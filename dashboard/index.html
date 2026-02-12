@@ -40,6 +40,7 @@
       --radius-md: 8px;
       --radius-lg: 12px;
       --radius-full: 9999px;
+      --radius: 8px;
       --duration-normal: 0.2s;
       --duration-slow: 0.35s;
       --ease-out: cubic-bezier(.16, 1, .3, 1);
@@ -81,7 +82,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 22px;
+      padding: 12px 14px;
       height: 56px;
       background: var(--bg);
       border-bottom: 1px solid var(--border);
@@ -90,17 +91,18 @@
     .header-left { display: flex; align-items: center; gap: 12px; }
 
     .sidebar-toggle {
-      width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
       border: none; background: none; color: var(--muted); cursor: pointer;
       border-radius: var(--radius-sm); transition: all var(--duration-normal);
       font-size: 18px;
     }
     .sidebar-toggle:hover { color: var(--text); background: var(--bg-hover); }
 
-    .header-logo { font-size: 28px; line-height: 1; }
+    .header-logo { line-height: 1; display: flex; align-items: center; }
+    .header-logo img { height: 30px; width: auto; vertical-align: middle; }
     .header-brand { display: flex; flex-direction: column; }
     .header-title {
-      font-size: 14px; font-weight: 700; letter-spacing: 0.05em;
+      font-size: 15px; font-weight: 700; letter-spacing: 0.05em;
       color: var(--text-strong); text-transform: uppercase;
     }
     .header-subtitle {
@@ -111,7 +113,7 @@
     .header-right { display: flex; align-items: center; gap: 10px; }
     .header-project {
       font-size: 13px; font-weight: 600; color: var(--text-strong);
-      text-transform: uppercase; letter-spacing: 0.02em;
+      letter-spacing: 0.02em;
     }
     .badge-active {
       display: inline-flex; padding: 3px 10px; border-radius: var(--radius-full);
@@ -124,8 +126,7 @@
     .sidebar {
       grid-row: 2;
       background: var(--bg);
-      border-right: 1px solid var(--border);
-      padding: 12px;
+      padding: 10px 14px 12px 14px;
       overflow-y: auto;
       overflow-x: hidden;
       transition: opacity var(--duration-normal);
@@ -134,28 +135,35 @@
 
     .sidebar-label {
       font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--muted); font-weight: 600; margin-bottom: 8px; padding: 0 4px;
+      color: var(--muted); font-weight: 600; margin-bottom: 8px; padding: 0;
     }
 
     .project-item {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 12px; border-radius: var(--radius-md);
-      font-size: 13px; font-weight: 500; color: var(--text);
+      padding: 8px 14px; border-radius: var(--radius-md);
+      font-size: 13px; font-weight: 500; color: var(--muted);
       cursor: pointer; transition: all var(--duration-normal);
       border: 1px solid transparent; margin-bottom: 2px;
     }
 
-    .project-item:hover { background: var(--bg-hover); }
-    .project-item.viewed { background: var(--bg-hover); }
+    .project-item:hover { 
+      background: var(--bg-hover); 
+      color: var(--text-strong);
+    }
+    .project-item.viewed { 
+      background: var(--accent-subtle);
+      color: var(--text-strong);
+    }
     .project-item.agent-active {
       border: 1px solid var(--accent);
-      background: var(--accent-subtle);
-      box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
+      color: var(--text-strong);
+      box-shadow: 0 0 12px rgba(255, 92, 92, .15);
     }
     .project-item.agent-active.viewed {
+      background: var(--accent-subtle);
       border: 1px solid var(--accent);
-      background: var(--bg-hover);
-      box-shadow: 0 0 12px rgba(255, 92, 92, .15);
+      color: var(--text-strong);
+      box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
     }
 
     .project-badge {
@@ -249,7 +257,7 @@
     .task-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
     .task-title {
       font-size: 13px; font-weight: 500; color: var(--text);
-      margin-bottom: 8px; line-height: 1.4; cursor: default;
+      margin-bottom: 8px; line-height: 1.4; cursor: pointer;
     }
     .task-title-input {
       font-size: 13px; font-weight: 500; color: var(--text);
@@ -388,7 +396,7 @@
   <div class="header">
     <div class="header-left">
       <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
-      <span class="header-logo"><img src="./favicon.svg" alt="OpenClaw" style="width:28px;height:28px;vertical-align:middle"></span>
+      <span class="header-logo"><img src="./favicon.svg" alt="OpenClaw"></span>
       <div class="header-brand">
         <div class="header-title">OpenClaw</div>
         <div class="header-subtitle">Project Dashboard</div>
@@ -414,9 +422,9 @@
 <div id="modalRoot"></div>
 
 <script>
-const API_HOST = window.location.port === '3001'
+const API_HOST = window.location.port === '18790'
   ? ''
-  : `http://${window.location.hostname}:3001`;
+  : `http://${window.location.hostname}:18790`;
 const API = API_HOST + '/api';
 const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 const PRIORITY_CYCLE = { low: 'medium', medium: 'high', high: 'low' };
@@ -531,6 +539,11 @@ function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// --- Format display name ---
+function formatDisplayName(name) {
+  return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
 // --- Render sidebar ---
 function renderSidebar() {
   const list = document.getElementById('projectList');
@@ -545,7 +558,7 @@ function renderSidebar() {
       if (isActive) cls += ' agent-active';
       if (isViewed) cls += ' viewed';
       return `<div class="${cls}" onclick="viewProject('${p.name}')">
-        <span>${p.name}</span>
+        <span>${formatDisplayName(p.name)}</span>
         ${openCount > 0 ? `<span class="project-badge">${openCount}</span>` : ''}
       </div>`;
     }).join('');
@@ -567,7 +580,7 @@ function renderHeader() {
   if (!state.viewedProject) { el.innerHTML = ''; return; }
   const isActive = state.viewedProject === state.activeProject;
   el.innerHTML = `
-    <span class="header-project">${state.viewedProject}</span>
+    <span class="header-project">${formatDisplayName(state.viewedProject)}</span>
     ${isActive ? '<span class="badge-active">Active</span>' : ''}
   `;
 }
@@ -737,7 +750,7 @@ function cardInnerHTML(task) {
     ${isEditing
       ? `<input class="task-title-input" value="${escHtml(task.title)}"
               onkeydown="onTitleKey(event, '${task.id}')" onblur="saveTitle('${task.id}', this)" autofocus>`
-      : `<div class="task-title" ondblclick="startEdit('${task.id}')">${escHtml(task.title)}</div>`}
+      : `<div class="task-title" onclick="startEdit('${task.id}')">${escHtml(task.title)}</div>`}
     <div class="task-meta">
       <span class="priority-pill-wrap">
         <span class="priority-pill priority-${task.priority}" onclick="togglePriorityPopover(event, '${task.id}', '${task.priority}')">${task.priority}</span>
