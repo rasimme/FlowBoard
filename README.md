@@ -1,8 +1,16 @@
 # Project Mode for OpenClaw
 
-> **v1.0.0** — File-based project context management for OpenClaw agents.
+> **v2.0.0** — File-based project management with Kanban dashboard for OpenClaw agents.
 
-Work on multiple projects with persistent context, structured planning, and session continuity — without needing separate agents.
+Work on multiple projects with persistent context, structured task management, and a live Kanban dashboard — without needing separate agents.
+
+## What's New in v2.0
+
+- **Task Management** — Structured `tasks.json` with status workflow (open → in-progress → review → done)
+- **Kanban Dashboard** — Interactive web UI with drag & drop, inline editing, priority popover, live auto-refresh
+- **Task Workflow Rules** — Agent updates task status in real-time as it works (one task at a time, visible on dashboard)
+- **Auto-task Creation** — Agent automatically breaks down work into tasks before execution
+- **Dashboard Data Sync** — Task changes sync to dashboard automatically
 
 ## The Problem
 
@@ -28,7 +36,8 @@ Project Mode uses a **lazy-loading, file-based approach**:
 2. Agent reads ACTIVE-PROJECT.md (mandatory, <100 bytes)
 3. If project active → reads PROJECT-RULES.md + project's PROJECT.md
 4. Agent works with full project context
-5. On deactivation → writes session summary, clears active project
+5. Tasks are tracked in tasks.json, visible on Kanban dashboard
+6. On deactivation → writes session summary, clears active project
 ```
 
 ## Components
@@ -38,8 +47,9 @@ Project Mode uses a **lazy-loading, file-based approach**:
 | [AGENTS.md trigger](#agentsmd-trigger) | Convention | Mandatory project check on session start |
 | [ACTIVE-PROJECT.md](#active-projectmd) | State file | Single source of truth for current project |
 | [PROJECT-RULES.md](#project-rulesmd) | Rules | Full project mode conventions (loaded on demand) |
-| [BOOT.md extension](#bootmd-extension) | Hook integration | Project state recovery after gateway restart |
-| [Project folder structure](#project-folder-structure) | Convention | Per-project files: PROJECT.md, DECISIONS.md, todo.md |
+| [tasks.json](#task-management) | Data | Structured task tracking per project |
+| [Kanban Dashboard](#kanban-dashboard) | Web UI | Interactive project dashboard with live updates |
+| [Project folder structure](#project-folder-structure) | Convention | Per-project files: PROJECT.md, DECISIONS.md, tasks.json |
 
 ## Installation
 
@@ -64,37 +74,37 @@ Only explicit user commands may change ACTIVE-PROJECT.md. Never modify it automa
 
 ### 2. Create workspace files
 
-Copy the files from this package to your workspace:
-
 ```bash
 # From your workspace root (e.g. ~/.openclaw/workspace)
 cp project-mode/files/ACTIVE-PROJECT.md .
 cp -r project-mode/files/projects .
 ```
 
-Or create them manually:
+Or create manually:
 
 ```bash
-# Active project pointer
 echo "project: none" > ACTIVE-PROJECT.md
-
-# Project rules and index
 mkdir -p projects
 cp project-mode/files/projects/PROJECT-RULES.md projects/
 cp project-mode/files/projects/_index.md projects/
 ```
 
-### 3. Extend BOOT.md (optional, recommended)
+### 3. Set up Kanban Dashboard (optional)
 
-If you use the `boot-md` hook, add project state recovery to your `BOOT.md`:
+```bash
+# Copy dashboard files
+mkdir -p canvas
+cp project-mode/dashboard/* canvas/
 
-```markdown
-## Project State Recovery
-After a gateway restart:
-1. Read `ACTIVE-PROJECT.md`
-2. If active project exists: mention it in the boot notification
-3. If active project with pending actions: include what was in progress
+# Install dependency
+cd canvas && npm install express
+
+# Start server
+./start-dashboard.sh
+# Dashboard available at http://localhost:3001
 ```
+
+The dashboard auto-refreshes every 5 seconds and shows task changes in real-time.
 
 ## Usage
 
@@ -107,27 +117,91 @@ After a gateway restart:
 | `Projekt beenden` | Deactivate current project (writes session summary) |
 | `Projekte` | Show all projects and which is active |
 
-### Example workflow
+### Task Workflow
 
+When the agent works on tasks, it follows this workflow:
+
+1. **Auto-create tasks** — When you give work, the agent breaks it into tasks in `tasks.json`
+2. **One at a time** — Agent sets a task to `in-progress` before starting work
+3. **Live updates** — Dashboard shows which task is being worked on in real-time
+4. **Review, not done** — When finished, agent sets task to `review` (you move it to `done`)
+5. **Next task** — Agent moves to the next task and repeats
+
+### Task Statuses
+
+| Status | Meaning | Set by |
+|--------|---------|--------|
+| `open` | Ready to work on | Agent (on creation) |
+| `in-progress` | Currently being worked on | Agent (before starting) |
+| `review` | Work complete, awaiting confirmation | Agent (when finished) |
+| `done` | Confirmed complete | User (manual) |
+
+## Task Management
+
+Tasks are stored in `tasks.json` inside each project folder:
+
+```json
+{
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Implement user authentication",
+      "status": "in-progress",
+      "priority": "high",
+      "specFile": null,
+      "created": "2026-02-12",
+      "completed": null
+    }
+  ]
+}
 ```
-You:    Neues Projekt: website-redesign
-Agent:  [Creates folder structure, asks for goal/background, activates project]
 
-You:    Let's plan the navigation structure
-Agent:  [Works in project context, updates PROJECT.md]
+### Task Schema
 
-You:    Projekt beenden
-Agent:  [Writes session summary to PROJECT.md, deactivates]
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Auto-incremented (T-001, T-002, ...) |
+| `title` | string | Short task description |
+| `status` | enum | `open`, `in-progress`, `review`, `done` |
+| `priority` | enum | `high`, `medium`, `low` |
+| `specFile` | string/null | Path to detailed spec in `context/` |
+| `created` | date | Creation date (YYYY-MM-DD) |
+| `completed` | date/null | Completion date |
 
---- next day ---
+## Kanban Dashboard
 
-You:    Projekt: website-redesign
-Agent:  [Loads project context, shows current status, continues where you left off]
-```
+Interactive web UI built with vanilla HTML/JS/CSS. Matches the OpenClaw Gateway design system.
+
+### Features
+
+- **Drag & drop** — Move tasks between columns
+- **Inline editing** — Double-click title to edit
+- **Priority popover** — Click priority badge to change (low/medium/high)
+- **Sort toggle** — Newest or oldest first (persisted in localStorage)
+- **Auto-refresh** — 5-second polling with diff-based DOM updates (no flicker)
+- **Multi-project** — Sidebar with project list, click to switch
+- **Delete modal** — Confirmation dialog for destructive actions
+- **Toast notifications** — Status change feedback
+
+### Architecture
+
+- **Single HTML file** — No framework, no build step
+- **Express API server** — REST endpoints for CRUD operations on port 3001
+- **Design tokens** — Uses identical CSS variables as OpenClaw Gateway UI
+- **Dashboard data sync** — `dashboard-data.json` auto-updated on every task change
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/status` | Gateway status |
+| GET | `/api/projects` | List all projects |
+| GET | `/api/projects/:name/tasks` | Get tasks for project |
+| POST | `/api/projects/:name/tasks` | Create task |
+| PUT | `/api/projects/:name/tasks/:id` | Update task |
+| DELETE | `/api/projects/:name/tasks/:id` | Delete task |
 
 ## Project Folder Structure
-
-When you create a new project, this structure is generated:
 
 ```
 workspace/
@@ -135,23 +209,27 @@ workspace/
 ├── projects/
 │   ├── PROJECT-RULES.md       ← Full rules (loaded on demand)
 │   ├── _index.md              ← Overview table of all projects
-│   └── website-redesign/      ← Example project
+│   └── my-project/
 │       ├── PROJECT.md          ← Goals, status, architecture, session log
 │       ├── DECISIONS.md        ← Decision archive (loaded on demand)
-│       ├── todo.md             ← Task list (loaded on demand)
+│       ├── tasks.json          ← Structured task tracking
 │       └── context/            ← Reference files, specs, docs
+├── canvas/
+│   ├── index.html             ← Kanban Dashboard UI
+│   ├── server.js              ← Express API server
+│   ├── dashboard-data.json    ← Auto-synced task data
+│   └── start-dashboard.sh     ← Server start script
 ```
 
-### File descriptions
+## Design Decisions
 
-| File | Loaded | Purpose |
-|------|--------|---------|
-| `ACTIVE-PROJECT.md` | Every session start | Pointer to current project (~100 bytes) |
-| `PROJECT-RULES.md` | When project is active | Full conventions and rules (~4KB) |
-| `_index.md` | On "Projekte" command | Overview of all projects |
-| `PROJECT.md` | When project is active | Project goals, status, session log (<4KB) |
-| `DECISIONS.md` | On demand only | Decision archive with reasoning |
-| `todo.md` | On demand only | Task tracking |
+| Decision | Reasoning |
+|----------|-----------|
+| Vanilla JS (no framework) | No build step, instant edit-refresh cycle, single file ~40KB |
+| Express on port 3001 | One port for static + API, single SSH tunnel for remote access |
+| `tasks.json` over `todo.md` | Structured data enables API, dashboard, automation |
+| Diff-based refresh | Prevents flicker, preserves form state during auto-refresh |
+| Review before Done | Human confirms completion — agent never marks tasks as done |
 
 ## Design Principles
 
@@ -159,7 +237,7 @@ workspace/
 Only load what's needed. `ACTIVE-PROJECT.md` is tiny (<100 bytes) and always read. Everything else is loaded on demand. No project active = zero overhead.
 
 ### Convention over code
-Project Mode is entirely file-based and convention-based. No custom hooks, plugins, or code required. The agent follows rules written in markdown. This makes it portable, debuggable, and easy to modify.
+Project Mode is entirely file-based and convention-based. No custom hooks or plugins required. The agent follows rules written in markdown.
 
 ### Graceful degradation
 Every failure mode degrades to "no project active, work normally":
@@ -168,47 +246,25 @@ Every failure mode degrades to "no project active, work normally":
 - Corrupt content → treat as inactive, notify user
 
 ### Context economy
-PROJECT.md has a 4KB size limit. Old session logs are archived to `context/session-archive.md`. DECISIONS.md and todo.md are only loaded when actually needed.
+PROJECT.md has a 4KB size limit. Old session logs are archived to `context/session-archive.md`. DECISIONS.md and tasks.json are only loaded when actually needed.
 
-## Integration with Other Systems
+## Integration
 
 ### Session Handoff (memory-management)
-Works seamlessly with the [Session Handoff](../memory-management/hooks/session-handoff/) hook. SESSION-STATE.md includes the active project reference, so context survives compaction.
+Works with the [Session Handoff](../memory-management/hooks/session-handoff/) hook. SESSION-STATE.md includes the active project reference.
 
-### boot-md Hook
-The BOOT.md extension ensures project state is recovered after gateway restarts. Requires the `boot-md` hook to be enabled.
-
-### Sub-agents & Cron
-Sub-agents run sandboxed (`workspaceAccess: "ro"`) — they can read but not modify `ACTIVE-PROJECT.md`. Only explicit user commands in the main session can change project state.
-
-## Edge Cases & Reliability
-
-| Scenario | What happens | Severity |
-|----------|-------------|----------|
-| Gateway restart | boot-md reads ACTIVE-PROJECT.md, recovers state | 🟢 Safe |
-| Compaction | AGENTS.md rule survives (injected file), SESSION-STATE.md has project ref | 🟢 Safe |
-| Concurrent sessions | Runs serialized per session key, no race conditions | 🟢 Safe |
-| Agent crash mid-write | ACTIVE-PROJECT.md is <100 bytes (practically atomic), degrades to "no project" | 🟢 Safe |
-| Deleted project folder | Agent detects, notifies user, sets to inactive | 🟢 Safe |
-| Sub-agent interference | Sandbox prevents writes to ACTIVE-PROJECT.md | 🟢 Safe |
-
-## Modular Roadmap
-
-Project Mode is designed to be extended:
-
-1. **✅ Module 1: Project structure & switching** (this package)
-2. **Module 2: Todo integration** — Structured task management per project via `todo.md`
-3. **Module 3: Planning mode** — `PLAN.md` with planning vs. execution status flag
-4. **Module 4: External sync** — Optional Kanban sync with Notion or similar
+### Dashboard Data Sync
+When tasks.json changes, `dashboard-data.json` is auto-synced to `canvas/`. Rule defined in PROJECT-RULES.md.
 
 ## Requirements
 
 - OpenClaw 2026.2.x or later
-- `boot-md` hook enabled (for gateway restart recovery)
+- Node.js 18+ (for dashboard server)
 - Writable workspace (not sandboxed)
 
 ## Version History
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.0.0 | 2026-02-12 | Task management (tasks.json), Kanban Dashboard, task workflow rules, auto-task creation, priority popover, sort toggle |
 | v1.0.0 | 2026-02-10 | Initial release — project switching, structure, rules |

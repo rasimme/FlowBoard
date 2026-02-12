@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Dashboard — OpenClaw</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #12141a;
+      --bg-accent: #14161d;
+      --bg-elevated: #1a1d25;
+      --bg-hover: #262a35;
+      --card: #181b22;
+      --secondary: #1e2028;
+      --text: #e4e4e7;
+      --text-strong: #fafafa;
+      --muted: #71717a;
+      --border: #27272a;
+      --border-strong: #3f3f46;
+      --accent: #ff5c5c;
+      --accent-subtle: rgba(255, 92, 92, .15);
+      --ok: #22c55e;
+      --ok-subtle: rgba(34, 197, 94, .12);
+      --warn: #f59e0b;
+      --warn-subtle: rgba(245, 158, 11, .12);
+      --danger: #ef4444;
+      --danger-subtle: rgba(239, 68, 68, .12);
+      --info: #3b82f6;
+      --info-subtle: rgba(59, 130, 246, .12);
+      --card-highlight: rgba(255, 255, 255, .05);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .2);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, .25), 0 0 0 1px rgba(255, 255, 255, .03);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, .4), 0 0 0 1px rgba(255, 255, 255, .03);
+      --radius-sm: 6px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-full: 9999px;
+      --duration-normal: 0.2s;
+      --duration-slow: 0.35s;
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+      --sidebar-width: 220px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    /* Scrollbar — matches Gateway Dashboard */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+    /* Layout */
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      grid-template-columns: var(--sidebar-width) 1fr;
+      height: 100vh;
+      transition: grid-template-columns var(--duration-normal) var(--ease-out);
+    }
+    .app.sidebar-collapsed { grid-template-columns: 0px 1fr; }
+
+    /* Header — matches Gateway Dashboard */
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      height: 56px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; }
+
+    .sidebar-toggle {
+      width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+      border: none; background: none; color: var(--muted); cursor: pointer;
+      border-radius: var(--radius-sm); transition: all var(--duration-normal);
+      font-size: 18px;
+    }
+    .sidebar-toggle:hover { color: var(--text); background: var(--bg-hover); }
+
+    .header-logo { font-size: 28px; line-height: 1; }
+    .header-brand { display: flex; flex-direction: column; }
+    .header-title {
+      font-size: 14px; font-weight: 700; letter-spacing: 0.05em;
+      color: var(--text-strong); text-transform: uppercase;
+    }
+    .header-subtitle {
+      font-size: 10px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 500;
+    }
+
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .header-project {
+      font-size: 13px; font-weight: 600; color: var(--text-strong);
+      text-transform: uppercase; letter-spacing: 0.02em;
+    }
+    .badge-active {
+      display: inline-flex; padding: 3px 10px; border-radius: var(--radius-full);
+      font-size: 10px; font-weight: 600; color: var(--accent);
+      border: 1px solid #ff5c5c59; background: var(--accent-subtle);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      grid-row: 2;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      padding: 12px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      transition: opacity var(--duration-normal);
+    }
+    .app.sidebar-collapsed .sidebar { opacity: 0; pointer-events: none; }
+
+    .sidebar-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); font-weight: 600; margin-bottom: 8px; padding: 0 4px;
+    }
+
+    .project-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; border-radius: var(--radius-md);
+      font-size: 13px; font-weight: 500; color: var(--text);
+      cursor: pointer; transition: all var(--duration-normal);
+      border: 1px solid transparent; margin-bottom: 2px;
+    }
+
+    .project-item:hover { background: var(--bg-hover); }
+    .project-item.viewed { background: var(--bg-hover); }
+    .project-item.agent-active {
+      border: 1px solid var(--accent);
+      background: var(--accent-subtle);
+      box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
+    }
+    .project-item.agent-active.viewed {
+      border: 1px solid var(--accent);
+      background: var(--bg-hover);
+      box-shadow: 0 0 12px rgba(255, 92, 92, .15);
+    }
+
+    .project-badge {
+      background: var(--secondary); border-radius: var(--radius-full);
+      padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--muted);
+    }
+
+    .sidebar-empty { color: var(--muted); font-size: 12px; padding: 12px; text-align: center; }
+
+    .sidebar-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 7px 14px; border-radius: var(--radius-md);
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--text); transition: all var(--duration-normal);
+      font-family: inherit;
+    }
+    .btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #ff4040; }
+
+    .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+
+    .btn-secondary { background: transparent; border-color: var(--border); color: var(--muted); }
+    .btn-secondary:hover { color: var(--text); }
+
+    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn-ghost:hover { color: var(--text); background: var(--bg-hover); }
+
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+    .btn-full { width: 100%; }
+
+    /* Content area */
+    .content {
+      grid-row: 2;
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+      padding: 16px 22px;
+    }
+
+    .empty-state {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 60vh; color: var(--muted); font-size: 14px;
+    }
+
+    /* Kanban */
+    .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+    .column {
+      background: var(--bg-accent); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 12px;
+      min-height: 200px; display: flex; flex-direction: column;
+      transition: background var(--duration-normal), border-color var(--duration-normal);
+    }
+    .column.drag-over { border-color: var(--accent); background: rgba(255, 92, 92, .05); }
+
+    .column-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .column-title {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+      font-weight: 600; color: var(--text);
+    }
+
+    .column-count {
+      background: var(--secondary); border-radius: var(--radius-full);
+      padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--muted);
+    }
+
+    .column-body { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .column-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0; opacity: 0.5; }
+
+    /* Task Cards */
+    .task-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 12px; position: relative;
+      box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-highlight);
+      transition: border-color var(--duration-normal), box-shadow var(--duration-normal), opacity var(--duration-normal);
+      cursor: grab;
+    }
+    .task-card.new-card { animation: rise var(--duration-slow) var(--ease-out) both; }
+    .task-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+    .task-card.dragging { opacity: 0.4; }
+    .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
+
+    .task-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .task-title {
+      font-size: 13px; font-weight: 500; color: var(--text);
+      margin-bottom: 8px; line-height: 1.4; cursor: default;
+    }
+    .task-title-input {
+      font-size: 13px; font-weight: 500; color: var(--text);
+      background: var(--bg-elevated); border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); padding: 4px 6px; width: 100%;
+      margin-bottom: 8px; font-family: inherit; outline: none;
+    }
+    .task-title-input:focus { border-color: var(--accent); }
+
+    .task-meta { display: flex; align-items: center; justify-content: space-between; }
+
+    .priority-pill {
+      display: inline-flex; padding: 4px 10px; border-radius: var(--radius-full);
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      transition: all var(--duration-normal);
+    }
+    .priority-high { color: var(--danger); border: 1px solid #ef444459; background: var(--danger-subtle); }
+    .priority-medium { color: var(--warn); border: 1px solid #f59e0b59; background: var(--warn-subtle); }
+    .priority-low { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
+
+    .priority-popover {
+      position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      display: flex; gap: 4px; padding: 6px;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
+      z-index: 100;
+      animation: popIn var(--duration-fast) var(--ease-out);
+    }
+    .priority-popover .priority-pill { opacity: 0.5; transition: opacity var(--duration-fast); }
+    .priority-popover .priority-pill:hover { opacity: 1; }
+    .priority-popover .priority-pill.current { opacity: 1; }
+    .priority-pill-wrap { position: relative; }
+    @keyframes popIn { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+    .delete-btn {
+      opacity: 0; width: 24px; height: 24px; display: flex; align-items: center;
+      justify-content: center; border: none; background: none; cursor: pointer;
+      color: var(--muted); border-radius: var(--radius-sm);
+      transition: all var(--duration-normal);
+    }
+    .task-card:hover .delete-btn { opacity: 1; }
+    .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
+
+    /* Add Task */
+    .add-task-btn {
+      border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+      padding: 12px; text-align: center; color: var(--muted); font-size: 12px;
+      cursor: pointer; transition: all var(--duration-normal); background: none;
+      width: 100%; font-family: inherit;
+    }
+    .add-task-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .add-task-form {
+      background: var(--card); border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md); padding: 12px;
+    }
+    .add-task-form input {
+      width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 8px 10px; color: var(--text);
+      font-size: 13px; font-family: inherit; outline: none; margin-bottom: 10px;
+    }
+    .add-task-form input:focus { border-color: var(--accent); }
+
+    .priority-selector { display: flex; gap: 6px; margin-bottom: 10px; }
+    .priority-option {
+      padding: 4px 10px; border-radius: var(--radius-full);
+      font-size: 11px; font-weight: 500; cursor: pointer;
+      border: 1px solid var(--border); background: var(--card);
+      color: var(--muted); transition: all var(--duration-normal); font-family: inherit;
+    }
+    .priority-option.selected { color: var(--text-strong); }
+    .priority-option[data-p="high"].selected { color: var(--danger); border-color: #ef444459; background: var(--danger-subtle); }
+    .priority-option[data-p="medium"].selected { color: var(--warn); border-color: #f59e0b59; background: var(--warn-subtle); }
+    .priority-option[data-p="low"].selected { color: var(--ok); border-color: #22c55e59; background: var(--ok-subtle); }
+
+    .form-actions { display: flex; gap: 8px; }
+
+    /* Footer */
+    .footer {
+      grid-column: 1 / -1;
+      padding: 10px 22px; text-align: center;
+      font-size: 11px; color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+
+    /* Toast — bottom-right */
+    .toast-container {
+      position: fixed; bottom: 16px; right: 16px; z-index: 900;
+      display: flex; flex-direction: column-reverse; gap: 8px;
+    }
+    .toast {
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 10px 16px;
+      box-shadow: var(--shadow-md); font-size: 12px; color: var(--text);
+      border-left: 3px solid var(--info); min-width: 200px;
+      animation: slideUp 0.25s var(--ease-out);
+    }
+    .toast.success { border-left-color: var(--ok); }
+    .toast.error { border-left-color: var(--danger); }
+    .toast.info { border-left-color: var(--info); }
+    .toast.removing { animation: slideDown 0.2s var(--ease-out) forwards; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; backdrop-filter: blur(4px);
+      animation: fadeIn 0.15s ease-out;
+    }
+    .modal {
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 24px;
+      max-width: 360px; width: 90%; box-shadow: var(--shadow-lg);
+      animation: modalIn 0.2s var(--ease-out);
+    }
+    .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
+    .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes shrink { to { opacity: 0; transform: scale(0.95) translateY(-4px); height: 0; padding: 0; margin: 0; border: 0; overflow: hidden; } }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideDown { to { opacity: 0; transform: translateY(10px); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 0px 1fr; }
+      .sidebar { opacity: 0; pointer-events: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <div class="header">
+    <div class="header-left">
+      <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+      <span class="header-logo"><img src="./favicon.svg" alt="OpenClaw" style="width:28px;height:28px;vertical-align:middle"></span>
+      <div class="header-brand">
+        <div class="header-title">OpenClaw</div>
+        <div class="header-subtitle">Project Dashboard</div>
+      </div>
+    </div>
+    <div class="header-right" id="headerRight"></div>
+  </div>
+
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-label">Projects</div>
+    <div id="projectList"></div>
+    <div class="sidebar-actions" id="sidebarActions"></div>
+  </div>
+
+  <div class="content" id="content"></div>
+
+  <div class="footer">
+    Auto-refresh active · Last update: <span id="lastRefresh">—</span>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+<div id="modalRoot"></div>
+
+<script>
+const API_HOST = window.location.port === '3001'
+  ? ''
+  : `http://${window.location.hostname}:3001`;
+const API = API_HOST + '/api';
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+const PRIORITY_CYCLE = { low: 'medium', medium: 'high', high: 'low' };
+const STATUS_KEYS = ['open', 'in-progress', 'review', 'done'];
+const STATUS_LABELS = { 'open': 'Open', 'in-progress': 'In Progress', 'review': 'Review', 'done': 'Done' };
+
+let state = {
+  projects: [],
+  activeProject: null,
+  viewedProject: null,
+  tasks: [],
+  addingTask: false,
+  editingTaskId: null
+};
+
+let prevProjectsJson = '';
+let prevTasksJson = '';
+let prevActiveProject = null;
+let boardBuilt = false;
+let newCardIds = new Set();
+
+// --- Sidebar toggle ---
+function toggleSidebar() {
+  document.getElementById('app').classList.toggle('sidebar-collapsed');
+}
+
+// --- API ---
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  return res.json();
+}
+
+// --- Toast (bottom-right) ---
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => {
+    el.classList.add('removing');
+    setTimeout(() => el.remove(), 200);
+  }, 3000);
+}
+
+// --- Modal ---
+function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger') {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = `<div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <div class="modal-title">${title}</div>
+      <div class="modal-body">${body}</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost btn-sm" id="modalCancel">Cancel</button>
+        <button class="btn ${confirmClass} btn-sm" id="modalConfirm">${confirmLabel}</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('modalCancel').onclick = closeModal;
+  document.getElementById('modalConfirm').onclick = () => { closeModal(); onConfirm(); };
+  document.getElementById('modalOverlay').onclick = (e) => {
+    if (e.target === e.currentTarget) closeModal();
+  };
+  document.addEventListener('keydown', modalEscHandler);
+}
+
+function closeModal() {
+  document.getElementById('modalRoot').innerHTML = '';
+  document.removeEventListener('keydown', modalEscHandler);
+}
+
+function modalEscHandler(e) { if (e.key === 'Escape') closeModal(); }
+
+function isUserInteracting() {
+  if (state.addingTask || state.editingTaskId) return true;
+  if (document.getElementById('modalOverlay')) return true;
+  const active = document.activeElement;
+  return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+}
+
+let sortNewestFirst = localStorage.getItem('sortNewestFirst') !== 'false';
+
+function toggleSort() {
+  sortNewestFirst = !sortNewestFirst;
+  localStorage.setItem('sortNewestFirst', sortNewestFirst);
+  const icon = document.getElementById('sortIcon');
+  const label = document.getElementById('sortLabel');
+  if (icon) icon.textContent = sortNewestFirst ? '↓' : '↑';
+  if (label) label.textContent = sortNewestFirst ? 'Newest first' : 'Oldest first';
+  // Force re-render of add button position
+  const btn = document.querySelector('.add-task-btn');
+  const form = document.querySelector('.add-task-form');
+  if (btn) btn.remove();
+  if (form) form.remove();
+  prevTasksJson = '';
+  updateBoard();
+}
+
+function sortTasks(tasks) {
+  const dir = sortNewestFirst ? -1 : 1;
+  return [...tasks].sort((a, b) => {
+    const idA = parseInt(a.id.replace('T-', ''));
+    const idB = parseInt(b.id.replace('T-', ''));
+    return dir * (idA - idB);
+  });
+}
+
+function escHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// --- Render sidebar ---
+function renderSidebar() {
+  const list = document.getElementById('projectList');
+  if (state.projects.length === 0) {
+    list.innerHTML = '<div class="sidebar-empty">No projects</div>';
+  } else {
+    list.innerHTML = state.projects.map(p => {
+      const isActive = p.name === state.activeProject;
+      const isViewed = p.name === state.viewedProject;
+      const openCount = (p.taskCounts.open || 0) + (p.taskCounts['in-progress'] || 0);
+      let cls = 'project-item';
+      if (isActive) cls += ' agent-active';
+      if (isViewed) cls += ' viewed';
+      return `<div class="${cls}" onclick="viewProject('${p.name}')">
+        <span>${p.name}</span>
+        ${openCount > 0 ? `<span class="project-badge">${openCount}</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  const actions = document.getElementById('sidebarActions');
+  if (state.viewedProject && state.viewedProject !== state.activeProject) {
+    actions.innerHTML = `<button class="btn btn-primary btn-sm btn-full" onclick="activateProject()">Activate</button>`;
+  } else if (state.viewedProject && state.viewedProject === state.activeProject) {
+    actions.innerHTML = `<button class="btn btn-secondary btn-sm btn-full" onclick="deactivateProject()">Deactivate</button>`;
+  } else {
+    actions.innerHTML = '';
+  }
+}
+
+// --- Render header (fixed height, no stats) ---
+function renderHeader() {
+  const el = document.getElementById('headerRight');
+  if (!state.viewedProject) { el.innerHTML = ''; return; }
+  const isActive = state.viewedProject === state.activeProject;
+  el.innerHTML = `
+    <span class="header-project">${state.viewedProject}</span>
+    ${isActive ? '<span class="badge-active">Active</span>' : ''}
+  `;
+}
+
+// --- Build board skeleton ---
+function buildBoard() {
+  const content = document.getElementById('content');
+  content.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+    <button class="btn btn-ghost btn-sm" id="sortToggle" onclick="toggleSort()" title="Toggle sort order"
+      style="font-size:12px;display:flex;align-items:center;gap:4px;">
+      <span id="sortIcon">${sortNewestFirst ? '↓' : '↑'}</span> <span id="sortLabel">${sortNewestFirst ? 'Newest first' : 'Oldest first'}</span>
+    </button>
+  </div>
+  <div class="kanban" id="kanban">
+    ${STATUS_KEYS.map(status => `<div class="column" data-status="${status}"
+      ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <div class="column-header">
+        <span class="column-title">${STATUS_LABELS[status]}</span>
+        <span class="column-count" id="count-${status}">0</span>
+      </div>
+      <div class="column-body" id="col-${status}"></div>
+    </div>`).join('')}
+  </div>`;
+  boardBuilt = true;
+}
+
+// --- Update board (diff-based) ---
+function updateBoard() {
+  if (!state.viewedProject) {
+    const content = document.getElementById('content');
+    const msg = state.projects.length === 0
+      ? 'No projects found. Create a new project via chat.'
+      : 'Select a project from the sidebar.';
+    content.innerHTML = `<div class="empty-state">${msg}</div>`;
+    boardBuilt = false;
+    return;
+  }
+
+  if (!boardBuilt) buildBoard();
+
+  const tasks = state.tasks;
+  const counts = {};
+  STATUS_KEYS.forEach(s => counts[s] = 0);
+
+  const grouped = {};
+  STATUS_KEYS.forEach(s => grouped[s] = []);
+  for (const t of tasks) {
+    if (grouped[t.status]) grouped[t.status].push(t);
+    counts[t.status]++;
+  }
+
+  STATUS_KEYS.forEach(status => {
+    const sorted = sortTasks(grouped[status]);
+    const body = document.getElementById(`col-${status}`);
+    const countEl = document.getElementById(`count-${status}`);
+    if (countEl) countEl.textContent = counts[status];
+
+    const existingCards = {};
+    body.querySelectorAll('.task-card').forEach(el => { existingCards[el.dataset.id] = el; });
+
+    const newIds = new Set(sorted.map(t => t.id));
+    for (const [id, el] of Object.entries(existingCards)) {
+      if (!newIds.has(id)) el.remove();
+    }
+
+    const emptyEl = body.querySelector('.column-empty');
+    const addBtn = body.querySelector('.add-task-btn');
+    const addForm = body.querySelector('.add-task-form');
+
+    if (sorted.length === 0 && !(status === 'open' && state.addingTask)) {
+      if (!emptyEl) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'column-empty';
+        placeholder.textContent = 'No tasks';
+        if (addBtn) body.insertBefore(placeholder, addBtn);
+        else if (addForm) body.insertBefore(placeholder, addForm);
+        else body.appendChild(placeholder);
+      }
+    } else {
+      if (emptyEl) emptyEl.remove();
+    }
+
+    let insertBefore = addBtn || addForm || null;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const task = sorted[i];
+      let card = body.querySelector(`.task-card[data-id="${task.id}"]`);
+      if (!card) {
+        card = createCardElement(task);
+        if (newCardIds.has(task.id)) card.classList.add('new-card');
+        body.insertBefore(card, insertBefore);
+      } else {
+        updateCardContent(card, task);
+        body.insertBefore(card, insertBefore);
+      }
+      insertBefore = card;
+    }
+
+    if (status === 'open') {
+      const existingBtn = body.querySelector('.add-task-btn');
+      const existingForm = body.querySelector('.add-task-form');
+      if (state.addingTask) {
+        if (existingBtn) existingBtn.remove();
+        if (existingForm) {
+          // Re-position existing form
+          if (sortNewestFirst) body.insertBefore(existingForm, body.firstChild);
+          else body.appendChild(existingForm);
+        } else {
+          body.insertAdjacentHTML(sortNewestFirst ? 'afterbegin' : 'beforeend', renderAddTaskForm());
+          setTimeout(() => {
+            const inp = document.getElementById('newTaskTitle');
+            if (inp && !inp.value) inp.focus();
+          }, 50);
+        }
+      } else {
+        if (existingForm) existingForm.remove();
+        if (existingBtn) {
+          // Re-position existing button
+          if (sortNewestFirst) body.insertBefore(existingBtn, body.firstChild);
+          else body.appendChild(existingBtn);
+        } else {
+          body.insertAdjacentHTML(sortNewestFirst ? 'afterbegin' : 'beforeend',
+            `<button class="add-task-btn" onclick="startAdd()">+ New Task</button>`);
+        }
+      }
+    }
+  });
+
+  if (newCardIds.size > 0) setTimeout(() => newCardIds.clear(), 400);
+}
+
+function createCardElement(task) {
+  const div = document.createElement('div');
+  div.className = 'task-card';
+  div.draggable = true;
+  div.dataset.id = task.id;
+  div.setAttribute('ondragstart', 'onDragStart(event)');
+  div.setAttribute('ondragend', 'onDragEnd(event)');
+  div.innerHTML = cardInnerHTML(task);
+  return div;
+}
+
+function updateCardContent(card, task) {
+  if (state.editingTaskId === task.id) return;
+  const titleEl = card.querySelector('.task-title');
+  const pillEl = card.querySelector('.priority-pill');
+  if (titleEl && titleEl.textContent !== task.title) titleEl.textContent = task.title;
+  if (pillEl) {
+    const newClass = `priority-pill priority-${task.priority}`;
+    if (pillEl.className !== newClass || pillEl.textContent !== task.priority) {
+      pillEl.className = newClass;
+      pillEl.textContent = task.priority;
+      pillEl.setAttribute('onclick', `togglePriorityPopover(event, '${task.id}', '${task.priority}')`);
+    }
+  }
+}
+
+function cardInnerHTML(task) {
+  const isEditing = state.editingTaskId === task.id;
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div class="task-id mono">${task.id}</div>
+      <button class="delete-btn" onclick="startDelete('${task.id}', '${escHtml(task.title)}')" title="Delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+        </svg>
+      </button>
+    </div>
+    ${isEditing
+      ? `<input class="task-title-input" value="${escHtml(task.title)}"
+              onkeydown="onTitleKey(event, '${task.id}')" onblur="saveTitle('${task.id}', this)" autofocus>`
+      : `<div class="task-title" ondblclick="startEdit('${task.id}')">${escHtml(task.title)}</div>`}
+    <div class="task-meta">
+      <span class="priority-pill-wrap">
+        <span class="priority-pill priority-${task.priority}" onclick="togglePriorityPopover(event, '${task.id}', '${task.priority}')">${task.priority}</span>
+      </span>
+    </div>`;
+}
+
+function renderAddTaskForm() {
+  return `<div class="add-task-form">
+    <input id="newTaskTitle" placeholder="Task title..." onkeydown="onAddKey(event)">
+    <div class="priority-selector">
+      <button class="priority-option" data-p="low" onclick="selectPriority('low')">low</button>
+      <button class="priority-option selected" data-p="medium" onclick="selectPriority('medium')">medium</button>
+      <button class="priority-option" data-p="high" onclick="selectPriority('high')">high</button>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary btn-sm" onclick="createTask()">Create</button>
+      <button class="btn btn-secondary btn-sm" onclick="cancelAdd()">Cancel</button>
+    </div>
+  </div>`;
+}
+
+// --- Actions ---
+async function viewProject(name) {
+  state.viewedProject = name;
+  state.addingTask = false;
+  state.editingTaskId = null;
+  boardBuilt = false;
+  const data = await api(`/projects/${name}/tasks`);
+  state.tasks = data.tasks || [];
+  prevTasksJson = JSON.stringify(state.tasks);
+  renderAll();
+}
+
+async function activateProject() {
+  await api('/status', { method: 'PUT', body: { project: state.viewedProject } });
+  state.activeProject = state.viewedProject;
+  toast(`Project "${state.viewedProject}" activated`, 'success');
+  renderSidebar();
+  renderHeader();
+}
+
+async function deactivateProject() {
+  await api('/status', { method: 'PUT', body: { project: null } });
+  state.activeProject = null;
+  toast('Project deactivated.', 'info');
+  renderSidebar();
+  renderHeader();
+}
+
+let selectedPriority = 'medium';
+
+function startAdd() {
+  state.addingTask = true;
+  selectedPriority = 'medium';
+  updateBoard();
+}
+
+function cancelAdd() {
+  state.addingTask = false;
+  updateBoard();
+}
+
+function selectPriority(p) {
+  selectedPriority = p;
+  document.querySelectorAll('.priority-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.p === p);
+  });
+}
+
+function onAddKey(e) {
+  if (e.key === 'Enter') createTask();
+  if (e.key === 'Escape') cancelAdd();
+}
+
+async function createTask() {
+  const inp = document.getElementById('newTaskTitle');
+  const title = inp ? inp.value.trim() : '';
+  if (!title) return;
+  const res = await api(`/projects/${state.viewedProject}/tasks`, {
+    method: 'POST', body: { title, priority: selectedPriority }
+  });
+  if (res.ok) {
+    state.tasks.push(res.task);
+    state.addingTask = false;
+    newCardIds.add(res.task.id);
+    toast(`Task ${res.task.id} created`, 'success');
+    prevTasksJson = JSON.stringify(state.tasks);
+    updateBoard();
+  } else {
+    toast(res.error || 'Error', 'error');
+  }
+}
+
+function startEdit(id) {
+  state.editingTaskId = id;
+  const card = document.querySelector(`.task-card[data-id="${id}"]`);
+  if (card) {
+    const task = state.tasks.find(t => t.id === id);
+    if (task) card.innerHTML = cardInnerHTML(task);
+    setTimeout(() => {
+      const inp = card.querySelector('.task-title-input');
+      if (inp) { inp.focus(); inp.select(); }
+    }, 50);
+  }
+}
+
+function onTitleKey(e, id) {
+  if (e.key === 'Enter') e.target.blur();
+  if (e.key === 'Escape') {
+    state.editingTaskId = null;
+    const card = document.querySelector(`.task-card[data-id="${id}"]`);
+    const task = state.tasks.find(t => t.id === id);
+    if (card && task) card.innerHTML = cardInnerHTML(task);
+  }
+}
+
+async function saveTitle(id, el) {
+  const newTitle = el.value.trim();
+  state.editingTaskId = null;
+  const task = state.tasks.find(t => t.id === id);
+  if (task && newTitle && task.title !== newTitle) {
+    await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+      method: 'PUT', body: { title: newTitle }
+    });
+    task.title = newTitle;
+    toast('Title updated', 'success');
+  }
+  const card = document.querySelector(`.task-card[data-id="${id}"]`);
+  if (card && task) card.innerHTML = cardInnerHTML(task);
+  prevTasksJson = JSON.stringify(state.tasks);
+}
+
+function togglePriorityPopover(e, id, current) {
+  e.stopPropagation();
+  // Close any existing popover
+  document.querySelectorAll('.priority-popover').forEach(p => p.remove());
+  const wrap = e.target.closest('.priority-pill-wrap');
+  if (!wrap) return;
+  const popover = document.createElement('div');
+  popover.className = 'priority-popover';
+  ['low', 'medium', 'high'].forEach(p => {
+    const pill = document.createElement('span');
+    pill.className = `priority-pill priority-${p}${p === current ? ' current' : ''}`;
+    pill.textContent = p;
+    pill.onclick = (ev) => { ev.stopPropagation(); setPriority(id, p); };
+    popover.appendChild(pill);
+  });
+  wrap.appendChild(popover);
+  // Close on outside click
+  setTimeout(() => {
+    const close = (ev) => {
+      if (!popover.contains(ev.target)) { popover.remove(); document.removeEventListener('click', close); }
+    };
+    document.addEventListener('click', close);
+  }, 0);
+}
+
+async function setPriority(id, priority) {
+  // Close popover
+  document.querySelectorAll('.priority-popover').forEach(p => p.remove());
+  // Instant DOM update
+  const card = document.querySelector(`.task-card[data-id="${id}"]`);
+  const pill = card?.querySelector('.priority-pill');
+  if (pill) {
+    pill.className = `priority-pill priority-${priority}`;
+    pill.textContent = priority;
+    pill.setAttribute('onclick', `togglePriorityPopover(event, '${id}', '${priority}')`);
+  }
+  const task = state.tasks.find(t => t.id === id);
+  if (task) task.priority = priority;
+  prevTasksJson = JSON.stringify(state.tasks);
+  await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+    method: 'PUT', body: { priority }
+  });
+}
+
+function startDelete(id, title) {
+  showModal(
+    'Delete task?',
+    `<strong>${id}</strong>: ${title}<br>This action cannot be undone.`,
+    () => confirmDelete(id)
+  );
+}
+
+async function confirmDelete(id) {
+  const card = document.querySelector(`.task-card[data-id="${id}"]`);
+  if (card) card.classList.add('removing');
+  await new Promise(r => setTimeout(r, 250));
+  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, { method: 'DELETE' });
+  if (res.ok) {
+    state.tasks = state.tasks.filter(t => t.id !== id);
+    prevTasksJson = JSON.stringify(state.tasks);
+    toast('Task deleted', 'success');
+    updateBoard();
+  }
+}
+
+// --- Drag & Drop ---
+let draggedId = null;
+
+function onDragStart(e) {
+  draggedId = e.currentTarget.dataset.id;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
+  draggedId = null;
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const col = e.currentTarget.closest('.column');
+  if (col) col.classList.add('drag-over');
+}
+
+function onDragLeave(e) {
+  const col = e.currentTarget.closest('.column');
+  if (col && !col.contains(e.relatedTarget)) col.classList.remove('drag-over');
+}
+
+async function onDrop(e) {
+  e.preventDefault();
+  const col = e.currentTarget.closest('.column');
+  if (!col || !draggedId) return;
+  col.classList.remove('drag-over');
+
+  const newStatus = col.dataset.status;
+  const task = state.tasks.find(t => t.id === draggedId);
+  if (!task || task.status === newStatus) return;
+
+  const oldStatus = task.status;
+  task.status = newStatus;
+  if (newStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
+  if (oldStatus === 'done' && newStatus !== 'done') task.completed = null;
+
+  prevTasksJson = JSON.stringify(state.tasks);
+  updateBoard();
+
+  const res = await api(`/projects/${state.viewedProject}/tasks/${draggedId}`, {
+    method: 'PUT', body: { status: newStatus }
+  });
+  if (!res.ok) {
+    task.status = oldStatus;
+    prevTasksJson = JSON.stringify(state.tasks);
+    toast('Failed to move task', 'error');
+    updateBoard();
+  } else {
+    toast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
+  }
+}
+
+// --- Render All ---
+function renderAll() {
+  renderSidebar();
+  renderHeader();
+  updateBoard();
+  updateTimestamp();
+}
+
+function updateTimestamp() {
+  document.getElementById('lastRefresh').textContent =
+    new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// --- Smart refresh ---
+async function refresh() {
+  try {
+    const data = await api('/projects');
+    const newProjects = data.projects || [];
+    const newActive = data.activeProject;
+    const projectsJson = JSON.stringify(newProjects);
+    const projectsChanged = projectsJson !== prevProjectsJson || newActive !== prevActiveProject;
+
+    state.projects = newProjects;
+    state.activeProject = newActive;
+    prevProjectsJson = projectsJson;
+    prevActiveProject = newActive;
+
+    if (!state.viewedProject) {
+      if (state.activeProject) state.viewedProject = state.activeProject;
+      else if (state.projects.length > 0) state.viewedProject = state.projects[0].name;
+    }
+
+    let tasksChanged = false;
+    if (state.viewedProject) {
+      const taskData = await api(`/projects/${state.viewedProject}/tasks`);
+      const newTasks = taskData.tasks || [];
+      const tasksJson = JSON.stringify(newTasks);
+      if (tasksJson !== prevTasksJson) {
+        tasksChanged = true;
+        state.tasks = newTasks;
+        prevTasksJson = tasksJson;
+      }
+    }
+
+    if (isUserInteracting() && !projectsChanged) {
+      updateTimestamp();
+      return;
+    }
+
+    if (projectsChanged) { renderSidebar(); renderHeader(); }
+    if (tasksChanged) { updateBoard(); }
+    updateTimestamp();
+  } catch (err) {
+    console.error('Refresh error:', err);
+  }
+}
+
+// --- Init ---
+async function init() {
+  const data = await api('/projects');
+  state.projects = data.projects || [];
+  state.activeProject = data.activeProject;
+  prevProjectsJson = JSON.stringify(state.projects);
+  prevActiveProject = state.activeProject;
+
+  if (state.activeProject) state.viewedProject = state.activeProject;
+  else if (state.projects.length > 0) state.viewedProject = state.projects[0].name;
+
+  if (state.viewedProject) {
+    const taskData = await api(`/projects/${state.viewedProject}/tasks`);
+    state.tasks = taskData.tasks || [];
+    prevTasksJson = JSON.stringify(state.tasks);
+  }
+
+  renderAll();
+  setInterval(refresh, 5000);
+}
+
+init();
+</script>
+</body>
+</html>
