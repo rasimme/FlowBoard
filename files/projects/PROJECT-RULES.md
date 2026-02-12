@@ -145,7 +145,13 @@ Tasks are stored in `tasks.json` inside each project folder. This file is the si
   - You complete a task and need to update the status
   - The user explicitly asks to create, change, or review tasks
   - You are working in executing mode and need to track progress
-- Read the entire file, modify the relevant task(s), write the entire file back
+- **CRITICAL: When the dashboard server is running (port 3001), ALWAYS use the API for task operations. Never write tasks.json directly — the server manages this file and direct writes cause race conditions / data loss.**
+  - Create: `POST /api/projects/:name/tasks` with `{title, priority}`
+  - Update: `PUT /api/projects/:name/tasks/:id` with fields to change
+  - Delete: `DELETE /api/projects/:name/tasks/:id`
+  - Read: `GET /api/projects/:name/tasks`
+  - Use `curl` or Node.js `http` module to call the API
+- If the server is NOT running, direct file writes are acceptable as fallback
 - Always preserve all existing tasks when writing — never drop tasks accidentally
 
 ### Creating Tasks

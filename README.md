@@ -1,6 +1,6 @@
 # Project Mode for OpenClaw
 
-> **v2.0.0** — File-based project management with Kanban dashboard for OpenClaw agents.
+> **v2.1.0** — File-based project management with Kanban dashboard for OpenClaw agents.
 
 Work on multiple projects with persistent context, structured task management, and a live Kanban dashboard — without needing separate agents.
 
@@ -101,7 +101,7 @@ cd canvas && npm install express
 
 # Start server
 ./start-dashboard.sh
-# Dashboard available at http://localhost:3001
+# Dashboard available at http://localhost:18790
 ```
 
 The dashboard auto-refreshes every 5 seconds and shows task changes in real-time.
@@ -186,7 +186,7 @@ Interactive web UI built with vanilla HTML/JS/CSS. Matches the OpenClaw Gateway 
 ### Architecture
 
 - **Single HTML file** — No framework, no build step
-- **Express API server** — REST endpoints for CRUD operations on port 3001
+- **Express API server** — REST endpoints for CRUD operations on port 18790
 - **Design tokens** — Uses identical CSS variables as OpenClaw Gateway UI
 - **Dashboard data sync** — `dashboard-data.json` auto-updated on every task change
 
@@ -226,7 +226,7 @@ workspace/
 | Decision | Reasoning |
 |----------|-----------|
 | Vanilla JS (no framework) | No build step, instant edit-refresh cycle, single file ~40KB |
-| Express on port 3001 | One port for static + API, single SSH tunnel for remote access |
+| Express on port 18790 | Adjacent to OpenClaw Gateway (18789), single SSH tunnel for remote access |
 | `tasks.json` over `todo.md` | Structured data enables API, dashboard, automation |
 | Diff-based refresh | Prevents flicker, preserves form state during auto-refresh |
 | Review before Done | Human confirms completion — agent never marks tasks as done |
@@ -266,5 +266,6 @@ When tasks.json changes, `dashboard-data.json` is auto-synced to `canvas/`. Rule
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.1.0 | 2026-02-13 | Port 3001→18790, systemd auto-start service, UI polish (hover states, click-to-edit, display name formatting, sidebar styling) |
 | v2.0.0 | 2026-02-12 | Task management (tasks.json), Kanban Dashboard, task workflow rules, auto-task creation, priority popover, sort toggle |
 | v1.0.0 | 2026-02-10 | Initial release — project switching, structure, rules |
