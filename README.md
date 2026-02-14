@@ -250,8 +250,21 @@ PROJECT.md has a 4KB size limit. Old session logs are archived to `context/sessi
 
 ## Integration
 
-### Session Handoff (memory-management)
-Works with the [Session Handoff](../memory-management/hooks/session-handoff/) hook. SESSION-STATE.md includes the active project reference.
+### Memory Management
+Project Mode integrates with OpenClaw's memory flush system:
+
+**Memory Flush (pre-compaction):**
+- Automatically reads ACTIVE-PROJECT.md
+- Updates PROJECT.md "Current Status" if project is active
+- Writes project context reminder to SESSION-STATE.md: "Read projects/PROJECT-RULES.md and projects/[name]/PROJECT.md"
+- Includes current task summary (Current Task, Key Context, Pending Actions, Blockers)
+
+**Session Recovery (boot-md hook):**
+- SESSION-STATE.md is loaded after gateway restart
+- Reminder ensures project context is restored even if AGENTS.md instructions are missed
+- Creates redundancy: AGENTS.md has mandatory trigger, SESSION-STATE.md has recovery reminder
+
+Configure via `agents.defaults.compaction.memoryFlush` in openclaw.json. See [memory-management](../memory-management/) for details.
 
 ### Dashboard Data Sync
 When tasks.json changes, `dashboard-data.json` is auto-synced to `canvas/`. Rule defined in PROJECT-RULES.md.
@@ -266,6 +279,7 @@ When tasks.json changes, `dashboard-data.json` is auto-synced to `canvas/`. Rule
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.1.1 | 2026-02-14 | Memory-flush integration — PROJECT.md updates + SESSION-STATE.md project context reminder on compaction |
 | v2.1.0 | 2026-02-13 | Port 3001→18790, systemd auto-start service, UI polish (hover states, click-to-edit, display name formatting, sidebar styling) |
 | v2.0.0 | 2026-02-12 | Task management (tasks.json), Kanban Dashboard, task workflow rules, auto-task creation, priority popover, sort toggle |
 | v1.0.0 | 2026-02-10 | Initial release — project switching, structure, rules |

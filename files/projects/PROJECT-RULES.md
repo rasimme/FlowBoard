@@ -108,9 +108,29 @@ When reading ACTIVE-PROJECT.md:
 
 ## SESSION-STATE.md Integration
 
-When writing SESSION-STATE.md (during compaction/memory flush):
-- Include a line: "Active project: [name]" or "Active project: none"
-- Include: "Reminder: Always check ACTIVE-PROJECT.md on session start"
+SESSION-STATE.md is written during memory flush (pre-compaction) and loaded after gateway restarts (boot-md hook).
+
+### Memory Flush Behavior
+
+When writing SESSION-STATE.md (triggered by compaction):
+1. Read ACTIVE-PROJECT.md to determine current project
+2. If project active:
+   - Update projects/[name]/PROJECT.md "Current Status" section with session summary
+   - Include reminder in SESSION-STATE.md: "Read projects/PROJECT-RULES.md and projects/[name]/PROJECT.md"
+3. Write session summary:
+   - Active project: [name] or "none"
+   - ## Current Task
+   - ## Key Context
+   - ## Pending Actions
+   - ## Blockers
+
+### Session Recovery
+
+When SESSION-STATE.md is loaded (after restart or /new):
+- The reminder ensures project context is re-loaded even if AGENTS.md instructions are missed
+- Agent should read ACTIVE-PROJECT.md → PROJECT-RULES.md → PROJECT.md to restore full context
+
+This creates redundancy: AGENTS.md has the mandatory trigger, SESSION-STATE.md has the recovery reminder.
 
 ## Task Management
 
