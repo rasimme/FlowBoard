@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-FlowBoard-blue?logo=github)](https://github.com/rasimme/FlowBoard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v2.2.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
+[![Version](https://img.shields.io/badge/version-v2.3.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
 
 > **File-based project management with Kanban dashboard for OpenClaw agents.**
 
@@ -15,7 +15,9 @@ Work on multiple projects with persistent context, structured task tracking, and
 - 📁 **File Explorer** — Browse, preview, and edit project files directly in the dashboard
 - 🔄 **Task Workflow** — Agent updates task status in real-time as it works
 - ✨ **Auto-task Creation** — Agent breaks down work into tasks automatically
-- 💾 **Session Persistence** — Project context survives gateway restarts via memory integration
+- 🔗 **API-Based Switching** — Dashboard + chat use same API, instant context loading via wake events
+- 🪝 **Hook-Based Loading** — Automatic BOOTSTRAP.md generation on /new, /reset, gateway startup
+- 💾 **Session Persistence** — Project context survives gateway restarts, no session reset needed
 - 🚀 **Zero Overhead** — Lazy-loading, only active when needed
 
 ---
@@ -47,13 +49,34 @@ Only explicit user commands may change ACTIVE-PROJECT.md.
 mkdir -p ~/.openclaw/workspace/projects
 cp -r projects/project-mode/templates/* ~/.openclaw/workspace/projects/
 
-# 4. Start dashboard (optional, for Kanban UI)
+# 4. Enable webhooks (required for v2.3.0+)
+# Add to your openclaw.json:
+{
+  "hooks": {
+    "enabled": true,
+    "token": "<generate-with-openssl-rand-hex-16>",
+    "path": "/hooks"
+  }
+}
+
+# 5. Set up project-context hook (optional, for auto context loading)
+# Copy hook to ~/.openclaw/hooks/project-context/
+# Enable in openclaw.json under hooks.internal.entries
+
+# 6. Start dashboard (optional, for Kanban UI)
 cd ~/.openclaw/workspace/canvas
 cp -r ../projects/project-mode/dashboard/* .
+
+# Set environment variables for wake events
+export OPENCLAW_HOOKS_TOKEN="<your-hooks-token>"
+export OPENCLAW_GATEWAY_PORT=18789
+
 node server.js &
 ```
 
 Then open http://localhost:18790 in your browser.
+
+**Note:** For production use, set up a systemd service for auto-start (see implementation notes).
 
 ---
 
@@ -98,8 +121,11 @@ Project Mode uses a **lazy-loading, file-based approach**:
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| [AGENTS.md trigger](#setup) | Convention | Mandatory project check on session start |
+| [AGENTS.md trigger](#setup) | Convention | Mandatory project check on session start (fallback) |
+| **project-context Hook** | **OpenClaw Hook** | **Auto-generates BOOTSTRAP.md on startup/new/reset** |
+| **PUT /api/status** | **REST API** | **Single endpoint for project activation (Dashboard + Chat)** |
 | [ACTIVE-PROJECT.md](#active-projectmd) | State file | Single source of truth for current project |
+| **BOOTSTRAP.md** | **Generated** | **PROJECT-RULES + PROJECT.md (loaded by boot-md hook)** |
 | [PROJECT-RULES.md](#project-rulesmd) | Rules | Full project mode conventions (loaded on demand) |
 | [tasks.json](#task-management) | Data | Structured task tracking per project |
 | [Kanban Dashboard](#dashboard) | Web UI | Live task board with drag & drop, file explorer |
@@ -219,6 +245,15 @@ This ensures project context survives compaction and gateway restarts.
 ## Changelog
 
 See [project-mode/README.md#changelog](https://github.com/rasimme/FlowBoard/blob/main/README.md#changelog) for version history.
+
+### v2.3.0 (2026-02-14) — Production Ready
+- **API-based project switching** — Dashboard + chat use same API endpoint
+- **Wake events** — Instant context switching in running session (no /new required)
+- **project-context Hook** — Automatic BOOTSTRAP.md generation on gateway:startup, /new, /reset
+- **Webhook integration** — POST /hooks/wake sends System Events to agent
+- **systemd environment** — OPENCLAW_HOOKS_TOKEN for secure webhook auth
+- **End-to-end tested** — Dashboard + chat project activation verified
+- **Documentation complete** — architecture.md, implementation notes, test logs
 
 ### v2.2.0 (2026-02-14)
 - File Explorer with tab system (Tasks/Files)
