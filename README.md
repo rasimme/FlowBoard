@@ -1,8 +1,8 @@
-# OpenClaw Project Mode
+# FlowBoard
 
-[![GitHub](https://img.shields.io/badge/GitHub-openclaw--project--mode-blue?logo=github)](https://github.com/rasimme/openclaw-project--mode)
+[![GitHub](https://img.shields.io/badge/GitHub-FlowBoard-blue?logo=github)](https://github.com/rasimme/FlowBoard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v2.2.0-orange.svg)](https://github.com/rasimme/openclaw-project-mode/releases)
+[![Version](https://img.shields.io/badge/version-v2.2.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
 
 > **File-based project management with Kanban dashboard for OpenClaw agents.**
 
@@ -25,7 +25,7 @@ Work on multiple projects with persistent context, structured task tracking, and
 ```bash
 # 1. Clone into your OpenClaw workspace
 cd ~/.openclaw/workspace
-git clone https://github.com/rasimme/openclaw-project-mode.git projects/project-mode
+git clone https://github.com/rasimme/FlowBoard.git projects/project-mode
 
 # 2. Set up AGENTS.md trigger (one-time)
 # Add to your ~/.openclaw/workspace/AGENTS.md:
@@ -59,7 +59,7 @@ Then open http://localhost:18790 in your browser.
 
 ## Related Projects
 
-- **[openclaw-memory](https://github.com/rasimme/openclaw-memory)** — Advanced memory management with session persistence (integrates with Project Mode)
+- **[ContextVault](https://github.com/rasimme/ContextVault)** — Advanced memory management with session persistence (integrates with Project Mode)
 - **[openclaw-skills](https://github.com/rasimme/openclaw-skills)** — Collection of OpenClaw skills and plugins
 
 ---
@@ -156,7 +156,7 @@ The Kanban dashboard provides:
 
 ## Memory Integration
 
-For project context persistence across sessions, integrate with [openclaw-memory](https://github.com/rasimme/openclaw-memory):
+For project context persistence across sessions, integrate with [ContextVault](https://github.com/rasimme/ContextVault):
 
 **Memory flush config** (in OpenClaw config):
 
@@ -218,7 +218,7 @@ This ensures project context survives compaction and gateway restarts.
 
 ## Changelog
 
-See [project-mode/README.md#changelog](https://github.com/rasimme/openclaw-project-mode/blob/main/README.md#changelog) for version history.
+See [project-mode/README.md#changelog](https://github.com/rasimme/FlowBoard/blob/main/README.md#changelog) for version history.
 
 ### v2.2.0 (2026-02-14)
 - File Explorer with tab system (Tasks/Files)
