@@ -9,8 +9,13 @@ const HOST = '0.0.0.0';
 const WORKSPACE = path.resolve(__dirname, '..');
 const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
+const BOOTSTRAP_FILE = path.join(WORKSPACE, 'BOOTSTRAP.md');
 const DASHBOARD_DATA_FILE = path.join(__dirname, 'dashboard-data.json');
 const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
+
+// Gateway webhook config (for project-switch wake events)
+const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
+const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || '';
 
 // Middleware
 app.use(express.json());
@@ -97,6 +102,59 @@ function nextTaskId(tasks) {
   return `T-${String(max + 1).padStart(3, '0')}`;
 }
 
+// --- Project Context Helpers ---
+
+function updateBootstrapMd(projectName) {
+  if (!projectName) {
+    // No active project — clear BOOTSTRAP.md
+    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch {}
+    return;
+  }
+
+  const rulesPath = path.join(PROJECTS_DIR, 'PROJECT-RULES.md');
+  const projectMdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
+
+  let rulesContent = '';
+  let projectContent = '';
+  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch {}
+  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch {}
+
+  const sections = [`# Active Project: ${projectName}\n`];
+  if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
+  if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
+
+  try {
+    fs.writeFileSync(BOOTSTRAP_FILE, sections.join('\n'));
+    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName}`);
+  } catch (err) {
+    console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
+  }
+}
+
+async function sendWakeEvent(text) {
+  if (!HOOKS_TOKEN) {
+    console.log('[wake] No OPENCLAW_HOOKS_TOKEN set, skipping wake event');
+    return;
+  }
+  try {
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/hooks/wake`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${HOOKS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ text, mode: 'now' })
+    });
+    if (res.ok) {
+      console.log(`[wake] Sent wake event: ${text.slice(0, 80)}...`);
+    } else {
+      console.error(`[wake] Failed (${res.status}): ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error(`[wake] Error:`, err.message);
+  }
+}
+
 // --- Routes ---
 
 // GET /api/status
@@ -105,11 +163,25 @@ app.get('/api/status', (req, res) => {
 });
 
 // PUT /api/status
-app.put('/api/status', (req, res) => {
+app.put('/api/status', async (req, res) => {
   const { project } = req.body;
+  const previousProject = readActiveProject();
   try {
-    writeActiveProject(project || null);
-    res.json({ ok: true, activeProject: project || null });
+    const effectiveProject = (project && project !== 'none') ? project : null;
+    writeActiveProject(effectiveProject);
+    updateBootstrapMd(effectiveProject);
+
+    // Send wake event to notify agent of project switch
+    if (effectiveProject) {
+      const wakeText = previousProject && previousProject !== project
+        ? `Projekt gewechselt von ${previousProject} auf ${project}. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den neuen Projekt-Context.`
+        : `Projekt ${project} aktiviert. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den Projekt-Context.`;
+      sendWakeEvent(wakeText);
+    } else if (previousProject) {
+      sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
+    }
+
+    res.json({ ok: true, activeProject: effectiveProject });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
