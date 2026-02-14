@@ -196,6 +196,174 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
   }
 });
 
+// --- File Explorer API ---
+
+// File loading categories
+const ALWAYS_LOADED = new Set(['PROJECT.md']);
+const MANDATORY_LAZY = new Set(['DECISIONS.md', 'tasks.json']);
+
+function getFileCategory(relPath) {
+  const basename = path.basename(relPath);
+  if (ALWAYS_LOADED.has(basename) && !relPath.includes('/')) return 'always';
+  if (MANDATORY_LAZY.has(basename) && !relPath.includes('/')) return 'lazy';
+  return 'optional';
+}
+
+function buildFileTree(projectName) {
+  const projectDir = path.join(PROJECTS_DIR, projectName);
+  if (!fs.existsSync(projectDir)) return null;
+
+  const entries = [];
+
+  function walk(dir, relBase) {
+    let items;
+    try { items = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const item of items) {
+      const relPath = relBase ? `${relBase}/${item.name}` : item.name;
+      const fullPath = path.join(dir, item.name);
+      if (item.name.startsWith('.')) continue;
+      if (item.isDirectory()) {
+        entries.push({
+          name: item.name,
+          path: relPath,
+          type: 'directory',
+          children: []
+        });
+        walk(fullPath, relPath);
+      } else {
+        const stat = fs.statSync(fullPath);
+        entries.push({
+          name: item.name,
+          path: relPath,
+          type: 'file',
+          size: stat.size,
+          category: getFileCategory(relPath),
+          modified: stat.mtime.toISOString()
+        });
+      }
+    }
+  }
+
+  walk(projectDir, '');
+
+  // Build nested tree
+  const tree = [];
+  const dirs = {};
+  for (const e of entries) {
+    if (e.type === 'directory') {
+      dirs[e.path] = e;
+    }
+  }
+  for (const e of entries) {
+    const parent = e.path.includes('/') ? e.path.split('/').slice(0, -1).join('/') : null;
+    if (parent && dirs[parent]) {
+      dirs[parent].children.push(e);
+    } else {
+      tree.push(e);
+    }
+  }
+
+  // Sort: directories first, then files; within each: always > lazy > optional
+  const catOrder = { always: 0, lazy: 1, optional: 2 };
+  function sortEntries(arr) {
+    arr.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? 1 : -1; // files first at root
+      if (a.type === 'file') {
+        const ca = catOrder[a.category] ?? 2;
+        const cb = catOrder[b.category] ?? 2;
+        if (ca !== cb) return ca - cb;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    for (const e of arr) {
+      if (e.children) sortEntries(e.children);
+    }
+  }
+  sortEntries(tree);
+
+  // Calculate total size
+  let totalSize = 0;
+  for (const e of entries) {
+    if (e.type === 'file') totalSize += e.size;
+  }
+
+  return { tree, totalSize, fileCount: entries.filter(e => e.type === 'file').length };
+}
+
+// GET /api/projects/:name/files
+app.get('/api/projects/:name/files', (req, res) => {
+  const result = buildFileTree(req.params.name);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  res.json(result);
+});
+
+// GET /api/projects/:name/files/{*filePath} — read file content
+app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
+
+  // Security: prevent path traversal
+  const resolved = path.resolve(projectDir, filePath);
+  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
+    return res.status(403).json({ error: 'Path traversal not allowed' });
+  }
+
+  if (!fs.existsSync(resolved) || fs.statSync(resolved).isDirectory()) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  const stat = fs.statSync(resolved);
+  if (stat.size > 500 * 1024) {
+    return res.status(413).json({ error: 'File too large (max 500KB)' });
+  }
+
+  try {
+    const content = fs.readFileSync(resolved, 'utf8');
+    res.json({
+      path: filePath,
+      content,
+      size: stat.size,
+      category: getFileCategory(filePath),
+      modified: stat.mtime.toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/projects/:name/files/{*filePath} — write file content (Phase 2)
+app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
+
+  // Security: prevent path traversal
+  const resolved = path.resolve(projectDir, filePath);
+  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
+    return res.status(403).json({ error: 'Path traversal not allowed' });
+  }
+
+  const { content } = req.body;
+  if (content === undefined) return res.status(400).json({ error: 'Content required' });
+  if (content.length > 100 * 1024) return res.status(413).json({ error: 'Content too large (max 100KB)' });
+
+  try {
+    // Ensure parent directory exists
+    const dir = path.dirname(resolved);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    fs.writeFileSync(resolved, content);
+    const stat = fs.statSync(resolved);
+    res.json({
+      ok: true,
+      path: filePath,
+      size: stat.size,
+      modified: stat.mtime.toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`Dashboard API running on http://${HOST}:${PORT}`);
 });
