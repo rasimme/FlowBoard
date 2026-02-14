@@ -806,6 +806,15 @@ function escHtml(s) {
 
 // --- Format display name ---
 function formatDisplayName(name) {
+  // Special cases for branded names
+  const brandedNames = {
+    'flowboard': 'FlowBoard',
+    'contextvault': 'ContextVault'
+  };
+  
+  if (brandedNames[name]) return brandedNames[name];
+  
+  // Default: capitalize each dash-separated word
   return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
