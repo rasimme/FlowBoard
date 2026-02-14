@@ -1618,9 +1618,12 @@ function renderFilePreview() {
 function renderMarkdown(text) {
   let html = escHtml(text);
 
-  // Code blocks (```...```)
+  // Code blocks (```...```) — protect from paragraph wrapping
+  const codeBlocks = [];
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
+    const placeholder = `<!--CODEBLOCK${codeBlocks.length}-->`;
+    codeBlocks.push(`<pre><code class="language-${lang}">${code.trim()}</code></pre>`);
+    return placeholder;
   });
 
   // Inline code
@@ -1670,8 +1673,13 @@ function renderMarkdown(text) {
   html = html.replace(/^(?!<[a-z/]|$)(.+)$/gm, '<p>$1</p>');
 
   // Clean up multiple <p> around block elements
-  html = html.replace(/<p>(<h[1-4]|<pre|<blockquote|<ul|<ol|<table|<hr)/g, '$1');
-  html = html.replace(/(<\/h[1-4]>|<\/pre>|<\/blockquote>|<\/ul>|<\/ol>|<\/table>|<hr>)<\/p>/g, '$1');
+  html = html.replace(/<p>(<h[1-4]|<pre|<blockquote|<ul|<ol|<table|<hr|<!--CODEBLOCK)/g, '$1');
+  html = html.replace(/(<\/h[1-4]>|<\/pre>|<\/blockquote>|<\/ul>|<\/ol>|<\/table>|<hr>|<!--CODEBLOCK\d+-->)<\/p>/g, '$1');
+
+  // Restore code blocks
+  codeBlocks.forEach((block, i) => {
+    html = html.replace(`<!--CODEBLOCK${i}-->`, block);
+  });
 
   // HTML comments (hide)
   html = html.replace(/&lt;!--[\s\S]*?--&gt;/g, '');
