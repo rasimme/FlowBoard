@@ -1729,6 +1729,8 @@ function _bindScroll(scrollEl, track, thumb) {
   }
   scrollEl.addEventListener('scroll', update, { passive: true });
   new ResizeObserver(update).observe(scrollEl);
+  // Detect content changes (e.g. project switch replaces inner HTML)
+  new MutationObserver(update).observe(scrollEl, { childList: true, subtree: true });
   thumb.addEventListener('mousedown', (e) => {
     e.preventDefault(); e.stopPropagation();
     dragging = true; startY = e.clientY; startScroll = scrollEl.scrollTop;
@@ -1749,7 +1751,8 @@ function _bindScroll(scrollEl, track, thumb) {
     const rect = track.getBoundingClientRect();
     scrollEl.scrollTop = ((e.clientY - rect.top) / rect.height) * (scrollEl.scrollHeight - scrollEl.clientHeight);
   });
-  requestAnimationFrame(update);
+  // Double-rAF ensures layout is fully resolved before first measurement
+  requestAnimationFrame(() => requestAnimationFrame(update));
   return update;
 }
 
@@ -1767,7 +1770,8 @@ function cscrollWrap(el) {
   el.style.overflowY = 'auto';
   const { track, thumb } = _makeTrack();
   wrap.appendChild(track);
-  _bindScroll(el, track, thumb);
+  const updateFn = _bindScroll(el, track, thumb);
+  wrap._cscrollUpdate = updateFn;
 }
 
 // Mode 2: track on host, scroll from dynamic child (host must be position:relative)
@@ -1805,10 +1809,16 @@ function applyStaticScrollbars() {
 }
 
 function updateContentScrollbarVisibility() {
-  const contentTrack = document.querySelector('.content-wrapper > .cscroll-track');
+  const wrap = document.querySelector('.content-wrapper');
+  const contentTrack = wrap && wrap.querySelector(':scope > .cscroll-track');
   if (contentTrack) {
     if (state.currentTab === 'tasks') {
-      contentTrack.style.display = 'block';
+      // Remove forced hide, let .hidden class control visibility
+      contentTrack.style.display = '';
+      // Re-measure after content change (project switch, data update)
+      if (wrap._cscrollUpdate) {
+        requestAnimationFrame(() => requestAnimationFrame(wrap._cscrollUpdate));
+      }
     } else {
       contentTrack.style.display = 'none';
     }
