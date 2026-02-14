@@ -279,6 +279,7 @@ When tasks.json changes, `dashboard-data.json` is auto-synced to `canvas/`. Rule
 
 | Version | Date | Changes |
 |---------|------|---------|
+| v2.2.0 | 2026-02-14 | File Explorer — Tab system, file tree with loading badges, Markdown/JSON preview, inline editing, context health indicator |
 | v2.1.1 | 2026-02-14 | Memory-flush integration — PROJECT.md updates + SESSION-STATE.md project context reminder on compaction |
 | v2.1.0 | 2026-02-13 | Port 3001→18790, systemd auto-start service, UI polish (hover states, click-to-edit, display name formatting, sidebar styling) |
 | v2.0.0 | 2026-02-12 | Task management (tasks.json), Kanban Dashboard, task workflow rules, auto-task creation, priority popover, sort toggle |
