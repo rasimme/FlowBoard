@@ -241,7 +241,7 @@
     .column {
       background: var(--bg-accent); border: 1px solid var(--border);
       border-radius: var(--radius-lg); padding: 12px;
-      min-height: 200px;
+      min-height: 200px; min-width: 0;
       display: flex; flex-direction: column;
       transition: background var(--duration-normal), border-color var(--duration-normal);
     }
@@ -268,6 +268,7 @@
     .task-card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: var(--radius-md); padding: 12px; position: relative;
+      overflow-wrap: break-word; word-break: break-word; min-width: 0;
       box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-highlight);
       transition: border-color var(--duration-normal), box-shadow var(--duration-normal), opacity var(--duration-normal);
       cursor: grab;
