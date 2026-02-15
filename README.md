@@ -60,7 +60,7 @@ MANDATORY on EVERY first message: read `ACTIVE-PROJECT.md`.
 - If active: read `projects/PROJECT-RULES.md`, then the project's `PROJECT.md`
 - If empty: work normally
 
-Commands: "Projekt: [Name]" | "Projekt beenden" | "Projekte"
+Commands: "Project: [Name]" | "End project" | "Projects"
 
 # 3. Create project structure
 mkdir -p ~/.openclaw/workspace/projects
@@ -80,10 +80,10 @@ Open http://localhost:18790 to see your Kanban board.
 
 ## Commands
 
-- `Projekt: [Name]` - Activate project (loads context)
-- `Neues Projekt: [Name]` - Create new project
-- `Projekt beenden` - Deactivate project
-- `Projekte` - List all projects
+- `Project: [Name]` - Activate project (loads context)
+- `New project: [Name]` - Create new project
+- `End project` - Deactivate project
+- `Projects` - List all projects
 
 ---
 
