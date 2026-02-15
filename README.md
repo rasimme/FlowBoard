@@ -170,6 +170,8 @@ The Kanban dashboard provides:
 
 **Access:** http://localhost:18790
 
+![FlowBoard File Explorer](docs/screenshot-files.png)
+
 ---
 
 ## Related Projects
