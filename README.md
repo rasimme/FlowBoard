@@ -23,10 +23,10 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 **FlowBoard** uses a lazy-loading, file-based approach:
 
 - ✨ **Zero overhead** when no project is active
-- 🎯 **Instant context switching** — One command loads full project state
-- 📋 **Structured task tracking** — Tasks survive restarts, visible in Kanban UI
-- 🔄 **Automatic task updates** — Agent tracks progress in real-time
-- 💾 **Session persistence** — Context survives gateway restarts
+- 🎯 **Instant context switching** - One command loads full project state
+- 📋 **Structured task tracking** - Tasks survive restarts, visible in Kanban UI
+- 🔄 **Automatic task updates** - Agent tracks progress in real-time
+- 💾 **Session persistence** - Context survives gateway restarts
 
 **How it works:** A tiny trigger in `AGENTS.md` checks for an active project on session start. When you activate a project, the agent loads rules + context. Tasks are tracked in `tasks.json`, visible on a live Kanban dashboard. When you switch projects or restart the gateway, everything just works.
 
@@ -34,14 +34,14 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 
 ## Features
 
-- 📋 **Task Management** — Structured `tasks.json` with status workflow (open → in-progress → review → done)
-- 🎯 **Kanban Dashboard** — Interactive web UI with drag & drop, inline editing, auto-refresh
-- 📁 **File Explorer** — Browse, preview, and edit project files directly in the dashboard
-- 🔄 **Live Task Workflow** — Agent updates task status as it works
-- ✨ **Auto-task Creation** — Agent breaks down work into tasks automatically
-- 🔗 **API-Based Switching** — Dashboard + chat use same API, instant context loading
-- 💾 **Session Persistence** — Project context survives gateway restarts
-- 🚀 **Zero Overhead** — Lazy-loading, only active when needed
+- 📋 **Task Management** - Structured `tasks.json` with status workflow (open → in-progress → review → done)
+- 🎯 **Kanban Dashboard** - Interactive web UI with drag & drop, inline editing, auto-refresh
+- 📁 **File Explorer** - Browse, preview, and edit project files directly in the dashboard
+- 🔄 **Live Task Workflow** - Agent updates task status as it works
+- ✨ **Auto-task Creation** - Agent breaks down work into tasks automatically
+- 🔗 **API-Based Switching** - Dashboard + chat use same API, instant context loading
+- 💾 **Session Persistence** - Project context survives gateway restarts
+- 🚀 **Zero Overhead** - Lazy-loading, only active when needed
 
 ---
 
@@ -80,10 +80,10 @@ Open http://localhost:18790 to see your Kanban board.
 
 ## Commands
 
-- `Projekt: [Name]` — Activate project (loads context)
-- `Neues Projekt: [Name]` — Create new project
-- `Projekt beenden` — Deactivate project
-- `Projekte` — List all projects
+- `Projekt: [Name]` - Activate project (loads context)
+- `Neues Projekt: [Name]` - Create new project
+- `Projekt beenden` - Deactivate project
+- `Projekte` - List all projects
 
 ---
 
@@ -117,11 +117,11 @@ Open http://localhost:18790 to see your Kanban board.
 
 ### Key Principles
 
-1. **Lazy Loading** — Only load what's needed
-2. **File-based Conventions** — No custom hooks required
-3. **Single Source of Truth** — ACTIVE-PROJECT.md + tasks.json
-4. **Graceful Degradation** — Errors = "no project active"
-5. **Modular Frontend** — Clean separation of concerns
+1. **Lazy Loading** - Only load what's needed
+2. **File-based Conventions** - No custom hooks required
+3. **Single Source of Truth** - ACTIVE-PROJECT.md + tasks.json
+4. **Graceful Degradation** - Errors = "no project active"
+5. **Modular Frontend** - Clean separation of concerns
 
 ---
 
@@ -170,33 +170,26 @@ The Kanban dashboard provides:
 
 **Access:** http://localhost:18790
 
-The file explorer lets you browse your entire project structure, preview Markdown and JSON files with syntax highlighting, and edit files inline — all without leaving the dashboard.
+The file explorer lets you browse your entire project structure, preview Markdown and JSON files with syntax highlighting, and edit files inline - all without leaving the dashboard.
 
 ![FlowBoard File Explorer](docs/screenshot-files.png)
 
 ---
 
-## Related Projects
-
-- **[ContextVault](https://github.com/rasimme/ContextVault)** — Advanced memory management with session persistence
-- **[openclaw-skills](https://github.com/rasimme/openclaw-skills)** — Collection of OpenClaw skills and plugins
-
----
-
 ## Changelog
 
-### v2.4.0 (2026-02-15) — Modular Frontend
-- **JavaScript module refactoring** — Separated Kanban and File Explorer into clean modules
-- **Improved code organization** — utils.js, kanban.js, file-explorer.js
-- **Better maintainability** — Clear separation of concerns
-- **Enhanced documentation** — Updated architecture diagrams
+### v2.4.0 (2026-02-15) - Modular Frontend
+- **JavaScript module refactoring** - Separated Kanban and File Explorer into clean modules
+- **Improved code organization** - utils.js, kanban.js, file-explorer.js
+- **Better maintainability** - Clear separation of concerns
+- **Enhanced documentation** - Updated architecture diagrams
 
-### v2.3.0 (2026-02-14) — Production Ready
-- **API-based project switching** — Dashboard + chat use same endpoint
-- **Wake events** — Instant context switching without /new
-- **project-context Hook** — Automatic BOOTSTRAP.md generation
-- **Webhook integration** — System events to agent
-- **End-to-end tested** — Dashboard + chat verified
+### v2.3.0 (2026-02-14) - Production Ready
+- **API-based project switching** - Dashboard + chat use same endpoint
+- **Wake events** - Instant context switching without /new
+- **project-context Hook** - Automatic BOOTSTRAP.md generation
+- **Webhook integration** - System events to agent
+- **End-to-end tested** - Dashboard + chat verified
 
 ### v2.2.0 (2026-02-14)
 - File Explorer with tab system
@@ -223,10 +216,10 @@ The file explorer lets you browse your entire project structure, preview Markdow
 
 ## Philosophy
 
-- 🎯 **Simplicity** — No unnecessary complexity
-- 💰 **Low cost** — Efficient token usage
-- 🔒 **Privacy** — Everything runs locally
-- ⚡ **Automatic** — Self-maintaining
+- 🎯 **Simplicity** - No unnecessary complexity
+- 💰 **Low cost** - Efficient token usage
+- 🔒 **Privacy** - Everything runs locally
+- ⚡ **Automatic** - Self-maintaining
 
 ---
 
