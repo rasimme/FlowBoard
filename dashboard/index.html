@@ -9,637 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #12141a;
-      --bg-accent: #14161d;
-      --bg-elevated: #1a1d25;
-      --bg-hover: #262a35;
-      --card: #181b22;
-      --secondary: #1e2028;
-      --text: #e4e4e7;
-      --text-strong: #fafafa;
-      --muted: #71717a;
-      --border: #27272a;
-      --border-strong: #3f3f46;
-      --accent: #ff5c5c;
-      --accent-subtle: rgba(255, 92, 92, .15);
-      --ok: #22c55e;
-      --ok-subtle: rgba(34, 197, 94, .12);
-      --warn: #f59e0b;
-      --warn-subtle: rgba(245, 158, 11, .12);
-      --danger: #ef4444;
-      --danger-subtle: rgba(239, 68, 68, .12);
-      --info: #3b82f6;
-      --info-subtle: rgba(59, 130, 246, .12);
-      --card-highlight: rgba(255, 255, 255, .05);
-      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .2);
-      --shadow-md: 0 4px 12px rgba(0, 0, 0, .25), 0 0 0 1px rgba(255, 255, 255, .03);
-      --shadow-lg: 0 8px 24px rgba(0, 0, 0, .4), 0 0 0 1px rgba(255, 255, 255, .03);
-      --radius-sm: 6px;
-      --radius-md: 8px;
-      --radius-lg: 12px;
-      --radius-full: 9999px;
-      --radius: 8px;
-      --duration-normal: 0.2s;
-      --duration-slow: 0.35s;
-      --ease-out: cubic-bezier(.16, 1, .3, 1);
-      --sidebar-width: 220px;
-    }
-
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: var(--text);
-      background: var(--bg);
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
-
-    /* Scrollbar — matches Gateway Dashboard */
-    /* Hide ALL native scrollbars globally */
-    ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
-    * { scrollbar-width: none !important; }
-
-    /* Custom scrollbar — wrapper approach */
-    .cscroll-wrap {
-      position: relative; overflow: hidden;
-      display: flex; flex-direction: column;
-    }
-    .cscroll-wrap > .cscroll-inner {
-      flex: 1; overflow-y: auto; overflow-x: hidden;
-    }
-    .cscroll-track {
-      position: absolute; top: 16px; right: 4px; bottom: 16px; width: 5px;
-      border-radius: 9999px; z-index: 50;
-    }
-    .cscroll-track.hidden { display: none; }
-    /* In file-preview, track should not overlap the header */
-    .file-preview > .cscroll-track { top: 54px; }
-    .cscroll-thumb {
-      width: 100%; border-radius: 9999px;
-      background: var(--border); position: absolute; min-height: 24px;
-      cursor: grab; transition: background 0.15s;
-    }
-    .cscroll-thumb:hover, .cscroll-thumb.dragging { background: var(--muted); }
-
-    /* Layout */
-    .app {
-      display: grid;
-      grid-template-rows: auto auto 1fr auto;
-      grid-template-columns: var(--sidebar-width) 1fr;
-      height: 100vh;
-      transition: grid-template-columns var(--duration-normal) var(--ease-out);
-    }
-    /* Sidebar spans tab-bar + content rows */
-    .sidebar { grid-row: 2 / 4; }
-    .app.sidebar-collapsed { grid-template-columns: 0px 1fr; }
-
-    /* Header — matches Gateway Dashboard */
-    .header {
-      grid-column: 1 / -1;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 14px;
-      height: 56px;
-      background: var(--bg);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .header-left { display: flex; align-items: center; gap: 12px; }
-
-    .sidebar-toggle {
-      width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-      border: none; background: none; color: var(--muted); cursor: pointer;
-      border-radius: var(--radius-sm); transition: all var(--duration-normal);
-      font-size: 18px;
-    }
-    .sidebar-toggle:hover { color: var(--text); background: var(--bg-hover); }
-
-    .header-logo { line-height: 1; display: flex; align-items: center; }
-    .header-logo img { height: 30px; width: auto; vertical-align: middle; }
-    .header-brand { display: flex; flex-direction: column; }
-    .header-title {
-      font-size: 15px; font-weight: 700; letter-spacing: 0.05em;
-      color: var(--text-strong); text-transform: uppercase;
-    }
-    .header-subtitle {
-      font-size: 10px; color: var(--muted); text-transform: uppercase;
-      letter-spacing: 0.06em; font-weight: 500;
-    }
-
-    .header-right { display: flex; align-items: center; gap: 10px; }
-    .header-project {
-      font-size: 13px; font-weight: 600; color: var(--text-strong);
-      letter-spacing: 0.02em;
-    }
-    .badge-active {
-      display: inline-flex; padding: 3px 10px; border-radius: var(--radius-full);
-      font-size: 10px; font-weight: 600; color: var(--accent);
-      border: 1px solid #ff5c5c59; background: var(--accent-subtle);
-      text-transform: uppercase; letter-spacing: 0.04em;
-    }
-
-    /* Sidebar */
-    .sidebar {
-      background: var(--bg);
-      padding: 10px 14px 12px 14px;
-      overflow-y: auto;
-      overflow-x: hidden;
-      transition: opacity var(--duration-normal);
-    }
-    .app.sidebar-collapsed .sidebar { opacity: 0; pointer-events: none; }
-
-    .sidebar-label {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--muted); font-weight: 600; margin-bottom: 8px; padding: 0;
-    }
-
-    .project-item {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 14px; border-radius: var(--radius-md);
-      font-size: 13px; font-weight: 500; color: var(--muted);
-      cursor: pointer; transition: all var(--duration-normal);
-      border: 1px solid transparent; margin-bottom: 2px;
-    }
-
-    .project-item:hover { 
-      background: var(--bg-hover); 
-      color: var(--text-strong);
-    }
-    .project-item.viewed { 
-      background: var(--accent-subtle);
-      color: var(--text-strong);
-    }
-    .project-item.agent-active {
-      border: 1px solid var(--accent);
-      color: var(--text-strong);
-      box-shadow: 0 0 12px rgba(255, 92, 92, .15);
-    }
-    .project-item.agent-active.viewed {
-      background: var(--accent-subtle);
-      border: 1px solid var(--accent);
-      color: var(--text-strong);
-      box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
-    }
-
-    .project-badge {
-      background: var(--secondary); border-radius: var(--radius-full);
-      padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--muted);
-    }
-
-    .sidebar-empty { color: var(--muted); font-size: 12px; padding: 12px; text-align: center; }
-
-    .sidebar-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
-
-    .btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 7px 14px; border-radius: var(--radius-md);
-      font-size: 12px; font-weight: 500; cursor: pointer;
-      border: 1px solid var(--border); background: var(--card);
-      color: var(--text); transition: all var(--duration-normal);
-      font-family: inherit;
-    }
-    .btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
-
-    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .btn-primary:hover { background: #ff4040; }
-
-    .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
-    .btn-danger:hover { background: #dc2626; }
-
-    .btn-secondary { background: transparent; border-color: var(--border); color: var(--muted); }
-    .btn-secondary:hover { color: var(--text); }
-
-    .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
-    .btn-ghost:hover { color: var(--text); background: var(--bg-hover); }
-
-    .btn-sm { padding: 4px 10px; font-size: 11px; }
-    .btn-full { width: 100%; }
-
-    /* Content area */
-    .content {
-      padding: 12px 18px 16px 22px;
-    }
-    /* Content wrapper (created by cscrollWrap) */
-    .cscroll-wrap.content-wrapper {
-      grid-row: 3;
-    }
-
-    .empty-state {
-      display: flex; align-items: center; justify-content: center;
-      min-height: 60vh; color: var(--muted); font-size: 14px;
-    }
-
-    /* Kanban */
-    .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-
-    .column {
-      background: var(--bg-accent); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 12px;
-      min-height: 200px; min-width: 0;
-      display: flex; flex-direction: column;
-      transition: background var(--duration-normal), border-color var(--duration-normal);
-    }
-    .column.drag-over { border-color: var(--accent); background: rgba(255, 92, 92, .05); }
-
-    .column-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 12px;
-    }
-    .column-title {
-      font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
-      font-weight: 600; color: var(--text);
-    }
-
-    .column-count {
-      background: var(--secondary); border-radius: var(--radius-full);
-      padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--muted);
-    }
-
-    .column-body { display: flex; flex-direction: column; gap: 8px; flex: 1; }
-    .column-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0; opacity: 0.5; }
-
-    /* Task Cards */
-    .task-card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 12px; position: relative;
-      overflow-wrap: break-word; word-break: break-word; min-width: 0;
-      box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-highlight);
-      transition: border-color var(--duration-normal), box-shadow var(--duration-normal), opacity var(--duration-normal);
-      cursor: grab;
-    }
-    .task-card.new-card { animation: rise var(--duration-slow) var(--ease-out) both; }
-    .task-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
-    .task-card.dragging { opacity: 0.4; }
-    .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
-
-    .task-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-    .task-title {
-      font-size: 13px; font-weight: 500; color: var(--text);
-      margin-bottom: 8px; line-height: 1.4; cursor: pointer;
-    }
-    .task-title-input {
-      font-size: 13px; font-weight: 500; color: var(--text);
-      background: var(--bg-elevated); border: 1px solid var(--border-strong);
-      border-radius: var(--radius-sm); padding: 4px 6px; width: 100%;
-      margin-bottom: 8px; font-family: inherit; outline: none;
-    }
-    .task-title-input:focus { border-color: var(--accent); }
-
-    .task-meta { display: flex; align-items: center; justify-content: space-between; }
-
-    .priority-pill {
-      display: inline-flex; padding: 4px 10px; border-radius: var(--radius-full);
-      font-size: 11px; font-weight: 500; cursor: pointer;
-      transition: all var(--duration-normal);
-    }
-    .priority-high { color: var(--danger); border: 1px solid #ef444459; background: var(--danger-subtle); }
-    .priority-medium { color: var(--warn); border: 1px solid #f59e0b59; background: var(--warn-subtle); }
-    .priority-low { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
-
-    .priority-popover {
-      position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-      display: flex; gap: 4px; padding: 6px;
-      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-      box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
-      z-index: 100;
-      animation: popIn var(--duration-fast) var(--ease-out);
-    }
-    .priority-popover .priority-pill { opacity: 0.5; transition: opacity var(--duration-fast); }
-    .priority-popover .priority-pill:hover { opacity: 1; }
-    .priority-popover .priority-pill.current { opacity: 1; }
-    .priority-pill-wrap { position: relative; }
-    @keyframes popIn { from { opacity: 0; transform: translateX(-50%) translateY(4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-
-    .delete-btn {
-      opacity: 0; width: 24px; height: 24px; display: flex; align-items: center;
-      justify-content: center; border: none; background: none; cursor: pointer;
-      color: var(--muted); border-radius: var(--radius-sm);
-      transition: all var(--duration-normal);
-    }
-    .task-card:hover .delete-btn { opacity: 1; }
-    .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
-
-    /* Add Task */
-    .add-task-btn {
-      border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
-      padding: 12px; text-align: center; color: var(--muted); font-size: 12px;
-      cursor: pointer; transition: all var(--duration-normal); background: none;
-      width: 100%; font-family: inherit;
-    }
-    .add-task-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-    .add-task-form {
-      background: var(--card); border: 1px solid var(--border-strong);
-      border-radius: var(--radius-md); padding: 12px;
-    }
-    .add-task-form input {
-      width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 8px 10px; color: var(--text);
-      font-size: 13px; font-family: inherit; outline: none; margin-bottom: 10px;
-    }
-    .add-task-form input:focus { border-color: var(--accent); }
-
-    .priority-selector { display: flex; gap: 6px; margin-bottom: 10px; }
-    .priority-option {
-      padding: 4px 10px; border-radius: var(--radius-full);
-      font-size: 11px; font-weight: 500; cursor: pointer;
-      border: 1px solid var(--border); background: var(--card);
-      color: var(--muted); transition: all var(--duration-normal); font-family: inherit;
-    }
-    .priority-option.selected { color: var(--text-strong); }
-    .priority-option[data-p="high"].selected { color: var(--danger); border-color: #ef444459; background: var(--danger-subtle); }
-    .priority-option[data-p="medium"].selected { color: var(--warn); border-color: #f59e0b59; background: var(--warn-subtle); }
-    .priority-option[data-p="low"].selected { color: var(--ok); border-color: #22c55e59; background: var(--ok-subtle); }
-
-    .form-actions { display: flex; gap: 8px; }
-
-    /* Footer */
-    .footer {
-      grid-column: 1 / -1;
-      padding: 10px 22px; text-align: center;
-      font-size: 11px; color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
-
-    /* Toast — bottom-right */
-    .toast-container {
-      position: fixed; bottom: 16px; right: 16px; z-index: 900;
-      display: flex; flex-direction: column-reverse; gap: 8px;
-    }
-    .toast {
-      background: var(--bg-elevated); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 10px 16px;
-      box-shadow: var(--shadow-md); font-size: 12px; color: var(--text);
-      border-left: 3px solid var(--info); min-width: 200px;
-      animation: slideUp 0.25s var(--ease-out);
-    }
-    .toast.success { border-left-color: var(--ok); }
-    .toast.error { border-left-color: var(--danger); }
-    .toast.info { border-left-color: var(--info); }
-    .toast.removing { animation: slideDown 0.2s var(--ease-out) forwards; }
-
-    /* Modal */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 1000; backdrop-filter: blur(4px);
-      animation: fadeIn 0.15s ease-out;
-    }
-    .modal {
-      background: var(--bg-elevated); border: 1px solid var(--border);
-      border-radius: var(--radius-lg); padding: 24px;
-      max-width: 360px; width: 90%; box-shadow: var(--shadow-lg);
-      animation: modalIn 0.2s var(--ease-out);
-    }
-    .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
-    .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
-
-    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes shrink { to { opacity: 0; transform: scale(0.95) translateY(-4px); height: 0; padding: 0; margin: 0; border: 0; overflow: hidden; } }
-    @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes slideDown { to { opacity: 0; transform: translateY(10px); } }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-
-    /* --- Tab Bar --- */
-    .tab-bar {
-      grid-column: 2;
-      grid-row: 2;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 12px 22px 0;
-      background: var(--bg);
-    }
-    .tab-bar-spacer { flex: 1; }
-
-    .tab {
-      display: flex; align-items: center; gap: 6px;
-      padding: 6px 16px; font-size: 12px; font-weight: 500;
-      color: var(--text); cursor: pointer;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-full);
-      transition: all var(--duration-normal);
-      background: var(--card);
-      font-family: inherit;
-    }
-    .tab:hover { background: var(--bg-hover); border-color: var(--border-strong); }
-    .tab.active {
-      color: #fff;
-      background: var(--accent);
-      border-color: var(--accent);
-    }
-    .tab.active:hover { background: #ff4040; }
-    .tab-icon { font-size: 13px; }
-
-    /* --- File Explorer --- */
-    .file-explorer {
-      display: grid;
-      grid-template-columns: 260px 1fr;
-      gap: 0;
-      height: 100%;
-      min-height: 0;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
-    }
-
-    .file-tree {
-      border-right: 1px solid var(--border);
-      overflow: hidden;
-      padding: 12px 0;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-accent);
-      position: relative;
-    }
-
-    .file-tree-items { flex: 1; overflow-y: auto; }
-
-    .file-tree-footer {
-      padding: 12px 14px;
-      border-top: 1px solid var(--border);
-      font-size: 11px; color: var(--muted);
-    }
-
-    .context-bar {
-      height: 4px; border-radius: 2px;
-      background: var(--secondary);
-      margin-top: 6px; overflow: hidden;
-    }
-    .context-bar-fill {
-      height: 100%; border-radius: 2px;
-      transition: width var(--duration-normal);
-    }
-
-    .tree-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 6px 14px 6px 14px;
-      font-size: 13px; color: var(--text);
-      cursor: pointer; transition: all var(--duration-normal);
-      border-left: 2px solid transparent;
-      user-select: none;
-    }
-    .tree-item:hover { background: var(--bg-hover); }
-    .tree-item.selected {
-      background: var(--accent-subtle);
-      border-left-color: var(--accent);
-      color: var(--text-strong);
-    }
-    .tree-item.directory { color: var(--muted); font-weight: 500; }
-    .tree-item.directory:hover { color: var(--text); }
-
-    .tree-indent { display: inline-block; }
-    .tree-icon { font-size: 14px; flex-shrink: 0; width: 18px; text-align: center; }
-    .tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tree-meta { font-size: 10px; color: var(--muted); flex-shrink: 0; }
-
-    .tree-badge {
-      width: 6px; height: 6px; border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .tree-badge.always { background: var(--ok); }
-    .tree-badge.lazy { background: var(--warn); }
-    .tree-badge.optional { background: var(--info); }
-
-    /* --- File Preview --- */
-    .file-preview {
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      background: var(--card);
-      position: relative;
-    }
-    .file-preview.editing .file-preview-body {
-      overflow: hidden;
-    }
-
-    .file-preview-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 18px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .file-preview-info {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 13px;
-    }
-    .file-preview-name { font-weight: 600; color: var(--text-strong); }
-    .file-preview-size { color: var(--muted); font-size: 11px; }
-    .file-preview-badge {
-      display: inline-flex; padding: 2px 8px; border-radius: var(--radius-full);
-      font-size: 10px; font-weight: 500; text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .file-preview-badge.always { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
-    .file-preview-badge.lazy { color: var(--warn); border: 1px solid #f59e0b59; background: var(--warn-subtle); }
-    .file-preview-badge.optional { color: var(--info); border: 1px solid #3b82f659; background: var(--info-subtle); }
-
-    .file-preview-actions { display: flex; gap: 6px; }
-
-    .file-preview-body {
-      flex: 1; overflow-y: auto; padding: 18px 24px;
-    }
-
-    .file-preview-empty {
-      display: flex; align-items: center; justify-content: center;
-      height: 100%; color: var(--muted); font-size: 14px;
-    }
-
-    /* --- Markdown Styles --- */
-    .md-content { line-height: 1.65; color: var(--text); }
-    .md-content h1 { font-size: 22px; font-weight: 700; color: var(--text-strong); margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
-    .md-content h2 { font-size: 17px; font-weight: 600; color: var(--text-strong); margin: 24px 0 10px; }
-    .md-content h3 { font-size: 14px; font-weight: 600; color: var(--text-strong); margin: 18px 0 8px; }
-    .md-content h4 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.03em; }
-    .md-content p { margin: 0 0 12px; }
-    .md-content a { color: var(--accent); text-decoration: none; }
-    .md-content a:hover { text-decoration: underline; }
-    .md-content strong { color: var(--text-strong); font-weight: 600; }
-    .md-content em { font-style: italic; }
-    .md-content ul, .md-content ol { margin: 0 0 12px; padding-left: 24px; }
-    .md-content li { margin: 4px 0; }
-    .md-content li::marker { color: var(--muted); }
-    .md-content blockquote {
-      border-left: 3px solid var(--accent);
-      padding: 8px 16px; margin: 0 0 12px;
-      background: var(--accent-subtle); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      color: var(--text); font-size: 13px;
-    }
-    .md-content code {
-      font-family: "JetBrains Mono", monospace; font-size: 12px;
-      background: var(--bg-elevated); padding: 2px 6px; border-radius: 4px;
-      color: var(--accent);
-    }
-    .md-content pre {
-      background: var(--bg-elevated); border: 1px solid var(--border);
-      border-radius: var(--radius-md); padding: 14px 16px;
-      overflow-x: auto; margin: 0 0 14px;
-    }
-    .md-content pre code {
-      background: none; padding: 0; color: var(--text);
-      font-size: 12px; line-height: 1.5;
-    }
-    .md-content table {
-      width: 100%; border-collapse: collapse; margin: 0 0 14px;
-      font-size: 13px;
-    }
-    .md-content th {
-      text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border);
-      color: var(--text-strong); font-weight: 600; font-size: 11px;
-      text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    .md-content td {
-      padding: 6px 12px; border-bottom: 1px solid var(--border);
-    }
-    .md-content tr:hover td { background: var(--bg-hover); }
-    .md-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-    .md-content img { max-width: 100%; border-radius: var(--radius-md); }
-
-    /* JSON preview */
-    .json-content {
-      font-family: "JetBrains Mono", monospace; font-size: 12px;
-      line-height: 1.5; white-space: pre-wrap; color: var(--text);
-    }
-    .json-key { color: var(--accent); }
-    .json-string { color: var(--ok); }
-    .json-number { color: var(--info); }
-    .json-bool { color: var(--warn); }
-    .json-null { color: var(--muted); }
-
-    /* Edit mode */
-    .file-editor {
-      width: 100%; height: 100%; resize: none;
-      background: var(--bg); color: var(--text);
-      border: none; outline: none;
-      font-family: "JetBrains Mono", monospace;
-      font-size: 13px; line-height: 1.6;
-      padding: 18px 24px;
-      overflow-y: auto;
-    }
-    .file-editor:focus { outline: none; }
-
-    .unsaved-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--warn); display: inline-block;
-      margin-left: 6px;
-    }
-
-    @media (max-width: 900px) {
-      .app { grid-template-columns: 0px 1fr; }
-      .sidebar { opacity: 0; pointer-events: none; }
-      .file-explorer { grid-template-columns: 1fr; }
-      .file-tree { display: none; }
-    }
-  </style>
+  <link rel="stylesheet" href="./styles/dashboard.css">
 </head>
 <body>
 
@@ -679,147 +49,41 @@
 <div class="toast-container" id="toastContainer"></div>
 <div id="modalRoot"></div>
 
-<script>
-const API_HOST = window.location.port === '18790'
-  ? ''
-  : `http://${window.location.hostname}:18790`;
-const API = API_HOST + '/api';
-const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
-const PRIORITY_CYCLE = { low: 'medium', medium: 'high', high: 'low' };
-const STATUS_KEYS = ['open', 'in-progress', 'review', 'done'];
-const STATUS_LABELS = { 'open': 'Open', 'in-progress': 'In Progress', 'review': 'Review', 'done': 'Done' };
+<script type="module">
+import { api, toast, showModal, escHtml, formatDisplayName, updateTimestamp } from './js/utils.js';
+import { 
+  kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd, selectPriority, 
+  onAddKey, createTask, startEdit, onTitleKey, saveTitle, togglePriorityPopover, setPriority,
+  startDelete, confirmDelete, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
+  renderTabBarRight
+} from './js/kanban.js';
+import {
+  fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir,
+  renderFileExplorer, applyStaticScrollbars, updateContentScrollbarVisibility
+} from './js/file-explorer.js';
 
-let state = {
+// Global state
+const state = {
   projects: [],
   activeProject: null,
   viewedProject: null,
   tasks: [],
-  addingTask: false,
-  editingTaskId: null,
-  currentTab: 'tasks',
-  fileTree: null,
-  selectedFile: null,
-  fileContent: null,
-  fileEditing: false,
-  fileUnsaved: false,
-  fileEditedContent: null,
-  expandedDirs: new Set(['context'])
+  currentTab: 'tasks'
 };
+
+// Make state accessible to modules
+window.appState = state;
 
 let prevProjectsJson = '';
 let prevTasksJson = '';
 let prevActiveProject = null;
-let boardBuilt = false;
-let newCardIds = new Set();
 
 // --- Sidebar toggle ---
-function toggleSidebar() {
+window.toggleSidebar = function() {
   document.getElementById('app').classList.toggle('sidebar-collapsed');
-}
+};
 
-// --- API ---
-async function api(path, opts = {}) {
-  const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-    body: opts.body ? JSON.stringify(opts.body) : undefined
-  });
-  return res.json();
-}
-
-// --- Toast (bottom-right) ---
-function toast(msg, type = 'info') {
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  document.getElementById('toastContainer').appendChild(el);
-  setTimeout(() => {
-    el.classList.add('removing');
-    setTimeout(() => el.remove(), 200);
-  }, 3000);
-}
-
-// --- Modal ---
-function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger') {
-  const root = document.getElementById('modalRoot');
-  root.innerHTML = `<div class="modal-overlay" id="modalOverlay">
-    <div class="modal">
-      <div class="modal-title">${title}</div>
-      <div class="modal-body">${body}</div>
-      <div class="modal-actions">
-        <button class="btn btn-ghost btn-sm" id="modalCancel">Cancel</button>
-        <button class="btn ${confirmClass} btn-sm" id="modalConfirm">${confirmLabel}</button>
-      </div>
-    </div>
-  </div>`;
-  document.getElementById('modalCancel').onclick = closeModal;
-  document.getElementById('modalConfirm').onclick = () => { closeModal(); onConfirm(); };
-  document.getElementById('modalOverlay').onclick = (e) => {
-    if (e.target === e.currentTarget) closeModal();
-  };
-  document.addEventListener('keydown', modalEscHandler);
-}
-
-function closeModal() {
-  document.getElementById('modalRoot').innerHTML = '';
-  document.removeEventListener('keydown', modalEscHandler);
-}
-
-function modalEscHandler(e) { if (e.key === 'Escape') closeModal(); }
-
-function isUserInteracting() {
-  if (state.addingTask || state.editingTaskId) return true;
-  if (document.getElementById('modalOverlay')) return true;
-  const active = document.activeElement;
-  return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-}
-
-let sortNewestFirst = localStorage.getItem('sortNewestFirst') !== 'false';
-
-function toggleSort() {
-  sortNewestFirst = !sortNewestFirst;
-  localStorage.setItem('sortNewestFirst', sortNewestFirst);
-  const icon = document.getElementById('sortIcon');
-  const label = document.getElementById('sortLabel');
-  if (icon) icon.textContent = sortNewestFirst ? '↓' : '↑';
-  if (label) label.textContent = sortNewestFirst ? 'Newest first' : 'Oldest first';
-  // Force re-render of add button position
-  const btn = document.querySelector('.add-task-btn');
-  const form = document.querySelector('.add-task-form');
-  if (btn) btn.remove();
-  if (form) form.remove();
-  prevTasksJson = '';
-  updateBoard();
-}
-
-function sortTasks(tasks) {
-  const dir = sortNewestFirst ? -1 : 1;
-  return [...tasks].sort((a, b) => {
-    const idA = parseInt(a.id.replace('T-', ''));
-    const idB = parseInt(b.id.replace('T-', ''));
-    return dir * (idA - idB);
-  });
-}
-
-function escHtml(s) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// --- Format display name ---
-function formatDisplayName(name) {
-  // Special cases for branded names
-  const brandedNames = {
-    'flowboard': 'FlowBoard',
-    'contextvault': 'ContextVault'
-  };
-  
-  if (brandedNames[name]) return brandedNames[name];
-  
-  // Default: capitalize each dash-separated word
-  return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-}
-
-// --- Render sidebar ---
+// --- Render functions ---
 function renderSidebar() {
   const list = document.getElementById('projectList');
   if (state.projects.length === 0) {
@@ -849,7 +113,6 @@ function renderSidebar() {
   }
 }
 
-// --- Render header (fixed height, no stats) ---
 function renderHeader() {
   const el = document.getElementById('headerRight');
   if (!state.viewedProject) { el.innerHTML = ''; return; }
@@ -860,448 +123,134 @@ function renderHeader() {
   `;
 }
 
-// --- Build board skeleton ---
-function buildBoard() {
-  const content = document.getElementById('content');
-  content.innerHTML = `<div class="kanban" id="kanban">
-    ${STATUS_KEYS.map(status => `<div class="column" data-status="${status}"
-      ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
-      <div class="column-header">
-        <span class="column-title">${STATUS_LABELS[status]}</span>
-        <span class="column-count" id="count-${status}">0</span>
-      </div>
-      <div class="column-body" id="col-${status}"></div>
-    </div>`).join('')}
-  </div>`;
-  boardBuilt = true;
-}
-
-// --- Update board (diff-based) ---
-function updateBoard() {
-  const content = document.getElementById('content');
-  // Reset file explorer styles
-  content.style.overflow = '';
-
-  if (!state.viewedProject) {
-    const msg = state.projects.length === 0
-      ? 'No projects found. Create a new project via chat.'
-      : 'Select a project from the sidebar.';
-    content.innerHTML = `<div class="empty-state">${msg}</div>`;
-    boardBuilt = false;
-    return;
+function renderAll() {
+  renderSidebar();
+  const app = document.querySelector('.app');
+  app.setAttribute('data-view', state.currentTab);
+  renderHeader();
+  if (state.currentTab === 'tasks') {
+    renderTabBarRight();
+    updateBoard(state);
+  } else if (state.currentTab === 'files') {
+    document.getElementById('tabBarRight').innerHTML = '';
+    renderFileExplorer(state);
   }
-
-  if (!boardBuilt) buildBoard();
-
-  const tasks = state.tasks;
-  const counts = {};
-  STATUS_KEYS.forEach(s => counts[s] = 0);
-
-  const grouped = {};
-  STATUS_KEYS.forEach(s => grouped[s] = []);
-  for (const t of tasks) {
-    if (grouped[t.status]) grouped[t.status].push(t);
-    counts[t.status]++;
-  }
-
-  STATUS_KEYS.forEach(status => {
-    const sorted = sortTasks(grouped[status]);
-    const body = document.getElementById(`col-${status}`);
-    const countEl = document.getElementById(`count-${status}`);
-    if (countEl) countEl.textContent = counts[status];
-
-    const existingCards = {};
-    body.querySelectorAll('.task-card').forEach(el => { existingCards[el.dataset.id] = el; });
-
-    const newIds = new Set(sorted.map(t => t.id));
-    for (const [id, el] of Object.entries(existingCards)) {
-      if (!newIds.has(id)) el.remove();
-    }
-
-    const emptyEl = body.querySelector('.column-empty');
-    const addBtn = body.querySelector('.add-task-btn');
-    const addForm = body.querySelector('.add-task-form');
-
-    if (sorted.length === 0 && !(status === 'open' && state.addingTask)) {
-      if (!emptyEl) {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'column-empty';
-        placeholder.textContent = 'No tasks';
-        if (addBtn) body.insertBefore(placeholder, addBtn);
-        else if (addForm) body.insertBefore(placeholder, addForm);
-        else body.appendChild(placeholder);
-      }
-    } else {
-      if (emptyEl) emptyEl.remove();
-    }
-
-    let insertBefore = addBtn || addForm || null;
-    for (let i = sorted.length - 1; i >= 0; i--) {
-      const task = sorted[i];
-      let card = body.querySelector(`.task-card[data-id="${task.id}"]`);
-      if (!card) {
-        card = createCardElement(task);
-        if (newCardIds.has(task.id)) card.classList.add('new-card');
-        body.insertBefore(card, insertBefore);
-      } else {
-        updateCardContent(card, task);
-        body.insertBefore(card, insertBefore);
-      }
-      insertBefore = card;
-    }
-
-    if (status === 'open') {
-      const existingBtn = body.querySelector('.add-task-btn');
-      const existingForm = body.querySelector('.add-task-form');
-      if (state.addingTask) {
-        if (existingBtn) existingBtn.remove();
-        if (existingForm) {
-          // Re-position existing form
-          if (sortNewestFirst) body.insertBefore(existingForm, body.firstChild);
-          else body.appendChild(existingForm);
-        } else {
-          body.insertAdjacentHTML(sortNewestFirst ? 'afterbegin' : 'beforeend', renderAddTaskForm());
-          setTimeout(() => {
-            const inp = document.getElementById('newTaskTitle');
-            if (inp && !inp.value) inp.focus();
-          }, 50);
-        }
-      } else {
-        if (existingForm) existingForm.remove();
-        if (existingBtn) {
-          // Re-position existing button
-          if (sortNewestFirst) body.insertBefore(existingBtn, body.firstChild);
-          else body.appendChild(existingBtn);
-        } else {
-          body.insertAdjacentHTML(sortNewestFirst ? 'afterbegin' : 'beforeend',
-            `<button class="add-task-btn" onclick="startAdd()">+ New Task</button>`);
-        }
-      }
-    }
-  });
-
-  if (newCardIds.size > 0) setTimeout(() => newCardIds.clear(), 400);
-}
-
-function createCardElement(task) {
-  const div = document.createElement('div');
-  div.className = 'task-card';
-  div.draggable = true;
-  div.dataset.id = task.id;
-  div.setAttribute('ondragstart', 'onDragStart(event)');
-  div.setAttribute('ondragend', 'onDragEnd(event)');
-  div.innerHTML = cardInnerHTML(task);
-  return div;
-}
-
-function updateCardContent(card, task) {
-  if (state.editingTaskId === task.id) return;
-  const titleEl = card.querySelector('.task-title');
-  const pillEl = card.querySelector('.priority-pill');
-  if (titleEl && titleEl.textContent !== task.title) titleEl.textContent = task.title;
-  if (pillEl) {
-    const newClass = `priority-pill priority-${task.priority}`;
-    if (pillEl.className !== newClass || pillEl.textContent !== task.priority) {
-      pillEl.className = newClass;
-      pillEl.textContent = task.priority;
-      pillEl.setAttribute('onclick', `togglePriorityPopover(event, '${task.id}', '${task.priority}')`);
-    }
-  }
-}
-
-function cardInnerHTML(task) {
-  const isEditing = state.editingTaskId === task.id;
-  return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div class="task-id mono">${task.id}</div>
-      <button class="delete-btn" onclick="startDelete('${task.id}', '${escHtml(task.title)}')" title="Delete">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-        </svg>
-      </button>
-    </div>
-    ${isEditing
-      ? `<input class="task-title-input" value="${escHtml(task.title)}"
-              onkeydown="onTitleKey(event, '${task.id}')" onblur="saveTitle('${task.id}', this)" autofocus>`
-      : `<div class="task-title" onclick="startEdit('${task.id}')">${escHtml(task.title)}</div>`}
-    <div class="task-meta">
-      <span class="priority-pill-wrap">
-        <span class="priority-pill priority-${task.priority}" onclick="togglePriorityPopover(event, '${task.id}', '${task.priority}')">${task.priority}</span>
-      </span>
-    </div>`;
-}
-
-function renderAddTaskForm() {
-  return `<div class="add-task-form">
-    <input id="newTaskTitle" placeholder="Task title..." onkeydown="onAddKey(event)">
-    <div class="priority-selector">
-      <button class="priority-option" data-p="low" onclick="selectPriority('low')">low</button>
-      <button class="priority-option selected" data-p="medium" onclick="selectPriority('medium')">medium</button>
-      <button class="priority-option" data-p="high" onclick="selectPriority('high')">high</button>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-primary btn-sm" onclick="createTask()">Create</button>
-      <button class="btn btn-secondary btn-sm" onclick="cancelAdd()">Cancel</button>
-    </div>
-  </div>`;
+  updateTimestamp();
+  requestAnimationFrame(applyStaticScrollbars);
 }
 
 // --- Actions ---
-async function viewProject(name) {
+window.viewProject = async function(name) {
   state.viewedProject = name;
-  state.addingTask = false;
-  state.editingTaskId = null;
-  boardBuilt = false;
-  state.fileTree = null;
-  state.selectedFile = null;
-  state.fileContent = null;
+  kanbanState.addingTask = false;
+  kanbanState.editingTaskId = null;
+  kanbanState.boardBuilt = false;
+  fileState.fileTree = null;
+  fileState.selectedFile = null;
+  fileState.fileContent = null;
   const data = await api(`/projects/${name}/tasks`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
   renderAll();
-}
+};
 
-async function activateProject() {
+window.activateProject = async function() {
   await api('/status', { method: 'PUT', body: { project: state.viewedProject } });
   state.activeProject = state.viewedProject;
   toast(`Project "${state.viewedProject}" activated`, 'success');
   renderSidebar();
   renderHeader();
-}
+};
 
-async function deactivateProject() {
+window.deactivateProject = async function() {
   await api('/status', { method: 'PUT', body: { project: null } });
   state.activeProject = null;
   toast('Project deactivated.', 'info');
   renderSidebar();
   renderHeader();
-}
+};
 
-let selectedPriority = 'medium';
-
-function startAdd() {
-  state.addingTask = true;
-  selectedPriority = 'medium';
-  updateBoard();
-}
-
-function cancelAdd() {
-  state.addingTask = false;
-  updateBoard();
-}
-
-function selectPriority(p) {
-  selectedPriority = p;
-  document.querySelectorAll('.priority-option').forEach(el => {
-    el.classList.toggle('selected', el.dataset.p === p);
+// --- Tab System ---
+window.switchTab = function(tab) {
+  state.currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
   });
-}
+  if (tab === 'tasks') {
+    kanbanState.boardBuilt = false;
+    renderTabBarRight();
+    updateBoard(state);
+  } else if (tab === 'files') {
+    document.getElementById('tabBarRight').innerHTML = '';
+    renderFileExplorer(state);
+  }
+  requestAnimationFrame(updateContentScrollbarVisibility);
+};
 
-function onAddKey(e) {
-  if (e.key === 'Enter') createTask();
-  if (e.key === 'Escape') cancelAdd();
-}
-
-async function createTask() {
-  const inp = document.getElementById('newTaskTitle');
-  const title = inp ? inp.value.trim() : '';
-  if (!title) return;
-  const res = await api(`/projects/${state.viewedProject}/tasks`, {
-    method: 'POST', body: { title, priority: selectedPriority }
+// --- Kanban Actions (exposed to window for inline handlers) ---
+window.toggleSort = function() {
+  if (toggleSort()) {
+    kanbanState.boardBuilt = false;
+    updateBoard(state);
+  }
+};
+window.startAdd = function() { if (startAdd()) updateBoard(state); };
+window.cancelAdd = function() { if (cancelAdd()) updateBoard(state); };
+window.selectPriority = selectPriority;
+window.onAddKey = function(e) {
+  const action = onAddKey(e);
+  if (action === 'create') createTask(state).then(changed => { if (changed) { prevTasksJson = JSON.stringify(state.tasks); updateBoard(state); } });
+  if (action === 'cancel') { cancelAdd(); updateBoard(state); }
+};
+window.createTask = function() {
+  createTask(state).then(changed => {
+    if (changed) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
+    }
   });
-  if (res.ok) {
-    state.tasks.push(res.task);
-    state.addingTask = false;
-    newCardIds.add(res.task.id);
-    toast(`Task ${res.task.id} created`, 'success');
+};
+window.startEdit = startEdit;
+window.onTitleKey = onTitleKey;
+window.saveTitle = function(id, el) {
+  saveTitle(id, el, state).then(() => {
     prevTasksJson = JSON.stringify(state.tasks);
-    updateBoard();
-  } else {
-    toast(res.error || 'Error', 'error');
-  }
-}
-
-function startEdit(id) {
-  state.editingTaskId = id;
-  const card = document.querySelector(`.task-card[data-id="${id}"]`);
-  if (card) {
-    const task = state.tasks.find(t => t.id === id);
-    if (task) card.innerHTML = cardInnerHTML(task);
-    setTimeout(() => {
-      const inp = card.querySelector('.task-title-input');
-      if (inp) { inp.focus(); inp.select(); }
-    }, 50);
-  }
-}
-
-function onTitleKey(e, id) {
-  if (e.key === 'Enter') e.target.blur();
-  if (e.key === 'Escape') {
-    state.editingTaskId = null;
-    const card = document.querySelector(`.task-card[data-id="${id}"]`);
-    const task = state.tasks.find(t => t.id === id);
-    if (card && task) card.innerHTML = cardInnerHTML(task);
-  }
-}
-
-async function saveTitle(id, el) {
-  const newTitle = el.value.trim();
-  state.editingTaskId = null;
-  const task = state.tasks.find(t => t.id === id);
-  if (task && newTitle && task.title !== newTitle) {
-    await api(`/projects/${state.viewedProject}/tasks/${id}`, {
-      method: 'PUT', body: { title: newTitle }
-    });
-    task.title = newTitle;
-    toast('Title updated', 'success');
-  }
-  const card = document.querySelector(`.task-card[data-id="${id}"]`);
-  if (card && task) card.innerHTML = cardInnerHTML(task);
-  prevTasksJson = JSON.stringify(state.tasks);
-}
-
-function togglePriorityPopover(e, id, current) {
-  e.stopPropagation();
-  // Close any existing popover
-  document.querySelectorAll('.priority-popover').forEach(p => p.remove());
-  const wrap = e.target.closest('.priority-pill-wrap');
-  if (!wrap) return;
-  const popover = document.createElement('div');
-  popover.className = 'priority-popover';
-  ['low', 'medium', 'high'].forEach(p => {
-    const pill = document.createElement('span');
-    pill.className = `priority-pill priority-${p}${p === current ? ' current' : ''}`;
-    pill.textContent = p;
-    pill.onclick = (ev) => { ev.stopPropagation(); setPriority(id, p); };
-    popover.appendChild(pill);
   });
-  wrap.appendChild(popover);
-  // Close on outside click
-  setTimeout(() => {
-    const close = (ev) => {
-      if (!popover.contains(ev.target)) { popover.remove(); document.removeEventListener('click', close); }
-    };
-    document.addEventListener('click', close);
-  }, 0);
-}
-
-async function setPriority(id, priority) {
-  // Close popover
-  document.querySelectorAll('.priority-popover').forEach(p => p.remove());
-  // Instant DOM update
-  const card = document.querySelector(`.task-card[data-id="${id}"]`);
-  const pill = card?.querySelector('.priority-pill');
-  if (pill) {
-    pill.className = `priority-pill priority-${priority}`;
-    pill.textContent = priority;
-    pill.setAttribute('onclick', `togglePriorityPopover(event, '${id}', '${priority}')`);
-  }
-  const task = state.tasks.find(t => t.id === id);
-  if (task) task.priority = priority;
+};
+window.togglePriorityPopover = togglePriorityPopover;
+window.setPriority = function(id, priority) {
+  setPriority(id, priority, state);
   prevTasksJson = JSON.stringify(state.tasks);
-  await api(`/projects/${state.viewedProject}/tasks/${id}`, {
-    method: 'PUT', body: { priority }
+};
+window.startDelete = startDelete;
+window.confirmDelete = function(id) {
+  confirmDelete(id, state).then(changed => {
+    if (changed) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
+    }
   });
-}
+};
 
-function startDelete(id, title) {
-  showModal(
-    'Delete task?',
-    `<strong>${id}</strong>: ${title}<br>This action cannot be undone.`,
-    () => confirmDelete(id)
-  );
-}
+// Drag & Drop
+window.onDragStart = onDragStart;
+window.onDragEnd = onDragEnd;
+window.onDragOver = onDragOver;
+window.onDragLeave = onDragLeave;
+window.onDrop = function(e) { onDrop(e, state); };
 
-async function confirmDelete(id) {
-  const card = document.querySelector(`.task-card[data-id="${id}"]`);
-  if (card) card.classList.add('removing');
-  await new Promise(r => setTimeout(r, 250));
-  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, { method: 'DELETE' });
-  if (res.ok) {
-    state.tasks = state.tasks.filter(t => t.id !== id);
-    prevTasksJson = JSON.stringify(state.tasks);
-    toast('Task deleted', 'success');
-    updateBoard();
-  }
-}
+// --- File Explorer Actions ---
+window.loadFileContent = function(path) { loadFileContent(path, state); };
+window.saveFileContent = function() { saveFileContent(state); };
+window.toggleFileEdit = toggleFileEdit;
+window.toggleDir = toggleDir;
 
-// --- Drag & Drop ---
-let draggedId = null;
-
-function onDragStart(e) {
-  draggedId = e.currentTarget.dataset.id;
-  e.currentTarget.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-}
-
-function onDragEnd(e) {
-  e.currentTarget.classList.remove('dragging');
-  document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
-  draggedId = null;
-}
-
-function onDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-  const col = e.currentTarget.closest('.column');
-  if (col) col.classList.add('drag-over');
-}
-
-function onDragLeave(e) {
-  const col = e.currentTarget.closest('.column');
-  if (col && !col.contains(e.relatedTarget)) col.classList.remove('drag-over');
-}
-
-async function onDrop(e) {
-  e.preventDefault();
-  const col = e.currentTarget.closest('.column');
-  if (!col || !draggedId) return;
-  col.classList.remove('drag-over');
-
-  const newStatus = col.dataset.status;
-  const task = state.tasks.find(t => t.id === draggedId);
-  if (!task || task.status === newStatus) return;
-
-  const oldStatus = task.status;
-  task.status = newStatus;
-  if (newStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
-  if (oldStatus === 'done' && newStatus !== 'done') task.completed = null;
-
-  prevTasksJson = JSON.stringify(state.tasks);
-  updateBoard();
-
-  const res = await api(`/projects/${state.viewedProject}/tasks/${draggedId}`, {
-    method: 'PUT', body: { status: newStatus }
-  });
-  if (!res.ok) {
-    task.status = oldStatus;
-    prevTasksJson = JSON.stringify(state.tasks);
-    toast('Failed to move task', 'error');
-    updateBoard();
-  } else {
-    toast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
-  }
-}
-
-// --- Render All ---
-function renderAll() {
-  renderSidebar();
-  // Set data-view attribute for conditional styling
-  const app = document.querySelector('.app');
-  app.setAttribute('data-view', state.currentTab);
-  
-  renderHeader();
-  renderTabBarRight();
-  if (state.currentTab === 'tasks') {
-    updateBoard();
-  } else if (state.currentTab === 'files') {
-    renderFileExplorer();
-  }
-  updateTimestamp();
-}
-
-function updateTimestamp() {
-  document.getElementById('lastRefresh').textContent =
-    new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+// --- User Interaction Detection ---
+function isUserInteracting() {
+  if (kanbanState.addingTask || kanbanState.editingTaskId) return true;
+  if (document.getElementById('modalOverlay')) return true;
+  const active = document.activeElement;
+  return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 }
 
 // --- Smart refresh ---
@@ -1341,527 +290,12 @@ async function refresh() {
     }
 
     if (projectsChanged) { renderSidebar(); renderHeader(); }
-    if (tasksChanged) { updateBoard(); }
+    if (tasksChanged && state.currentTab === 'tasks') { updateBoard(state); }
     updateTimestamp();
   } catch (err) {
     console.error('Refresh error:', err);
   }
 }
-
-// --- Tab System ---
-function switchTab(tab) {
-  state.currentTab = tab;
-  document.querySelectorAll('.tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.tab === tab);
-  });
-  renderTabBarRight();
-  if (tab === 'tasks') {
-    boardBuilt = false;
-    updateBoard();
-  } else if (tab === 'files') {
-    renderFileExplorer();
-  }
-  // Update scrollbar visibility after render
-  requestAnimationFrame(updateContentScrollbarVisibility);
-}
-
-function renderTabBarRight() {
-  const el = document.getElementById('tabBarRight');
-  if (!el) return;
-  if (state.currentTab === 'tasks') {
-    el.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="toggleSort()" title="Toggle sort order"
-      style="font-size:11px;display:flex;align-items:center;gap:4px;">
-      <span id="sortIcon">${sortNewestFirst ? '↓' : '↑'}</span> <span id="sortLabel">${sortNewestFirst ? 'Newest first' : 'Oldest first'}</span>
-    </button>`;
-  } else {
-    el.innerHTML = '';
-  }
-}
-
-// --- File Explorer ---
-const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
-const CATEGORY_COLORS = { always: 'ok', lazy: 'warn', optional: 'info' };
-
-async function loadFileTree() {
-  if (!state.viewedProject) return;
-  try {
-    const data = await api(`/projects/${state.viewedProject}/files`);
-    state.fileTree = data;
-  } catch (err) {
-    console.error('Failed to load file tree:', err);
-    state.fileTree = null;
-  }
-}
-
-async function loadFileContent(filePath) {
-  if (!state.viewedProject) return;
-  try {
-    const data = await api(`/projects/${state.viewedProject}/files/${filePath}`);
-    state.fileContent = data;
-    state.selectedFile = filePath;
-    state.fileEditing = false;
-    state.fileUnsaved = false;
-    state.fileEditedContent = null;
-    renderFileTree();
-    renderFilePreview();
-  } catch (err) {
-    console.error('Failed to load file:', err);
-  }
-}
-
-async function saveFileContent() {
-  if (!state.viewedProject || !state.selectedFile) return;
-  const content = state.fileEditedContent ?? state.fileContent?.content;
-  if (!content && content !== '') return;
-  try {
-    await api(`/projects/${state.viewedProject}/files/${state.selectedFile}`, {
-      method: 'PUT', body: { content }
-    });
-    state.fileContent.content = content;
-    state.fileUnsaved = false;
-    state.fileEditedContent = null;
-    toast('File saved', 'success');
-    renderFilePreview();
-    loadFileTree();
-  } catch (err) {
-    toast('Failed to save: ' + err.message, 'error');
-  }
-}
-
-function toggleFileEdit() {
-  // When switching from edit to preview, preserve edited content
-  if (state.fileEditing) {
-    const editor = document.getElementById('fileEditor');
-    if (editor) state.fileEditedContent = editor.value;
-  }
-  state.fileEditing = !state.fileEditing;
-  renderFilePreview();
-  if (state.fileEditing) {
-    setTimeout(() => {
-      const editor = document.getElementById('fileEditor');
-      if (editor) editor.focus();
-    }, 50);
-  }
-}
-
-function toggleDir(dirPath) {
-  if (state.expandedDirs.has(dirPath)) state.expandedDirs.delete(dirPath);
-  else state.expandedDirs.add(dirPath);
-  renderFileTree();
-}
-
-async function renderFileExplorer() {
-  if (!state.fileTree) await loadFileTree();
-  const content = document.getElementById('content');
-  content.style.overflow = 'hidden';
-  content.innerHTML = `<div class="file-explorer">
-    <div class="file-tree">
-      <div class="file-tree-items" id="fileTreeItems"></div>
-      <div class="file-tree-footer" id="fileTreeFooter"></div>
-    </div>
-    <div class="file-preview" id="filePreview">
-      <div class="file-preview-empty">Select a file to preview</div>
-    </div>
-  </div>`;
-  renderFileTree();
-  // Auto-open first file if nothing selected
-  if (!state.selectedFile && state.fileTree && state.fileTree.tree.length > 0) {
-    const firstFile = state.fileTree.tree.find(e => e.type === 'file');
-    if (firstFile) loadFileContent(firstFile.path);
-  } else if (state.selectedFile) {
-    loadFileContent(state.selectedFile);
-  }
-}
-
-function renderFileTree() {
-  const container = document.getElementById('fileTreeItems');
-  if (!container || !state.fileTree) return;
-
-  let html = '';
-
-  function renderEntry(entry, depth) {
-    const indent = depth * 16;
-    if (entry.type === 'directory') {
-      const expanded = state.expandedDirs.has(entry.path);
-      const icon = expanded ? '📂' : '📁';
-      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" onclick="toggleDir('${entry.path}')">
-        <span class="tree-icon">${icon}</span>
-        <span class="tree-name">${escHtml(entry.name)}</span>
-        <span class="tree-meta">${entry.children.length}</span>
-      </div>`;
-      if (expanded && entry.children) {
-        for (const child of entry.children) renderEntry(child, depth + 1);
-      }
-    } else {
-      const isSelected = state.selectedFile === entry.path;
-      const sizeStr = formatSize(entry.size);
-      const ext = entry.name.split('.').pop();
-      const icon = ext === 'json' ? '{ }' : ext === 'md' ? '📝' : '📄';
-      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" onclick="loadFileContent('${entry.path}')">
-        <span class="tree-badge ${entry.category}"></span>
-        <span class="tree-icon">${icon}</span>
-        <span class="tree-name">${escHtml(entry.name)}</span>
-        <span class="tree-meta">${sizeStr}</span>
-      </div>`;
-    }
-  }
-
-  for (const entry of state.fileTree.tree) renderEntry(entry, 0);
-  container.innerHTML = html;
-
-  // Footer: context health
-  const footer = document.getElementById('fileTreeFooter');
-  if (footer && state.fileTree) {
-    const total = state.fileTree.totalSize;
-    const recommended = 50 * 1024;
-    const pct = Math.min(100, Math.round((total / recommended) * 100));
-    const color = pct > 80 ? 'var(--warn)' : pct > 100 ? 'var(--danger)' : 'var(--ok)';
-    footer.innerHTML = `
-      <div>${state.fileTree.fileCount} files · ${formatSize(total)}</div>
-      <div class="context-bar">
-        <div class="context-bar-fill" style="width:${pct}%;background:${color}"></div>
-      </div>
-    `;
-  }
-}
-
-function renderFilePreview() {
-  const container = document.getElementById('filePreview');
-  if (!container) return;
-
-  container.classList.toggle('editing', !!state.fileEditing);
-
-  if (!state.fileContent) {
-    container.innerHTML = '<div class="file-preview-empty">Select a file to preview</div>';
-    return;
-  }
-
-  const f = state.fileContent;
-  const catLabel = CATEGORY_LABELS[f.category] || '';
-  const catClass = f.category || 'optional';
-  const ext = f.path.split('.').pop();
-  const isJson = ext === 'json';
-
-  const unsavedDot = state.fileUnsaved ? '<span class="unsaved-dot" title="Unsaved changes"></span>' : '';
-  const saveBtn = state.fileUnsaved
-    ? '<button class="btn btn-primary btn-sm" onclick="saveFileContent()" style="font-size:11px">Save</button>'
-    : '';
-
-  container.innerHTML = `
-    <div class="file-preview-header">
-      <div class="file-preview-info">
-        <span class="file-preview-name">${escHtml(f.path)}${unsavedDot}</span>
-        <span class="file-preview-size">${formatSize(f.size)}</span>
-        <span class="file-preview-badge ${catClass}">${catLabel}</span>
-      </div>
-      <div class="file-preview-actions">
-        ${saveBtn}
-        <button class="btn btn-ghost btn-sm" onclick="toggleFileEdit()">
-          ${state.fileEditing ? 'Preview' : 'Edit'}
-        </button>
-      </div>
-    </div>
-    <div class="file-preview-body" id="filePreviewBody"></div>
-  `;
-
-  const body = document.getElementById('filePreviewBody');
-  const displayContent = state.fileEditedContent ?? f.content;
-
-  if (state.fileEditing) {
-    body.innerHTML = `<textarea class="file-editor" id="fileEditor" spellcheck="false">${escHtml(displayContent)}</textarea>`;
-    const editor = document.getElementById('fileEditor');
-    editor.addEventListener('input', () => {
-      state.fileEditedContent = editor.value;
-      state.fileUnsaved = editor.value !== f.content;
-      // Update header (save btn + dot)
-      const actions = container.querySelector('.file-preview-actions');
-      const nameEl = container.querySelector('.file-preview-name');
-      if (nameEl) {
-        const dot = nameEl.querySelector('.unsaved-dot');
-        if (state.fileUnsaved && !dot) nameEl.insertAdjacentHTML('beforeend', '<span class="unsaved-dot" title="Unsaved changes"></span>');
-        else if (!state.fileUnsaved && dot) dot.remove();
-      }
-      if (actions) {
-        const existing = actions.querySelector('.btn-primary');
-        if (state.fileUnsaved && !existing) {
-          actions.insertAdjacentHTML('afterbegin', '<button class="btn btn-primary btn-sm" onclick="saveFileContent()" style="font-size:11px">Save</button>');
-        } else if (!state.fileUnsaved && existing) {
-          existing.remove();
-        }
-      }
-    });
-    editor.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        saveFileContent();
-      }
-      if (e.key === 'Escape') {
-        toggleFileEdit();
-      }
-      if (e.key === 'Tab') {
-        e.preventDefault();
-        const start = editor.selectionStart;
-        const end = editor.selectionEnd;
-        editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
-        editor.selectionStart = editor.selectionEnd = start + 2;
-        editor.dispatchEvent(new Event('input'));
-      }
-    });
-  } else if (isJson) {
-    body.innerHTML = `<div class="json-content">${syntaxHighlightJson(displayContent)}</div>`;
-  } else {
-    body.innerHTML = `<div class="md-content">${renderMarkdown(displayContent)}</div>`;
-  }
-  requestAnimationFrame(applyFileScrollbars);
-}
-
-// --- Markdown Renderer (simple, no external deps) ---
-function renderMarkdown(text) {
-  let html = escHtml(text);
-
-  // Code blocks (```...```) — protect from paragraph wrapping
-  const codeBlocks = [];
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    const placeholder = `<!--CODEBLOCK${codeBlocks.length}-->`;
-    codeBlocks.push(`<pre><code class="language-${lang}">${code.trim()}</code></pre>`);
-    return placeholder;
-  });
-
-  // Inline code
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-
-  // Headers
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // Bold + Italic
-  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // Blockquotes
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-  // Horizontal rules
-  html = html.replace(/^---$/gm, '<hr>');
-
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-
-  // Images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
-
-  // Tables
-  html = html.replace(/^(\|.+\|)\n(\|[-:\s|]+\|)\n((?:\|.+\|\n?)*)/gm, (_, header, sep, body) => {
-    const ths = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
-    const rows = body.trim().split('\n').map(row => {
-      const tds = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
-      return `<tr>${tds}</tr>`;
-    }).join('');
-    return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
-  });
-
-  // Unordered lists
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-  // Ordered lists
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-
-  // Paragraphs — wrap remaining text lines
-  html = html.replace(/^(?!<[a-z/]|$)(.+)$/gm, '<p>$1</p>');
-
-  // Clean up multiple <p> around block elements
-  html = html.replace(/<p>(<h[1-4]|<pre|<blockquote|<ul|<ol|<table|<hr|<!--CODEBLOCK)/g, '$1');
-  html = html.replace(/(<\/h[1-4]>|<\/pre>|<\/blockquote>|<\/ul>|<\/ol>|<\/table>|<hr>|<!--CODEBLOCK\d+-->)<\/p>/g, '$1');
-
-  // Restore code blocks
-  codeBlocks.forEach((block, i) => {
-    html = html.replace(`<!--CODEBLOCK${i}-->`, block);
-  });
-
-  // HTML comments (hide)
-  html = html.replace(/&lt;!--[\s\S]*?--&gt;/g, '');
-
-  return html;
-}
-
-// --- JSON Syntax Highlighting ---
-function syntaxHighlightJson(text) {
-  try {
-    const obj = JSON.parse(text);
-    const formatted = JSON.stringify(obj, null, 2);
-    return escHtml(formatted)
-      .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
-      .replace(/: "([^"]*)"/g, ': <span class="json-string">"$1"</span>')
-      .replace(/: (\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
-      .replace(/: (true|false)/g, ': <span class="json-bool">$1</span>')
-      .replace(/: (null)/g, ': <span class="json-null">$1</span>');
-  } catch {
-    return `<pre>${escHtml(text)}</pre>`;
-  }
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-}
-
-// --- Custom Scrollbar ---
-// Two modes:
-// 1. cscrollWrap(el) — wraps el, track on wrapper. For static elements.
-// 2. cscrollBind(scrollEl, trackHost) — track on trackHost, listens to scrollEl. For dynamic content.
-
-function _makeTrack() {
-  const track = document.createElement('div');
-  track.className = 'cscroll-track';
-  const thumb = document.createElement('div');
-  thumb.className = 'cscroll-thumb';
-  track.appendChild(thumb);
-  return { track, thumb };
-}
-
-function _bindScroll(scrollEl, track, thumb) {
-  let dragging = false, startY = 0, startScroll = 0;
-  function update() {
-    const sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight;
-    if (sh <= ch + 1) { track.classList.add('hidden'); return; }
-    track.classList.remove('hidden');
-    const trackH = track.clientHeight;
-    const thumbH = Math.max(24, trackH * (ch / sh));
-    const scrollRatio = scrollEl.scrollTop / (sh - ch);
-    thumb.style.height = thumbH + 'px';
-    thumb.style.top = (scrollRatio * (trackH - thumbH)) + 'px';
-  }
-  scrollEl.addEventListener('scroll', update, { passive: true });
-  new ResizeObserver(update).observe(scrollEl);
-  // Detect content changes (e.g. project switch replaces inner HTML)
-  new MutationObserver(update).observe(scrollEl, { childList: true, subtree: true });
-  thumb.addEventListener('mousedown', (e) => {
-    e.preventDefault(); e.stopPropagation();
-    dragging = true; startY = e.clientY; startScroll = scrollEl.scrollTop;
-    thumb.classList.add('dragging');
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight, trackH = track.clientHeight;
-    const thumbH = Math.max(24, trackH * (ch / sh));
-    scrollEl.scrollTop = startScroll + (e.clientY - startY) * ((sh - ch) / (trackH - thumbH));
-  });
-  window.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false; thumb.classList.remove('dragging');
-  });
-  track.addEventListener('mousedown', (e) => {
-    if (e.target === thumb) return;
-    const rect = track.getBoundingClientRect();
-    scrollEl.scrollTop = ((e.clientY - rect.top) / rect.height) * (scrollEl.scrollHeight - scrollEl.clientHeight);
-  });
-  // Double-rAF ensures layout is fully resolved before first measurement
-  requestAnimationFrame(() => requestAnimationFrame(update));
-  return update;
-}
-
-// Mode 1: wrap element (for static DOM elements like sidebar, kanban columns)
-function cscrollWrap(el) {
-  if (!el || el.classList.contains('cscroll-inner')) return;
-  const wrap = document.createElement('div');
-  wrap.className = 'cscroll-wrap';
-  const cs = getComputedStyle(el);
-  if (cs.flex && cs.flex !== '0 1 auto') wrap.style.flex = cs.flex;
-  wrap.style.overflow = 'hidden';
-  el.parentNode.insertBefore(wrap, el);
-  wrap.appendChild(el);
-  el.classList.add('cscroll-inner');
-  el.style.overflowY = 'auto';
-  const { track, thumb } = _makeTrack();
-  wrap.appendChild(track);
-  const updateFn = _bindScroll(el, track, thumb);
-  wrap._cscrollUpdate = updateFn;
-}
-
-// Mode 2: track on host, scroll from dynamic child (host must be position:relative)
-// Returns cleanup fn. Call each render cycle — reuses existing track if present.
-function cscrollBind(scrollEl, trackHost) {
-  if (!scrollEl || !trackHost) return;
-  trackHost.style.position = 'relative';
-  // Remove old track if present
-  const old = trackHost.querySelector(':scope > .cscroll-track');
-  if (old) old.remove();
-  const { track, thumb } = _makeTrack();
-  trackHost.appendChild(track);
-  _bindScroll(scrollEl, track, thumb);
-}
-
-// Apply to static elements — called once
-let _staticDone = false;
-function applyStaticScrollbars() {
-  if (_staticDone) return;
-  // Wrap content area with custom scrollbar
-  const content = document.getElementById('content');
-  if (content && !content.classList.contains('cscroll-inner')) {
-    cscrollWrap(content);
-    // Fix grid positioning for wrapper
-    const wrap = content.parentElement;
-    if (wrap && wrap.classList.contains('cscroll-wrap')) {
-      wrap.style.gridRow = '3';
-      wrap.style.overflow = 'hidden';
-      wrap.classList.add('content-wrapper');
-    }
-  }
-  _staticDone = true;
-  // Now toggle scrollbar visibility based on current tab
-  updateContentScrollbarVisibility();
-}
-
-function updateContentScrollbarVisibility() {
-  const wrap = document.querySelector('.content-wrapper');
-  const contentTrack = wrap && wrap.querySelector(':scope > .cscroll-track');
-  if (contentTrack) {
-    if (state.currentTab === 'tasks') {
-      // Remove forced hide, let .hidden class control visibility
-      contentTrack.style.display = '';
-      // Re-measure after content change (project switch, data update)
-      if (wrap._cscrollUpdate) {
-        requestAnimationFrame(() => requestAnimationFrame(wrap._cscrollUpdate));
-      }
-    } else {
-      contentTrack.style.display = 'none';
-    }
-  }
-}
-
-// Apply to file explorer dynamic elements
-function applyFileScrollbars() {
-  // File tree: track on .file-tree, scroll on .file-tree-items
-  const tree = document.querySelector('.file-tree');
-  const treeItems = document.querySelector('.file-tree-items');
-  if (tree && treeItems) cscrollBind(treeItems, tree);
-
-  // File preview: depends on editing mode
-  const preview = document.getElementById('filePreview');
-  if (!preview) return;
-
-  if (state.fileEditing) {
-    // Editor textarea scrolls, track on #filePreview
-    const editor = document.querySelector('.file-editor');
-    if (editor) cscrollBind(editor, preview);
-  } else {
-    // Preview body scrolls, track on #filePreview
-    const body = document.querySelector('.file-preview-body');
-    if (body) cscrollBind(body, preview);
-  }
-}
-
-// Patch renderAll
-const _origRenderAll = renderAll;
-renderAll = function() {
-  _origRenderAll();
-  requestAnimationFrame(applyStaticScrollbars);
-};
 
 // --- Init ---
 async function init() {
