@@ -8,6 +8,8 @@
 
 Stop re-explaining context. Work on multiple projects with persistent state, structured task tracking, and a beautiful live dashboard — without needing separate agents.
 
+![FlowBoard Dashboard](docs/screenshot-kanban.png)
+
 ---
 
 ## The Problem
@@ -40,8 +42,6 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 - 🔗 **API-Based Switching** — Dashboard + chat use same API, instant context loading
 - 💾 **Session Persistence** — Project context survives gateway restarts
 - 🚀 **Zero Overhead** — Lazy-loading, only active when needed
-
-![FlowBoard Dashboard](docs/screenshot-kanban.png)
 
 ---
 
@@ -169,6 +169,8 @@ The Kanban dashboard provides:
 - **Context Health:** File size tracking with warnings
 
 **Access:** http://localhost:18790
+
+The file explorer lets you browse your entire project structure, preview Markdown and JSON files with syntax highlighting, and edit files inline — all without leaving the dashboard.
 
 ![FlowBoard File Explorer](docs/screenshot-files.png)
 
