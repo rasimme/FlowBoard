@@ -6,7 +6,7 @@
 
 > **File-based project management with Kanban dashboard for OpenClaw agents.**
 
-Stop re-explaining context. Work on multiple projects with persistent state, structured task tracking, and a beautiful live dashboard — without needing separate agents.
+Stop re-explaining context. Work on multiple projects with persistent state, structured task tracking, and a beautiful live dashboard, without needing separate agents.
 
 ![FlowBoard Dashboard](docs/screenshot-kanban.png)
 
