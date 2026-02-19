@@ -1,0 +1,12 @@
+{
+  "name": "flowboard-dashboard",
+  "version": "2.5.0",
+  "description": "FlowBoard Kanban Dashboard for OpenClaw",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

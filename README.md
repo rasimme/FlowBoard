@@ -49,33 +49,54 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 ## Quick Start
 
 ```bash
-# 1. Clone into your OpenClaw workspace
+# 1. Clone the repo
+git clone https://github.com/rasimme/FlowBoard.git
+cd FlowBoard
+
+# 2. Set up your workspace structure
 cd ~/.openclaw/workspace
-git clone https://github.com/rasimme/FlowBoard.git projects/project-mode
 
-# 2. Set up AGENTS.md trigger
-# Add to your ~/.openclaw/workspace/AGENTS.md:
+# Copy project rules and templates
+cp FlowBoard/files/ACTIVE-PROJECT.md .
+cp -r FlowBoard/files/projects .
 
-## Projects (MANDATORY)
-MANDATORY on EVERY first message: read `ACTIVE-PROJECT.md`.
-- If active: read `projects/PROJECT-RULES.md`, then the project's `PROJECT.md`
-- If empty: work normally
+# 3. Add trigger to AGENTS.md (top of file)
+cat FlowBoard/snippets/AGENTS-trigger.md
+# → Copy that block into your ~/.openclaw/workspace/AGENTS.md
 
-Commands: "Project: [Name]" | "End project" | "Projects"
-
-# 3. Create project structure
-mkdir -p ~/.openclaw/workspace/projects
-cp -r projects/project-mode/templates/* ~/.openclaw/workspace/projects/
-
-# 4. Start dashboard (optional)
-cd ~/.openclaw/workspace/canvas
-cp -r ../projects/project-mode/dashboard/* .
+# 4. Set up dashboard
+mkdir -p canvas
+cp -r FlowBoard/dashboard/* canvas/
+cd canvas
+npm install
 node server.js &
 ```
 
 Open http://localhost:18790 to see your Kanban board.
 
-**For production:** Set up a systemd service for auto-start (see docs/).
+### Expected folder structure after setup
+```
+~/.openclaw/workspace/
+├── AGENTS.md                    # With project trigger block
+├── ACTIVE-PROJECT.md            # "project: none"
+├── projects/
+│   ├── PROJECT-RULES.md         # Rules (from files/)
+│   └── _index.md                # Project registry
+└── canvas/
+    ├── server.js                # Dashboard API
+    ├── index.html               # Dashboard UI
+    ├── js/                      # JS modules
+    ├── styles/                  # CSS
+    └── node_modules/            # npm dependencies
+```
+
+### Create your first project
+Tell your agent: `New project: my-project`
+
+**For production:** Set up a systemd service for auto-start:
+```bash
+# See docs/ for a systemd unit file example
+```
 
 ---
 
