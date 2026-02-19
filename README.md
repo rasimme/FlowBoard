@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-FlowBoard-blue?logo=github)](https://github.com/rasimme/FlowBoard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v2.4.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
+[![Version](https://img.shields.io/badge/version-v2.5.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
 
 > **File-based project management with Kanban dashboard for OpenClaw agents.**
 
@@ -35,8 +35,9 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 ## Features
 
 - 📋 **Task Management** - Structured `tasks.json` with status workflow (open → in-progress → review → done)
+- 📄 **Spec Files** - Optional detailed specs for complex tasks (`specs/` folder, template scaffolding)
 - 🎯 **Kanban Dashboard** - Interactive web UI with drag & drop, inline editing, auto-refresh
-- 📁 **File Explorer** - Browse, preview, and edit project files directly in the dashboard
+- 📁 **File Explorer** - Browse, preview, and edit project files with auto-refresh
 - 🔄 **Live Task Workflow** - Agent updates task status as it works
 - ✨ **Auto-task Creation** - Agent breaks down work into tasks automatically
 - 🔗 **API-Based Switching** - Dashboard + chat use same API, instant context loading
@@ -101,7 +102,8 @@ Open http://localhost:18790 to see your Kanban board.
 │   ├── my-project/
 │   │   ├── PROJECT.md                 # Project context
 │   │   ├── tasks.json                 # Task tracking
-│   │   └── context/                   # Specs, docs, etc.
+│   │   ├── context/                   # Project-level docs
+│   │   └── specs/                     # Task spec files (created lazily)
 │   └── another-project/
 │       └── ...
 └── canvas/                            # Dashboard
@@ -137,8 +139,9 @@ Each project gets a `tasks.json`:
       "title": "Set up authentication",
       "status": "in-progress",
       "priority": "high",
-      "created": "2026-02-10T10:00:00Z",
-      "updated": "2026-02-10T14:30:00Z"
+      "specFile": "specs/T-001-auth.md",
+      "created": "2026-02-10",
+      "completed": null
     }
   ]
 }
@@ -162,8 +165,10 @@ open → in-progress → review → done
 The Kanban dashboard provides:
 
 - **Tasks View:** Drag & drop kanban board with 4 columns
+- **Spec Badges:** Lucide SVG icon on cards — click to open spec, hover to create
 - **Files View:** File tree with Markdown/JSON preview and inline editing
-- **Live Updates:** Auto-refresh every 5 seconds
+- **File Auto-Refresh:** Detects new, modified, and deleted files automatically
+- **Live Updates:** Auto-refresh every 5 seconds (fingerprint-based diff)
 - **Inline Editing:** Click to edit, drag to change status
 - **Priority Management:** Visual indicators with popover selector
 - **Context Health:** File size tracking with warnings
@@ -177,6 +182,16 @@ The file explorer lets you browse your entire project structure, preview Markdow
 ---
 
 ## Changelog
+
+### v2.5.0 (2026-02-19) - Spec Files & Auto-Refresh
+- **Spec file system** - Optional `specs/` folder for complex tasks with template scaffolding
+- **Spec UI integration** - Lucide SVG badge on task cards (click to open, hover to create)
+- **File auto-refresh** - File explorer auto-updates on create/modify/delete (fingerprint-based polling)
+- **Auto-expand directories** - Opening a file via badge auto-expands parent dirs in tree
+- **Deleted file handling** - Auto-opens first file when selected file is deleted
+- **Priority popover fix** - Correct horizontal layout
+- **Design guidelines** - Documented design system reference (Gateway Dashboard alignment)
+- **Spec API** - `POST /api/projects/:name/specs/:taskId` for programmatic spec creation
 
 ### v2.4.0 (2026-02-15) - Modular Frontend
 - **JavaScript module refactoring** - Separated Kanban and File Explorer into clean modules
