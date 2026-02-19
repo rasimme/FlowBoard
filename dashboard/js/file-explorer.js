@@ -36,6 +36,11 @@ export async function loadFileContent(filePath, state) {
     fileState.fileEditing = false;
     fileState.fileUnsaved = false;
     fileState.fileEditedContent = null;
+    // Auto-expand all parent directories so file is visible in tree
+    const parts = filePath.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      fileState.expandedDirs.add(parts.slice(0, i).join('/'));
+    }
     renderFileTree();
     renderFilePreview();
   } catch (err) {
@@ -105,7 +110,7 @@ export async function renderFileExplorer(state) {
   }
 }
 
-function renderFileTree() {
+export function renderFileTree() {
   const container = document.getElementById('fileTreeItems');
   if (!container || !fileState.fileTree) return;
 

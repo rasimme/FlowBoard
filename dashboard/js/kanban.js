@@ -178,8 +178,15 @@ function updateCardContent(card, task) {
   }
 }
 
+// Lucide-style SVG icons (24x24, stroke-based, matching Gateway Dashboard)
+const ICON_SPEC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13h4"/><path d="M10 17h4"/></svg>`;
+const ICON_SPEC_ADD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>`;
+
 function cardInnerHTML(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
+  const specBadge = task.specFile
+    ? `<span class="spec-badge" onclick="window.openSpec('${escHtml(task.specFile)}')" title="Open spec file">${ICON_SPEC}</span>`
+    : `<span class="spec-badge spec-badge-add" onclick="window.createSpec('${task.id}')" title="Create spec file">${ICON_SPEC_ADD}</span>`;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
       <button class="delete-btn" onclick="window.startDelete('${task.id}', '${escHtml(task.title)}')" title="Delete">
@@ -196,6 +203,7 @@ function cardInnerHTML(task) {
       <span class="priority-pill-wrap">
         <span class="priority-pill priority-${task.priority}" onclick="window.togglePriorityPopover(event, '${task.id}', '${task.priority}')">${task.priority}</span>
       </span>
+      ${specBadge}
     </div>`;
 }
 
@@ -350,6 +358,20 @@ export async function confirmDelete(id, state) {
     state.tasks = state.tasks.filter(t => t.id !== id);
     toast('Task deleted', 'success');
     return true; // Signal re-render
+  }
+}
+
+// --- Spec files ---
+export async function createSpec(taskId, state) {
+  const res = await api(`/projects/${state.viewedProject}/specs/${taskId}`, { method: 'POST' });
+  if (res.ok) {
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task) task.specFile = res.specFile;
+    toast(`Spec created for ${taskId}`, 'success');
+    return res.specFile; // Signal to open it
+  } else {
+    toast(res.error || 'Failed to create spec', 'error');
+    return null;
   }
 }
 

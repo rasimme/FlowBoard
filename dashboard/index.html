@@ -54,12 +54,12 @@ import { api, toast, showModal, escHtml, formatDisplayName, updateTimestamp } fr
 import { 
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd, selectPriority, 
   onAddKey, createTask, startEdit, onTitleKey, saveTitle, togglePriorityPopover, setPriority,
-  startDelete, confirmDelete, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
+  startDelete, confirmDelete, createSpec, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
   renderTabBarRight
 } from './js/kanban.js';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir,
-  renderFileExplorer, applyStaticScrollbars, updateContentScrollbarVisibility
+  renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
 } from './js/file-explorer.js';
 
 // Global state
@@ -77,6 +77,20 @@ window.appState = state;
 let prevProjectsJson = '';
 let prevTasksJson = '';
 let prevActiveProject = null;
+let prevFilesMeta = null; // flat [{path, mtime, size}] for change detection
+
+// Extract flat file fingerprint from a file tree for diffing
+function getFilesMeta(tree) {
+  const files = [];
+  function walk(entries) {
+    for (const e of entries) {
+      if (e.type === 'file') files.push({ path: e.path, mtime: e.modified, size: e.size });
+      if (e.children) walk(e.children);
+    }
+  }
+  walk(tree || []);
+  return files.sort((a, b) => a.path.localeCompare(b.path));
+}
 
 // --- Sidebar toggle ---
 window.toggleSidebar = function() {
@@ -148,6 +162,7 @@ window.viewProject = async function(name) {
   fileState.fileTree = null;
   fileState.selectedFile = null;
   fileState.fileContent = null;
+  prevFilesMeta = null; // Reset so next refresh re-baselines for new project
   const data = await api(`/projects/${name}/tasks`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
@@ -239,6 +254,22 @@ window.onDragOver = onDragOver;
 window.onDragLeave = onDragLeave;
 window.onDrop = function(e) { onDrop(e, state); };
 
+// --- Spec File Actions ---
+window.openSpec = function(specPath) {
+  window.switchTab('files');
+  setTimeout(() => loadFileContent(specPath, state), 100);
+};
+window.createSpec = function(taskId) {
+  createSpec(taskId, state).then(specFile => {
+    if (specFile) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
+      window.switchTab('files');
+      setTimeout(() => loadFileContent(specFile, state), 100);
+    }
+  });
+};
+
 // --- File Explorer Actions ---
 window.loadFileContent = function(path) { loadFileContent(path, state); };
 window.saveFileContent = function() { saveFileContent(state); };
@@ -284,6 +315,29 @@ async function refresh() {
       }
     }
 
+    // --- File tree polling (always, silent update; render only when on files tab) ---
+    let filesChanged = false;
+    let changedFilePath = null;
+    if (state.viewedProject) {
+      try {
+        const filesData = await api(`/projects/${state.viewedProject}/files`);
+        const newMeta = getFilesMeta(filesData.tree);
+        const newMetaJson = JSON.stringify(newMeta);
+        const prevMetaJson = JSON.stringify(prevFilesMeta);
+        if (newMetaJson !== prevMetaJson) {
+          filesChanged = true;
+          // Detect if the currently open file changed
+          if (fileState.selectedFile && prevFilesMeta) {
+            const prev = prevFilesMeta.find(f => f.path === fileState.selectedFile);
+            const next = newMeta.find(f => f.path === fileState.selectedFile);
+            if (next && (!prev || prev.mtime !== next.mtime)) changedFilePath = fileState.selectedFile;
+          }
+          prevFilesMeta = newMeta;
+          fileState.fileTree = filesData; // Update silently (no extra fetch on tab switch)
+        }
+      } catch (e) { /* silent */ }
+    }
+
     if (isUserInteracting() && !projectsChanged) {
       updateTimestamp();
       return;
@@ -291,6 +345,23 @@ async function refresh() {
 
     if (projectsChanged) { renderSidebar(); renderHeader(); }
     if (tasksChanged && state.currentTab === 'tasks') { updateBoard(state); }
+
+    if (filesChanged && state.currentTab === 'files') {
+      renderFileTree(); // Diff-update tree (new/deleted/renamed files appear instantly)
+
+      // Selected file was deleted → auto-open first available file (same pattern as init)
+      const selectedGone = fileState.selectedFile && !prevFilesMeta?.find(f => f.path === fileState.selectedFile);
+      if (selectedGone) {
+        fileState.selectedFile = null;
+        fileState.fileContent = null;
+        const firstFile = fileState.fileTree?.tree?.find(e => e.type === 'file');
+        if (firstFile) loadFileContent(firstFile.path, state);
+      } else if (changedFilePath && !fileState.fileEditing) {
+        // Reload content if open file changed and not currently editing
+        loadFileContent(changedFilePath, state);
+      }
+    }
+
     updateTimestamp();
   } catch (err) {
     console.error('Refresh error:', err);
@@ -312,6 +383,13 @@ async function init() {
     const taskData = await api(`/projects/${state.viewedProject}/tasks`);
     state.tasks = taskData.tasks || [];
     prevTasksJson = JSON.stringify(state.tasks);
+
+    // Initialize file meta baseline so first refresh doesn't false-positive
+    try {
+      const filesData = await api(`/projects/${state.viewedProject}/files`);
+      fileState.fileTree = filesData;
+      prevFilesMeta = getFilesMeta(filesData.tree);
+    } catch (e) { /* silent */ }
   }
 
   renderAll();
