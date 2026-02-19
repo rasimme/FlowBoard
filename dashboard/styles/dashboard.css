@@ -281,6 +281,21 @@
 
     .task-meta { display: flex; align-items: center; justify-content: space-between; }
 
+    .spec-badge {
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: var(--radius-sm);
+      color: var(--accent); background: var(--accent-subtle);
+      border: 1px solid rgba(255, 92, 92, 0.2);
+      transition: all var(--duration-fast);
+    }
+    .spec-badge:hover { background: rgba(255, 92, 92, 0.25); border-color: rgba(255, 92, 92, 0.4); }
+    .spec-badge-add {
+      opacity: 0; color: var(--muted); background: transparent;
+      border: 1px solid transparent;
+    }
+    .task-card:hover .spec-badge-add { opacity: 0.5; border-color: var(--border); }
+    .task-card:hover .spec-badge-add:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
+
     .priority-pill {
       display: inline-flex; padding: 4px 10px; border-radius: var(--radius-full);
       font-size: 11px; font-weight: 500; cursor: pointer;
@@ -292,13 +307,14 @@
 
     .priority-popover {
       position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-      display: flex; gap: 4px; padding: 6px;
+      display: flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; padding: 6px;
+      width: max-content;
       background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
       box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
       z-index: 100;
       animation: popIn var(--duration-fast) var(--ease-out);
     }
-    .priority-popover .priority-pill { opacity: 0.5; transition: opacity var(--duration-fast); }
+    .priority-popover .priority-pill { opacity: 0.5; transition: opacity var(--duration-fast); white-space: nowrap; }
     .priority-popover .priority-pill:hover { opacity: 1; }
     .priority-popover .priority-pill.current { opacity: 1; }
     .priority-pill-wrap { position: relative; }

@@ -436,6 +436,45 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
   }
 });
 
+// POST /api/projects/:name/specs/:taskId — scaffold a new spec file
+app.post('/api/projects/:name/specs/:taskId', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+
+  const taskId = req.params.taskId;
+  const tasksFile = path.join(projectDir, 'tasks.json');
+  if (!fs.existsSync(tasksFile)) return res.status(404).json({ error: 'tasks.json not found' });
+
+  const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+  const task = tasksData.tasks.find(t => t.id === taskId);
+  if (!task) return res.status(404).json({ error: `Task ${taskId} not found` });
+  if (task.specFile) return res.status(409).json({ error: 'Task already has a spec file', specFile: task.specFile });
+
+  // Generate slug from title
+  const slug = task.title.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 40)
+    .replace(/-$/, '');
+
+  const specFilename = `${taskId}-${slug}.md`;
+  const specsDir = path.join(projectDir, 'specs');
+  fs.mkdirSync(specsDir, { recursive: true });
+
+  const specPath = path.join(specsDir, specFilename);
+  const date = new Date().toISOString().slice(0, 10);
+  const template = `# ${taskId}: ${task.title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Approach\n\n\n## Log\n- ${date}: Spec created\n`;
+
+  fs.writeFileSync(specPath, template);
+
+  // Link spec to task
+  task.specFile = `specs/${specFilename}`;
+  fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
+
+  res.json({ ok: true, specFile: task.specFile, taskId });
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`Dashboard API running on http://${HOST}:${PORT}`);
 });
