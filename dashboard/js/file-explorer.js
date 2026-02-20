@@ -31,6 +31,11 @@ export async function loadFileContent(filePath, state) {
   if (!state.viewedProject) return;
   try {
     const data = await api(`/projects/${state.viewedProject}/files/${filePath}`);
+    if (data?.error) {
+      toast(`Datei nicht gefunden: ${filePath}`, 'warn');
+      console.warn('Failed to load file:', data.error);
+      return;
+    }
     fileState.fileContent = data;
     fileState.selectedFile = filePath;
     fileState.fileEditing = false;
@@ -44,6 +49,7 @@ export async function loadFileContent(filePath, state) {
     renderFileTree();
     renderFilePreview();
   } catch (err) {
+    toast(`Fehler beim Laden: ${filePath}`, 'error');
     console.error('Failed to load file:', err);
   }
 }

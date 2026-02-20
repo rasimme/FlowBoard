@@ -255,7 +255,11 @@ window.onDragLeave = onDragLeave;
 window.onDrop = function(e) { onDrop(e, state); };
 
 // --- Spec File Actions ---
-window.openSpec = function(specPath) {
+window.openSpec = function(specPath, taskId) {
+  if (!specPath) {
+    toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
+    return;
+  }
   window.switchTab('files');
   setTimeout(() => loadFileContent(specPath, state), 100);
 };
