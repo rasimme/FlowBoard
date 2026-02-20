@@ -184,8 +184,9 @@ const ICON_SPEC_ADD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="non
 
 function cardInnerHTML(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
-  const specBadge = task.specFile
-    ? `<span class="spec-badge" onclick="window.openSpec('${escHtml(task.specFile)}')" title="Open spec file">${ICON_SPEC}</span>`
+  const hasUsableSpec = task.specFile && task.specExists !== false;
+  const specBadge = hasUsableSpec
+    ? `<span class="spec-badge" onclick="window.openSpec('${escHtml(task.specFile)}', '${task.id}')" title="Open spec file">${ICON_SPEC}</span>`
     : `<span class="spec-badge spec-badge-add" onclick="window.createSpec('${task.id}')" title="Create spec file">${ICON_SPEC_ADD}</span>`;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>

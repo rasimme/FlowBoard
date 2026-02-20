@@ -51,6 +51,17 @@ function readTasksFile(projectName) {
   } catch { return null; }
 }
 
+function taskWithSpecStatus(projectName, task) {
+  const specFile = task?.specFile;
+  const hasSpec = Boolean(specFile);
+  const specExists = hasSpec && fs.existsSync(path.join(PROJECTS_DIR, projectName, specFile));
+  return { ...task, specExists };
+}
+
+function enrichTasks(projectName, tasks = []) {
+  return tasks.map(task => taskWithSpecStatus(projectName, task));
+}
+
 function writeTasksFile(projectName, data) {
   const file = path.join(PROJECTS_DIR, projectName, 'tasks.json');
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
@@ -201,7 +212,7 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/:name/tasks', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  res.json(data);
+  res.json({ ...data, tasks: enrichTasks(req.params.name, data.tasks) });
 });
 
 // POST /api/projects/:name/tasks
@@ -223,7 +234,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
-    res.json({ ok: true, task });
+    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -236,6 +247,24 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   const task = data.tasks.find(t => t.id === req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const updates = req.body;
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'specFile')) {
+    const nextSpec = updates.specFile;
+    if (nextSpec !== null) {
+      if (typeof nextSpec !== 'string' || !nextSpec.trim()) {
+        return res.status(400).json({ error: 'specFile must be a non-empty string or null' });
+      }
+      const resolvedSpec = path.resolve(PROJECTS_DIR, req.params.name, nextSpec);
+      const projectRoot = path.resolve(PROJECTS_DIR, req.params.name) + path.sep;
+      if (!resolvedSpec.startsWith(projectRoot)) {
+        return res.status(400).json({ error: 'specFile path traversal not allowed' });
+      }
+      if (!fs.existsSync(resolvedSpec) || fs.statSync(resolvedSpec).isDirectory()) {
+        return res.status(400).json({ error: `specFile target not found: ${nextSpec}` });
+      }
+    }
+  }
+
   if (updates.status === 'done' && task.status !== 'done') {
     updates.completed = new Date().toISOString().slice(0, 10);
   }
@@ -246,7 +275,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
-    res.json({ ok: true, task });
+    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -448,7 +477,13 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
   const task = tasksData.tasks.find(t => t.id === taskId);
   if (!task) return res.status(404).json({ error: `Task ${taskId} not found` });
-  if (task.specFile) return res.status(409).json({ error: 'Task already has a spec file', specFile: task.specFile });
+  if (task.specFile) {
+    const existingSpec = path.join(projectDir, task.specFile);
+    if (fs.existsSync(existingSpec) && !fs.statSync(existingSpec).isDirectory()) {
+      return res.status(409).json({ error: 'Task already has a spec file', specFile: task.specFile });
+    }
+    // stale link: allow recreation and relink to a fresh spec file
+  }
 
   // Generate slug from title
   const slug = task.title.toLowerCase()
@@ -472,7 +507,7 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   task.specFile = `specs/${specFilename}`;
   fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
 
-  res.json({ ok: true, specFile: task.specFile, taskId });
+  res.json({ ok: true, specFile: task.specFile, taskId, task: taskWithSpecStatus(req.params.name, task) });
 });
 
 app.listen(PORT, HOST, () => {
