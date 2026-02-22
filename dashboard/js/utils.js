@@ -18,6 +18,23 @@ export async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
   if (res.status === 403) {
+    // Try to re-auth with Telegram initData before showing error
+    const tg = window.Telegram?.WebApp;
+    if (tg?.initData) {
+      const reauth = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'X-Telegram-Init-Data': tg.initData }
+      });
+      if (reauth.ok) {
+        // Re-auth succeeded — retry original request
+        const retry = await fetch(API + path, {
+          headers: { 'Content-Type': 'application/json' },
+          ...opts,
+          body: opts.body ? JSON.stringify(opts.body) : undefined
+        });
+        if (retry.ok) return retry.json();
+      }
+    }
     document.getElementById('content').innerHTML = `
       <div class="empty-state" style="flex-direction:column;gap:12px">
         <span style="font-size:32px">🔒</span>

@@ -72,7 +72,7 @@ function telegramAuthMiddleware(req, res, next) {
   }
   const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
   res.cookie('flowboard_session', sessionToken, {
-    httpOnly: true, secure: true, sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000
+    httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
   });
   req.user = user;
   next();
