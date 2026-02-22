@@ -4,6 +4,8 @@ const path = require('path');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+const cors = require('cors');
 
 const app = express();
 const PORT = 18790;
@@ -77,30 +79,51 @@ function telegramAuthMiddleware(req, res, next) {
 app.use(cookieParser());
 app.use(express.json());
 
-// CORS — nur eigene Domain wenn konfiguriert, sonst offen (lokaler Zugriff)
-app.use((req, res, next) => {
-  const origin = DASHBOARD_ORIGIN || '*';
-  res.header('Access-Control-Allow-Origin', origin);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, X-Telegram-Init-Data');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
-  next();
-});
+// CORS — eigene Domain wenn konfiguriert, sonst wildcard (lokaler Zugriff)
+if (DASHBOARD_ORIGIN) {
+  app.use(cors({
+    origin: DASHBOARD_ORIGIN,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data']
+  }));
+} else {
+  app.use(cors());
+}
 
-// No-cache für JS/HTML + Security Headers
+// Rate Limiting — max 60 Requests/Minute pro IP auf API-Routen
+app.use('/api/', rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please slow down.' }
+}));
+
+// Security + Cache Headers
 app.use((req, res, next) => {
+  // No-cache für JS/HTML
   if (req.path.endsWith('.js') || req.path.endsWith('.html') || req.path === '/') {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   }
+  // Security Headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'",
+    "script-src 'self' https://telegram.org",
+    "connect-src 'self'",
+    "img-src 'self' data: https://t.me",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' https://fonts.gstatic.com",
+    "frame-ancestors 'self' https://web.telegram.org"
+  ].join('; '));
   next();
 });
 
 app.use(express.static(__dirname));
 
-// Auth-Endpoint (muss vor dem generellen API-Auth stehen)
+// Auth-Endpoint (vor dem generellen API-Auth)
 app.post('/api/auth', telegramAuthMiddleware, (req, res) => {
   res.json({ ok: true, user: req.user });
 });
