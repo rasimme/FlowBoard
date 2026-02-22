@@ -25,9 +25,10 @@ When the user says "Projekt: [Name]":
 
 When the user says "Projekt beenden":
 1. Write session summary to PROJECT.md Session Log:
-   - What was done
-   - What's next
-   - Open questions
+   - **ALWAYS APPEND** a new entry — NEVER try to find/edit existing text (brittle, fails when file changed)
+   - Use Write tool to read full file, then rewrite with new entry prepended under `## Session Log`
+   - Or append directly after `## Session Log` header using a unique marker
+   - Format: `### YYYY-MM-DD\n- **Was wurde gemacht:** ...\n- **Was ist als Nächstes dran:** ...\n- **Offene Fragen:** ...`
 2. Call API to deactivate:
    ```bash
    curl -X PUT http://localhost:18790/api/status \
@@ -140,6 +141,11 @@ open → in-progress → review → done
 - Created via Dashboard ("+ 📋" on task card) or API: `POST /api/projects/:name/specs/:taskId`
 - `specFile` field in tasks.json links to the relative path (set automatically)
 - `specs/` folder is created lazily on first spec
+
+⚠️ **Planning files always live in `~/.openclaw/workspace/projects/<name>/`** — NOT in the project's git repo.
+The dashboard reads/writes from this directory. When writing spec content with the Write tool, always use the `.openclaw` path:
+- ✅ `~/.openclaw/workspace/projects/<name>/specs/T-xxx-....md`
+- ❌ `~/workspace/projects/<name>/specs/T-xxx-....md` (git repo — wrong!)
 
 **When to create a spec:**
 - Task requires planning or multiple steps before execution
