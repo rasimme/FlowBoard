@@ -43,6 +43,7 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 - 🔗 **API-Based Switching** - Dashboard + chat use same API, instant context loading
 - 💾 **Session Persistence** - Project context survives gateway restarts
 - 🚀 **Zero Overhead** - Lazy-loading, only active when needed
+- 📱 **Telegram Mini App** - Optional remote access via secure tunnel, auth, and mobile-optimized UI
 
 ---
 
