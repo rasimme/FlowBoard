@@ -50,17 +50,17 @@
 <div id="modalRoot"></div>
 
 <script type="module">
-import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames, updateTimestamp } from './js/utils.js';
+import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames, updateTimestamp } from './js/utils.js?v=2';
 import { 
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd, selectPriority, 
   onAddKey, createTask, startEdit, onTitleKey, saveTitle, togglePriorityPopover, setPriority,
   startDelete, confirmDelete, createSpec, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
   renderTabBarRight
-} from './js/kanban.js';
+} from './js/kanban.js?v=2';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
-} from './js/file-explorer.js';
+} from './js/file-explorer.js?v=2';
 
 // Global state
 const state = {
