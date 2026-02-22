@@ -1,0 +1,20 @@
+# Systemd user service for FlowBoard dashboard
+# Copy to ~/.local/share/systemd/user/dashboard.service
+# Then: systemctl --user daemon-reload && systemctl --user enable --now dashboard
+
+[Unit]
+Description=FlowBoard Project Dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/FlowBoard/dashboard
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+Environment="OPENCLAW_WORKSPACE=/path/to/.openclaw/workspace"
+Environment="OPENCLAW_GATEWAY_PORT=18789"
+# For auth, create a drop-in: see templates/systemd-auth.conf.example
+
+[Install]
+WantedBy=default.target

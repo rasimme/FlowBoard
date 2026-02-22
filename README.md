@@ -64,7 +64,12 @@ cp -r FlowBoard/files/projects .
 cat FlowBoard/snippets/AGENTS-trigger.md
 # → Copy that block into your ~/.openclaw/workspace/AGENTS.md
 
-# 4. Set up dashboard
+# 4. Install hooks (optional but recommended)
+cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
+cp -r FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
+# Then restart gateway: openclaw gateway restart
+
+# 5. Set up dashboard
 cd FlowBoard/dashboard
 npm install
 node server.js &
@@ -94,7 +99,11 @@ Tell your agent: `New project: my-project`
 
 **For production:** Set up a systemd service for auto-start:
 ```bash
-# See docs/ for a systemd unit file example
+# Copy and edit the template
+cp FlowBoard/templates/dashboard.service ~/.local/share/systemd/user/
+# Edit paths in the file, then:
+systemctl --user daemon-reload
+systemctl --user enable --now dashboard
 ```
 
 ---

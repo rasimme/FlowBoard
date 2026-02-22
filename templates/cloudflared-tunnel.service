@@ -1,0 +1,17 @@
+# Systemd user service for Cloudflare Tunnel
+# Copy to ~/.local/share/systemd/user/cloudflared-tunnel.service
+# Then: systemctl --user daemon-reload && systemctl --user enable --now cloudflared-tunnel
+
+[Unit]
+Description=Cloudflare Tunnel for FlowBoard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel run flowboard
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
