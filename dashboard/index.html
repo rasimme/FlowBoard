@@ -50,7 +50,7 @@
 <div id="modalRoot"></div>
 
 <script type="module">
-import { api, toast, showModal, escHtml, formatDisplayName, updateTimestamp } from './js/utils.js';
+import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames, updateTimestamp } from './js/utils.js';
 import { 
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd, selectPriority, 
   onAddKey, createTask, startEdit, onTitleKey, saveTitle, togglePriorityPopover, setPriority,
@@ -298,6 +298,7 @@ async function refresh() {
     const projectsChanged = projectsJson !== prevProjectsJson || newActive !== prevActiveProject;
 
     state.projects = newProjects;
+    registerDisplayNames(newProjects);
     state.activeProject = newActive;
     prevProjectsJson = projectsJson;
     prevActiveProject = newActive;
@@ -376,6 +377,7 @@ async function refresh() {
 async function init() {
   const data = await api('/projects');
   state.projects = data.projects || [];
+  registerDisplayNames(state.projects);
   state.activeProject = data.activeProject;
   prevProjectsJson = JSON.stringify(state.projects);
   prevActiveProject = state.activeProject;

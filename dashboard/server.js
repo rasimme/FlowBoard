@@ -78,6 +78,17 @@ function syncDashboardData(projectName) {
   fs.writeFileSync(DASHBOARD_DATA_FILE, JSON.stringify(out, null, 2));
 }
 
+function getDisplayName(projectName) {
+  try {
+    const mdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
+    const firstLine = fs.readFileSync(mdPath, 'utf8').split('\n')[0];
+    let title = firstLine.replace(/^#\s*/, '').trim();
+    // Strip subtitle after em-dash or en-dash
+    title = title.split(/\s*[—–]\s*/)[0].trim();
+    return title || projectName;
+  } catch { return projectName; }
+}
+
 function parseIndexMd() {
   try {
     const text = fs.readFileSync(INDEX_FILE, 'utf8');
@@ -86,7 +97,12 @@ function parseIndexMd() {
     for (const line of lines) {
       const match = line.match(/^\|\s*(\w[\w-]*)\s*\|\s*(\w+)\s*\|\s*(.+?)\s*\|$/);
       if (match && match[1] !== 'Project') {
-        projects.push({ name: match[1], status: match[2], description: match[3] });
+        projects.push({
+          name: match[1],
+          displayName: getDisplayName(match[1]),
+          status: match[2],
+          description: match[3]
+        });
       }
     }
     return projects;

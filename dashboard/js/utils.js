@@ -65,12 +65,17 @@ export function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Display name cache populated from API response (displayName field from PROJECT.md titles)
+const _displayNames = {};
+
+export function registerDisplayNames(projects) {
+  for (const p of projects) {
+    if (p.displayName) _displayNames[p.name] = p.displayName;
+  }
+}
+
 export function formatDisplayName(name) {
-  const brandedNames = {
-    'flowboard': 'FlowBoard',
-    'contextvault': 'ContextVault'
-  };
-  if (brandedNames[name]) return brandedNames[name];
+  if (_displayNames[name]) return _displayNames[name];
   return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
