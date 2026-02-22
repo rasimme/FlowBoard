@@ -1,6 +1,10 @@
 // kanban.js — Task Board Logic
 
-import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, updateTimestamp } from './utils.js?v=2';
+import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, updateTimestamp } from './utils.js?v=3';
+
+// Telegram Haptic Feedback (no-op if not in Telegram)
+const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);
+const _hn = (t='success') => window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred(t);
 
 // Export state (shared with main)
 export const kanbanState = {
@@ -259,9 +263,11 @@ export async function createTask(state) {
     kanbanState.addingTask = false;
     kanbanState.newCardIds.add(res.task.id);
     toast(`Task ${res.task.id} created`, 'success');
+    _hn('success');
     return true; // Signal re-render
   } else {
     toast(res.error || 'Error', 'error');
+    _hn('error');
   }
 }
 
@@ -426,9 +432,11 @@ export async function onDrop(e, state) {
   if (!res.ok) {
     task.status = oldStatus;
     toast('Failed to move task', 'error');
+    _hn('error');
     updateBoard(state);
   } else {
     toast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
+    _h('medium');
   }
 }
 
