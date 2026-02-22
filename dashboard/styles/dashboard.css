@@ -79,7 +79,7 @@
       display: grid;
       grid-template-rows: auto auto 1fr auto;
       grid-template-columns: var(--sidebar-width) 1fr;
-      height: var(--tg-viewport-stable-height, 100dvh);
+      height: 100dvh;
       transition: grid-template-columns var(--duration-normal) var(--ease-out);
     }
     /* Sidebar spans tab-bar + content rows */
