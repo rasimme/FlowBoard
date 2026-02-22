@@ -675,7 +675,7 @@
       }
 
       /* Kanban: horizontal scroll with snap */
-      .kanban-board {
+      .kanban {
         display: flex !important;
         flex-direction: row !important;
         overflow-x: auto;
