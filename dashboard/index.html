@@ -78,7 +78,7 @@ import {
   renderTabBarRight
 } from './js/kanban.js?v=3';
 import {
-  fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir,
+  fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
 } from './js/file-explorer.js?v=3';
 
@@ -300,6 +300,7 @@ window.loadFileContent = function(path) { loadFileContent(path, state); };
 window.saveFileContent = function() { saveFileContent(state); };
 window.toggleFileEdit = toggleFileEdit;
 window.toggleDir = toggleDir;
+window.fileBackToTree = fileBackToTree;
 
 // --- User Interaction Detection ---
 function isUserInteracting() {

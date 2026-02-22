@@ -527,6 +527,16 @@
       overflow: hidden;
     }
 
+    .file-back-btn {
+      display: none;
+      align-items: center; gap: 4px;
+      background: none; border: 1px solid var(--border); border-radius: var(--radius-md);
+      color: var(--text); font-size: 13px; font-family: inherit;
+      padding: 4px 10px; cursor: pointer; margin-right: 8px;
+      transition: all var(--duration-normal);
+    }
+    .file-back-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+
     .file-preview-header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 10px 18px;
@@ -640,9 +650,66 @@
 
     @media (max-width: 900px) {
       .app { grid-template-columns: 0px 1fr; }
-      .sidebar { opacity: 0; pointer-events: none; }
-      .file-explorer { grid-template-columns: 1fr; }
-      .file-tree { display: none; }
+      .file-explorer { grid-template-columns: 1fr; display: block; height: 100%; overflow: hidden; }
+      /* Mobile file nav: show tree OR preview, not both */
+      .file-explorer .file-tree { display: flex; flex-direction: column; border-right: none; height: 100%; overflow-y: auto; }
+      .file-explorer .file-preview { display: none; }
+      .file-explorer.show-preview .file-tree { display: none; }
+      .file-explorer.show-preview .file-preview { display: flex; flex-direction: column; height: 100%; overflow: auto; }
+      /* Back button — only visible on mobile */
+      .file-back-btn { display: flex !important; }
+
+      /* File preview header: two rows on mobile */
+      .file-preview-header {
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 8px 12px;
+      }
+      .file-back-btn { order: 0; }
+      .file-preview-actions { order: 1; margin-left: auto; }
+      .file-preview-info {
+        order: 2;
+        flex: 1 1 100%;
+      }
+      .file-preview-name { font-size: 12px; }
+      .file-preview-size { display: none; }
+      .file-preview-badge { font-size: 9px; }
+
+      /* Sidebar: slide-in overlay (same as mobile) */
+      .sidebar {
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        width: 260px;
+        z-index: 200;
+        transform: translateX(-100%);
+        opacity: 1;
+        pointer-events: none;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+        box-shadow: none;
+      }
+      .app:not(.sidebar-collapsed) .sidebar {
+        transform: translateX(0);
+        pointer-events: auto;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+      }
+      .sidebar-backdrop {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 199;
+      }
+      .app:not(.sidebar-collapsed) .sidebar-backdrop {
+        display: block;
+      }
+
+      /* Span full width — sidebar is out of grid flow (position:fixed) */
+      .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
+      .tab-bar { grid-column: 1 / -1; }
+
+      /* Allow horizontal scroll through the cscroll wrapper */
+      .cscroll-wrap > .cscroll-inner { overflow-x: auto; }
+      /* Hide custom scrollbar track (not useful with horizontal kanban) */
+      .cscroll-wrap.content-wrapper > .cscroll-track { display: none; }
 
       /* Kanban: horizontal scroll on tablet + Telegram Desktop side panel */
       .kanban {
@@ -668,34 +735,6 @@
 
     /* Mobile: Telegram Mini App + small screens */
     @media (max-width: 600px) {
-      /* Sidebar: slide-in overlay */
-      .sidebar {
-        position: fixed;
-        top: 0; left: 0; bottom: 0;
-        width: 260px;
-        z-index: 200;
-        transform: translateX(-100%);
-        opacity: 1 !important;
-        pointer-events: none;
-        transition: transform 0.25s ease, box-shadow 0.25s ease;
-        box-shadow: none;
-      }
-      .app:not(.sidebar-collapsed) .sidebar {
-        transform: translateX(0);
-        pointer-events: auto;
-        box-shadow: 4px 0 20px rgba(0,0,0,0.3);
-      }
-      /* Overlay backdrop when sidebar open */
-      .sidebar-backdrop {
-        display: none;
-        position: fixed; inset: 0;
-        background: rgba(0,0,0,0.4);
-        z-index: 199;
-      }
-      .app:not(.sidebar-collapsed) .sidebar-backdrop {
-        display: block;
-      }
-
       /* CRITICAL: span full width — sidebar is out of grid flow (position:fixed) */
       .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
       .tab-bar { grid-column: 1 / -1; }
