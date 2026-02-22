@@ -50,7 +50,10 @@ function validateTelegramWebApp(initData) {
 }
 
 function telegramAuthMiddleware(req, res, next) {
-  if (!AUTH_ENABLED) return next(); // Auth nicht konfiguriert → lokal offen lassen
+  if (!AUTH_ENABLED) return next(); // Auth nicht konfiguriert → offen lassen
+  // Cloudflare Tunnel setzt CF-Ray auf alle externen Requests
+  // Direkte lokale Aufrufe (Agent, Shell, SSH-Tunnel) haben kein CF-Ray → kein Auth nötig
+  if (!req.headers['cf-ray']) return next();
   const token = req.cookies?.flowboard_session;
   if (token) {
     try {
