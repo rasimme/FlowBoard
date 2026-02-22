@@ -46,6 +46,9 @@ export async function loadFileContent(filePath, state) {
     for (let i = 1; i < parts.length; i++) {
       fileState.expandedDirs.add(parts.slice(0, i).join('/'));
     }
+    // Mobile: switch to preview view
+    const explorer = document.querySelector('.file-explorer');
+    if (explorer) explorer.classList.add('show-preview');
     renderFileTree();
     renderFilePreview();
   } catch (err) {
@@ -88,6 +91,11 @@ export function toggleFileEdit() {
   }
 }
 
+export function fileBackToTree() {
+  const explorer = document.querySelector('.file-explorer');
+  if (explorer) explorer.classList.remove('show-preview');
+}
+
 export function toggleDir(dirPath) {
   if (fileState.expandedDirs.has(dirPath)) fileState.expandedDirs.delete(dirPath);
   else fileState.expandedDirs.add(dirPath);
@@ -108,7 +116,12 @@ export async function renderFileExplorer(state) {
     </div>
   </div>`;
   renderFileTree();
-  if (!fileState.selectedFile && fileState.fileTree && fileState.fileTree.tree.length > 0) {
+  const isMobile = window.matchMedia('(max-width: 900px)').matches;
+  if (isMobile) {
+    // Mobile: always show tree first, never auto-open
+    const explorer = document.querySelector('.file-explorer');
+    if (explorer) explorer.classList.remove('show-preview');
+  } else if (!fileState.selectedFile && fileState.fileTree && fileState.fileTree.tree.length > 0) {
     const firstFile = fileState.fileTree.tree.find(e => e.type === 'file');
     if (firstFile) loadFileContent(firstFile.path, state);
   } else if (fileState.selectedFile) {
@@ -191,6 +204,7 @@ function renderFilePreview() {
 
   container.innerHTML = `
     <div class="file-preview-header">
+      <button class="file-back-btn" onclick="window.fileBackToTree()">← Files</button>
       <div class="file-preview-info">
         <span class="file-preview-name">${escHtml(f.path)}${unsavedDot}</span>
         <span class="file-preview-size">${formatSize(f.size)}</span>
