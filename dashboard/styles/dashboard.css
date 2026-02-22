@@ -88,6 +88,7 @@
 
     /* Header — matches Gateway Dashboard */
     .header {
+      grid-row: 1;
       grid-column: 1 / -1;
       display: flex;
       align-items: center;
@@ -652,10 +653,12 @@
         -webkit-overflow-scrolling: touch;
         gap: 10px;
         padding: 0 12px 16px;
-        height: calc(var(--tg-viewport-stable-height, 100dvh) - 100px);
+        height: 100%;
       }
       .column {
-        min-width: min(82vw, 300px);
+        width: 300px;
+        min-width: 300px;
+        max-width: 300px;
         scroll-snap-align: start;
         flex-shrink: 0;
         height: 100%;
