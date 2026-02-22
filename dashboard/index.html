@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles/dashboard.css?v=2">
+  <link rel="stylesheet" href="./styles/dashboard.css?v=3">
   <!-- Telegram WebApp SDK (loads tg object, also used for graceful degradation check) -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -445,10 +445,8 @@ function applyTelegramTheme() {
   if (secondary_bg_color) r.style.setProperty('--tg-secondary-bg', secondary_bg_color);
 }
 
-function applyTelegramViewport() {
-  const h = tg?.viewportStableHeight;
-  if (h) document.documentElement.style.setProperty('--tg-viewport-stable-height', `${h}px`);
-}
+// Viewport height now handled by pure CSS (100dvh) — no JS override needed
+// Telegram's viewportStableHeight caused collapse on minimize/resume
 
 // External links via Telegram
 document.addEventListener('click', e => {
@@ -468,9 +466,7 @@ document.addEventListener('click', e => {
     tg.expand();
     tg.disableVerticalSwipes?.();
     applyTelegramTheme();
-    applyTelegramViewport();
     tg.onEvent?.('themeChanged', applyTelegramTheme);
-    tg.onEvent?.('viewportChanged', applyTelegramViewport);
     try {
       await fetch('/api/auth', {
         method: 'POST',
