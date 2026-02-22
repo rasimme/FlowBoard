@@ -48,98 +48,189 @@ Separate agents per project? That's heavyweight: each needs its own config, work
 
 ## Quick Start
 
+### 1. Clone & install
+
 ```bash
-# 1. Clone the repo
 git clone https://github.com/rasimme/FlowBoard.git
-cd FlowBoard
-
-# 2. Set up your workspace structure
-cd ~/.openclaw/workspace
-
-# Copy project rules and templates
-cp FlowBoard/files/ACTIVE-PROJECT.md .
-cp -r FlowBoard/files/projects .
-
-# 3. Add trigger to AGENTS.md (top of file)
-cat FlowBoard/snippets/AGENTS-trigger.md
-# → Copy that block into your ~/.openclaw/workspace/AGENTS.md
-
-# 4. Install hooks (optional but recommended)
-cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
-cp -r FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
-# Then restart gateway: openclaw gateway restart
-
-# 5. Set up dashboard
 cd FlowBoard/dashboard
 npm install
-node server.js &
 ```
 
-Open http://localhost:18790 to see your Kanban board.
+### 2. Set up workspace files
 
-### Expected folder structure after setup
+```bash
+# Copy project structure into your OpenClaw workspace
+cp ~/FlowBoard/files/ACTIVE-PROJECT.md ~/.openclaw/workspace/
+cp -r ~/FlowBoard/files/projects ~/.openclaw/workspace/
+```
+
+### 3. Add AGENTS.md trigger
+
+Copy the project trigger block into the top of your `~/.openclaw/workspace/AGENTS.md`:
+
+```bash
+cat ~/FlowBoard/snippets/AGENTS-trigger.md
+# → Paste that block into your AGENTS.md
+```
+
+This tells your agent to check for an active project on every session start.
+
+### 4. Install hooks (recommended)
+
+```bash
+cp -r ~/FlowBoard/hooks/project-context ~/.openclaw/hooks/
+cp -r ~/FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
+openclaw gateway restart
+```
+
+- **project-context** — Auto-loads project rules + context on session start
+- **session-handoff** — Persists session context across `/new` commands
+
+### 5. Start the dashboard
+
+```bash
+# Quick start (development)
+cd ~/FlowBoard/dashboard
+node server.js
+
+# Production: systemd service (auto-start on boot)
+mkdir -p ~/.local/share/systemd/user
+cp ~/FlowBoard/templates/dashboard.service ~/.local/share/systemd/user/
+# Edit the file: replace /path/to/ with your actual paths
+nano ~/.local/share/systemd/user/dashboard.service
+systemctl --user daemon-reload
+systemctl --user enable --now dashboard
+```
+
+### 6. Create your first project
+
+Open http://localhost:18790 and tell your agent:
+
+> `New project: my-project`
+
+The agent creates the folder structure, tasks.json, and registers it in the dashboard.
+
+### Expected folder structure
+
 ```
 ~/.openclaw/workspace/
 ├── AGENTS.md                    # With project trigger block
-├── ACTIVE-PROJECT.md            # "project: none"
+├── ACTIVE-PROJECT.md            # "project: none" (until activated)
 ├── projects/
-│   ├── PROJECT-RULES.md         # Rules (from files/)
-│   └── _index.md                # Project registry
+│   ├── PROJECT-RULES.md         # System rules (from files/)
+│   ├── _index.md                # Project registry
+│   └── my-project/              # Created per project
+│       ├── PROJECT.md
+│       ├── DECISIONS.md
+│       ├── tasks.json
+│       ├── context/
+│       └── specs/
+
+~/.openclaw/hooks/
+├── project-context/             # Auto-context loading
+│   └── handler.js
+└── session-handoff/             # Session persistence
+    └── handler.js
 
 ~/FlowBoard/dashboard/           # Dashboard (git repo = live instance)
-├── server.js                    # Express API server
+├── server.js                    # Express API + auth
 ├── index.html                   # Dashboard UI
 ├── js/                          # JS modules
 ├── styles/                      # CSS
-└── node_modules/                # npm dependencies
-```
-
-### Create your first project
-Tell your agent: `New project: my-project`
-
-**For production:** Set up a systemd service for auto-start:
-```bash
-# Copy and edit the template
-cp FlowBoard/templates/dashboard.service ~/.local/share/systemd/user/
-# Edit paths in the file, then:
-systemctl --user daemon-reload
-systemctl --user enable --now dashboard
+└── package.json
 ```
 
 ---
 
 ## Remote Access (Telegram Mini App)
 
-FlowBoard can be accessed remotely as a **Telegram Mini App** through a secure tunnel.
+FlowBoard can be accessed remotely as a **Telegram Mini App** through a secure tunnel. This is entirely optional — the dashboard works locally without any of this.
 
 ### How it works
 
-1. A tunnel (Cloudflare, ngrok, Tailscale, etc.) exposes port 18790
-2. Telegram Bot menu button opens the dashboard URL
-3. Auth via Telegram `initData` (HMAC-SHA256) + JWT session cookie
+1. A tunnel (Cloudflare, ngrok, Tailscale, etc.) exposes port 18790 to the internet
+2. Your Telegram Bot gets a menu button that opens the dashboard URL
+3. Authentication via Telegram `initData` (HMAC-SHA256 signature) + JWT session cookie
 4. Only allowlisted Telegram user IDs can access the dashboard
+5. Without auth config, the dashboard stays open (local development)
 
-### Setup
+### Step 1: Set up a tunnel
+
+You need a way to expose port 18790 to the internet. Any tunnel works:
+
+**Option A: Cloudflare Tunnel (recommended — free, stable)**
+```bash
+# Install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/
+cloudflared tunnel login
+cloudflared tunnel create flowboard
+
+# Set up DNS (replace with your domain)
+cloudflared tunnel route dns flowboard dashboard.your-domain.com
+
+# Copy and edit config
+cp ~/FlowBoard/templates/cloudflare-config.yml ~/.cloudflared/config.yml
+nano ~/.cloudflared/config.yml  # Replace <TUNNEL_ID>, <USER>, <YOUR_DOMAIN>
+
+# Start tunnel (or use systemd template)
+cloudflared tunnel run flowboard
+
+# Optional: auto-start on boot
+cp ~/FlowBoard/templates/cloudflared-tunnel.service ~/.local/share/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now cloudflared-tunnel
+```
+
+**Option B: ngrok**
+```bash
+ngrok http 18790
+# Note: set AUTH_ALWAYS=true (see Step 2)
+```
+
+**Option C: Tailscale Funnel**
+```bash
+tailscale funnel 18790
+# Note: set AUTH_ALWAYS=true (see Step 2)
+```
+
+### Step 2: Configure authentication
 
 ```bash
-# 1. Set environment variables (see .env.example or templates/systemd-auth.conf.example)
-export TELEGRAM_BOT_TOKEN="your-bot-token"      # from @BotFather
-export JWT_SECRET="$(openssl rand -hex 32)"       # random secret
-export ALLOWED_USER_IDS="123456789"               # your Telegram user ID
-export DASHBOARD_ORIGIN="https://your-domain.com" # public URL (for CORS)
+# Generate a JWT secret
+JWT_SECRET=$(openssl rand -hex 32)
 
-# 2. For non-Cloudflare tunnels (ngrok, Tailscale, etc.):
-export AUTH_ALWAYS=true
+# Find your Telegram user ID (message @userinfobot on Telegram)
 
-# 3. Set up your tunnel (example with Cloudflare)
-# See templates/cloudflare-config.yml for config template
+# Create systemd drop-in for env vars
+mkdir -p ~/.config/systemd/user/dashboard.service.d
+cp ~/FlowBoard/templates/systemd-auth.conf.example \
+   ~/.config/systemd/user/dashboard.service.d/auth.conf
 
-# 4. Register WebApp button in Telegram
-# Message @BotFather → /setmenubutton → your public URL
+# Edit with your values
+nano ~/.config/systemd/user/dashboard.service.d/auth.conf
+```
 
-# 5. Restart dashboard
+Fill in these values:
+- `TELEGRAM_BOT_TOKEN` — from [@BotFather](https://t.me/BotFather) (your OpenClaw bot token)
+- `JWT_SECRET` — the random secret you just generated
+- `ALLOWED_USER_IDS` — your Telegram user ID (comma-separated for multiple users)
+- `DASHBOARD_ORIGIN` — your public URL, e.g. `https://dashboard.your-domain.com`
+- `AUTH_ALWAYS` — set to `true` if using ngrok/Tailscale (not needed for Cloudflare)
+
+```bash
+# Apply changes
+systemctl --user daemon-reload
 systemctl --user restart dashboard
 ```
+
+### Step 3: Register Telegram Mini App button
+
+1. Open [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/setmenubutton`
+3. Select your OpenClaw bot
+4. Send your public dashboard URL (e.g. `https://dashboard.your-domain.com`)
+5. Send a button label (e.g. `Dashboard`)
+
+Now your bot has a menu button that opens FlowBoard as a Telegram Mini App.
 
 ### Auth behavior
 
@@ -156,9 +247,11 @@ curl http://localhost:18790/api/health
 # → { "ok": true, "auth": true, "authAlways": false, "version": "...", "uptime": 123 }
 ```
 
-### Cookie note
+### Notes
 
-Session cookies use `sameSite: strict`. If your Telegram client has issues with cookies, try changing to `lax` in `server.js`.
+- **Session cookies** use `sameSite: strict`. If your Telegram client has issues with cookies not being sent, change to `lax` in `server.js`.
+- **Rate limiting** uses `CF-Connecting-IP` header for real client IPs behind Cloudflare. With other tunnels, all requests may share the same IP for rate limiting purposes.
+- **CSP** allows `unsafe-inline` for scripts (required for inline JS). For stricter security, consider migrating to nonce-based CSP.
 
 ---
 
