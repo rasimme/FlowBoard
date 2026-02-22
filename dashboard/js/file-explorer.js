@@ -51,6 +51,11 @@ export async function loadFileContent(filePath, state) {
     if (explorer) explorer.classList.add('show-preview');
     renderFileTree();
     renderFilePreview();
+    // Scroll selected file into view in the tree
+    requestAnimationFrame(() => {
+      const sel = document.querySelector('#fileTreeItems .tree-item.selected');
+      if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
   } catch (err) {
     toast(`Fehler beim Laden: ${filePath}`, 'error');
     console.error('Failed to load file:', err);
