@@ -1,6 +1,6 @@
 // file-explorer.js — File Tree + Preview
 
-import { api, toast, escHtml, formatSize } from './utils.js';
+import { api, toast, escHtml, formatSize } from './utils.js?v=2';
 
 // File loading categories
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };

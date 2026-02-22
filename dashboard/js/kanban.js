@@ -1,6 +1,6 @@
 // kanban.js — Task Board Logic
 
-import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, updateTimestamp } from './utils.js';
+import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, updateTimestamp } from './utils.js?v=2';
 
 // Export state (shared with main)
 export const kanbanState = {
