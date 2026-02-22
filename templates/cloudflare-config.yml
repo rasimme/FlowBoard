@@ -1,0 +1,17 @@
+# Cloudflare Tunnel config for FlowBoard
+# Copy to ~/.cloudflared/config.yml and replace placeholders
+#
+# Setup:
+#   1. cloudflared tunnel login
+#   2. cloudflared tunnel create flowboard
+#   3. Add CNAME: your-subdomain.your-domain.com → <TUNNEL_ID>.cfargotunnel.com
+#   4. Copy this file to ~/.cloudflared/config.yml
+#   5. Replace <TUNNEL_ID> and <YOUR_DOMAIN>
+
+tunnel: <TUNNEL_ID>
+credentials-file: /home/<USER>/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: <YOUR_DOMAIN>
+    service: http://localhost:18790
+  - service: http_status:404

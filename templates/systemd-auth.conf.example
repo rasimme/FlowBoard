@@ -1,0 +1,19 @@
+# Systemd drop-in for FlowBoard dashboard auth
+# Copy to ~/.config/systemd/user/dashboard.service.d/auth.conf
+# Then: systemctl --user daemon-reload && systemctl --user restart dashboard
+#
+# Required for Telegram Mini App auth:
+#   TELEGRAM_BOT_TOKEN  — from @BotFather
+#   JWT_SECRET          — generate with: openssl rand -hex 32
+#   ALLOWED_USER_IDS    — comma-separated Telegram user IDs
+#   DASHBOARD_ORIGIN    — your public URL (for CORS)
+#
+# Optional:
+#   AUTH_ALWAYS          — set to "true" for non-Cloudflare tunnels (ngrok, Tailscale)
+
+[Service]
+Environment="TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN>"
+Environment="JWT_SECRET=<YOUR_JWT_SECRET>"
+Environment="ALLOWED_USER_IDS=<YOUR_TELEGRAM_USER_ID>"
+Environment="DASHBOARD_ORIGIN=https://<YOUR_DOMAIN>"
+# Environment="AUTH_ALWAYS=true"

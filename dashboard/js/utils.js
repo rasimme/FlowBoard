@@ -17,6 +17,15 @@ export async function api(path, opts = {}) {
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
+  if (res.status === 403) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state" style="flex-direction:column;gap:12px">
+        <span style="font-size:32px">🔒</span>
+        <span>Session abgelaufen</span>
+        <span style="font-size:12px;color:var(--muted)">Bitte über Telegram neu öffnen.</span>
+      </div>`;
+    throw new Error('Unauthorized');
+  }
   return res.json();
 }
 
