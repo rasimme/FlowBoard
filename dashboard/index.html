@@ -10,8 +10,27 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles/dashboard.css">
+  <!-- Telegram WebApp SDK (loads tg object, also used for graceful degradation check) -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
+<script>
+  // Graceful Degradation — client-side check before app loads
+  // If opened outside Telegram AND no session cookie → show info page
+  const _tg = window.Telegram?.WebApp;
+  const _hasSession = document.cookie.includes('flowboard_session');
+  if (!_hasSession && (!_tg || !_tg.initData)) {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.innerHTML = `
+        <div style="font-family:sans-serif;text-align:center;padding:60px 20px;max-width:400px;margin:0 auto">
+          <img src="./favicon.svg" style="width:64px;margin-bottom:16px" alt="FlowBoard">
+          <h2 style="margin:0 0 8px">FlowBoard</h2>
+          <p style="color:#888;margin:0 0 24px">Please open via Telegram.</p>
+          <p style="color:#aaa;font-size:14px">Open this dashboard from your Telegram bot.</p>
+        </div>`;
+    });
+  }
+</script>
 
 <div class="app" id="app">
   <div class="header">
@@ -402,7 +421,21 @@ async function init() {
   setInterval(refresh, 5000);
 }
 
-init();
+// Telegram WebApp Auth — send initData once on startup
+(async () => {
+  const tg = window.Telegram?.WebApp;
+  if (tg?.initData) {
+    tg.ready();
+    tg.expand();
+    try {
+      await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'X-Telegram-Init-Data': tg.initData }
+      });
+    } catch (e) { console.warn('Auth failed:', e); }
+  }
+  await init();
+})();
 </script>
 </body>
 </html>
