@@ -6,7 +6,7 @@ const app = express();
 const PORT = 18790;
 const HOST = '0.0.0.0';
 
-const WORKSPACE = path.resolve(__dirname, '..');
+const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..');
 const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
 const BOOTSTRAP_FILE = path.join(WORKSPACE, 'BOOTSTRAP.md');
