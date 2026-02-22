@@ -111,7 +111,7 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' https://telegram.org",
+    "script-src 'self' 'unsafe-inline' https://telegram.org",
     "connect-src 'self'",
     "img-src 'self' data: https://t.me",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
