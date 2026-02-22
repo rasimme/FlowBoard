@@ -643,3 +643,71 @@
       .file-explorer { grid-template-columns: 1fr; }
       .file-tree { display: none; }
     }
+
+    /* Mobile: Telegram Mini App + small screens */
+    @media (max-width: 600px) {
+      /* Sidebar: slide-in overlay */
+      .sidebar {
+        position: fixed;
+        top: 0; left: 0; bottom: 0;
+        width: 260px;
+        z-index: 200;
+        transform: translateX(-100%);
+        opacity: 1 !important;
+        pointer-events: none;
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+        box-shadow: none;
+      }
+      .app:not(.sidebar-collapsed) .sidebar {
+        transform: translateX(0);
+        pointer-events: auto;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+      }
+      /* Overlay backdrop when sidebar open */
+      .sidebar-backdrop {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 199;
+      }
+      .app:not(.sidebar-collapsed) .sidebar-backdrop {
+        display: block;
+      }
+
+      /* Kanban: horizontal scroll with snap */
+      .kanban-board {
+        display: flex !important;
+        flex-direction: row !important;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 10px;
+        padding: 0 12px 16px;
+        height: calc(100vh - 100px);
+      }
+      .column {
+        min-width: 82vw;
+        max-width: 82vw;
+        scroll-snap-align: start;
+        flex-shrink: 0;
+        height: 100%;
+        overflow-y: auto;
+      }
+
+      /* Touch-friendly task cards */
+      .task-card {
+        padding: 12px 14px;
+        min-height: 44px;
+      }
+      .task-card .task-actions { opacity: 1; } /* Always show on mobile */
+
+      /* Header */
+      .header { padding: 8px 12px; }
+      .header-logo { display: none; }
+
+      /* Sidebar toggle: more prominent */
+      .sidebar-toggle {
+        width: 36px; height: 36px;
+        font-size: 18px;
+      }
+    }

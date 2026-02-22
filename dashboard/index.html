@@ -33,6 +33,7 @@
 </script>
 
 <div class="app" id="app">
+  <div class="sidebar-backdrop" onclick="document.getElementById('app').classList.add('sidebar-collapsed')"></div>
   <div class="header">
     <div class="header-left">
       <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
@@ -69,17 +70,17 @@
 <div id="modalRoot"></div>
 
 <script type="module">
-import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames, updateTimestamp } from './js/utils.js?v=2';
+import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames, updateTimestamp } from './js/utils.js?v=3';
 import { 
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd, selectPriority, 
   onAddKey, createTask, startEdit, onTitleKey, saveTitle, togglePriorityPopover, setPriority,
   startDelete, confirmDelete, createSpec, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
   renderTabBarRight
-} from './js/kanban.js?v=2';
+} from './js/kanban.js?v=3';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
-} from './js/file-explorer.js?v=2';
+} from './js/file-explorer.js?v=3';
 
 // Global state
 const state = {
@@ -114,6 +115,7 @@ function getFilesMeta(tree) {
 // --- Sidebar toggle ---
 window.toggleSidebar = function() {
   document.getElementById('app').classList.toggle('sidebar-collapsed');
+  window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
 };
 
 // --- Render functions ---
@@ -421,12 +423,46 @@ async function init() {
   setInterval(refresh, 5000);
 }
 
-// Telegram WebApp Auth — send initData once on startup
+// Telegram WebApp integration
+const tg = window.Telegram?.WebApp;
+
+function haptic(type = 'light') {
+  tg?.HapticFeedback?.impactOccurred(type);
+}
+function hapticNotification(type = 'success') {
+  tg?.HapticFeedback?.notificationOccurred(type);
+}
+
+function applyTelegramTheme() {
+  if (!tg?.themeParams) return;
+  const { bg_color, text_color, hint_color, button_color, secondary_bg_color } = tg.themeParams;
+  const r = document.documentElement;
+  if (bg_color)           r.style.setProperty('--tg-bg', bg_color);
+  if (text_color)         r.style.setProperty('--tg-text', text_color);
+  if (hint_color)         r.style.setProperty('--tg-hint', hint_color);
+  if (button_color)       r.style.setProperty('--tg-btn', button_color);
+  if (secondary_bg_color) r.style.setProperty('--tg-secondary-bg', secondary_bg_color);
+}
+
+// External links via Telegram
+document.addEventListener('click', e => {
+  const link = e.target.closest('a[href]');
+  if (!link) return;
+  const href = link.href;
+  if (tg && href.startsWith('http') && !href.includes(window.location.hostname)) {
+    e.preventDefault();
+    tg.openLink(href);
+  }
+});
+
+// Telegram WebApp Auth + init
 (async () => {
-  const tg = window.Telegram?.WebApp;
   if (tg?.initData) {
     tg.ready();
     tg.expand();
+    tg.disableVerticalSwipes?.();
+    applyTelegramTheme();
+    tg.onEvent?.('themeChanged', applyTelegramTheme);
     try {
       await fetch('/api/auth', {
         method: 'POST',
