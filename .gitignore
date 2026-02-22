@@ -1,0 +1,16 @@
+node_modules/
+dashboard/node_modules/
+
+# Runtime data — contains private project/task names
+dashboard/dashboard-data.json
+
+# Cloudflare credentials — never commit
+.cloudflared/*.json
+
+# Env files
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
