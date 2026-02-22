@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-FlowBoard-blue?logo=github)](https://github.com/rasimme/FlowBoard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v2.5.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
+[![Version](https://img.shields.io/badge/version-v3.0.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
 
 > **File-based project management with Kanban dashboard for OpenClaw agents.**
 
@@ -65,9 +65,7 @@ cat FlowBoard/snippets/AGENTS-trigger.md
 # → Copy that block into your ~/.openclaw/workspace/AGENTS.md
 
 # 4. Set up dashboard
-mkdir -p canvas
-cp -r FlowBoard/dashboard/* canvas/
-cd canvas
+cd FlowBoard/dashboard
 npm install
 node server.js &
 ```
@@ -82,12 +80,13 @@ Open http://localhost:18790 to see your Kanban board.
 ├── projects/
 │   ├── PROJECT-RULES.md         # Rules (from files/)
 │   └── _index.md                # Project registry
-└── canvas/
-    ├── server.js                # Dashboard API
-    ├── index.html               # Dashboard UI
-    ├── js/                      # JS modules
-    ├── styles/                  # CSS
-    └── node_modules/            # npm dependencies
+
+~/FlowBoard/dashboard/           # Dashboard (git repo = live instance)
+├── server.js                    # Express API server
+├── index.html                   # Dashboard UI
+├── js/                          # JS modules
+├── styles/                      # CSS
+└── node_modules/                # npm dependencies
 ```
 
 ### Create your first project
@@ -97,6 +96,60 @@ Tell your agent: `New project: my-project`
 ```bash
 # See docs/ for a systemd unit file example
 ```
+
+---
+
+## Remote Access (Telegram Mini App)
+
+FlowBoard can be accessed remotely as a **Telegram Mini App** through a secure tunnel.
+
+### How it works
+
+1. A tunnel (Cloudflare, ngrok, Tailscale, etc.) exposes port 18790
+2. Telegram Bot menu button opens the dashboard URL
+3. Auth via Telegram `initData` (HMAC-SHA256) + JWT session cookie
+4. Only allowlisted Telegram user IDs can access the dashboard
+
+### Setup
+
+```bash
+# 1. Set environment variables (see .env.example or templates/systemd-auth.conf.example)
+export TELEGRAM_BOT_TOKEN="your-bot-token"      # from @BotFather
+export JWT_SECRET="$(openssl rand -hex 32)"       # random secret
+export ALLOWED_USER_IDS="123456789"               # your Telegram user ID
+export DASHBOARD_ORIGIN="https://your-domain.com" # public URL (for CORS)
+
+# 2. For non-Cloudflare tunnels (ngrok, Tailscale, etc.):
+export AUTH_ALWAYS=true
+
+# 3. Set up your tunnel (example with Cloudflare)
+# See templates/cloudflare-config.yml for config template
+
+# 4. Register WebApp button in Telegram
+# Message @BotFather → /setmenubutton → your public URL
+
+# 5. Restart dashboard
+systemctl --user restart dashboard
+```
+
+### Auth behavior
+
+| Env vars set? | AUTH_ALWAYS | Tunnel | Result |
+|---|---|---|---|
+| No | — | — | Open (no auth, local dev) |
+| Yes | false | Cloudflare | Auth via CF-Ray header detection |
+| Yes | true | Any | Auth on every request |
+
+### Health check
+
+```bash
+curl http://localhost:18790/api/health
+# → { "ok": true, "auth": true, "authAlways": false, "version": "...", "uptime": 123 }
+```
+
+### Cookie note
+
+Session cookies use `sameSite: strict`. If your Telegram client has issues with cookies, try changing to `lax` in `server.js`.
 
 ---
 
@@ -127,13 +180,13 @@ Tell your agent: `New project: my-project`
 │   │   └── specs/                     # Task spec files (created lazily)
 │   └── another-project/
 │       └── ...
-└── canvas/                            # Dashboard
-    ├── index.html                     # Main HTML
-    ├── server.js                      # Express API server
+~/FlowBoard/dashboard/                         # Dashboard (git repo = live instance)
+    ├── index.html                     # Main HTML + Telegram WebApp SDK
+    ├── server.js                      # Express API + auth middleware
     ├── styles/
-    │   └── dashboard.css              # Styles
+    │   └── dashboard.css              # Responsive styles (mobile + desktop)
     └── js/
-        ├── utils.js                   # Shared utilities
+        ├── utils.js                   # Shared utilities + API client
         ├── kanban.js                  # Kanban view module
         └── file-explorer.js           # File explorer module
 ```
@@ -203,6 +256,19 @@ The file explorer lets you browse your entire project structure, preview Markdow
 ---
 
 ## Changelog
+
+### v3.0.0 (2026-02-22) - Telegram Mini App + Remote Access
+- **Telegram Mini App** - Access dashboard from Telegram via secure tunnel
+- **Auth middleware** - HMAC-SHA256 initData validation + JWT session cookies
+- **User allowlist** - Only configured Telegram user IDs can access
+- **AUTH_ALWAYS mode** - Tunnel-agnostic auth (Cloudflare, ngrok, Tailscale, etc.)
+- **Security hardening** - Rate limiting, CORS, CSP, X-Frame-Options, auth logging
+- **Health endpoint** - `GET /api/health` for monitoring
+- **Responsive mobile CSS** - Horizontal kanban scroll, sidebar overlay, touch-friendly cards
+- **Mobile file explorer** - Navigation pattern (tree → preview → back button)
+- **Telegram WebApp SDK** - Theme sync, viewport handling, haptic feedback
+- **Single Source of Truth** - Git repo = live dashboard instance (canvas/ removed)
+- **Templates** - Cloudflare config, systemd auth drop-in, .env.example
 
 ### v2.5.0 (2026-02-19) - Spec Files & Auto-Refresh
 - **Spec file system** - Optional `specs/` folder for complex tasks with template scaffolding

@@ -28,6 +28,7 @@ const JWT_SECRET = process.env.JWT_SECRET || '';
 const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
+const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
 const AUTH_ENABLED = !!(BOT_TOKEN && JWT_SECRET && ALLOWED_USER_IDS.length);
 
 // --- Auth helpers ---
@@ -53,9 +54,9 @@ function validateTelegramWebApp(initData) {
 
 function telegramAuthMiddleware(req, res, next) {
   if (!AUTH_ENABLED) return next(); // Auth nicht konfiguriert → offen lassen
-  // Cloudflare Tunnel setzt CF-Ray auf alle externen Requests
-  // Direkte lokale Aufrufe (Agent, Shell, SSH-Tunnel) haben kein CF-Ray → kein Auth nötig
-  if (!req.headers['cf-ray']) return next();
+  // AUTH_ALWAYS: Auth bei jedem Request (für ngrok, Tailscale, etc.)
+  // Ohne AUTH_ALWAYS: nur externe Requests via Cloudflare Tunnel (CF-Ray Header)
+  if (!AUTH_ALWAYS && !req.headers['cf-ray']) return next();
   const token = req.cookies?.flowboard_session;
   if (token) {
     try {
@@ -65,7 +66,10 @@ function telegramAuthMiddleware(req, res, next) {
   }
   const initData = req.headers['x-telegram-init-data'];
   const user = validateTelegramWebApp(initData);
-  if (!user) return res.status(403).json({ error: 'Unauthorized' });
+  if (!user) {
+    console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
   const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
   res.cookie('flowboard_session', sessionToken, {
     httpOnly: true, secure: true, sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000
@@ -96,6 +100,7 @@ app.use('/api/', rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
   message: { error: 'Too many requests, please slow down.' }
 }));
 
@@ -122,6 +127,19 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(__dirname));
+
+// Health-Endpoint (kein Auth)
+const startTime = Date.now();
+const pkg = require('./package.json');
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    version: pkg.version,
+    auth: AUTH_ENABLED,
+    authAlways: AUTH_ALWAYS,
+    uptime: Math.floor((Date.now() - startTime) / 1000)
+  });
+});
 
 // Auth-Endpoint (vor dem generellen API-Auth)
 app.post('/api/auth', telegramAuthMiddleware, (req, res) => {
