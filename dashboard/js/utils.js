@@ -1,8 +1,8 @@
 // utils.js — API calls & helpers
 
-export const API_HOST = window.location.port === '18790'
-  ? ''
-  : `http://${window.location.hostname}:18790`;
+// Always use relative URLs — works for direct access (port 18790),
+// SSH tunnels, and Cloudflare Tunnel (HTTPS proxy)
+export const API_HOST = '';
 export const API = API_HOST + '/api';
 
 export const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
