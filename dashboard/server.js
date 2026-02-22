@@ -114,7 +114,7 @@ app.use((req, res, next) => {
     "script-src 'self' https://telegram.org",
     "connect-src 'self'",
     "img-src 'self' data: https://t.me",
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "frame-ancestors 'self' https://web.telegram.org"
   ].join('; '));
