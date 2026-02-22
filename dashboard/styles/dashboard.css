@@ -79,7 +79,7 @@
       display: grid;
       grid-template-rows: auto auto 1fr auto;
       grid-template-columns: var(--sidebar-width) 1fr;
-      height: 100vh;
+      height: var(--tg-viewport-stable-height, 100dvh);
       transition: grid-template-columns var(--duration-normal) var(--ease-out);
     }
     /* Sidebar spans tab-bar + content rows */
@@ -642,6 +642,25 @@
       .sidebar { opacity: 0; pointer-events: none; }
       .file-explorer { grid-template-columns: 1fr; }
       .file-tree { display: none; }
+
+      /* Kanban: horizontal scroll on tablet + Telegram Desktop side panel */
+      .kanban {
+        display: flex !important;
+        flex-direction: row !important;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 10px;
+        padding: 0 12px 16px;
+        height: calc(var(--tg-viewport-stable-height, 100dvh) - 100px);
+      }
+      .column {
+        min-width: min(82vw, 300px);
+        scroll-snap-align: start;
+        flex-shrink: 0;
+        height: 100%;
+        overflow-y: auto;
+      }
     }
 
     /* Mobile: Telegram Mini App + small screens */
@@ -674,25 +693,12 @@
         display: block;
       }
 
-      /* Kanban: horizontal scroll with snap */
-      .kanban {
-        display: flex !important;
-        flex-direction: row !important;
-        overflow-x: auto;
-        scroll-snap-type: x mandatory;
-        -webkit-overflow-scrolling: touch;
-        gap: 10px;
-        padding: 0 12px 16px;
-        height: calc(100vh - 100px);
-      }
-      .column {
-        min-width: 82vw;
-        max-width: 82vw;
-        scroll-snap-align: start;
-        flex-shrink: 0;
-        height: 100%;
-        overflow-y: auto;
-      }
+      /* CRITICAL: span full width — sidebar is out of grid flow (position:fixed) */
+      .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
+      .tab-bar { grid-column: 1 / -1; }
+
+      /* Narrower columns on small phones */
+      .column { min-width: 82vw; max-width: 82vw; }
 
       /* Touch-friendly task cards */
       .task-card {

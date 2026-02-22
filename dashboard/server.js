@@ -102,7 +102,7 @@ app.use('/api/', rateLimit({
 // Security + Cache Headers
 app.use((req, res, next) => {
   // No-cache für JS/HTML
-  if (req.path.endsWith('.js') || req.path.endsWith('.html') || req.path === '/') {
+  if (req.path.endsWith('.js') || req.path.endsWith('.html') || req.path.endsWith('.css') || req.path === '/') {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   }
   // Security Headers
