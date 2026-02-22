@@ -1,6 +1,9 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = 18790;
@@ -17,23 +20,90 @@ const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
 const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || '';
 
-// Middleware
+// Auth config (from env vars — never hardcoded)
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const JWT_SECRET = process.env.JWT_SECRET || '';
+const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
+  .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
+const AUTH_ENABLED = !!(BOT_TOKEN && JWT_SECRET && ALLOWED_USER_IDS.length);
+
+// --- Auth helpers ---
+
+function validateTelegramWebApp(initData) {
+  if (!initData || !BOT_TOKEN) return null;
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash');
+  if (!hash) return null;
+  const authDate = parseInt(params.get('auth_date'), 10);
+  if (!authDate || Date.now() / 1000 - authDate > 3600) return null;
+  params.delete('hash');
+  const dataCheckString = [...params.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`).join('\n');
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+  const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+  if (checkHash !== hash) return null;
+  const user = JSON.parse(params.get('user') || 'null');
+  if (!user || !ALLOWED_USER_IDS.includes(user.id)) return null;
+  return user;
+}
+
+function telegramAuthMiddleware(req, res, next) {
+  if (!AUTH_ENABLED) return next(); // Auth nicht konfiguriert → lokal offen lassen
+  const token = req.cookies?.flowboard_session;
+  if (token) {
+    try {
+      req.user = jwt.verify(token, JWT_SECRET);
+      return next();
+    } catch { /* abgelaufen */ }
+  }
+  const initData = req.headers['x-telegram-init-data'];
+  const user = validateTelegramWebApp(initData);
+  if (!user) return res.status(403).json({ error: 'Unauthorized' });
+  const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+  res.cookie('flowboard_session', sessionToken, {
+    httpOnly: true, secure: true, sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000
+  });
+  req.user = user;
+  next();
+}
+
+// --- Middleware stack ---
+
+app.use(cookieParser());
 app.use(express.json());
+
+// CORS — nur eigene Domain wenn konfiguriert, sonst offen (lokaler Zugriff)
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = DASHBOARD_ORIGIN || '*';
+  res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-Telegram-Init-Data');
+  res.header('Access-Control-Allow-Credentials', 'true');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-// No-cache for JS/HTML — prevents Cloudflare from serving stale files
+
+// No-cache für JS/HTML + Security Headers
 app.use((req, res, next) => {
   if (req.path.endsWith('.js') || req.path.endsWith('.html') || req.path === '/') {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   next();
 });
+
 app.use(express.static(__dirname));
+
+// Auth-Endpoint (muss vor dem generellen API-Auth stehen)
+app.post('/api/auth', telegramAuthMiddleware, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
+
+// Auth auf alle weiteren API-Routes
+app.use('/api/', telegramAuthMiddleware);
 
 // --- Helpers ---
 
