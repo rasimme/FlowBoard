@@ -428,24 +428,6 @@ The file explorer lets you browse your entire project structure, preview Markdow
 
 ---
 
-## Privacy & Public Repo Hygiene
-
-This repo is public. **Never commit personal data:**
-
-| ❌ Never | ✅ Instead |
-|---------|-----------|
-| Your domain (`board.your-domain.com`) | Placeholder (`your-domain.com`) |
-| Your Telegram user ID | `<YOUR_TELEGRAM_USER_ID>` |
-| Bot tokens, JWT secrets | `.env` file (gitignored) |
-| Project/task names from your instance | — runtime data, not tracked |
-| Tunnel IDs or credentials | Templates with placeholders only |
-
-**Gitignored by default:** `dashboard-data.json` (runtime state), `.cloudflared/*.json` (tunnel credentials), `.env`.
-
-When contributing or opening PRs: double-check that no personal URLs, IDs, or tokens appear in code, comments, or release notes.
-
----
-
 ## License
 
 MIT © 2026
