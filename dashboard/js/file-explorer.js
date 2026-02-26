@@ -10,6 +10,7 @@ export const fileState = {
   fileTree: null,
   selectedFile: null,
   fileContent: null,
+  pendingOpen: null,
   fileEditing: false,
   fileUnsaved: false,
   fileEditedContent: null,
@@ -121,6 +122,15 @@ export async function renderFileExplorer(state) {
     </div>
   </div>`;
   renderFileTree();
+
+  // pendingOpen: explicit file to open (e.g. from openSpec) — takes priority, works on mobile too
+  if (fileState.pendingOpen) {
+    const toOpen = fileState.pendingOpen;
+    fileState.pendingOpen = null;
+    loadFileContent(toOpen, state);
+    return;
+  }
+
   const isMobile = window.matchMedia('(max-width: 900px)').matches;
   if (isMobile) {
     // Mobile: always show tree first, never auto-open
