@@ -121,11 +121,11 @@ The agent creates the folder structure, tasks.json, and registers it in the dash
 │   ├── PROJECT-RULES.md         # System rules (from files/)
 │   ├── _index.md                # Project registry
 │   └── my-project/              # Created per project
-│       ├── PROJECT.md
-│       ├── DECISIONS.md
-│       ├── tasks.json
-│       ├── context/
-│       └── specs/
+│       ├── PROJECT.md           # Goal, Scope, Status, Session Log, Project Files index
+│       ├── DECISIONS.md         # Architecture Decision Records
+│       ├── tasks.json           # Task tracking (API-managed)
+│       ├── context/             # External references only (hardware guides, API docs, research)
+│       └── specs/               # Task specs (linked via tasks.json specFile)
 
 ~/.openclaw/hooks/
 ├── project-context/             # Auto-context loading
@@ -277,10 +277,10 @@ curl http://localhost:18790/api/health
 │   ├── PROJECT-RULES.md               # System rules (loaded on demand)
 │   ├── _index.md                      # Project registry
 │   ├── my-project/
-│   │   ├── PROJECT.md                 # Project context
-│   │   ├── tasks.json                 # Task tracking
-│   │   ├── context/                   # Project-level docs
-│   │   └── specs/                     # Task spec files (created lazily)
+│   │   ├── PROJECT.md                 # Goal, Scope, Status, Session Log, Project Files index
+│   │   ├── tasks.json                 # Task tracking (API-managed)
+│   │   ├── context/                   # External references (hardware guides, API docs, research)
+│   │   └── specs/                     # Task specs (linked via tasks.json specFile)
 │   └── another-project/
 │       └── ...
 ~/FlowBoard/dashboard/                         # Dashboard (git repo = live instance)
