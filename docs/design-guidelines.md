@@ -177,6 +177,39 @@ Breakpoint: `900px`
 **All UI text in English** — labels, buttons, toasts, placeholders, tab names.
 Project content (tasks, specs, docs) can be in any language.
 
+## Shared Components (`utils.js`)
+
+All reusable UI components live in `js/utils.js`. Modules import what they need.
+
+### ICONS
+Central SVG icon registry. All icons follow the Lucide template (14px, stroke-based).
+
+```js
+import { ICONS } from './utils.js';
+// ICONS.trash — Trash/delete icon
+```
+
+**Adding new icons:** Add to the `ICONS` object in utils.js. Use Lucide SVGs from https://lucide.dev with the template from the Icons section above.
+
+### renderDeleteBtn(onclick, title)
+Renders a consistent delete button with trash icon. Uses `.delete-btn` CSS class (opacity 0, shows on parent hover, red on hover).
+
+```js
+import { renderDeleteBtn } from './utils.js';
+renderDeleteBtn("window.handleDelete('id')", 'Delete item')
+```
+
+### toast(message, type)
+Bottom-right notification. Types: `'info'` (default), `'success'`, `'error'`. Auto-dismisses after 3s.
+
+### showModal(title, body, onConfirm, confirmLabel, confirmClass)
+Confirm dialog with overlay. Closes on Cancel, Escape, or backdrop click. Use for destructive actions instead of `confirm()`.
+
+### Convention for New Components
+- **Shared UI helpers** → `utils.js` (buttons, modals, icons, formatters)
+- **Module-specific rendering** → stays in `kanban.js` or `file-explorer.js`
+- **Rule of thumb:** If two modules need the same UI element → extract to utils.js
+
 ---
 
-*Based on OpenClaw Gateway Dashboard (control-ui), analyzed 2026-02-19.*
+*Based on OpenClaw Gateway Dashboard (control-ui), analyzed 2026-02-19. Updated 2026-02-26.*
