@@ -208,7 +208,7 @@ window.deactivateProject = async function() {
 
 // --- Tab System ---
 // Persisted kanban scroll position across tab switches
-const savedKanbanScroll = { top: 0, left: 0 };
+const savedKanbanScroll = { top: 0, colIndex: 0, columns: {} };
 
 window.switchTab = function(tab) {
   state.currentTab = tab;
@@ -225,9 +225,19 @@ window.switchTab = function(tab) {
       const isMobile = window.matchMedia('(max-width: 900px)').matches;
       if (isMobile) {
         const kanban = document.querySelector('.kanban');
-        if (kanban && saved.colIndex) {
-          const colWidth = kanban.firstElementChild?.offsetWidth || 300;
-          kanban.scrollLeft = saved.colIndex * colWidth;
+        if (kanban) {
+          // Restore horizontal column position
+          if (saved.colIndex) {
+            const colWidth = kanban.firstElementChild?.offsetWidth || 300;
+            kanban.scrollLeft = saved.colIndex * colWidth;
+          }
+          // Restore each column's vertical scroll
+          if (saved.columns) {
+            kanban.querySelectorAll('.column[data-status]').forEach(col => {
+              const top = saved.columns[col.dataset.status];
+              if (top) col.scrollTop = top;
+            });
+          }
         }
       } else {
         const content = document.getElementById('content');
@@ -243,6 +253,11 @@ window.switchTab = function(tab) {
       if (kanban) {
         const colWidth = kanban.firstElementChild?.offsetWidth || 300;
         savedKanbanScroll.colIndex = Math.round(kanban.scrollLeft / colWidth);
+        // Save each column's vertical scroll position
+        savedKanbanScroll.columns = {};
+        kanban.querySelectorAll('.column[data-status]').forEach(col => {
+          savedKanbanScroll.columns[col.dataset.status] = col.scrollTop;
+        });
       }
     } else {
       const content = document.getElementById('content');
