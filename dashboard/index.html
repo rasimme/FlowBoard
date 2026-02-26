@@ -80,7 +80,7 @@ import {
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
-} from './js/file-explorer.js?v=5';
+} from './js/file-explorer.js?v=6';
 
 // Global state
 const state = {
@@ -281,16 +281,16 @@ window.openSpec = function(specPath, taskId) {
     toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
     return;
   }
+  fileState.pendingOpen = specPath;
   window.switchTab('files');
-  setTimeout(() => loadFileContent(specPath, state), 100);
 };
 window.createSpec = function(taskId) {
   createSpec(taskId, state).then(specFile => {
     if (specFile) {
       prevTasksJson = JSON.stringify(state.tasks);
       updateBoard(state);
+      fileState.pendingOpen = specFile;
       window.switchTab('files');
-      setTimeout(() => loadFileContent(specFile, state), 100);
     }
   });
 };
