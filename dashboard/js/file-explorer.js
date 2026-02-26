@@ -112,6 +112,8 @@ export async function renderFileExplorer(state) {
   if (!fileState.fileTree) await loadFileTree(state);
   const content = document.getElementById('content');
   content.style.overflow = 'hidden';
+  // Clear stale content before building DOM — prevents any stale renderFilePreview() call
+  fileState.fileContent = null;
   content.innerHTML = `<div class="file-explorer">
     <div class="file-tree">
       <div class="file-tree-items" id="fileTreeItems"></div>
@@ -121,15 +123,16 @@ export async function renderFileExplorer(state) {
       <div class="file-preview-empty">Select a file to preview</div>
     </div>
   </div>`;
-  renderFileTree();
 
-  // pendingOpen: explicit file to open (e.g. from openSpec) — takes priority, works on mobile too
+  // pendingOpen: check BEFORE renderFileTree to prevent ghost-tap on old selected item
   if (fileState.pendingOpen) {
     const toOpen = fileState.pendingOpen;
     fileState.pendingOpen = null;
     loadFileContent(toOpen, state);
     return;
   }
+
+  renderFileTree();
 
   const isMobile = window.matchMedia('(max-width: 900px)').matches;
   if (isMobile) {

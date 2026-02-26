@@ -80,7 +80,7 @@ import {
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
-} from './js/file-explorer.js?v=6';
+} from './js/file-explorer.js?v=7';
 
 // Global state
 const state = {
@@ -219,23 +219,22 @@ window.switchTab = function(tab) {
     kanbanState.boardBuilt = false;
     renderTabBarRight();
     updateBoard(state);
-    // Restore scroll after board is painted (rAF ensures layout is done)
+    // Restore scroll after board is painted — double rAF ensures layout is complete
     const saved = { ...savedKanbanScroll };
-    requestAnimationFrame(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       const isMobile = window.matchMedia('(max-width: 900px)').matches;
       if (isMobile) {
         const kanban = document.querySelector('.kanban');
         if (kanban && saved.colIndex) {
-          // snap-scroll: use scrollTo instant to land on exact column
           const colWidth = kanban.firstElementChild?.offsetWidth || 300;
-          kanban.scrollTo({ left: saved.colIndex * colWidth, behavior: 'instant' });
+          kanban.scrollLeft = saved.colIndex * colWidth;
         }
       } else {
         const content = document.getElementById('content');
         if (content && saved.top) content.scrollTop = saved.top;
       }
       updateContentScrollbarVisibility();
-    });
+    }));
   } else if (tab === 'files') {
     // Save kanban scroll before leaving
     const isMobile = window.matchMedia('(max-width: 900px)').matches;
