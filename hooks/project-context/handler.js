@@ -22,6 +22,43 @@ function resolveWorkspace() {
   return null;
 }
 
+/**
+ * Trim SESSION LOG in PROJECT.md to only the last N session entries.
+ * Keeps everything before "## Session Log" intact, then appends
+ * only the last N "### ..." entries from the log.
+ */
+function trimSessionLog(content, maxSessions = 2) {
+  const sessionLogMatch = content.match(/^(## Session Log)\s*$/m);
+  if (!sessionLogMatch) return content; // no session log section
+
+  const splitIndex = sessionLogMatch.index;
+  const beforeLog = content.slice(0, splitIndex);
+  const logSection = content.slice(splitIndex);
+
+  // Split log into entries by ### headers
+  const entryPattern = /^### .+$/gm;
+  const entries = [];
+  let match;
+  const matches = [];
+  while ((match = entryPattern.exec(logSection)) !== null) {
+    matches.push(match.index);
+  }
+
+  if (matches.length === 0) return content; // no entries, keep as-is
+
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i];
+    const end = i + 1 < matches.length ? matches[i + 1] : logSection.length;
+    entries.push(logSection.slice(start, end).trimEnd());
+  }
+
+  // Keep only first N entries (newest are at the top, prepended by agent)
+  const kept = entries.slice(0, maxSessions);
+  const trimmedLog = `## Session Log\n\n${kept.join("\n\n")}\n`;
+
+  return beforeLog + trimmedLog;
+}
+
 function updateBootstrapWithProjectContext(workspaceDir) {
   if (!workspaceDir) return;
 
@@ -49,11 +86,16 @@ function updateBootstrapWithProjectContext(workspaceDir) {
     try { rulesContent = readFileSync(rulesPath, "utf8"); } catch {}
   }
 
-  // Read PROJECT.md
+  // Read PROJECT.md (smart: trim session log to last N entries)
   const projectMdPath = join(workspaceDir, "projects", projectName, "PROJECT.md");
   let projectContent = "";
   if (existsSync(projectMdPath)) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
+  }
+
+  // Smart Session Log trimming: keep only last 2 sessions in bootstrap
+  if (projectContent) {
+    projectContent = trimSessionLog(projectContent, 2);
   }
 
   if (!rulesContent && !projectContent) return;
