@@ -86,6 +86,15 @@ export function closeModal() {
 
 function modalEscHandler(e) { if (e.key === 'Escape') closeModal(); }
 
+// --- Shared UI Components ---
+const ICONS = {
+  trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
+};
+
+export function renderDeleteBtn(onclick, title = 'Delete') {
+  return `<button class="delete-btn" onclick="${onclick}" title="${title}">${ICONS.trash}</button>`;
+}
+
 // --- Helpers ---
 export function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

@@ -1,6 +1,6 @@
 // file-explorer.js — File Tree + Preview
 
-import { api, toast, escHtml, formatSize } from './utils.js?v=3';
+import { api, toast, escHtml, formatSize, renderDeleteBtn, showModal } from './utils.js?v=4';
 
 // File loading categories
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
@@ -207,9 +207,7 @@ function renderFilePreview() {
     ? '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>'
     : '';
   const canDelete = f.path.startsWith('context/') || f.path.startsWith('specs/');
-  const deleteBtn = canDelete
-    ? '<button class="btn btn-ghost btn-sm btn-delete" onclick="window.deleteCurrentFile()" title="Delete file">🗑</button>'
-    : '';
+  const deleteBtn = canDelete ? renderDeleteBtn("window.deleteCurrentFile()", 'Delete file') : '';
 
   container.innerHTML = `
     <div class="file-preview-header">

@@ -301,17 +301,18 @@ window.saveFileContent = function() { saveFileContent(state); };
 window.toggleFileEdit = toggleFileEdit;
 window.toggleDir = toggleDir;
 window.fileBackToTree = fileBackToTree;
-window.deleteCurrentFile = async function() {
+window.deleteCurrentFile = function() {
   const f = state.fileState?.selectedFile;
   if (!f) return;
-  if (!confirm(`Delete "${f.path}"?`)) return;
-  try {
-    const res = await fetch(`/api/projects/${state.activeProject}/files/${f.path}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!res.ok) { toast(data.error || 'Delete failed', 'error'); return; }
-    toast(`Deleted ${f.path}`, 'success');
-    fileBackToTree();
-  } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+  showModal('Delete File', `Delete <strong>${f.path}</strong>?`, async () => {
+    try {
+      const res = await fetch(`/api/projects/${state.activeProject}/files/${f.path}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { toast(data.error || 'Delete failed', 'error'); return; }
+      toast(`Deleted ${f.path}`, 'success');
+      fileBackToTree();
+    } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+  });
 };
 
 // --- User Interaction Detection ---
