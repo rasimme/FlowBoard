@@ -51,11 +51,20 @@ When the user says "Neues Projekt: [Name]":
    ## Goal
    [What should be achieved?]
    
+   ## Scope
+   - **Dazu gehört:** [Was ist Teil des Projekts]
+   - **Nicht dazu:** [Was explizit ausgeschlossen ist]
+   - **Appetite:** [Klein/Mittel/Groß — wie viel Aufwand investieren wir?]
+   
    ## Background
    [Why? Prerequisites?]
    
    ## Architecture
-   [Technical details — fill as project develops]
+   [Technical details — for projects with a Git repo, reference `docs/` in the repo instead of duplicating here. Optional for small/non-technical projects.]
+   
+   ## Project Files
+   [List non-standard files when they are created. specs/ are linked via tasks.json and don't need entries here.]
+   - `context/example.md` — Description of what this file contains
    
    ## Current Status
    [Updated after each significant session]
@@ -99,6 +108,8 @@ When the user says "Projekte":
   - Exception: Quick questions, discussions, or work unrelated to project
 - **Task updates:** Update task status to "review" when completing work
 - **PROJECT.md:** Keep "Current Status" updated after significant progress
+- **Project Files:** When creating new files in `context/`, update `## Project Files` in PROJECT.md (path + one-line description)
+- **context/ folder:** Only for external references (hardware guides, API docs, research). NOT for code documentation (belongs in Git repo `docs/`) or task-specific planning (belongs in `specs/`)
 
 ---
 
