@@ -261,6 +261,37 @@ function nextTaskId(tasks) {
   return `T-${String(max + 1).padStart(3, '0')}`;
 }
 
+// --- Canvas Helpers ---
+
+function readCanvasFile(projectName) {
+  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Garbage-collect orphaned connections on every load
+    const noteIds = new Set((data.notes || []).map(n => n.id));
+    data.connections = (data.connections || []).filter(
+      c => noteIds.has(c.from) && noteIds.has(c.to)
+    );
+    return data;
+  } catch {
+    return { notes: [], connections: [] };
+  }
+}
+
+function writeCanvasFile(projectName, data) {
+  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function nextNoteId(notes) {
+  let max = 0;
+  for (const n of notes) {
+    const m = n.id.match(/N-(\d+)/);
+    if (m) max = Math.max(max, parseInt(m[1]));
+  }
+  return `N-${String(max + 1).padStart(3, '0')}`;
+}
+
 // --- Project Context Helpers ---
 
 /**
