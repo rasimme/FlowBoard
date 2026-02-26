@@ -252,6 +252,40 @@ function nextTaskId(tasks) {
 
 // --- Project Context Helpers ---
 
+/**
+ * Trim SESSION LOG in PROJECT.md to only the last N session entries.
+ * Keeps everything before "## Session Log" intact, then appends
+ * only the last N "### ..." entries from the log.
+ */
+function trimSessionLog(content, maxSessions = 2) {
+  const sessionLogMatch = content.match(/^(## Session Log)\s*$/m);
+  if (!sessionLogMatch) return content;
+
+  const splitIndex = sessionLogMatch.index;
+  const beforeLog = content.slice(0, splitIndex);
+  const logSection = content.slice(splitIndex);
+
+  const entryPattern = /^### .+$/gm;
+  const matches = [];
+  let match;
+  while ((match = entryPattern.exec(logSection)) !== null) {
+    matches.push(match.index);
+  }
+
+  if (matches.length === 0) return content;
+
+  const entries = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i];
+    const end = i + 1 < matches.length ? matches[i + 1] : logSection.length;
+    entries.push(logSection.slice(start, end).trimEnd());
+  }
+
+  const kept = entries.slice(0, maxSessions);
+  const trimmedLog = `## Session Log\n\n${kept.join('\n\n')}\n`;
+  return beforeLog + trimmedLog;
+}
+
 function updateBootstrapMd(projectName) {
   if (!projectName) {
     // No active project — clear BOOTSTRAP.md
@@ -266,6 +300,11 @@ function updateBootstrapMd(projectName) {
   let projectContent = '';
   try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch {}
   try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch {}
+
+  // Smart Session Log trimming: keep only last 2 sessions in bootstrap
+  if (projectContent) {
+    projectContent = trimSessionLog(projectContent, 2);
+  }
 
   const sections = [`# Active Project: ${projectName}\n`];
   if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
