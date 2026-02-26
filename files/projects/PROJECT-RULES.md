@@ -149,7 +149,7 @@ open → in-progress → review → done
 
 ### Spec Files (optional)
 - Complex tasks can have a spec file in `specs/T-{id}-{slug}.md`
-- Created via Dashboard ("+ 📋" on task card) or API: `POST /api/projects/:name/specs/:taskId`
+- Created via Dashboard ("+ 📋" on task card) or API: `POST /api/projects/:name/specs/:taskId` with optional `{"content": "..."}` body (falls back to empty template if omitted)
 - `specFile` field in tasks.json links to the relative path (set automatically)
 - `specs/` folder is created lazily on first spec
 
