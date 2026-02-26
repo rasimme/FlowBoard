@@ -302,7 +302,7 @@ window.toggleFileEdit = toggleFileEdit;
 window.toggleDir = toggleDir;
 window.fileBackToTree = fileBackToTree;
 window.deleteCurrentFile = function() {
-  const filePath = state.fileState?.selectedFile;
+  const filePath = fileState?.selectedFile;
   if (!filePath) return;
   showModal('Delete File', `Delete <strong>${filePath}</strong>?`, async () => {
     try {
