@@ -126,7 +126,14 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(__dirname));
+app.use(express.static(__dirname, {
+  setHeaders: (res, filePath) => {
+    // Never cache HTML — Telegram WebApp ignores query-param versioning on the HTML itself
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
+}));
 
 // Health-Endpoint (kein Auth)
 const startTime = Date.now();

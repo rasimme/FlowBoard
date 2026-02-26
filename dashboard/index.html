@@ -225,7 +225,11 @@ window.switchTab = function(tab) {
       const isMobile = window.matchMedia('(max-width: 900px)').matches;
       if (isMobile) {
         const kanban = document.querySelector('.kanban');
-        if (kanban && saved.left) kanban.scrollLeft = saved.left;
+        if (kanban && saved.colIndex) {
+          // snap-scroll: use scrollTo instant to land on exact column
+          const colWidth = kanban.firstElementChild?.offsetWidth || 300;
+          kanban.scrollTo({ left: saved.colIndex * colWidth, behavior: 'instant' });
+        }
       } else {
         const content = document.getElementById('content');
         if (content && saved.top) content.scrollTop = saved.top;
@@ -237,7 +241,10 @@ window.switchTab = function(tab) {
     const isMobile = window.matchMedia('(max-width: 900px)').matches;
     if (isMobile) {
       const kanban = document.querySelector('.kanban');
-      if (kanban) savedKanbanScroll.left = kanban.scrollLeft;
+      if (kanban) {
+        const colWidth = kanban.firstElementChild?.offsetWidth || 300;
+        savedKanbanScroll.colIndex = Math.round(kanban.scrollLeft / colWidth);
+      }
     } else {
       const content = document.getElementById('content');
       if (content) savedKanbanScroll.top = content.scrollTop;
