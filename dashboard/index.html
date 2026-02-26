@@ -80,7 +80,7 @@ import {
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
-} from './js/file-explorer.js?v=4';
+} from './js/file-explorer.js?v=5';
 
 // Global state
 const state = {
@@ -302,14 +302,14 @@ window.toggleFileEdit = toggleFileEdit;
 window.toggleDir = toggleDir;
 window.fileBackToTree = fileBackToTree;
 window.deleteCurrentFile = function() {
-  const f = state.fileState?.selectedFile;
-  if (!f) return;
-  showModal('Delete File', `Delete <strong>${f.path}</strong>?`, async () => {
+  const filePath = state.fileState?.selectedFile;
+  if (!filePath) return;
+  showModal('Delete File', `Delete <strong>${filePath}</strong>?`, async () => {
     try {
-      const res = await fetch(`/api/projects/${state.activeProject}/files/${f.path}`, { method: 'DELETE' });
+      const res = await fetch(`/api/projects/${state.activeProject}/files/${filePath}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) { toast(data.error || 'Delete failed', 'error'); return; }
-      toast(`Deleted ${f.path}`, 'success');
+      toast(`Deleted ${filePath}`, 'success');
       fileBackToTree();
     } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
   });

@@ -206,7 +206,7 @@ function renderFilePreview() {
   const saveBtn = fileState.fileUnsaved
     ? '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>'
     : '';
-  const canDelete = f.path.startsWith('context/') || f.path.startsWith('specs/');
+  const canDelete = (f.path.startsWith('context/') || f.path.startsWith('specs/')) && !fileState.fileEditing;
   const deleteBtn = canDelete ? renderDeleteBtn("window.deleteCurrentFile()", 'Delete file') : '';
 
   container.innerHTML = `
