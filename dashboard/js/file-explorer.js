@@ -206,6 +206,10 @@ function renderFilePreview() {
   const saveBtn = fileState.fileUnsaved
     ? '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>'
     : '';
+  const canDelete = f.path.startsWith('context/') || f.path.startsWith('specs/');
+  const deleteBtn = canDelete
+    ? '<button class="btn btn-ghost btn-sm btn-delete" onclick="window.deleteCurrentFile()" title="Delete file">🗑</button>'
+    : '';
 
   container.innerHTML = `
     <div class="file-preview-header">
@@ -220,6 +224,7 @@ function renderFilePreview() {
         <button class="btn btn-ghost btn-sm" onclick="window.toggleFileEdit()">
           ${fileState.fileEditing ? 'Preview' : 'Edit'}
         </button>
+        ${deleteBtn}
       </div>
     </div>
     <div class="file-preview-body" id="filePreviewBody"></div>

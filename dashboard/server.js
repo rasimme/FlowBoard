@@ -602,6 +602,52 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
   }
 });
 
+// DELETE /api/projects/:name/files/{*filePath} — delete files (only context/ and specs/)
+app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
+
+  // Security: prevent path traversal
+  const resolved = path.resolve(projectDir, filePath);
+  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
+    return res.status(403).json({ error: 'Path traversal not allowed' });
+  }
+
+  // Only allow deletion in context/ and specs/
+  if (!filePath.startsWith('context/') && !filePath.startsWith('specs/')) {
+    return res.status(403).json({ error: 'Only files in context/ and specs/ can be deleted' });
+  }
+
+  if (!fs.existsSync(resolved)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+
+  if (fs.statSync(resolved).isDirectory()) {
+    return res.status(403).json({ error: 'Cannot delete directories' });
+  }
+
+  try {
+    fs.unlinkSync(resolved);
+
+    // If it was a spec file, clean up the specFile link in tasks.json
+    if (filePath.startsWith('specs/')) {
+      const tasksFile = path.join(projectDir, 'tasks.json');
+      if (fs.existsSync(tasksFile)) {
+        const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+        const task = tasksData.tasks.find(t => t.specFile === filePath);
+        if (task) {
+          task.specFile = null;
+          fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
+        }
+      }
+    }
+
+    res.json({ ok: true, deleted: filePath });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/projects/:name/specs/:taskId — scaffold a new spec file
 app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
