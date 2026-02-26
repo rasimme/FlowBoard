@@ -1,6 +1,6 @@
 // kanban.js — Task Board Logic
 
-import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, updateTimestamp } from './utils.js?v=3';
+import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, updateTimestamp, renderDeleteBtn } from './utils.js?v=4';
 
 // Telegram Haptic Feedback (no-op if not in Telegram)
 const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);
@@ -194,10 +194,7 @@ function cardInnerHTML(task) {
     : `<span class="spec-badge spec-badge-add" onclick="window.createSpec('${task.id}')" title="Create spec file">${ICON_SPEC_ADD}</span>`;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
-      <button class="delete-btn" onclick="window.startDelete('${task.id}', '${escHtml(task.title)}')" title="Delete">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-        </svg>
+      ${renderDeleteBtn(`window.startDelete('${task.id}', '${escHtml(task.title)}')`, 'Delete task')}
       </button>
     </div>
     ${isEditing
