@@ -328,6 +328,8 @@
       transition: all var(--duration-normal);
     }
     .task-card:hover .delete-btn { opacity: 1; }
+    .file-preview-actions .delete-btn { opacity: 0.6; }
+    .file-preview-actions .delete-btn:hover { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
 
     /* Add Task */
