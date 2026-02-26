@@ -206,6 +206,7 @@
 
     .btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
     .btn-ghost:hover { color: var(--text); background: var(--bg-hover); }
+    .btn-delete:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
 
     .btn-sm { padding: 4px 10px; font-size: 11px; }
     .btn-full { width: 100%; }
