@@ -7,3 +7,13 @@
   outline-offset: 3px;
   box-shadow: var(--shadow-md), 0 0 0 5px rgba(255, 92, 92, 0.18);
 }
+
+/* Dot-pattern background + visible frame */
+.canvas-wrap {
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, #3a3a45 1px, transparent 1px);
+  background-size: 24px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-sizing: border-box;
+}
