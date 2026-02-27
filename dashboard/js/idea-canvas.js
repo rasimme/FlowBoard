@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml, renderDeleteBtn } from './utils.js?v=3'
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=1';
+  _l.href = './styles/canvas.css?v=2';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -136,7 +136,8 @@ export async function renderIdeaCanvas(state) {
         <button class="btn btn-primary btn-sm" onclick="window.addNote()">+ Note</button>
       </div>
       <div class="canvas-viewport" id="canvasViewport">
-        <svg id="canvasSvg" class="canvas-svg"></svg>
+        <svg id="canvasSvg" class="canvas-svg canvas-svg-underlay"></svg>
+        <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
       </div>
       <div class="canvas-lasso" id="canvasLasso"></div>
     </div>`;
@@ -145,7 +146,8 @@ export async function renderIdeaCanvas(state) {
 
   if (!state.viewedProject) {
     const vp = document.getElementById('canvasViewport');
-    if (vp) vp.innerHTML = `<svg id="canvasSvg" class="canvas-svg"></svg>
+    if (vp) vp.innerHTML = `<svg id="canvasSvg" class="canvas-svg canvas-svg-underlay"></svg>
+      <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
       <div class="canvas-empty"><div class="canvas-empty-icon">💡</div><div>Select a project</div></div>`;
     return;
   }
