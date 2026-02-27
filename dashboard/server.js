@@ -61,9 +61,6 @@ function telegramAuthMiddleware(req, res, next) {
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   if (localHostname && cfHost === localHostname) return next();
-  // local.simme-ns5.com = LAN-Zugriff ohne Auth (Host-Header von Cloudflare)
-  const cfHost = (req.headers['host'] || '').split(':')[0];
-  if (cfHost === 'local.simme-ns5.com') return next();
   const token = req.cookies?.flowboard_session;
   if (token) {
     try {
