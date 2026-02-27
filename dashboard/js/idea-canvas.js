@@ -2,6 +2,15 @@
 
 import { api, toast, showModal, escHtml, renderDeleteBtn } from './utils.js?v=3';
 
+// Inject canvas.css once at module load (overrides dashboard.css canvas rules)
+if (!document.querySelector('link[data-canvas]')) {
+  const _l = document.createElement('link');
+  _l.rel = 'stylesheet';
+  _l.href = './styles/canvas.css?v=1';
+  _l.dataset.canvas = '1';
+  document.head.appendChild(_l);
+}
+
 // --- Constants ---
 const NOTE_WIDTH = 160;
 const SCALE_MIN = 0.3;
@@ -109,10 +118,10 @@ function renderEmptyState() {
 // --- Render all canvas elements ---
 export function renderAll() {
   renderNotes();
-  renderConnections();
   applyTransform();
   renderEmptyState();
   renderPromoteButton();
+  requestAnimationFrame(renderConnections);
 }
 
 // --- Main entry point called from switchTab ---
@@ -203,6 +212,23 @@ function createNoteElement(note) {
   return el;
 }
 
+// --- Reposition notes that landed at origin (created via API with default x:0, y:0) ---
+function repositionZeroNote(note) {
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap) return;
+  // Compute canvas-space coordinate of the visible viewport center
+  const cx = (wrap.clientWidth  / 2 - canvasState.pan.x) / canvasState.scale;
+  const cy = (wrap.clientHeight / 2 - canvasState.pan.y) / canvasState.scale;
+  // Scatter ±100px horizontal, ±50px vertical so multiple zero-notes don't stack
+  note.x = cx + (Math.random() - 0.5) * 200;
+  note.y = cy + (Math.random() - 0.5) * 100;
+  // Persist in background — failure is silent, next refresh recalculates
+  if (!canvasState._state?.viewedProject) return;
+  api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${note.id}`, {
+    method: 'PUT', body: { x: Math.round(note.x), y: Math.round(note.y) }
+  }).catch(() => {});
+}
+
 // --- Render notes ---
 function renderNotes() {
   const vp = document.getElementById('canvasViewport');
@@ -210,6 +236,7 @@ function renderNotes() {
   // Remove old note elements (keep SVG)
   vp.querySelectorAll('.note').forEach(el => el.remove());
   for (const note of canvasState.notes) {
+    if (note.x === 0 && note.y === 0) repositionZeroNote(note);
     vp.appendChild(createNoteElement(note));
   }
 }
@@ -892,46 +919,33 @@ function renderPromoteButton() {
   if (!vp) return;
   vp.querySelectorAll('.canvas-promote-btn').forEach(b => b.remove());
 
-  const clusters = getAllClusters();
-
-  // Also show promote for a multi-note manual selection (even if not connected)
   const selIds = [...canvasState.selectedIds];
-  if (selIds.length >= 2) {
-    const selSet = new Set(selIds);
-    // Only add if not already covered by a cluster
-    const alreadyCovered = clusters.some(c => selIds.every(id => c.has(id)));
-    if (!alreadyCovered) clusters.push(selSet);
-  }
+  if (selIds.length === 0) return; // nothing selected — no button
 
-  // Also allow single-note promote
-  if (selIds.length === 1) {
-    clusters.push(new Set(selIds));
-  }
-
-  for (const cluster of clusters) {
-    const ids = [...cluster];
-    let maxX = -Infinity, maxY = -Infinity;
-    for (const id of ids) {
-      const note = canvasState.notes.find(n => n.id === id);
-      const el   = document.getElementById('note-' + id);
-      if (note && el) {
-        maxX = Math.max(maxX, note.x + el.offsetWidth);
-        maxY = Math.max(maxY, note.y + el.offsetHeight);
-      }
+  // Compute bounding box of all selected notes
+  let maxX = -Infinity, maxY = -Infinity;
+  for (const id of selIds) {
+    const note = canvasState.notes.find(n => n.id === id);
+    const el   = document.getElementById('note-' + id);
+    if (note && el) {
+      maxX = Math.max(maxX, note.x + el.offsetWidth);
+      maxY = Math.max(maxY, note.y + el.offsetHeight);
     }
-    if (!isFinite(maxX)) continue;
-
-    const btn = document.createElement('button');
-    btn.className = 'canvas-promote-btn';
-    btn.textContent = '\u2192 Task';
-    btn.style.left = (maxX - 56) + 'px';
-    btn.style.top  = (maxY + 8)  + 'px';
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      showPromoteModal(ids);
-    });
-    vp.appendChild(btn);
   }
+  if (!isFinite(maxX)) return;
+
+  const btn = document.createElement('button');
+  btn.className = 'canvas-promote-btn';
+  btn.textContent = '\u2192 Task';
+  btn.style.left = (maxX - 56) + 'px';
+  btn.style.top  = (maxY + 8)  + 'px';
+  // Stop mousedown from bubbling to canvasWrap — prevents selectedIds from being cleared
+  btn.addEventListener('mousedown', e => e.stopPropagation());
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    showPromoteModal(selIds);
+  });
+  vp.appendChild(btn);
 }
 
 // --- Promote modal ---

@@ -1,0 +1,9 @@
+/* canvas.css — Idea Canvas style overrides
+   Injected programmatically by idea-canvas.js — do NOT add to index.html */
+
+/* Bug 3 fix: enhanced selection state — visible glow on top of dashboard.css outline */
+.note.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: var(--shadow-md), 0 0 0 5px rgba(255, 92, 92, 0.18);
+}
