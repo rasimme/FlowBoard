@@ -18,7 +18,7 @@
   // Graceful Degradation — client-side check before app loads
   // If opened outside Telegram AND no session cookie → show info page
   const _tg = window.Telegram?.WebApp;
-  const _isLocal = ['localhost', '127.0.0.1', 'local.simme-ns5.com'].includes(window.location.hostname);
+  const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.hostname === (window.__LOCAL_HOSTNAME__ || '');
   if (!_isLocal && (!_tg || !_tg.initData)) {
     document.addEventListener('DOMContentLoaded', () => {
       document.body.innerHTML = `

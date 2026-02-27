@@ -57,9 +57,10 @@ function telegramAuthMiddleware(req, res, next) {
   // AUTH_ALWAYS: Auth bei jedem Request (für ngrok, Tailscale, etc.)
   // Ohne AUTH_ALWAYS: nur externe Requests via Cloudflare Tunnel (CF-Ray Header)
   if (!AUTH_ALWAYS && !req.headers['cf-ray']) return next();
-  // local.simme-ns5.com = LAN-Zugriff ohne Auth (Host-Header von Cloudflare)
+  // Optional: allow a custom hostname without auth (e.g. for LAN access via Cloudflare Tunnel)
   const cfHost = (req.headers['host'] || '').split(':')[0];
-  if (cfHost === 'local.simme-ns5.com') return next();
+  const localHostname = process.env.LOCAL_HOSTNAME || '';
+  if (localHostname && cfHost === localHostname) return next();
   const token = req.cookies?.flowboard_session;
   if (token) {
     try {
