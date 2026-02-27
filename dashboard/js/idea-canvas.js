@@ -16,6 +16,17 @@ const NOTE_WIDTH = 160;
 const SCALE_MIN = 0.3;
 const SCALE_MAX = 2.5;
 const NOTE_COLORS = ['yellow', 'blue', 'green', 'red', 'teal'];
+const CORNER_RADIUS = 12;    // px — radius of rounded bends in connection paths
+const PORT_SPACING  = 18;    // px — spacing between stacked port centers on a side
+
+// SVG stroke color by note color name
+const COLOR_STROKE = {
+  yellow: 'var(--warn)',
+  blue:   'var(--info)',
+  green:  'var(--ok)',
+  red:    'var(--danger)',
+  teal:   'var(--accent-2)'
+};
 
 // --- State ---
 export const canvasState = {
@@ -755,6 +766,53 @@ function onTouchEnd(e) {
     canvasState.panning  = null;
     _pinchDist = 0;
   }
+}
+
+/**
+ * Returns an SVG path `d` string for a 3-segment Manhattan route:
+ *   horizontal (x1→midX) → vertical (y1→y2) → horizontal (midX→x2)
+ * Corners are smoothed with quadratic Bézier curves (radius = CORNER_RADIUS).
+ *
+ * @param {number} x1  Source port X (canvas space)
+ * @param {number} y1  Source port Y
+ * @param {number} x2  Target port X
+ * @param {number} y2  Target port Y
+ * @returns {string}   SVG path `d` attribute value
+ */
+function manhattanPath(x1, y1, x2, y2) {
+  const r   = CORNER_RADIUS;
+  const dx  = x2 - x1;
+  const dy  = y2 - y1;
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+
+  // Degenerate: essentially straight — no bending needed
+  if (adx < 2 || ady < 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
+
+  const mx  = (x1 + x2) / 2;  // horizontal midpoint
+  const sx  = dx >= 0 ? 1 : -1;  // +1 right, -1 left
+  const sy  = dy >= 0 ? 1 : -1;  // +1 down,  -1 up
+
+  // Clamp radii so Bézier arcs don't overshoot their segment
+  const rh = Math.max(0, Math.min(r, adx / 2 - 2));
+  const rv = Math.max(0, Math.min(r, ady / 2 - 2));
+
+  // Too short for smooth curves — fall back to sharp corners
+  if (rh < 1 || rv < 1) {
+    return `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+  }
+
+  // H/V/H with two rounded corners:
+  //   Approach corner 1 from x1 side → arc → descend vertically →
+  //   Approach corner 2 from y2 side → arc → exit to x2
+  return [
+    `M ${x1} ${y1}`,
+    `L ${mx - sx * rh} ${y1}`,            // run along first H segment
+    `Q ${mx} ${y1} ${mx} ${y1 + sy * rv}`, // round corner 1
+    `L ${mx} ${y2 - sy * rv}`,             // V segment
+    `Q ${mx} ${y2} ${mx + sx * rh} ${y2}`, // round corner 2
+    `L ${x2} ${y2}`                         // run along last H segment
+  ].join(' ');
 }
 
 // --- Render connections ---
