@@ -815,6 +815,109 @@ function manhattanPath(x1, y1, x2, y2) {
   ].join(' ');
 }
 
+/**
+ * Given two notes (with their DOM element dimensions), returns which sides
+ * of each note face each other — used to route the connection.
+ *
+ * @param {object} noteA  note object {id, x, y, color, ...}
+ * @param {object} noteB
+ * @param {HTMLElement} elA  DOM element for noteA
+ * @param {HTMLElement} elB  DOM element for noteB
+ * @returns {{ sideA: string, sideB: string }}  e.g. { sideA: 'right', sideB: 'left' }
+ */
+function getBestSides(noteA, noteB, elA, elB) {
+  const wA = elA.offsetWidth,  hA = elA.offsetHeight;
+  const wB = elB.offsetWidth,  hB = elB.offsetHeight;
+  const cax = noteA.x + wA / 2,  cay = noteA.y + hA / 2;
+  const cbx = noteB.x + wB / 2,  cby = noteB.y + hB / 2;
+  const dx = cbx - cax,  dy = cby - cay;
+
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sideA: 'right',  sideB: 'left'  }
+      : { sideA: 'left',   sideB: 'right' };
+  }
+  return dy >= 0
+    ? { sideA: 'bottom', sideB: 'top'    }
+    : { sideA: 'top',    sideB: 'bottom' };
+}
+
+/**
+ * Computes stacked port positions for every connection in canvasState.connections.
+ *
+ * Algorithm:
+ *   1. For each connection, call getBestSides() to decide (sideA, sideB).
+ *   2. Group connections by (noteId, side) to know how many share each side.
+ *   3. For each group, assign index i and offset around the side center:
+ *        offset = (i - (n-1)/2) * PORT_SPACING
+ *   4. Return a Map keyed by "fromId:toId" → { ax, ay, bx, by }.
+ *
+ * @returns {Map<string, {ax:number, ay:number, bx:number, by:number}>}
+ */
+function computePortPositions() {
+  // Step 1: assign sides to every connection
+  const assignments = [];
+  for (const conn of canvasState.connections) {
+    const noteA = canvasState.notes.find(n => n.id === conn.from);
+    const noteB = canvasState.notes.find(n => n.id === conn.to);
+    const elA   = document.getElementById('note-' + conn.from);
+    const elB   = document.getElementById('note-' + conn.to);
+    if (!noteA || !noteB || !elA || !elB) continue;
+    const { sideA, sideB } = getBestSides(noteA, noteB, elA, elB);
+    assignments.push({ conn, noteA, noteB, elA, elB, sideA, sideB });
+  }
+
+  // Step 2: group by "noteId:side"
+  const sideGroups = new Map(); // "noteId:side" → [assignment, ...]
+  for (const a of assignments) {
+    const kA = a.conn.from + ':' + a.sideA;
+    const kB = a.conn.to   + ':' + a.sideB;
+    if (!sideGroups.has(kA)) sideGroups.set(kA, []);
+    if (!sideGroups.has(kB)) sideGroups.set(kB, []);
+    sideGroups.get(kA).push(a);
+    sideGroups.get(kB).push(a);
+  }
+
+  // Step 3: compute stacked positions per group
+  const portMap = new Map(); // "fromId:toId" → { ax, ay, bx, by }
+  for (const [sideKey, group] of sideGroups) {
+    const colonIdx = sideKey.indexOf(':');
+    const noteId   = sideKey.slice(0, colonIdx);
+    const side     = sideKey.slice(colonIdx + 1);
+    const note     = canvasState.notes.find(n => n.id === noteId);
+    const noteEl   = document.getElementById('note-' + noteId);
+    if (!note || !noteEl) continue;
+
+    const w = noteEl.offsetWidth;
+    const h = noteEl.offsetHeight;
+    const n = group.length;
+
+    group.forEach((a, i) => {
+      const offset = (i - (n - 1) / 2) * PORT_SPACING;
+      let px, py;
+      if (side === 'top')    { px = note.x + w / 2 + offset; py = note.y;     }
+      if (side === 'bottom') { px = note.x + w / 2 + offset; py = note.y + h; }
+      if (side === 'left')   { px = note.x;     py = note.y + h / 2 + offset; }
+      if (side === 'right')  { px = note.x + w; py = note.y + h / 2 + offset; }
+
+      const connKey = a.conn.from + ':' + a.conn.to;
+      if (!portMap.has(connKey)) portMap.set(connKey, {});
+      const entry = portMap.get(connKey);
+
+      // isFrom: is this noteId the FROM end of the connection?
+      if (a.conn.from === noteId) {
+        entry.ax = px;
+        entry.ay = py;
+      } else {
+        entry.bx = px;
+        entry.by = py;
+      }
+    });
+  }
+
+  return portMap;
+}
+
 // --- Render connections ---
 function renderConnections() {
   const svg = document.getElementById('canvasSvg');
