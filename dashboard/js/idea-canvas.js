@@ -402,6 +402,19 @@ function schedulePositionSave(noteId) {
   }, 500);
 }
 
+/** Immediately persists a note's current canvas position to the server. */
+async function saveNotePosition(noteId) {
+  const note = canvasState.notes.find(n => n.id === noteId);
+  if (!note || !canvasState._state?.viewedProject) return;
+  try {
+    await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${noteId}`, {
+      method: 'PUT', body: { x: Math.round(note.x), y: Math.round(note.y) }
+    });
+  } catch {
+    toast('Position save failed — refresh may revert', 'warn');
+  }
+}
+
 // --- Color popover ---
 export function toggleColorPopover(e, noteId) {
   e.stopPropagation();
@@ -562,7 +575,6 @@ function onCanvasMouseMove(e) {
       const el = document.getElementById('note-' + d.noteId);
       if (el) { el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; }
       renderConnections();
-      schedulePositionSave(d.noteId);
     }
     return;
   }
@@ -630,9 +642,11 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
-  // End note drag
+  // End note drag — persist final position immediately
   if (canvasState.dragging) {
+    const { noteId } = canvasState.dragging;
     canvasState.dragging = null;
+    saveNotePosition(noteId);
     return;
   }
 
@@ -759,7 +773,6 @@ function onTouchMove(e) {
         const el = document.getElementById('note-' + d.noteId);
         if (el) { el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; }
         renderConnections();
-        schedulePositionSave(d.noteId);
       }
     } else if (canvasState.panning) {
       const d = canvasState.panning;
@@ -790,6 +803,12 @@ function onTouchMove(e) {
 
 function onTouchEnd(e) {
   if (e.touches.length === 0) {
+    if (canvasState.dragging) {
+      const { noteId } = canvasState.dragging;
+      // Cancel any in-flight debounced save and fire immediately
+      clearTimeout(canvasState.posSaveTimers[noteId]);
+      saveNotePosition(noteId);
+    }
     canvasState.dragging = null;
     canvasState.panning  = null;
     _pinchDist = 0;
