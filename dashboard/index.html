@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles/dashboard.css?v=4">
+  <link rel="stylesheet" href="./styles/dashboard.css?v=3">
   <!-- Telegram WebApp SDK (loads tg object, also used for graceful degradation check) -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -49,7 +49,6 @@
   <div class="tab-bar" id="tabBar">
     <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
     <button class="tab" data-tab="files" onclick="switchTab('files')">Files</button>
-    <button class="tab" data-tab="ideas" onclick="switchTab('ideas')">Ideas</button>
     <span class="tab-bar-spacer"></span>
     <span id="tabBarRight"></span>
   </div>
@@ -82,11 +81,6 @@ import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
 } from './js/file-explorer.js?v=7';
-import {
-  canvasState, renderIdeaCanvas, addNote, startDeleteNote, toggleColorPopover,
-  setNoteColor, startNoteEdit, saveNoteText, startConnectionDrag, showPromoteModal,
-  refreshCanvas, resetCanvasState
-} from './js/idea-canvas.js?v=1';
 
 // Global state
 const state = {
@@ -94,9 +88,7 @@ const state = {
   activeProject: null,
   viewedProject: null,
   tasks: [],
-  currentTab: 'tasks',
-  canvasNotes: [],
-  canvasConnections: []
+  currentTab: 'tasks'
 };
 
 // Make state accessible to modules
@@ -106,7 +98,6 @@ let prevProjectsJson = '';
 let prevTasksJson = '';
 let prevActiveProject = null;
 let prevFilesMeta = null; // flat [{path, mtime, size}] for change detection
-let prevCanvasJson = '';
 
 // Extract flat file fingerprint from a file tree for diffing
 function getFilesMeta(tree) {
@@ -178,9 +169,6 @@ function renderAll() {
   } else if (state.currentTab === 'files') {
     document.getElementById('tabBarRight').innerHTML = '';
     renderFileExplorer(state);
-  } else if (state.currentTab === 'ideas') {
-    document.getElementById('tabBarRight').innerHTML = '';
-    renderIdeaCanvas(state);
   }
   updateTimestamp();
   requestAnimationFrame(applyStaticScrollbars);
@@ -196,8 +184,6 @@ window.viewProject = async function(name) {
   fileState.selectedFile = null;
   fileState.fileContent = null;
   prevFilesMeta = null; // Reset so next refresh re-baselines for new project
-  resetCanvasState();
-  prevCanvasJson = '';
   const data = await api(`/projects/${name}/tasks`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
@@ -279,10 +265,6 @@ window.switchTab = function(tab) {
     }
     document.getElementById('tabBarRight').innerHTML = '';
     renderFileExplorer(state);
-    requestAnimationFrame(updateContentScrollbarVisibility);
-  } else if (tab === 'ideas') {
-    document.getElementById('tabBarRight').innerHTML = '';
-    renderIdeaCanvas(state);
     requestAnimationFrame(updateContentScrollbarVisibility);
   }
 };
@@ -379,21 +361,10 @@ window.deleteCurrentFile = function() {
   });
 };
 
-// --- Canvas Actions ---
-window.addNote = function() { addNote(state); };
-window.startDeleteNote = function(id) { startDeleteNote(id, state); };
-window.toggleColorPopover = toggleColorPopover;
-window.setNoteColor = setNoteColor;
-window.startNoteEdit = function(e, id) { e.stopPropagation(); startNoteEdit(id); };
-window.saveNoteText = saveNoteText;
-window.startConnectionDrag = startConnectionDrag;
-window.showPromoteModal = showPromoteModal;
-
 // --- User Interaction Detection ---
 function isUserInteracting() {
   if (kanbanState.addingTask || kanbanState.editingTaskId) return true;
   if (document.getElementById('modalOverlay')) return true;
-  if (canvasState.editingId) return true;
   const active = document.activeElement;
   return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 }
@@ -451,20 +422,6 @@ async function refresh() {
           fileState.fileTree = filesData; // Update silently (no extra fetch on tab switch)
         }
       } catch (e) { /* silent */ }
-    }
-
-    // --- Canvas polling (background, silent) ---
-    if (state.viewedProject) {
-      try {
-        const canvasData = await api(`/projects/${state.viewedProject}/canvas`);
-        const canvasJson = JSON.stringify(canvasData);
-        if (canvasJson !== prevCanvasJson) {
-          prevCanvasJson = canvasJson;
-          canvasState.notes = canvasData.notes || [];
-          canvasState.connections = canvasData.connections || [];
-          if (state.currentTab === 'ideas') refreshCanvas();
-        }
-      } catch { /* silent */ }
     }
 
     if (isUserInteracting() && !projectsChanged) {

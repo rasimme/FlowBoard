@@ -61,6 +61,9 @@ function telegramAuthMiddleware(req, res, next) {
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   if (localHostname && cfHost === localHostname) return next();
+  // local.simme-ns5.com = LAN-Zugriff ohne Auth (Host-Header von Cloudflare)
+  const cfHost = (req.headers['host'] || '').split(':')[0];
+  if (cfHost === 'local.simme-ns5.com') return next();
   const token = req.cookies?.flowboard_session;
   if (token) {
     try {
@@ -259,37 +262,6 @@ function nextTaskId(tasks) {
     if (m) max = Math.max(max, parseInt(m[1]));
   }
   return `T-${String(max + 1).padStart(3, '0')}`;
-}
-
-// --- Canvas Helpers ---
-
-function readCanvasFile(projectName) {
-  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
-  try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-    // Garbage-collect orphaned connections on every load
-    const noteIds = new Set((data.notes || []).map(n => n.id));
-    data.connections = (data.connections || []).filter(
-      c => noteIds.has(c.from) && noteIds.has(c.to)
-    );
-    return data;
-  } catch {
-    return { notes: [], connections: [] };
-  }
-}
-
-function writeCanvasFile(projectName, data) {
-  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
-
-function nextNoteId(notes) {
-  let max = 0;
-  for (const n of notes) {
-    const m = n.id.match(/N-(\d+)/);
-    if (m) max = Math.max(max, parseInt(m[1]));
-  }
-  return `N-${String(max + 1).padStart(3, '0')}`;
 }
 
 // --- Project Context Helpers ---
@@ -773,174 +745,6 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
 
   res.json({ ok: true, specFile: task.specFile, taskId, task: taskWithSpecStatus(req.params.name, task) });
-});
-
-// --- Canvas API ---
-
-// GET /api/projects/:name/canvas
-app.get('/api/projects/:name/canvas', (req, res) => {
-  const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
-  res.json(readCanvasFile(req.params.name));
-});
-
-// POST /api/projects/:name/canvas/notes
-app.post('/api/projects/:name/canvas/notes', (req, res) => {
-  const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
-  const data = readCanvasFile(req.params.name);
-  const { text = '', x = 0, y = 0, color = 'yellow' } = req.body;
-  const note = {
-    id: nextNoteId(data.notes),
-    text,
-    x,
-    y,
-    color,
-    created: new Date().toISOString().slice(0, 10)
-  };
-  data.notes.push(note);
-  try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true, note });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PUT /api/projects/:name/canvas/notes/:id
-app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const note = data.notes.find(n => n.id === req.params.id);
-  if (!note) return res.status(404).json({ error: 'Note not found' });
-  const allowed = ['text', 'x', 'y', 'color'];
-  for (const k of allowed) {
-    if (Object.prototype.hasOwnProperty.call(req.body, k)) note[k] = req.body[k];
-  }
-  try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true, note });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/projects/:name/canvas/notes/:id
-app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const idx = data.notes.findIndex(n => n.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Note not found' });
-  data.notes.splice(idx, 1);
-  const noteIds = new Set(data.notes.map(n => n.id));
-  data.connections = data.connections.filter(c => noteIds.has(c.from) && noteIds.has(c.to));
-  try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/projects/:name/canvas/connections
-app.post('/api/projects/:name/canvas/connections', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const { from, to } = req.body;
-  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
-  if (from === to) return res.status(400).json({ error: 'Cannot connect note to itself' });
-  const noteIds = new Set(data.notes.map(n => n.id));
-  if (!noteIds.has(from) || !noteIds.has(to)) return res.status(404).json({ error: 'Note not found' });
-  const exists = data.connections.some(
-    c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
-  );
-  if (exists) return res.json({ ok: true, duplicate: true });
-  const conn = { from, to };
-  data.connections.push(conn);
-  try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true, connection: conn });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// DELETE /api/projects/:name/canvas/connections
-app.delete('/api/projects/:name/canvas/connections', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const { from, to } = req.body;
-  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
-  data.connections = data.connections.filter(
-    c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
-  );
-  try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/projects/:name/canvas/promote
-app.post('/api/projects/:name/canvas/promote', (req, res) => {
-  const { noteIds, title, priority } = req.body;
-  if (!noteIds || !noteIds.length || !title) {
-    return res.status(400).json({ error: 'noteIds array and title required' });
-  }
-
-  const canvasData = readCanvasFile(req.params.name);
-  const notesToPromote = canvasData.notes.filter(n => noteIds.includes(n.id));
-  if (notesToPromote.length === 0) return res.status(404).json({ error: 'No matching notes found' });
-
-  const tasksData = readTasksFile(req.params.name);
-  if (!tasksData) return res.status(404).json({ error: 'Project not found' });
-
-  // Create task
-  const task = {
-    id: nextTaskId(tasksData.tasks),
-    title,
-    status: 'open',
-    priority: priority || 'medium',
-    specFile: null,
-    created: new Date().toISOString().slice(0, 10),
-    completed: null
-  };
-  tasksData.tasks.push(task);
-
-  // Create spec with note contents as context
-  const specsDir = path.join(PROJECTS_DIR, req.params.name, 'specs');
-  fs.mkdirSync(specsDir, { recursive: true });
-  const slug = title.toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
-    .slice(0, 40).replace(/-$/, '');
-  const specFilename = `${task.id}-${slug}.md`;
-  const specPath = path.join(specsDir, specFilename);
-  const date = new Date().toISOString().slice(0, 10);
-  const noteContents = notesToPromote
-    .map(n => `### Note ${n.id}\n${n.text || '(empty)'}`)
-    .join('\n\n');
-  fs.writeFileSync(specPath, `# ${task.id}: ${title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Context (from Idea Canvas)\n\n${noteContents}\n\n## Log\n- ${date}: Spec created from ${notesToPromote.length} canvas note${notesToPromote.length > 1 ? 's' : ''}\n`);
-  task.specFile = `specs/${specFilename}`;
-
-  writeTasksFile(req.params.name, tasksData);
-  syncDashboardData(req.params.name);
-
-  // Remove promoted notes and orphaned connections
-  const promotedIds = new Set(noteIds);
-  canvasData.notes = canvasData.notes.filter(n => !promotedIds.has(n.id));
-  const remainingIds = new Set(canvasData.notes.map(n => n.id));
-  canvasData.connections = canvasData.connections.filter(
-    c => remainingIds.has(c.from) && remainingIds.has(c.to)
-  );
-
-  try {
-    writeCanvasFile(req.params.name, canvasData);
-    res.json({
-      ok: true,
-      task: taskWithSpecStatus(req.params.name, task),
-      deletedNotes: Array.from(promotedIds),
-      deletedConnections: canvasData.connections.length
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 app.listen(PORT, HOST, () => {
