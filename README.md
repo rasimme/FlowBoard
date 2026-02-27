@@ -2,7 +2,7 @@
 
 [![GitHub](https://img.shields.io/badge/GitHub-FlowBoard-blue?logo=github)](https://github.com/rasimme/FlowBoard)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v3.0.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
+[![Version](https://img.shields.io/badge/version-v3.1.0-orange.svg)](https://github.com/rasimme/FlowBoard/releases)
 
 > **File-based project management with Kanban dashboard for OpenClaw agents.**
 
@@ -359,6 +359,17 @@ The file explorer lets you browse your entire project structure, preview Markdow
 ---
 
 ## Changelog
+
+### v3.1.0 (2026-02-27) - UX & Mobile Improvements
+- **Delete files** - Remove files from `context/` and `specs/` directly in the dashboard
+- **Spec pre-fill** - `POST /specs/:taskId` accepts optional content body for programmatic creation
+- **Smart session log trimming** - project-context hook keeps only last 2 sessions (smaller context)
+- **Shared UI components** - `ICONS` registry and `renderDeleteBtn()` for consistent UI
+- **LAN access via custom hostname** - Configurable `LOCAL_HOSTNAME` env var for auth bypass
+- **Kanban scroll preservation** - Scroll position kept when switching between tabs
+- **Mobile fixes** - Ghost-tap prevention, file explorer rebuild, no-cache HTML header
+- **Extended PROJECT.md template** - Scope, Project Files, context/ convention documented
+- **env.example template** - Easier setup with documented environment variables
 
 ### v3.0.0 (2026-02-22) - Telegram Mini App + Remote Access
 - **Telegram Mini App** - Access dashboard from Telegram via secure tunnel
