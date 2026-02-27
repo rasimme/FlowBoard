@@ -918,43 +918,50 @@ function computePortPositions() {
   return portMap;
 }
 
-// --- Render connections ---
+// --- Render connections (underlay SVG) ---
 function renderConnections() {
   const svg = document.getElementById('canvasSvg');
   if (!svg) return;
-  // Remove all connection lines (keep conn-temp if exists)
+
+  // Remove all existing connection groups
   svg.querySelectorAll('.conn-line-group').forEach(g => g.remove());
 
+  const portMap = computePortPositions();
+
   for (const conn of canvasState.connections) {
-    const a = getNoteCenter(conn.from);
-    const b = getNoteCenter(conn.to);
-    if (!a || !b) continue;
+    const ports = portMap.get(conn.from + ':' + conn.to);
+    if (!ports || ports.ax == null || ports.bx == null) continue;
+
+    const { ax, ay, bx, by } = ports;
+
+    // Stroke color from source note's color
+    const fromNote  = canvasState.notes.find(n => n.id === conn.from);
+    const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
+
+    const pathD = manhattanPath(ax, ay, bx, by);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'conn-line-group');
 
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-    line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-    line.setAttribute('class', 'conn-line');
-    line.setAttribute('data-from', conn.from);
-    line.setAttribute('data-to', conn.to);
+    // Visible path
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathD);
+    path.setAttribute('class', 'conn-path');
+    path.style.stroke = strokeCol;
+    path.setAttribute('data-from', conn.from);
+    path.setAttribute('data-to',   conn.to);
 
-    // Wider invisible hit area for easier clicking
-    const hitLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    hitLine.setAttribute('x1', a.x); hitLine.setAttribute('y1', a.y);
-    hitLine.setAttribute('x2', b.x); hitLine.setAttribute('y2', b.y);
-    hitLine.setAttribute('stroke', 'transparent');
-    hitLine.setAttribute('stroke-width', '12');
-    hitLine.style.cursor = 'pointer';
-    hitLine.style.pointerEvents = 'stroke';
-    hitLine.addEventListener('click', e => {
+    // Wide invisible hit target for easier clicking
+    const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hitPath.setAttribute('d', pathD);
+    hitPath.setAttribute('class', 'conn-path-hit');
+    hitPath.addEventListener('click', e => {
       e.stopPropagation();
-      showConnectionDeleteBtn(conn.from, conn.to, a, b);
+      showConnectionDeleteBtn(conn.from, conn.to, { x: ax, y: ay }, { x: bx, y: by });
     });
 
-    g.appendChild(line);
-    g.appendChild(hitLine);
+    g.appendChild(path);
+    g.appendChild(hitPath);
     svg.appendChild(g);
   }
 }
