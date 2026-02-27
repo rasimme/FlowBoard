@@ -104,6 +104,7 @@ app.use('/api/', rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1', // localhost immer erlauben
   keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
   message: { error: 'Too many requests, please slow down.' }
 }));
@@ -152,6 +153,162 @@ app.use(express.static(__dirname, {
 // Health-Endpoint (kein Auth)
 const startTime = Date.now();
 const pkg = require('./package.json');
+// --- Canvas Helpers ---
+
+function readCanvasFile(projectName) {
+  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Garbage-collect orphaned connections on every load
+    const noteIds = new Set((data.notes || []).map(n => n.id));
+    data.connections = (data.connections || []).filter(
+      c => noteIds.has(c.from) && noteIds.has(c.to)
+    );
+    return data;
+  } catch {
+    return { notes: [], connections: [] };
+  }
+}
+
+function writeCanvasFile(projectName, data) {
+  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function nextNoteId(notes) {
+  let max = 0;
+  for (const n of notes) {
+    const m = n.id.match(/N-(\d+)/);
+    if (m) max = Math.max(max, parseInt(m[1]));
+  }
+  return `N-${String(max + 1).padStart(3, '0')}`;
+}
+
+// --- Project Context Helpers ---
+
+/**
+ * Trim SESSION LOG in PROJECT.md to only the last N session entries.
+ * Keeps everything before "## Session Log" intact, then appends
+ * only the last N "### ..." entries from the log.
+ */
+function trimSessionLog(content, maxSessions = 2) {
+  const sessionLogMatch = content.match(/^(## Session Log)\s*$/m);
+  if (!sessionLogMatch) return content;
+
+  const splitIndex = sessionLogMatch.index;
+  const beforeLog = content.slice(0, splitIndex);
+  const logSection = content.slice(splitIndex);
+
+  const entryPattern = /^### .+$/gm;
+  const matches = [];
+  let match;
+  while ((match = entryPattern.exec(logSection)) !== null) {
+    matches.push(match.index);
+  }
+
+  if (matches.length === 0) return content;
+
+  const entries = [];
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i];
+    const end = i + 1 < matches.length ? matches[i + 1] : logSection.length;
+    entries.push(logSection.slice(start, end).trimEnd());
+  }
+
+  const kept = entries.slice(0, maxSessions);
+  const trimmedLog = `## Session Log\n\n${kept.join('\n\n')}\n`;
+  return beforeLog + trimmedLog;
+}
+
+function updateBootstrapMd(projectName) {
+  if (!projectName) {
+    // No active project — clear BOOTSTRAP.md
+    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch {}
+    return;
+  }
+
+  const rulesPath = path.join(PROJECTS_DIR, 'PROJECT-RULES.md');
+  const projectMdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
+
+  let rulesContent = '';
+  let projectContent = '';
+  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch {}
+  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch {}
+
+  // Smart Session Log trimming: keep only last 2 sessions in bootstrap
+  if (projectContent) {
+    projectContent = trimSessionLog(projectContent, 2);
+  }
+
+  const sections = [`# Active Project: ${projectName}\n`];
+  if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
+  if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
+
+  try {
+    fs.writeFileSync(BOOTSTRAP_FILE, sections.join('\n'));
+    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName}`);
+  } catch (err) {
+    console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
+  }
+}
+
+async function sendWakeEvent(text) {
+  if (!HOOKS_TOKEN) {
+    console.log('[wake] No OPENCLAW_HOOKS_TOKEN set, skipping wake event');
+    return;
+  }
+  try {
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/hooks/wake`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${HOOKS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ text, mode: 'now' })
+    });
+    if (res.ok) {
+      console.log(`[wake] Sent wake event: ${text.slice(0, 80)}...`);
+    } else {
+      console.error(`[wake] Failed (${res.status}): ${await res.text()}`);
+    }
+  } catch (err) {
+    console.error(`[wake] Error:`, err.message);
+  }
+}
+
+// --- Routes ---
+
+// GET /api/status
+app.get('/api/status', (req, res) => {
+  res.json({ activeProject: readActiveProject() });
+});
+
+// PUT /api/status
+app.put('/api/status', async (req, res) => {
+  const { project } = req.body;
+  const previousProject = readActiveProject();
+  try {
+    const effectiveProject = (project && project !== 'none') ? project : null;
+    writeActiveProject(effectiveProject);
+    updateBootstrapMd(effectiveProject);
+
+    // Send wake event to notify agent of project switch
+    if (effectiveProject) {
+      const wakeText = previousProject && previousProject !== project
+        ? `Projekt gewechselt von ${previousProject} auf ${project}. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den neuen Projekt-Context.`
+        : `Projekt ${project} aktiviert. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den Projekt-Context.`;
+      sendWakeEvent(wakeText);
+    } else if (previousProject) {
+      sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
+    }
+
+    res.json({ ok: true, activeProject: effectiveProject });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
@@ -752,6 +909,165 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
 
   res.json({ ok: true, specFile: task.specFile, taskId, task: taskWithSpecStatus(req.params.name, task) });
+});
+
+
+// GET /api/projects/:name/canvas
+app.get('/api/projects/:name/canvas', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+  res.json(readCanvasFile(req.params.name));
+});
+
+// POST /api/projects/:name/canvas/notes
+app.post('/api/projects/:name/canvas/notes', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+  const data = readCanvasFile(req.params.name);
+  const { text = '', x = 0, y = 0, color = 'yellow' } = req.body;
+  const note = {
+    id: nextNoteId(data.notes),
+    text,
+    x,
+    y,
+    color,
+    created: new Date().toISOString().slice(0, 10)
+  };
+  data.notes.push(note);
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true, note });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/projects/:name/canvas/notes/:id
+app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const note = data.notes.find(n => n.id === req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  const allowed = ['text', 'x', 'y', 'color'];
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(req.body, k)) note[k] = req.body[k];
+  }
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true, note });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/projects/:name/canvas/notes/:id
+app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const idx = data.notes.findIndex(n => n.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Note not found' });
+  data.notes.splice(idx, 1);
+  const noteIds = new Set(data.notes.map(n => n.id));
+  data.connections = data.connections.filter(c => noteIds.has(c.from) && noteIds.has(c.to));
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/canvas/connections
+app.post('/api/projects/:name/canvas/connections', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const { from, to } = req.body;
+  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
+  if (from === to) return res.status(400).json({ error: 'Cannot connect note to itself' });
+  const noteIds = new Set(data.notes.map(n => n.id));
+  if (!noteIds.has(from) || !noteIds.has(to)) return res.status(404).json({ error: 'Note not found' });
+  const exists = data.connections.some(
+    c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
+  );
+  if (exists) return res.json({ ok: true, duplicate: true });
+  const conn = { from, to };
+  data.connections.push(conn);
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true, connection: conn });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/projects/:name/canvas/connections
+app.delete('/api/projects/:name/canvas/connections', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const { from, to } = req.body;
+  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
+  data.connections = data.connections.filter(
+    c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
+  );
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/canvas/promote
+app.post('/api/projects/:name/canvas/promote', (req, res) => {
+  const { noteIds, title, priority } = req.body;
+  if (!noteIds || !noteIds.length || !title) {
+    return res.status(400).json({ error: 'noteIds array and title required' });
+  }
+
+  const canvasData = readCanvasFile(req.params.name);
+  const notesToPromote = canvasData.notes.filter(n => noteIds.includes(n.id));
+  if (notesToPromote.length === 0) return res.status(404).json({ error: 'No matching notes found' });
+
+  const tasksData = readTasksFile(req.params.name);
+  if (!tasksData) return res.status(404).json({ error: 'Project not found' });
+
+  const task = {
+    id: nextTaskId(tasksData.tasks),
+    title,
+    status: 'open',
+    priority: priority || 'medium',
+    specFile: null,
+    created: new Date().toISOString().slice(0, 10),
+    completed: null
+  };
+  tasksData.tasks.push(task);
+
+  const specsDir = path.join(PROJECTS_DIR, req.params.name, 'specs');
+  fs.mkdirSync(specsDir, { recursive: true });
+  const slug = title.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
+    .slice(0, 40).replace(/-$/, '');
+  const specFilename = `${task.id}-${slug}.md`;
+  const specPath = path.join(specsDir, specFilename);
+  const date = new Date().toISOString().slice(0, 10);
+  const noteContents = notesToPromote
+    .map(n => `### Note ${n.id}\n${n.text || '(empty)'}`)
+    .join('\n\n');
+  fs.writeFileSync(specPath, `# ${task.id}: ${title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Context (from Idea Canvas)\n\n${noteContents}\n\n## Log\n- ${date}: Spec created from ${notesToPromote.length} canvas note${notesToPromote.length > 1 ? 's' : ''}\n`);
+  task.specFile = `specs/${specFilename}`;
+
+  writeTasksFile(req.params.name, tasksData);
+  syncDashboardData(req.params.name);
+
+  const promotedIds = new Set(noteIds);
+  canvasData.notes = canvasData.notes.filter(n => !promotedIds.has(n.id));
+  const remainingIds = new Set(canvasData.notes.map(n => n.id));
+  canvasData.connections = canvasData.connections.filter(
+    c => remainingIds.has(c.from) && remainingIds.has(c.to)
+  );
+
+  try {
+    writeCanvasFile(req.params.name, canvasData);
+    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task), deletedNotes: Array.from(promotedIds) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, HOST, () => {
