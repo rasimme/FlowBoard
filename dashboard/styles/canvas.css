@@ -45,3 +45,55 @@
   background: rgba(18, 20, 26, 0.85) !important;
   border-color: var(--accent-2) !important;
 }
+
+/* Z-order: underlay SVG (0) → note cards (1) → overlay SVG (2) */
+.canvas-svg-underlay {
+  z-index: 0;
+}
+.note {
+  z-index: 1;
+}
+.canvas-svg-overlay {
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Underlay connection paths (solid, colored) */
+.conn-path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  cursor: pointer;
+  pointer-events: stroke;
+  transition: opacity 0.15s;
+}
+.conn-path:hover {
+  opacity: 0.7;
+}
+
+/* Wide invisible hit target — easier click on thin line */
+.conn-path-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+
+/* Overlay preview path (dashed, while dragging a new connection) */
+.conn-preview-path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* Target port highlight during connection drag */
+.conn-dot-target-highlight {
+  opacity: 1 !important;
+  background: var(--accent-2) !important;
+  transform: translate(-50%, -50%) scale(1.35) !important;
+}
