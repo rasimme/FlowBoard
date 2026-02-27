@@ -768,7 +768,7 @@ function renderConnections() {
     if (!a || !b) continue;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.className = 'conn-line-group';
+    g.setAttribute('class', 'conn-line-group');
 
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
