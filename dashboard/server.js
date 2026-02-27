@@ -130,6 +130,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve index.html with injected config
+app.get('/', (req, res) => {
+  const fs = require('fs');
+  let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  const localHostname = process.env.LOCAL_HOSTNAME || '';
+  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};</script></head>`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(html);
+});
+
 app.use(express.static(__dirname, {
   setHeaders: (res, filePath) => {
     // Never cache HTML — Telegram WebApp ignores query-param versioning on the HTML itself
