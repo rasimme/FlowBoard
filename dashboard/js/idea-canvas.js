@@ -56,6 +56,16 @@ function renderNoteMarkdown(text) {
   return html;
 }
 
+function checkTruncation(noteEl) {
+  const body = noteEl?.querySelector('.note-body');
+  if (!body) return;
+  if (body.scrollHeight > body.clientHeight + 2) {
+    body.classList.add('truncated');
+  } else {
+    body.classList.remove('truncated');
+  }
+}
+
 // --- Coordinate helpers ---
 function screenToCanvas(screenX, screenY) {
   const wrap = document.getElementById('canvasWrap');
@@ -261,6 +271,13 @@ function renderNotes() {
     if (note.x === 0 && note.y === 0) repositionZeroNote(note);
     vp.appendChild(createNoteElement(note));
   }
+
+  // Check truncation after DOM layout
+  requestAnimationFrame(() => {
+    for (const note of canvasState.notes) {
+      checkTruncation(document.getElementById('note-' + note.id));
+    }
+  });
 }
 
 // --- Create note ---
@@ -385,6 +402,7 @@ export async function saveNoteText(id, text) {
       const rendered = renderNoteMarkdown(text);
       body.innerHTML = `<div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>`;
     }
+    checkTruncation(el);
   }
   renderConnections();
 
