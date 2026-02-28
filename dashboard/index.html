@@ -83,7 +83,7 @@ import {
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
 } from './js/file-explorer.js?v=7';
 import {
-  canvasState, renderIdeaCanvas, addNote, startDeleteNote, toggleColorPopover,
+  canvasState, renderIdeaCanvas, addNote, startDeleteNote,
   setNoteColor, startNoteEdit, saveNoteText, startConnectionDrag, showPromoteModal,
   refreshCanvas, resetCanvasState
 } from './js/idea-canvas.js?v=1';
@@ -382,7 +382,6 @@ window.deleteCurrentFile = function() {
 // --- Canvas Actions ---
 window.addNote = function() { addNote(state); };
 window.startDeleteNote = function(id) { startDeleteNote(id, state); };
-window.toggleColorPopover = toggleColorPopover;
 window.setNoteColor = setNoteColor;
 window.startNoteEdit = function(e, id) { e.stopPropagation(); startNoteEdit(id); };
 window.saveNoteText = saveNoteText;
