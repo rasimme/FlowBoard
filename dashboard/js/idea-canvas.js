@@ -41,6 +41,7 @@ export const canvasState = {
   panning: null,       // { startX, startY, startPanX, startPanY }
   lassoState: null,    // { startX, startY, rect: {x,y,w,h} }
   posSaveTimers: {},
+  sidebarNoteId: null,
   _state: null         // ref to global app state, set on renderIdeaCanvas
 };
 
@@ -168,9 +169,33 @@ export async function renderIdeaCanvas(state) {
         <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
       </div>
       <div class="canvas-lasso" id="canvasLasso"></div>
+      <div class="canvas-sidebar" id="canvasSidebar">
+        <div class="canvas-sidebar-header">
+          <span class="canvas-sidebar-color-bar" id="sidebarColorBar"></span>
+          <span class="canvas-sidebar-id" id="sidebarNoteId"></span>
+          <button class="canvas-sidebar-close" onclick="window.closeSidebar()">✕</button>
+        </div>
+        <div class="canvas-sidebar-body">
+          <textarea class="canvas-sidebar-textarea" id="sidebarTextarea"></textarea>
+        </div>
+      </div>
     </div>`;
 
   bindCanvasEvents();
+
+  // Sidebar textarea events
+  const sidebarTa = document.getElementById('sidebarTextarea');
+  if (sidebarTa) {
+    sidebarTa.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Escape') closeSidebar();
+    });
+    sidebarTa.addEventListener('blur', () => {
+      if (canvasState.sidebarNoteId) {
+        saveNoteText(canvasState.sidebarNoteId, sidebarTa.value);
+      }
+    });
+  }
 
   if (!state.viewedProject) {
     const vp = document.getElementById('canvasViewport');
@@ -213,6 +238,7 @@ export function resetCanvasState() {
   canvasState.lassoState = null;
   canvasState.pan = { x: 60, y: 60 };
   canvasState.scale = 1.0;
+  canvasState.sidebarNoteId = null;
 }
 
 // --- Note HTML ---
@@ -352,6 +378,19 @@ async function confirmDeleteNote(id) {
 
 // --- Note editing ---
 export function startNoteEdit(id) {
+  const el = document.getElementById('note-' + id);
+  if (!el) return;
+  const body = el.querySelector('.note-body');
+
+  // If truncated, open sidebar instead of inline edit
+  if (body?.classList.contains('truncated')) {
+    openSidebar(id);
+    return;
+  }
+
+  // If sidebar is open for another note, close it
+  if (canvasState.sidebarNoteId) closeSidebar();
+
   if (canvasState.editingId === id) return;
   // Save any current edit first
   if (canvasState.editingId) {
@@ -359,8 +398,6 @@ export function startNoteEdit(id) {
     if (prevTa) saveNoteText(canvasState.editingId, prevTa.value);
   }
   canvasState.editingId = id;
-  const el = document.getElementById('note-' + id);
-  if (!el) return;
   const note = canvasState.notes.find(n => n.id === id);
   if (!note) return;
 
@@ -413,6 +450,43 @@ export async function saveNoteText(id, text) {
     });
   } catch { /* silent — data is in memory */ }
 }
+
+// --- Sidebar ---
+function openSidebar(noteId) {
+  const note = canvasState.notes.find(n => n.id === noteId);
+  if (!note) return;
+  canvasState.sidebarNoteId = noteId;
+
+  const sidebar = document.getElementById('canvasSidebar');
+  const colorBar = document.getElementById('sidebarColorBar');
+  const noteIdEl = document.getElementById('sidebarNoteId');
+  const textarea = document.getElementById('sidebarTextarea');
+  if (!sidebar || !textarea) return;
+
+  sidebar.classList.add('open');
+  colorBar.className = `canvas-sidebar-color-bar sidebar-color-${note.color || 'yellow'}`;
+  noteIdEl.textContent = note.id;
+  textarea.value = note.text || '';
+  textarea.focus();
+}
+
+export function closeSidebar() {
+  const sidebar = document.getElementById('canvasSidebar');
+  if (!sidebar) return;
+
+  // Save current text before closing
+  if (canvasState.sidebarNoteId) {
+    const textarea = document.getElementById('sidebarTextarea');
+    if (textarea) {
+      saveNoteText(canvasState.sidebarNoteId, textarea.value);
+    }
+  }
+
+  sidebar.classList.remove('open');
+  canvasState.sidebarNoteId = null;
+}
+
+window.closeSidebar = closeSidebar;
 
 // --- Debounced position save ---
 function schedulePositionSave(noteId) {
@@ -691,6 +765,9 @@ function onCanvasMouseDown(e) {
   canvasState.selectedIds.clear();
   document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
   renderPromoteButton();
+
+  // Close sidebar when clicking empty canvas
+  if (canvasState.sidebarNoteId) closeSidebar();
 
   // Close any active edit
   if (canvasState.editingId) {
