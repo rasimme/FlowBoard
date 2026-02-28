@@ -881,6 +881,7 @@ function onCanvasMouseMove(e) {
       nearestDot.classList.add('conn-dot-snap');
       canvasState.connecting.snapTargetId = nearestNoteId;
       canvasState.connecting.snapValid = true;
+      canvasState.connecting.snapPort = nearestPort;
     } else {
       // Not near any port — follow cursor freely
       tx = pos.x;
@@ -970,9 +971,9 @@ function onCanvasMouseUp(e) {
 
   // End connection drag — only commit if cursor was snapped to a valid port
   if (canvasState.connecting) {
-    const { fromId, snapTargetId, snapValid } = canvasState.connecting;
+    const { fromId, fromPort, snapTargetId, snapValid, snapPort } = canvasState.connecting;
     if (snapValid && snapTargetId && snapTargetId !== fromId) {
-      saveConnection(fromId, snapTargetId);
+      saveConnection(fromId, snapTargetId, fromPort, snapPort);
     }
     removeTempConnectionLine();
     canvasState.connecting = null;
@@ -1436,17 +1437,29 @@ function renderConnections() {
   const portMap = computePortPositions();
 
   for (const conn of canvasState.connections) {
-    const ports = portMap.get(conn.from + ':' + conn.to);
-    if (!ports || ports.ax == null || ports.bx == null) continue;
+    let ax, ay, bx, by, sideA, sideB;
 
-    const { ax, ay, bx, by, sideA } = ports;
+    if (conn.fromPort && conn.toPort) {
+      // Use stored port positions (user explicitly chose these)
+      const ptA = getNoteDotPosition(conn.from, conn.fromPort);
+      const ptB = getNoteDotPosition(conn.to, conn.toPort);
+      if (!ptA || !ptB) continue;
+      ax = ptA.x; ay = ptA.y; sideA = conn.fromPort;
+      bx = ptB.x; by = ptB.y; sideB = conn.toPort;
+    } else {
+      // Legacy connections without stored ports — fallback to dynamic routing
+      const ports = portMap.get(conn.from + ':' + conn.to);
+      if (!ports || ports.ax == null || ports.bx == null) continue;
+      ax = ports.ax; ay = ports.ay; sideA = ports.sideA;
+      bx = ports.bx; by = ports.by; sideB = ports.sideB;
+    }
 
     // Stroke color from source note's color
     const fromNote  = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
 
     const oriA = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
-    const oriB = (ports.sideB === 'top' || ports.sideB === 'bottom') ? 'vertical' : 'horizontal';
+    const oriB = (sideB === 'top' || sideB === 'bottom') ? 'vertical' : 'horizontal';
     const pathD = manhattanPath(ax, ay, bx, by, oriA, oriB);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1529,14 +1542,14 @@ function removeTempConnectionLine() {
     .forEach(d => d.classList.remove('conn-dot-snap'));
 }
 
-async function saveConnection(fromId, toId) {
+async function saveConnection(fromId, toId, fromPort, toPort) {
   if (!canvasState._state?.viewedProject) return;
   try {
     const res = await api(`/projects/${canvasState._state.viewedProject}/canvas/connections`, {
-      method: 'POST', body: { from: fromId, to: toId }
+      method: 'POST', body: { from: fromId, to: toId, fromPort: fromPort || null, toPort: toPort || null }
     });
     if (res.ok && !res.duplicate) {
-      canvasState.connections.push({ from: fromId, to: toId });
+      canvasState.connections.push({ from: fromId, to: toId, fromPort: fromPort || null, toPort: toPort || null });
 
       renderConnections();
       renderPromoteButton();
