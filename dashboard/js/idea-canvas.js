@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=3';
+  _l.href = './styles/canvas.css?v=4';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
