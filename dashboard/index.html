@@ -387,7 +387,7 @@ window.showPromoteModal = showPromoteModal;
 function isUserInteracting() {
   if (kanbanState.addingTask || kanbanState.editingTaskId) return true;
   if (document.getElementById('modalOverlay')) return true;
-  if (canvasState.editingId) return true;
+  if (canvasState.editingId || canvasState.sidebarNoteId) return true;
   const active = document.activeElement;
   return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 }
@@ -456,7 +456,10 @@ async function refresh() {
           prevCanvasJson = canvasJson;
           canvasState.notes = canvasData.notes || [];
           canvasState.connections = canvasData.connections || [];
-          if (state.currentTab === 'ideas') refreshCanvas();
+          // Only re-render if not actively editing or using sidebar
+          if (state.currentTab === 'ideas' && !canvasState.editingId && !canvasState.sidebarNoteId) {
+            refreshCanvas();
+          }
         }
       } catch { /* silent */ }
     }
