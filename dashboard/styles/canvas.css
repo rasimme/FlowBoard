@@ -267,10 +267,21 @@
 }
 
 @media (max-width: 600px) {
+  /* Mobile: treat sidebar as a modal overlay (no slide animation) */
   .canvas-sidebar {
     width: 100%;
+    left: 0;
+    right: 0;
     border-left: none;
     border-top: 1px solid var(--border);
+    transition: none;
+    transform: none;
+    opacity: 0;
+    visibility: hidden;
+  }
+  .canvas-sidebar.open {
+    opacity: 1;
+    visibility: visible;
   }
 }
 

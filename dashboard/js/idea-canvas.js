@@ -416,6 +416,12 @@ export function startNoteEdit(id) {
   const note = canvasState.notes.find(n => n.id === id);
   if (!note) return;
 
+  // Keep card size stable while editing (prevents visual jump + port reposition)
+  if (!el.dataset.editLockHeight) {
+    el.dataset.editLockHeight = String(el.offsetHeight || 0);
+    if (el.offsetHeight) el.style.minHeight = el.offsetHeight + 'px';
+  }
+
   if (!body) return;
   body.innerHTML = `<textarea class="note-textarea" id="note-ta-${id}">${escHtml(note.text || '')}</textarea>`;
   const ta = document.getElementById('note-ta-' + id);
@@ -455,6 +461,12 @@ export async function saveNoteText(id, text) {
       body.innerHTML = `<div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>`;
     }
     checkTruncation(el);
+
+    // Clear edit size lock (restore natural height)
+    if (el.dataset.editLockHeight) {
+      delete el.dataset.editLockHeight;
+      el.style.minHeight = '';
+    }
   }
   renderConnections();
 
@@ -482,7 +494,12 @@ function openSidebar(noteId) {
   colorBar.className = `canvas-sidebar-color-bar sidebar-color-${note.color || 'yellow'}`;
   noteIdEl.textContent = note.id;
   textarea.value = note.text || '';
-  textarea.focus();
+  // Prevent browser scroll/viewport adjustments when focusing the sidebar textarea
+  try {
+    textarea.focus({ preventScroll: true });
+  } catch {
+    textarea.focus();
+  }
 }
 
 export function closeSidebar() {
