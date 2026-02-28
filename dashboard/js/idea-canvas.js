@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=2';
+  _l.href = './styles/canvas.css?v=3';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -515,51 +515,13 @@ async function saveNotePosition(noteId) {
   }
 }
 
-// --- Color popover ---
-export function toggleColorPopover(e, noteId) {
-  e.stopPropagation();
-  document.querySelectorAll('.color-popover').forEach(p => p.remove());
-
-  const dot = e.currentTarget;
-  const note = canvasState.notes.find(n => n.id === noteId);
-  const popover = document.createElement('div');
-  popover.className = 'color-popover';
-
-  NOTE_COLORS.forEach(color => {
-    const swatch = document.createElement('span');
-    swatch.className = `color-swatch color-swatch-${color}${color === note?.color ? ' selected' : ''}`;
-    swatch.title = color;
-    swatch.addEventListener('click', ev => {
-      ev.stopPropagation();
-      setNoteColor(noteId, color);
-      popover.remove();
-    });
-    popover.appendChild(swatch);
-  });
-
-  // Position popover below the header
-  dot.closest('.note-header').appendChild(popover);
-  popover.style.top = '28px';
-  popover.style.left = '0';
-
-  setTimeout(() => {
-    const close = ev => {
-      if (!popover.contains(ev.target)) {
-        popover.remove();
-        document.removeEventListener('click', close);
-      }
-    };
-    document.addEventListener('click', close);
-  }, 0);
-}
-
 export async function setNoteColor(noteId, color) {
   const note = canvasState.notes.find(n => n.id === noteId);
   if (!note) return;
   note.color = color;
   const el = document.getElementById('note-' + noteId);
   if (el) {
-    el.className = `note color-${color}${canvasState.selectedIds.has(noteId) ? ' selected' : ''}`;
+    el.className = `note color-${color}${note.size === 'medium' ? ' size-medium' : ''}${canvasState.selectedIds.has(noteId) ? ' selected' : ''}`;
   }
   if (!canvasState._state?.viewedProject) return;
   try {
