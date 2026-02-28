@@ -244,3 +244,81 @@
   z-index: 1;
   pointer-events: none;
 }
+
+/* Overflow sidebar */
+.canvas-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px;
+  height: 100%;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.2s ease-out;
+}
+.canvas-sidebar.open {
+  transform: translateX(0);
+}
+
+.canvas-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.canvas-sidebar-color-bar {
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+}
+.sidebar-color-yellow { background: var(--warn); }
+.sidebar-color-blue   { background: var(--info); }
+.sidebar-color-green  { background: var(--ok); }
+.sidebar-color-red    { background: var(--danger); }
+.sidebar-color-teal   { background: var(--accent-2); }
+
+.canvas-sidebar-id {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  flex: 1;
+}
+
+.canvas-sidebar-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  line-height: 1;
+}
+.canvas-sidebar-close:hover {
+  color: var(--text);
+}
+
+.canvas-sidebar-body {
+  flex: 1;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.canvas-sidebar-textarea {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+  resize: none;
+}
