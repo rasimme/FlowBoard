@@ -856,9 +856,12 @@ function onCanvasMouseMove(e) {
       ty = pos.y;
     }
 
+    const fromPort = canvasState.connecting.fromPort;
+    const orientation = (fromPort === 'top' || fromPort === 'bottom') ? 'vertical' : 'horizontal';
+
     const prev = document.getElementById('conn-preview');
     if (prev && fromPt) {
-      prev.setAttribute('d', manhattanPath(fromPt.x, fromPt.y, tx, ty));
+      prev.setAttribute('d', manhattanPath(fromPt.x, fromPt.y, tx, ty, orientation));
     }
     return;
   }
@@ -1152,17 +1155,16 @@ function onTouchEnd(e) {
 }
 
 /**
- * Returns an SVG path `d` string for a 3-segment Manhattan route:
- *   horizontal (x1→midX) → vertical (y1→y2) → horizontal (midX→x2)
- * Corners are smoothed with quadratic Bézier curves (radius = CORNER_RADIUS).
+ * Returns an SVG path `d` string for a 3-segment Manhattan route.
  *
  * @param {number} x1  Source port X (canvas space)
  * @param {number} y1  Source port Y
  * @param {number} x2  Target port X
  * @param {number} y2  Target port Y
+ * @param {"horizontal"|"vertical"} orientation  Routing direction based on source port side
  * @returns {string}   SVG path `d` attribute value
  */
-function manhattanPath(x1, y1, x2, y2) {
+function manhattanPath(x1, y1, x2, y2, orientation = 'horizontal') {
   const r   = CORNER_RADIUS;
   const dx  = x2 - x1;
   const dy  = y2 - y1;
@@ -1172,29 +1174,48 @@ function manhattanPath(x1, y1, x2, y2) {
   // Degenerate: essentially straight — no bending needed
   if (adx < 2 || ady < 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
 
-  const mx  = (x1 + x2) / 2;  // horizontal midpoint
-  const sx  = dx >= 0 ? 1 : -1;  // +1 right, -1 left
-  const sy  = dy >= 0 ? 1 : -1;  // +1 down,  -1 up
+  if (orientation === 'vertical') {
+    // V→H→V routing (for top/bottom ports)
+    const my  = (y1 + y2) / 2;
+    const sx  = dx >= 0 ? 1 : -1;
+    const sy  = dy >= 0 ? 1 : -1;
 
-  // Clamp radii so Bézier arcs don't overshoot their segment
+    const rv = Math.max(0, Math.min(r, ady / 2 - 2));
+    const rh = Math.max(0, Math.min(r, adx / 2 - 2));
+
+    if (rv < 1 || rh < 1) {
+      return `M ${x1} ${y1} L ${x1} ${my} L ${x2} ${my} L ${x2} ${y2}`;
+    }
+
+    return [
+      `M ${x1} ${y1}`,
+      `L ${x1} ${my - sy * rv}`,
+      `Q ${x1} ${my} ${x1 + sx * rh} ${my}`,
+      `L ${x2 - sx * rh} ${my}`,
+      `Q ${x2} ${my} ${x2} ${my + sy * rv}`,
+      `L ${x2} ${y2}`
+    ].join(' ');
+  }
+
+  // H→V→H routing (for left/right ports — default)
+  const mx  = (x1 + x2) / 2;
+  const sx  = dx >= 0 ? 1 : -1;
+  const sy  = dy >= 0 ? 1 : -1;
+
   const rh = Math.max(0, Math.min(r, adx / 2 - 2));
   const rv = Math.max(0, Math.min(r, ady / 2 - 2));
 
-  // Too short for smooth curves — fall back to sharp corners
   if (rh < 1 || rv < 1) {
     return `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
   }
 
-  // H/V/H with two rounded corners:
-  //   Approach corner 1 from x1 side → arc → descend vertically →
-  //   Approach corner 2 from y2 side → arc → exit to x2
   return [
     `M ${x1} ${y1}`,
-    `L ${mx - sx * rh} ${y1}`,            // run along first H segment
-    `Q ${mx} ${y1} ${mx} ${y1 + sy * rv}`, // round corner 1
-    `L ${mx} ${y2 - sy * rv}`,             // V segment
-    `Q ${mx} ${y2} ${mx + sx * rh} ${y2}`, // round corner 2
-    `L ${x2} ${y2}`                         // run along last H segment
+    `L ${mx - sx * rh} ${y1}`,
+    `Q ${mx} ${y1} ${mx} ${y1 + sy * rv}`,
+    `L ${mx} ${y2 - sy * rv}`,
+    `Q ${mx} ${y2} ${mx + sx * rh} ${y2}`,
+    `L ${x2} ${y2}`
   ].join(' ');
 }
 
@@ -1291,6 +1312,7 @@ function computePortPositions() {
       if (a.conn.from === noteId) {
         entry.ax = px;
         entry.ay = py;
+        entry.sideA = side;
       } else {
         entry.bx = px;
         entry.by = py;
@@ -1318,13 +1340,14 @@ function renderConnections() {
     const ports = portMap.get(conn.from + ':' + conn.to);
     if (!ports || ports.ax == null || ports.bx == null) continue;
 
-    const { ax, ay, bx, by } = ports;
+    const { ax, ay, bx, by, sideA } = ports;
 
     // Stroke color from source note's color
     const fromNote  = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
 
-    const pathD = manhattanPath(ax, ay, bx, by);
+    const orientation = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
+    const pathD = manhattanPath(ax, ay, bx, by, orientation);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'conn-line-group');
