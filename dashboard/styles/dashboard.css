@@ -905,22 +905,15 @@
     .note.selected .delete-btn { opacity: 0.5; }
     .note .delete-btn:hover { opacity: 1 !important; }
 
-    /* Connection dots (appear on hover/select) */
+    /* Connection dots — base styles (visibility managed by canvas.css) */
     .conn-dot {
       position: absolute; width: 12px; height: 12px;
       border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
       cursor: crosshair; z-index: 5;
       transform: translate(-50%, -50%);
-      opacity: 0;
       transition: opacity var(--duration-normal), transform var(--duration-normal);
     }
-    .note:hover .conn-dot,
-    .note.selected .conn-dot { opacity: 1; }
     .conn-dot:hover { transform: translate(-50%, -50%) scale(1.4); }
-    .conn-dot-top    { top: 0;    left: 50%; }
-    .conn-dot-right  { top: 50%;  left: 100%; }
-    .conn-dot-bottom { top: 100%; left: 50%; }
-    .conn-dot-left   { top: 50%;  left: 0; }
     /* 44px touch targets on mobile */
     .conn-dot::after {
       content: ''; position: absolute;

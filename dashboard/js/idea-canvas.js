@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=4';
+  _l.href = './styles/canvas.css?v=5';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -278,10 +278,7 @@ function noteHTML(note) {
     <div class="note-body">
       <div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>
     </div>
-    <div class="conn-dot conn-dot-top"    onmousedown="window.startConnectionDrag(event,'${note.id}','top')"></div>
-    <div class="conn-dot conn-dot-right"  onmousedown="window.startConnectionDrag(event,'${note.id}','right')"></div>
-    <div class="conn-dot conn-dot-bottom" onmousedown="window.startConnectionDrag(event,'${note.id}','bottom')"></div>
-    <div class="conn-dot conn-dot-left"   onmousedown="window.startConnectionDrag(event,'${note.id}','left')"></div>`;
+    `;
 }
 
 function createNoteElement(note) {
@@ -1487,16 +1484,81 @@ function renderConnections() {
     svg.appendChild(g);
   }
 
-  // Mark ports that have connections as always-visible
-  const connectedNotes = new Set();
+  // Build map of exactly which ports are connected and their line colors
+  // Map: "noteId:side" → [{color: strokeCol}]
+  const connectedPorts = new Map();
   for (const conn of canvasState.connections) {
-    connectedNotes.add(conn.from);
-    connectedNotes.add(conn.to);
+    const fromNote = canvasState.notes.find(n => n.id === conn.from);
+    const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
+
+    let sideA, sideB;
+    if (conn.fromPort && conn.toPort) {
+      sideA = conn.fromPort;
+      sideB = conn.toPort;
+    } else {
+      const ports = portMap.get(conn.from + ':' + conn.to);
+      if (ports) { sideA = ports.sideA; sideB = ports.sideB; }
+    }
+    if (sideA) {
+      const kA = conn.from + ':' + sideA;
+      if (!connectedPorts.has(kA)) connectedPorts.set(kA, []);
+      connectedPorts.get(kA).push({ color: strokeCol });
+    }
+    if (sideB) {
+      const kB = conn.to + ':' + sideB;
+      if (!connectedPorts.has(kB)) connectedPorts.set(kB, []);
+      connectedPorts.get(kB).push({ color: strokeCol });
+    }
   }
-  for (const noteId of connectedNotes) {
-    const el = document.getElementById('note-' + noteId);
+
+  renderPorts(connectedPorts);
+}
+
+// --- Dynamic port rendering ---
+function renderPorts(connectedPorts) {
+  // Remove all old dynamically-rendered dots
+  document.querySelectorAll('.conn-dot[data-dynamic]').forEach(d => d.remove());
+
+  const sides = ['top', 'right', 'bottom', 'left'];
+
+  for (const note of canvasState.notes) {
+    const el = document.getElementById('note-' + note.id);
     if (!el) continue;
-    el.querySelectorAll('.conn-dot').forEach(d => d.classList.add('conn-dot-connected'));
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const noteColor = note.color || 'yellow';
+    const cardStroke = COLOR_STROKE[noteColor] || 'var(--border-strong)';
+
+    for (const side of sides) {
+      const key = note.id + ':' + side;
+      const conns = connectedPorts.get(key) || [];
+      const connCount = conns.length;
+      const total = connCount + 1; // connected dots + 1 free dot
+
+      for (let i = 0; i < total; i++) {
+        const offset = (i - (total - 1) / 2) * PORT_SPACING;
+        let left, top;
+        if (side === 'top')    { left = w / 2 + offset; top = 0; }
+        if (side === 'bottom') { left = w / 2 + offset; top = h; }
+        if (side === 'left')   { left = 0; top = h / 2 + offset; }
+        if (side === 'right')  { left = w; top = h / 2 + offset; }
+
+        const dot = document.createElement('div');
+        dot.dataset.dynamic = '1';
+
+        if (i < connCount) {
+          // Connected dot — always visible, colored by connection line
+          dot.className = `conn-dot conn-dot-connected conn-dot-${side}`;
+          dot.style.cssText = `left:${left}px;top:${top}px;background:${conns[i].color};`;
+        } else {
+          // Free dot — hidden by CSS, shown on hover/selection via .conn-dot-free rule
+          dot.className = `conn-dot conn-dot-free conn-dot-${side}`;
+          dot.style.cssText = `left:${left}px;top:${top}px;background:${cardStroke};`;
+          dot.setAttribute('onmousedown', `window.startConnectionDrag(event,'${note.id}','${side}')`);
+        }
+
+        el.appendChild(dot);
+      }
+    }
   }
 }
 
