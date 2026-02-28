@@ -401,7 +401,7 @@ export function startNoteEdit(id) {
   const note = canvasState.notes.find(n => n.id === id);
   if (!note) return;
 
-  const body = el.querySelector('.note-body');
+  if (!body) return;
   body.innerHTML = `<textarea class="note-textarea" id="note-ta-${id}">${escHtml(note.text || '')}</textarea>`;
   const ta = document.getElementById('note-ta-' + id);
   ta.focus();
