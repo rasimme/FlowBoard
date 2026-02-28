@@ -647,6 +647,25 @@ function onCanvasMouseDown(e) {
       startNoteX: note.x,     startNoteY: note.y,
       moved: false
     };
+
+    // If dragging a selected note, store start positions for all selected
+    // If dragging an unselected note, it becomes the only selection
+    if (!canvasState.selectedIds.has(noteId)) {
+      canvasState.selectedIds.clear();
+      document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+      canvasState.selectedIds.add(noteId);
+      noteEl.classList.add('selected');
+      renderPromoteButton();
+    }
+
+    // Store start positions for all selected notes
+    canvasState.dragging.startPositions = new Map();
+    for (const selId of canvasState.selectedIds) {
+      const selNote = canvasState.notes.find(n => n.id === selId);
+      if (selNote) {
+        canvasState.dragging.startPositions.set(selId, { x: selNote.x, y: selNote.y });
+      }
+    }
     return;
   }
 
@@ -684,18 +703,22 @@ function onCanvasMouseMove(e) {
     const dy = (e.clientY - d.startMouseY) / canvasState.scale;
     const dist = Math.abs(e.clientX - d.startMouseX) + Math.abs(e.clientY - d.startMouseY);
 
-    // Don't start moving until threshold exceeded
     if (!d.moved && dist < 5) return;
     d.moved = true;
 
-    const note = canvasState.notes.find(n => n.id === d.noteId);
-    if (note) {
-      note.x = d.startNoteX + dx;
-      note.y = d.startNoteY + dy;
-      const el = document.getElementById('note-' + d.noteId);
-      if (el) { el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; }
-      renderConnections();
+    // Move all selected notes (multi-select drag)
+    if (d.startPositions) {
+      for (const [selId, startPos] of d.startPositions) {
+        const selNote = canvasState.notes.find(n => n.id === selId);
+        if (selNote) {
+          selNote.x = startPos.x + dx;
+          selNote.y = startPos.y + dy;
+          const el = document.getElementById('note-' + selId);
+          if (el) { el.style.left = selNote.x + 'px'; el.style.top = selNote.y + 'px'; }
+        }
+      }
     }
+    renderConnections();
     return;
   }
 
@@ -764,12 +787,18 @@ function onCanvasMouseMove(e) {
 function onCanvasMouseUp(e) {
   // End note drag or click-to-select
   if (canvasState.dragging) {
-    const { noteId, moved } = canvasState.dragging;
+    const { noteId, moved, startPositions } = canvasState.dragging;
     canvasState.dragging = null;
 
     if (moved) {
-      // Actual drag happened — persist position
-      saveNotePosition(noteId);
+      // Persist positions for all moved notes
+      if (startPositions) {
+        for (const selId of startPositions.keys()) {
+          saveNotePosition(selId);
+        }
+      } else {
+        saveNotePosition(noteId);
+      }
     } else {
       // Click without drag — select/toggle
       const noteEl = document.getElementById('note-' + noteId);
@@ -952,14 +981,21 @@ function onTouchMove(e) {
       if (!d.moved && dist < 5) return;
       d.moved = true;
       clearTimeout(_longPressTimer);
-      const note = canvasState.notes.find(n => n.id === d.noteId);
-      if (note) {
-        note.x = d.startNoteX + (t.clientX - d.startMouseX) / canvasState.scale;
-        note.y = d.startNoteY + (t.clientY - d.startMouseY) / canvasState.scale;
-        const el = document.getElementById('note-' + d.noteId);
-        if (el) { el.style.left = note.x + 'px'; el.style.top = note.y + 'px'; }
-        renderConnections();
+
+      const dx = (t.clientX - d.startMouseX) / canvasState.scale;
+      const dy = (t.clientY - d.startMouseY) / canvasState.scale;
+      if (d.startPositions) {
+        for (const [selId, startPos] of d.startPositions) {
+          const selNote = canvasState.notes.find(n => n.id === selId);
+          if (selNote) {
+            selNote.x = startPos.x + dx;
+            selNote.y = startPos.y + dy;
+            const el = document.getElementById('note-' + selId);
+            if (el) { el.style.left = selNote.x + 'px'; el.style.top = selNote.y + 'px'; }
+          }
+        }
       }
+      renderConnections();
     } else if (canvasState.panning) {
       const d = canvasState.panning;
       canvasState.pan.x = d.startPanX + (t.clientX - d.startX);
@@ -991,10 +1027,17 @@ function onTouchEnd(e) {
   clearTimeout(_longPressTimer);
   if (e.touches.length === 0) {
     if (canvasState.dragging) {
-      const { noteId, moved } = canvasState.dragging;
+      const { noteId, moved, startPositions } = canvasState.dragging;
       if (moved) {
-        clearTimeout(canvasState.posSaveTimers[noteId]);
-        saveNotePosition(noteId);
+        if (startPositions) {
+          for (const selId of startPositions.keys()) {
+            clearTimeout(canvasState.posSaveTimers[selId]);
+            saveNotePosition(selId);
+          }
+        } else {
+          clearTimeout(canvasState.posSaveTimers[noteId]);
+          saveNotePosition(noteId);
+        }
       }
     }
     canvasState.dragging = null;
