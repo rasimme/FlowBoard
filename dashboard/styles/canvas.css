@@ -105,10 +105,13 @@
 .note.color-red    .conn-dot { background: var(--danger); }
 .note.color-teal   .conn-dot { background: var(--accent-2); }
 
-/* Connected ports stay visible even without hover */
-.conn-dot-connected {
-  opacity: 1 !important;
-}
+/* Free dots: hidden by default, shown on hover/selection */
+.conn-dot-free { opacity: 0; transition: opacity 0.15s; }
+.note:hover .conn-dot-free,
+.note.selected .conn-dot-free { opacity: 0.4; }
+
+/* Connected dots: always visible, full opacity */
+.conn-dot-connected { opacity: 1 !important; }
 
 /* ⋮ Menu button */
 .note-menu-btn {
