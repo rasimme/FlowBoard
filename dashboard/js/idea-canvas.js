@@ -197,6 +197,15 @@ export async function renderIdeaCanvas(state) {
     });
   }
 
+  // Sidebar event isolation — prevent canvas interactions from leaking through
+  const sidebar = document.getElementById('canvasSidebar');
+  if (sidebar) {
+    sidebar.addEventListener('wheel', e => e.stopPropagation(), { passive: false });
+    sidebar.addEventListener('mousedown', e => e.stopPropagation());
+    sidebar.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
+    sidebar.addEventListener('touchmove', e => e.stopPropagation(), { passive: false });
+  }
+
   if (!state.viewedProject) {
     const vp = document.getElementById('canvasViewport');
     if (vp) vp.innerHTML = `<svg id="canvasSvg" class="canvas-svg canvas-svg-underlay">
@@ -660,11 +669,17 @@ function bindCanvasEvents() {
 
 function onCanvasDblClick(e) {
   if (e.target.closest('.canvas-toolbar')) return;
+  if (e.target.closest('.canvas-sidebar')) return; // Don't process sidebar dblclicks as canvas events
 
-  // Double-click on a note → enter edit mode
+  // Double-click on a note → edit or switch sidebar
   const noteEl = e.target.closest('.note');
   if (noteEl) {
     const noteId = noteEl.id.replace('note-', '');
+    // If sidebar is open, switch to this note
+    if (canvasState.sidebarNoteId) {
+      openSidebar(noteId);
+      return;
+    }
     startNoteEdit(noteId);
     return;
   }
@@ -702,6 +717,9 @@ function onCanvasMouseDown(e) {
 
     // Don't start drag on a note that's being edited (defense-in-depth)
     if (canvasState.editingId === noteId) return;
+
+    // Close sidebar on single click of any note (design: any click on canvas closes sidebar)
+    if (canvasState.sidebarNoteId) closeSidebar();
 
     // Start potential drag from anywhere on the note
     canvasState.dragging = {
@@ -1009,7 +1027,11 @@ function onTouchStart(e) {
       if (_lastTapTarget === noteId && now - _lastTapTime < 300) {
         _lastTapTime = 0;
         _lastTapTarget = null;
-        startNoteEdit(noteId);
+        if (canvasState.sidebarNoteId) {
+          openSidebar(noteId); // switch sidebar content
+        } else {
+          startNoteEdit(noteId);
+        }
         return;
       }
       _lastTapTime = now;
@@ -1042,6 +1064,9 @@ function onTouchStart(e) {
 
     _lastTapTime = 0;
     _lastTapTarget = null;
+
+    // Close sidebar on canvas tap
+    if (canvasState.sidebarNoteId) closeSidebar();
 
     // Canvas pan
     canvasState.panning = {
@@ -1132,6 +1157,9 @@ function onTouchEnd(e) {
           clearTimeout(canvasState.posSaveTimers[noteId]);
           saveNotePosition(noteId);
         }
+      } else {
+        // Tap without drag — close sidebar if open
+        if (canvasState.sidebarNoteId) closeSidebar();
       }
     }
     canvasState.dragging = null;
