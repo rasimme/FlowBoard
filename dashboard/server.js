@@ -992,7 +992,10 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
     c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
   );
   if (exists) return res.json({ ok: true, duplicate: true });
+  const { fromPort, toPort } = req.body;
   const conn = { from, to };
+  if (fromPort) conn.fromPort = fromPort;
+  if (toPort) conn.toPort = toPort;
   data.connections.push(conn);
   try {
     writeCanvasFile(req.params.name, data);
