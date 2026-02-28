@@ -1,6 +1,6 @@
 // idea-canvas.js — Infinite sticky-note canvas
 
-import { api, toast, showModal, escHtml, renderDeleteBtn } from './utils.js?v=3';
+import { api, toast, showModal, escHtml } from './utils.js?v=3';
 
 // Inject canvas.css once at module load (overrides dashboard.css canvas rules)
 if (!document.querySelector('link[data-canvas]')) {
@@ -210,12 +210,11 @@ function noteHTML(note) {
   const rendered = renderNoteMarkdown(note.text || '');
   return `
     <div class="note-header" data-noteid="${note.id}">
-      <span class="note-color-dot" onclick="window.toggleColorPopover(event, '${note.id}')"></span>
       <span class="note-id">${note.id}</span>
-      ${renderDeleteBtn(`window.startDeleteNote('${note.id}')`, 'Delete note')}
+      <button class="note-menu-btn" onclick="window.toggleNoteMenu(event, '${note.id}')" title="Menu">⋮</button>
     </div>
     <div class="note-body">
-      <div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Click to add text\u2026</span>'}</div>
+      <div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>
     </div>
     <div class="conn-dot conn-dot-top"    onmousedown="window.startConnectionDrag(event,'${note.id}','top')"></div>
     <div class="conn-dot conn-dot-right"  onmousedown="window.startConnectionDrag(event,'${note.id}','right')"></div>
@@ -482,6 +481,112 @@ export async function setNoteColor(noteId, color) {
     });
   } catch { /* silent */ }
 }
+
+async function setNoteSize(noteId, size) {
+  const note = canvasState.notes.find(n => n.id === noteId);
+  if (!note) return;
+  note.size = size;
+  const el = document.getElementById('note-' + noteId);
+  if (el) {
+    el.classList.toggle('size-medium', size === 'medium');
+    el.style.width = size === 'medium' ? '280px' : '';
+  }
+  renderConnections();
+  if (!canvasState._state?.viewedProject) return;
+  try {
+    await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${noteId}`, {
+      method: 'PUT', body: { size }
+    });
+  } catch { /* silent */ }
+}
+
+export function toggleNoteMenu(e, noteId) {
+  e.stopPropagation();
+  // Close any existing menu
+  document.querySelectorAll('.note-menu-dropdown').forEach(m => m.remove());
+
+  const note = canvasState.notes.find(n => n.id === noteId);
+  if (!note) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'note-menu-dropdown';
+
+  // Color row
+  const colorRow = document.createElement('div');
+  colorRow.className = 'note-menu-section';
+  colorRow.innerHTML = '<span class="note-menu-label">Color</span>';
+  const swatchRow = document.createElement('div');
+  swatchRow.className = 'note-menu-swatches';
+  NOTE_COLORS.forEach(color => {
+    const swatch = document.createElement('span');
+    swatch.className = `color-swatch color-swatch-${color}${color === note.color ? ' selected' : ''}`;
+    swatch.title = color;
+    swatch.addEventListener('click', ev => {
+      ev.stopPropagation();
+      setNoteColor(noteId, color);
+      menu.remove();
+    });
+    swatchRow.appendChild(swatch);
+  });
+  colorRow.appendChild(swatchRow);
+  menu.appendChild(colorRow);
+
+  // Size row
+  const sizeRow = document.createElement('div');
+  sizeRow.className = 'note-menu-section';
+  sizeRow.innerHTML = '<span class="note-menu-label">Size</span>';
+  const sizeBtns = document.createElement('div');
+  sizeBtns.className = 'note-menu-sizes';
+  ['small', 'medium'].forEach(size => {
+    const btn = document.createElement('button');
+    btn.className = `note-menu-size-btn${(note.size || 'small') === size ? ' active' : ''}`;
+    btn.textContent = size.charAt(0).toUpperCase() + size.slice(1);
+    btn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      setNoteSize(noteId, size);
+      menu.remove();
+    });
+    sizeBtns.appendChild(btn);
+  });
+  sizeRow.appendChild(sizeBtns);
+  menu.appendChild(sizeRow);
+
+  // Delete option
+  const delBtn = document.createElement('button');
+  delBtn.className = 'note-menu-delete';
+  delBtn.textContent = 'Delete';
+  delBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    menu.remove();
+    startDeleteNote(noteId);
+  });
+  menu.appendChild(delBtn);
+
+  // Position below the menu button
+  e.currentTarget.closest('.note-header').appendChild(menu);
+
+  // Close on outside click or Escape
+  setTimeout(() => {
+    const close = ev => {
+      if (!menu.contains(ev.target) && !ev.target.closest('.note-menu-btn')) {
+        menu.remove();
+        document.removeEventListener('click', close);
+        document.removeEventListener('keydown', escClose);
+      }
+    };
+    const escClose = ev => {
+      if (ev.key === 'Escape') {
+        menu.remove();
+        document.removeEventListener('click', close);
+        document.removeEventListener('keydown', escClose);
+      }
+    };
+    document.addEventListener('click', close);
+    document.addEventListener('keydown', escClose);
+  }, 0);
+}
+
+window.toggleNoteMenu = toggleNoteMenu;
 
 // --- Canvas mouse/touch events ---
 function bindCanvasEvents() {
