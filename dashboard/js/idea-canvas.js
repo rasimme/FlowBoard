@@ -423,6 +423,7 @@ export function startNoteEdit(id) {
   }
 
   if (!body) return;
+  el.classList.add('editing');
   body.innerHTML = `<textarea class="note-textarea" id="note-ta-${id}">${escHtml(note.text || '')}</textarea>`;
   const ta = document.getElementById('note-ta-' + id);
   ta.focus();
@@ -462,11 +463,12 @@ export async function saveNoteText(id, text) {
     }
     checkTruncation(el);
 
-    // Clear edit size lock (restore natural height)
+    // Clear edit size lock + editing class (restore natural height)
     if (el.dataset.editLockHeight) {
       delete el.dataset.editLockHeight;
       el.style.minHeight = '';
     }
+    el.classList.remove('editing');
   }
   renderConnections();
 

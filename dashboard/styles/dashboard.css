@@ -869,9 +869,22 @@
 
     .note-textarea {
       width: 100%; min-height: 60px;
+      /* Fill full available note-body height when editing */
+      height: 100%;
       background: transparent; border: none; outline: none;
       font-size: 12px; line-height: 1.5; color: var(--text);
       font-family: inherit; resize: none;
+      display: block;
+    }
+
+    /* When a note is in edit mode: remove max-height + overflow clipping on body */
+    .note.editing .note-body {
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    .note.editing .note-body::after,
+    .note.editing .note-body::before {
+      display: none !important;
     }
 
     /* Note delete button: hidden until hover/selected */
