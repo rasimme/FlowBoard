@@ -113,99 +113,61 @@
 /* Connected dots: always visible, full opacity */
 .conn-dot-connected { opacity: 1 !important; }
 
-/* ⋮ Menu button */
-.note-menu-btn {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 4px;
-  opacity: 0;
-  transition: opacity var(--duration-normal);
-}
-.note:hover .note-menu-btn,
-.note.selected .note-menu-btn {
-  opacity: 0.6;
-}
-.note-menu-btn:hover {
-  opacity: 1 !important;
-  color: var(--text);
-}
-
-/* Dropdown menu */
-.note-menu-dropdown {
+/* --- Floating toolbar (T-085) --- */
+.canvas-floating-toolbar {
   position: absolute;
-  top: 28px;
-  right: 0;
-  z-index: 200;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  user-select: none;
+}
+.toolbar-section { display: flex; align-items: center; gap: 2px; }
+.toolbar-separator { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.toolbar-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text); font-size: 14px; padding: 4px 6px;
+  border-radius: var(--radius-sm); line-height: 1;
+}
+.toolbar-btn:hover { background: var(--bg-hover); }
+.toolbar-btn-danger:hover { color: var(--danger); }
+
+/* Toolbar popovers */
+.toolbar-popover {
+  position: absolute;
+  z-index: 26;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 8px;
-  min-width: 140px;
+  display: flex;
+  gap: 6px;
   box-shadow: var(--shadow-lg);
   animation: popIn var(--duration-normal) var(--ease-out);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
-.note-menu-section {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.note-menu-label {
-  font-size: 10px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.note-menu-swatches {
-  display: flex;
-  gap: 6px;
-}
-
-.note-menu-sizes {
-  display: flex;
-  gap: 4px;
-}
-
-.note-menu-size-btn {
+.toolbar-size-btn {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: 12px;
+  padding: 3px 10px;
   cursor: pointer;
   font-family: inherit;
 }
-.note-menu-size-btn.active {
+.toolbar-size-btn.active {
   background: var(--border);
   color: var(--text-strong);
 }
-.note-menu-size-btn:hover {
+.toolbar-size-btn:hover {
   border-color: var(--text);
-}
-
-.note-menu-delete {
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border);
-  color: var(--danger);
-  font-size: 12px;
-  padding: 6px 0 2px;
-  cursor: pointer;
-  text-align: left;
-  font-family: inherit;
-}
-.note-menu-delete:hover {
-  color: #ff4040;
 }
 
 /* Card sizes */
