@@ -186,6 +186,21 @@ export async function renderIdeaCanvas(state) {
         <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
       </div>
       <div class="canvas-lasso" id="canvasLasso"></div>
+      <div class="canvas-floating-toolbar" id="canvasToolbar" style="display:none">
+        <div class="toolbar-section toolbar-props">
+          <button class="toolbar-btn" id="tbColor" title="Color">🎨</button>
+          <button class="toolbar-btn" id="tbSize" title="Size">📐</button>
+          <button class="toolbar-btn toolbar-btn-danger" id="tbDelete" title="Delete">🗑</button>
+        </div>
+        <div class="toolbar-section toolbar-format" id="toolbarFormat" style="display:none">
+          <div class="toolbar-separator"></div>
+          <button class="toolbar-btn" data-fmt="bold" title="Bold"><b>B</b></button>
+          <button class="toolbar-btn" data-fmt="italic" title="Italic"><i>I</i></button>
+          <button class="toolbar-btn" data-fmt="bullet" title="Bullet list">•</button>
+          <button class="toolbar-btn" data-fmt="number" title="Numbered list">1.</button>
+          <button class="toolbar-btn" data-fmt="link" title="Link">🔗</button>
+        </div>
+      </div>
       <div class="canvas-sidebar" id="canvasSidebar">
         <div class="canvas-sidebar-header">
           <span class="canvas-sidebar-color-bar" id="sidebarColorBar"></span>
@@ -199,6 +214,7 @@ export async function renderIdeaCanvas(state) {
     </div>`;
 
   bindCanvasEvents();
+  bindToolbarEvents();
 
   // Sidebar textarea events
   const sidebarTa = document.getElementById('sidebarTextarea');
@@ -273,7 +289,6 @@ function noteHTML(note) {
   return `
     <div class="note-header" data-noteid="${note.id}">
       <span class="note-id">${note.id}</span>
-      <button class="note-menu-btn" onclick="window.toggleNoteMenu(event, '${note.id}')" title="Menu">⋮</button>
     </div>
     <div class="note-body">
       <div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>
@@ -459,6 +474,8 @@ export function startNoteEdit(id) {
     ta.style.height = ta.scrollHeight + 'px';
     renderConnections(); // redraw lines as note grows
   });
+
+  updateToolbar(); // show format section in toolbar
 }
 
 export async function saveNoteText(id, text) {
@@ -485,6 +502,7 @@ export async function saveNoteText(id, text) {
     el.classList.remove('editing');
   }
   renderConnections();
+  updateToolbar(); // hide format section
 
   if (!canvasState._state?.viewedProject) return;
   try {
@@ -597,93 +615,206 @@ async function setNoteSize(noteId, size) {
   } catch { /* silent */ }
 }
 
-export function toggleNoteMenu(e, noteId) {
-  e.stopPropagation();
-  // Close any existing menu
-  document.querySelectorAll('.note-menu-dropdown').forEach(m => m.remove());
+// --- Floating toolbar (T-085) ---
 
-  const note = canvasState.notes.find(n => n.id === noteId);
-  if (!note) return;
+function updateToolbar() {
+  const toolbar = document.getElementById('canvasToolbar');
+  if (!toolbar) return;
 
-  const menu = document.createElement('div');
-  menu.className = 'note-menu-dropdown';
+  // Hide if nothing selected or during connection drag
+  if (canvasState.selectedIds.size === 0 || canvasState.connecting) {
+    toolbar.style.display = 'none';
+    closeToolbarPopovers();
+    return;
+  }
 
-  // Color row
-  const colorRow = document.createElement('div');
-  colorRow.className = 'note-menu-section';
-  colorRow.innerHTML = '<span class="note-menu-label">Color</span>';
-  const swatchRow = document.createElement('div');
-  swatchRow.className = 'note-menu-swatches';
+  // Show/hide format section based on editing state
+  const fmtSection = document.getElementById('toolbarFormat');
+  if (fmtSection) {
+    fmtSection.style.display = canvasState.editingId ? 'flex' : 'none';
+  }
+
+  // Compute bounding box of all selected notes in screen space
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap) return;
+  const wrapRect = wrap.getBoundingClientRect();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  for (const id of canvasState.selectedIds) {
+    const note = canvasState.notes.find(n => n.id === id);
+    const el = document.getElementById('note-' + id);
+    if (!note || !el) continue;
+    const sx = note.x * canvasState.scale + canvasState.pan.x;
+    const sy = note.y * canvasState.scale + canvasState.pan.y;
+    const sw = el.offsetWidth * canvasState.scale;
+    const sh = el.offsetHeight * canvasState.scale;
+    minX = Math.min(minX, sx);
+    minY = Math.min(minY, sy);
+    maxX = Math.max(maxX, sx + sw);
+    maxY = Math.max(maxY, sy + sh);
+  }
+  if (!isFinite(minX)) { toolbar.style.display = 'none'; return; }
+
+  const tbWidth = toolbar.offsetWidth || 120;
+  let tbX = (minX + maxX) / 2 - tbWidth / 2;
+  let tbY = minY - 8 - 36; // 36px toolbar height + 8px gap above
+
+  // If near top edge, position below instead
+  if (tbY < 4) {
+    tbY = maxY + 8;
+  }
+
+  // Clamp to wrap bounds
+  tbX = Math.max(4, Math.min(tbX, wrap.clientWidth - tbWidth - 4));
+
+  toolbar.style.display = 'flex';
+  toolbar.style.left = tbX + 'px';
+  toolbar.style.top = tbY + 'px';
+}
+
+function closeToolbarPopovers() {
+  document.querySelectorAll('.toolbar-popover').forEach(p => p.remove());
+}
+
+function showColorPopover() {
+  closeToolbarPopovers();
+  const toolbar = document.getElementById('canvasToolbar');
+  const btn = document.getElementById('tbColor');
+  if (!toolbar || !btn) return;
+
+  const pop = document.createElement('div');
+  pop.className = 'toolbar-popover';
+
+  // Determine current color (first selected note)
+  const firstId = [...canvasState.selectedIds][0];
+  const firstNote = canvasState.notes.find(n => n.id === firstId);
+  const currentColor = firstNote?.color || 'yellow';
+
   NOTE_COLORS.forEach(color => {
     const swatch = document.createElement('span');
-    swatch.className = `color-swatch color-swatch-${color}${color === note.color ? ' selected' : ''}`;
+    swatch.className = `color-swatch color-swatch-${color}${color === currentColor ? ' selected' : ''}`;
     swatch.title = color;
     swatch.addEventListener('click', ev => {
       ev.stopPropagation();
-      setNoteColor(noteId, color);
-      menu.remove();
+      for (const id of canvasState.selectedIds) {
+        setNoteColor(id, color);
+      }
+      pop.remove();
+      renderConnections(); // refresh port colors
     });
-    swatchRow.appendChild(swatch);
+    pop.appendChild(swatch);
   });
-  colorRow.appendChild(swatchRow);
-  menu.appendChild(colorRow);
 
-  // Size row
-  const sizeRow = document.createElement('div');
-  sizeRow.className = 'note-menu-section';
-  sizeRow.innerHTML = '<span class="note-menu-label">Size</span>';
-  const sizeBtns = document.createElement('div');
-  sizeBtns.className = 'note-menu-sizes';
-  ['small', 'medium'].forEach(size => {
-    const btn = document.createElement('button');
-    btn.className = `note-menu-size-btn${(note.size || 'small') === size ? ' active' : ''}`;
-    btn.textContent = size.charAt(0).toUpperCase() + size.slice(1);
-    btn.addEventListener('click', ev => {
-      ev.stopPropagation();
-      setNoteSize(noteId, size);
-      menu.remove();
-    });
-    sizeBtns.appendChild(btn);
-  });
-  sizeRow.appendChild(sizeBtns);
-  menu.appendChild(sizeRow);
+  // Position below the color button
+  const btnRect = btn.getBoundingClientRect();
+  const tbRect = toolbar.getBoundingClientRect();
+  pop.style.left = (btnRect.left - tbRect.left) + 'px';
+  pop.style.top = (btnRect.bottom - tbRect.top + 4) + 'px';
 
-  // Delete option
-  const delBtn = document.createElement('button');
-  delBtn.className = 'note-menu-delete';
-  delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', ev => {
-    ev.stopPropagation();
-    menu.remove();
-    startDeleteNote(noteId);
-  });
-  menu.appendChild(delBtn);
+  toolbar.appendChild(pop);
 
-  // Position below the menu button
-  e.currentTarget.closest('.note-header').appendChild(menu);
-
-  // Close on outside click or Escape
+  // Close on outside click
   setTimeout(() => {
     const close = ev => {
-      if (!menu.contains(ev.target) && !ev.target.closest('.note-menu-btn')) {
-        menu.remove();
-        document.removeEventListener('click', close);
-        document.removeEventListener('keydown', escClose);
+      if (!pop.contains(ev.target) && ev.target !== btn) {
+        pop.remove();
+        document.removeEventListener('mousedown', close);
       }
     };
-    const escClose = ev => {
-      if (ev.key === 'Escape') {
-        menu.remove();
-        document.removeEventListener('click', close);
-        document.removeEventListener('keydown', escClose);
-      }
-    };
-    document.addEventListener('click', close);
-    document.addEventListener('keydown', escClose);
+    document.addEventListener('mousedown', close);
   }, 0);
 }
 
-window.toggleNoteMenu = toggleNoteMenu;
+function showSizePopover() {
+  closeToolbarPopovers();
+  const toolbar = document.getElementById('canvasToolbar');
+  const btn = document.getElementById('tbSize');
+  if (!toolbar || !btn) return;
+
+  const firstId = [...canvasState.selectedIds][0];
+  const firstNote = canvasState.notes.find(n => n.id === firstId);
+  const currentSize = firstNote?.size || 'small';
+
+  const pop = document.createElement('div');
+  pop.className = 'toolbar-popover';
+
+  ['small', 'medium'].forEach(size => {
+    const sizeBtn = document.createElement('button');
+    sizeBtn.className = `toolbar-size-btn${currentSize === size ? ' active' : ''}`;
+    sizeBtn.textContent = size === 'small' ? 'S' : 'M';
+    sizeBtn.title = size === 'small' ? 'Small (160px)' : 'Medium (280px)';
+    sizeBtn.addEventListener('click', ev => {
+      ev.stopPropagation();
+      for (const id of canvasState.selectedIds) {
+        setNoteSize(id, size);
+      }
+      pop.remove();
+      requestAnimationFrame(updateToolbar);
+    });
+    pop.appendChild(sizeBtn);
+  });
+
+  const btnRect = btn.getBoundingClientRect();
+  const tbRect = toolbar.getBoundingClientRect();
+  pop.style.left = (btnRect.left - tbRect.left) + 'px';
+  pop.style.top = (btnRect.bottom - tbRect.top + 4) + 'px';
+
+  toolbar.appendChild(pop);
+
+  setTimeout(() => {
+    const close = ev => {
+      if (!pop.contains(ev.target) && ev.target !== btn) {
+        pop.remove();
+        document.removeEventListener('mousedown', close);
+      }
+    };
+    document.addEventListener('mousedown', close);
+  }, 0);
+}
+
+function toolbarDelete() {
+  const ids = [...canvasState.selectedIds];
+  if (ids.length === 0) return;
+
+  if (ids.length === 1) {
+    startDeleteNote(ids[0]);
+  } else {
+    showModal(
+      'Delete notes?',
+      `Delete <strong>${ids.length}</strong> selected notes? This cannot be undone.`,
+      async () => {
+        for (const id of ids) {
+          await confirmDeleteNote(id);
+        }
+      }
+    );
+  }
+}
+
+function bindToolbarEvents() {
+  const toolbar = document.getElementById('canvasToolbar');
+  if (!toolbar) return;
+
+  // Event isolation — prevent canvas interactions
+  toolbar.addEventListener('mousedown', e => e.stopPropagation());
+  toolbar.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
+  toolbar.addEventListener('wheel', e => e.stopPropagation(), { passive: false });
+
+  // Button handlers
+  document.getElementById('tbColor')?.addEventListener('click', showColorPopover);
+  document.getElementById('tbSize')?.addEventListener('click', showSizePopover);
+  document.getElementById('tbDelete')?.addEventListener('click', toolbarDelete);
+
+  // Format buttons (wired up for Task 3)
+  toolbar.querySelectorAll('[data-fmt]').forEach(btn => {
+    btn.addEventListener('click', () => applyFormatting(btn.dataset.fmt));
+  });
+}
+
+// Placeholder for Task 3 — formatting commands
+function applyFormatting(type) {
+  // Implemented in T-088
+}
 
 // --- Canvas mouse/touch events ---
 function bindCanvasEvents() {
@@ -728,8 +859,8 @@ function onCanvasMouseDown(e) {
   const connDot = e.target.closest('.conn-dot');
   if (connDot) return; // handled by startConnectionDrag inline handler
 
-  // Ignore clicks on menu elements
-  if (e.target.closest('.note-menu-btn') || e.target.closest('.note-menu-dropdown')) return;
+  // Ignore clicks on floating toolbar
+  if (e.target.closest('.canvas-floating-toolbar')) return;
 
   const noteEl = e.target.closest('.note');
 
@@ -836,6 +967,7 @@ function onCanvasMouseMove(e) {
       }
     }
     renderConnections();
+    updateToolbar();
     return;
   }
 
@@ -907,6 +1039,7 @@ function onCanvasMouseMove(e) {
     canvasState.pan.x = d.startPanX + (e.clientX - d.startX);
     canvasState.pan.y = d.startPanY + (e.clientY - d.startY);
     applyTransform();
+    updateToolbar();
     return;
   }
 
@@ -974,6 +1107,7 @@ function onCanvasMouseUp(e) {
     }
     removeTempConnectionLine();
     canvasState.connecting = null;
+    updateToolbar(); // restore toolbar after connection drag
     return;
   }
 
@@ -1037,6 +1171,7 @@ function onCanvasWheel(e) {
     canvasState.pan.y -= e.deltaY;
   }
   applyTransform();
+  updateToolbar();
 }
 
 let _pinchDist = 0;
@@ -1176,11 +1311,13 @@ function onTouchMove(e) {
         }
       }
       renderConnections();
+      updateToolbar();
     } else if (canvasState.panning) {
       const d = canvasState.panning;
       canvasState.pan.x = d.startPanX + (t.clientX - d.startX);
       canvasState.pan.y = d.startPanY + (t.clientY - d.startY);
       applyTransform();
+      updateToolbar();
     }
   } else if (e.touches.length === 2) {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1198,6 +1335,7 @@ function onTouchMove(e) {
       canvasState.pan.y = py - (py - canvasState.pan.y) * (newScale / canvasState.scale);
       canvasState.scale = newScale;
       applyTransform();
+      updateToolbar();
     }
     _pinchDist = newDist;
   }
@@ -1570,6 +1708,7 @@ export function startConnectionDrag(e, noteId, port) {
   if (!pt) return;
   const note = canvasState.notes.find(n => n.id === noteId);
   canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y } };
+  updateToolbar(); // hide toolbar during connection drag
 
   // Draw preview path in overlay SVG (above cards)
   const overlay = document.getElementById('canvasSvgOverlay');
@@ -1713,7 +1852,7 @@ function renderPromoteButton() {
   vp.querySelectorAll('.canvas-promote-btn').forEach(b => b.remove());
 
   const selIds = [...canvasState.selectedIds];
-  if (selIds.length === 0) return; // nothing selected — no button
+  if (selIds.length === 0) { updateToolbar(); return; }
 
   // Compute bounding box of all selected notes
   let maxX = -Infinity, maxY = -Infinity;
@@ -1739,6 +1878,8 @@ function renderPromoteButton() {
     showPromoteModal(selIds);
   });
   vp.appendChild(btn);
+
+  updateToolbar();
 }
 
 // --- Promote modal ---
