@@ -987,6 +987,9 @@ function renderConnections() {
   // Remove all existing connection groups
   svg.querySelectorAll('.conn-line-group').forEach(g => g.remove());
 
+  // Clear old connected-port markers
+  document.querySelectorAll('.conn-dot-connected').forEach(d => d.classList.remove('conn-dot-connected'));
+
   const portMap = computePortPositions();
 
   for (const conn of canvasState.connections) {
@@ -1024,6 +1027,18 @@ function renderConnections() {
     g.appendChild(path);
     g.appendChild(hitPath);
     svg.appendChild(g);
+  }
+
+  // Mark ports that have connections as always-visible
+  const connectedNotes = new Set();
+  for (const conn of canvasState.connections) {
+    connectedNotes.add(conn.from);
+    connectedNotes.add(conn.to);
+  }
+  for (const noteId of connectedNotes) {
+    const el = document.getElementById('note-' + noteId);
+    if (!el) continue;
+    el.querySelectorAll('.conn-dot').forEach(d => d.classList.add('conn-dot-connected'));
   }
 }
 

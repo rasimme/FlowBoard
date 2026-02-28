@@ -94,3 +94,15 @@
   background: var(--accent-2) !important;
   transform: translate(-50%, -50%) scale(1.35) !important;
 }
+
+/* Port color matches card border color */
+.note.color-yellow .conn-dot { background: var(--warn); }
+.note.color-blue   .conn-dot { background: var(--info); }
+.note.color-green  .conn-dot { background: var(--ok); }
+.note.color-red    .conn-dot { background: var(--danger); }
+.note.color-teal   .conn-dot { background: var(--accent-2); }
+
+/* Connected ports stay visible even without hover */
+.conn-dot-connected {
+  opacity: 1 !important;
+}
