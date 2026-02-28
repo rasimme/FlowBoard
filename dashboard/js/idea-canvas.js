@@ -1538,20 +1538,6 @@ async function saveConnection(fromId, toId) {
     if (res.ok && !res.duplicate) {
       canvasState.connections.push({ from: fromId, to: toId });
 
-      // Color cascade: get target's color, apply to entire connected component
-      const toNote = canvasState.notes.find(n => n.id === toId);
-      if (toNote?.color) {
-        const component = getConnectedComponent(fromId);
-        for (const nodeId of component) {
-          const n = canvasState.notes.find(x => x.id === nodeId);
-          if (n && n.color !== toNote.color) {
-            setNoteColor(nodeId, toNote.color).catch(() => {
-              toast('Color cascade failed for ' + nodeId, 'warn');
-            });
-          }
-        }
-      }
-
       renderConnections();
       renderPromoteButton();
     }
