@@ -225,16 +225,12 @@ function noteHTML(note) {
 function createNoteElement(note) {
   const el = document.createElement('div');
   el.id = 'note-' + note.id;
-  el.className = `note color-${note.color || 'yellow'}`;
+  el.className = `note color-${note.color || 'yellow'}${note.size === 'medium' ? ' size-medium' : ''}`;
+  if (note.size === 'medium') el.style.width = '280px';
   if (canvasState.selectedIds.has(note.id)) el.classList.add('selected');
   el.style.left = note.x + 'px';
   el.style.top  = note.y + 'px';
   el.innerHTML = noteHTML(note);
-  // Click on note-body to start editing
-  el.querySelector('.note-body').addEventListener('click', e => {
-    e.stopPropagation();
-    startNoteEdit(note.id);
-  });
   return el;
 }
 
@@ -387,8 +383,7 @@ export async function saveNoteText(id, text) {
     const body = el.querySelector('.note-body');
     if (body) {
       const rendered = renderNoteMarkdown(text);
-      body.innerHTML = `<div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Click to add text\u2026</span>'}</div>`;
-      body.addEventListener('click', e => { e.stopPropagation(); startNoteEdit(id); });
+      body.innerHTML = `<div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>`;
     }
   }
   renderConnections();
@@ -604,58 +599,54 @@ function bindCanvasEvents() {
 }
 
 function onCanvasDblClick(e) {
-  if (e.target.closest('.note')) return; // ignore dbl-click on notes
   if (e.target.closest('.canvas-toolbar')) return;
+
+  // Double-click on a note → enter edit mode
+  const noteEl = e.target.closest('.note');
+  if (noteEl) {
+    const noteId = noteEl.id.replace('note-', '');
+    startNoteEdit(noteId);
+    return;
+  }
+
+  // Double-click on empty canvas → create note
   const pos = screenToCanvas(e.clientX, e.clientY);
   createNoteAt(pos.x - NOTE_WIDTH / 2, pos.y - 20);
 }
 
 function onCanvasMouseDown(e) {
-  // Ignore right-click
   if (e.button !== 0) return;
 
   const connDot = e.target.closest('.conn-dot');
   if (connDot) return; // handled by startConnectionDrag inline handler
 
-  const header  = e.target.closest('.note-header');
-  const noteEl  = e.target.closest('.note');
+  // Ignore clicks on menu elements
+  if (e.target.closest('.note-menu-btn') || e.target.closest('.note-menu-dropdown')) return;
 
-  if (header && noteEl) {
-    // Note drag
+  const noteEl = e.target.closest('.note');
+
+  if (noteEl) {
     e.stopPropagation();
     const noteId = noteEl.id.replace('note-', '');
     const note   = canvasState.notes.find(n => n.id === noteId);
     if (!note) return;
-    // Close any active edit
+
+    // Close any active edit on another note
     if (canvasState.editingId && canvasState.editingId !== noteId) {
       const ta = document.getElementById('note-ta-' + canvasState.editingId);
       if (ta) saveNoteText(canvasState.editingId, ta.value);
     }
+
+    // If clicking inside a textarea (editing), don't start drag
+    if (e.target.closest('.note-textarea')) return;
+
+    // Start potential drag from anywhere on the note
     canvasState.dragging = {
       noteId,
       startMouseX: e.clientX, startMouseY: e.clientY,
-      startNoteX: note.x,     startNoteY: note.y
+      startNoteX: note.x,     startNoteY: note.y,
+      moved: false
     };
-    if (!e.shiftKey) {
-      canvasState.selectedIds.clear();
-      document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
-    }
-    canvasState.selectedIds.add(noteId);
-    noteEl.classList.add('selected');
-    renderPromoteButton();
-    return;
-  }
-
-  if (noteEl) {
-    // Click on note body → select (edit handled by click listener on note-body)
-    if (!e.shiftKey) {
-      canvasState.selectedIds.clear();
-      document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
-    }
-    const noteId = noteEl.id.replace('note-', '');
-    canvasState.selectedIds.add(noteId);
-    noteEl.classList.add('selected');
-    renderPromoteButton();
     return;
   }
 
@@ -664,8 +655,13 @@ function onCanvasMouseDown(e) {
   document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
   renderPromoteButton();
 
+  // Close any active edit
+  if (canvasState.editingId) {
+    const ta = document.getElementById('note-ta-' + canvasState.editingId);
+    if (ta) saveNoteText(canvasState.editingId, ta.value);
+  }
+
   if (e.shiftKey) {
-    // Start lasso selection
     const wrap = document.getElementById('canvasWrap');
     const rect = wrap.getBoundingClientRect();
     canvasState.lassoState = {
@@ -673,7 +669,6 @@ function onCanvasMouseDown(e) {
       startY: e.clientY - rect.top
     };
   } else {
-    // Pan
     canvasState.panning = {
       startX: e.clientX, startY: e.clientY,
       startPanX: canvasState.pan.x, startPanY: canvasState.pan.y
@@ -687,6 +682,12 @@ function onCanvasMouseMove(e) {
     const d = canvasState.dragging;
     const dx = (e.clientX - d.startMouseX) / canvasState.scale;
     const dy = (e.clientY - d.startMouseY) / canvasState.scale;
+    const dist = Math.abs(e.clientX - d.startMouseX) + Math.abs(e.clientY - d.startMouseY);
+
+    // Don't start moving until threshold exceeded
+    if (!d.moved && dist < 5) return;
+    d.moved = true;
+
     const note = canvasState.notes.find(n => n.id === d.noteId);
     if (note) {
       note.x = d.startNoteX + dx;
@@ -761,11 +762,35 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
-  // End note drag — persist final position immediately
+  // End note drag or click-to-select
   if (canvasState.dragging) {
-    const { noteId } = canvasState.dragging;
+    const { noteId, moved } = canvasState.dragging;
     canvasState.dragging = null;
-    saveNotePosition(noteId);
+
+    if (moved) {
+      // Actual drag happened — persist position
+      saveNotePosition(noteId);
+    } else {
+      // Click without drag — select/toggle
+      const noteEl = document.getElementById('note-' + noteId);
+      if (e.shiftKey) {
+        // Shift+click: toggle selection
+        if (canvasState.selectedIds.has(noteId)) {
+          canvasState.selectedIds.delete(noteId);
+          noteEl?.classList.remove('selected');
+        } else {
+          canvasState.selectedIds.add(noteId);
+          noteEl?.classList.add('selected');
+        }
+      } else {
+        // Plain click: select only this
+        canvasState.selectedIds.clear();
+        document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+        canvasState.selectedIds.add(noteId);
+        noteEl?.classList.add('selected');
+      }
+      renderPromoteButton();
+    }
     return;
   }
 
@@ -845,32 +870,70 @@ function onCanvasWheel(e) {
   applyTransform();
 }
 
-let _pinchDist = 0;  // last pinch distance
+let _pinchDist = 0;
+let _longPressTimer = null;
+let _lastTapTime = 0;
+let _lastTapTarget = null;
 
 function onTouchStart(e) {
   e.preventDefault();
+  clearTimeout(_longPressTimer);
+
   if (e.touches.length === 1) {
     const t = e.touches[0];
-    // Single touch on note header → note drag; else canvas pan
-    const header = document.elementFromPoint(t.clientX, t.clientY)?.closest?.('.note-header');
-    const noteEl = header?.closest('.note');
-    if (header && noteEl) {
+    const noteEl = document.elementFromPoint(t.clientX, t.clientY)?.closest?.('.note');
+
+    if (noteEl) {
       const noteId = noteEl.id.replace('note-', '');
       const note   = canvasState.notes.find(n => n.id === noteId);
-      if (note) {
-        canvasState.dragging = {
-          noteId,
-          startMouseX: t.clientX, startMouseY: t.clientY,
-          startNoteX: note.x,     startNoteY: note.y
-        };
+      if (!note) return;
+
+      // Double-tap detection (300ms)
+      const now = Date.now();
+      if (_lastTapTarget === noteId && now - _lastTapTime < 300) {
+        _lastTapTime = 0;
+        _lastTapTarget = null;
+        startNoteEdit(noteId);
         return;
       }
+      _lastTapTime = now;
+      _lastTapTarget = noteId;
+
+      // Long-press detection (500ms) → edit
+      _longPressTimer = setTimeout(() => {
+        if (canvasState.dragging && !canvasState.dragging.moved) {
+          canvasState.dragging = null;
+          startNoteEdit(noteId);
+        }
+      }, 500);
+
+      // Start potential drag
+      canvasState.dragging = {
+        noteId,
+        startMouseX: t.clientX, startMouseY: t.clientY,
+        startNoteX: note.x,     startNoteY: note.y,
+        moved: false
+      };
+
+      // Select this note
+      canvasState.selectedIds.clear();
+      document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+      canvasState.selectedIds.add(noteId);
+      noteEl.classList.add('selected');
+      renderPromoteButton();
+      return;
     }
+
+    _lastTapTime = 0;
+    _lastTapTarget = null;
+
+    // Canvas pan
     canvasState.panning = {
       startX: t.clientX, startY: t.clientY,
       startPanX: canvasState.pan.x, startPanY: canvasState.pan.y
     };
   } else if (e.touches.length === 2) {
+    clearTimeout(_longPressTimer);
     canvasState.panning = null;
     canvasState.dragging = null;
     const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -885,6 +948,10 @@ function onTouchMove(e) {
     const t = e.touches[0];
     if (canvasState.dragging) {
       const d = canvasState.dragging;
+      const dist = Math.abs(t.clientX - d.startMouseX) + Math.abs(t.clientY - d.startMouseY);
+      if (!d.moved && dist < 5) return;
+      d.moved = true;
+      clearTimeout(_longPressTimer);
       const note = canvasState.notes.find(n => n.id === d.noteId);
       if (note) {
         note.x = d.startNoteX + (t.clientX - d.startMouseX) / canvasState.scale;
@@ -921,12 +988,14 @@ function onTouchMove(e) {
 }
 
 function onTouchEnd(e) {
+  clearTimeout(_longPressTimer);
   if (e.touches.length === 0) {
     if (canvasState.dragging) {
-      const { noteId } = canvasState.dragging;
-      // Cancel any in-flight debounced save and fire immediately
-      clearTimeout(canvasState.posSaveTimers[noteId]);
-      saveNotePosition(noteId);
+      const { noteId, moved } = canvasState.dragging;
+      if (moved) {
+        clearTimeout(canvasState.posSaveTimers[noteId]);
+        saveNotePosition(noteId);
+      }
     }
     canvasState.dragging = null;
     canvasState.panning  = null;
