@@ -924,13 +924,14 @@ app.post('/api/projects/:name/canvas/notes', (req, res) => {
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
   const data = readCanvasFile(req.params.name);
-  const { text = '', x = 0, y = 0, color = 'yellow' } = req.body;
+  const { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = req.body;
   const note = {
     id: nextNoteId(data.notes),
     text,
     x,
     y,
     color,
+    size,
     created: new Date().toISOString().slice(0, 10)
   };
   data.notes.push(note);
@@ -947,7 +948,7 @@ app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
   const data = readCanvasFile(req.params.name);
   const note = data.notes.find(n => n.id === req.params.id);
   if (!note) return res.status(404).json({ error: 'Note not found' });
-  const allowed = ['text', 'x', 'y', 'color'];
+  const allowed = ['text', 'x', 'y', 'color', 'size'];
   for (const k of allowed) {
     if (Object.prototype.hasOwnProperty.call(req.body, k)) note[k] = req.body[k];
   }
