@@ -983,7 +983,7 @@ app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
 // POST /api/projects/:name/canvas/connections
 app.post('/api/projects/:name/canvas/connections', (req, res) => {
   const data = readCanvasFile(req.params.name);
-  const { from, to } = req.body;
+  const { from, to, fromPort, toPort } = req.body;
   if (!from || !to) return res.status(400).json({ error: 'from and to required' });
   if (from === to) return res.status(400).json({ error: 'Cannot connect note to itself' });
   const noteIds = new Set(data.notes.map(n => n.id));
@@ -1010,7 +1010,6 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
     }
     return res.json({ ok: true, duplicate: true });
   }
-  const { fromPort, toPort } = req.body;
   const conn = { from, to };
   if (fromPort) conn.fromPort = fromPort;
   if (toPort) conn.toPort = toPort;
