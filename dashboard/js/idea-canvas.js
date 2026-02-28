@@ -48,13 +48,30 @@ export const canvasState = {
 // --- Markdown renderer (note subset: bold, lists, links only) ---
 function renderNoteMarkdown(text) {
   if (!text) return '';
-  let html = escHtml(text);
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, match => `<ul>${match}</ul>`);
-  html = html.replace(/^(?!<[ul]|$)(.+)$/gm, '<p>$1</p>');
-  return html;
+  // Process line by line so list items stay together, plain lines use <br>
+  const lines = text.split('\n');
+  const out = [];
+  let inList = false;
+  for (let i = 0; i < lines.length; i++) {
+    let line = escHtml(lines[i]);
+    // Inline formatting
+    line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    if (line.startsWith('- ')) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push('<li>' + line.slice(2) + '</li>');
+    } else {
+      if (inList) { out.push('</ul>'); inList = false; }
+      if (line === '') {
+        out.push('<br>');
+      } else {
+        out.push(line + (i < lines.length - 1 ? '<br>' : ''));
+      }
+    }
+  }
+  if (inList) out.push('</ul>');
+  return out.join('');
 }
 
 function checkTruncation(noteEl) {
@@ -1096,8 +1113,12 @@ function onTouchStart(e) {
     _lastTapTime = 0;
     _lastTapTarget = null;
 
-    // Close sidebar and deselect on empty canvas tap
+    // Close sidebar, exit edit, and deselect on empty canvas tap
     if (canvasState.sidebarNoteId) closeSidebar();
+    if (canvasState.editingId) {
+      const ta = document.getElementById('note-ta-' + canvasState.editingId);
+      if (ta) saveNoteText(canvasState.editingId, ta.value);
+    }
     if (canvasState.selectedIds.size > 0) {
       canvasState.selectedIds.clear();
       document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));

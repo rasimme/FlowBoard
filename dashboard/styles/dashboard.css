@@ -863,7 +863,8 @@
       min-height: 20px; white-space: pre-wrap; word-break: break-word;
     }
     /* Compact md-content overrides for notes */
-    .note-text.md-content p  { margin: 0 0 2px; }
+    .note-text.md-content p  { margin: 0; }
+    .note-text.md-content br { display: block; content: ''; }
     .note-text.md-content ul { margin: 2px 0; padding-left: 14px; }
     .note-text.md-content li { margin: 1px 0; }
 
@@ -877,14 +878,24 @@
       display: block;
     }
 
-    /* When a note is in edit mode: remove max-height + overflow clipping on body */
+    /* When a note is in edit mode: remove max-height + overflow clipping on body,
+       and make body + textarea fill available card height via flex */
     .note.editing .note-body {
       max-height: none !important;
       overflow: visible !important;
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1 !important;
+      padding-bottom: 0 !important;
     }
     .note.editing .note-body::after,
     .note.editing .note-body::before {
       display: none !important;
+    }
+    .note.editing .note-textarea {
+      flex: 1 !important;
+      height: auto !important;
+      min-height: 80px !important;
     }
 
     /* Note delete button: hidden until hover/selected */
