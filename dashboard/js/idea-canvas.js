@@ -1067,12 +1067,21 @@ function onTouchStart(e) {
         }
       }, 500);
 
-      // Start potential drag
+      // Start potential drag — include startPositions for all selected notes (mirrors mouse drag)
+      const startPositions = new Map();
+      const idsToTrack = canvasState.selectedIds.has(noteId)
+        ? [...canvasState.selectedIds]
+        : [noteId];
+      for (const id of idsToTrack) {
+        const n = canvasState.notes.find(n => n.id === id);
+        if (n) startPositions.set(id, { x: n.x, y: n.y });
+      }
       canvasState.dragging = {
         noteId,
         startMouseX: t.clientX, startMouseY: t.clientY,
         startNoteX: note.x,     startNoteY: note.y,
-        moved: false
+        moved: false,
+        startPositions
       };
 
       // Select this note
@@ -1087,8 +1096,13 @@ function onTouchStart(e) {
     _lastTapTime = 0;
     _lastTapTarget = null;
 
-    // Close sidebar on canvas tap
+    // Close sidebar and deselect on empty canvas tap
     if (canvasState.sidebarNoteId) closeSidebar();
+    if (canvasState.selectedIds.size > 0) {
+      canvasState.selectedIds.clear();
+      document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+      renderPromoteButton();
+    }
 
     // Canvas pan
     canvasState.panning = {
