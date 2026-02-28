@@ -856,7 +856,7 @@
     /* Note body (text area) */
     .note-body {
       padding: 4px 10px 8px;
-      min-height: 40px; cursor: text; flex: 1;
+      min-height: 40px; cursor: grab; flex: 1;
     }
     .note-text {
       font-size: 12px; line-height: 1.5; color: var(--text);
@@ -887,6 +887,7 @@
       flex-direction: column !important;
       flex: 1 !important;
       padding-bottom: 0 !important;
+      cursor: text !important;
     }
     .note.editing .note-body::after,
     .note.editing .note-body::before {

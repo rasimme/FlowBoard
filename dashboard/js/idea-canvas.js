@@ -855,6 +855,7 @@ function onCanvasMouseMove(e) {
     let nearestDot = null;
     let nearestDist = Infinity;
     let nearestNoteId = null;
+    let nearestPort = null;
 
     document.querySelectorAll('.note').forEach(noteEl => {
       if (noteEl.id === 'note-' + canvasState.connecting.fromId) return;
@@ -868,6 +869,7 @@ function onCanvasMouseMove(e) {
           nearestDist = d;
           nearestDot = noteEl.querySelector(`.conn-dot-${port}`);
           nearestNoteId = targetId;
+          nearestPort = port;
           tx = portPos.x;
           ty = portPos.y;
         }
@@ -888,11 +890,15 @@ function onCanvasMouseMove(e) {
     }
 
     const fromPort = canvasState.connecting.fromPort;
-    const orientation = (fromPort === 'top' || fromPort === 'bottom') ? 'vertical' : 'horizontal';
+    const oriA = (fromPort === 'top' || fromPort === 'bottom') ? 'vertical' : 'horizontal';
+    // When snapped to a target port, use its orientation; otherwise default to same as source
+    const oriB = nearestPort
+      ? ((nearestPort === 'top' || nearestPort === 'bottom') ? 'vertical' : 'horizontal')
+      : oriA;
 
     const prev = document.getElementById('conn-preview');
     if (prev && fromPt) {
-      prev.setAttribute('d', manhattanPath(fromPt.x, fromPt.y, tx, ty, orientation));
+      prev.setAttribute('d', manhattanPath(fromPt.x, fromPt.y, tx, ty, oriA, oriB));
     }
     return;
   }
@@ -1235,57 +1241,78 @@ function onTouchEnd(e) {
  * @param {"horizontal"|"vertical"} orientation  Routing direction based on source port side
  * @returns {string}   SVG path `d` attribute value
  */
-function manhattanPath(x1, y1, x2, y2, orientation = 'horizontal') {
+function manhattanPath(x1, y1, x2, y2, oriA = 'horizontal', oriB = 'horizontal') {
   const r   = CORNER_RADIUS;
   const dx  = x2 - x1;
   const dy  = y2 - y1;
   const adx = Math.abs(dx);
   const ady = Math.abs(dy);
+  const sx  = dx >= 0 ? 1 : -1;
+  const sy  = dy >= 0 ? 1 : -1;
 
-  // Degenerate: essentially straight — no bending needed
+  // Degenerate: essentially straight
   if (adx < 2 || ady < 2) return `M ${x1} ${y1} L ${x2} ${y2}`;
 
-  if (orientation === 'vertical') {
-    // V→H→V routing (for top/bottom ports)
-    const my  = (y1 + y2) / 2;
-    const sx  = dx >= 0 ? 1 : -1;
-    const sy  = dy >= 0 ? 1 : -1;
-
-    const rv = Math.max(0, Math.min(r, ady / 2 - 2));
-    const rh = Math.max(0, Math.min(r, adx / 2 - 2));
-
-    if (rv < 1 || rh < 1) {
-      return `M ${x1} ${y1} L ${x1} ${my} L ${x2} ${my} L ${x2} ${y2}`;
+  // Same orientation: use midpoint routing
+  if (oriA === oriB) {
+    if (oriA === 'vertical') {
+      // V→H→V: vertical out, horizontal across, vertical in
+      const my = (y1 + y2) / 2;
+      const rv = Math.max(0, Math.min(r, ady / 2 - 2));
+      const rh = Math.max(0, Math.min(r, adx / 2 - 2));
+      if (rv < 1 || rh < 1) {
+        return `M ${x1} ${y1} L ${x1} ${my} L ${x2} ${my} L ${x2} ${y2}`;
+      }
+      return [
+        `M ${x1} ${y1}`,
+        `L ${x1} ${my - sy * rv}`,
+        `Q ${x1} ${my} ${x1 + sx * rh} ${my}`,
+        `L ${x2 - sx * rh} ${my}`,
+        `Q ${x2} ${my} ${x2} ${my + sy * rv}`,
+        `L ${x2} ${y2}`
+      ].join(' ');
     }
-
+    // H→V→H: horizontal out, vertical across, horizontal in
+    const mx = (x1 + x2) / 2;
+    const rh = Math.max(0, Math.min(r, adx / 2 - 2));
+    const rv = Math.max(0, Math.min(r, ady / 2 - 2));
+    if (rh < 1 || rv < 1) {
+      return `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+    }
     return [
       `M ${x1} ${y1}`,
-      `L ${x1} ${my - sy * rv}`,
-      `Q ${x1} ${my} ${x1 + sx * rh} ${my}`,
-      `L ${x2 - sx * rh} ${my}`,
-      `Q ${x2} ${my} ${x2} ${my + sy * rv}`,
+      `L ${mx - sx * rh} ${y1}`,
+      `Q ${mx} ${y1} ${mx} ${y1 + sy * rv}`,
+      `L ${mx} ${y2 - sy * rv}`,
+      `Q ${mx} ${y2} ${mx + sx * rh} ${y2}`,
       `L ${x2} ${y2}`
     ].join(' ');
   }
 
-  // H→V→H routing (for left/right ports — default)
-  const mx  = (x1 + x2) / 2;
-  const sx  = dx >= 0 ? 1 : -1;
-  const sy  = dy >= 0 ? 1 : -1;
-
-  const rh = Math.max(0, Math.min(r, adx / 2 - 2));
-  const rv = Math.max(0, Math.min(r, ady / 2 - 2));
-
-  if (rh < 1 || rv < 1) {
-    return `M ${x1} ${y1} L ${mx} ${y1} L ${mx} ${y2} L ${x2} ${y2}`;
+  // Mixed orientation: L-shape routing (one bend)
+  if (oriA === 'horizontal' && oriB === 'vertical') {
+    // H out → turn → V into target (bend at x2, y1)
+    const rc = Math.max(0, Math.min(r, adx - 2, ady - 2));
+    if (rc < 1) {
+      return `M ${x1} ${y1} L ${x2} ${y1} L ${x2} ${y2}`;
+    }
+    return [
+      `M ${x1} ${y1}`,
+      `L ${x2 - sx * rc} ${y1}`,
+      `Q ${x2} ${y1} ${x2} ${y1 + sy * rc}`,
+      `L ${x2} ${y2}`
+    ].join(' ');
   }
 
+  // V out → turn → H into target (bend at x1, y2)
+  const rc = Math.max(0, Math.min(r, adx - 2, ady - 2));
+  if (rc < 1) {
+    return `M ${x1} ${y1} L ${x1} ${y2} L ${x2} ${y2}`;
+  }
   return [
     `M ${x1} ${y1}`,
-    `L ${mx - sx * rh} ${y1}`,
-    `Q ${mx} ${y1} ${mx} ${y1 + sy * rv}`,
-    `L ${mx} ${y2 - sy * rv}`,
-    `Q ${mx} ${y2} ${mx + sx * rh} ${y2}`,
+    `L ${x1} ${y2 - sy * rc}`,
+    `Q ${x1} ${y2} ${x1 + sx * rc} ${y2}`,
     `L ${x2} ${y2}`
   ].join(' ');
 }
@@ -1387,6 +1414,7 @@ function computePortPositions() {
       } else {
         entry.bx = px;
         entry.by = py;
+        entry.sideB = side;
       }
     });
   }
@@ -1417,8 +1445,9 @@ function renderConnections() {
     const fromNote  = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
 
-    const orientation = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
-    const pathD = manhattanPath(ax, ay, bx, by, orientation);
+    const oriA = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
+    const oriB = (ports.sideB === 'top' || ports.sideB === 'bottom') ? 'vertical' : 'horizontal';
+    const pathD = manhattanPath(ax, ay, bx, by, oriA, oriB);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'conn-line-group');
