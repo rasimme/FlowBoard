@@ -204,3 +204,8 @@
 .note-menu-delete:hover {
   color: #ff4040;
 }
+
+/* Card sizes */
+.note.size-medium {
+  width: 280px;
+}
