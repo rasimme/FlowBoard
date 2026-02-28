@@ -1548,7 +1548,21 @@ async function saveConnection(fromId, toId, fromPort, toPort) {
     const res = await api(`/projects/${canvasState._state.viewedProject}/canvas/connections`, {
       method: 'POST', body: { from: fromId, to: toId, fromPort: fromPort || null, toPort: toPort || null }
     });
-    if (res.ok && !res.duplicate) {
+    if (res.ok && res.updated) {
+      // Existing connection was updated with new ports
+      const existing = canvasState.connections.find(
+        c => (c.from === fromId && c.to === toId) || (c.from === toId && c.to === fromId)
+      );
+      if (existing) {
+        if (existing.from === fromId) {
+          existing.fromPort = fromPort || null;
+          existing.toPort = toPort || null;
+        } else {
+          existing.fromPort = toPort || null;
+          existing.toPort = fromPort || null;
+        }
+      }
+    } else if (res.ok && !res.duplicate) {
       canvasState.connections.push({ from: fromId, to: toId, fromPort: fromPort || null, toPort: toPort || null });
 
       renderConnections();
