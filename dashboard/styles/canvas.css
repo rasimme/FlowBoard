@@ -209,3 +209,38 @@
 .note.size-medium {
   width: 280px;
 }
+
+/* Max-height with fade for overflow */
+.note-body {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+.note.size-medium .note-body {
+  max-height: 300px;
+}
+
+/* Fade gradient at bottom when truncated */
+.note-body.truncated::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(transparent, #12141a);
+  pointer-events: none;
+}
+
+/* Ellipsis indicator */
+.note-body.truncated::before {
+  content: '\22EF';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 14px;
+  z-index: 1;
+  pointer-events: none;
+}
