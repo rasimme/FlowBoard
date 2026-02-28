@@ -79,7 +79,7 @@
     /* Layout */
     .app {
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
+      grid-template-rows: auto auto 1fr;
       grid-template-columns: var(--sidebar-width) 1fr;
       height: 100dvh;
       transition: grid-template-columns var(--duration-normal) var(--ease-out);
@@ -367,14 +367,6 @@
     .priority-option[data-p="low"].selected { color: var(--ok); border-color: #22c55e59; background: var(--ok-subtle); }
 
     .form-actions { display: flex; gap: 8px; }
-
-    /* Footer */
-    .footer {
-      grid-column: 1 / -1;
-      padding: 10px 22px; text-align: center;
-      font-size: 11px; color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
 
     /* Toast — bottom-right */
     .toast-container {

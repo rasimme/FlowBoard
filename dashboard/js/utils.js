@@ -120,9 +120,3 @@ export function formatSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export function updateTimestamp() {
-  const el = document.getElementById('lastRefresh');
-  if (el) {
-    el.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  }
-}
