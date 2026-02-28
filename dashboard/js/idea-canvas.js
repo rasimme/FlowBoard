@@ -291,16 +291,22 @@ function repositionZeroNote(note) {
 function renderNotes() {
   const vp = document.getElementById('canvasViewport');
   if (!vp) return;
-  // Remove old note elements (keep SVG)
-  vp.querySelectorAll('.note').forEach(el => el.remove());
+  // Remove old note elements (keep SVG) — skip the note being edited
+  vp.querySelectorAll('.note').forEach(el => {
+    const noteId = el.id.replace('note-', '');
+    if (noteId === canvasState.editingId) return; // preserve active edit DOM
+    el.remove();
+  });
   for (const note of canvasState.notes) {
+    if (note.id === canvasState.editingId) continue; // already in DOM, skip
     if (note.x === 0 && note.y === 0) repositionZeroNote(note);
     vp.appendChild(createNoteElement(note));
   }
 
-  // Check truncation after DOM layout
+  // Check truncation after DOM layout (skip editing note)
   requestAnimationFrame(() => {
     for (const note of canvasState.notes) {
+      if (note.id === canvasState.editingId) continue;
       checkTruncation(document.getElementById('note-' + note.id));
     }
   });
@@ -694,6 +700,9 @@ function onCanvasMouseDown(e) {
     // If clicking inside a textarea (editing), don't start drag
     if (e.target.closest('.note-textarea')) return;
 
+    // Don't start drag on a note that's being edited (defense-in-depth)
+    if (canvasState.editingId === noteId) return;
+
     // Start potential drag from anywhere on the note
     canvasState.dragging = {
       noteId,
@@ -975,6 +984,11 @@ let _lastTapTime = 0;
 let _lastTapTarget = null;
 
 function onTouchStart(e) {
+  // Don't preventDefault if touching a textarea — allow native text interaction
+  const touchTarget = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+  if (touchTarget?.closest('.note-textarea') || touchTarget?.closest('.canvas-sidebar-textarea')) {
+    return; // Let browser handle textarea touch natively
+  }
   e.preventDefault();
   clearTimeout(_longPressTimer);
 
@@ -986,6 +1000,9 @@ function onTouchStart(e) {
       const noteId = noteEl.id.replace('note-', '');
       const note   = canvasState.notes.find(n => n.id === noteId);
       if (!note) return;
+
+      // Don't interfere with active edit textarea touch interaction
+      if (canvasState.editingId === noteId) return;
 
       // Double-tap detection (300ms)
       const now = Date.now();
@@ -1042,6 +1059,13 @@ function onTouchStart(e) {
 }
 
 function onTouchMove(e) {
+  // Don't prevent default if interacting with textarea
+  if (canvasState.editingId || canvasState.sidebarNoteId) {
+    const touchTarget = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+    if (touchTarget?.closest('.note-textarea') || touchTarget?.closest('.canvas-sidebar-textarea')) {
+      return;
+    }
+  }
   e.preventDefault();
   if (e.touches.length === 1) {
     const t = e.touches[0];
