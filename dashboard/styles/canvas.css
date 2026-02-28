@@ -88,11 +88,14 @@
   pointer-events: none;
 }
 
-/* Target port highlight during connection drag */
-.conn-dot-target-highlight {
+/* Target ports visible during connection drag (not highlighted) */
+.conn-dot-target-active {
   opacity: 1 !important;
-  background: var(--accent-2) !important;
-  transform: translate(-50%, -50%) scale(1.35) !important;
+}
+
+/* Nearest port grows during connection drag */
+.conn-dot-snap {
+  transform: translate(-50%, -50%) scale(1.5) !important;
 }
 
 /* Port color matches card border color */
