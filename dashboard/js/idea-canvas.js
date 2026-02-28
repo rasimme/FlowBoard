@@ -1562,6 +1562,7 @@ async function saveConnection(fromId, toId, fromPort, toPort) {
           existing.toPort = fromPort || null;
         }
       }
+      renderConnections();
     } else if (res.ok && !res.duplicate) {
       canvasState.connections.push({ from: fromId, to: toId, fromPort: fromPort || null, toPort: toPort || null });
 
