@@ -106,3 +106,98 @@
 .conn-dot-connected {
   opacity: 1 !important;
 }
+
+/* ⋮ Menu button */
+.note-menu-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity var(--duration-normal);
+}
+.note:hover .note-menu-btn,
+.note.selected .note-menu-btn {
+  opacity: 0.6;
+}
+.note-menu-btn:hover {
+  opacity: 1 !important;
+  color: var(--text);
+}
+
+/* Dropdown menu */
+.note-menu-dropdown {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  z-index: 200;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  min-width: 140px;
+  box-shadow: var(--shadow-lg);
+  animation: popIn var(--duration-normal) var(--ease-out);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-menu-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.note-menu-swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.note-menu-sizes {
+  display: flex;
+  gap: 4px;
+}
+
+.note-menu-size-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.note-menu-size-btn.active {
+  background: var(--border);
+  color: var(--text-strong);
+}
+.note-menu-size-btn:hover {
+  border-color: var(--text);
+}
+
+.note-menu-delete {
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--danger);
+  font-size: 12px;
+  padding: 6px 0 2px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.note-menu-delete:hover {
+  color: #ff4040;
+}
