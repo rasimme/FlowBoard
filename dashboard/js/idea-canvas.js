@@ -818,10 +818,11 @@ function onCanvasMouseMove(e) {
     // Find nearest port on any target note
     let nearestDot = null;
     let nearestDist = Infinity;
+    let nearestNoteId = null;
 
     document.querySelectorAll('.note').forEach(noteEl => {
       if (noteEl.id === 'note-' + canvasState.connecting.fromId) return;
-      const targetId   = noteEl.id.replace('note-', '');
+      const targetId = noteEl.id.replace('note-', '');
 
       ['top', 'right', 'bottom', 'left'].forEach(port => {
         const portPos = getNoteDotPosition(targetId, port);
@@ -830,6 +831,7 @@ function onCanvasMouseMove(e) {
         if (d < nearestDist) {
           nearestDist = d;
           nearestDot = noteEl.querySelector(`.conn-dot-${port}`);
+          nearestNoteId = targetId;
           tx = portPos.x;
           ty = portPos.y;
         }
@@ -839,10 +841,14 @@ function onCanvasMouseMove(e) {
     // Snap threshold: 60px canvas-space (~close enough to a card)
     if (nearestDist < 60 && nearestDot) {
       nearestDot.classList.add('conn-dot-snap');
+      canvasState.connecting.snapTargetId = nearestNoteId;
+      canvasState.connecting.snapValid = true;
     } else {
       // Not near any port — follow cursor freely
       tx = pos.x;
       ty = pos.y;
+      canvasState.connecting.snapTargetId = null;
+      canvasState.connecting.snapValid = false;
     }
 
     const fromPort = canvasState.connecting.fromPort;
@@ -920,14 +926,11 @@ function onCanvasMouseUp(e) {
     return;
   }
 
-  // End connection drag
+  // End connection drag — only commit if cursor was snapped to a valid port
   if (canvasState.connecting) {
-    const targetNote = e.target.closest?.('.note');
-    if (targetNote) {
-      const targetId = targetNote.id.replace('note-', '');
-      if (targetId !== canvasState.connecting.fromId) {
-        saveConnection(canvasState.connecting.fromId, targetId);
-      }
+    const { fromId, snapTargetId, snapValid } = canvasState.connecting;
+    if (snapValid && snapTargetId && snapTargetId !== fromId) {
+      saveConnection(fromId, snapTargetId);
     }
     removeTempConnectionLine();
     canvasState.connecting = null;
