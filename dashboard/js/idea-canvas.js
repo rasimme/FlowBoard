@@ -722,33 +722,43 @@ function onCanvasMouseMove(e) {
     return;
   }
 
-  // Connection drag — update preview path
+  // Connection drag — update preview path + nearest port snap
   if (canvasState.connecting) {
     const pos     = screenToCanvas(e.clientX, e.clientY);
     const fromPt  = canvasState.connecting.fromPt;
     let tx = pos.x, ty = pos.y;
 
-    // Snap to nearest side center of target note when hovering one
-    const targetEl = e.target.closest?.('.note');
-    if (targetEl && targetEl.id !== 'note-' + canvasState.connecting.fromId) {
-      const targetId   = targetEl.id.replace('note-', '');
-      const targetNote = canvasState.notes.find(n => n.id === targetId);
-      if (targetNote) {
-        const w  = targetEl.offsetWidth;
-        const h  = targetEl.offsetHeight;
-        const cx = targetNote.x + w / 2;
-        const cy = targetNote.y + h / 2;
-        const dx = fromPt.x - cx;
-        const dy = fromPt.y - cy;
-        // Snap to the side of the target that faces the source
-        if (Math.abs(dx) >= Math.abs(dy)) {
-          tx = dx >= 0 ? targetNote.x       : targetNote.x + w;
-          ty = cy;
-        } else {
-          tx = cx;
-          ty = dy >= 0 ? targetNote.y       : targetNote.y + h;
+    // Remove previous snap highlight
+    document.querySelectorAll('.conn-dot-snap').forEach(d => d.classList.remove('conn-dot-snap'));
+
+    // Find nearest port on any target note
+    let nearestDot = null;
+    let nearestDist = Infinity;
+
+    document.querySelectorAll('.note').forEach(noteEl => {
+      if (noteEl.id === 'note-' + canvasState.connecting.fromId) return;
+      const targetId   = noteEl.id.replace('note-', '');
+
+      ['top', 'right', 'bottom', 'left'].forEach(port => {
+        const portPos = getNoteDotPosition(targetId, port);
+        if (!portPos) return;
+        const d = Math.hypot(pos.x - portPos.x, pos.y - portPos.y);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestDot = noteEl.querySelector(`.conn-dot-${port}`);
+          tx = portPos.x;
+          ty = portPos.y;
         }
-      }
+      });
+    });
+
+    // Snap threshold: 60px canvas-space (~close enough to a card)
+    if (nearestDist < 60 && nearestDot) {
+      nearestDot.classList.add('conn-dot-snap');
+    } else {
+      // Not near any port — follow cursor freely
+      tx = pos.x;
+      ty = pos.y;
     }
 
     const prev = document.getElementById('conn-preview');
@@ -1265,6 +1275,7 @@ export function startConnectionDrag(e, noteId, port) {
   e.preventDefault();
   const pt = getNoteDotPosition(noteId, port);
   if (!pt) return;
+  const note = canvasState.notes.find(n => n.id === noteId);
   canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y } };
 
   // Draw preview path in overlay SVG (above cards)
@@ -1274,26 +1285,30 @@ export function startConnectionDrag(e, noteId, port) {
     prev.id = 'conn-preview';
     prev.setAttribute('class', 'conn-preview-path');
     prev.setAttribute('d', `M ${pt.x} ${pt.y}`);
+    // Color preview line to match source card
+    prev.style.stroke = COLOR_STROKE[note?.color] || 'var(--muted)';
     overlay.appendChild(prev);
   }
 
-  // Highlight connection dots on all other notes
+  // Show all target ports at normal size (no green highlight)
   document.querySelectorAll('.note').forEach(el => {
     if (el.id === 'note-' + noteId) return;
-    el.querySelectorAll('.conn-dot').forEach(d => d.classList.add('conn-dot-target-highlight'));
+    el.querySelectorAll('.conn-dot').forEach(d => {
+      d.classList.add('conn-dot-target-active');
+    });
   });
 }
 
 function removeTempConnectionLine() {
-  // Legacy straight-line element (may exist in old sessions)
   const line = document.getElementById('conn-temp');
   if (line) line.remove();
-  // New overlay preview path
   const prev = document.getElementById('conn-preview');
   if (prev) prev.remove();
-  // Remove target port highlights from all dots
-  document.querySelectorAll('.conn-dot-target-highlight')
-    .forEach(d => d.classList.remove('conn-dot-target-highlight'));
+  // Remove target port markers
+  document.querySelectorAll('.conn-dot-target-active')
+    .forEach(d => d.classList.remove('conn-dot-target-active'));
+  document.querySelectorAll('.conn-dot-snap')
+    .forEach(d => d.classList.remove('conn-dot-snap'));
 }
 
 async function saveConnection(fromId, toId) {
