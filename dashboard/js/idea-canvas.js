@@ -147,7 +147,14 @@ export async function renderIdeaCanvas(state) {
         <button class="btn btn-primary btn-sm" onclick="window.addNote()">+ Note</button>
       </div>
       <div class="canvas-viewport" id="canvasViewport">
-        <svg id="canvasSvg" class="canvas-svg canvas-svg-underlay"></svg>
+        <svg id="canvasSvg" class="canvas-svg canvas-svg-underlay">
+          <defs>
+            <pattern id="dotPattern" width="24" height="24" patternUnits="userSpaceOnUse">
+              <circle cx="12" cy="12" r="1" fill="#3a3a45"/>
+            </pattern>
+          </defs>
+          <rect width="10000" height="10000" x="-5000" y="-5000" fill="url(#dotPattern)"/>
+        </svg>
         <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
       </div>
       <div class="canvas-lasso" id="canvasLasso"></div>
@@ -157,7 +164,14 @@ export async function renderIdeaCanvas(state) {
 
   if (!state.viewedProject) {
     const vp = document.getElementById('canvasViewport');
-    if (vp) vp.innerHTML = `<svg id="canvasSvg" class="canvas-svg canvas-svg-underlay"></svg>
+    if (vp) vp.innerHTML = `<svg id="canvasSvg" class="canvas-svg canvas-svg-underlay">
+        <defs>
+          <pattern id="dotPattern" width="24" height="24" patternUnits="userSpaceOnUse">
+            <circle cx="12" cy="12" r="1" fill="#3a3a45"/>
+          </pattern>
+        </defs>
+        <rect width="10000" height="10000" x="-5000" y="-5000" fill="url(#dotPattern)"/>
+      </svg>
       <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
       <div class="canvas-empty"><div class="canvas-empty-icon">💡</div><div>Select a project</div></div>`;
     return;
