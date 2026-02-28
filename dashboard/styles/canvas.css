@@ -1,11 +1,10 @@
 /* canvas.css — Idea Canvas style overrides
    Injected programmatically by idea-canvas.js — do NOT add to index.html */
 
-/* Bug 3 fix: enhanced selection state — visible glow on top of dashboard.css outline */
+/* Selection state — white border, no red glow */
 .note.selected {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  box-shadow: var(--shadow-md), 0 0 0 5px rgba(255, 92, 92, 0.18);
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 /* Dot-pattern background + visible frame */
@@ -18,29 +17,29 @@
 
 /* Outline-only note cards — override dashboard.css color fills */
 .note {
-  background: rgba(18, 20, 26, 0.85) !important;
+  background: #12141a !important;
   border-width: 1.5px !important;
   border-left-width: 1.5px !important;
   border-style: solid !important;
 }
 .note.color-yellow {
-  background: rgba(18, 20, 26, 0.85) !important;
+  background: #12141a !important;
   border-color: var(--warn) !important;
 }
 .note.color-blue {
-  background: rgba(18, 20, 26, 0.85) !important;
+  background: #12141a !important;
   border-color: var(--info) !important;
 }
 .note.color-green {
-  background: rgba(18, 20, 26, 0.85) !important;
+  background: #12141a !important;
   border-color: var(--ok) !important;
 }
 .note.color-red {
-  background: rgba(18, 20, 26, 0.85) !important;
+  background: #12141a !important;
   border-color: var(--danger) !important;
 }
 .note.color-teal {
-  background: rgba(18, 20, 26, 0.85) !important;
+  background: #12141a !important;
   border-color: var(--accent-2) !important;
 }
 
