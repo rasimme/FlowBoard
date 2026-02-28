@@ -988,10 +988,28 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
   if (from === to) return res.status(400).json({ error: 'Cannot connect note to itself' });
   const noteIds = new Set(data.notes.map(n => n.id));
   if (!noteIds.has(from) || !noteIds.has(to)) return res.status(404).json({ error: 'Note not found' });
-  const exists = data.connections.some(
+  const existing = data.connections.find(
     c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
   );
-  if (exists) return res.json({ ok: true, duplicate: true });
+  if (existing) {
+    // Connection exists — update ports if different (allows re-routing)
+    if (fromPort || toPort) {
+      if (existing.from === from) {
+        existing.fromPort = fromPort || existing.fromPort;
+        existing.toPort = toPort || existing.toPort;
+      } else {
+        existing.fromPort = toPort || existing.fromPort;
+        existing.toPort = fromPort || existing.toPort;
+      }
+      try {
+        writeCanvasFile(req.params.name, data);
+        return res.json({ ok: true, updated: true, connection: existing });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+    return res.json({ ok: true, duplicate: true });
+  }
   const { fromPort, toPort } = req.body;
   const conn = { from, to };
   if (fromPort) conn.fromPort = fromPort;
