@@ -899,7 +899,11 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
 
   const specPath = path.join(specsDir, specFilename);
   const date = new Date().toISOString().slice(0, 10);
-  const customContent = req.body?.content;
+  let customContent = req.body?.content;
+  // Defensive: replace literal '\n' (escaped newlines from callers) with real newlines
+  if (customContent && customContent.includes('\\n')) {
+    customContent = customContent.replace(/\\n/g, '\n');
+  }
   const template = customContent || `# ${taskId}: ${task.title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Approach\n\n\n## Log\n- ${date}: Spec created\n`;
 
   fs.writeFileSync(specPath, template);
