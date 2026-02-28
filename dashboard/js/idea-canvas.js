@@ -811,9 +811,109 @@ function bindToolbarEvents() {
   });
 }
 
-// Placeholder for Task 3 — formatting commands
+// --- Formatting commands (T-088) ---
 function applyFormatting(type) {
-  // Implemented in T-088
+  const ta = document.getElementById('note-ta-' + canvasState.editingId);
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const selected = ta.value.substring(start, end);
+
+  switch (type) {
+    case 'bold': {
+      const before = '**', after = '**';
+      if (selected.length > 0) {
+        ta.value = ta.value.substring(0, start) + before + selected + after + ta.value.substring(end);
+        ta.setSelectionRange(start + before.length, start + before.length + selected.length);
+      } else {
+        ta.value = ta.value.substring(0, start) + before + after + ta.value.substring(end);
+        ta.setSelectionRange(start + before.length, start + before.length);
+      }
+      break;
+    }
+    case 'italic': {
+      const before = '*', after = '*';
+      if (selected.length > 0) {
+        ta.value = ta.value.substring(0, start) + before + selected + after + ta.value.substring(end);
+        ta.setSelectionRange(start + before.length, start + before.length + selected.length);
+      } else {
+        ta.value = ta.value.substring(0, start) + before + after + ta.value.substring(end);
+        ta.setSelectionRange(start + before.length, start + before.length);
+      }
+      break;
+    }
+    case 'bullet': {
+      insertLinePrefix(ta, '- ');
+      break;
+    }
+    case 'number': {
+      insertNumberedPrefix(ta);
+      break;
+    }
+    case 'link': {
+      const before = '[', after = '](url)';
+      if (selected.length > 0) {
+        ta.value = ta.value.substring(0, start) + before + selected + after + ta.value.substring(end);
+        // Select "url" for easy replacement
+        const urlStart = start + before.length + selected.length + 2; // after ](
+        ta.setSelectionRange(urlStart, urlStart + 3);
+      } else {
+        ta.value = ta.value.substring(0, start) + before + after + ta.value.substring(end);
+        // Select "url"
+        const urlStart = start + before.length + 2; // after [](
+        ta.setSelectionRange(urlStart, urlStart + 3);
+      }
+      break;
+    }
+  }
+  ta.focus();
+}
+
+function insertLinePrefix(ta, prefix) {
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const val = ta.value;
+
+  // Find start of current line
+  let lineStart = val.lastIndexOf('\n', start - 1) + 1;
+
+  if (start === end) {
+    // No selection: insert prefix at current line start
+    ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
+    ta.setSelectionRange(start + prefix.length, start + prefix.length);
+  } else {
+    // Selection: prefix each selected line
+    const before = val.substring(0, lineStart);
+    const selectedLines = val.substring(lineStart, end);
+    const after = val.substring(end);
+    const prefixed = selectedLines.split('\n').map(line => prefix + line).join('\n');
+    ta.value = before + prefixed + after;
+    ta.setSelectionRange(lineStart, lineStart + prefixed.length);
+  }
+  ta.focus();
+}
+
+function insertNumberedPrefix(ta) {
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const val = ta.value;
+
+  let lineStart = val.lastIndexOf('\n', start - 1) + 1;
+
+  if (start === end) {
+    const prefix = '1. ';
+    ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
+    ta.setSelectionRange(start + prefix.length, start + prefix.length);
+  } else {
+    const before = val.substring(0, lineStart);
+    const selectedLines = val.substring(lineStart, end);
+    const after = val.substring(end);
+    const lines = selectedLines.split('\n');
+    const prefixed = lines.map((line, i) => `${i + 1}. ${line}`).join('\n');
+    ta.value = before + prefixed + after;
+    ta.setSelectionRange(lineStart, lineStart + prefixed.length);
+  }
+  ta.focus();
 }
 
 // --- Canvas mouse/touch events ---
@@ -829,6 +929,14 @@ function bindCanvasEvents() {
   wrap.addEventListener('touchstart', onTouchStart,  { passive: false });
   wrap.addEventListener('touchmove',  onTouchMove,   { passive: false });
   wrap.addEventListener('touchend',   onTouchEnd);
+
+  // Scrollable note-body: intercept wheel to scroll content instead of canvas zoom
+  wrap.addEventListener('wheel', e => {
+    const body = e.target.closest('.note.selected .note-body');
+    if (body && body.scrollHeight > body.clientHeight) {
+      e.stopPropagation();
+    }
+  }, { passive: false, capture: true });
 }
 
 function onCanvasDblClick(e) {
@@ -1184,6 +1292,11 @@ function onTouchStart(e) {
   const touchTarget = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
   if (touchTarget?.closest('.note-textarea') || touchTarget?.closest('.canvas-sidebar-textarea')) {
     return; // Let browser handle textarea touch natively
+  }
+  // If touching inside a scrollable note-body of a selected card, let browser handle scroll
+  const touchBody = touchTarget?.closest('.note.selected .note-body');
+  if (touchBody && touchBody.scrollHeight > touchBody.clientHeight && !touchTarget?.closest('.note-header')) {
+    return; // native touch scroll on note content
   }
   e.preventDefault();
   clearTimeout(_longPressTimer);
