@@ -1053,8 +1053,14 @@ function applyFormatting(type) {
     case 'number': insertNumberedPrefix(ta);     break;
     case 'link': {
       const sel = val.substring(start, end).trimEnd();
-      if (sel.length > 0) {
-        ta.value = val.substring(0, start) + '[' + sel + '](url)' + val.substring(end);
+      const trailing = val.substring(start + sel.length, end);
+      // Toggle off: if selection matches [Name](url), unwrap to just Name
+      const linkMatch = sel.match(/^\[([^\]]+)\]\([^)]+\)$/);
+      if (linkMatch) {
+        ta.value = val.substring(0, start) + linkMatch[1] + trailing + val.substring(end);
+        ta.setSelectionRange(start, start + linkMatch[1].length);
+      } else if (sel.length > 0) {
+        ta.value = val.substring(0, start) + '[' + sel + '](url)' + trailing + val.substring(end);
         const urlStart = start + 1 + sel.length + 2;
         ta.setSelectionRange(urlStart, urlStart + 3);
       } else {
@@ -1114,17 +1120,32 @@ function insertNumberedPrefix(ta) {
   let lineStart = val.lastIndexOf('\n', start - 1) + 1;
 
   if (start === end) {
-    const prefix = '1. ';
-    ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
-    ta.setSelectionRange(start + prefix.length, start + prefix.length);
+    const line = val.substring(lineStart, val.indexOf('\n', lineStart) === -1 ? val.length : val.indexOf('\n', lineStart));
+    const numMatch = line.match(/^\d+\. /);
+    if (numMatch) {
+      // Toggle off
+      ta.value = val.substring(0, lineStart) + val.substring(lineStart + numMatch[0].length);
+      ta.setSelectionRange(Math.max(lineStart, start - numMatch[0].length), Math.max(lineStart, start - numMatch[0].length));
+    } else {
+      const prefix = '1. ';
+      ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
+      ta.setSelectionRange(start + prefix.length, start + prefix.length);
+    }
   } else {
+    // Trim trailing newline
+    const rawEnd = end;
+    const trimEnd = val[rawEnd - 1] === '\n' ? rawEnd - 1 : rawEnd;
+    const trailing = val.substring(trimEnd, rawEnd);
     const before = val.substring(0, lineStart);
-    const selectedLines = val.substring(lineStart, end);
-    const after = val.substring(end);
+    const selectedLines = val.substring(lineStart, trimEnd);
+    const after = val.substring(rawEnd);
     const lines = selectedLines.split('\n');
-    const prefixed = lines.map((line, i) => `${i + 1}. ${line}`).join('\n');
-    ta.value = before + prefixed + after;
-    ta.setSelectionRange(lineStart, lineStart + prefixed.length);
+    const allNumbered = lines.every(l => /^\d+\. /.test(l));
+    const result = allNumbered
+      ? lines.map(l => l.replace(/^\d+\. /, '')).join('\n')
+      : lines.map((line, i) => /^\d+\. /.test(line) ? line : `${i + 1}. ${line}`).join('\n');
+    ta.value = before + result + trailing + after;
+    ta.setSelectionRange(lineStart, lineStart + result.length);
   }
   ta.focus();
 }
