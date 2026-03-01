@@ -1269,7 +1269,19 @@ function bindCanvasEvents() {
   wrap.addEventListener('mousemove',  onCanvasMouseMove);
   wrap.addEventListener('mouseup',    onCanvasMouseUp);
   wrap.addEventListener('mouseleave', onCanvasMouseUp);
-  wrap.addEventListener('wheel',      onCanvasWheel, { passive: false });
+  // Capture-phase: intercept wheel before notes consume it (non-selected notes → canvas pan)
+  wrap.addEventListener('wheel', e => {
+    const noteEl = e.target.closest?.('.note');
+    const noteBody = e.target.closest?.('.note-body');
+    // Only let selected scrollable notes handle their own wheel
+    if (noteEl?.classList.contains('selected') && noteBody && noteBody.scrollHeight > noteBody.clientHeight) {
+      return; // let note scroll
+    }
+    // Everything else → canvas handles it
+    e.preventDefault();
+    e.stopPropagation();
+    onCanvasWheel(e);
+  }, { passive: false, capture: true });
 
   wrap.addEventListener('touchstart', onTouchStart,  { passive: false });
   wrap.addEventListener('touchmove',  onTouchMove,   { passive: false });
@@ -1707,14 +1719,7 @@ function applyLassoSelection(screenRect) {
 }
 
 function onCanvasWheel(e) {
-  // If inside a selected note with scrollable content, let it scroll naturally
-  const noteEl = e.target.closest?.('.note');
-  const noteBody = e.target.closest?.('.note-body');
-  if (noteEl?.classList.contains('selected') && noteBody && noteBody.scrollHeight > noteBody.clientHeight) {
-    // Don't preventDefault — let note scroll
-    return;
-  }
-  e.preventDefault();
+  e.preventDefault?.();
   if (e.ctrlKey || e.metaKey) {
     // Zoom toward cursor
     const factor = e.deltaY > 0 ? 0.9 : 1.1;
