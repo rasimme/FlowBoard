@@ -76,15 +76,21 @@ export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confi
   document.getElementById('modalOverlay').onclick = (e) => {
     if (e.target === e.currentTarget) closeModal();
   };
-  document.addEventListener('keydown', modalEscHandler);
+  document.addEventListener('keydown', modalKeyHandler);
 }
 
 export function closeModal() {
   document.getElementById('modalRoot').innerHTML = '';
-  document.removeEventListener('keydown', modalEscHandler);
+  document.removeEventListener('keydown', modalKeyHandler);
 }
 
-function modalEscHandler(e) { if (e.key === 'Escape') closeModal(); }
+function modalKeyHandler(e) {
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('modalConfirm')?.click();
+  }
+}
 
 // --- Shared UI Components ---
 const ICONS = {
