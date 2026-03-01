@@ -1182,6 +1182,15 @@ function onCanvasMouseMove(e) {
     // Snap threshold: 60px canvas-space (~close enough to a card)
     if (nearestDist < 60 && nearestDot) {
       nearestDot.classList.add('conn-dot-snap');
+      // Lift snap-target note above overlay SVG so its dot is visible above the preview line
+      const snapNoteEl = nearestDot.closest('.note');
+      if (snapNoteEl && snapNoteEl !== canvasState.connecting._noteEl) {
+        if (canvasState.connecting._prevSnapNoteEl && canvasState.connecting._prevSnapNoteEl !== snapNoteEl) {
+          canvasState.connecting._prevSnapNoteEl.style.zIndex = '';
+        }
+        snapNoteEl.style.zIndex = '3';
+        canvasState.connecting._prevSnapNoteEl = snapNoteEl;
+      }
       canvasState.connecting.snapTargetId = nearestNoteId;
       canvasState.connecting.snapValid = true;
       canvasState.connecting.snapPort = nearestPort;
@@ -1583,8 +1592,15 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   if (fromSide === 'left'   && x2 > x1 - MIN_ESCAPE) ex = x1 - MIN_ESCAPE;
   if (fromSide === 'bottom' && y2 < y1 + MIN_ESCAPE) ey = y1 + MIN_ESCAPE;
 
-  const body = manhattanPath(ex, ey, x2, y2, oriA, oriB);
-  if (ex === x1 && ey === y1) return body;
+  // After a forced escape, the routing from the escape point should exit perpendicularly
+  // (e.g., right-escape + target-left → go down first, not back left)
+  const escaped = ex !== x1 || ey !== y1;
+  const actualOriA = escaped
+    ? (oriA === 'horizontal' ? 'vertical' : 'horizontal')
+    : oriA;
+
+  const body = manhattanPath(ex, ey, x2, y2, actualOriA, oriB);
+  if (!escaped) return body;
 
   // Prepend M orig L escaped, then drop the redundant M from body
   const bodyTail = body.replace(`M ${ex} ${ey} `, '').replace(`M ${ex} ${ey}`, '');
