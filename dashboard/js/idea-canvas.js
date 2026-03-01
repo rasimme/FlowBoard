@@ -198,7 +198,7 @@ export async function renderIdeaCanvas(state) {
   content.innerHTML = `
     <div class="canvas-wrap" id="canvasWrap">
       <div class="canvas-toolbar">
-        <button class="btn btn-primary btn-sm" onclick="window.addNote()">+ Note</button>
+        <button class="btn btn-primary btn-sm" onclick="window.addNote()" ontouchend="event.preventDefault(); window.addNote()">+ Note</button>
       </div>
       <div class="canvas-viewport" id="canvasViewport">
         <svg id="canvasSvg" class="canvas-svg canvas-svg-underlay">
@@ -1830,8 +1830,17 @@ function onTouchStart(e) {
       return;
     }
 
-    _lastTapTime = 0;
-    _lastTapTarget = null;
+    // Double-tap on empty canvas → create note
+    const now2 = Date.now();
+    if (_lastTapTarget === '__canvas__' && now2 - _lastTapTime < 300) {
+      _lastTapTime = 0;
+      _lastTapTarget = null;
+      const pos = screenToCanvas(t.clientX, t.clientY);
+      createNoteAt(pos.x - NOTE_WIDTH / 2, pos.y - 20);
+      return;
+    }
+    _lastTapTime = now2;
+    _lastTapTarget = '__canvas__';
 
     // Close sidebar, exit edit, and deselect on empty canvas tap
     if (canvasState.sidebarNoteId) closeSidebar();
