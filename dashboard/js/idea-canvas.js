@@ -1667,24 +1667,39 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     const sameSide = fromSide === toSide; // right→right, left→left, bottom→bottom
 
     if (sameSide) {
-      // Same-side: U-shape. Midpoint must be BEYOND both escapes in the
-      // shared escape direction — otherwise the line would reverse immediately.
+      // Same-side: U-shape. Midpoint BEYOND both escapes in escape direction.
       if (srcHorz) {
         const mx = fromSide === 'right' ? Math.max(sx, ex) + E : Math.min(sx, ex) - E;
         mid = [[mx, sy], [mx, ey]];
       } else {
-        const my = Math.max(sy, ey) + E; // bottom→bottom: go further down
+        const my = Math.max(sy, ey) + E;
         mid = [[sx, my], [ex, my]];
       }
     } else {
-      // Opposite-facing (left→right, right→left): S-shape with midpoint
-      // between endpoints. No reversal because escapes face each other.
+      // Opposite-facing (left→right, right→left): check if escapes face
+      // each other (S-shape OK) or face away (need U-shape like same-side).
+      // Facing each other: right-escape (sx) is LEFT of left-escape (ex) → sx < ex
+      // Facing away: right-escape (sx) is RIGHT of left-escape (ex) → sx > ex
       if (srcHorz) {
-        const mx = (sx + ex) / 2;
-        mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
+        const facingEachOther = (fromSide === 'right' && sx < ex) ||
+                                (fromSide === 'left'  && sx > ex);
+        if (facingEachOther) {
+          const mx = (sx + ex) / 2;
+          mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
+        } else {
+          // Facing away: U-shape, go further in source escape direction
+          const mx = fromSide === 'right' ? Math.max(sx, ex) + E : Math.min(sx, ex) - E;
+          mid = [[mx, sy], [mx, ey]];
+        }
       } else {
-        const my = (sy + ey) / 2;
-        mid = (Math.abs(sx - ex) < 1) ? [] : [[sx, my], [ex, my]];
+        const facingEachOther = (fromSide === 'bottom' && sy < ey);
+        if (facingEachOther) {
+          const my = (sy + ey) / 2;
+          mid = (Math.abs(sx - ex) < 1) ? [] : [[sx, my], [ex, my]];
+        } else {
+          const my = Math.max(sy, ey) + E;
+          mid = [[sx, my], [ex, my]];
+        }
       }
     }
   }
