@@ -1851,6 +1851,13 @@ function onTouchMove(e) {
   e.preventDefault();
   if (e.touches.length === 1) {
     const t = e.touches[0];
+
+    // Connection drag via touch — delegate to shared mouse handler
+    if (canvasState.connecting) {
+      onCanvasMouseMove({ clientX: t.clientX, clientY: t.clientY, target: document.elementFromPoint(t.clientX, t.clientY) });
+      return;
+    }
+
     if (canvasState.dragging) {
       const d = canvasState.dragging;
       const dist = Math.abs(t.clientX - d.startMouseX) + Math.abs(t.clientY - d.startMouseY);
@@ -1905,6 +1912,11 @@ function onTouchMove(e) {
 function onTouchEnd(e) {
   clearTimeout(_longPressTimer);
   if (e.touches.length === 0) {
+    // Finish connection drag via touch
+    if (canvasState.connecting) {
+      onCanvasMouseUp({ clientX: e.changedTouches[0]?.clientX, clientY: e.changedTouches[0]?.clientY });
+      return;
+    }
     if (canvasState.dragging) {
       const { noteId, moved, startPositions } = canvasState.dragging;
       if (moved) {
