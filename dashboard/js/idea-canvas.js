@@ -1724,10 +1724,10 @@ function computePortPositions() {
       // bl = border width; dot CSS coords are relative to PADDING edge (note.x + bl)
       // perpendicular axis: center of border line (note.x + w - bl/2 etc.)
       // along-edge axis: needs +bl because CSS top/left is from padding edge
-      if (side === 'top')    { px = note.x + bl + w / 2 + offset; py = note.y - bl / 2; }
-      if (side === 'bottom') { px = note.x + bl + w / 2 + offset; py = note.y + h - bl / 2; }
-      if (side === 'left')   { px = note.x + bl / 2;              py = note.y + bl + h / 2 + offset; }
-      if (side === 'right')  { px = note.x + w - bl / 2;          py = note.y + bl + h / 2 + offset; }
+      if (side === 'top')    { px = Math.round(note.x + bl + w / 2 + offset); py = Math.round(note.y - bl / 2); }
+      if (side === 'bottom') { px = Math.round(note.x + bl + w / 2 + offset); py = Math.round(note.y + h - bl / 2); }
+      if (side === 'left')   { px = Math.round(note.x + bl / 2);              py = Math.round(note.y + bl + h / 2 + offset); }
+      if (side === 'right')  { px = Math.round(note.x + w - bl / 2);          py = Math.round(note.y + bl + h / 2 + offset); }
 
       const connKey = a.conn.from + ':' + a.conn.to;
       if (!portMap.has(connKey)) portMap.set(connKey, {});
@@ -1808,7 +1808,7 @@ function renderConnections() {
     else if (side === 'left')  { x += bl / 2; y += bl + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
     else if (side === 'right') { x += w - bl / 2; y += bl + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
     else { x += bl + w / 2; } // top fallback (legacy)
-    return { x, y };
+    return { x: Math.round(x), y: Math.round(y) };
   }
 
   // --- Step 2: Draw SVG lines using stacking-aware positions ---
@@ -1900,14 +1900,14 @@ function renderPorts(connectedPorts) {
         const bl = el.clientLeft || 1;
         let left, top;
         if (side === 'bottom') {
-          left = Math.max(8, Math.min(w - 8, w / 2 + offset));
-          top = h - bl * 1.5;
+          left = Math.round(Math.max(8, Math.min(w - 8, w / 2 + offset)));
+          top  = Math.round(h - bl * 1.5);
         } else if (side === 'left') {
-          left = -bl / 2;
-          top = Math.max(8, Math.min(h - 8, h / 2 + offset));
+          left = Math.round(-bl / 2);
+          top  = Math.round(Math.max(8, Math.min(h - 8, h / 2 + offset)));
         } else { // right
-          left = w - bl * 1.5;
-          top = Math.max(8, Math.min(h - 8, h / 2 + offset));
+          left = Math.round(w - bl * 1.5);
+          top  = Math.round(Math.max(8, Math.min(h - 8, h / 2 + offset)));
         }
 
         const dot = document.createElement('div');
