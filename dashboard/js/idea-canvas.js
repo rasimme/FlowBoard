@@ -1631,12 +1631,19 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
     (toSide === 'left'  && x1 > x2)
   );
 
+  // Bottom dot clearance: when source is close in height to a bottom-dot target,
+  // the horizontal segment would run along the card edge. Force source escape +
+  // route below both dots to create visible clearance.
+  const bottomClearance = toSide === 'bottom' && Math.abs(y1 - y2) < E;
+
   // Source escape: trigger early (2*E threshold) + forced when target needs escape
+  // + forced when bottom-dot needs vertical clearance
   const srcEscaped =
     (fromSide === 'right'  && x2 < x1 + 2*E) ||
     (fromSide === 'left'   && x2 > x1 - 2*E) ||
     (fromSide === 'bottom' && y2 < y1 + 2*E) ||
-    tgtWillEscape; // Force V exit to avoid horizontal card crossing
+    tgtWillEscape ||    // Force V exit to avoid horizontal card crossing
+    bottomClearance;    // Force V exit for bottom-dot card-edge clearance
   const sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
   const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
 
@@ -1647,7 +1654,10 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
     (toSide === 'bottom' && sy < y2)
   );
   const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
-  const ey = tgtEscaped && toSide === 'bottom' ? y2 + E : y2;
+  // Bottom clearance: route below max(sy, y2) + E so horizontal segment clears card edge
+  const ey = bottomClearance ? Math.max(sy, y2) + E
+           : (tgtEscaped && toSide === 'bottom') ? y2 + E
+           : y2;
 
   // Mid orientation: natural exit direction; switch to perpendicular after escape
   const naturalOriA = (fromSide === 'left' || fromSide === 'right') ? 'horizontal' : 'vertical';
