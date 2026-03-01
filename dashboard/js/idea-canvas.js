@@ -1052,15 +1052,22 @@ function applyFormatting(type) {
       return;
     }
 
-    // Single line: toggle off if already wrapped (inside or outside selection)
-    if (trimmed.startsWith(marker) && trimmed.endsWith(marker) && trimmed.length > marker.length * 2) {
+    // Single line: toggle off if already wrapped (inside or outside selection).
+    // Use exact match: for italic (*), ensure it's not actually bold (**).
+    const exactStart = trimmed.startsWith(marker) && !trimmed.startsWith(marker + marker[0]);
+    const exactEnd   = trimmed.endsWith(marker)   && !trimmed.slice(0, -marker.length).endsWith(marker[0]);
+    if (exactStart && exactEnd && trimmed.length > marker.length * 2) {
       const inner = trimmed.slice(marker.length, -marker.length);
       ta.value = val.substring(0, start) + inner + trailing + val.substring(end);
       ta.setSelectionRange(start, start + inner.length);
       return;
     }
-    if (val.substring(start - marker.length, start) === marker &&
-        val.substring(end, end + marker.length) === marker) {
+    const outerBefore = val.substring(start - marker.length, start);
+    const outerAfter  = val.substring(end, end + marker.length);
+    const outerExact  = outerBefore === marker && outerAfter === marker
+      && val.substring(start - marker.length - 1, start - marker.length) !== marker[0]
+      && val.substring(end + marker.length, end + marker.length + 1) !== marker[0];
+    if (outerExact) {
       ta.value = val.substring(0, start - marker.length) + trimmed + trailing + val.substring(end + marker.length);
       ta.setSelectionRange(start - marker.length, start - marker.length + trimmed.length);
       return;
