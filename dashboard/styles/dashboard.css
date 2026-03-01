@@ -878,9 +878,10 @@
       display: block;
     }
 
-    /* Edit mode: body grows with textarea up to CSS max-height (200/300px), then scrolls */
+    /* Edit mode: body sizes freely to textarea content (grows + shrinks) */
     .note.editing .note-body {
-      overflow-y: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
       padding-bottom: 0 !important;
       cursor: text !important;
     }
