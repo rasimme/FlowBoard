@@ -1642,18 +1642,29 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   else if (toSide === 'bottom') { ex = x2; ey = y2 + E; }
   else                          { ex = x2; ey = y2; }
 
-  // Source escape: at least E in dot direction, but extend further if it
-  // reaches toward the target escape point (avoids extra bend at target)
+  // Source escape: at least E in dot direction, but extend toward target
+  // escape ONLY if the target escape is further in the same direction.
+  // Never extend past the target escape — that would create a U-turn.
   let sx, sy;
-  if (fromSide === 'right')  { sx = Math.max(x1 + E, ex); sy = y1; }
-  else if (fromSide === 'left')   { sx = Math.min(x1 - E, ex); sy = y1; }
-  else if (fromSide === 'bottom') { sx = x1; sy = Math.max(y1 + E, ey); }
-  else { sx = x1; sy = y1; }
+  if (fromSide === 'right') {
+    sx = x1 + E;
+    // Extend right only if target escape is also to the right
+    if (ex > sx) sx = ex;
+    sy = y1;
+  } else if (fromSide === 'left') {
+    sx = x1 - E;
+    if (ex < sx) sx = ex;
+    sy = y1;
+  } else if (fromSide === 'bottom') {
+    sx = x1;
+    sy = y1 + E;
+    if (ey > sy) sy = ey;
+  } else { sx = x1; sy = y1; }
 
-  // Symmetrically: extend target escape toward source escape point
-  if (toSide === 'right')       ex = Math.max(ex, sx);
-  else if (toSide === 'left')   ex = Math.min(ex, sx);
-  else if (toSide === 'bottom') ey = Math.max(ey, sy);
+  // Symmetrically: extend target escape toward source ONLY in escape direction
+  if (toSide === 'right'  && sx > ex) ex = sx;
+  if (toSide === 'left'   && sx < ex) ex = sx;
+  if (toSide === 'bottom' && sy > ey) ey = sy;
 
   // ── Rule 2: Simplest path (fewest bends) ──
   const parallel = !!toSide && (srcHorz === tgtHorz);
