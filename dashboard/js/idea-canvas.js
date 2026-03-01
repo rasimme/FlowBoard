@@ -1741,10 +1741,16 @@ function onTouchStart(e) {
   if (touchTarget?.closest('.conn-dot')) {
     return;
   }
-  // If touching inside a scrollable note-body of a selected card, let browser handle scroll
+  // If touching inside a note-body with overflow content, let browser handle scroll.
+  // Check both actual scroll AND truncated class (overflow:hidden hides scrollHeight).
   const touchBody = touchTarget?.closest('.note .note-body');
-  if (touchBody && touchBody.scrollHeight > touchBody.clientHeight && !touchTarget?.closest('.note-header')) {
-    return; // native touch scroll on note content
+  if (touchBody && !touchTarget?.closest('.note-header')) {
+    const hasOverflow = touchBody.scrollHeight > touchBody.clientHeight || touchBody.classList.contains('truncated');
+    if (hasOverflow) {
+      // Temporarily enable scroll so touch works
+      touchBody.style.overflowY = 'auto';
+      return; // native touch scroll on note content
+    }
   }
   e.preventDefault();
   clearTimeout(_longPressTimer);
