@@ -362,3 +362,8 @@
 .note.selected .note-body {
   overflow-y: auto;
 }
+
+/* Hide overflow fade on selected notes (content is scrollable) */
+.note.selected .note-overflow-fade {
+  display: none !important;
+}
