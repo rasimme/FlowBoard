@@ -42,6 +42,10 @@
   background: #12141a !important;
   border-color: var(--accent-2) !important;
 }
+.note.color-grey {
+  background: #12141a !important;
+  border-color: var(--border-strong) !important;
+}
 
 /* Z-order: underlay SVG (0) → note cards (1) → overlay SVG (2) */
 .canvas-svg-underlay {
@@ -104,6 +108,7 @@
 .note.color-green  .conn-dot { background: var(--ok); }
 .note.color-red    .conn-dot { background: var(--danger); }
 .note.color-teal   .conn-dot { background: var(--accent-2); }
+.note.color-grey   .conn-dot { background: var(--border-strong); }
 
 /* Free dots: hidden by default, shown on hover/selection */
 .conn-dot-free { opacity: 0; transition: opacity 0.15s; }
@@ -279,6 +284,7 @@
 .sidebar-color-green  { background: var(--ok); }
 .sidebar-color-red    { background: var(--danger); }
 .sidebar-color-teal   { background: var(--accent-2); }
+.sidebar-color-grey   { background: var(--border-strong); }
 
 .canvas-sidebar-id {
   font-size: 11px;

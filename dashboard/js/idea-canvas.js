@@ -15,12 +15,13 @@ if (!document.querySelector('link[data-canvas]')) {
 const NOTE_WIDTH = 160;
 const SCALE_MIN = 0.3;
 const SCALE_MAX = 2.5;
-const NOTE_COLORS = ['yellow', 'blue', 'green', 'red', 'teal'];
+const NOTE_COLORS = ['grey', 'yellow', 'blue', 'green', 'red', 'teal'];
 const CORNER_RADIUS = 12;    // px — radius of rounded bends in connection paths
 const PORT_SPACING  = 18;    // px — spacing between stacked port centers on a side
 
 // SVG stroke color by note color name
 const COLOR_STROKE = {
+  grey:   'var(--border-strong)',
   yellow: 'var(--warn)',
   blue:   'var(--info)',
   green:  'var(--ok)',
@@ -710,15 +711,19 @@ function showColorPopover() {
     pop.appendChild(swatch);
   });
 
-  // Append first so offsetWidth is available, then position
+  // Position relative to canvasWrap to avoid toolbar reflow jump
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap) { toolbar.appendChild(pop); return; }
+  pop.style.position = 'absolute';
   pop.style.visibility = 'hidden';
-  toolbar.appendChild(pop);
+  wrap.appendChild(pop);
   const btnRect = btn.getBoundingClientRect();
-  const tbRect = toolbar.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
   const popW = pop.offsetWidth;
-  const centered = btnRect.left - tbRect.left + btnRect.width / 2 - popW / 2;
-  pop.style.left = Math.max(0, centered) + 'px';
-  pop.style.top = (btnRect.bottom - tbRect.top + 4) + 'px';
+  const centered = btnRect.left - wrapRect.left + btnRect.width / 2 - popW / 2;
+  pop.style.left = Math.max(4, centered) + 'px';
+  pop.style.top = (btnRect.bottom - wrapRect.top + 4) + 'px';
+  pop.style.zIndex = '40';
   pop.style.visibility = '';
 
   // Close on outside click
@@ -762,15 +767,19 @@ function showSizePopover() {
     pop.appendChild(sizeBtn);
   });
 
-  // Append first so offsetWidth is available, then position
+  // Position relative to canvasWrap to avoid toolbar reflow jump
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap) { toolbar.appendChild(pop); return; }
+  pop.style.position = 'absolute';
   pop.style.visibility = 'hidden';
-  toolbar.appendChild(pop);
+  wrap.appendChild(pop);
   const btnRect = btn.getBoundingClientRect();
-  const tbRect = toolbar.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
   const popW = pop.offsetWidth;
-  const centered = btnRect.left - tbRect.left + btnRect.width / 2 - popW / 2;
-  pop.style.left = Math.max(0, centered) + 'px';
-  pop.style.top = (btnRect.bottom - tbRect.top + 4) + 'px';
+  const centered = btnRect.left - wrapRect.left + btnRect.width / 2 - popW / 2;
+  pop.style.left = Math.max(4, centered) + 'px';
+  pop.style.top = (btnRect.bottom - wrapRect.top + 4) + 'px';
+  pop.style.zIndex = '40';
   pop.style.visibility = '';
 
   setTimeout(() => {
