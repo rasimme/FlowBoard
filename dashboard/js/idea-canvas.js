@@ -402,12 +402,14 @@ async function createNoteAt(x, y) {
   }
 }
 
+let _addNoteCounter = 0;
 export function addNote(state) {
-  // Toolbar button: place note in visible center of canvas
+  // Toolbar button: place note in visible center of canvas, offset each successive one
   const wrap = document.getElementById('canvasWrap');
   if (!wrap) return;
-  const cx = (wrap.clientWidth  / 2 - canvasState.pan.x) / canvasState.scale - NOTE_WIDTH / 2;
-  const cy = (wrap.clientHeight / 2 - canvasState.pan.y) / canvasState.scale - 40;
+  const offset = (_addNoteCounter++ % 8) * 30;
+  const cx = (wrap.clientWidth  / 2 - canvasState.pan.x) / canvasState.scale - NOTE_WIDTH / 2 + offset;
+  const cy = (wrap.clientHeight / 2 - canvasState.pan.y) / canvasState.scale - 40 + offset;
   createNoteAt(cx, cy);
 }
 
