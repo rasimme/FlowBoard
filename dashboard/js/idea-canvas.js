@@ -1292,6 +1292,9 @@ function onCanvasMouseUp(e) {
     if (canvasState.connecting._activeDotEl) {
       canvasState.connecting._activeDotEl.classList.remove('conn-dot-active');
     }
+    if (canvasState.connecting._noteEl) canvasState.connecting._noteEl.style.zIndex = '';
+    if (canvasState.connecting._prevSnapNoteEl) canvasState.connecting._prevSnapNoteEl.style.zIndex = '';
+    if (canvasState.connecting._activeDotEl) canvasState.connecting._activeDotEl.classList.remove('conn-dot-active');
     const { fromId, fromPort, snapTargetId, snapValid, snapPort } = canvasState.connecting;
     if (snapValid && snapTargetId && snapTargetId !== fromId) {
       saveConnection(fromId, snapTargetId, fromPort, snapPort);
