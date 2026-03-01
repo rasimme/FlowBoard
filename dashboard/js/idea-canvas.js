@@ -1668,10 +1668,11 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     (toSide === 'bottom' && sy < y2)
   );
   const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
-  // Bottom clearance: route below max(sy, y2) + E so horizontal segment clears card edge
-  const ey = bottomClearance ? Math.max(sy, y2) + E
-           : (tgtEscaped && toSide === 'bottom') ? y2 + E
-           : y2;
+  // Bottom dot: ALWAYS approach from below with E clearance.
+  // This prevents horizontal segments from running along the card's bottom edge.
+  const ey = toSide === 'bottom'
+    ? (bottomClearance ? Math.max(sy, y2) + E : y2 + E)
+    : (tgtEscaped ? y2 + E : y2);
 
   // Mid orientation: natural exit direction; switch to perpendicular after escape
   const naturalOriA = (fromSide === 'left' || fromSide === 'right') ? 'horizontal' : 'vertical';
