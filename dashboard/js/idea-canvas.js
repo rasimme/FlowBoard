@@ -59,7 +59,13 @@ function renderNoteMarkdown(text) {
     // Inline formatting
     line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Explicit markdown links first
     line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Auto-link bare URLs (http/https/www) not already inside an <a> tag
+    line = line.replace(/(?<!href="|">)(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g, url => {
+      const href = url.startsWith('http') ? url : 'https://' + url;
+      return `<a href="${href}" target="_blank" rel="noopener">${url}</a>`;
+    });
     if (line.startsWith('- ')) {
       if (!inList) { out.push('<ul>'); inList = true; }
       out.push('<li>' + line.slice(2) + '</li>');
