@@ -1665,11 +1665,16 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   } else if (perpendicular) {
     // L-shape — but check if it would reverse the escape direction.
     // If so, use Z-shape (escape → perpendicular → approach target).
+    // Reversal: L-segment after corner goes backwards from escape direction.
+    // Also treat very short L-segments (< 2*E) as problematic — the Bézier
+    // curves create visual artifacts when segments are shorter than the radius.
+    const afterCornerLen = srcHorz ? Math.abs(ex - sx) : Math.abs(ey - sy);
     const wouldReverse = srcHorz
       ? (fromSide === 'right' && ex < sx) || (fromSide === 'left' && ex > sx)
       : (fromSide === 'bottom' && ey < sy);
+    const tooShort = afterCornerLen < 2 * E && afterCornerLen > 1;
 
-    if (wouldReverse) {
+    if (wouldReverse || tooShort) {
       // Z-shape: go perpendicular first (midpoint between), then toward target
       if (srcHorz) {
         const my = (sy + ey) / 2;
