@@ -296,6 +296,7 @@ function noteHTML(note) {
     <div class="note-body">
       <div class="note-text md-content">${rendered || '<span style="opacity:0.3;font-size:11px">Double-click to add text\u2026</span>'}</div>
     </div>
+    <div class="note-overflow-fade" aria-hidden="true"></div>
     `;
 }
 
