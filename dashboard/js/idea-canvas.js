@@ -1028,28 +1028,45 @@ function applyFormatting(type) {
     const trimmed = raw.trimEnd();
     const trailing = raw.substring(trimmed.length); // e.g. "\n" from double-click
 
-    // Toggle off: if trimmed selection is already wrapped, remove markers
+    if (trimmed.length === 0) {
+      // No selection: insert empty markers, cursor between them
+      ta.value = val.substring(0, start) + marker + marker + val.substring(end);
+      ta.setSelectionRange(start + marker.length, start + marker.length);
+      return;
+    }
+
+    const lines = trimmed.split('\n');
+    const multiLine = lines.length > 1;
+
+    if (multiLine) {
+      // Multi-line: apply/toggle per line
+      const allWrapped = lines.every(l => l.startsWith(marker) && l.endsWith(marker) && l.length > marker.length * 2);
+      const result = allWrapped
+        ? lines.map(l => l.slice(marker.length, -marker.length)).join('\n')
+        : lines.map(l => {
+            if (l.startsWith(marker) && l.endsWith(marker) && l.length > marker.length * 2) return l;
+            return l.trim() === '' ? l : marker + l + marker;
+          }).join('\n');
+      ta.value = val.substring(0, start) + result + trailing + val.substring(end);
+      ta.setSelectionRange(start, start + result.length);
+      return;
+    }
+
+    // Single line: toggle off if already wrapped (inside or outside selection)
     if (trimmed.startsWith(marker) && trimmed.endsWith(marker) && trimmed.length > marker.length * 2) {
       const inner = trimmed.slice(marker.length, -marker.length);
       ta.value = val.substring(0, start) + inner + trailing + val.substring(end);
       ta.setSelectionRange(start, start + inner.length);
       return;
     }
-    // Also check if markers are just outside the selection (e.g. user selected the inner text)
     if (val.substring(start - marker.length, start) === marker &&
         val.substring(end, end + marker.length) === marker) {
       ta.value = val.substring(0, start - marker.length) + trimmed + trailing + val.substring(end + marker.length);
       ta.setSelectionRange(start - marker.length, start - marker.length + trimmed.length);
       return;
     }
-
-    if (trimmed.length > 0) {
-      ta.value = val.substring(0, start) + marker + trimmed + marker + trailing + val.substring(end);
-      ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
-    } else {
-      ta.value = val.substring(0, start) + marker + marker + val.substring(end);
-      ta.setSelectionRange(start + marker.length, start + marker.length);
-    }
+    ta.value = val.substring(0, start) + marker + trimmed + marker + trailing + val.substring(end);
+    ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
   }
 
   switch (type) {
