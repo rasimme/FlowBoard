@@ -912,8 +912,9 @@
       cursor: crosshair; z-index: 5;
       transform: translate(-50%, -50%);
       transition: opacity var(--duration-normal), transform var(--duration-normal);
+      opacity: 0; /* hidden by default; canvas.css controls visibility per state */
     }
-    .conn-dot:hover { transform: translate(-50%, -50%) scale(1.4); }
+    .conn-dot:hover { transform: translate(-50%, -50%) scale(1.5); }
     /* 44px touch targets on mobile */
     .conn-dot::after {
       content: ''; position: absolute;
