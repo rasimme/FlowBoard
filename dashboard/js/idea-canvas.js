@@ -38,7 +38,8 @@ export const canvasState = {
   selectedIds: new Set(),
   editingId: null,
   dragging: null,      // { noteId, startMouseX, startMouseY, startNoteX, startNoteY }
-  connecting: null,    // { fromId }
+  connecting: null,
+  selectedConn: null,  // currently selected connection    // { fromId }
   panning: null,       // { startX, startY, startPanX, startPanY }
   lassoState: null,    // { startX, startY, rect: {x,y,w,h} }
   posSaveTimers: {},
@@ -1115,8 +1116,17 @@ function bindCanvasEvents() {
       return;
     }
 
-    // Delete/Backspace: delete selected
+    // Delete/Backspace: delete selected notes or connection
     if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    // Connection selected?
+    if (canvasState.selectedConn) {
+      e.preventDefault();
+      const { from, to } = canvasState.selectedConn;
+      canvasState.selectedConn = null;
+      document.querySelectorAll('.conn-delete-overlay').forEach(el => el.remove());
+      deleteConnection(from, to);
+      return;
+    }
     if (canvasState.selectedIds.size === 0) return;
     e.preventDefault();
     toolbarDelete();
@@ -2376,33 +2386,46 @@ function showConnectionDeleteBtn(from, to, pointA, pointB) {
   const screenX = midCanvasX * canvasState.scale + canvasState.pan.x + rect.left;
   const screenY = midCanvasY * canvasState.scale + canvasState.pan.y + rect.top;
 
+  // Track selected connection for keyboard delete
+  canvasState.selectedConn = { from, to };
+
   const btn = document.createElement('button');
   btn.className = 'btn btn-danger btn-sm conn-delete-overlay';
-  btn.style.cssText = `position:fixed;left:${screenX}px;top:${screenY}px;transform:translate(-50%,-50%);z-index:1000;font-size:10px;padding:3px 8px;`;
-  btn.textContent = '\u2715 connection';
+  btn.title = 'Delete connection';
+  btn.style.cssText = `position:fixed;left:${screenX}px;top:${screenY}px;transform:translate(-50%,-50%);z-index:1000;padding:5px 7px;line-height:0;`;
+  btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>';
   btn.addEventListener('click', async e => {
     e.stopPropagation();
     btn.remove();
-    if (!canvasState._state?.viewedProject) return;
-    try {
-      await api(`/projects/${canvasState._state.viewedProject}/canvas/connections`, {
-        method: 'DELETE', body: { from, to }
-      });
-      canvasState.connections = canvasState.connections.filter(
-        c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
-      );
-      renderConnections();
-      renderPromoteButton();
-    } catch { toast('Failed to delete connection', 'error'); }
+    canvasState.selectedConn = null;
+    await deleteConnection(from, to);
   });
   document.body.appendChild(btn);
 
   setTimeout(() => {
     const close = ev => {
-      if (!btn.contains(ev.target)) { btn.remove(); document.removeEventListener('click', close); }
+      if (!btn.contains(ev.target)) {
+        btn.remove();
+        canvasState.selectedConn = null;
+        document.removeEventListener('click', close);
+      }
     };
     document.addEventListener('click', close);
   }, 0);
+}
+
+async function deleteConnection(from, to) {
+  if (!canvasState._state?.viewedProject) return;
+  try {
+    await api(`/projects/${canvasState._state.viewedProject}/canvas/connections`, {
+      method: 'DELETE', body: { from, to }
+    });
+    canvasState.connections = canvasState.connections.filter(
+      c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
+    );
+    renderConnections();
+    renderPromoteButton();
+  } catch { toast('Failed to delete connection', 'error'); }
 }
 
 // --- Cluster detection ---
