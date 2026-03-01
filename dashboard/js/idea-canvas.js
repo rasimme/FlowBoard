@@ -953,8 +953,9 @@ function bindToolbarEvents() {
   document.getElementById('tbDelete')?.addEventListener('click', toolbarDelete);
   document.getElementById('tbDuplicate')?.addEventListener('click', duplicateSelected);
 
-  // Format buttons (wired up for Task 3)
+  // Format buttons: preventDefault on mousedown keeps textarea focus
   toolbar.querySelectorAll('[data-fmt]').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
     btn.addEventListener('click', () => applyFormatting(btn.dataset.fmt));
   });
 }
@@ -1014,6 +1015,7 @@ function applyFormatting(type) {
       break;
     }
   }
+  ta.dispatchEvent(new Event('input')); // trigger autoGrow after formatting
   ta.focus();
 }
 
