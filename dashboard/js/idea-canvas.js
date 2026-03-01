@@ -1627,99 +1627,46 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   const E = MIN_ESCAPE;
   const r = CORNER_RADIUS;
 
-  // For horizontal↔horizontal connections, pre-check if target will need escape (using raw x1/x2).
-  // If yes, force source escape too — this ensures V exit from source, preventing the
-  // path from running horizontally through the target card body.
-  const horzToHorz = (fromSide === 'left' || fromSide === 'right') &&
-                     !!toSide && (toSide === 'left' || toSide === 'right');
-  const tgtWillEscape = horzToHorz && (
-    (toSide === 'right' && x1 < x2) ||
-    (toSide === 'left'  && x1 > x2)
-  );
-
-  // Bottom dot clearance: when source is close in height to a bottom-dot target,
-  // the horizontal segment would run along the card edge. Force source escape +
-  // route below both dots to create visible clearance.
-  const bottomClearance = toSide === 'bottom' && Math.abs(y1 - y2) < E;
-  // Bottom dot below: when source is below a bottom-dot target, force V routing
-  // so the path goes up near the source, not horizontal across to the target.
-  const bottomBelow = toSide === 'bottom' && y1 > y2;
-
-  // Source escape: trigger early (2*E threshold) + forced when target needs escape
-  // + forced when bottom-dot needs vertical clearance or source is below
-  const srcEscaped =
-    (fromSide === 'right'  && x2 < x1 + 2*E) ||
-    (fromSide === 'left'   && x2 > x1 - 2*E) ||
-    (fromSide === 'bottom' && y2 < y1 + 2*E) ||
-    tgtWillEscape ||    // Force V exit to avoid horizontal card crossing
-    bottomClearance ||  // Force V exit for bottom-dot card-edge clearance
-    bottomBelow;        // Force V exit so path routes up near source, not at target
-  let sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
-  const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
-  // For bottom-dot targets: if source escaped position is within the target card's
-  // horizontal span AND source is ABOVE the target (vertical segment crosses card body),
-  // extend sx past the card edge. When source is below, the vertical stays below the card.
-  if (toSide === 'bottom' && tgtHalfW > 0 && srcEscaped && sy < y2) {
-    const cardRight = x2 + tgtHalfW + E;
-    const cardLeft  = x2 - tgtHalfW - E;
-    if (fromSide === 'right' && sx > x2 - tgtHalfW && sx < cardRight)  sx = cardRight;
-    if (fromSide === 'left'  && sx < x2 + tgtHalfW && sx > cardLeft)   sx = cardLeft;
+  // ── Rule 1: Always escape in dot's natural direction by E ──
+  function esc(x, y, side) {
+    if (side === 'right')  return [x + E, y];
+    if (side === 'left')   return [x - E, y];
+    if (side === 'bottom') return [x, y + E];
+    return [x, y]; // top / fallback
   }
 
-  // Target escape: only when path would arrive from inside the card
-  const tgtEscaped = !!toSide && (
-    (toSide === 'right'  && sx < x2) ||
-    (toSide === 'left'   && sx > x2) ||
-    (toSide === 'bottom' && sy < y2)
-  );
-  const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
-  // Bottom dot approach clearance:
-  // - bottomClearance (close height): route below max(sy,y2)+E
-  // - bottomBelow (source below): y2+E so horizontal doesn't touch card edge
-  // - source above/close: y2+E for approach clearance
-  // - source far below, no bottom flags: y2 (natural approach from below)
-  const ey = toSide === 'bottom'
-    ? (bottomClearance ? Math.max(sy, y2) + E : ((bottomBelow || sy < y2 + E) ? y2 + E : y2))
-    : (tgtEscaped ? y2 + E : y2);
+  const [sx, sy] = esc(x1, y1, fromSide);
+  const [ex, ey] = toSide ? esc(x2, y2, toSide) : [x2, y2];
 
-  // Mid orientation: natural exit direction; switch to perpendicular after escape
-  const naturalOriA = (fromSide === 'left' || fromSide === 'right') ? 'horizontal' : 'vertical';
-  const midOriA = srcEscaped ? (naturalOriA === 'horizontal' ? 'vertical' : 'horizontal') : naturalOriA;
-  const naturalOriB = toSide ? ((toSide === 'left' || toSide === 'right') ? 'horizontal' : 'vertical') : naturalOriA;
-  const midOriB = tgtEscaped ? (naturalOriB === 'horizontal' ? 'vertical' : 'horizontal') : naturalOriB;
+  // ── Rule 2: Simplest path between escape points ──
+  // Perpendicular escapes (right/left ↔ bottom): L-shape (1 corner)
+  // Parallel escapes (right↔right, left↔left, right↔left, etc.): Z-shape (2 corners)
+  const srcHorz = (fromSide === 'right' || fromSide === 'left');
+  const tgtHorz = !!toSide && (toSide === 'right' || toSide === 'left');
+  const parallel = !!toSide && (srcHorz === tgtHorz); // both horizontal or both vertical
 
-  // Build interior waypoints between (sx,sy) and (ex,ey)
-  const mid = [];
-  const dx = ex - sx, dy = ey - sy;
-  const adx = Math.abs(dx), ady = Math.abs(dy);
-
-  if (adx < 1 && ady < 1) {
-    // Same point — no mid waypoints needed
-  } else if (midOriA === 'vertical' && midOriB === 'vertical') {
-    // Both ends want vertical routing.
-    // Check if a simple L-shape (V→H) suffices: when source-escape already passed
-    // the target vertically (or vice versa), no mid-horizontal needed.
-    // V→H L-shape works when we can go straight vertical to ey then horizontal to ex.
-    // Use L-shape when NO target escape and no horizontal-to-horizontal forced routing.
-    if (!tgtEscaped && !horzToHorz && adx > 1) {
-      // V→H L-shape: go vertical to target Y, then horizontal
-      mid.push([sx, ey]);
+  let mid;
+  if (!toSide) {
+    // Free drag (no snap): simple L, perpendicular to source
+    mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
+  } else if (parallel) {
+    // Z-shape: same-axis escapes need perpendicular detour through midpoint
+    if (srcHorz) {
+      // Both horizontal → vertical detour at midY
+      let my = (sy + ey) / 2;
+      if (Math.abs(sy - ey) < 2 * E) my = Math.max(sy, ey) + E;
+      mid = [[sx, my], [ex, my]];
     } else {
-      // V→H→V: full staircase with midpoint or detour
-      const my = ady > 2 * E ? (sy + ey) / 2 : Math.max(sy, ey) + E;
-      mid.push([sx, my], [ex, my]);
+      // Both vertical → horizontal detour at midX
+      let mx = (sx + ex) / 2;
+      if (Math.abs(sx - ex) < 2 * E) mx = Math.max(sx, ex) + E;
+      mid = [[mx, sy], [mx, ey]];
     }
-  } else if (midOriA === 'horizontal' && midOriB === 'horizontal') {
-    // H→V→H: go horizontal to midX, vertical, horizontal
-    const mx = (sx + ex) / 2;
-    if (adx > 1) mid.push([mx, sy], [mx, ey]);
-    else         mid.push([sx, ey]); // same x: just vertical
-  } else if (midOriA === 'vertical' && midOriB === 'horizontal') {
-    // V→H L-shape: corner at (sx, ey)
-    mid.push([sx, ey]);
   } else {
-    // H→V L-shape: corner at (ex, sy)
-    mid.push([ex, sy]);
+    // L-shape: one corner connecting perpendicular escape directions
+    // Source horizontal → go vertical first → corner at (sx, ey)
+    // Source vertical   → go horizontal first → corner at (ex, sy)
+    mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
   }
 
   const pts = [[x1, y1], [sx, sy], ...mid, [ex, ey], [x2, y2]];
