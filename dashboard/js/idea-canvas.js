@@ -55,23 +55,21 @@ function renderNoteMarkdown(text) {
   const out = [];
   let inList = false;
   for (let i = 0; i < lines.length; i++) {
-    // Apply markdown on RAW line first, escape only text content (not generated HTML)
-    let raw = lines[i];
-    // Replace markdown patterns on raw text, escape each captured group individually
-    let line = raw
-      // Explicit markdown links: [label](url)
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
-        const href = /^https?:\/\//.test(url) ? url : 'https://' + url;
-        return `<a href="${href}" target="_blank" rel="noopener">${escHtml(label)}</a>`;
-      })
-      // Bold
-      .replace(/\*\*(.+?)\*\*/g, (_, c) => `<strong>${escHtml(c)}</strong>`)
-      // Italic (not preceded by another *)
-      .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, (_, c) => `<em>${escHtml(c)}</em>`)
-      // Escape remaining plain text segments (everything outside tags)
-      .replace(/(?<=>|^)([^<]+)/g, (_, txt) => escHtml(txt));
+    // Escape HTML first, then apply markdown (safe order: patterns like ** and [] survive escaping)
+    let line = escHtml(lines[i]);
+    // Bold
+    line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    // Explicit markdown links [label](url) — unescape URL for href (& → &amp; is valid in href)
+    line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+      // url may have &amp; from escHtml — decode for href
+      const rawUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      const href = /^https?:\/\//.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
+      return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+    });
     // Auto-link bare URLs not already in an <a> tag
-    line = line.replace(/(?<!href="|">)(https?:\/\/[^\s<>"&]+|www\.[^\s<>"&]+)/g, url => {
+    line = line.replace(/(?<!href="|">)(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g, url => {
       const href = url.startsWith('http') ? url : 'https://' + url;
       return `<a href="${href}" target="_blank" rel="noopener">${url}</a>`;
     });
