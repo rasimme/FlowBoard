@@ -1,6 +1,6 @@
 // idea-canvas.js — Infinite sticky-note canvas
 
-import { api, toast, showModal, escHtml } from './utils.js?v=3';
+import { api, toast, showModal, escHtml, ICONS } from './utils.js?v=3';
 
 // Inject canvas.css once at module load (overrides dashboard.css canvas rules)
 if (!document.querySelector('link[data-canvas]')) {
@@ -170,7 +170,7 @@ function renderEmptyState() {
     if (!existing) {
       const el = document.createElement('div');
       el.className = 'canvas-empty';
-      el.innerHTML = `<div class="canvas-empty-icon">💡</div>
+      el.innerHTML = `<div class="canvas-empty-icon">${ICONS.lightbulb}</div>
         <div>Double-click to create your first idea</div>
         <div style="font-size:12px;opacity:0.6">or use the + Note button</div>`;
       vp.appendChild(el);
@@ -277,7 +277,7 @@ export async function renderIdeaCanvas(state) {
         <rect width="10000" height="10000" x="-5000" y="-5000" fill="url(#dotPattern)"/>
       </svg>
       <svg id="canvasSvgOverlay" class="canvas-svg canvas-svg-overlay"></svg>
-      <div class="canvas-empty"><div class="canvas-empty-icon">💡</div><div>Select a project</div></div>`;
+      <div class="canvas-empty"><div class="canvas-empty-icon">${ICONS.lightbulb}</div><div>Select a project</div></div>`;
     return;
   }
 

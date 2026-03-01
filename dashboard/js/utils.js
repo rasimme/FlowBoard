@@ -95,7 +95,10 @@ function modalKeyHandler(e) {
 // --- Shared UI Components ---
 const ICONS = {
   trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
+  lightbulb: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z"/></svg>',
 };
+
+export { ICONS };
 
 export function renderDeleteBtn(onclick, title = 'Delete') {
   return `<button class="delete-btn" onclick="${onclick}" title="${title}">${ICONS.trash}</button>`;
