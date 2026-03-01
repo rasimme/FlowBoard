@@ -1956,14 +1956,17 @@ export function startConnectionDrag(e, noteId, port) {
     const dLeft = parseFloat(dotEl.dataset.dotLeft);
     const dTop  = parseFloat(dotEl.dataset.dotTop);
     pt = { x: note.x + bl + dLeft, y: note.y + bl + dTop };
-    // Keep the dragged dot visible during the drag
     dotEl.classList.add('conn-dot-active');
-    canvasState.connecting._activeDotEl = dotEl;
   } else {
     pt = getNoteDotPosition(noteId, port);
   }
   if (!pt) return;
   canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y } };
+  // Store active dot ref after object creation (was null before)
+  const _dotEl = (e.target?.closest?.('.conn-dot') || e.target);
+  if (_dotEl?.classList?.contains('conn-dot-active')) {
+    canvasState.connecting._activeDotEl = _dotEl;
+  }
   updateToolbar(); // hide toolbar during connection drag
 
   // Draw preview path in overlay SVG (above cards)
