@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=5';
+  _l.href = './styles/canvas.css?v=6';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -1684,64 +1684,13 @@ function renderConnections() {
 
   const portMap = computePortPositions();
 
-  for (const conn of canvasState.connections) {
-    let ax, ay, bx, by, sideA, sideB;
-
-    if (conn.fromPort && conn.toPort) {
-      // Use stored port positions (user explicitly chose these)
-      const ptA = getNoteDotPosition(conn.from, conn.fromPort);
-      const ptB = getNoteDotPosition(conn.to, conn.toPort);
-      if (!ptA || !ptB) continue;
-      ax = ptA.x; ay = ptA.y; sideA = conn.fromPort;
-      bx = ptB.x; by = ptB.y; sideB = conn.toPort;
-    } else {
-      // Legacy connections without stored ports — fallback to dynamic routing
-      const ports = portMap.get(conn.from + ':' + conn.to);
-      if (!ports || ports.ax == null || ports.bx == null) continue;
-      ax = ports.ax; ay = ports.ay; sideA = ports.sideA;
-      bx = ports.bx; by = ports.by; sideB = ports.sideB;
-    }
-
-    // Stroke color from source note's color
-    const fromNote  = canvasState.notes.find(n => n.id === conn.from);
-    const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
-
-    const oriA = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
-    const oriB = (sideB === 'top' || sideB === 'bottom') ? 'vertical' : 'horizontal';
-    const pathD = manhattanPath(ax, ay, bx, by, oriA, oriB);
-
-    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    g.setAttribute('class', 'conn-line-group');
-
-    // Visible path
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', pathD);
-    path.setAttribute('class', 'conn-path');
-    path.style.stroke = strokeCol;
-    path.setAttribute('data-from', conn.from);
-    path.setAttribute('data-to',   conn.to);
-
-    // Wide invisible hit target for easier clicking
-    const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    hitPath.setAttribute('d', pathD);
-    hitPath.setAttribute('class', 'conn-path-hit');
-    hitPath.addEventListener('click', e => {
-      e.stopPropagation();
-      showConnectionDeleteBtn(conn.from, conn.to, { x: ax, y: ay }, { x: bx, y: by });
-    });
-
-    g.appendChild(path);
-    g.appendChild(hitPath);
-    svg.appendChild(g);
-  }
-
-  // Build map of exactly which ports are connected and their line colors
-  // Map: "noteId:side" → [{color: strokeCol}]
+  // --- Step 1: Build connectedPorts map with stacking indices ---
+  // Map: "noteId:side" → [{color, connId}]
+  // Order matters: index in array = stacking slot index used by renderPorts
   const connectedPorts = new Map();
   for (const conn of canvasState.connections) {
     const fromNote = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
-
     let sideA, sideB;
     if (conn.fromPort && conn.toPort) {
       sideA = conn.fromPort;
@@ -1753,13 +1702,86 @@ function renderConnections() {
     if (sideA) {
       const kA = conn.from + ':' + sideA;
       if (!connectedPorts.has(kA)) connectedPorts.set(kA, []);
-      connectedPorts.get(kA).push({ color: strokeCol });
+      connectedPorts.get(kA).push({ color: strokeCol, connId: conn.from + ':' + conn.to });
     }
     if (sideB) {
       const kB = conn.to + ':' + sideB;
       if (!connectedPorts.has(kB)) connectedPorts.set(kB, []);
-      connectedPorts.get(kB).push({ color: strokeCol });
+      connectedPorts.get(kB).push({ color: strokeCol, connId: conn.from + ':' + conn.to });
     }
+  }
+
+  // Helper: compute stacked dot position for a specific connection on a note/side
+  // Uses same formula as renderPorts so lines land exactly on dots
+  function getStackedDotPos(noteId, side, connId) {
+    const el = document.getElementById('note-' + noteId);
+    const note = canvasState.notes.find(n => n.id === noteId);
+    if (!el || !note) return null;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const key = noteId + ':' + side;
+    const conns = connectedPorts.get(key) || [];
+    const total = conns.length + 1; // connected + 1 free
+    const idx = conns.findIndex(c => c.connId === connId);
+    if (idx === -1) {
+      // fallback: center of side
+      return getNoteDotPosition(noteId, side);
+    }
+    const offset = (idx - (total - 1) / 2) * PORT_SPACING;
+    let x = note.x, y = note.y;
+    if (side === 'top')    { x += w / 2 + offset; }
+    if (side === 'bottom') { x += w / 2 + offset; y += h; }
+    if (side === 'left')   { y += h / 2 + offset; }
+    if (side === 'right')  { x += w; y += h / 2 + offset; }
+    return { x, y };
+  }
+
+  // --- Step 2: Draw SVG lines using stacking-aware positions ---
+  for (const conn of canvasState.connections) {
+    let ax, ay, bx, by, sideA, sideB;
+
+    if (conn.fromPort && conn.toPort) {
+      sideA = conn.fromPort; sideB = conn.toPort;
+      const connKey = conn.from + ':' + conn.to;
+      const ptA = getStackedDotPos(conn.from, sideA, connKey);
+      const ptB = getStackedDotPos(conn.to,   sideB, connKey);
+      if (!ptA || !ptB) continue;
+      ax = ptA.x; ay = ptA.y;
+      bx = ptB.x; by = ptB.y;
+    } else {
+      // Legacy connections without stored ports — fallback to dynamic routing
+      const ports = portMap.get(conn.from + ':' + conn.to);
+      if (!ports || ports.ax == null || ports.bx == null) continue;
+      ax = ports.ax; ay = ports.ay; sideA = ports.sideA;
+      bx = ports.bx; by = ports.by; sideB = ports.sideB;
+    }
+
+    const fromNote  = canvasState.notes.find(n => n.id === conn.from);
+    const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
+    const oriA = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
+    const oriB = (sideB === 'top' || sideB === 'bottom') ? 'vertical' : 'horizontal';
+    const pathD = manhattanPath(ax, ay, bx, by, oriA, oriB);
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'conn-line-group');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathD);
+    path.setAttribute('class', 'conn-path');
+    path.style.stroke = strokeCol;
+    path.setAttribute('data-from', conn.from);
+    path.setAttribute('data-to',   conn.to);
+
+    const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hitPath.setAttribute('d', pathD);
+    hitPath.setAttribute('class', 'conn-path-hit');
+    hitPath.addEventListener('click', e => {
+      e.stopPropagation();
+      showConnectionDeleteBtn(conn.from, conn.to, { x: ax, y: ay }, { x: bx, y: by });
+    });
+
+    g.appendChild(path);
+    g.appendChild(hitPath);
+    svg.appendChild(g);
   }
 
   renderPorts(connectedPorts);
@@ -1805,6 +1827,7 @@ function renderPorts(connectedPorts) {
           dot.className = `conn-dot conn-dot-free conn-dot-${side}`;
           dot.style.cssText = `left:${left}px;top:${top}px;background:${cardStroke};`;
           dot.setAttribute('onmousedown', `window.startConnectionDrag(event,'${note.id}','${side}')`);
+          dot.setAttribute('ontouchstart', `window.startConnectionDragTouch(event,'${note.id}','${side}')`);
         }
 
         el.appendChild(dot);
@@ -1814,6 +1837,17 @@ function renderPorts(connectedPorts) {
 }
 
 // --- Connection drag ---
+export function startConnectionDragTouch(e, noteId, port) {
+  e.stopPropagation();
+  e.preventDefault();
+  // Synthesize a mouse-like event for the shared drag logic
+  const touch = e.touches[0];
+  const synth = { clientX: touch.clientX, clientY: touch.clientY,
+                  stopPropagation: () => {}, preventDefault: () => {} };
+  startConnectionDrag(synth, noteId, port);
+}
+window.startConnectionDragTouch = startConnectionDragTouch;
+
 export function startConnectionDrag(e, noteId, port) {
   e.stopPropagation();
   e.preventDefault();
