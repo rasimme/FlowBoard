@@ -1023,61 +1023,63 @@ function applyFormatting(type) {
   // Helper: wrap selection with inline markers (bold/italic).
   // Trims trailing whitespace/newlines from selection before wrapping
   // (double-click often selects trailing newline which breaks markdown).
+  // Check if a string is exactly wrapped with marker (not a longer marker).
+  // e.g. isWrapped('**bold**', '**') = true
+  //      isWrapped('**bold**', '*')  = false (it's bold, not italic)
+  function isWrapped(s, m) {
+    const ml = m.length;
+    if (s.length <= ml * 2) return false;
+    if (s.slice(0, ml) !== m || s.slice(-ml) !== m) return false;
+    // Prevent italic (*) from matching bold (**): inner must not start/end with same char
+    if (ml === 1 && (s[ml] === m || s[s.length - ml - 1] === m)) return false;
+    return true;
+  }
+  // Check if marker surrounds the selection in the full value
+  function isSurrounded(v, s, e, m) {
+    const ml = m.length;
+    if (s < ml) return false;
+    if (v.slice(s - ml, s) !== m || v.slice(e, e + ml) !== m) return false;
+    if (ml === 1 && (v[s - ml - 1] === m || v[e + ml] === m)) return false;
+    return true;
+  }
+
   function wrapInline(marker) {
     const raw = val.substring(start, end);
     const trimmed = raw.trimEnd();
-    const trailing = raw.substring(trimmed.length); // e.g. "\n" from double-click
+    const trailing = raw.substring(trimmed.length); // trailing \n from double-click
 
     if (trimmed.length === 0) {
-      // No selection: insert empty markers, cursor between them
       ta.value = val.substring(0, start) + marker + marker + val.substring(end);
       ta.setSelectionRange(start + marker.length, start + marker.length);
       return;
     }
 
     const lines = trimmed.split('\n');
-    const multiLine = lines.length > 1;
-
-    if (multiLine) {
-      // Multi-line: apply/toggle per line
-      // Exact marker match: * must not be ** (italic check shouldn't match bold)
-      const exactWrapped = l => {
-        const s = l.startsWith(marker) && !l.startsWith(marker + marker[0]);
-        const e = l.endsWith(marker)   && !l.slice(0, -marker.length).endsWith(marker[0]);
-        return s && e && l.length > marker.length * 2;
-      };
-      const allWrapped = lines.every(l => l.trim() === '' || exactWrapped(l));
+    if (lines.length > 1) {
+      // Multi-line: toggle per line
+      const allWrapped = lines.every(l => l.trim() === '' || isWrapped(l, marker));
       const result = allWrapped
-        ? lines.map(l => exactWrapped(l) ? l.slice(marker.length, -marker.length) : l).join('\n')
-        : lines.map(l => {
-            if (exactWrapped(l) || l.trim() === '') return l;
-            return marker + l + marker;
-          }).join('\n');
+        ? lines.map(l => isWrapped(l, marker) ? l.slice(marker.length, -marker.length) : l).join('\n')
+        : lines.map(l => (isWrapped(l, marker) || l.trim() === '') ? l : marker + l + marker).join('\n');
       ta.value = val.substring(0, start) + result + trailing + val.substring(end);
       ta.setSelectionRange(start, start + result.length);
       return;
     }
 
-    // Single line: toggle off if already wrapped (inside or outside selection).
-    // Use exact match: for italic (*), ensure it's not actually bold (**).
-    const exactStart = trimmed.startsWith(marker) && !trimmed.startsWith(marker + marker[0]);
-    const exactEnd   = trimmed.endsWith(marker)   && !trimmed.slice(0, -marker.length).endsWith(marker[0]);
-    if (exactStart && exactEnd && trimmed.length > marker.length * 2) {
+    // Single line: toggle off if selection itself is wrapped
+    if (isWrapped(trimmed, marker)) {
       const inner = trimmed.slice(marker.length, -marker.length);
       ta.value = val.substring(0, start) + inner + trailing + val.substring(end);
       ta.setSelectionRange(start, start + inner.length);
       return;
     }
-    const outerBefore = val.substring(start - marker.length, start);
-    const outerAfter  = val.substring(end, end + marker.length);
-    const outerExact  = outerBefore === marker && outerAfter === marker
-      && val.substring(start - marker.length - 1, start - marker.length) !== marker[0]
-      && val.substring(end + marker.length, end + marker.length + 1) !== marker[0];
-    if (outerExact) {
+    // Or if marker surrounds the selection in the text (user selected only inner text)
+    if (isSurrounded(val, start, end, marker)) {
       ta.value = val.substring(0, start - marker.length) + trimmed + trailing + val.substring(end + marker.length);
       ta.setSelectionRange(start - marker.length, start - marker.length + trimmed.length);
       return;
     }
+    // Otherwise: wrap
     ta.value = val.substring(0, start) + marker + trimmed + marker + trailing + val.substring(end);
     ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
   }
