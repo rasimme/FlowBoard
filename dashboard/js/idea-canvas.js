@@ -448,10 +448,11 @@ export function startNoteEdit(id) {
   const note = canvasState.notes.find(n => n.id === id);
   if (!note) return;
 
-  // Record initial height so we can restore if user clears all text
+  // Lock card at its current display height as min-height — prevents size jump on edit start/end
   if (!el.dataset.editLockHeight) {
-    el.dataset.editLockHeight = String(el.offsetHeight || 0);
-    // Don't lock min-height — let card grow with content up to CSS max-height
+    const currentH = el.offsetHeight;
+    el.dataset.editLockHeight = String(currentH);
+    if (currentH) el.style.minHeight = currentH + 'px';
   }
 
   if (!body) return;
