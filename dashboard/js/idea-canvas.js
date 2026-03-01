@@ -1632,22 +1632,28 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   // But if the target is further in that direction, extend the segment — don't
   // force a bend at E when going straight is shorter.
 
-  // Source escape minimum
+  // Target escape point (compute first — source needs to know where target escape is)
   const srcHorz = (fromSide === 'right' || fromSide === 'left');
-  let sx, sy;
-  if (fromSide === 'right')  { sx = Math.max(x1 + E, x2); sy = y1; } // go right at least E, further if target is more right
-  else if (fromSide === 'left')   { sx = Math.min(x1 - E, x2); sy = y1; }
-  else if (fromSide === 'bottom') { sx = x1; sy = Math.max(y1 + E, y2); }
-  else { sx = x1; sy = y1; }
-
-  // Target escape minimum
   const tgtHorz = !!toSide && (toSide === 'right' || toSide === 'left');
   let ex, ey;
-  if (!toSide) { ex = x2; ey = y2; }
-  else if (toSide === 'right')  { ex = Math.max(x2 + E, x1); ey = y2; } // approach from right: at least E past dot, further if source is more right
-  else if (toSide === 'left')   { ex = Math.min(x2 - E, x1); ey = y2; }
-  else if (toSide === 'bottom') { ex = x2; ey = Math.max(y2 + E, y1); }
-  else { ex = x2; ey = y2; }
+  if (!toSide)                  { ex = x2; ey = y2; }
+  else if (toSide === 'right')  { ex = x2 + E; ey = y2; }
+  else if (toSide === 'left')   { ex = x2 - E; ey = y2; }
+  else if (toSide === 'bottom') { ex = x2; ey = y2 + E; }
+  else                          { ex = x2; ey = y2; }
+
+  // Source escape: at least E in dot direction, but extend further if it
+  // reaches toward the target escape point (avoids extra bend at target)
+  let sx, sy;
+  if (fromSide === 'right')  { sx = Math.max(x1 + E, ex); sy = y1; }
+  else if (fromSide === 'left')   { sx = Math.min(x1 - E, ex); sy = y1; }
+  else if (fromSide === 'bottom') { sx = x1; sy = Math.max(y1 + E, ey); }
+  else { sx = x1; sy = y1; }
+
+  // Symmetrically: extend target escape toward source escape point
+  if (toSide === 'right')       ex = Math.max(ex, sx);
+  else if (toSide === 'left')   ex = Math.min(ex, sx);
+  else if (toSide === 'bottom') ey = Math.max(ey, sy);
 
   // ── Rule 2: Simplest path (fewest bends) ──
   const parallel = !!toSide && (srcHorz === tgtHorz);
