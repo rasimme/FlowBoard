@@ -2403,6 +2403,11 @@ function renderConnections() {
       e.stopPropagation();
       showConnectionDeleteBtn(conn.from, conn.to, path);
     });
+    hitPath.addEventListener('touchend', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      showConnectionDeleteBtn(conn.from, conn.to, path);
+    });
 
     g.appendChild(path);
     g.appendChild(hitPath);

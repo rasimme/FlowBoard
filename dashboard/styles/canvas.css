@@ -77,7 +77,7 @@
 .conn-path-hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 12;
+  stroke-width: 20;
   cursor: pointer;
   pointer-events: stroke;
 }
