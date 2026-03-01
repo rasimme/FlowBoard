@@ -1211,7 +1211,13 @@ function onCanvasMouseMove(e) {
 
     const prev = document.getElementById('conn-preview');
     if (prev && fromPt) {
-      prev.setAttribute('d', routePath(fromPt.x, fromPt.y, tx, ty, fromPort, nearestPort));
+      // Pass target card half-width for bottom-dot routing
+      let previewHW = 0;
+      if (nearestPort === 'bottom') {
+        const tNEl = document.getElementById('note-' + canvasState.connecting.snapTargetId);
+        if (tNEl) previewHW = tNEl.offsetWidth / 2;
+      }
+      prev.setAttribute('d', routePath(fromPt.x, fromPt.y, tx, ty, fromPort, nearestPort, previewHW));
     }
     return;
   }
@@ -1617,7 +1623,7 @@ function ptsToRoundedPath(pts, r) {
  * - Middle routing: perpendicular exits/entries (no U-turns)
  * - All corners rounded via ptsToRoundedPath
  */
-function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
+function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   const E = MIN_ESCAPE;
   const r = CORNER_RADIUS;
 
@@ -1634,7 +1640,12 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   // Bottom dot clearance: when source is close in height to a bottom-dot target,
   // the horizontal segment would run along the card edge. Force source escape +
   // route below both dots to create visible clearance.
-  const bottomClearance = toSide === 'bottom' && Math.abs(y1 - y2) < E;
+  // Also: when source x is within the target card's width (for bottom dots),
+  // the vertical segment would run along the card's side edge.
+  const bottomClearance = toSide === 'bottom' && (
+    Math.abs(y1 - y2) < E ||                          // close in height
+    (tgtHalfW > 0 && Math.abs(x1 - x2) < tgtHalfW + E) // source within card width + margin
+  );
 
   // Source escape: trigger early (2*E threshold) + forced when target needs escape
   // + forced when bottom-dot needs vertical clearance
@@ -1644,7 +1655,14 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
     (fromSide === 'bottom' && y2 < y1 + 2*E) ||
     tgtWillEscape ||    // Force V exit to avoid horizontal card crossing
     bottomClearance;    // Force V exit for bottom-dot card-edge clearance
-  const sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
+  let sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
+  // For bottom-dot targets: ensure vertical segment clears target card's side edge
+  if (bottomClearance && tgtHalfW > 0) {
+    const cardRight = x2 + tgtHalfW + E;
+    const cardLeft  = x2 - tgtHalfW - E;
+    if (fromSide === 'right' && sx < cardRight)  sx = cardRight;
+    if (fromSide === 'left'  && sx > cardLeft)   sx = cardLeft;
+  }
   const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
 
   // Target escape: only when path would arrive from inside the card
@@ -1972,8 +1990,13 @@ function renderConnections() {
 
     const fromNote  = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
-    const pathD = routePath(ax, ay, bx, by, sideA, sideB);
-    console.log('[ROUTE]', conn.from+':'+sideA, '→', conn.to+':'+sideB, 'pts:', ax.toFixed(0), ay.toFixed(0), bx.toFixed(0), by.toFixed(0), 'd:', pathD.substring(0, 120));
+    // For bottom-dot targets, pass target card half-width so routing clears the card
+    let tgtHW = 0;
+    if (sideB === 'bottom') {
+      const tNoteEl = document.getElementById('note-' + conn.to);
+      if (tNoteEl) tgtHW = tNoteEl.offsetWidth / 2;
+    }
+    const pathD = routePath(ax, ay, bx, by, sideA, sideB, tgtHW);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'conn-line-group');
