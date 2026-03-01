@@ -1621,16 +1621,26 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   const E = MIN_ESCAPE;
   const r = CORNER_RADIUS;
 
-  // Source escape: trigger early (2*E threshold) so transition happens before line touches card
+  // For horizontal↔horizontal connections, pre-check if target will need escape (using raw x1/x2).
+  // If yes, force source escape too — this ensures V exit from source, preventing the
+  // path from running horizontally through the target card body.
+  const horzToHorz = (fromSide === 'left' || fromSide === 'right') &&
+                     !!toSide && (toSide === 'left' || toSide === 'right');
+  const tgtWillEscape = horzToHorz && (
+    (toSide === 'right' && x1 < x2) ||
+    (toSide === 'left'  && x1 > x2)
+  );
+
+  // Source escape: trigger early (2*E threshold) + forced when target needs escape
   const srcEscaped =
     (fromSide === 'right'  && x2 < x1 + 2*E) ||
     (fromSide === 'left'   && x2 > x1 - 2*E) ||
-    (fromSide === 'bottom' && y2 < y1 + 2*E);
+    (fromSide === 'bottom' && y2 < y1 + 2*E) ||
+    tgtWillEscape; // Force V exit to avoid horizontal card crossing
   const sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
   const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
 
-  // Target escape: only needed when path would arrive from inside the card
-  // (approach from wrong direction). Evaluated after source escape so sx/sy are final.
+  // Target escape: only when path would arrive from inside the card
   const tgtEscaped = !!toSide && (
     (toSide === 'right'  && sx < x2) ||
     (toSide === 'left'   && sx > x2) ||
@@ -1639,7 +1649,7 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
   const ey = tgtEscaped && toSide === 'bottom' ? y2 + E : y2;
 
-  // Mid orientation: natural exit direction for the side; switch to perpendicular after escape
+  // Mid orientation: natural exit direction; switch to perpendicular after escape
   const naturalOriA = (fromSide === 'left' || fromSide === 'right') ? 'horizontal' : 'vertical';
   const midOriA = srcEscaped ? (naturalOriA === 'horizontal' ? 'vertical' : 'horizontal') : naturalOriA;
   const naturalOriB = toSide ? ((toSide === 'left' || toSide === 'right') ? 'horizontal' : 'vertical') : naturalOriA;
@@ -1653,10 +1663,10 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   if (adx < 1 && ady < 1) {
     // Same point — no mid waypoints needed
   } else if (midOriA === 'vertical' && midOriB === 'vertical') {
-    // V→H→V: go vertical to midY, horizontal, vertical
-    const my = (sy + ey) / 2;
-    if (ady > 1) mid.push([sx, my], [ex, my]);
-    else         mid.push([ex, sy]); // same height: just horizontal
+    // V→H→V: go vertical to midY, horizontal, vertical.
+    // Near same height: detour below both dots to avoid card overlap.
+    const my = ady > 2 * E ? (sy + ey) / 2 : Math.max(sy, ey) + E;
+    mid.push([sx, my], [ex, my]);
   } else if (midOriA === 'horizontal' && midOriB === 'horizontal') {
     // H→V→H: go horizontal to midX, vertical, horizontal
     const mx = (sx + ex) / 2;
