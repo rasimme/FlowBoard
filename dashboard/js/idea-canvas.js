@@ -1576,46 +1576,93 @@ function onTouchEnd(e) {
  * @param {"horizontal"|"vertical"} orientation  Routing direction based on source port side
  * @returns {string}   SVG path `d` attribute value
  */
-const MIN_ESCAPE = 28; // px — mandatory clearance from card edge before routing
+const MIN_ESCAPE = 28; // px — mandatory clearance from card edge
 
 /**
- * Route a connection path with mandatory card-edge escapes on BOTH ends.
- * - Source: first segment exits AWAY from the source card
- * - Target: last segment arrives from OUTSIDE the target card
- * - After source escape: route perpendicularly (no U-turn)
+ * Convert an array of [x,y] waypoints into a rounded-corner SVG path.
+ * Each interior corner gets a Q arc of radius r (clamped to half the shorter segment).
+ */
+function ptsToRoundedPath(pts, r) {
+  // Remove consecutive duplicates
+  const p = pts.filter((pt, i) =>
+    i === 0 || pt[0] !== pts[i-1][0] || pt[1] !== pts[i-1][1]
+  );
+  if (p.length < 2) return '';
+  if (p.length === 2) return `M ${p[0][0]} ${p[0][1]} L ${p[1][0]} ${p[1][1]}`;
+
+  let d = `M ${p[0][0]} ${p[0][1]}`;
+  for (let i = 1; i < p.length - 1; i++) {
+    const [px, py] = p[i-1], [cx, cy] = p[i], [nx, ny] = p[i+1];
+    const len1 = Math.hypot(cx - px, cy - py);
+    const len2 = Math.hypot(nx - cx, ny - cy);
+    const rc = Math.min(r, len1 / 2, len2 / 2);
+    if (rc < 1) {
+      d += ` L ${cx} ${cy}`;
+    } else {
+      const bx = cx - ((cx - px) / len1) * rc;
+      const by = cy - ((cy - py) / len1) * rc;
+      const ax = cx + ((nx - cx) / len2) * rc;
+      const ay = cy + ((ny - cy) / len2) * rc;
+      d += ` L ${bx} ${by} Q ${cx} ${cy} ${ax} ${ay}`;
+    }
+  }
+  d += ` L ${p[p.length-1][0]} ${p[p.length-1][1]}`;
+  return d;
+}
+
+/**
+ * Route a connection with mandatory card-edge escapes on BOTH ends + proper rounding.
+ * - Source exit: always escapes MIN_ESCAPE away from source card edge
+ * - Target entry: always escapes MIN_ESCAPE away from target card edge
+ * - Middle routing: perpendicular exits/entries (no U-turns)
+ * - All corners rounded via ptsToRoundedPath
  */
 function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
-  const oriA = (fromSide === 'top' || fromSide === 'bottom') ? 'vertical' : 'horizontal';
-  const oriB = toSide
-    ? ((toSide === 'top' || toSide === 'bottom') ? 'vertical' : 'horizontal')
-    : oriA;
+  const E = MIN_ESCAPE;
+  const r = CORNER_RADIUS;
 
-  // Source escape: first segment must exit card in fromSide direction
-  let sx = x1, sy = y1;
-  if (fromSide === 'right'  && x2 < x1 + MIN_ESCAPE) sx = x1 + MIN_ESCAPE;
-  if (fromSide === 'left'   && x2 > x1 - MIN_ESCAPE) sx = x1 - MIN_ESCAPE;
-  if (fromSide === 'bottom' && y2 < y1 + MIN_ESCAPE) sy = y1 + MIN_ESCAPE;
-  const srcEscaped = sx !== x1 || sy !== y1;
+  // Source escape point
+  const sx = fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1;
+  const sy = fromSide === 'bottom' ? y1 + E : y1;
 
-  // Target escape: last segment must arrive from outside the target card
-  let tx = x2, ty = y2;
-  if (toSide === 'right'  && sx <  x2) tx = x2 + MIN_ESCAPE; // approach from right
-  if (toSide === 'left'   && sx >  x2) tx = x2 - MIN_ESCAPE; // approach from left
-  if (toSide === 'bottom' && sy <  y2) ty = y2 + MIN_ESCAPE; // approach from below
-  const tgtEscaped = tx !== x2 || ty !== y2;
+  // Target escape point
+  const ex = toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2;
+  const ey = toSide === 'bottom' ? y2 + E : y2;
 
-  // After source escape, route perpendicularly to avoid U-turn
-  const midOriA = srcEscaped ? (oriA === 'horizontal' ? 'vertical' : 'horizontal') : oriA;
+  // Middle orientation:
+  // After source escape (horizontal side), go vertical; after vertical side, go horizontal
+  const midOriA = (fromSide === 'left' || fromSide === 'right') ? 'vertical' : 'horizontal';
+  const midOriB = toSide
+    ? ((toSide === 'left' || toSide === 'right') ? 'vertical' : 'horizontal')
+    : midOriA;
 
-  const mid = manhattanPath(sx, sy, tx, ty, midOriA, oriB);
+  // Build interior waypoints between (sx,sy) and (ex,ey)
+  const mid = [];
+  const dx = ex - sx, dy = ey - sy;
+  const adx = Math.abs(dx), ady = Math.abs(dy);
 
-  let result = mid;
-  if (srcEscaped) {
-    const tail = mid.replace(`M ${sx} ${sy} `, '').replace(`M ${sx} ${sy}`, '');
-    result = `M ${x1} ${y1} L ${sx} ${sy} ${tail}`;
+  if (adx < 1 && ady < 1) {
+    // Same point — no mid waypoints needed
+  } else if (midOriA === 'vertical' && midOriB === 'vertical') {
+    // V→H→V: go vertical to midY, horizontal, vertical
+    const my = (sy + ey) / 2;
+    if (ady > 1) mid.push([sx, my], [ex, my]);
+    else         mid.push([ex, sy]); // same height: just horizontal
+  } else if (midOriA === 'horizontal' && midOriB === 'horizontal') {
+    // H→V→H: go horizontal to midX, vertical, horizontal
+    const mx = (sx + ex) / 2;
+    if (adx > 1) mid.push([mx, sy], [mx, ey]);
+    else         mid.push([sx, ey]); // same x: just vertical
+  } else if (midOriA === 'vertical' && midOriB === 'horizontal') {
+    // V→H L-shape: corner at (sx, ey)
+    mid.push([sx, ey]);
+  } else {
+    // H→V L-shape: corner at (ex, sy)
+    mid.push([ex, sy]);
   }
-  if (tgtEscaped) result += ` L ${x2} ${y2}`;
-  return result;
+
+  const pts = [[x1, y1], [sx, sy], ...mid, [ex, ey], [x2, y2]];
+  return ptsToRoundedPath(pts, r);
 }
 
 function manhattanPath(x1, y1, x2, y2, oriA = 'horizontal', oriB = 'horizontal') {
@@ -2017,8 +2064,12 @@ export function startConnectionDrag(e, noteId, port) {
     pt = getNoteDotPosition(noteId, port);
   }
   if (!pt) return;
-  canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y } };
-  // Store active dot ref after object creation (was null before)
+  // Lift source note above overlay SVG (z:2) so dots stay visible during drag
+  const _srcNoteEl = document.getElementById('note-' + noteId);
+  if (_srcNoteEl) _srcNoteEl.style.zIndex = '3';
+
+  canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y }, _noteEl: _srcNoteEl };
+  // Store active dot ref after object creation
   const _dotEl = (e.target?.closest?.('.conn-dot') || e.target);
   if (_dotEl?.classList?.contains('conn-dot-active')) {
     canvasState.connecting._activeDotEl = _dotEl;
