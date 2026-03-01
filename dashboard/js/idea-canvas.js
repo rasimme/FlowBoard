@@ -1669,10 +1669,11 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     (toSide === 'bottom' && sy < y2)
   );
   const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
-  // Bottom dot: ALWAYS approach from below with E clearance.
-  // This prevents horizontal segments from running along the card's bottom edge.
+  // Bottom dot: approach from below with E clearance ONLY when source is close in height
+  // or above the target. When source is far below (sy > y2+E), the path naturally
+  // approaches from below — no extra clearance needed, avoids unnecessary staircase.
   const ey = toSide === 'bottom'
-    ? (bottomClearance ? Math.max(sy, y2) + E : y2 + E)
+    ? (bottomClearance ? Math.max(sy, y2) + E : (sy < y2 + E ? y2 + E : y2))
     : (tgtEscaped ? y2 + E : y2);
 
   // Mid orientation: natural exit direction; switch to perpendicular after escape
