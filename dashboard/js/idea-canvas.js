@@ -1621,20 +1621,29 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   const E = MIN_ESCAPE;
   const r = CORNER_RADIUS;
 
-  // Source escape point
-  const sx = fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1;
-  const sy = fromSide === 'bottom' ? y1 + E : y1;
+  // Source escape: only needed when natural first move would go the wrong way
+  const srcEscaped =
+    (fromSide === 'right'  && x2 < x1 + E) ||
+    (fromSide === 'left'   && x2 > x1 - E) ||
+    (fromSide === 'bottom' && y2 < y1 + E);
+  const sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
+  const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
 
-  // Target escape point
-  const ex = toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2;
-  const ey = toSide === 'bottom' ? y2 + E : y2;
+  // Target escape: only needed when path would arrive from inside the card
+  // (approach from wrong direction). Evaluated after source escape so sx/sy are final.
+  const tgtEscaped = !!toSide && (
+    (toSide === 'right'  && sx < x2) ||
+    (toSide === 'left'   && sx > x2) ||
+    (toSide === 'bottom' && sy < y2)
+  );
+  const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
+  const ey = tgtEscaped && toSide === 'bottom' ? y2 + E : y2;
 
-  // Middle orientation:
-  // After source escape (horizontal side), go vertical; after vertical side, go horizontal
-  const midOriA = (fromSide === 'left' || fromSide === 'right') ? 'vertical' : 'horizontal';
-  const midOriB = toSide
-    ? ((toSide === 'left' || toSide === 'right') ? 'vertical' : 'horizontal')
-    : midOriA;
+  // Mid orientation: natural exit direction for the side; switch to perpendicular after escape
+  const naturalOriA = (fromSide === 'left' || fromSide === 'right') ? 'horizontal' : 'vertical';
+  const midOriA = srcEscaped ? (naturalOriA === 'horizontal' ? 'vertical' : 'horizontal') : naturalOriA;
+  const naturalOriB = toSide ? ((toSide === 'left' || toSide === 'right') ? 'horizontal' : 'vertical') : naturalOriA;
+  const midOriB = tgtEscaped ? (naturalOriB === 'horizontal' ? 'vertical' : 'horizontal') : naturalOriB;
 
   // Build interior waypoints between (sx,sy) and (ex,ey)
   const mid = [];
