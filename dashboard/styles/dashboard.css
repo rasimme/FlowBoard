@@ -878,13 +878,9 @@
       display: block;
     }
 
-    /* When a note is in edit mode: allow card to grow up to max-height, then scroll */
+    /* When a note is in edit mode: JS controls body height, no max-height clipping */
     .note.editing .note-body {
-      /* Keep max-height from canvas.css (200px/300px) — card grows up to that, then scrolls */
-      overflow-y: auto !important;
-      display: flex !important;
-      flex-direction: column !important;
-      flex: 1 !important;
+      max-height: none !important;
       padding-bottom: 0 !important;
       cursor: text !important;
     }
@@ -893,8 +889,9 @@
       display: none !important;
     }
     .note.editing .note-textarea {
-      flex: 1 !important;
-      height: auto !important;
+      display: block !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
       min-height: 60px !important;
     }
 
