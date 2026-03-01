@@ -357,3 +357,8 @@
   transform: translate(-50%, -50%);
   border-radius: 50%;
 }
+
+/* Selected notes also get scroll on touch devices */
+.note.selected .note-body {
+  overflow-y: auto;
+}
