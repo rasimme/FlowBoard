@@ -1668,13 +1668,27 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
 
   // ── Rule 2: Simplest path (fewest bends) ──
   const parallel = !!toSide && (srcHorz === tgtHorz);
+  // Opposite: same axis but facing each other (left→right, right→left)
+  const opposite = parallel && (
+    (fromSide === 'left'  && toSide === 'right') ||
+    (fromSide === 'right' && toSide === 'left')
+  );
 
   let mid;
   if (!toSide) {
     // Free drag: simple L
     mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
+  } else if (opposite) {
+    // Facing each other: straight horizontal if same height, S-shape if different
+    // The escape extension already made sx/ex meet or overlap → just connect vertically
+    const mx = (sx + ex) / 2;
+    if (Math.abs(sy - ey) < 1) {
+      mid = []; // straight line, escapes handle it
+    } else {
+      mid = [[mx, sy], [mx, ey]]; // S-shape through midpoint
+    }
   } else if (parallel) {
-    // Z-shape: same-axis escapes need perpendicular detour
+    // Same-side parallel (right→right, left→left, bottom→bottom): Z-shape with detour
     if (srcHorz) {
       let my = (sy + ey) / 2;
       if (Math.abs(sy - ey) < 2 * E) my = Math.max(sy, ey) + E;
