@@ -1268,6 +1268,11 @@ function onCanvasMouseMove(e) {
     const dist = Math.abs(e.clientX - d.startMouseX) + Math.abs(e.clientY - d.startMouseY);
 
     if (!d.moved && dist < 5) return;
+    if (!d.moved) {
+      // Note drag started — dismiss any open connection delete button
+      document.querySelectorAll('.conn-delete-overlay').forEach(el => el.remove());
+      canvasState.selectedConn = null;
+    }
     d.moved = true;
 
     // Move all selected notes (multi-select drag)
