@@ -878,9 +878,9 @@
       display: block;
     }
 
-    /* When a note is in edit mode: JS controls body height, no max-height clipping */
+    /* Edit mode: body grows with textarea up to CSS max-height (200/300px), then scrolls */
     .note.editing .note-body {
-      max-height: none !important;
+      overflow-y: auto !important;
       padding-bottom: 0 !important;
       cursor: text !important;
     }
