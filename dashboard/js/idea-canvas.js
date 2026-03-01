@@ -1030,8 +1030,11 @@ function applyFormatting(type) {
     const ml = m.length;
     if (s.length <= ml * 2) return false;
     if (s.slice(0, ml) !== m || s.slice(-ml) !== m) return false;
-    // Prevent italic (*) from matching bold (**): inner must not start/end with same char
-    if (ml === 1 && (s[ml] === m || s[s.length - ml - 1] === m)) return false;
+    // For italic (*): block matching **text** (pure bold) but allow ***text*** (bold+italic).
+    // Rule: if the very next char after opening marker is ALSO m but the one after is NOT,
+    // then it's bold-only → return false.
+    if (ml === 1 && s[ml] === m && s[ml + 1] !== m) return false;
+    if (ml === 1 && s[s.length - ml - 1] === m && s[s.length - ml - 2] !== m) return false;
     return true;
   }
   // Check if marker surrounds the selection in the full value
