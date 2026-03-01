@@ -61,8 +61,9 @@ function renderNoteMarkdown(text) {
     line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     // Italic
     line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    // Strip empty markers (e.g. **** or **)
-    line = line.replace(/\*{2,4}/g, '');
+    // Strip remaining unpaired/empty markers and empty tags
+    line = line.replace(/\*+/g, '');
+    line = line.replace(/<(strong|em)><\/\1>/g, '');
     // Explicit markdown links [label](url) — unescape URL for href (& → &amp; is valid in href)
     line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
       // url may have &amp; from escHtml — decode for href
