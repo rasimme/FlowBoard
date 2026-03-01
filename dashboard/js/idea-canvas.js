@@ -1088,16 +1088,19 @@ function insertLinePrefix(ta, prefix) {
       ta.setSelectionRange(start + prefix.length, start + prefix.length);
     }
   } else {
-    // Selection: check if ALL lines already have prefix → toggle off; otherwise add
+    // Selection: trim trailing newline (double-click includes it)
+    const rawEnd = end;
+    const trimEnd = val[rawEnd - 1] === '\n' ? rawEnd - 1 : rawEnd;
+    const trailing = val.substring(trimEnd, rawEnd);
     const before = val.substring(0, lineStart);
-    const selectedLines = val.substring(lineStart, end);
-    const after = val.substring(end);
+    const selectedLines = val.substring(lineStart, trimEnd);
+    const after = val.substring(rawEnd);
     const lines = selectedLines.split('\n');
     const allPrefixed = lines.every(l => l.startsWith(prefix));
     const result = allPrefixed
       ? lines.map(l => l.substring(prefix.length)).join('\n')
       : lines.map(l => l.startsWith(prefix) ? l : prefix + l).join('\n');
-    ta.value = before + result + after;
+    ta.value = before + result + trailing + after;
     ta.setSelectionRange(lineStart, lineStart + result.length);
   }
   ta.focus();
