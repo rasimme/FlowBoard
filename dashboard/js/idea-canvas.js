@@ -1652,8 +1652,9 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     bottomClearance;    // Force V exit for bottom-dot card-edge clearance
   let sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
   // For bottom-dot targets: if source escaped position is within the target card's
-  // horizontal span, extend sx past the card edge (avoid vertical along card side)
-  if (toSide === 'bottom' && tgtHalfW > 0 && srcEscaped) {
+  // horizontal span AND source is ABOVE the target (vertical segment crosses card body),
+  // extend sx past the card edge. When source is below, the vertical stays below the card.
+  if (toSide === 'bottom' && tgtHalfW > 0 && srcEscaped && sy < y2) {
     const cardRight = x2 + tgtHalfW + E;
     const cardLeft  = x2 - tgtHalfW - E;
     if (fromSide === 'right' && sx > x2 - tgtHalfW && sx < cardRight)  sx = cardRight;
