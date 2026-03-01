@@ -655,9 +655,14 @@ function updateToolbar() {
   }
   if (!isFinite(minX)) { toolbar.style.display = 'none'; return; }
 
-  const tbWidth = toolbar.offsetWidth || 120;
+  // Show first (off-screen) so offsetWidth is accurate, then position
+  toolbar.style.visibility = 'hidden';
+  toolbar.style.display = 'flex';
+
+  const tbWidth = toolbar.offsetWidth;
+  const tbHeight = toolbar.offsetHeight || 36;
   let tbX = (minX + maxX) / 2 - tbWidth / 2;
-  let tbY = minY - 8 - 36; // 36px toolbar height + 8px gap above
+  let tbY = minY - 8 - tbHeight;
 
   // If near top edge, position below instead
   if (tbY < 4) {
@@ -667,9 +672,9 @@ function updateToolbar() {
   // Clamp to wrap bounds
   tbX = Math.max(4, Math.min(tbX, wrap.clientWidth - tbWidth - 4));
 
-  toolbar.style.display = 'flex';
   toolbar.style.left = tbX + 'px';
   toolbar.style.top = tbY + 'px';
+  toolbar.style.visibility = '';
 }
 
 function closeToolbarPopovers() {
@@ -705,13 +710,16 @@ function showColorPopover() {
     pop.appendChild(swatch);
   });
 
-  // Position below the color button
+  // Append first so offsetWidth is available, then position
+  pop.style.visibility = 'hidden';
+  toolbar.appendChild(pop);
   const btnRect = btn.getBoundingClientRect();
   const tbRect = toolbar.getBoundingClientRect();
-  pop.style.left = (btnRect.left - tbRect.left) + 'px';
+  const popW = pop.offsetWidth;
+  const centered = btnRect.left - tbRect.left + btnRect.width / 2 - popW / 2;
+  pop.style.left = Math.max(0, centered) + 'px';
   pop.style.top = (btnRect.bottom - tbRect.top + 4) + 'px';
-
-  toolbar.appendChild(pop);
+  pop.style.visibility = '';
 
   // Close on outside click
   setTimeout(() => {
@@ -754,12 +762,16 @@ function showSizePopover() {
     pop.appendChild(sizeBtn);
   });
 
+  // Append first so offsetWidth is available, then position
+  pop.style.visibility = 'hidden';
+  toolbar.appendChild(pop);
   const btnRect = btn.getBoundingClientRect();
   const tbRect = toolbar.getBoundingClientRect();
-  pop.style.left = (btnRect.left - tbRect.left) + 'px';
+  const popW = pop.offsetWidth;
+  const centered = btnRect.left - tbRect.left + btnRect.width / 2 - popW / 2;
+  pop.style.left = Math.max(0, centered) + 'px';
   pop.style.top = (btnRect.bottom - tbRect.top + 4) + 'px';
-
-  toolbar.appendChild(pop);
+  pop.style.visibility = '';
 
   setTimeout(() => {
     const close = ev => {
