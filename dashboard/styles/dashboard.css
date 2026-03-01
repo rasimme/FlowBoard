@@ -904,7 +904,7 @@
 
     /* Connection dots — base styles (visibility managed by canvas.css) */
     .conn-dot {
-      position: absolute; width: 10px; height: 10px;
+      position: absolute; width: 8px; height: 8px;
       border-radius: 50%; background: var(--accent);
       box-sizing: border-box; /* border included in 10px — fixes translate(-50%) centering */
       cursor: crosshair; z-index: 5;
@@ -964,6 +964,6 @@
       display: none;
     }
 
-    @media (max-width: 900px) {
-      .conn-dot { width: 14px; height: 14px; box-sizing: border-box; }
+    @media (max-width: 600px) {
+      .conn-dot { width: 12px; height: 12px; box-sizing: border-box; }
     }
