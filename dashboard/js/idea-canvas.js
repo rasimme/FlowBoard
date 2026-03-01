@@ -53,7 +53,7 @@ function renderNoteMarkdown(text) {
   // Process line by line so list items stay together, plain lines use <br>
   const lines = text.split('\n');
   const out = [];
-  let inList = false;
+  let inList = false; // false | 'ul' | 'ol'
   for (let i = 0; i < lines.length; i++) {
     // Escape HTML first, then apply markdown (safe order: patterns like ** and [] survive escaping)
     let line = escHtml(lines[i]);
@@ -74,11 +74,18 @@ function renderNoteMarkdown(text) {
       const href = match.startsWith('http') ? match : 'https://' + match;
       return `<a href="${href}" target="_blank" rel="noopener">${match}</a>`;
     });
+    const numListMatch = line.match(/^\d+\. (.*)/);
     if (line.startsWith('- ')) {
-      if (!inList) { out.push('<ul>'); inList = true; }
+      if (inList === 'ol') { out.push('</ol>'); inList = false; }
+      if (!inList) { out.push('<ul>'); inList = 'ul'; }
       out.push('<li>' + line.slice(2) + '</li>');
+    } else if (numListMatch) {
+      if (inList === 'ul') { out.push('</ul>'); inList = false; }
+      if (!inList) { out.push('<ol>'); inList = 'ol'; }
+      out.push('<li>' + numListMatch[1] + '</li>');
     } else {
-      if (inList) { out.push('</ul>'); inList = false; }
+      if (inList === 'ul') { out.push('</ul>'); inList = false; }
+      if (inList === 'ol') { out.push('</ol>'); inList = false; }
       if (line === '') {
         out.push('<br>');
       } else {
@@ -86,7 +93,7 @@ function renderNoteMarkdown(text) {
       }
     }
   }
-  if (inList) out.push('</ul>');
+  if (inList === 'ul') out.push('</ul>'); if (inList === 'ol') out.push('</ol>');
   return out.join('');
 }
 
@@ -1212,9 +1219,15 @@ function insertNumberedPrefix(ta) {
       ta.value = val.substring(0, lineStart) + val.substring(lineStart + numMatch[0].length);
       ta.setSelectionRange(Math.max(lineStart, start - numMatch[0].length), Math.max(lineStart, start - numMatch[0].length));
     } else {
-      // Replace bullet if present, then add number
+      // Replace bullet if present, then add number (continue from previous)
       const stripped = stripBullet(line);
-      const prefix = '1. ';
+      // Check previous line for numbering
+      const prevLineEnd = lineStart - 1;
+      const prevLineStart = prevLineEnd > 0 ? val.lastIndexOf('\n', prevLineEnd - 1) + 1 : 0;
+      const prevLine = prevLineEnd > 0 ? val.substring(prevLineStart, prevLineEnd) : '';
+      const prevNum = prevLine.match(/^(\d+)\. /);
+      const num = prevNum ? parseInt(prevNum[1], 10) + 1 : 1;
+      const prefix = num + '. ';
       ta.value = val.substring(0, lineStart) + prefix + stripped + val.substring(lineEnd);
       ta.setSelectionRange(lineStart + prefix.length + stripped.length, lineStart + prefix.length + stripped.length);
     }
@@ -1229,7 +1242,15 @@ function insertNumberedPrefix(ta) {
     const allNumbered = lines.every(l => /^\d+\. /.test(l));
     const result = allNumbered
       ? lines.map(l => l.replace(/^\d+\. /, '')).join('\n')
-      : lines.map((line, i) => `${i + 1}. ${stripBullet(line.replace(/^\d+\. /, ''))}`).join('\n');
+      : (() => {
+          // Check line above selection for numbering context
+          const prevEnd = lineStart - 1;
+          const prevStart = prevEnd > 0 ? val.lastIndexOf('\n', prevEnd - 1) + 1 : 0;
+          const prevLine = prevEnd > 0 ? val.substring(prevStart, prevEnd) : '';
+          const prevNum = prevLine.match(/^(\d+)\. /);
+          const startNum = prevNum ? parseInt(prevNum[1], 10) + 1 : 1;
+          return lines.map((line, i) => `${startNum + i}. ${stripBullet(line.replace(/^\d+\. /, ''))}`).join('\n');
+        })();
     ta.value = before + result + trailing + after;
     ta.setSelectionRange(lineStart, lineStart + result.length);
   }
