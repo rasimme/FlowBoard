@@ -209,34 +209,36 @@
 .note:hover .note-body {
   overflow-y: auto;
 }
-.note:hover .note-body.truncated::after,
-.note:hover .note-body.truncated::before {
+
+/* Show fade overlay when truncated (not hovered) */
+.note-body.truncated ~ .note-overflow-fade {
+  display: block;
+}
+.note:hover .note-overflow-fade {
   display: none;
 }
 
-/* Fade gradient at bottom when truncated */
-.note-body.truncated::after {
-  content: '';
+/* Fade gradient at bottom when truncated — real DOM element so it doesn't scroll with content */
+.note-overflow-fade {
+  display: none;
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: 48px;
   background: linear-gradient(transparent, #12141a);
   pointer-events: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
+  z-index: 2;
 }
-
-/* Ellipsis indicator */
-.note-body.truncated::before {
+.note-overflow-fade::after {
   content: '\22EF';
   position: absolute;
-  bottom: 2px;
+  bottom: 4px;
   left: 50%;
   transform: translateX(-50%);
   color: var(--muted);
   font-size: 14px;
-  z-index: 1;
   pointer-events: none;
 }
 
