@@ -410,10 +410,12 @@ async function confirmDeleteNote(id) {
       canvasState.connections = canvasState.connections.filter(
         c => c.from !== id && c.to !== id
       );
+      canvasState.selectedIds.delete(id);
       if (el) el.remove();
       renderConnections();
       renderEmptyState();
       renderPromoteButton();
+      updateToolbar();
     }
   } catch {
     toast('Failed to delete note', 'error');
