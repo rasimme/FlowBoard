@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=6';
+  _l.href = './styles/canvas.css?v=7';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -1773,7 +1773,7 @@ function renderConnections() {
   }
 
   // Helper: compute stacked dot position for a specific connection on a note/side
-  // Uses same formula as renderPorts so lines land exactly on dots
+  // Uses same stackOffset formula as renderPorts so lines land exactly on dots
   function getStackedDotPos(noteId, side, connId) {
     const el = document.getElementById('note-' + noteId);
     const note = canvasState.notes.find(n => n.id === noteId);
@@ -1781,18 +1781,14 @@ function renderConnections() {
     const w = el.offsetWidth, h = el.offsetHeight;
     const key = noteId + ':' + side;
     const conns = connectedPorts.get(key) || [];
-    const total = conns.length + 1; // connected + 1 free
     const idx = conns.findIndex(c => c.connId === connId);
-    if (idx === -1) {
-      // fallback: center of side
-      return getNoteDotPosition(noteId, side);
-    }
-    const offset = (idx - (total - 1) / 2) * PORT_SPACING;
+    if (idx === -1) return getNoteDotPosition(noteId, side);
+    const offset = stackOffset(idx);
     let x = note.x, y = note.y;
-    if (side === 'top')    { x += w / 2 + offset; }
-    if (side === 'bottom') { x += w / 2 + offset; y += h; }
-    if (side === 'left')   { y += h / 2 + offset; }
-    if (side === 'right')  { x += w; y += h / 2 + offset; }
+    if (side === 'bottom') { x += Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h; }
+    else if (side === 'left')  { y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else if (side === 'right') { x += w; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else { x += w / 2; } // top fallback (legacy)
     return { x, y };
   }
 
@@ -1849,11 +1845,19 @@ function renderConnections() {
 }
 
 // --- Dynamic port rendering ---
+// Stacking slots: center=0, then alternating +1,-1,+2,-2,...
+// slot 0 → offset 0, slot 1 → +PORT_SPACING, slot 2 → -PORT_SPACING, etc.
+function stackOffset(slotIndex) {
+  if (slotIndex === 0) return 0;
+  const half = Math.ceil(slotIndex / 2);
+  return (slotIndex % 2 === 1 ? 1 : -1) * half * PORT_SPACING;
+}
+
 function renderPorts(connectedPorts) {
-  // Remove all old dynamically-rendered dots
   document.querySelectorAll('.conn-dot[data-dynamic]').forEach(d => d.remove());
 
-  const sides = ['top', 'right', 'bottom', 'left'];
+  // Only 3 sides — top removed (header area, easy to accidentally drag from)
+  const sides = ['right', 'bottom', 'left'];
 
   for (const note of canvasState.notes) {
     const el = document.getElementById('note-' + note.id);
@@ -1866,27 +1870,36 @@ function renderPorts(connectedPorts) {
       const key = note.id + ':' + side;
       const conns = connectedPorts.get(key) || [];
       const connCount = conns.length;
-      const total = connCount + 1; // connected dots + 1 free dot
+      // Render connected dots + 1 free dot
+      const total = connCount + 1;
 
       for (let i = 0; i < total; i++) {
-        const offset = (i - (total - 1) / 2) * PORT_SPACING;
+        const offset = stackOffset(i);
+
+        // Compute raw position and clamp to card edge length
         let left, top;
-        if (side === 'top')    { left = w / 2 + offset; top = 0; }
-        if (side === 'bottom') { left = w / 2 + offset; top = h; }
-        if (side === 'left')   { left = 0; top = h / 2 + offset; }
-        if (side === 'right')  { left = w; top = h / 2 + offset; }
+        if (side === 'bottom') {
+          left = Math.max(8, Math.min(w - 8, w / 2 + offset)); top = h;
+        } else if (side === 'left') {
+          left = 0; top = Math.max(8, Math.min(h - 8, h / 2 + offset));
+        } else { // right
+          left = w; top = Math.max(8, Math.min(h - 8, h / 2 + offset));
+        }
 
         const dot = document.createElement('div');
         dot.dataset.dynamic = '1';
+        // Store note-relative coords for accurate connection preview
+        dot.dataset.dotLeft = String(left);
+        dot.dataset.dotTop  = String(top);
 
         if (i < connCount) {
-          // Connected dot — always visible, colored by connection line
+          // Connected dot: filled, always visible, line color
           dot.className = `conn-dot conn-dot-connected conn-dot-${side}`;
-          dot.style.cssText = `left:${left}px;top:${top}px;background:${conns[i].color};`;
+          dot.style.cssText = `left:${left}px;top:${top}px;background:${conns[i].color};border-color:${conns[i].color};`;
         } else {
-          // Free dot — hidden by CSS, shown on hover/selection via .conn-dot-free rule
+          // Free dot: ring style (visible on hover), draggable
           dot.className = `conn-dot conn-dot-free conn-dot-${side}`;
-          dot.style.cssText = `left:${left}px;top:${top}px;background:${cardStroke};`;
+          dot.style.cssText = `left:${left}px;top:${top}px;`;
           dot.setAttribute('onmousedown', `window.startConnectionDrag(event,'${note.id}','${side}')`);
           dot.setAttribute('ontouchstart', `window.startConnectionDragTouch(event,'${note.id}','${side}')`);
         }
@@ -1912,9 +1925,20 @@ window.startConnectionDragTouch = startConnectionDragTouch;
 export function startConnectionDrag(e, noteId, port) {
   e.stopPropagation();
   e.preventDefault();
-  const pt = getNoteDotPosition(noteId, port);
-  if (!pt) return;
   const note = canvasState.notes.find(n => n.id === noteId);
+  if (!note) return;
+  // Use actual rendered dot position if available (data-dot-left/top),
+  // otherwise fall back to center of side
+  let pt;
+  const dotEl = e.target?.closest?.('.conn-dot') || e.target;
+  if (dotEl?.dataset?.dotLeft !== undefined) {
+    const dLeft = parseFloat(dotEl.dataset.dotLeft);
+    const dTop  = parseFloat(dotEl.dataset.dotTop);
+    pt = { x: note.x + dLeft, y: note.y + dTop };
+  } else {
+    pt = getNoteDotPosition(noteId, port);
+  }
+  if (!pt) return;
   canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y } };
   updateToolbar(); // hide toolbar during connection drag
 
