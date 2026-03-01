@@ -199,6 +199,7 @@ export async function renderIdeaCanvas(state) {
         <div class="toolbar-section toolbar-props">
           <button class="toolbar-btn" id="tbColor" title="Color"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></button>
           <button class="toolbar-btn" id="tbSize" title="Size"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+          <button class="toolbar-btn" id="tbDuplicate" title="Duplicate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
           <button class="toolbar-btn toolbar-btn-danger" id="tbDelete" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
         </div>
       </div>
@@ -803,6 +804,120 @@ function showSizePopover() {
   }, 0);
 }
 
+
+// --- Clipboard for copy/paste ---
+let clipboard = []; // [{text, color, size, offsetX, offsetY}]
+
+// --- Duplicate selected notes ---
+async function duplicateSelected() {
+  const ids = [...canvasState.selectedIds];
+  if (ids.length === 0) return;
+  const project = canvasState._state?.viewedProject;
+  if (!project) return;
+
+  // Calculate bounding box center for offset
+  const notes = ids.map(id => canvasState.notes.find(n => n.id === id)).filter(Boolean);
+  const cx = notes.reduce((s, n) => s + n.x, 0) / notes.length;
+  const cy = notes.reduce((s, n) => s + n.y, 0) / notes.length;
+
+  const newIds = new Set();
+  for (const note of notes) {
+    try {
+      const res = await api(`/projects/${project}/canvas/notes`, {
+        method: 'POST',
+        body: {
+          text: note.text || '',
+          x: Math.round(note.x + 40),
+          y: Math.round(note.y + 40),
+          color: note.color || 'grey',
+          size: note.size || 'small'
+        }
+      });
+      if (res.ok) {
+        canvasState.notes.push(res.note);
+        const vp = document.getElementById('canvasViewport');
+        if (vp) vp.appendChild(createNoteElement(res.note));
+        newIds.add(res.note.id);
+      }
+    } catch {}
+  }
+
+  // Select the new duplicates
+  if (newIds.size > 0) {
+    canvasState.selectedIds = newIds;
+    document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+    for (const id of newIds) {
+      document.getElementById('note-' + id)?.classList.add('selected');
+    }
+    renderConnections();
+    renderEmptyState();
+    renderPromoteButton();
+    updateToolbar();
+  }
+}
+
+// --- Copy/Paste (Ctrl+C / Ctrl+V) ---
+function copySelectedToClipboard() {
+  const ids = [...canvasState.selectedIds];
+  if (ids.length === 0) return;
+  const notes = ids.map(id => canvasState.notes.find(n => n.id === id)).filter(Boolean);
+  const cx = notes.reduce((s, n) => s + n.x, 0) / notes.length;
+  const cy = notes.reduce((s, n) => s + n.y, 0) / notes.length;
+  clipboard = notes.map(n => ({
+    text: n.text || '',
+    color: n.color || 'grey',
+    size: n.size || 'small',
+    offsetX: n.x - cx,
+    offsetY: n.y - cy
+  }));
+}
+
+async function pasteFromClipboard() {
+  if (clipboard.length === 0) return;
+  const project = canvasState._state?.viewedProject;
+  if (!project) return;
+
+  // Paste at visible center of canvas
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap) return;
+  const cx = (wrap.clientWidth  / 2 - canvasState.pan.x) / canvasState.scale;
+  const cy = (wrap.clientHeight / 2 - canvasState.pan.y) / canvasState.scale;
+
+  const newIds = new Set();
+  for (const item of clipboard) {
+    try {
+      const res = await api(`/projects/${project}/canvas/notes`, {
+        method: 'POST',
+        body: {
+          text: item.text,
+          x: Math.round(cx + item.offsetX),
+          y: Math.round(cy + item.offsetY),
+          color: item.color,
+          size: item.size
+        }
+      });
+      if (res.ok) {
+        canvasState.notes.push(res.note);
+        const vp = document.getElementById('canvasViewport');
+        if (vp) vp.appendChild(createNoteElement(res.note));
+        newIds.add(res.note.id);
+      }
+    } catch {}
+  }
+
+  if (newIds.size > 0) {
+    canvasState.selectedIds = newIds;
+    document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+    for (const id of newIds) {
+      document.getElementById('note-' + id)?.classList.add('selected');
+    }
+    renderConnections();
+    renderEmptyState();
+    renderPromoteButton();
+    updateToolbar();
+  }
+}
+
 function toolbarDelete() {
   const ids = [...canvasState.selectedIds];
   if (ids.length === 0) return;
@@ -835,6 +950,7 @@ function bindToolbarEvents() {
   document.getElementById('tbColor')?.addEventListener('click', showColorPopover);
   document.getElementById('tbSize')?.addEventListener('click', showSizePopover);
   document.getElementById('tbDelete')?.addEventListener('click', toolbarDelete);
+  document.getElementById('tbDuplicate')?.addEventListener('click', duplicateSelected);
 
   // Format buttons (wired up for Task 3)
   toolbar.querySelectorAll('[data-fmt]').forEach(btn => {
@@ -971,11 +1087,36 @@ function bindCanvasEvents() {
 
   // Delete/Backspace key: trigger delete modal for selected notes
   document.addEventListener('keydown', e => {
-    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     // Don't intercept if user is typing in an input/textarea
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (canvasState.editingId) return;
+
+    // Ctrl+C: copy selected notes
+    if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+      if (canvasState.selectedIds.size > 0) {
+        e.preventDefault();
+        copySelectedToClipboard();
+      }
+      return;
+    }
+    // Ctrl+V: paste
+    if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+      e.preventDefault();
+      pasteFromClipboard();
+      return;
+    }
+    // Ctrl+D: duplicate
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+      if (canvasState.selectedIds.size > 0) {
+        e.preventDefault();
+        duplicateSelected();
+      }
+      return;
+    }
+
+    // Delete/Backspace: delete selected
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
     if (canvasState.selectedIds.size === 0) return;
     e.preventDefault();
     toolbarDelete();
@@ -1582,7 +1723,8 @@ function onTouchEnd(e) {
  * @param {"horizontal"|"vertical"} orientation  Routing direction based on source port side
  * @returns {string}   SVG path `d` attribute value
  */
-const MIN_ESCAPE = 28; // px — mandatory clearance from card edge
+const MIN_ESCAPE = 28;
+const MAX_PORTS_PER_SIDE = 5; // max connections per side of a card // px — mandatory clearance from card edge
 
 /**
  * Convert an array of [x,y] waypoints into a rounded-corner SVG path.
@@ -2069,8 +2211,8 @@ function renderPorts(connectedPorts) {
       const key = note.id + ':' + side;
       const conns = connectedPorts.get(key) || [];
       const connCount = conns.length;
-      // Render connected dots + 1 free dot
-      const total = connCount + 1;
+      // Render connected dots + 1 free dot (up to MAX_PORTS_PER_SIDE)
+      const total = connCount < MAX_PORTS_PER_SIDE ? connCount + 1 : connCount;
 
       for (let i = 0; i < total; i++) {
         const offset = stackOffset(i);
