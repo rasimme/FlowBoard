@@ -1627,45 +1627,48 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   const E = MIN_ESCAPE;
   const r = CORNER_RADIUS;
 
-  // ── Rule 1: Always escape in dot's natural direction by E ──
-  function esc(x, y, side) {
-    if (side === 'right')  return [x + E, y];
-    if (side === 'left')   return [x - E, y];
-    if (side === 'bottom') return [x, y + E];
-    return [x, y]; // top / fallback
-  }
+  // ── Rule 1: Escape = minimum clearance in dot's natural direction ──
+  // The line MUST go at least E pixels in the dot's direction before turning.
+  // But if the target is further in that direction, extend the segment — don't
+  // force a bend at E when going straight is shorter.
 
-  const [sx, sy] = esc(x1, y1, fromSide);
-  const [ex, ey] = toSide ? esc(x2, y2, toSide) : [x2, y2];
-
-  // ── Rule 2: Simplest path between escape points ──
-  // Perpendicular escapes (right/left ↔ bottom): L-shape (1 corner)
-  // Parallel escapes (right↔right, left↔left, right↔left, etc.): Z-shape (2 corners)
+  // Source escape minimum
   const srcHorz = (fromSide === 'right' || fromSide === 'left');
+  let sx, sy;
+  if (fromSide === 'right')  { sx = Math.max(x1 + E, x2); sy = y1; } // go right at least E, further if target is more right
+  else if (fromSide === 'left')   { sx = Math.min(x1 - E, x2); sy = y1; }
+  else if (fromSide === 'bottom') { sx = x1; sy = Math.max(y1 + E, y2); }
+  else { sx = x1; sy = y1; }
+
+  // Target escape minimum
   const tgtHorz = !!toSide && (toSide === 'right' || toSide === 'left');
-  const parallel = !!toSide && (srcHorz === tgtHorz); // both horizontal or both vertical
+  let ex, ey;
+  if (!toSide) { ex = x2; ey = y2; }
+  else if (toSide === 'right')  { ex = Math.max(x2 + E, x1); ey = y2; } // approach from right: at least E past dot, further if source is more right
+  else if (toSide === 'left')   { ex = Math.min(x2 - E, x1); ey = y2; }
+  else if (toSide === 'bottom') { ex = x2; ey = Math.max(y2 + E, y1); }
+  else { ex = x2; ey = y2; }
+
+  // ── Rule 2: Simplest path (fewest bends) ──
+  const parallel = !!toSide && (srcHorz === tgtHorz);
 
   let mid;
   if (!toSide) {
-    // Free drag (no snap): simple L, perpendicular to source
+    // Free drag: simple L
     mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
   } else if (parallel) {
-    // Z-shape: same-axis escapes need perpendicular detour through midpoint
+    // Z-shape: same-axis escapes need perpendicular detour
     if (srcHorz) {
-      // Both horizontal → vertical detour at midY
       let my = (sy + ey) / 2;
       if (Math.abs(sy - ey) < 2 * E) my = Math.max(sy, ey) + E;
       mid = [[sx, my], [ex, my]];
     } else {
-      // Both vertical → horizontal detour at midX
       let mx = (sx + ex) / 2;
       if (Math.abs(sx - ex) < 2 * E) mx = Math.max(sx, ex) + E;
       mid = [[mx, sy], [mx, ey]];
     }
   } else {
-    // L-shape: one corner connecting perpendicular escape directions
-    // Source horizontal → go vertical first → corner at (sx, ey)
-    // Source vertical   → go horizontal first → corner at (ex, sy)
+    // L-shape: one corner at the intersection of escape directions
     mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
   }
 
