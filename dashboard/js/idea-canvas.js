@@ -1640,12 +1640,7 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   // Bottom dot clearance: when source is close in height to a bottom-dot target,
   // the horizontal segment would run along the card edge. Force source escape +
   // route below both dots to create visible clearance.
-  // Also: when source x is within the target card's width (for bottom dots),
-  // the vertical segment would run along the card's side edge.
-  const bottomClearance = toSide === 'bottom' && (
-    Math.abs(y1 - y2) < E ||                          // close in height
-    (tgtHalfW > 0 && Math.abs(x1 - x2) < tgtHalfW + E) // source within card width + margin
-  );
+  const bottomClearance = toSide === 'bottom' && Math.abs(y1 - y2) < E;
 
   // Source escape: trigger early (2*E threshold) + forced when target needs escape
   // + forced when bottom-dot needs vertical clearance
@@ -1656,12 +1651,13 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     tgtWillEscape ||    // Force V exit to avoid horizontal card crossing
     bottomClearance;    // Force V exit for bottom-dot card-edge clearance
   let sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
-  // For bottom-dot targets: ensure vertical segment clears target card's side edge
-  if (bottomClearance && tgtHalfW > 0) {
+  // For bottom-dot targets: if source escaped position is within the target card's
+  // horizontal span, extend sx past the card edge (avoid vertical along card side)
+  if (toSide === 'bottom' && tgtHalfW > 0 && srcEscaped) {
     const cardRight = x2 + tgtHalfW + E;
     const cardLeft  = x2 - tgtHalfW - E;
-    if (fromSide === 'right' && sx < cardRight)  sx = cardRight;
-    if (fromSide === 'left'  && sx > cardLeft)   sx = cardLeft;
+    if (fromSide === 'right' && sx > x2 - tgtHalfW && sx < cardRight)  sx = cardRight;
+    if (fromSide === 'left'  && sx < x2 + tgtHalfW && sx > cardLeft)   sx = cardLeft;
   }
   const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
 
