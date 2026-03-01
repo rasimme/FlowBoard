@@ -212,6 +212,7 @@
   height: 40px;
   background: linear-gradient(transparent, #12141a);
   pointer-events: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
 
 /* Ellipsis indicator */
