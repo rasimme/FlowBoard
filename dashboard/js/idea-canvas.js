@@ -1660,15 +1660,29 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     // L-shape: one corner connecting perpendicular directions
     mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
   } else {
-    // Parallel: S-shape with midpoint BETWEEN endpoints.
-    // Key rule: midpoint is always (sx+ex)/2 or (sy+ey)/2 — never outside
-    // the range of the two escape points. This prevents down-then-up reversals.
-    if (srcHorz) {
-      const mx = (sx + ex) / 2;
-      mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
+    // Parallel connections: two sub-cases
+    const sameSide = fromSide === toSide; // right→right, left→left, bottom→bottom
+
+    if (sameSide) {
+      // Same-side: U-shape. Midpoint must be BEYOND both escapes in the
+      // shared escape direction — otherwise the line would reverse immediately.
+      if (srcHorz) {
+        const mx = fromSide === 'right' ? Math.max(sx, ex) + E : Math.min(sx, ex) - E;
+        mid = [[mx, sy], [mx, ey]];
+      } else {
+        const my = Math.max(sy, ey) + E; // bottom→bottom: go further down
+        mid = [[sx, my], [ex, my]];
+      }
     } else {
-      const my = (sy + ey) / 2;
-      mid = (Math.abs(sx - ex) < 1) ? [] : [[sx, my], [ex, my]];
+      // Opposite-facing (left→right, right→left): S-shape with midpoint
+      // between endpoints. No reversal because escapes face each other.
+      if (srcHorz) {
+        const mx = (sx + ex) / 2;
+        mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
+      } else {
+        const my = (sy + ey) / 2;
+        mid = (Math.abs(sx - ex) < 1) ? [] : [[sx, my], [ex, my]];
+      }
     }
   }
 
