@@ -466,7 +466,52 @@ export function startNoteEdit(id) {
   });
   ta.addEventListener('keydown', e => {
     e.stopPropagation(); // prevent canvas keybindings
-    if (e.key === 'Escape') ta.blur();
+    if (e.key === 'Escape') { ta.blur(); return; }
+
+    // Auto-continue lists on Enter
+    if (e.key === 'Enter') {
+      const pos = ta.selectionStart;
+      const val = ta.value;
+      const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      const line = val.substring(lineStart, pos);
+
+      // Detect list prefix: "- " or "N. "
+      const bulletMatch = line.match(/^(- )(.*)/);
+      const numberMatch = line.match(/^(\d+)\. (.*)/);
+
+      if (bulletMatch) {
+        e.preventDefault();
+        const content = bulletMatch[2];
+        if (content.trim() === '') {
+          // Empty bullet → exit list (remove prefix)
+          ta.value = val.substring(0, lineStart) + val.substring(pos);
+          ta.setSelectionRange(lineStart, lineStart);
+        } else {
+          // Continue bullet
+          const insert = '\n- ';
+          ta.value = val.substring(0, pos) + insert + val.substring(pos);
+          ta.setSelectionRange(pos + insert.length, pos + insert.length);
+        }
+        ta.dispatchEvent(new Event('input'));
+        return;
+      }
+      if (numberMatch) {
+        e.preventDefault();
+        const num = parseInt(numberMatch[1], 10);
+        const content = numberMatch[2];
+        if (content.trim() === '') {
+          // Empty numbered line → exit list
+          ta.value = val.substring(0, lineStart) + val.substring(pos);
+          ta.setSelectionRange(lineStart, lineStart);
+        } else {
+          const insert = '\n' + (num + 1) + '. ';
+          ta.value = val.substring(0, pos) + insert + val.substring(pos);
+          ta.setSelectionRange(pos + insert.length, pos + insert.length);
+        }
+        ta.dispatchEvent(new Event('input'));
+        return;
+      }
+    }
   });
   ta.addEventListener('click', e => e.stopPropagation());
   ta.addEventListener('mousedown', e => e.stopPropagation());
@@ -961,62 +1006,52 @@ function bindToolbarEvents() {
   });
 }
 
-// --- Formatting commands (T-088) ---
+// --- Formatting commands ---
 function applyFormatting(type) {
   const ta = document.getElementById('note-ta-' + canvasState.editingId);
   if (!ta) return;
   const start = ta.selectionStart;
-  const end = ta.selectionEnd;
-  const selected = ta.value.substring(start, end);
+  const end   = ta.selectionEnd;
+  const val   = ta.value;
+
+  // Helper: wrap selection with inline markers (bold/italic).
+  // Trims trailing whitespace/newlines from selection before wrapping
+  // (double-click often selects trailing newline which breaks markdown).
+  function wrapInline(marker) {
+    const raw = val.substring(start, end);
+    const trimmed = raw.trimEnd();
+    const trailLen = raw.length - trimmed.length;
+    if (trimmed.length > 0) {
+      const newVal = val.substring(0, start) + marker + trimmed + marker + val.substring(start + raw.length);
+      ta.value = newVal;
+      ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
+    } else {
+      const newVal = val.substring(0, start) + marker + marker + val.substring(end);
+      ta.value = newVal;
+      ta.setSelectionRange(start + marker.length, start + marker.length);
+    }
+  }
 
   switch (type) {
-    case 'bold': {
-      const before = '**', after = '**';
-      if (selected.length > 0) {
-        ta.value = ta.value.substring(0, start) + before + selected + after + ta.value.substring(end);
-        ta.setSelectionRange(start + before.length, start + before.length + selected.length);
-      } else {
-        ta.value = ta.value.substring(0, start) + before + after + ta.value.substring(end);
-        ta.setSelectionRange(start + before.length, start + before.length);
-      }
-      break;
-    }
-    case 'italic': {
-      const before = '*', after = '*';
-      if (selected.length > 0) {
-        ta.value = ta.value.substring(0, start) + before + selected + after + ta.value.substring(end);
-        ta.setSelectionRange(start + before.length, start + before.length + selected.length);
-      } else {
-        ta.value = ta.value.substring(0, start) + before + after + ta.value.substring(end);
-        ta.setSelectionRange(start + before.length, start + before.length);
-      }
-      break;
-    }
-    case 'bullet': {
-      insertLinePrefix(ta, '- ');
-      break;
-    }
-    case 'number': {
-      insertNumberedPrefix(ta);
-      break;
-    }
+    case 'bold':   wrapInline('**'); break;
+    case 'italic': wrapInline('*');  break;
+    case 'bullet': insertLinePrefix(ta, '- ');  break;
+    case 'number': insertNumberedPrefix(ta);     break;
     case 'link': {
-      const before = '[', after = '](url)';
-      if (selected.length > 0) {
-        ta.value = ta.value.substring(0, start) + before + selected + after + ta.value.substring(end);
-        // Select "url" for easy replacement
-        const urlStart = start + before.length + selected.length + 2; // after ](
+      const sel = val.substring(start, end).trimEnd();
+      if (sel.length > 0) {
+        ta.value = val.substring(0, start) + '[' + sel + '](url)' + val.substring(end);
+        const urlStart = start + 1 + sel.length + 2;
         ta.setSelectionRange(urlStart, urlStart + 3);
       } else {
-        ta.value = ta.value.substring(0, start) + before + after + ta.value.substring(end);
-        // Select "url"
-        const urlStart = start + before.length + 2; // after [](
+        ta.value = val.substring(0, start) + '[link](url)' + val.substring(end);
+        const urlStart = start + 7;
         ta.setSelectionRange(urlStart, urlStart + 3);
       }
       break;
     }
   }
-  ta.dispatchEvent(new Event('input')); // trigger autoGrow after formatting
+  ta.dispatchEvent(new Event('input')); // trigger autoGrow
   ta.focus();
 }
 
