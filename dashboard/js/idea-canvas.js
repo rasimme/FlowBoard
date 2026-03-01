@@ -1719,12 +1719,15 @@ function computePortPositions() {
 
     const bl = noteEl.clientLeft || 1;
     group.forEach((a, i) => {
-      const offset = stackOffset(i); // alternating: 0, +1, -1, +2, -2
+      const offset = stackOffset(i);
       let px, py;
-      if (side === 'top')    { px = note.x + w / 2 + offset;                 py = note.y - bl / 2; }
-      if (side === 'bottom') { px = note.x + w / 2 + offset;                 py = note.y + h - bl / 2; }
-      if (side === 'left')   { px = note.x + bl / 2;  py = note.y + h / 2 + offset; }
-      if (side === 'right')  { px = note.x + w - bl / 2; py = note.y + h / 2 + offset; }
+      // bl = border width; dot CSS coords are relative to PADDING edge (note.x + bl)
+      // perpendicular axis: center of border line (note.x + w - bl/2 etc.)
+      // along-edge axis: needs +bl because CSS top/left is from padding edge
+      if (side === 'top')    { px = note.x + bl + w / 2 + offset; py = note.y - bl / 2; }
+      if (side === 'bottom') { px = note.x + bl + w / 2 + offset; py = note.y + h - bl / 2; }
+      if (side === 'left')   { px = note.x + bl / 2;              py = note.y + bl + h / 2 + offset; }
+      if (side === 'right')  { px = note.x + w - bl / 2;          py = note.y + bl + h / 2 + offset; }
 
       const connKey = a.conn.from + ':' + a.conn.to;
       if (!portMap.has(connKey)) portMap.set(connKey, {});
@@ -1801,10 +1804,10 @@ function renderConnections() {
     const bl = el.clientLeft || 1;
     // Canvas coords = note.x + borderLeft + CSS_left (absolute positioning origin = padding edge)
     let x = note.x, y = note.y;
-    if (side === 'bottom') { x += Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h - bl / 2; }
-    else if (side === 'left')  { x += bl / 2; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
-    else if (side === 'right') { x += w - bl / 2; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
-    else { x += w / 2; } // top fallback (legacy)
+    if (side === 'bottom') { x += bl + Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h - bl / 2; }
+    else if (side === 'left')  { x += bl / 2; y += bl + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else if (side === 'right') { x += w - bl / 2; y += bl + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else { x += bl + w / 2; } // top fallback (legacy)
     return { x, y };
   }
 
