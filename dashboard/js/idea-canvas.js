@@ -1648,12 +1648,12 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   if (perpendicular && srcHorz) {
     // L-corner at (sx, ey). After corner, horizontal goes sx→ex.
     // Only extend if target is far enough in escape direction.
-    if (fromSide === 'right' && ex > sx + E) sx = ex;
-    if (fromSide === 'left'  && ex < sx - E) sx = ex;
+    // DISABLED: if (fromSide === 'right' && ex > sx + E) sx = ex;
+    // DISABLED: if (fromSide === 'left'  && ex < sx - E) sx = ex;
   }
   if (perpendicular && !srcHorz) {
     // L-corner at (ex, sy). After corner, vertical goes sy→ey.
-    if (fromSide === 'bottom' && ey > sy + E) sy = ey;
+    // DISABLED: if (fromSide === 'bottom' && ey > sy + E) sy = ey;
   }
 
   // ── Route between escape points ──
