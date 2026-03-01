@@ -1632,9 +1632,9 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   // Target escape: only needed when path would arrive from inside the card
   // (approach from wrong direction). Evaluated after source escape so sx/sy are final.
   const tgtEscaped = !!toSide && (
-    (toSide === 'right'  && sx < x2 + E) ||
-    (toSide === 'left'   && sx > x2 - E) ||
-    (toSide === 'bottom' && sy < y2 + E)
+    (toSide === 'right'  && sx < x2) ||
+    (toSide === 'left'   && sx > x2) ||
+    (toSide === 'bottom' && sy < y2)
   );
   const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
   const ey = tgtEscaped && toSide === 'bottom' ? y2 + E : y2;
