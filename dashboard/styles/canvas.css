@@ -368,11 +368,3 @@
   display: none !important;
 }
 
-/* Non-selected notes: let wheel events pass through to canvas */
-.note:not(.selected) .note-body {
-  pointer-events: none;
-}
-.note:not(.selected) .note-body a,
-.note:not(.selected) .note-body .note-text {
-  pointer-events: auto;
-}
