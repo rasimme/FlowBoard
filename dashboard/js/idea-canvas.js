@@ -1663,10 +1663,19 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   if (adx < 1 && ady < 1) {
     // Same point — no mid waypoints needed
   } else if (midOriA === 'vertical' && midOriB === 'vertical') {
-    // V→H→V: go vertical to midY, horizontal, vertical.
-    // Near same height: detour below both dots to avoid card overlap.
-    const my = ady > 2 * E ? (sy + ey) / 2 : Math.max(sy, ey) + E;
-    mid.push([sx, my], [ex, my]);
+    // Both ends want vertical routing.
+    // Check if a simple L-shape (V→H) suffices: when source-escape already passed
+    // the target vertically (or vice versa), no mid-horizontal needed.
+    // V→H L-shape works when we can go straight vertical to ey then horizontal to ex.
+    // Use L-shape when NO target escape and no horizontal-to-horizontal forced routing.
+    if (!tgtEscaped && !horzToHorz && adx > 1) {
+      // V→H L-shape: go vertical to target Y, then horizontal
+      mid.push([sx, ey]);
+    } else {
+      // V→H→V: full staircase with midpoint or detour
+      const my = ady > 2 * E ? (sy + ey) / 2 : Math.max(sy, ey) + E;
+      mid.push([sx, my], [ex, my]);
+    }
   } else if (midOriA === 'horizontal' && midOriB === 'horizontal') {
     // H→V→H: go horizontal to midX, vertical, horizontal
     const mx = (sx + ex) / 2;
@@ -1954,6 +1963,7 @@ function renderConnections() {
     const fromNote  = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
     const pathD = routePath(ax, ay, bx, by, sideA, sideB);
+    console.log('[ROUTE]', conn.from+':'+sideA, '→', conn.to+':'+sideB, 'pts:', ax.toFixed(0), ay.toFixed(0), bx.toFixed(0), by.toFixed(0), 'd:', pathD.substring(0, 120));
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'conn-line-group');
