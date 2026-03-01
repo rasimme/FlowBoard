@@ -1248,6 +1248,9 @@ function onCanvasMouseUp(e) {
           canvasState.selectedIds.add(noteId);
           noteEl?.classList.add('selected');
         }
+      } else if (e.ctrlKey || e.metaKey) {
+        // Ctrl/Cmd+Click on mouseup: toggle (mirrors mousedown handler)
+        // (already handled in mousedown, but guard here too to prevent clear)
       } else {
         // Plain click: select only this
         canvasState.selectedIds.clear();
@@ -1256,6 +1259,7 @@ function onCanvasMouseUp(e) {
         noteEl?.classList.add('selected');
       }
       renderPromoteButton();
+      updateToolbar();
     }
     return;
   }
