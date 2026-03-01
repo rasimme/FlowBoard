@@ -1627,88 +1627,54 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   const E = MIN_ESCAPE;
   const r = CORNER_RADIUS;
 
-  // ── Rule 1: Escape = minimum clearance in dot's natural direction ──
-  // The line MUST go at least E pixels in the dot's direction before turning.
-  // But if the target is further in that direction, extend the segment — don't
-  // force a bend at E when going straight is shorter.
+  // ── Escape points: fixed E in dot's natural direction ──
+  function esc(x, y, side) {
+    if (side === 'right')  return [x + E, y];
+    if (side === 'left')   return [x - E, y];
+    if (side === 'bottom') return [x, y + E];
+    return [x, y];
+  }
 
-  // Target escape point (compute first — source needs to know where target escape is)
+  let [sx, sy] = esc(x1, y1, fromSide);
+  const [ex, ey] = toSide ? esc(x2, y2, toSide) : [x2, y2];
+
   const srcHorz = (fromSide === 'right' || fromSide === 'left');
   const tgtHorz = !!toSide && (toSide === 'right' || toSide === 'left');
-  let ex, ey;
-  if (!toSide)                  { ex = x2; ey = y2; }
-  else if (toSide === 'right')  { ex = x2 + E; ey = y2; }
-  else if (toSide === 'left')   { ex = x2 - E; ey = y2; }
-  else if (toSide === 'bottom') { ex = x2; ey = y2 + E; }
-  else                          { ex = x2; ey = y2; }
-
-  // Source escape: always at least E in dot direction.
-  // Extension rule: only extend toward target escape when the L-shape corner
-  // would be ON the escape segment (same perpendicular coordinate).
-  // For perpendicular connections (right↔bottom), the source horizontal segment
-  // can extend to the target's x (since the L-corner is at that x).
-  // For parallel connections, NO extension — each side keeps its own E escape.
-  let sx, sy;
-  if (fromSide === 'right')       { sx = x1 + E; sy = y1; }
-  else if (fromSide === 'left')   { sx = x1 - E; sy = y1; }
-  else if (fromSide === 'bottom') { sx = x1; sy = y1 + E; }
-  else                            { sx = x1; sy = y1; }
-
-  // For perpendicular L-shapes: extend source segment to reach the L-corner
-  // directly (corner is at sx,ey for srcHorz or ex,sy for srcVert).
-  // This merges the escape into the L without extra bends.
   const perpendicular = !!toSide && (srcHorz !== tgtHorz);
+
+  // ── Perpendicular optimization: extend escape to reach L-corner directly ──
+  // Merges escape stub + first L-segment → fewer bends.
+  // Only extend in the escape direction (right→further right, never backwards).
   if (perpendicular && srcHorz) {
-    // Source goes horizontal → L-corner at (sx, ey) → extend sx to ex if in escape direction
     if (fromSide === 'right' && ex > sx) sx = ex;
     if (fromSide === 'left'  && ex < sx) sx = ex;
   }
   if (perpendicular && !srcHorz) {
-    // Source goes vertical → L-corner at (ex, sy) → extend sy to ey if in escape direction
     if (fromSide === 'bottom' && ey > sy) sy = ey;
   }
 
-  // ── Rule 2: Simplest path (fewest bends) ──
-  const parallel = !!toSide && (srcHorz === tgtHorz);
-  // Opposite: same axis but facing each other (left→right, right→left)
-  const opposite = parallel && (
-    (fromSide === 'left'  && toSide === 'right') ||
-    (fromSide === 'right' && toSide === 'left')
-  );
-
+  // ── Route between escape points ──
   let mid;
-  if (!toSide) {
-    // Free drag: simple L
+
+  if (!toSide || perpendicular) {
+    // L-shape: one corner connecting perpendicular directions
     mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
-  } else if (opposite) {
-    // Facing each other: straight horizontal if same height, S-shape if different
-    // The escape extension already made sx/ex meet or overlap → just connect vertically
-    const mx = (sx + ex) / 2;
-    if (Math.abs(sy - ey) < 1) {
-      mid = []; // straight line, escapes handle it
-    } else {
-      mid = [[mx, sy], [mx, ey]]; // S-shape through midpoint
-    }
-  } else if (parallel) {
-    // Same-side parallel (right→right, left→left, bottom→bottom): Z-shape with detour
-    if (srcHorz) {
-      let my = (sy + ey) / 2;
-      if (Math.abs(sy - ey) < 2 * E) my = Math.max(sy, ey) + E;
-      mid = [[sx, my], [ex, my]];
-    } else {
-      let mx = (sx + ex) / 2;
-      if (Math.abs(sx - ex) < 2 * E) mx = Math.max(sx, ex) + E;
-      mid = [[mx, sy], [mx, ey]];
-    }
   } else {
-    // L-shape: one corner at the intersection of escape directions
-    mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
+    // Parallel: S-shape with midpoint BETWEEN endpoints.
+    // Key rule: midpoint is always (sx+ex)/2 or (sy+ey)/2 — never outside
+    // the range of the two escape points. This prevents down-then-up reversals.
+    if (srcHorz) {
+      const mx = (sx + ex) / 2;
+      mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
+    } else {
+      const my = (sy + ey) / 2;
+      mid = (Math.abs(sx - ex) < 1) ? [] : [[sx, my], [ex, my]];
+    }
   }
 
   const pts = [[x1, y1], [sx, sy], ...mid, [ex, ey], [x2, y2]];
   return ptsToRoundedPath(pts, r);
 }
-
 function manhattanPath(x1, y1, x2, y2, oriA = 'horizontal', oriB = 'horizontal') {
   const r   = CORNER_RADIUS;
   const dx  = x2 - x1;
