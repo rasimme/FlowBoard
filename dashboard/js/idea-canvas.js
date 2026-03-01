@@ -1641,15 +1641,19 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   // the horizontal segment would run along the card edge. Force source escape +
   // route below both dots to create visible clearance.
   const bottomClearance = toSide === 'bottom' && Math.abs(y1 - y2) < E;
+  // Bottom dot below: when source is below a bottom-dot target, force V routing
+  // so the path goes up near the source, not horizontal across to the target.
+  const bottomBelow = toSide === 'bottom' && y1 > y2;
 
   // Source escape: trigger early (2*E threshold) + forced when target needs escape
-  // + forced when bottom-dot needs vertical clearance
+  // + forced when bottom-dot needs vertical clearance or source is below
   const srcEscaped =
     (fromSide === 'right'  && x2 < x1 + 2*E) ||
     (fromSide === 'left'   && x2 > x1 - 2*E) ||
     (fromSide === 'bottom' && y2 < y1 + 2*E) ||
     tgtWillEscape ||    // Force V exit to avoid horizontal card crossing
-    bottomClearance;    // Force V exit for bottom-dot card-edge clearance
+    bottomClearance ||  // Force V exit for bottom-dot card-edge clearance
+    bottomBelow;        // Force V exit so path routes up near source, not at target
   let sx = srcEscaped ? (fromSide === 'right' ? x1 + E : fromSide === 'left' ? x1 - E : x1) : x1;
   const sy = srcEscaped && fromSide === 'bottom' ? y1 + E : y1;
   // For bottom-dot targets: if source escaped position is within the target card's
@@ -1669,11 +1673,13 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
     (toSide === 'bottom' && sy < y2)
   );
   const ex = tgtEscaped ? (toSide === 'right' ? x2 + E : toSide === 'left' ? x2 - E : x2) : x2;
-  // Bottom dot: approach from below with E clearance ONLY when source is close in height
-  // or above the target. When source is far below (sy > y2+E), the path naturally
-  // approaches from below — no extra clearance needed, avoids unnecessary staircase.
+  // Bottom dot approach clearance:
+  // - bottomClearance (close height): route below max(sy,y2)+E
+  // - bottomBelow (source below): y2+E so horizontal doesn't touch card edge
+  // - source above/close: y2+E for approach clearance
+  // - source far below, no bottom flags: y2 (natural approach from below)
   const ey = toSide === 'bottom'
-    ? (bottomClearance ? Math.max(sy, y2) + E : (sy < y2 + E ? y2 + E : y2))
+    ? (bottomClearance ? Math.max(sy, y2) + E : ((bottomBelow || sy < y2 + E) ? y2 + E : y2))
     : (tgtEscaped ? y2 + E : y2);
 
   // Mid orientation: natural exit direction; switch to perpendicular after escape
