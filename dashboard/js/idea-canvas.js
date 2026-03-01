@@ -300,7 +300,7 @@ function noteHTML(note) {
 function createNoteElement(note) {
   const el = document.createElement('div');
   el.id = 'note-' + note.id;
-  el.className = `note color-${note.color || 'yellow'}${note.size === 'medium' ? ' size-medium' : ''}`;
+  el.className = `note color-${note.color || 'grey'}${note.size === 'medium' ? ' size-medium' : ''}`;
   if (note.size === 'medium') el.style.width = '280px';
   if (canvasState.selectedIds.has(note.id)) el.classList.add('selected');
   el.style.left = note.x + 'px';
@@ -357,7 +357,7 @@ async function createNoteAt(x, y) {
   try {
     const res = await api(`/projects/${canvasState._state.viewedProject}/canvas/notes`, {
       method: 'POST',
-      body: { text: '', x: Math.round(x), y: Math.round(y), color: 'yellow' }
+      body: { text: '', x: Math.round(x), y: Math.round(y), color: 'grey' }
     });
     if (res.ok) {
       canvasState.notes.push(res.note);
@@ -526,7 +526,7 @@ function openSidebar(noteId) {
   if (!sidebar || !textarea) return;
 
   sidebar.classList.add('open');
-  colorBar.className = `canvas-sidebar-color-bar sidebar-color-${note.color || 'yellow'}`;
+  colorBar.className = `canvas-sidebar-color-bar sidebar-color-${note.color || 'grey'}`;
   noteIdEl.textContent = note.id;
   textarea.value = note.text || '';
   // Prevent browser scroll/viewport adjustments when focusing the sidebar textarea
@@ -694,7 +694,7 @@ function showColorPopover() {
   // Determine current color (first selected note)
   const firstId = [...canvasState.selectedIds][0];
   const firstNote = canvasState.notes.find(n => n.id === firstId);
-  const currentColor = firstNote?.color || 'yellow';
+  const currentColor = firstNote?.color || 'grey';
 
   NOTE_COLORS.forEach(color => {
     const swatch = document.createElement('span');
@@ -1825,7 +1825,7 @@ function renderPorts(connectedPorts) {
     const el = document.getElementById('note-' + note.id);
     if (!el) continue;
     const w = el.offsetWidth, h = el.offsetHeight;
-    const noteColor = note.color || 'yellow';
+    const noteColor = note.color || 'grey';
     const cardStroke = COLOR_STROKE[noteColor] || 'var(--border-strong)';
 
     for (const side of sides) {
