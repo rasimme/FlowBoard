@@ -2646,11 +2646,10 @@ function showConnectionDeleteBtn(from, to, svgPath) {
 
   // Place button inside canvasViewport — it inherits the pan/zoom transform automatically.
   // Counteract scale so the button stays the same visual size.
-  const s = canvasState.scale;
   const btn = document.createElement('button');
   btn.className = 'btn btn-danger btn-sm conn-delete-overlay';
   btn.title = 'Delete connection';
-  btn.style.cssText = `position:absolute;left:${midX}px;top:${midY}px;transform:translate(-50%,-50%) scale(${1/s});transform-origin:center;z-index:40;padding:5px 7px;line-height:0;`;
+  btn.style.cssText = `position:absolute;left:${midX}px;top:${midY}px;transform:translate(-50%,-50%);z-index:40;padding:5px 7px;line-height:0;`;
   btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>';
   btn.addEventListener('mousedown', e => e.stopPropagation());
   btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
@@ -2668,9 +2667,11 @@ function showConnectionDeleteBtn(from, to, svgPath) {
         btn.remove();
         canvasState.selectedConn = null;
         document.removeEventListener('click', close);
+        document.removeEventListener('touchstart', close);
       }
     };
     document.addEventListener('click', close);
+    document.addEventListener('touchstart', close);
   }, 0);
 }
 
