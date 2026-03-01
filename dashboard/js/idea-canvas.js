@@ -1040,12 +1040,18 @@ function applyFormatting(type) {
 
     if (multiLine) {
       // Multi-line: apply/toggle per line
-      const allWrapped = lines.every(l => l.startsWith(marker) && l.endsWith(marker) && l.length > marker.length * 2);
+      // Exact marker match: * must not be ** (italic check shouldn't match bold)
+      const exactWrapped = l => {
+        const s = l.startsWith(marker) && !l.startsWith(marker + marker[0]);
+        const e = l.endsWith(marker)   && !l.slice(0, -marker.length).endsWith(marker[0]);
+        return s && e && l.length > marker.length * 2;
+      };
+      const allWrapped = lines.every(l => l.trim() === '' || exactWrapped(l));
       const result = allWrapped
-        ? lines.map(l => l.slice(marker.length, -marker.length)).join('\n')
+        ? lines.map(l => exactWrapped(l) ? l.slice(marker.length, -marker.length) : l).join('\n')
         : lines.map(l => {
-            if (l.startsWith(marker) && l.endsWith(marker) && l.length > marker.length * 2) return l;
-            return l.trim() === '' ? l : marker + l + marker;
+            if (exactWrapped(l) || l.trim() === '') return l;
+            return marker + l + marker;
           }).join('\n');
       ta.value = val.substring(0, start) + result + trailing + val.substring(end);
       ta.setSelectionRange(start, start + result.length);
