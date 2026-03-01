@@ -1270,6 +1270,7 @@ function bindCanvasEvents() {
   wrap.addEventListener('mouseup',    onCanvasMouseUp);
   wrap.addEventListener('mouseleave', onCanvasMouseUp);
   wrap.addEventListener('wheel',      onCanvasWheel, { passive: false });
+
   wrap.addEventListener('touchstart', onTouchStart,  { passive: false });
   wrap.addEventListener('touchmove',  onTouchMove,   { passive: false });
   wrap.addEventListener('touchend',   onTouchEnd);
@@ -1706,6 +1707,13 @@ function applyLassoSelection(screenRect) {
 }
 
 function onCanvasWheel(e) {
+  // If inside a selected note with scrollable content, let it scroll naturally
+  const noteEl = e.target.closest?.('.note');
+  const noteBody = e.target.closest?.('.note-body');
+  if (noteEl?.classList.contains('selected') && noteBody && noteBody.scrollHeight > noteBody.clientHeight) {
+    // Don't preventDefault — let note scroll
+    return;
+  }
   e.preventDefault();
   if (e.ctrlKey || e.metaKey) {
     // Zoom toward cursor
