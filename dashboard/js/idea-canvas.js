@@ -471,25 +471,14 @@ export function startNoteEdit(id) {
   ta.addEventListener('click', e => e.stopPropagation());
   ta.addEventListener('mousedown', e => e.stopPropagation());
 
-  // Auto-grow card + textarea as user types (up to max-height, then scroll)
-  const NOTE_MAX_H = note.size === 'medium' ? 300 : 200;
-  const HEADER_H = el.querySelector('.note-header')?.offsetHeight || 28;
+  // Auto-grow textarea as user types; CSS handles body max-height + scroll
   const autoGrow = () => {
-    const body = el.querySelector('.note-body');
-    if (!body) return;
-    // Reset heights to measure true scrollHeight
     ta.style.height = '1px';
-    body.style.height = '1px';
-    const contentH = ta.scrollHeight;
-    const bodyH = Math.min(contentH, NOTE_MAX_H - HEADER_H);
-    body.style.height = bodyH + 'px';
-    body.style.overflowY = contentH > NOTE_MAX_H - HEADER_H ? 'auto' : 'hidden';
-    ta.style.height = contentH + 'px';
+    ta.style.height = ta.scrollHeight + 'px';
     renderConnections();
     updateToolbar();
   };
   ta.addEventListener('input', autoGrow);
-  // Initial size on open
   requestAnimationFrame(autoGrow);
 
   updateToolbar(); // show format section in toolbar
@@ -516,6 +505,9 @@ export async function saveNoteText(id, text) {
       delete el.dataset.editLockHeight;
       el.style.minHeight = '';
     }
+    // Clear any inline heights set during edit mode
+    const body = el.querySelector('.note-body');
+    if (body) { body.style.height = ''; body.style.overflowY = ''; }
     el.classList.remove('editing');
   }
   renderConnections();
