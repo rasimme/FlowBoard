@@ -966,9 +966,9 @@ function bindCanvasEvents() {
 
   // Scrollable note-body: intercept wheel to scroll content instead of canvas zoom
   wrap.addEventListener('wheel', e => {
-    const body = e.target.closest('.note.selected .note-body');
+    const body = e.target.closest('.note .note-body');
     if (body && body.scrollHeight > body.clientHeight) {
-      e.stopPropagation();
+      e.stopPropagation(); // scroll note content, not canvas zoom
     }
   }, { passive: false, capture: true });
 
@@ -1358,7 +1358,7 @@ function onTouchStart(e) {
     return; // Let browser handle textarea touch natively
   }
   // If touching inside a scrollable note-body of a selected card, let browser handle scroll
-  const touchBody = touchTarget?.closest('.note.selected .note-body');
+  const touchBody = touchTarget?.closest('.note .note-body');
   if (touchBody && touchBody.scrollHeight > touchBody.clientHeight && !touchTarget?.closest('.note-header')) {
     return; // native touch scroll on note content
   }

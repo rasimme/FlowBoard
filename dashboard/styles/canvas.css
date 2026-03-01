@@ -193,13 +193,12 @@
   max-height: 300px;
 }
 
-/* Selected cards: scrollable, no truncation fade */
-.note.selected .note-body {
-  max-height: none;
+/* Hovered cards: scrollable within existing height, truncation fade hidden */
+.note:hover .note-body {
   overflow-y: auto;
 }
-.note.selected .note-body.truncated::after,
-.note.selected .note-body.truncated::before {
+.note:hover .note-body.truncated::after,
+.note:hover .note-body.truncated::before {
   display: none;
 }
 
