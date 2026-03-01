@@ -173,7 +173,7 @@ function renderEmptyState() {
       el.innerHTML = `<div class="canvas-empty-icon">${ICONS.lightbulb}</div>
         <div>Double-click to create your first idea</div>
         <div style="font-size:12px;opacity:0.6">or use the + Note button</div>`;
-      vp.appendChild(el);
+      document.getElementById("canvasWrap").appendChild(el);
     }
   } else {
     if (existing) existing.remove();
