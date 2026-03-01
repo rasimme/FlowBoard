@@ -1202,7 +1202,7 @@ function onCanvasMouseMove(e) {
 
     const prev = document.getElementById('conn-preview');
     if (prev && fromPt) {
-      prev.setAttribute('d', manhattanPath(fromPt.x, fromPt.y, tx, ty, oriA, oriB));
+      prev.setAttribute('d', routePath(fromPt.x, fromPt.y, tx, ty, fromPort, nearestPort));
     }
     return;
   }
@@ -1564,6 +1564,33 @@ function onTouchEnd(e) {
  * @param {"horizontal"|"vertical"} orientation  Routing direction based on source port side
  * @returns {string}   SVG path `d` attribute value
  */
+const MIN_ESCAPE = 28; // px — mandatory exit distance from source card edge
+
+/**
+ * Wrapper around manhattanPath that enforces a minimum escape from the source side.
+ * Right/left dots must first move horizontally AWAY from the card;
+ * bottom dots must first move DOWN before any turn.
+ */
+function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
+  const oriA = (fromSide === 'top' || fromSide === 'bottom') ? 'vertical' : 'horizontal';
+  const oriB = toSide
+    ? ((toSide === 'top' || toSide === 'bottom') ? 'vertical' : 'horizontal')
+    : oriA;
+
+  // Compute escaped start point
+  let ex = x1, ey = y1;
+  if (fromSide === 'right'  && x2 < x1 + MIN_ESCAPE) ex = x1 + MIN_ESCAPE;
+  if (fromSide === 'left'   && x2 > x1 - MIN_ESCAPE) ex = x1 - MIN_ESCAPE;
+  if (fromSide === 'bottom' && y2 < y1 + MIN_ESCAPE) ey = y1 + MIN_ESCAPE;
+
+  const body = manhattanPath(ex, ey, x2, y2, oriA, oriB);
+  if (ex === x1 && ey === y1) return body;
+
+  // Prepend M orig L escaped, then drop the redundant M from body
+  const bodyTail = body.replace(`M ${ex} ${ey} `, '').replace(`M ${ex} ${ey}`, '');
+  return `M ${x1} ${y1} L ${ex} ${ey} ${bodyTail}`;
+}
+
 function manhattanPath(x1, y1, x2, y2, oriA = 'horizontal', oriB = 'horizontal') {
   const r   = CORNER_RADIUS;
   const dx  = x2 - x1;
@@ -1833,9 +1860,7 @@ function renderConnections() {
 
     const fromNote  = canvasState.notes.find(n => n.id === conn.from);
     const strokeCol = COLOR_STROKE[fromNote?.color] || 'var(--border-strong)';
-    const oriA = (sideA === 'top' || sideA === 'bottom') ? 'vertical' : 'horizontal';
-    const oriB = (sideB === 'top' || sideB === 'bottom') ? 'vertical' : 'horizontal';
-    const pathD = manhattanPath(ax, ay, bx, by, oriA, oriB);
+    const pathD = routePath(ax, ay, bx, by, sideA, sideB);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'conn-line-group');
