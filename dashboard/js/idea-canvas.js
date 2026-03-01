@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=8';
+  _l.href = './styles/canvas.css?v=9';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -1154,14 +1154,23 @@ function onCanvasMouseMove(e) {
     document.querySelectorAll('.note').forEach(noteEl => {
       if (noteEl.id === 'note-' + canvasState.connecting.fromId) return;
       const targetId = noteEl.id.replace('note-', '');
+      const targetNote = canvasState.notes.find(n => n.id === targetId);
+      if (!targetNote) return;
+      const tBl = noteEl.clientLeft || 1;
 
-      ['top', 'right', 'bottom', 'left'].forEach(port => {
-        const portPos = getNoteDotPosition(targetId, port);
-        if (!portPos) return;
+      // Only 3 sides (no top), snap to the FREE dot (last slot) on each side
+      ['right', 'bottom', 'left'].forEach(port => {
+        const freeDot = noteEl.querySelector(`.conn-dot-free.conn-dot-${port}`);
+        if (!freeDot) return;
+        const dLeft = parseFloat(freeDot.dataset.dotLeft);
+        const dTop  = parseFloat(freeDot.dataset.dotTop);
+        if (isNaN(dLeft) || isNaN(dTop)) return;
+        // Canvas coords = note position + border + CSS offset
+        const portPos = { x: targetNote.x + tBl + dLeft, y: targetNote.y + tBl + dTop };
         const d = Math.hypot(pos.x - portPos.x, pos.y - portPos.y);
         if (d < nearestDist) {
           nearestDist = d;
-          nearestDot = noteEl.querySelector(`.conn-dot-${port}`);
+          nearestDot = freeDot;
           nearestNoteId = targetId;
           nearestPort = port;
           tx = portPos.x;
@@ -1270,6 +1279,10 @@ function onCanvasMouseUp(e) {
 
   // End connection drag — only commit if cursor was snapped to a valid port
   if (canvasState.connecting) {
+    // Clear active-dot class from the dragged dot
+    if (canvasState.connecting._activeDotEl) {
+      canvasState.connecting._activeDotEl.classList.remove('conn-dot-active');
+    }
     const { fromId, fromPort, snapTargetId, snapValid, snapPort } = canvasState.connecting;
     if (snapValid && snapTargetId && snapTargetId !== fromId) {
       saveConnection(fromId, snapTargetId, fromPort, snapPort);
@@ -1785,10 +1798,11 @@ function renderConnections() {
     if (idx === -1) return getNoteDotPosition(noteId, side);
     const offset = stackOffset(idx);
     const bl = el.clientLeft || 1;
+    // Canvas coords = note.x + borderLeft + CSS_left (absolute positioning origin = padding edge)
     let x = note.x, y = note.y;
-    if (side === 'bottom') { x += Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h - bl * 1.5; }
+    if (side === 'bottom') { x += Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h - bl / 2; }
     else if (side === 'left')  { x += bl / 2; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
-    else if (side === 'right') { x += w - bl * 1.5; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else if (side === 'right') { x += w - bl / 2; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
     else { x += w / 2; } // top fallback (legacy)
     return { x, y };
   }
@@ -1885,7 +1899,7 @@ function renderPorts(connectedPorts) {
           left = Math.max(8, Math.min(w - 8, w / 2 + offset));
           top = h - bl * 1.5;
         } else if (side === 'left') {
-          left = bl / 2;
+          left = -bl / 2;
           top = Math.max(8, Math.min(h - 8, h / 2 + offset));
         } else { // right
           left = w - bl * 1.5;
@@ -1938,9 +1952,13 @@ export function startConnectionDrag(e, noteId, port) {
   let pt;
   const dotEl = e.target?.closest?.('.conn-dot') || e.target;
   if (dotEl?.dataset?.dotLeft !== undefined) {
+    const bl = (document.getElementById('note-' + noteId)?.clientLeft) || 1;
     const dLeft = parseFloat(dotEl.dataset.dotLeft);
     const dTop  = parseFloat(dotEl.dataset.dotTop);
-    pt = { x: note.x + dLeft, y: note.y + dTop };
+    pt = { x: note.x + bl + dLeft, y: note.y + bl + dTop };
+    // Keep the dragged dot visible during the drag
+    dotEl.classList.add('conn-dot-active');
+    canvasState.connecting._activeDotEl = dotEl;
   } else {
     pt = getNoteDotPosition(noteId, port);
   }

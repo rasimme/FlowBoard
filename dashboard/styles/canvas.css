@@ -121,6 +121,9 @@
 .note:hover .conn-dot-free,
 .note.selected .conn-dot-free { opacity: 0.85; }
 
+/* Active dot: the dot being dragged from — stays visible even when hover leaves */
+.conn-dot-active { opacity: 1 !important; }
+
 /* Connected dots: filled with line color + dark outer shadow ring */
 .conn-dot-connected {
   box-shadow: 0 0 0 1.5px var(--bg);
