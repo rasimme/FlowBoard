@@ -1741,14 +1741,14 @@ function onTouchStart(e) {
   if (touchTarget?.closest('.conn-dot')) {
     return;
   }
-  // If touching inside a note-body with overflow content, let browser handle scroll.
-  // Check both actual scroll AND truncated class (overflow:hidden hides scrollHeight).
+  // If touching inside a selected note-body, let browser handle scroll.
+  // Selected notes have overflow-y:auto, so check if content exceeds visible area.
+  const touchNote = touchTarget?.closest('.note');
   const touchBody = touchTarget?.closest('.note .note-body');
-  if (touchBody && !touchTarget?.closest('.note-header')) {
-    const hasOverflow = touchBody.scrollHeight > touchBody.clientHeight || touchBody.classList.contains('truncated');
-    if (hasOverflow) {
-      // Temporarily enable scroll so touch works
-      touchBody.style.overflowY = 'auto';
+  if (touchBody && touchNote?.classList.contains('selected') && !touchTarget?.closest('.note-header')) {
+    // Force overflow for scroll, then check if scrollable
+    touchBody.style.overflowY = 'auto';
+    if (touchBody.scrollHeight > touchBody.clientHeight) {
       return; // native touch scroll on note content
     }
   }
