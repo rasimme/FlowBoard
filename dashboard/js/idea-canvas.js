@@ -1151,21 +1151,32 @@ function insertLinePrefix(ta, prefix) {
   const end = ta.selectionEnd;
   const val = ta.value;
 
+  // Detect and strip the other list type before applying
+  const otherPrefix = prefix === '- ' ? /^\d+\. / : /^- /;
+  function stripOther(line) {
+    return line.replace(otherPrefix, '');
+  }
+
   // Find start of current line
   let lineStart = val.lastIndexOf('\n', start - 1) + 1;
 
   if (start === end) {
-    const line = val.substring(lineStart, val.indexOf('\n', lineStart) === -1 ? val.length : val.indexOf('\n', lineStart));
+    const lineEnd = val.indexOf('\n', lineStart) === -1 ? val.length : val.indexOf('\n', lineStart);
+    const line = val.substring(lineStart, lineEnd);
     if (line.startsWith(prefix)) {
       // Toggle off: remove prefix
       ta.value = val.substring(0, lineStart) + val.substring(lineStart + prefix.length);
       ta.setSelectionRange(Math.max(lineStart, start - prefix.length), Math.max(lineStart, start - prefix.length));
+    } else if (otherPrefix.test(line)) {
+      // Replace other list type with this one
+      const stripped = stripOther(line);
+      ta.value = val.substring(0, lineStart) + prefix + stripped + val.substring(lineEnd);
+      ta.setSelectionRange(lineStart + prefix.length + stripped.length, lineStart + prefix.length + stripped.length);
     } else {
       ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
       ta.setSelectionRange(start + prefix.length, start + prefix.length);
     }
   } else {
-    // Selection: trim trailing newline (double-click includes it)
     const rawEnd = end;
     const trimEnd = val[rawEnd - 1] === '\n' ? rawEnd - 1 : rawEnd;
     const trailing = val.substring(trimEnd, rawEnd);
@@ -1176,7 +1187,7 @@ function insertLinePrefix(ta, prefix) {
     const allPrefixed = lines.every(l => l.startsWith(prefix));
     const result = allPrefixed
       ? lines.map(l => l.substring(prefix.length)).join('\n')
-      : lines.map(l => l.startsWith(prefix) ? l : prefix + l).join('\n');
+      : lines.map(l => l.startsWith(prefix) ? l : prefix + stripOther(l)).join('\n');
     ta.value = before + result + trailing + after;
     ta.setSelectionRange(lineStart, lineStart + result.length);
   }
@@ -1188,22 +1199,26 @@ function insertNumberedPrefix(ta) {
   const end = ta.selectionEnd;
   const val = ta.value;
 
+  function stripBullet(line) { return line.replace(/^- /, ''); }
+
   let lineStart = val.lastIndexOf('\n', start - 1) + 1;
 
   if (start === end) {
-    const line = val.substring(lineStart, val.indexOf('\n', lineStart) === -1 ? val.length : val.indexOf('\n', lineStart));
+    const lineEnd = val.indexOf('\n', lineStart) === -1 ? val.length : val.indexOf('\n', lineStart);
+    const line = val.substring(lineStart, lineEnd);
     const numMatch = line.match(/^\d+\. /);
     if (numMatch) {
       // Toggle off
       ta.value = val.substring(0, lineStart) + val.substring(lineStart + numMatch[0].length);
       ta.setSelectionRange(Math.max(lineStart, start - numMatch[0].length), Math.max(lineStart, start - numMatch[0].length));
     } else {
+      // Replace bullet if present, then add number
+      const stripped = stripBullet(line);
       const prefix = '1. ';
-      ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
-      ta.setSelectionRange(start + prefix.length, start + prefix.length);
+      ta.value = val.substring(0, lineStart) + prefix + stripped + val.substring(lineEnd);
+      ta.setSelectionRange(lineStart + prefix.length + stripped.length, lineStart + prefix.length + stripped.length);
     }
   } else {
-    // Trim trailing newline
     const rawEnd = end;
     const trimEnd = val[rawEnd - 1] === '\n' ? rawEnd - 1 : rawEnd;
     const trailing = val.substring(trimEnd, rawEnd);
@@ -1214,7 +1229,7 @@ function insertNumberedPrefix(ta) {
     const allNumbered = lines.every(l => /^\d+\. /.test(l));
     const result = allNumbered
       ? lines.map(l => l.replace(/^\d+\. /, '')).join('\n')
-      : lines.map((line, i) => /^\d+\. /.test(line) ? line : `${i + 1}. ${line}`).join('\n');
+      : lines.map((line, i) => `${i + 1}. ${stripBullet(line.replace(/^\d+\. /, ''))}`).join('\n');
     ta.value = before + result + trailing + after;
     ta.setSelectionRange(lineStart, lineStart + result.length);
   }
