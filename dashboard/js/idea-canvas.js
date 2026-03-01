@@ -188,18 +188,18 @@ export async function renderIdeaCanvas(state) {
       </div>
       <div class="canvas-lasso" id="canvasLasso"></div>
       <div class="canvas-floating-toolbar" id="canvasToolbar" style="display:none">
-        <div class="toolbar-section toolbar-props">
-          <button class="toolbar-btn" id="tbColor" title="Color">🎨</button>
-          <button class="toolbar-btn" id="tbSize" title="Size">📐</button>
-          <button class="toolbar-btn toolbar-btn-danger" id="tbDelete" title="Delete">🗑</button>
-        </div>
         <div class="toolbar-section toolbar-format" id="toolbarFormat" style="display:none">
+          <button class="toolbar-btn" data-fmt="bold" title="Bold"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 010 8H6z"/><path d="M6 12h9a4 4 0 010 8H6z"/></svg></button>
+          <button class="toolbar-btn" data-fmt="italic" title="Italic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg></button>
+          <button class="toolbar-btn" data-fmt="bullet" title="Bullet list"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
+          <button class="toolbar-btn" data-fmt="number" title="Numbered list"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></button>
+          <button class="toolbar-btn" data-fmt="link" title="Link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></button>
           <div class="toolbar-separator"></div>
-          <button class="toolbar-btn" data-fmt="bold" title="Bold"><b>B</b></button>
-          <button class="toolbar-btn" data-fmt="italic" title="Italic"><i>I</i></button>
-          <button class="toolbar-btn" data-fmt="bullet" title="Bullet list">•</button>
-          <button class="toolbar-btn" data-fmt="number" title="Numbered list">1.</button>
-          <button class="toolbar-btn" data-fmt="link" title="Link">🔗</button>
+        </div>
+        <div class="toolbar-section toolbar-props">
+          <button class="toolbar-btn" id="tbColor" title="Color"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></button>
+          <button class="toolbar-btn" id="tbSize" title="Size"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4h7v7"/><path d="M4 20 20 4"/><path d="M4 11V4h7"/></svg></button>
+          <button class="toolbar-btn toolbar-btn-danger" id="tbDelete" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
         </div>
       </div>
       <div class="canvas-sidebar" id="canvasSidebar">
