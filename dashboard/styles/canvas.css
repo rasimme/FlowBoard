@@ -342,3 +342,8 @@
   font-family: inherit;
   resize: none;
 }
+
+/* Hide hover/free dots when note is in edit mode */
+.note.editing .conn-dot-free {
+  display: none !important;
+}
