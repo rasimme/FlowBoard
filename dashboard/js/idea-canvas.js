@@ -711,20 +711,23 @@ function showColorPopover() {
     pop.appendChild(swatch);
   });
 
-  // Position relative to canvasWrap to avoid toolbar reflow jump
+  // Position relative to canvasWrap — start off-screen to avoid 0,0 flash
   const wrap = document.getElementById('canvasWrap');
-  if (!wrap) { toolbar.appendChild(pop); return; }
+  if (!wrap) return;
   pop.style.position = 'absolute';
-  pop.style.visibility = 'hidden';
+  pop.style.left = '-9999px';
+  pop.style.top = '-9999px';
+  pop.style.zIndex = '40';
+  pop.addEventListener('mousedown', e => e.stopPropagation());
+  pop.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   wrap.appendChild(pop);
+  // Now measure and position
   const btnRect = btn.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
   const popW = pop.offsetWidth;
   const centered = btnRect.left - wrapRect.left + btnRect.width / 2 - popW / 2;
   pop.style.left = Math.max(4, centered) + 'px';
   pop.style.top = (btnRect.bottom - wrapRect.top + 4) + 'px';
-  pop.style.zIndex = '40';
-  pop.style.visibility = '';
 
   // Close on outside click
   setTimeout(() => {
@@ -767,20 +770,23 @@ function showSizePopover() {
     pop.appendChild(sizeBtn);
   });
 
-  // Position relative to canvasWrap to avoid toolbar reflow jump
+  // Position relative to canvasWrap — start off-screen to avoid 0,0 flash
   const wrap = document.getElementById('canvasWrap');
-  if (!wrap) { toolbar.appendChild(pop); return; }
+  if (!wrap) return;
   pop.style.position = 'absolute';
-  pop.style.visibility = 'hidden';
+  pop.style.left = '-9999px';
+  pop.style.top = '-9999px';
+  pop.style.zIndex = '40';
+  pop.addEventListener('mousedown', e => e.stopPropagation());
+  pop.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   wrap.appendChild(pop);
+  // Now measure and position
   const btnRect = btn.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
   const popW = pop.offsetWidth;
   const centered = btnRect.left - wrapRect.left + btnRect.width / 2 - popW / 2;
   pop.style.left = Math.max(4, centered) + 'px';
   pop.style.top = (btnRect.bottom - wrapRect.top + 4) + 'px';
-  pop.style.zIndex = '40';
-  pop.style.visibility = '';
 
   setTimeout(() => {
     const close = ev => {
