@@ -1746,12 +1746,13 @@ function onTouchStart(e) {
   const touchNote = touchTarget?.closest('.note');
   const touchBody = touchTarget?.closest('.note .note-body');
   if (touchBody && touchNote?.classList.contains('selected') && !touchTarget?.closest('.note-header')) {
-    // Force overflow for scroll, then check if scrollable
     touchBody.style.overflowY = 'auto';
     if (touchBody.scrollHeight > touchBody.clientHeight) {
+      canvasState._nativeScroll = true;
       return; // native touch scroll on note content
     }
   }
+  canvasState._nativeScroll = false;
   e.preventDefault();
   clearTimeout(_longPressTimer);
 
@@ -1854,6 +1855,8 @@ function onTouchMove(e) {
       return;
     }
   }
+  // Allow native scroll on selected note content
+  if (canvasState._nativeScroll) return;
   e.preventDefault();
   if (e.touches.length === 1) {
     const t = e.touches[0];
@@ -1917,6 +1920,7 @@ function onTouchMove(e) {
 
 function onTouchEnd(e) {
   clearTimeout(_longPressTimer);
+  canvasState._nativeScroll = false;
   if (e.touches.length === 0) {
     // Finish connection drag via touch
     if (canvasState.connecting) {
