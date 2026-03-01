@@ -1679,7 +1679,13 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
         mid = [[mx, sy], [mx, ey]];
       }
     } else {
-      // L-shape works without reversal
+      // L-shape: extend source escape to target coordinate for cleanest path.
+      // This is safe because wouldReverse is false → target IS in escape direction.
+      if (srcHorz) {
+        sx = (fromSide === 'right') ? Math.max(sx, ex) : Math.min(sx, ex);
+      } else {
+        sy = (fromSide === 'bottom') ? Math.max(sy, ey) : sy;
+      }
       mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
     }
   } else {
