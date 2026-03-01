@@ -1576,12 +1576,13 @@ function onTouchEnd(e) {
  * @param {"horizontal"|"vertical"} orientation  Routing direction based on source port side
  * @returns {string}   SVG path `d` attribute value
  */
-const MIN_ESCAPE = 28; // px — mandatory exit distance from source card edge
+const MIN_ESCAPE = 28; // px — mandatory clearance from card edge before routing
 
 /**
- * Wrapper around manhattanPath that enforces a minimum escape from the source side.
- * Right/left dots must first move horizontally AWAY from the card;
- * bottom dots must first move DOWN before any turn.
+ * Route a connection path with mandatory card-edge escapes on BOTH ends.
+ * - Source: first segment exits AWAY from the source card
+ * - Target: last segment arrives from OUTSIDE the target card
+ * - After source escape: route perpendicularly (no U-turn)
  */
 function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
   const oriA = (fromSide === 'top' || fromSide === 'bottom') ? 'vertical' : 'horizontal';
@@ -1589,25 +1590,32 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null) {
     ? ((toSide === 'top' || toSide === 'bottom') ? 'vertical' : 'horizontal')
     : oriA;
 
-  // Compute escaped start point
-  let ex = x1, ey = y1;
-  if (fromSide === 'right'  && x2 < x1 + MIN_ESCAPE) ex = x1 + MIN_ESCAPE;
-  if (fromSide === 'left'   && x2 > x1 - MIN_ESCAPE) ex = x1 - MIN_ESCAPE;
-  if (fromSide === 'bottom' && y2 < y1 + MIN_ESCAPE) ey = y1 + MIN_ESCAPE;
+  // Source escape: first segment must exit card in fromSide direction
+  let sx = x1, sy = y1;
+  if (fromSide === 'right'  && x2 < x1 + MIN_ESCAPE) sx = x1 + MIN_ESCAPE;
+  if (fromSide === 'left'   && x2 > x1 - MIN_ESCAPE) sx = x1 - MIN_ESCAPE;
+  if (fromSide === 'bottom' && y2 < y1 + MIN_ESCAPE) sy = y1 + MIN_ESCAPE;
+  const srcEscaped = sx !== x1 || sy !== y1;
 
-  // After a forced escape, the routing from the escape point should exit perpendicularly
-  // (e.g., right-escape + target-left → go down first, not back left)
-  const escaped = ex !== x1 || ey !== y1;
-  const actualOriA = escaped
-    ? (oriA === 'horizontal' ? 'vertical' : 'horizontal')
-    : oriA;
+  // Target escape: last segment must arrive from outside the target card
+  let tx = x2, ty = y2;
+  if (toSide === 'right'  && sx <  x2) tx = x2 + MIN_ESCAPE; // approach from right
+  if (toSide === 'left'   && sx >  x2) tx = x2 - MIN_ESCAPE; // approach from left
+  if (toSide === 'bottom' && sy <  y2) ty = y2 + MIN_ESCAPE; // approach from below
+  const tgtEscaped = tx !== x2 || ty !== y2;
 
-  const body = manhattanPath(ex, ey, x2, y2, actualOriA, oriB);
-  if (!escaped) return body;
+  // After source escape, route perpendicularly to avoid U-turn
+  const midOriA = srcEscaped ? (oriA === 'horizontal' ? 'vertical' : 'horizontal') : oriA;
 
-  // Prepend M orig L escaped, then drop the redundant M from body
-  const bodyTail = body.replace(`M ${ex} ${ey} `, '').replace(`M ${ex} ${ey}`, '');
-  return `M ${x1} ${y1} L ${ex} ${ey} ${bodyTail}`;
+  const mid = manhattanPath(sx, sy, tx, ty, midOriA, oriB);
+
+  let result = mid;
+  if (srcEscaped) {
+    const tail = mid.replace(`M ${sx} ${sy} `, '').replace(`M ${sx} ${sy}`, '');
+    result = `M ${x1} ${y1} L ${sx} ${sy} ${tail}`;
+  }
+  if (tgtEscaped) result += ` L ${x2} ${y2}`;
+  return result;
 }
 
 function manhattanPath(x1, y1, x2, y2, oriA = 'horizontal', oriB = 'horizontal') {
