@@ -198,7 +198,7 @@ export async function renderIdeaCanvas(state) {
         </div>
         <div class="toolbar-section toolbar-props">
           <button class="toolbar-btn" id="tbColor" title="Color"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg></button>
-          <button class="toolbar-btn" id="tbSize" title="Size"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4h7v7"/><path d="M4 20 20 4"/><path d="M4 11V4h7"/></svg></button>
+          <button class="toolbar-btn" id="tbSize" title="Size"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
           <button class="toolbar-btn toolbar-btn-danger" id="tbDelete" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
         </div>
       </div>
@@ -663,7 +663,7 @@ function updateToolbar() {
   const tbWidth = toolbar.offsetWidth;
   const tbHeight = toolbar.offsetHeight || 36;
   let tbX = (minX + maxX) / 2 - tbWidth / 2;
-  let tbY = minY - 8 - tbHeight;
+  let tbY = minY - 16 - tbHeight;
 
   // If near top edge, position below instead
   if (tbY < 4) {
@@ -727,7 +727,7 @@ function showColorPopover() {
   const popW = pop.offsetWidth;
   const centered = btnRect.left - wrapRect.left + btnRect.width / 2 - popW / 2;
   pop.style.left = Math.max(4, centered) + 'px';
-  pop.style.top = (btnRect.bottom - wrapRect.top + 4) + 'px';
+  pop.style.top = (btnRect.bottom - wrapRect.top + 10) + 'px';
 
   // Close on outside click
   setTimeout(() => {
@@ -786,7 +786,7 @@ function showSizePopover() {
   const popW = pop.offsetWidth;
   const centered = btnRect.left - wrapRect.left + btnRect.width / 2 - popW / 2;
   pop.style.left = Math.max(4, centered) + 'px';
-  pop.style.top = (btnRect.bottom - wrapRect.top + 4) + 'px';
+  pop.style.top = (btnRect.bottom - wrapRect.top + 10) + 'px';
 
   setTimeout(() => {
     const close = ev => {
