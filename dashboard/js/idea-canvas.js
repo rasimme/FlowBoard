@@ -448,10 +448,10 @@ export function startNoteEdit(id) {
   const note = canvasState.notes.find(n => n.id === id);
   if (!note) return;
 
-  // Keep card size stable while editing (prevents visual jump + port reposition)
+  // Record initial height so we can restore if user clears all text
   if (!el.dataset.editLockHeight) {
     el.dataset.editLockHeight = String(el.offsetHeight || 0);
-    if (el.offsetHeight) el.style.minHeight = el.offsetHeight + 'px';
+    // Don't lock min-height — let card grow with content up to CSS max-height
   }
 
   if (!body) return;
@@ -471,12 +471,16 @@ export function startNoteEdit(id) {
   ta.addEventListener('click', e => e.stopPropagation());
   ta.addEventListener('mousedown', e => e.stopPropagation());
 
-  // Resize note height as user types
-  ta.addEventListener('input', () => {
+  // Auto-grow textarea + card as user types (up to CSS max-height, then scroll)
+  const autoGrow = () => {
     ta.style.height = 'auto';
     ta.style.height = ta.scrollHeight + 'px';
     renderConnections(); // redraw lines as note grows
-  });
+    updateToolbar();     // keep toolbar positioned correctly
+  };
+  ta.addEventListener('input', autoGrow);
+  // Initial size on open
+  requestAnimationFrame(autoGrow);
 
   updateToolbar(); // show format section in toolbar
 }
