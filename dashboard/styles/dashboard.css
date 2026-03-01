@@ -878,11 +878,10 @@
       display: block;
     }
 
-    /* When a note is in edit mode: remove max-height + overflow clipping on body,
-       and make body + textarea fill available card height via flex */
+    /* When a note is in edit mode: allow card to grow up to max-height, then scroll */
     .note.editing .note-body {
-      max-height: none !important;
-      overflow: visible !important;
+      /* Keep max-height from canvas.css (200px/300px) — card grows up to that, then scrolls */
+      overflow-y: auto !important;
       display: flex !important;
       flex-direction: column !important;
       flex: 1 !important;
@@ -896,7 +895,7 @@
     .note.editing .note-textarea {
       flex: 1 !important;
       height: auto !important;
-      min-height: 80px !important;
+      min-height: 60px !important;
     }
 
     /* Note delete button: hidden until hover/selected */
