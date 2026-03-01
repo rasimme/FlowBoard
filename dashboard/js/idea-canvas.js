@@ -1021,8 +1021,23 @@ function applyFormatting(type) {
     const raw = val.substring(start, end);
     const trimmed = raw.trimEnd();
     const trailing = raw.substring(trimmed.length); // e.g. "\n" from double-click
+
+    // Toggle off: if trimmed selection is already wrapped, remove markers
+    if (trimmed.startsWith(marker) && trimmed.endsWith(marker) && trimmed.length > marker.length * 2) {
+      const inner = trimmed.slice(marker.length, -marker.length);
+      ta.value = val.substring(0, start) + inner + trailing + val.substring(end);
+      ta.setSelectionRange(start, start + inner.length);
+      return;
+    }
+    // Also check if markers are just outside the selection (e.g. user selected the inner text)
+    if (val.substring(start - marker.length, start) === marker &&
+        val.substring(end, end + marker.length) === marker) {
+      ta.value = val.substring(0, start - marker.length) + trimmed + trailing + val.substring(end + marker.length);
+      ta.setSelectionRange(start - marker.length, start - marker.length + trimmed.length);
+      return;
+    }
+
     if (trimmed.length > 0) {
-      // Keep trailing chars (newline etc.) after closing marker
       ta.value = val.substring(0, start) + marker + trimmed + marker + trailing + val.substring(end);
       ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
     } else {
@@ -1063,17 +1078,27 @@ function insertLinePrefix(ta, prefix) {
   let lineStart = val.lastIndexOf('\n', start - 1) + 1;
 
   if (start === end) {
-    // No selection: insert prefix at current line start
-    ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
-    ta.setSelectionRange(start + prefix.length, start + prefix.length);
+    const line = val.substring(lineStart, val.indexOf('\n', lineStart) === -1 ? val.length : val.indexOf('\n', lineStart));
+    if (line.startsWith(prefix)) {
+      // Toggle off: remove prefix
+      ta.value = val.substring(0, lineStart) + val.substring(lineStart + prefix.length);
+      ta.setSelectionRange(Math.max(lineStart, start - prefix.length), Math.max(lineStart, start - prefix.length));
+    } else {
+      ta.value = val.substring(0, lineStart) + prefix + val.substring(lineStart);
+      ta.setSelectionRange(start + prefix.length, start + prefix.length);
+    }
   } else {
-    // Selection: prefix each selected line
+    // Selection: check if ALL lines already have prefix → toggle off; otherwise add
     const before = val.substring(0, lineStart);
     const selectedLines = val.substring(lineStart, end);
     const after = val.substring(end);
-    const prefixed = selectedLines.split('\n').map(line => prefix + line).join('\n');
-    ta.value = before + prefixed + after;
-    ta.setSelectionRange(lineStart, lineStart + prefixed.length);
+    const lines = selectedLines.split('\n');
+    const allPrefixed = lines.every(l => l.startsWith(prefix));
+    const result = allPrefixed
+      ? lines.map(l => l.substring(prefix.length)).join('\n')
+      : lines.map(l => l.startsWith(prefix) ? l : prefix + l).join('\n');
+    ta.value = before + result + after;
+    ta.setSelectionRange(lineStart, lineStart + result.length);
   }
   ta.focus();
 }
