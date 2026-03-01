@@ -506,7 +506,6 @@ export async function saveNoteText(id, text) {
       el.style.minHeight = '';
     }
     // Clear any inline heights set during edit mode
-    const body = el.querySelector('.note-body');
     if (body) { body.style.height = ''; body.style.overflowY = ''; }
     el.classList.remove('editing');
   }
