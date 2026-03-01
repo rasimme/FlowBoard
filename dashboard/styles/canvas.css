@@ -110,18 +110,22 @@
 .note.color-teal   .conn-dot { background: var(--accent-2);     color: var(--accent-2); }
 .note.color-grey   .conn-dot { background: var(--border-strong); color: var(--border-strong); }
 
-/* Free dots: ring style (border only, no fill), hidden until hover */
+/* Free dots: dark fill + colored inner ring + dark outer shadow (ring style) */
 .conn-dot-free {
-  background: transparent !important;
-  border: 2px solid currentColor;
+  background: var(--bg) !important;
+  border: 2px solid currentColor;        /* colored ring inside */
+  box-shadow: 0 0 0 1.5px var(--bg);    /* dark outer ring via shadow */
   opacity: 0;
   transition: opacity 0.15s;
 }
-.note:hover .conn-dot-free { opacity: 0.75; }
-.note.selected .conn-dot-free { opacity: 0.75; }
+.note:hover .conn-dot-free,
+.note.selected .conn-dot-free { opacity: 0.85; }
 
-/* Connected dots: filled, always visible */
-.conn-dot-connected { opacity: 1 !important; }
+/* Connected dots: filled with line color + dark outer shadow ring */
+.conn-dot-connected {
+  box-shadow: 0 0 0 1.5px var(--bg);
+  opacity: 1 !important;
+}
 
 /* --- Floating toolbar (T-085) --- */
 .canvas-floating-toolbar {

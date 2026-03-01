@@ -1895,7 +1895,7 @@ function renderPorts(connectedPorts) {
         if (i < connCount) {
           // Connected dot: filled, always visible, line color
           dot.className = `conn-dot conn-dot-connected conn-dot-${side}`;
-          dot.style.cssText = `left:${left}px;top:${top}px;background:${conns[i].color};border-color:${conns[i].color};`;
+          dot.style.cssText = `left:${left}px;top:${top}px;background:${conns[i].color};`;
         } else {
           // Free dot: ring style (visible on hover), draggable
           dot.className = `conn-dot conn-dot-free conn-dot-${side}`;

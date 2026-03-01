@@ -905,11 +905,12 @@
     /* Connection dots — base styles (visibility managed by canvas.css) */
     .conn-dot {
       position: absolute; width: 10px; height: 10px;
-      border-radius: 50%; background: var(--accent); border: 2px solid var(--bg);
+      border-radius: 50%; background: var(--accent);
+      box-sizing: border-box; /* border included in 10px — fixes translate(-50%) centering */
       cursor: crosshair; z-index: 5;
       transform: translate(-50%, -50%);
       transition: opacity var(--duration-normal), transform var(--duration-normal);
-      opacity: 0; /* hidden by default; canvas.css controls visibility per state */
+      opacity: 0;
     }
     .conn-dot:hover { transform: translate(-50%, -50%) scale(1.5); }
     /* 44px touch targets on mobile */
@@ -964,5 +965,5 @@
     }
 
     @media (max-width: 900px) {
-      .conn-dot { width: 14px; height: 14px; }
+      .conn-dot { width: 14px; height: 14px; box-sizing: border-box; }
     }
