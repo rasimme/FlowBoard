@@ -1020,14 +1020,13 @@ function applyFormatting(type) {
   function wrapInline(marker) {
     const raw = val.substring(start, end);
     const trimmed = raw.trimEnd();
-    const trailLen = raw.length - trimmed.length;
+    const trailing = raw.substring(trimmed.length); // e.g. "\n" from double-click
     if (trimmed.length > 0) {
-      const newVal = val.substring(0, start) + marker + trimmed + marker + val.substring(start + raw.length);
-      ta.value = newVal;
+      // Keep trailing chars (newline etc.) after closing marker
+      ta.value = val.substring(0, start) + marker + trimmed + marker + trailing + val.substring(end);
       ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
     } else {
-      const newVal = val.substring(0, start) + marker + marker + val.substring(end);
-      ta.value = newVal;
+      ta.value = val.substring(0, start) + marker + marker + val.substring(end);
       ta.setSelectionRange(start + marker.length, start + marker.length);
     }
   }
@@ -1044,7 +1043,7 @@ function applyFormatting(type) {
         const urlStart = start + 1 + sel.length + 2;
         ta.setSelectionRange(urlStart, urlStart + 3);
       } else {
-        ta.value = val.substring(0, start) + '[link](url)' + val.substring(end);
+        ta.value = val.substring(0, start) + '[Name](url)' + val.substring(end);
         const urlStart = start + 7;
         ta.setSelectionRange(urlStart, urlStart + 3);
       }
