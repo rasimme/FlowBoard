@@ -1687,9 +1687,11 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
           const mx = (sx + ex) / 2;
           mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
         } else {
-          // Facing away: U-shape, go further in source escape direction
-          const mx = fromSide === 'right' ? Math.max(sx, ex) + E : Math.min(sx, ex) - E;
-          mid = [[mx, sy], [mx, ey]];
+          // Facing away: Z-shape. Go in source escape direction, then
+          // perpendicular to target level, then in target escape direction.
+          // This avoids immediate reversal after either escape.
+          const my = (sy + ey) / 2;
+          mid = [[sx, my], [ex, my]];
         }
       } else {
         const facingEachOther = (fromSide === 'bottom' && sy < ey);
