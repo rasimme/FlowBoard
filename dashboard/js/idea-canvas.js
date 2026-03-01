@@ -68,10 +68,11 @@ function renderNoteMarkdown(text) {
       const href = /^https?:\/\//.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
       return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
     });
-    // Auto-link bare URLs not already in an <a> tag
-    line = line.replace(/(?<!href="|">)(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g, url => {
-      const href = url.startsWith('http') ? url : 'https://' + url;
-      return `<a href="${href}" target="_blank" rel="noopener">${url}</a>`;
+    // Auto-link bare URLs — only in text segments outside HTML tags
+    line = line.replace(/(<[^>]*>)|(?:https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g, (match, tag) => {
+      if (tag) return tag; // HTML tag — pass through unchanged
+      const href = match.startsWith('http') ? match : 'https://' + match;
+      return `<a href="${href}" target="_blank" rel="noopener">${match}</a>`;
     });
     if (line.startsWith('- ')) {
       if (!inList) { out.push('<ul>'); inList = true; }
