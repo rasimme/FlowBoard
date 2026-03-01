@@ -1679,12 +1679,17 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
         mid = [[mx, sy], [mx, ey]];
       }
     } else {
-      // L-shape: extend source escape to target coordinate for cleanest path.
-      // This is safe because wouldReverse is false → target IS in escape direction.
+      // L-shape: extend source escape to merge with L-corner when safe.
+      // Cross-axis check: the segments on BOTH sides of the L-corner must
+      // go in the same direction on the corner's perpendicular axis.
+      // If they go opposite (e.g., left then right), extension would create
+      // a visible reversal → keep fixed escape instead.
       if (srcHorz) {
-        sx = (fromSide === 'right') ? Math.max(sx, ex) : Math.min(sx, ex);
+        const crossOK = Math.sign(ey - sy) === Math.sign(y2 - ey) || ey === sy || ey === y2;
+        if (crossOK) sx = (fromSide === 'right') ? Math.max(sx, ex) : Math.min(sx, ex);
       } else {
-        sy = (fromSide === 'bottom') ? Math.max(sy, ey) : sy;
+        const crossOK = Math.sign(ex - sx) === Math.sign(x2 - ex) || ex === sx || ex === x2;
+        if (crossOK) sy = (fromSide === 'bottom') ? Math.max(sy, ey) : sy;
       }
       mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
     }
