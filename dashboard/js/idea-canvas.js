@@ -1642,15 +1642,18 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   const tgtHorz = !!toSide && (toSide === 'right' || toSide === 'left');
   const perpendicular = !!toSide && (srcHorz !== tgtHorz);
 
-  // ── Perpendicular optimization: extend escape to reach L-corner directly ──
-  // Merges escape stub + first L-segment → fewer bends.
-  // Only extend in the escape direction (right→further right, never backwards).
+  // ── Perpendicular optimization: extend escape toward L-corner ──
+  // Only extend when the L-corner horizontal/vertical segment would be
+  // long enough (> E) to avoid creating a reversal at the target entry.
   if (perpendicular && srcHorz) {
-    if (fromSide === 'right' && ex > sx) sx = ex;
-    if (fromSide === 'left'  && ex < sx) sx = ex;
+    // L-corner at (sx, ey). After corner, horizontal goes sx→ex.
+    // Only extend if target is far enough in escape direction.
+    if (fromSide === 'right' && ex > sx + E) sx = ex;
+    if (fromSide === 'left'  && ex < sx - E) sx = ex;
   }
   if (perpendicular && !srcHorz) {
-    if (fromSide === 'bottom' && ey > sy) sy = ey;
+    // L-corner at (ex, sy). After corner, vertical goes sy→ey.
+    if (fromSide === 'bottom' && ey > sy + E) sy = ey;
   }
 
   // ── Route between escape points ──
