@@ -146,7 +146,6 @@
 /* Toolbar popovers */
 .toolbar-popover {
   position: absolute;
-  z-index: 26;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -154,7 +153,11 @@
   display: flex;
   gap: 6px;
   box-shadow: var(--shadow-lg);
-  animation: popIn var(--duration-normal) var(--ease-out);
+  animation: toolbarPopIn 0.12s ease-out;
+}
+@keyframes toolbarPopIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .toolbar-size-btn {
