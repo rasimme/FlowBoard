@@ -6,7 +6,7 @@ import { api, toast, showModal, escHtml } from './utils.js?v=3';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=7';
+  _l.href = './styles/canvas.css?v=8';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -1784,10 +1784,11 @@ function renderConnections() {
     const idx = conns.findIndex(c => c.connId === connId);
     if (idx === -1) return getNoteDotPosition(noteId, side);
     const offset = stackOffset(idx);
+    const bl = el.clientLeft || 1;
     let x = note.x, y = note.y;
-    if (side === 'bottom') { x += Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h; }
-    else if (side === 'left')  { y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
-    else if (side === 'right') { x += w; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    if (side === 'bottom') { x += Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h - bl * 1.5; }
+    else if (side === 'left')  { x += bl / 2; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else if (side === 'right') { x += w - bl * 1.5; y += Math.max(8, Math.min(h - 8, h / 2 + offset)); }
     else { x += w / 2; } // top fallback (legacy)
     return { x, y };
   }
@@ -1876,14 +1877,19 @@ function renderPorts(connectedPorts) {
       for (let i = 0; i < total; i++) {
         const offset = stackOffset(i);
 
-        // Compute raw position and clamp to card edge length
+        // Compute position centered on card BORDER LINE (not outer edge)
+        // el.clientLeft = borderWidth (typically 1px); border center = offsetWidth - 1.5
+        const bl = el.clientLeft || 1;
         let left, top;
         if (side === 'bottom') {
-          left = Math.max(8, Math.min(w - 8, w / 2 + offset)); top = h;
+          left = Math.max(8, Math.min(w - 8, w / 2 + offset));
+          top = h - bl * 1.5;
         } else if (side === 'left') {
-          left = 0; top = Math.max(8, Math.min(h - 8, h / 2 + offset));
+          left = bl / 2;
+          top = Math.max(8, Math.min(h - 8, h / 2 + offset));
         } else { // right
-          left = w; top = Math.max(8, Math.min(h - 8, h / 2 + offset));
+          left = w - bl * 1.5;
+          top = Math.max(8, Math.min(h - 8, h / 2 + offset));
         }
 
         const dot = document.createElement('div');
