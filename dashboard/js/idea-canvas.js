@@ -1665,9 +1665,12 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   } else if (perpendicular) {
     // L-shape — but check if it would reverse the escape direction.
     // If so, use Z-shape (escape → perpendicular → approach target).
+    // Direct reversal: the L-segment after corner goes opposite to escape,
+    // AND there's no perpendicular segment separating them (corner axis = 0).
+    // With a perpendicular segment between, it's a valid L-shape, not a reversal.
     const wouldReverse = srcHorz
-      ? (fromSide === 'right' && ex < sx) || (fromSide === 'left' && ex > sx)
-      : (fromSide === 'bottom' && ey < sy);
+      ? ((fromSide === 'right' && ex < sx) || (fromSide === 'left' && ex > sx)) && Math.abs(ey - sy) < 1
+      : (fromSide === 'bottom' && ey < sy) && Math.abs(ex - sx) < 1;
 
     if (wouldReverse) {
       // Z-shape: go perpendicular first (midpoint between), then toward target
