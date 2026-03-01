@@ -964,6 +964,18 @@ function bindCanvasEvents() {
       e.stopPropagation();
     }
   }, { passive: false, capture: true });
+
+  // Delete/Backspace key: trigger delete modal for selected notes
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    // Don't intercept if user is typing in an input/textarea
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (canvasState.editingId) return;
+    if (canvasState.selectedIds.size === 0) return;
+    e.preventDefault();
+    toolbarDelete();
+  });
 }
 
 function onCanvasDblClick(e) {
@@ -1027,6 +1039,20 @@ function onCanvasMouseDown(e) {
       startNoteX: note.x,     startNoteY: note.y,
       moved: false
     };
+
+    // Ctrl/Cmd+Click: toggle note in multi-selection
+    if (e.ctrlKey || e.metaKey) {
+      if (canvasState.selectedIds.has(noteId)) {
+        canvasState.selectedIds.delete(noteId);
+        noteEl.classList.remove('selected');
+      } else {
+        canvasState.selectedIds.add(noteId);
+        noteEl.classList.add('selected');
+      }
+      renderPromoteButton();
+      updateToolbar();
+      return; // don't start drag on Ctrl+Click
+    }
 
     // If dragging a selected note, store start positions for all selected
     // If dragging an unselected note, it becomes the only selection
