@@ -1717,13 +1717,14 @@ function computePortPositions() {
     const h = noteEl.offsetHeight;
     const n = group.length;
 
+    const bl = noteEl.clientLeft || 1;
     group.forEach((a, i) => {
-      const offset = (i - (n - 1) / 2) * PORT_SPACING;
+      const offset = stackOffset(i); // alternating: 0, +1, -1, +2, -2
       let px, py;
-      if (side === 'top')    { px = note.x + w / 2 + offset; py = note.y;     }
-      if (side === 'bottom') { px = note.x + w / 2 + offset; py = note.y + h; }
-      if (side === 'left')   { px = note.x;     py = note.y + h / 2 + offset; }
-      if (side === 'right')  { px = note.x + w; py = note.y + h / 2 + offset; }
+      if (side === 'top')    { px = note.x + w / 2 + offset;                 py = note.y - bl / 2; }
+      if (side === 'bottom') { px = note.x + w / 2 + offset;                 py = note.y + h - bl / 2; }
+      if (side === 'left')   { px = note.x + bl / 2;  py = note.y + h / 2 + offset; }
+      if (side === 'right')  { px = note.x + w - bl / 2; py = note.y + h / 2 + offset; }
 
       const connKey = a.conn.from + ':' + a.conn.to;
       if (!portMap.has(connKey)) portMap.set(connKey, {});
