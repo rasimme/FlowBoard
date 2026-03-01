@@ -1642,29 +1642,31 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   else if (toSide === 'bottom') { ex = x2; ey = y2 + E; }
   else                          { ex = x2; ey = y2; }
 
-  // Source escape: at least E in dot direction, but extend toward target
-  // escape ONLY if the target escape is further in the same direction.
-  // Never extend past the target escape — that would create a U-turn.
+  // Source escape: always at least E in dot direction.
+  // Extension rule: only extend toward target escape when the L-shape corner
+  // would be ON the escape segment (same perpendicular coordinate).
+  // For perpendicular connections (right↔bottom), the source horizontal segment
+  // can extend to the target's x (since the L-corner is at that x).
+  // For parallel connections, NO extension — each side keeps its own E escape.
   let sx, sy;
-  if (fromSide === 'right') {
-    sx = x1 + E;
-    // Extend right only if target escape is also to the right
-    if (ex > sx) sx = ex;
-    sy = y1;
-  } else if (fromSide === 'left') {
-    sx = x1 - E;
-    if (ex < sx) sx = ex;
-    sy = y1;
-  } else if (fromSide === 'bottom') {
-    sx = x1;
-    sy = y1 + E;
-    if (ey > sy) sy = ey;
-  } else { sx = x1; sy = y1; }
+  if (fromSide === 'right')       { sx = x1 + E; sy = y1; }
+  else if (fromSide === 'left')   { sx = x1 - E; sy = y1; }
+  else if (fromSide === 'bottom') { sx = x1; sy = y1 + E; }
+  else                            { sx = x1; sy = y1; }
 
-  // Symmetrically: extend target escape toward source ONLY in escape direction
-  if (toSide === 'right'  && sx > ex) ex = sx;
-  if (toSide === 'left'   && sx < ex) ex = sx;
-  if (toSide === 'bottom' && sy > ey) ey = sy;
+  // For perpendicular L-shapes: extend source segment to reach the L-corner
+  // directly (corner is at sx,ey for srcHorz or ex,sy for srcVert).
+  // This merges the escape into the L without extra bends.
+  const perpendicular = !!toSide && (srcHorz !== tgtHorz);
+  if (perpendicular && srcHorz) {
+    // Source goes horizontal → L-corner at (sx, ey) → extend sx to ex if in escape direction
+    if (fromSide === 'right' && ex > sx) sx = ex;
+    if (fromSide === 'left'  && ex < sx) sx = ex;
+  }
+  if (perpendicular && !srcHorz) {
+    // Source goes vertical → L-corner at (ex, sy) → extend sy to ey if in escape direction
+    if (fromSide === 'bottom' && ey > sy) sy = ey;
+  }
 
   // ── Rule 2: Simplest path (fewest bends) ──
   const parallel = !!toSide && (srcHorz === tgtHorz);
