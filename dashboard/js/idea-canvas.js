@@ -1105,7 +1105,7 @@ function applyFormatting(type) {
         const urlStart = start + 1 + sel.length + 2;
         ta.setSelectionRange(urlStart, urlStart + 3);
       } else {
-        ta.value = val.substring(0, start) + '[Name](url)' + val.substring(end);
+        ta.value = val.substring(0, start) + '[title](url)' + val.substring(end);
         const urlStart = start + 7;
         ta.setSelectionRange(urlStart, urlStart + 3);
       }
