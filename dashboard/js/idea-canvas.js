@@ -122,6 +122,13 @@ function applyTransform() {
   const vp = document.getElementById('canvasViewport');
   if (vp) vp.style.transform =
     `translate(${canvasState.pan.x}px, ${canvasState.pan.y}px) scale(${canvasState.scale})`;
+  // Reposition any open connection delete button
+  const btn = document.querySelector('.conn-delete-overlay');
+  if (btn && canvasState.selectedConn?._midCanvas) {
+    const { x, y } = canvasState.selectedConn._midCanvas;
+    btn.style.left = (x * canvasState.scale + canvasState.pan.x) + 'px';
+    btn.style.top  = (y * canvasState.scale + canvasState.pan.y) + 'px';
+  }
 }
 
 // --- Load canvas data ---
@@ -2378,29 +2385,34 @@ async function saveConnection(fromId, toId, fromPort, toPort) {
 function showConnectionDeleteBtn(from, to, pointA, pointB) {
   document.querySelectorAll('.conn-delete-overlay').forEach(el => el.remove());
 
-  // Position delete button at line midpoint in screen space
+  // Place button inside canvasWrap at canvas-space midpoint so it moves with pan/zoom.
+  // Use position:absolute relative to canvasWrap, then apply the same transform offset.
   const wrap = document.getElementById('canvasWrap');
-  const rect = wrap.getBoundingClientRect();
+  if (!wrap) return;
+
   const midCanvasX = (pointA.x + pointB.x) / 2;
   const midCanvasY = (pointA.y + pointB.y) / 2;
-  const screenX = midCanvasX * canvasState.scale + canvasState.pan.x + rect.left;
-  const screenY = midCanvasY * canvasState.scale + canvasState.pan.y + rect.top;
+  // Convert canvas coords → wrap-relative pixels (same math as applyTransform)
+  const wrapX = midCanvasX * canvasState.scale + canvasState.pan.x;
+  const wrapY = midCanvasY * canvasState.scale + canvasState.pan.y;
 
   // Track selected connection for keyboard delete
-  canvasState.selectedConn = { from, to };
+  canvasState.selectedConn = { from, to, _midCanvas: { x: midCanvasX, y: midCanvasY } };
 
   const btn = document.createElement('button');
   btn.className = 'btn btn-danger btn-sm conn-delete-overlay';
   btn.title = 'Delete connection';
-  btn.style.cssText = `position:fixed;left:${screenX}px;top:${screenY}px;transform:translate(-50%,-50%);z-index:1000;padding:5px 7px;line-height:0;`;
+  btn.style.cssText = `position:absolute;left:${wrapX}px;top:${wrapY}px;transform:translate(-50%,-50%);z-index:40;padding:5px 7px;line-height:0;`;
   btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>';
+  btn.addEventListener('mousedown', e => e.stopPropagation());
+  btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   btn.addEventListener('click', async e => {
     e.stopPropagation();
     btn.remove();
     canvasState.selectedConn = null;
     await deleteConnection(from, to);
   });
-  document.body.appendChild(btn);
+  wrap.appendChild(btn);
 
   setTimeout(() => {
     const close = ev => {
