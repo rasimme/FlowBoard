@@ -956,6 +956,7 @@
     .color-swatch-green  { background: var(--ok); }
     .color-swatch-red    { background: var(--danger); }
     .color-swatch-teal   { background: var(--accent-2); }
+    .color-swatch-grey   { background: var(--border-strong); }
 
     /* Lasso selection rectangle */
     .canvas-lasso {
