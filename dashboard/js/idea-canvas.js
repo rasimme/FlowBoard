@@ -1065,23 +1065,44 @@ function applyFormatting(type) {
       return;
     }
 
+    // Helper: strip list prefix from a line, returning [prefix, content]
+    function splitListPrefix(l) {
+      const m = l.match(/^(- |\d+\. )/);
+      return m ? [m[1], l.slice(m[1].length)] : ['', l];
+    }
+    // Check if a line's content (after list prefix) is wrapped
+    function lineIsWrapped(l) {
+      const [, content] = splitListPrefix(l);
+      return isWrapped(content, marker);
+    }
+    // Wrap content after list prefix
+    function wrapLine(l) {
+      const [pfx, content] = splitListPrefix(l);
+      return pfx + marker + content + marker;
+    }
+    // Unwrap content after list prefix
+    function unwrapLine(l) {
+      const [pfx, content] = splitListPrefix(l);
+      return isWrapped(content, marker) ? pfx + content.slice(marker.length, -marker.length) : l;
+    }
+
     const lines = trimmed.split('\n');
     if (lines.length > 1) {
       // Multi-line: toggle per line
-      const allWrapped = lines.every(l => l.trim() === '' || isWrapped(l, marker));
+      const allWrapped = lines.every(l => l.trim() === '' || lineIsWrapped(l));
       const result = allWrapped
-        ? lines.map(l => isWrapped(l, marker) ? l.slice(marker.length, -marker.length) : l).join('\n')
-        : lines.map(l => (isWrapped(l, marker) || l.trim() === '') ? l : marker + l + marker).join('\n');
+        ? lines.map(l => lineIsWrapped(l) ? unwrapLine(l) : l).join('\n')
+        : lines.map(l => (lineIsWrapped(l) || l.trim() === '') ? l : wrapLine(l)).join('\n');
       ta.value = val.substring(0, start) + result + trailing + val.substring(end);
       ta.setSelectionRange(start, start + result.length);
       return;
     }
 
-    // Single line: toggle off if selection itself is wrapped
-    if (isWrapped(trimmed, marker)) {
-      const inner = trimmed.slice(marker.length, -marker.length);
-      ta.value = val.substring(0, start) + inner + trailing + val.substring(end);
-      ta.setSelectionRange(start, start + inner.length);
+    // Single line: toggle off if content (after list prefix) is wrapped
+    if (lineIsWrapped(trimmed)) {
+      const unwrapped = unwrapLine(trimmed);
+      ta.value = val.substring(0, start) + unwrapped + trailing + val.substring(end);
+      ta.setSelectionRange(start, start + unwrapped.length);
       return;
     }
     // Or if marker surrounds the selection in the text (user selected only inner text)
@@ -1090,9 +1111,10 @@ function applyFormatting(type) {
       ta.setSelectionRange(start - marker.length, start - marker.length + trimmed.length);
       return;
     }
-    // Otherwise: wrap
-    ta.value = val.substring(0, start) + marker + trimmed + marker + trailing + val.substring(end);
-    ta.setSelectionRange(start + marker.length, start + marker.length + trimmed.length);
+    // Otherwise: wrap (respecting list prefix)
+    const wrapped = wrapLine(trimmed);
+    ta.value = val.substring(0, start) + wrapped + trailing + val.substring(end);
+    ta.setSelectionRange(start, start + wrapped.length);
   }
 
   switch (type) {
