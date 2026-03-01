@@ -1737,6 +1737,10 @@ function onTouchStart(e) {
   if (touchTarget?.closest('.note-textarea') || touchTarget?.closest('.canvas-sidebar-textarea')) {
     return; // Let browser handle textarea touch natively
   }
+  // Connection dot touched — let the dot's own ontouchstart handler manage it
+  if (touchTarget?.closest('.conn-dot')) {
+    return;
+  }
   // If touching inside a scrollable note-body of a selected card, let browser handle scroll
   const touchBody = touchTarget?.closest('.note .note-body');
   if (touchBody && touchBody.scrollHeight > touchBody.clientHeight && !touchTarget?.closest('.note-header')) {

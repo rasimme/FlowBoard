@@ -347,3 +347,13 @@
 .note.editing .conn-dot-free {
   display: none !important;
 }
+
+/* Bigger touch target for connection dots on mobile (44px recommended by Apple) */
+.conn-dot::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 36px; height: 36px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
