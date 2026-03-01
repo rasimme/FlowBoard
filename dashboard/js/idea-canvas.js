@@ -55,17 +55,23 @@ function renderNoteMarkdown(text) {
   const out = [];
   let inList = false;
   for (let i = 0; i < lines.length; i++) {
-    let line = escHtml(lines[i]);
-    // Inline formatting
-    line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    line = line.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    // Explicit markdown links first
-    line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
-      const href = /^https?:\/\//.test(url) ? url : 'https://' + url;
-      return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
-    });
-    // Auto-link bare URLs (http/https/www) not already inside an <a> tag
-    line = line.replace(/(?<!href="|">)(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g, url => {
+    // Apply markdown on RAW line first, escape only text content (not generated HTML)
+    let raw = lines[i];
+    // Replace markdown patterns on raw text, escape each captured group individually
+    let line = raw
+      // Explicit markdown links: [label](url)
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+        const href = /^https?:\/\//.test(url) ? url : 'https://' + url;
+        return `<a href="${href}" target="_blank" rel="noopener">${escHtml(label)}</a>`;
+      })
+      // Bold
+      .replace(/\*\*(.+?)\*\*/g, (_, c) => `<strong>${escHtml(c)}</strong>`)
+      // Italic (not preceded by another *)
+      .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, (_, c) => `<em>${escHtml(c)}</em>`)
+      // Escape remaining plain text segments (everything outside tags)
+      .replace(/(?<=>|^)([^<]+)/g, (_, txt) => escHtml(txt));
+    // Auto-link bare URLs not already in an <a> tag
+    line = line.replace(/(?<!href="|">)(https?:\/\/[^\s<>"&]+|www\.[^\s<>"&]+)/g, url => {
       const href = url.startsWith('http') ? url : 'https://' + url;
       return `<a href="${href}" target="_blank" rel="noopener">${url}</a>`;
     });
