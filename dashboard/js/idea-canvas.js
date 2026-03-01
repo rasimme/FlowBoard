@@ -1659,9 +1659,29 @@ function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0) {
   // ── Route between escape points ──
   let mid;
 
-  if (!toSide || perpendicular) {
-    // L-shape: one corner connecting perpendicular directions
+  if (!toSide) {
+    // Free drag: simple L
     mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
+  } else if (perpendicular) {
+    // L-shape — but check if it would reverse the escape direction.
+    // If so, use Z-shape (escape → perpendicular → approach target).
+    const wouldReverse = srcHorz
+      ? (fromSide === 'right' && ex < sx) || (fromSide === 'left' && ex > sx)
+      : (fromSide === 'bottom' && ey < sy);
+
+    if (wouldReverse) {
+      // Z-shape: go perpendicular first (midpoint between), then toward target
+      if (srcHorz) {
+        const my = (sy + ey) / 2;
+        mid = [[sx, my], [ex, my]];
+      } else {
+        const mx = (sx + ex) / 2;
+        mid = [[mx, sy], [mx, ey]];
+      }
+    } else {
+      // L-shape works without reversal
+      mid = srcHorz ? [[sx, ey]] : [[ex, sy]];
+    }
   } else {
     // Parallel connections: two sub-cases
     const sameSide = fromSide === toSide; // right→right, left→left, bottom→bottom
