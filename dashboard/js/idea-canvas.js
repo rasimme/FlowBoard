@@ -684,6 +684,7 @@ async function setNoteSize(noteId, size) {
   if (el) {
     el.classList.toggle('size-medium', size === 'medium');
     el.style.width = size === 'medium' ? '280px' : '';
+    requestAnimationFrame(() => checkTruncation(el));
   }
   renderConnections();
   if (!canvasState._state?.viewedProject) return;
