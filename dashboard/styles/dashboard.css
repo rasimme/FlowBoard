@@ -316,10 +316,32 @@
     .task-card:hover .subtask-add-btn:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
 
     .add-subtask-form {
-      margin-left: 36px;
+      position: relative;
+      margin-left: 0;
       padding: 8px 12px; background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
+    }
+    /* Tree-line dot + branch for add-subtask form */
+    .subtask-container .add-subtask-form::before {
+      content: '';
+      position: absolute;
+      left: -15px;
+      top: -4px;
+      bottom: 50%;
+      width: 1px;
+      background: #555;
+    }
+    .subtask-container .add-subtask-form::after {
+      content: '';
+      position: absolute;
+      left: -19px;
+      top: 50%;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #555;
+      transform: translate(0, -50%);
     }
     .add-subtask-form .subtask-input {
       width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
