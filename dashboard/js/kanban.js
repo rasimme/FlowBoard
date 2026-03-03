@@ -422,10 +422,19 @@ export async function setPriority(id, priority, state) {
   });
 }
 
-export function startDelete(id, title, specFile) {
-  if (specFile) {
+export function startDelete(id, title, specFile, subtaskCount = 0) {
+  if (subtaskCount > 0) {
     showModal(
-      `🗑️ Delete task?`,
+      'Delete parent task?',
+      `<strong>${id}</strong>: ${escHtml(title)}<br>This task has <strong>${subtaskCount}</strong> subtask(s).`,
+      () => { if (window._confirmDelete) window._confirmDelete(id, false, 'all'); },
+      'Delete all',
+      'btn-danger',
+      { label: 'Keep subtasks', onAction: () => { if (window._confirmDelete) window._confirmDelete(id, false, 'keep-children'); } }
+    );
+  } else if (specFile) {
+    showModal(
+      `\uD83D\uDDD1\uFE0F Delete task?`,
       `<strong>${id}</strong>: ${title}<br>This task has a spec file. Delete it too?`,
       () => { if (window._confirmDelete) window._confirmDelete(id, true); },
       'Delete everything',
@@ -441,15 +450,44 @@ export function startDelete(id, title, specFile) {
   }
 }
 
-export async function confirmDelete(id, state, deleteSpec = false) {
+export async function confirmDelete(id, state, deleteSpec = false, mode = null) {
   const card = document.querySelector(`.task-card[data-id="${id}"]`);
   if (card) card.classList.add('removing');
   await new Promise(r => setTimeout(r, 250));
   const task = state.tasks.find(t => t.id === id);
   const specFile = task?.specFile;
-  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, { method: 'DELETE' });
+  const url = mode
+    ? `/projects/${state.viewedProject}/tasks/${id}?mode=${mode}`
+    : `/projects/${state.viewedProject}/tasks/${id}`;
+  const res = await api(url, { method: 'DELETE' });
+
+  if (res.error === 'Task has subtasks') {
+    if (card) card.classList.remove('removing');
+    toast('Choose how to handle subtasks', 'warn');
+    return;
+  }
+
   if (res.ok) {
-    state.tasks = state.tasks.filter(t => t.id !== id);
+    if (mode === 'all') {
+      const idsToRemove = new Set([id, ...(task?.subtaskIds || [])]);
+      state.tasks = state.tasks.filter(t => !idsToRemove.has(t.id));
+    } else if (mode === 'keep-children') {
+      state.tasks = state.tasks.filter(t => t.id !== id);
+      for (const t of state.tasks) {
+        if (t.parentId === id) {
+          t.parentId = null;
+        }
+      }
+    } else {
+      state.tasks = state.tasks.filter(t => t.id !== id);
+      // If this was a subtask, update parent's subtaskIds in local state
+      if (task?.parentId) {
+        const parent = state.tasks.find(t => t.id === task.parentId);
+        if (parent && parent.subtaskIds) {
+          parent.subtaskIds = parent.subtaskIds.filter(sid => sid !== id);
+        }
+      }
+    }
     if (deleteSpec && specFile) {
       await api(`/projects/${state.viewedProject}/files/${specFile}`, { method: 'DELETE' });
     }
@@ -547,7 +585,8 @@ export function bindKanbanEvents(container) {
     const { action, id, title, priority, file } = btn.dataset;
     switch (action) {
       case 'edit-task':       startEdit(id); break;
-      case 'delete-task':     startDelete(id, title, btn.dataset.spec || null); break;
+      case 'delete-task':     startDelete(id, title, btn.dataset.spec || null, parseInt(btn.dataset.subtasks) || 0); break;
+      case 'toggle-expand':   if (window._toggleExpand) window._toggleExpand(id); break;
       case 'create-spec':     if (window._createSpec) window._createSpec(id); break;
       case 'open-spec':       if (window._openSpec) window._openSpec(file, id); break;
       case 'toggle-priority': togglePriorityPopover(e, id, priority); break;
