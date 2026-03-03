@@ -635,6 +635,14 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     }
   }
 
+  // Cascade priority change to subtasks
+  if (updates.priority && task.subtaskIds && task.subtaskIds.length > 0) {
+    for (const subId of task.subtaskIds) {
+      const sub = data.tasks.find(t => t.id === subId);
+      if (sub) sub.priority = updates.priority;
+    }
+  }
+
   // Recalculate parent status if this is a subtask and status changed
   let parentUpdated = null;
   if (task.parentId && updates.status && updates.status !== prevStatus) {
