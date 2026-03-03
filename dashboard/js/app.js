@@ -1,19 +1,19 @@
 import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=3';
 import {
-  kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd, selectPriority,
-  onAddKey, createTask, startEdit, onTitleKey, saveTitle, togglePriorityPopover, setPriority,
-  startDelete, confirmDelete, createSpec, onDragStart, onDragEnd, onDragOver, onDragLeave, onDrop,
-  renderTabBarRight
-} from './kanban.js?v=3';
+  kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
+  createTask, saveTitle, setPriority,
+  confirmDelete, createSpec, onDrop,
+  renderTabBarRight, bindKanbanEvents
+} from './kanban.js?v=4';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
-  renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility
-} from './file-explorer.js?v=7';
+  renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
+  bindFileExplorerEvents
+} from './file-explorer.js?v=8';
 import {
-  canvasState, renderIdeaCanvas, addNote, startDeleteNote,
-  setNoteColor, startNoteEdit, saveNoteText, startConnectionDrag, showPromoteModal,
+  canvasState, renderIdeaCanvas,
   refreshCanvas, resetCanvasState
-} from './canvas/index.js?v=1';
+} from './canvas/index.js?v=2';
 
 // Global state
 const state = {
@@ -49,10 +49,10 @@ function getFilesMeta(tree) {
 }
 
 // --- Sidebar toggle ---
-window.toggleSidebar = function() {
+function toggleSidebar() {
   document.getElementById('app').classList.toggle('sidebar-collapsed');
   window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
-};
+}
 
 // --- Render functions ---
 function renderSidebar() {
@@ -67,7 +67,7 @@ function renderSidebar() {
       let cls = 'project-item';
       if (isActive) cls += ' agent-active';
       if (isViewed) cls += ' viewed';
-      return `<div class="${cls}" onclick="viewProject('${p.name}')">
+      return `<div class="${cls}" data-action="view-project" data-project="${p.name}">
         <span>${formatDisplayName(p.name)}</span>
         ${openCount > 0 ? `<span class="project-badge">${openCount}</span>` : ''}
       </div>`;
@@ -76,9 +76,9 @@ function renderSidebar() {
 
   const actions = document.getElementById('sidebarActions');
   if (state.viewedProject && state.viewedProject !== state.activeProject) {
-    actions.innerHTML = `<button class="btn btn-primary btn-sm btn-full" onclick="activateProject()">Activate</button>`;
+    actions.innerHTML = `<button class="btn btn-primary btn-sm btn-full" data-action="activate-project">Activate</button>`;
   } else if (state.viewedProject && state.viewedProject === state.activeProject) {
-    actions.innerHTML = `<button class="btn btn-secondary btn-sm btn-full" onclick="deactivateProject()">Deactivate</button>`;
+    actions.innerHTML = `<button class="btn btn-secondary btn-sm btn-full" data-action="deactivate-project">Deactivate</button>`;
   } else {
     actions.innerHTML = '';
   }
@@ -113,7 +113,7 @@ function renderAll() {
 }
 
 // --- Actions ---
-window.viewProject = async function(name) {
+async function viewProject(name) {
   state.viewedProject = name;
   kanbanState.addingTask = false;
   kanbanState.editingTaskId = null;
@@ -128,29 +128,29 @@ window.viewProject = async function(name) {
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
   renderAll();
-};
+}
 
-window.activateProject = async function() {
+async function activateProject() {
   await api('/status', { method: 'PUT', body: { project: state.viewedProject } });
   state.activeProject = state.viewedProject;
   toast(`Project "${state.viewedProject}" activated`, 'success');
   renderSidebar();
   renderHeader();
-};
+}
 
-window.deactivateProject = async function() {
+async function deactivateProject() {
   await api('/status', { method: 'PUT', body: { project: null } });
   state.activeProject = null;
   toast('Project deactivated.', 'info');
   renderSidebar();
   renderHeader();
-};
+}
 
 // --- Tab System ---
 // Persisted kanban scroll position across tab switches
 const savedKanbanScroll = { top: 0, colIndex: 0, columns: {} };
 
-window.switchTab = function(tab) {
+function switchTab(tab) {
   state.currentTab = tab;
   document.querySelectorAll('.tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tab);
@@ -211,24 +211,18 @@ window.switchTab = function(tab) {
     renderIdeaCanvas(state);
     requestAnimationFrame(updateContentScrollbarVisibility);
   }
-};
+}
 
-// --- Kanban Actions (exposed to window for inline handlers) ---
-window.toggleSort = function() {
+// --- Kanban bridge callbacks (set on window._ for delegated handlers) ---
+window._toggleSort = function() {
   if (toggleSort()) {
     kanbanState.boardBuilt = false;
     updateBoard(state);
   }
 };
-window.startAdd = function() { if (startAdd()) updateBoard(state); };
-window.cancelAdd = function() { if (cancelAdd()) updateBoard(state); };
-window.selectPriority = selectPriority;
-window.onAddKey = function(e) {
-  const action = onAddKey(e);
-  if (action === 'create') createTask(state).then(changed => { if (changed) { prevTasksJson = JSON.stringify(state.tasks); updateBoard(state); } });
-  if (action === 'cancel') { cancelAdd(); updateBoard(state); }
-};
-window.createTask = function() {
+window._startAdd = function() { if (startAdd()) updateBoard(state); };
+window._cancelAdd = function() { if (cancelAdd()) updateBoard(state); };
+window._createTask = function() {
   createTask(state).then(changed => {
     if (changed) {
       prevTasksJson = JSON.stringify(state.tasks);
@@ -236,20 +230,16 @@ window.createTask = function() {
     }
   });
 };
-window.startEdit = startEdit;
-window.onTitleKey = onTitleKey;
-window.saveTitle = function(id, el) {
+window._saveTitle = function(id, el) {
   saveTitle(id, el, state).then(() => {
     prevTasksJson = JSON.stringify(state.tasks);
   });
 };
-window.togglePriorityPopover = togglePriorityPopover;
-window.setPriority = function(id, priority) {
+window._setPriority = function(id, priority) {
   setPriority(id, priority, state);
   prevTasksJson = JSON.stringify(state.tasks);
 };
-window.startDelete = startDelete;
-window.confirmDelete = function(id) {
+window._confirmDelete = function(id) {
   confirmDelete(id, state).then(changed => {
     if (changed) {
       prevTasksJson = JSON.stringify(state.tasks);
@@ -257,41 +247,30 @@ window.confirmDelete = function(id) {
     }
   });
 };
-
-// Drag & Drop
-window.onDragStart = onDragStart;
-window.onDragEnd = onDragEnd;
-window.onDragOver = onDragOver;
-window.onDragLeave = onDragLeave;
-window.onDrop = function(e) { onDrop(e, state); };
-
-// --- Spec File Actions ---
-window.openSpec = function(specPath, taskId) {
+window._onDrop = function(e) { onDrop(e, state); };
+window._openSpec = function(specPath, taskId) {
   if (!specPath) {
     toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
     return;
   }
   fileState.pendingOpen = specPath;
-  window.switchTab('files');
+  switchTab('files');
 };
-window.createSpec = function(taskId) {
+window._createSpec = function(taskId) {
   createSpec(taskId, state).then(specFile => {
     if (specFile) {
       prevTasksJson = JSON.stringify(state.tasks);
       updateBoard(state);
       fileState.pendingOpen = specFile;
-      window.switchTab('files');
+      switchTab('files');
     }
   });
 };
 
-// --- File Explorer Actions ---
-window.loadFileContent = function(path) { loadFileContent(path, state); };
-window.saveFileContent = function() { saveFileContent(state); };
-window.toggleFileEdit = toggleFileEdit;
-window.toggleDir = toggleDir;
-window.fileBackToTree = fileBackToTree;
-window.deleteCurrentFile = function() {
+// --- File Explorer bridge callbacks ---
+window._loadFileContent = function(path) { loadFileContent(path, state); };
+window._saveFileContent = function() { saveFileContent(state); };
+window._deleteCurrentFile = function() {
   const filePath = fileState?.selectedFile;
   if (!filePath) return;
   showModal('Delete File', `Delete <strong>${filePath}</strong>?`, async () => {
@@ -304,15 +283,6 @@ window.deleteCurrentFile = function() {
     } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
   });
 };
-
-// --- Canvas Actions ---
-window.addNote = function() { addNote(state); };
-window.startDeleteNote = function(id) { startDeleteNote(id, state); };
-window.setNoteColor = setNoteColor;
-window.startNoteEdit = function(e, id) { e.stopPropagation(); startNoteEdit(id); };
-window.saveNoteText = saveNoteText;
-window.startConnectionDrag = startConnectionDrag;
-window.showPromoteModal = showPromoteModal;
 
 // --- User Interaction Detection ---
 function isUserInteracting() {
@@ -446,6 +416,41 @@ async function init() {
       prevFilesMeta = getFilesMeta(filesData.tree);
     } catch (e) { /* silent */ }
   }
+
+  // Bind delegated event listeners (once, on persistent containers)
+  const content = document.getElementById('content');
+  bindKanbanEvents(content);
+  bindFileExplorerEvents(content);
+
+  // Tab bar delegation
+  document.getElementById('tabBar').addEventListener('click', e => {
+    const tab = e.target.closest('[data-tab]');
+    if (tab) switchTab(tab.dataset.tab);
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'toggle-sort') window._toggleSort();
+  });
+
+  // Sidebar delegation
+  document.getElementById('sidebar').addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const { action, project } = el.dataset;
+    if (action === 'view-project') viewProject(project);
+    if (action === 'activate-project') activateProject();
+    if (action === 'deactivate-project') deactivateProject();
+  });
+
+  // Header delegation (sidebar toggle)
+  document.querySelector('.header').addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    if (el.dataset.action === 'toggle-sidebar') toggleSidebar();
+  });
+
+  // Sidebar backdrop (close sidebar on click)
+  document.querySelector('.sidebar-backdrop')?.addEventListener('click', () => {
+    document.getElementById('app').classList.add('sidebar-collapsed');
+  });
 
   renderAll();
   setInterval(refresh, 5000);

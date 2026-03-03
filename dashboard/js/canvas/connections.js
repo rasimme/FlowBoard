@@ -533,8 +533,8 @@ export function renderPorts(connectedPorts) {
           // Free dot: ring style (visible on hover), draggable
           dot.className = `conn-dot conn-dot-free conn-dot-${side}`;
           dot.style.cssText = `left:${left}px;top:${top}px;`;
-          dot.setAttribute('onmousedown', `window.startConnectionDrag(event,'${note.id}','${side}')`);
-          dot.setAttribute('ontouchstart', `window.startConnectionDragTouch(event,'${note.id}','${side}')`);
+          dot.addEventListener('mousedown', e => startConnectionDrag(e, note.id, side));
+          dot.addEventListener('touchstart', e => startConnectionDragTouch(e, note.id, side), { passive: false });
         }
 
         el.appendChild(dot);
@@ -553,7 +553,6 @@ export function startConnectionDragTouch(e, noteId, port) {
                   stopPropagation: () => {}, preventDefault: () => {} };
   startConnectionDrag(synth, noteId, port);
 }
-window.startConnectionDragTouch = startConnectionDragTouch;
 
 export function startConnectionDrag(e, noteId, port) {
   e.stopPropagation();

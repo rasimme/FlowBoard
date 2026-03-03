@@ -33,10 +33,10 @@
 </script>
 
 <div class="app" id="app">
-  <div class="sidebar-backdrop" onclick="document.getElementById('app').classList.add('sidebar-collapsed')"></div>
+  <div class="sidebar-backdrop"></div>
   <div class="header">
     <div class="header-left">
-      <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+      <button class="sidebar-toggle" data-action="toggle-sidebar" title="Toggle sidebar">☰</button>
       <span class="header-logo"><img src="./favicon.svg" alt="FlowBoard"></span>
       <div class="header-brand">
         <div class="header-title">FlowBoard</div>
@@ -47,9 +47,9 @@
   </div>
 
   <div class="tab-bar" id="tabBar">
-    <button class="tab" data-tab="ideas" onclick="switchTab('ideas')">Ideas</button>
-    <button class="tab active" data-tab="tasks" onclick="switchTab('tasks')">Tasks</button>
-    <button class="tab" data-tab="files" onclick="switchTab('files')">Files</button>
+    <button class="tab" data-tab="ideas">Ideas</button>
+    <button class="tab active" data-tab="tasks">Tasks</button>
+    <button class="tab" data-tab="files">Files</button>
     <span class="tab-bar-spacer"></span>
     <span id="tabBarRight"></span>
   </div>
@@ -66,6 +66,6 @@
 <div class="toast-container" id="toastContainer"></div>
 <div id="modalRoot"></div>
 
-<script type="module" src="./js/app.js?v=1"></script>
+<script type="module" src="./js/app.js?v=2"></script>
 </body>
 </html>

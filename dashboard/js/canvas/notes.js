@@ -408,8 +408,6 @@ export function closeSidebar() {
   canvasState.sidebarNoteId = null;
 }
 
-window.closeSidebar = closeSidebar;
-
 // --- Debounced position save ---
 export function schedulePositionSave(noteId) {
   clearTimeout(canvasState.posSaveTimers[noteId]);
