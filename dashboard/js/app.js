@@ -5,7 +5,7 @@ import {
   confirmDelete, createSpec, onDrop, toggleExpand,
   startAddSubtask, cancelAddSubtask, submitSubtask,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=8';
+} from './kanban.js?v=9';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,

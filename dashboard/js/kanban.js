@@ -129,22 +129,24 @@ export function updateBoard(state) {
     }
 
     // Render subtask cards for expanded parents
-    body.querySelectorAll('.subtask-card').forEach(el => el.remove());
+    body.querySelectorAll('.subtask-container').forEach(el => el.remove());
     for (const task of sorted) {
       if (!task.subtaskIds?.length || !kanbanState.expandedParents.has(task.id)) continue;
       const parentCard = body.querySelector(`.task-card[data-id="${task.id}"]`);
       if (!parentCard) continue;
       const subtasks = allTasks.filter(t => t.parentId === task.id);
-      let anchor = parentCard;
+      const container = document.createElement('div');
+      container.className = 'subtask-container';
+      container.dataset.parentId = task.id;
       for (const st of subtasks) {
         const el = document.createElement('div');
-        el.className = `subtask-card parent-${task.priority}`;
+        el.className = 'subtask-card';
         el.dataset.id = st.id;
         el.dataset.parentId = task.id;
         el.innerHTML = subtaskCardInner(st);
-        anchor.after(el);
-        anchor = el;
+        container.appendChild(el);
       }
+      parentCard.after(container);
     }
 
     // Render add-subtask inline input if active
@@ -153,10 +155,9 @@ export function updateBoard(state) {
       const parentCard = body.querySelector(`.task-card[data-id="${kanbanState.addingSubtaskParentId}"]`);
       if (parentCard) {
         let anchor = parentCard;
-        let next = anchor.nextElementSibling;
-        while (next && next.classList.contains('subtask-card') && next.dataset.parentId === kanbanState.addingSubtaskParentId) {
-          anchor = next;
-          next = anchor.nextElementSibling;
+        const nextEl = anchor.nextElementSibling;
+        if (nextEl && nextEl.classList.contains('subtask-container') && nextEl.dataset.parentId === kanbanState.addingSubtaskParentId) {
+          anchor = nextEl;
         }
         const form = document.createElement('div');
         form.className = 'add-subtask-form';
@@ -265,19 +266,28 @@ function cardInnerHTML(task) {
   const subtaskBtn = `<span class="subtask-add-btn" data-action="add-subtask" data-id="${task.id}" title="Add subtask">${ICON_SUBTASK}</span>`;
 
   let progressHtml = '';
-  if (task.progress && task.progress.total > 0) {
-    const { done, inProgress, total } = task.progress;
-    const isExpanded = kanbanState.expandedParents.has(task.id);
-    const donePct = (done / total) * 100;
-    const activePct = (inProgress / total) * 100;
-    progressHtml = `<div class="subtask-progress" data-action="toggle-expand" data-id="${task.id}">
-      <span class="expand-chevron${isExpanded ? ' expanded' : ''}">&#9654;</span>
-      <div class="progress-bar">
-        <div class="progress-done" style="width:${donePct}%"></div>
-        <div class="progress-active" style="width:${activePct}%"></div>
-      </div>
-      <span class="progress-text">${done}/${total}</span>
-    </div>`;
+  if (task.subtaskIds && task.subtaskIds.length > 0) {
+    const allTasks = window.appState.tasks;
+    const subtasks = allTasks.filter(t => t.parentId === task.id);
+    const total = subtasks.length;
+    if (total > 0) {
+      const done = subtasks.filter(t => t.status === 'done').length;
+      const review = subtasks.filter(t => t.status === 'review').length;
+      const active = subtasks.filter(t => t.status === 'in-progress').length;
+      const isExpanded = kanbanState.expandedParents.has(task.id);
+      const donePct = (done / total) * 100;
+      const reviewPct = (review / total) * 100;
+      const activePct = (active / total) * 100;
+      progressHtml = `<div class="subtask-progress" data-action="toggle-expand" data-id="${task.id}">
+        <span class="expand-chevron${isExpanded ? ' expanded' : ''}">&#9654;</span>
+        <div class="progress-bar">
+          <div class="progress-done" style="width:${donePct}%"></div>
+          <div class="progress-review" style="width:${reviewPct}%"></div>
+          <div class="progress-active" style="width:${activePct}%"></div>
+        </div>
+        <span class="progress-text">${done}/${total}</span>
+      </div>`;
+    }
   }
 
   const subtaskCount = task.subtaskIds ? task.subtaskIds.length : 0;
@@ -301,15 +311,15 @@ function subtaskCardInner(task) {
   const specBadge = hasUsableSpec
     ? `<span class="spec-badge spec-badge-sm" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
     : `<span class="spec-badge spec-badge-add spec-badge-sm" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
-  return `<div class="subtask-title">${escHtml(task.title)}</div>
-    <div class="subtask-meta">
-      <span class="status-dot-wrap" data-action="toggle-status" data-id="${task.id}" data-status="${task.status}">
-        <span class="status-dot status-dot-${task.status}"></span>
-      </span>
+  return `<span class="tree-dot"></span>
+    <span class="status-dot-wrap" data-action="toggle-status" data-id="${task.id}" data-status="${task.status}">
+      <span class="status-dot status-dot-${task.status}"></span>
+    </span>
+    <span class="subtask-title">${escHtml(task.title)}</span>
+    <span class="subtask-actions">
       ${specBadge}
-      <span class="subtask-meta-spacer"></span>
       <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICON_TRASH}</button>
-    </div>`;
+    </span>`;
 }
 
 function renderAddTaskForm() {

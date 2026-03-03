@@ -35,6 +35,11 @@
       --duration-slow: 0.35s;
       --ease-out: cubic-bezier(.16, 1, .3, 1);
       --sidebar-width: 220px;
+      --status-open: #888;
+      --status-in-progress: #f0c000;
+      --status-review: #e07020;
+      --status-done: #d04040;
+      --tree-line: rgba(113, 113, 122, 0.3);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -308,19 +313,20 @@
       border: 1px solid transparent; transition: all var(--duration-fast);
     }
     .task-card:hover .subtask-add-btn { opacity: 0.5; border-color: var(--border); }
-    .task-card:hover .subtask-add-btn:hover { opacity: 1; color: var(--accent-2); background: rgba(20, 184, 166, 0.1); border-color: rgba(20, 184, 166, 0.3); }
+    .task-card:hover .subtask-add-btn:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
 
     .add-subtask-form {
-      margin-left: 12px; border-left: 2px solid var(--accent-2);
+      margin-left: 36px;
       padding: 8px 12px; background: var(--card);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
     }
     .add-subtask-form .subtask-input {
       width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
       border-radius: var(--radius-sm); padding: 6px 8px; color: var(--text);
       font-size: 12px; font-family: inherit; outline: none;
     }
-    .add-subtask-form .subtask-input:focus { border-color: var(--accent-2); }
+    .add-subtask-form .subtask-input:focus { border-color: var(--accent); }
 
     .priority-pill {
       display: inline-flex; padding: 4px 10px; border-radius: var(--radius-full);
@@ -386,12 +392,17 @@
       display: flex;
     }
     .progress-done {
-      background: var(--ok);
+      background: var(--status-done);
+      height: 100%;
+      transition: width var(--duration-normal);
+    }
+    .progress-review {
+      background: var(--status-review);
       height: 100%;
       transition: width var(--duration-normal);
     }
     .progress-active {
-      background: var(--info);
+      background: var(--status-in-progress);
       height: 100%;
       transition: width var(--duration-normal);
     }
@@ -402,36 +413,83 @@
       font-family: "JetBrains Mono", monospace;
     }
 
-    /* Subtask Cards (inline below parent) — multi-line layout */
-    .subtask-card {
+    /* Subtask container — wraps all subtask cards for a parent */
+    .subtask-container {
+      position: relative;
+      margin-left: 14px;
+      padding-left: 22px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      padding: 8px 12px;
-      margin-left: 12px;
-      border-left: 2px solid var(--border);
+      gap: 4px;
+    }
+
+    /* Subtask Cards — compact mini-cards with card outline */
+    .subtask-card {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 10px;
       background: var(--bg-accent);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
       transition: background var(--duration-normal);
     }
     .subtask-card:hover { background: var(--bg-hover); }
+
+    /* Tree-line: vertical segment on each card */
+    .subtask-card::before {
+      content: '';
+      position: absolute;
+      left: -15px;
+      top: -2px;
+      bottom: -2px;
+      width: 1.5px;
+      background: var(--tree-line);
+    }
+    .subtask-container > .subtask-card:first-child::before { top: 50%; }
+    .subtask-container > .subtask-card:last-child::before { bottom: 50%; }
+    .subtask-container > .subtask-card:only-child::before { display: none; }
+
+    /* Tree-line: horizontal branch */
+    .subtask-card::after {
+      content: '';
+      position: absolute;
+      left: -14px;
+      top: 50%;
+      width: 10px;
+      height: 1.5px;
+      background: var(--tree-line);
+      transform: translateY(-50%);
+    }
+
+    /* Tree-line: dot connector */
+    .tree-dot {
+      position: absolute;
+      left: -6px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(113, 113, 122, 0.4);
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
     .subtask-card .subtask-title {
+      flex: 1;
+      min-width: 0;
       font-size: 12px;
       color: var(--text);
       line-height: 1.4;
       word-break: break-word;
     }
-    .subtask-meta {
+    .subtask-actions {
       display: flex;
+      gap: 4px;
       align-items: center;
-      gap: 6px;
+      flex-shrink: 0;
     }
-    .subtask-meta-spacer { flex: 1; }
-
-    /* Parent priority color on subtask left border */
-    .subtask-card.parent-high { border-left-color: var(--danger); }
-    .subtask-card.parent-medium { border-left-color: var(--warn); }
-    .subtask-card.parent-low { border-left-color: var(--ok); }
 
     /* Status dots (subtask status indicator) */
     .status-dot {
@@ -440,10 +498,10 @@
       border-radius: var(--radius-full);
       flex-shrink: 0;
     }
-    .status-dot-done { background: var(--ok); }
-    .status-dot-in-progress { background: var(--info); }
-    .status-dot-open { background: var(--muted); }
-    .status-dot-review { background: var(--warn); }
+    .status-dot-done { background: var(--status-done); }
+    .status-dot-in-progress { background: var(--status-in-progress); }
+    .status-dot-open { background: var(--status-open); }
+    .status-dot-review { background: var(--status-review); }
 
     /* Clickable status dot wrapper */
     .status-dot-wrap {
@@ -486,7 +544,7 @@
     .subtask-card:hover .spec-badge-add:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
 
     /* Subtask delete button */
-    .subtask-card .delete-btn { width: 20px; height: 20px; }
+    .subtask-card .delete-btn { width: 20px; height: 20px; opacity: 0; }
     .subtask-card:hover .delete-btn { opacity: 0.6; }
     .subtask-card:hover .delete-btn:hover { opacity: 1; }
 
