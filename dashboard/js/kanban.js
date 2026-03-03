@@ -675,6 +675,11 @@ export async function confirmDelete(id, state, deleteSpec = false, mode = null) 
         const parent = state.tasks.find(t => t.id === task.parentId);
         if (parent && parent.subtaskIds) {
           parent.subtaskIds = parent.subtaskIds.filter(sid => sid !== id);
+          // Auto-demote: if no subtasks left, parent becomes a normal task
+          if (parent.subtaskIds.length === 0) {
+            delete parent.subtaskIds;
+            kanbanState.expandedParents.delete(task.parentId);
+          }
         }
       }
     }
