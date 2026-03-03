@@ -299,6 +299,29 @@
     .task-card:hover .spec-badge-add { opacity: 0.5; border-color: var(--border); }
     .task-card:hover .spec-badge-add:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
 
+    .task-meta-actions { display: flex; gap: 4px; align-items: center; }
+
+    .subtask-add-btn {
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: var(--radius-sm);
+      opacity: 0; color: var(--muted); background: transparent;
+      border: 1px solid transparent; transition: all var(--duration-fast);
+    }
+    .task-card:hover .subtask-add-btn { opacity: 0.5; border-color: var(--border); }
+    .task-card:hover .subtask-add-btn:hover { opacity: 1; color: var(--accent-2); background: rgba(20, 184, 166, 0.1); border-color: rgba(20, 184, 166, 0.3); }
+
+    .add-subtask-form {
+      margin-left: 12px; border-left: 2px solid var(--accent-2);
+      padding: 8px 12px; background: var(--card);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+    .add-subtask-form .subtask-input {
+      width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 6px 8px; color: var(--text);
+      font-size: 12px; font-family: inherit; outline: none;
+    }
+    .add-subtask-form .subtask-input:focus { border-color: var(--accent-2); }
+
     .priority-pill {
       display: inline-flex; padding: 4px 10px; border-radius: var(--radius-full);
       font-size: 11px; font-weight: 500; cursor: pointer;

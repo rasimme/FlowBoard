@@ -14,7 +14,8 @@ export const kanbanState = {
   selectedPriority: 'medium',
   boardBuilt: false,
   newCardIds: new Set(),
-  expandedParents: new Set()
+  expandedParents: new Set(),
+  addingSubtaskParentId: null
 };
 
 // --- Sort ---
@@ -146,6 +147,38 @@ export function updateBoard(state) {
       }
     }
 
+    // Render add-subtask inline input if active
+    body.querySelectorAll('.add-subtask-form').forEach(el => el.remove());
+    if (kanbanState.addingSubtaskParentId) {
+      const parentCard = body.querySelector(`.task-card[data-id="${kanbanState.addingSubtaskParentId}"]`);
+      if (parentCard) {
+        let anchor = parentCard;
+        let next = anchor.nextElementSibling;
+        while (next && next.classList.contains('subtask-card') && next.dataset.parentId === kanbanState.addingSubtaskParentId) {
+          anchor = next;
+          next = anchor.nextElementSibling;
+        }
+        const form = document.createElement('div');
+        form.className = 'add-subtask-form';
+        form.innerHTML = `<input class="subtask-input" placeholder="Subtask title..." data-parent="${kanbanState.addingSubtaskParentId}">
+          <div class="form-actions" style="margin-top:6px">
+            <button class="btn btn-primary btn-sm" data-action="submit-subtask" data-id="${kanbanState.addingSubtaskParentId}">Add</button>
+            <button class="btn btn-secondary btn-sm" data-action="cancel-subtask">Cancel</button>
+          </div>`;
+        anchor.after(form);
+        setTimeout(() => {
+          const inp = form.querySelector('.subtask-input');
+          if (inp) {
+            inp.focus();
+            inp.addEventListener('keydown', e => {
+              if (e.key === 'Enter') { if (window._submitSubtask) window._submitSubtask(); }
+              if (e.key === 'Escape') { if (window._cancelSubtask) window._cancelSubtask(); }
+            });
+          }
+        }, 50);
+      }
+    }
+
     if (status === 'open') {
       const existingBtn = body.querySelector('.add-task-btn');
       const existingForm = body.querySelector('.add-task-form');
@@ -221,6 +254,7 @@ function updateCardContent(card, task) {
 const ICON_TRASH = ICONS.trash;
 const ICON_SPEC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13h4"/><path d="M10 17h4"/></svg>`;
 const ICON_SPEC_ADD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>`;
+const ICON_SUBTASK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12h-8"/><path d="M21 6h-8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg>`;
 
 function cardInnerHTML(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
@@ -228,6 +262,7 @@ function cardInnerHTML(task) {
   const specBadge = hasUsableSpec
     ? `<span class="spec-badge" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
     : `<span class="spec-badge spec-badge-add" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
+  const subtaskBtn = `<span class="subtask-add-btn" data-action="add-subtask" data-id="${task.id}" title="Add subtask">${ICON_SUBTASK}</span>`;
 
   let progressHtml = '';
   if (task.progress && task.progress.total > 0) {
@@ -257,7 +292,7 @@ function cardInnerHTML(task) {
       <span class="priority-pill-wrap">
         <span class="priority-pill priority-${task.priority}" data-action="toggle-priority" data-id="${task.id}" data-priority="${task.priority}">${task.priority}</span>
       </span>
-      ${specBadge}
+      <span class="task-meta-actions">${subtaskBtn}${specBadge}</span>
     </div>${progressHtml}`;
 }
 
@@ -315,6 +350,45 @@ export function toggleExpand(id) {
     kanbanState.expandedParents.add(id);
   }
   return true; // Signal re-render
+}
+
+export function startAddSubtask(id) {
+  kanbanState.addingSubtaskParentId = id;
+  kanbanState.expandedParents.add(id);
+  return true;
+}
+
+export function cancelAddSubtask() {
+  kanbanState.addingSubtaskParentId = null;
+  return true;
+}
+
+export async function submitSubtask(state) {
+  const parentId = kanbanState.addingSubtaskParentId;
+  if (!parentId) return;
+  const inp = document.querySelector('.add-subtask-form .subtask-input');
+  const title = inp ? inp.value.trim() : '';
+  if (!title) return;
+  const res = await api(`/projects/${state.viewedProject}/tasks`, {
+    method: 'POST', body: { title, parentId }
+  });
+  if (res.ok) {
+    state.tasks.push(res.task);
+    const parent = state.tasks.find(t => t.id === parentId);
+    if (parent) {
+      if (!parent.subtaskIds) parent.subtaskIds = [];
+      parent.subtaskIds.push(res.task.id);
+      if (!parent.progress) parent.progress = { done: 0, inProgress: 0, total: 0 };
+      parent.progress.total++;
+    }
+    kanbanState.addingSubtaskParentId = null;
+    toast(`Subtask ${res.task.id} created`, 'success');
+    _hn('success');
+    return true;
+  } else {
+    toast(res.error || 'Error', 'error');
+    _hn('error');
+  }
 }
 
 export async function createTask(state) {
@@ -594,6 +668,9 @@ export function bindKanbanEvents(container) {
       case 'create-task':     if (window._createTask) window._createTask(); break;
       case 'cancel-add':      if (window._cancelAdd) window._cancelAdd(); break;
       case 'start-add':       if (window._startAdd) window._startAdd(); break;
+      case 'add-subtask':     if (window._addSubtask) window._addSubtask(id); break;
+      case 'submit-subtask':  if (window._submitSubtask) window._submitSubtask(); break;
+      case 'cancel-subtask':  if (window._cancelSubtask) window._cancelSubtask(); break;
       case 'select-priority': selectPriority(priority); break;
       case 'toggle-sort':     if (window._toggleSort) window._toggleSort(); break;
     }
