@@ -428,6 +428,50 @@ function nextTaskId(tasks) {
   return `T-${String(max + 1).padStart(3, '0')}`;
 }
 
+function nextSubtaskId(parentId, existingSubtaskIds) {
+  const nums = existingSubtaskIds.map(id => {
+    const parts = id.split('-');
+    return parseInt(parts[parts.length - 1], 10);
+  }).filter(n => !isNaN(n));
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  return `${parentId}-${next}`;
+}
+
+function recalcParentStatus(tasks, parentId) {
+  const parent = tasks.find(t => t.id === parentId);
+  if (!parent || parent.status === 'done') return null;
+
+  const subtasks = tasks.filter(t => t.parentId === parentId);
+  if (subtasks.length === 0) return null;
+
+  const allDone = subtasks.every(t => t.status === 'done');
+  const anyStarted = subtasks.some(t => t.status !== 'open');
+
+  let newStatus = parent.status;
+  if (allDone) {
+    newStatus = 'review';
+  } else if (anyStarted && parent.status === 'open') {
+    newStatus = 'in-progress';
+  } else if (!allDone && parent.status === 'review') {
+    newStatus = 'in-progress';
+  }
+
+  if (newStatus !== parent.status) {
+    parent.status = newStatus;
+    return { id: parent.id, status: newStatus };
+  }
+  return null;
+}
+
+function getSubtaskProgress(tasks, parentId) {
+  const subtasks = tasks.filter(t => t.parentId === parentId);
+  return {
+    done: subtasks.filter(t => t.status === 'done').length,
+    inProgress: subtasks.filter(t => t.status === 'in-progress' || t.status === 'review').length,
+    total: subtasks.length
+  };
+}
+
 /**
  * Return a contextual reminder string for task lifecycle events.
  * @param {object} task - The task object (after any mutations)
