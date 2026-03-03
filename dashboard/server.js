@@ -619,10 +619,23 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       task[key] = updates[key];
     }
   }
+
+  // Recalculate parent status if this is a subtask and status changed
+  let parentUpdated = null;
+  if (task.parentId && updates.status && updates.status !== prevStatus) {
+    try {
+      parentUpdated = recalcParentStatus(data.tasks, task.parentId);
+      if (parentUpdated) {
+        parentUpdated.progress = getSubtaskProgress(data.tasks, task.parentId);
+      }
+    } catch (e) { console.warn('[recalcParent]', e); }
+  }
+
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
+    if (parentUpdated) response.parentUpdated = parentUpdated;
     try {
       const r = getTaskReminder(task, 'status-change', updates.status, prevStatus);
       if (r) response.reminder = r;
