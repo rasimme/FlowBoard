@@ -1,4 +1,4 @@
-import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=3';
+import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=4';
 import {
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
   createTask, saveTitle, setPriority,

@@ -1,11 +1,11 @@
 // canvas/connections.js — Connection routing, SVG rendering, ports, drag, save/delete
 
-import { api, toast } from '../utils.js?v=3';
+import { api, toast } from '../utils.js?v=4';
 import {
   canvasState, getNoteDotPosition, COLOR_STROKE,
   CORNER_RADIUS, PORT_SPACING, MIN_ESCAPE, MAX_PORTS_PER_SIDE
 } from './state.js?v=1';
-import { renderPromoteButton, updateToolbar } from './toolbar.js?v=1';
+import { renderPromoteButton, updateToolbar } from './toolbar.js?v=2';
 
 /**
  * Convert an array of [x,y] waypoints into a rounded-corner SVG path.
@@ -127,7 +127,14 @@ export function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0)
         mid = [[mx, sy], [mx, ey]];
       } else {
         const my = Math.max(sy, ey) + E;
-        mid = [[sx, my], [ex, my]];
+        if (Math.abs(sx - ex) < 2 * r) {
+          // Dots nearly overlap: C-shape to avoid invisible overlapping arms
+          const armX = (sx >= ex) ? sx + E : ex + E;
+          mid = [[armX, sy], [armX, ey]];
+        } else {
+          // Normal U-shape: go below both, connect horizontally
+          mid = [[sx, my], [ex, my]];
+        }
       }
     } else {
       // Opposite-facing (left→right, right→left): check if escapes face
@@ -138,13 +145,32 @@ export function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0)
         const facingEachOther = (fromSide === 'right' && sx < ex) ||
                                 (fromSide === 'left'  && sx > ex);
         if (facingEachOther) {
-          const mx = (sx + ex) / 2;
-          mid = (Math.abs(sy - ey) < 1) ? [] : [[mx, sy], [mx, ey]];
+          const escGap = Math.abs(sx - ex);
+          if (Math.abs(sy - ey) < 1) {
+            mid = [];
+          } else {
+            // S-shape: vertical line always centered between escapes.
+            // When gap is narrow (< 2*r), skip both escape stubs and
+            // route directly from source dot through midpoint to target dot.
+            // This avoids micro-segments AND ensures no visual jump when
+            // the gap crosses the threshold.
+            const mx = (sx + ex) / 2;
+            if (escGap < 4 * r) {
+              const sPts = srcHorz
+                ? [[x1, y1], [mx, sy], [mx, y2], [x2, y2]]
+                : [[x1, y1], [sx, mx], [x2, mx], [x2, y2]];
+              return ptsToRoundedPath(sPts, r);
+            }
+            mid = [[mx, sy], [mx, ey]];
+          }
         } else {
-          // Facing away: Z-shape. Go in source escape direction, then
-          // perpendicular to target level, then in target escape direction.
-          // This avoids immediate reversal after either escape.
-          const my = (sy + ey) / 2;
+          // Facing away: Z-shape (per connection-routing.md).
+          // When vertical gap is too small, midpoint would collapse
+          // onto the escapes → route above or below instead.
+          const vertGap = Math.abs(sy - ey);
+          const my = (vertGap < 2 * r)
+            ? Math.min(sy, ey) - E
+            : (sy + ey) / 2;
           mid = [[sx, my], [ex, my]];
         }
       } else {
@@ -153,14 +179,36 @@ export function routePath(x1, y1, x2, y2, fromSide, toSide = null, tgtHalfW = 0)
           const my = (sy + ey) / 2;
           mid = (Math.abs(sx - ex) < 1) ? [] : [[sx, my], [ex, my]];
         } else {
-          const my = Math.max(sy, ey) + E;
-          mid = [[sx, my], [ex, my]];
+          if (srcHorz) {
+            // left/right same-side: U goes in escape direction
+            const mx = (fromSide === 'right') ? Math.max(sx, ex) + E : Math.min(sx, ex) - E;
+            // When vertical gap too small, offset arms horizontally
+            if (Math.abs(sy - ey) < 2 * r) {
+              const cy = (sy + ey) / 2;
+              const arm1 = cy - E, arm2 = cy + E;
+              mid = [[mx, arm1], [mx, arm2]];
+              // TODO: may need 4-point mid for full rectangle
+            } else {
+              mid = [[mx, sy], [mx, ey]];
+            }
+          } else {
+            // bottom same-side: U goes below both escapes
+            const my = Math.max(sy, ey) + E;
+            // When horizontal gap too small, offset arms so U is visible
+            if (Math.abs(sx - ex) < 2 * r) {
+              const cx = (sx + ex) / 2;
+              mid = [[cx - E, sy], [cx - E, my], [cx + E, my], [cx + E, ey]];
+            } else {
+              mid = [[sx, my], [ex, my]];
+            }
+          }
         }
       }
     }
   }
 
-  const pts = [[x1, y1], [sx, sy], ...mid, [ex, ey], [x2, y2]];
+  let pts = [[x1, y1], [sx, sy], ...mid, [ex, ey], [x2, y2]];
+
   return ptsToRoundedPath(pts, r);
 }
 
@@ -318,16 +366,16 @@ export function computePortPositions() {
     const n = group.length;
 
     const bl = noteEl.clientLeft || 1;
+    const bt = noteEl.clientTop || 1;
     group.forEach((a, i) => {
       const offset = stackOffset(i);
       let px, py;
-      // bl = border width; dot CSS coords are relative to PADDING edge (note.x + bl)
-      // perpendicular axis: center of border line (note.x + w - bl/2 etc.)
-      // along-edge axis: needs +bl because CSS top/left is from padding edge
-      if (side === 'top')    { px = Math.round(note.x + bl + w / 2 + offset); py = Math.round(note.y - bl / 2); }
-      if (side === 'bottom') { px = Math.round(note.x + bl + w / 2 + offset); py = Math.round(note.y + h - bl / 2); }
-      if (side === 'left')   { px = Math.round(note.x + bl / 2);              py = Math.round(note.y + bl + h / 2 + offset); }
-      if (side === 'right')  { px = Math.round(note.x + w - bl / 2);          py = Math.round(note.y + bl + h / 2 + offset); }
+      // bl/bt = border widths (left may differ from top due to accent border)
+      // dot CSS coords are relative to PADDING edge: X uses +bl, Y uses +bt
+      if (side === 'top')    { px = Math.round(note.x + bl + w / 2 + offset); py = Math.round(note.y + bt / 2); }
+      if (side === 'bottom') { px = Math.round(note.x + bl + w / 2 + offset); py = Math.round(note.y + bt + h - bl * 1.5); }
+      if (side === 'left')   { px = Math.round(note.x + bl / 2);              py = Math.round(note.y + bt + h / 2 + offset); }
+      if (side === 'right')  { px = Math.round(note.x + w - bl / 2);          py = Math.round(note.y + bt + h / 2 + offset); }
 
       const connKey = a.conn.from + ':' + a.conn.to;
       if (!portMap.has(connKey)) portMap.set(connKey, {});
@@ -402,11 +450,12 @@ export function renderConnections() {
     if (idx === -1) return getNoteDotPosition(noteId, side);
     const offset = stackOffset(idx);
     const bl = el.clientLeft || 1;
-    // Canvas coords = note.x + borderLeft + CSS_left (absolute positioning origin = padding edge)
+    const bt = el.clientTop || 1;
+    // Canvas coords: X = note.x + clientLeft + CSS_left, Y = note.y + clientTop + CSS_top
     let x = note.x, y = note.y;
-    if (side === 'bottom') { x += bl + Math.max(8, Math.min(w - 8, w / 2 + offset)); y += h - bl / 2; }
-    else if (side === 'left')  { x += bl / 2; y += bl + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
-    else if (side === 'right') { x += w - bl / 2; y += bl + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    if (side === 'bottom') { x += bl + Math.max(8, Math.min(w - 8, w / 2 + offset)); y += bt + h - bl * 1.5; }
+    else if (side === 'left')  { x += bl / 2; y += bt + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
+    else if (side === 'right') { x += w - bl / 2; y += bt + Math.max(8, Math.min(h - 8, h / 2 + offset)); }
     else { x += bl + w / 2; } // top fallback (legacy)
     return { x: Math.round(x), y: Math.round(y) };
   }
@@ -566,10 +615,12 @@ export function startConnectionDrag(e, noteId, port) {
   let pt;
   const dotEl = e.target?.closest?.('.conn-dot') || e.target;
   if (dotEl?.dataset?.dotLeft !== undefined) {
-    const bl = (document.getElementById('note-' + noteId)?.clientLeft) || 1;
+    const _nEl = document.getElementById('note-' + noteId);
+    const bl = _nEl?.clientLeft || 1;
+    const bt = _nEl?.clientTop || 1;
     const dLeft = parseFloat(dotEl.dataset.dotLeft);
     const dTop  = parseFloat(dotEl.dataset.dotTop);
-    pt = { x: note.x + bl + dLeft, y: note.y + bl + dTop };
+    pt = { x: note.x + bl + dLeft, y: note.y + bt + dTop };
     dotEl.classList.add('conn-dot-active');
   } else {
     pt = getNoteDotPosition(noteId, port);

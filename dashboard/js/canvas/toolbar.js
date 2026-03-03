@@ -1,13 +1,13 @@
 // canvas/toolbar.js — Floating toolbar, formatting, popovers, clipboard, promote
 
-import { api, toast, showModal, escHtml } from '../utils.js?v=3';
+import { api, toast, showModal, escHtml } from '../utils.js?v=4';
 import { canvasState, NOTE_COLORS, applyTransform } from './state.js?v=1';
 import {
   setNoteColor, setNoteSize, confirmDeleteNote, startDeleteNote,
   createNoteElement, startNoteEdit, saveNoteText, renderNotes,
   renderEmptyState, checkTruncation
-} from './notes.js?v=1';
-import { renderConnections } from './connections.js?v=1';
+} from './notes.js?v=2';
+import { renderConnections } from './connections.js?v=2';
 
 export function updateToolbar() {
   const toolbar = document.getElementById('canvasToolbar');
@@ -235,7 +235,8 @@ export async function duplicateSelected() {
 
   // Select the new duplicates
   if (newIds.size > 0) {
-    canvasState.selectedIds = newIds;
+    canvasState.selectedIds.clear();
+    for (const id of newIds) canvasState.selectedIds.add(id);
     document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
     for (const id of newIds) {
       document.getElementById('note-' + id)?.classList.add('selected');
@@ -297,7 +298,8 @@ export async function pasteFromClipboard() {
   }
 
   if (newIds.size > 0) {
-    canvasState.selectedIds = newIds;
+    canvasState.selectedIds.clear();
+    for (const id of newIds) canvasState.selectedIds.add(id);
     document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
     for (const id of newIds) {
       document.getElementById('note-' + id)?.classList.add('selected');

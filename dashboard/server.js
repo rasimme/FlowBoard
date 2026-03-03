@@ -223,7 +223,7 @@ function trimSessionLog(content, maxSessions = 2) {
 function updateBootstrapMd(projectName) {
   if (!projectName) {
     // No active project — clear BOOTSTRAP.md
-    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch {}
+    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch (e) { console.warn(e); }
     return;
   }
 
@@ -232,8 +232,8 @@ function updateBootstrapMd(projectName) {
 
   let rulesContent = '';
   let projectContent = '';
-  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch {}
-  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch {}
+  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch (e) { console.warn(e); }
+  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch (e) { console.warn(e); }
 
   // Smart Session Log trimming: keep only last 2 sessions in bootstrap
   if (projectContent) {
