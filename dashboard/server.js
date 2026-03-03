@@ -428,6 +428,33 @@ function nextTaskId(tasks) {
   return `T-${String(max + 1).padStart(3, '0')}`;
 }
 
+/**
+ * Return a contextual reminder string for task lifecycle events.
+ * @param {object} task - The task object (after any mutations)
+ * @param {'create'|'status-change'} action - What triggered the call
+ * @param {string|undefined} newStatus - The new status (only for status-change)
+ * @param {string|undefined} prevStatus - The previous status (only for status-change)
+ * @returns {string|null}
+ */
+function getTaskReminder(task, action, newStatus, prevStatus) {
+  if (action === 'create') {
+    return '\u{1F4A1} Evaluate: does this task need a spec? Consider: multiple files affected, new UI pattern, unclear scope, or complex logic \u2192 create a spec. Simple fix or config change \u2192 title is enough.';
+  }
+  if (action === 'status-change' && newStatus && newStatus !== prevStatus) {
+    if (newStatus === 'in-progress') {
+      return task.specFile
+        ? `\u{1F4CB} This task has a spec \u2014 read it before starting: ${task.specFile}`
+        : '\u{1F4A1} No spec for this task. If it\'s complex (multiple files, new patterns), consider creating one first.';
+    }
+    if (newStatus === 'done') {
+      return task.specFile
+        ? `\u26A0\uFE0F Before confirming done: read the spec (${task.specFile}), verify all Done-When criteria are met, and update checkboxes.`
+        : '\u2705 No spec to verify. Confirm the task title accurately describes what was delivered.';
+    }
+  }
+  return null;
+}
+
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = readActiveProject();
