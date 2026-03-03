@@ -17,33 +17,33 @@
 
 /* Outline-only note cards — override dashboard.css color fills */
 .note {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-width: 1.5px !important;
   border-left-width: 1.5px !important;
   border-style: solid !important;
 }
 .note.color-yellow {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-color: var(--warn) !important;
 }
 .note.color-blue {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-color: var(--info) !important;
 }
 .note.color-green {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-color: var(--ok) !important;
 }
 .note.color-red {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-color: var(--danger) !important;
 }
 .note.color-teal {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-color: var(--accent-2) !important;
 }
 .note.color-grey {
-  background: #12141a !important;
+  background: var(--bg) !important;
   border-color: var(--border-strong) !important;
 }
 
@@ -226,7 +226,7 @@
   left: 0;
   right: 0;
   height: 48px;
-  background: linear-gradient(transparent, #12141a);
+  background: linear-gradient(transparent, var(--bg));
   pointer-events: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   z-index: 2;
