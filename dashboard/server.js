@@ -706,7 +706,7 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
       parent.subtaskIds = parent.subtaskIds.filter(id => id !== task.id);
       // Auto-demote: if no subtasks left, parent becomes a normal task
       if (parent.subtaskIds.length === 0) {
-        delete parent.subtaskIds;
+        parent.subtaskIds = undefined;
       }
     }
     data.tasks = data.tasks.filter(t => t.id !== task.id);
