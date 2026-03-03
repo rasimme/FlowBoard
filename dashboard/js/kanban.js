@@ -585,6 +585,14 @@ export async function setSubtaskStatus(id, status, state) {
     method: 'PUT', body: { status }
   });
   if (res.ok) {
+    // Update parent status from server response
+    if (res.parentUpdated) {
+      const parent = state.tasks.find(t => t.id === res.parentUpdated.id);
+      if (parent) {
+        parent.status = res.parentUpdated.status;
+        if (res.parentUpdated.progress) parent.progress = res.parentUpdated.progress;
+      }
+    }
     toast(`${STATUS_LABELS[status]}`, 'success');
     _h('light');
     return true;
@@ -677,7 +685,7 @@ export async function confirmDelete(id, state, deleteSpec = false, mode = null) 
           parent.subtaskIds = parent.subtaskIds.filter(sid => sid !== id);
           // Auto-demote: if no subtasks left, parent becomes a normal task
           if (parent.subtaskIds.length === 0) {
-            delete parent.subtaskIds;
+            parent.subtaskIds = undefined;
             kanbanState.expandedParents.delete(task.parentId);
           }
         }
