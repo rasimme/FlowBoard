@@ -36,8 +36,7 @@ export const canvasState = {
   panning: null,
   lassoState: null,
   posSaveTimers: {},
-  sidebarNoteId: null,
-  _state: null
+  sidebarNoteId: null
 };
 
 // --- Coordinate helpers ---

@@ -198,7 +198,7 @@ let clipboard = []; // [{text, color, size, offsetX, offsetY}]
 export async function duplicateSelected() {
   const ids = [...canvasState.selectedIds];
   if (ids.length === 0) return;
-  const project = canvasState._state?.viewedProject;
+  const project = window.appState?.viewedProject;
   if (!project) return;
 
   // Calculate bounding box center for offset
@@ -260,7 +260,7 @@ export function copySelectedToClipboard() {
 
 export async function pasteFromClipboard() {
   if (clipboard.length === 0) return;
-  const project = canvasState._state?.viewedProject;
+  const project = window.appState?.viewedProject;
   if (!project) return;
 
   // Paste at visible center of canvas
@@ -645,9 +645,9 @@ export function showPromoteModal(noteIds) {
 }
 
 export async function promoteNotes(noteIds, title, priority) {
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    const res = await api(`/projects/${canvasState._state.viewedProject}/canvas/promote`, {
+    const res = await api(`/projects/${window.appState.viewedProject}/canvas/promote`, {
       method: 'POST', body: { noteIds, title, priority }
     });
     if (res.ok) {
@@ -669,8 +669,8 @@ export async function promoteNotes(noteIds, title, priority) {
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
 
       // Update tasks state so kanban reflects the new task
-      if (canvasState._state) {
-        canvasState._state.tasks.push(res.task);
+      if (window.appState) {
+        window.appState.tasks.push(res.task);
       }
     } else {
       toast(res.error || 'Promote failed', 'error');
