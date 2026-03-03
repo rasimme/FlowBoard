@@ -69,7 +69,8 @@ export function updateBoard(state) {
 
   if (!kanbanState.boardBuilt) buildBoard();
 
-  const tasks = state.tasks;
+  const allTasks = state.tasks;
+  const tasks = allTasks.filter(t => !t.parentId);
   const counts = {};
   STATUS_KEYS.forEach(s => counts[s] = 0);
 
@@ -124,6 +125,25 @@ export function updateBoard(state) {
         body.insertBefore(card, insertBefore);
       }
       insertBefore = card;
+    }
+
+    // Render subtask cards for expanded parents
+    body.querySelectorAll('.subtask-card').forEach(el => el.remove());
+    for (const task of sorted) {
+      if (!task.subtaskIds?.length || !kanbanState.expandedParents.has(task.id)) continue;
+      const parentCard = body.querySelector(`.task-card[data-id="${task.id}"]`);
+      if (!parentCard) continue;
+      const subtasks = allTasks.filter(t => t.parentId === task.id);
+      let anchor = parentCard;
+      for (const st of subtasks) {
+        const el = document.createElement('div');
+        el.className = `subtask-card parent-${task.priority}`;
+        el.dataset.id = st.id;
+        el.dataset.parentId = task.id;
+        el.innerHTML = subtaskCardInner(st);
+        anchor.after(el);
+        anchor = el;
+      }
     }
 
     if (status === 'open') {
@@ -239,6 +259,14 @@ function cardInnerHTML(task) {
       </span>
       ${specBadge}
     </div>${progressHtml}`;
+}
+
+function subtaskCardInner(task) {
+  return `<span class="status-dot status-dot-${task.status}"></span>
+    <span class="task-id mono">${task.id}</span>
+    <span class="subtask-title">${escHtml(task.title)}</span>
+    <span class="priority-pill priority-${task.priority}">${task.priority}</span>
+    <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICON_TRASH}</button>`;
 }
 
 function renderAddTaskForm() {
