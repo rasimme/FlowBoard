@@ -1,9 +1,9 @@
 // canvas/index.js — Entry point, orchestrator, CSS injection, public API re-exports
 
-import { ICONS } from '../utils.js?v=4';
+import { ICONS } from '../utils.js?v=5';
 import { canvasState, loadCanvas, applyTransform, resetCanvasState } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
-         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=2';
+         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=3';
 import { renderConnections, startConnectionDrag } from './connections.js?v=2';
 import { renderPromoteButton, showPromoteModal, bindToolbarEvents, updateToolbar } from './toolbar.js?v=2';
 import { bindCanvasEvents } from './events.js?v=1';
