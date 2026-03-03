@@ -650,9 +650,55 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 app.delete('/api/projects/:name/tasks/:id', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  const idx = data.tasks.findIndex(t => t.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Task not found' });
-  data.tasks.splice(idx, 1);
+  const task = data.tasks.find(t => t.id === req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (task.subtaskIds && task.subtaskIds.length > 0) {
+    // Parent with subtasks — require mode
+    const mode = req.query.mode;
+    if (!mode) {
+      return res.status(400).json({
+        error: 'Task has subtasks',
+        subtaskCount: task.subtaskIds.length
+      });
+    }
+
+    if (mode === 'all') {
+      const idsToDelete = new Set([task.id, ...task.subtaskIds]);
+      for (const t of data.tasks) {
+        if (idsToDelete.has(t.id) && t.specFile) {
+          try {
+            const specPath = path.join(PROJECTS_DIR, req.params.name, t.specFile);
+            if (fs.existsSync(specPath)) fs.unlinkSync(specPath);
+          } catch (e) { console.warn('[delete-spec]', e); }
+        }
+      }
+      data.tasks = data.tasks.filter(t => !idsToDelete.has(t.id));
+    } else if (mode === 'keep-children') {
+      for (const t of data.tasks) {
+        if (t.parentId === task.id) {
+          t.parentId = null;
+        }
+      }
+      data.tasks = data.tasks.filter(t => t.id !== task.id);
+    } else {
+      return res.status(400).json({ error: 'Invalid mode. Use "all" or "keep-children"' });
+    }
+  } else if (task.parentId) {
+    // Subtask — remove from parent's subtaskIds, recalc parent
+    const parent = data.tasks.find(t => t.id === task.parentId);
+    if (parent && parent.subtaskIds) {
+      parent.subtaskIds = parent.subtaskIds.filter(id => id !== task.id);
+    }
+    data.tasks = data.tasks.filter(t => t.id !== task.id);
+    if (parent) {
+      try { recalcParentStatus(data.tasks, parent.id); } catch (e) { console.warn('[recalcParent]', e); }
+    }
+  } else {
+    // Simple task — no subtasks, no parent
+    data.tasks = data.tasks.filter(t => t.id !== task.id);
+  }
+
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
