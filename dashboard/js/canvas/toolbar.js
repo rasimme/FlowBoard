@@ -112,6 +112,9 @@ export function showColorPopover() {
   pop.addEventListener('mousedown', e => e.stopPropagation());
   pop.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   wrap.appendChild(pop);
+  // Ensure toolbar visible for accurate getBoundingClientRect measurement
+  // (on mobile, toolbar may be hidden between touchend and synthesized click)
+  toolbar.style.display = 'flex';
   // Now measure and position
   const btnRect = btn.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
@@ -171,6 +174,8 @@ export function showSizePopover() {
   pop.addEventListener('mousedown', e => e.stopPropagation());
   pop.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   wrap.appendChild(pop);
+  // Ensure toolbar visible for accurate getBoundingClientRect measurement
+  toolbar.style.display = 'flex';
   // Now measure and position
   const btnRect = btn.getBoundingClientRect();
   const wrapRect = wrap.getBoundingClientRect();
