@@ -107,7 +107,46 @@ When modifying a JS or CSS file, increment its version in all import/script/link
 - **Custom scrollbar** in file-explorer — complex but working, don't refactor
 - **Connection routing algorithm** (Manhattan + rounded corners in connections.js) — don't rewrite
 - **`?v=N` cache busting** — primitive but effective, keep it (see Cache Busting section above)
-- **`window.*` bindings** in app.js — required for inline onclick handlers in dynamically rendered HTML; don't remove
+- **Event delegation** — modules use `data-action` + `data-*` attributes; app.js sets `window._*` bridge callbacks for cross-module coordination; zero inline `onclick` handlers
 
 ## Testing
 No test framework currently. When adding tests, prefer lightweight approaches (Node test runner or similar). No heavy test frameworks.
+
+## Event Handling Patterns (MANDATORY)
+
+### Event Delegation — always use this for dynamically rendered HTML
+Never use `onclick="window.fn()"` or `ondragstart="window.fn()"` inline attributes. Use data-* attributes + delegated listeners:
+
+```html
+<!-- ✅ Correct -->
+<button data-action="delete-task" data-id="${id}" data-title="${title}">Delete</button>
+
+<!-- ❌ Wrong -->
+<button onclick="window.startDelete('${id}', '${title}')">Delete</button>
+```
+
+Each module exposes a `bind*Events(container)` function that attaches one delegated listener:
+```js
+container.addEventListener('click', e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const { action, id } = el.dataset;
+  if (action === 'delete-task') startDelete(id);
+});
+```
+
+### Direct addEventListener — use for these cases only
+- Input `keydown`/`blur` events (attach after element creation)
+- Canvas dot `mousedown`/`touchstart` (geometry-sensitive, use direct attach)
+- Modal-scoped one-time listeners (attach + self-remove)
+
+### window.* globals — forbidden for new code
+The only allowed `window.*` assignments are `window._*` bridge callbacks in app.js for cross-module state. Never add new `window.*` bindings.
+
+### Drag Events (HTML5 DnD)
+- `ondragstart`/`ondragend` on cards: attach via `el.addEventListener()` in JS after element creation
+- `ondragover`/`ondragleave`/`ondrop` on columns: delegation from container, explicitly pass the column element to handler (never rely on `e.currentTarget` in delegated handlers)
+
+### Touch Events & getBoundingClientRect()
+- When using touch events on canvas dots: pass the actual dot element explicitly, never rely on `e.target` from a synthetic event
+- Popovers: always verify element is visible before calling `getBoundingClientRect()`. A `display:none` element returns zeros.
