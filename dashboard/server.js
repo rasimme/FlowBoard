@@ -527,6 +527,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     }
   }
 
+  const prevStatus = task.status;
   if (updates.status === 'done' && task.status !== 'done') {
     updates.completed = new Date().toISOString().slice(0, 10);
   }
@@ -542,7 +543,12 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
-    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
+    const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
+    try {
+      const r = getTaskReminder(task, 'status-change', updates.status, prevStatus);
+      if (r) response.reminder = r;
+    } catch (e) { console.warn('[reminder]', e); }
+    res.json(response);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
