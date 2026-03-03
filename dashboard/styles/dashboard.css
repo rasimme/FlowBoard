@@ -402,11 +402,11 @@
       font-family: "JetBrains Mono", monospace;
     }
 
-    /* Subtask Cards (inline below parent) */
+    /* Subtask Cards (inline below parent) — multi-line layout */
     .subtask-card {
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
+      gap: 6px;
       padding: 8px 12px;
       margin-left: 12px;
       border-left: 2px solid var(--border);
@@ -415,20 +415,18 @@
       transition: background var(--duration-normal);
     }
     .subtask-card:hover { background: var(--bg-hover); }
-    .subtask-card .task-id { margin-bottom: 0; font-size: 10px; }
     .subtask-card .subtask-title {
-      flex: 1;
       font-size: 12px;
       color: var(--text);
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      line-height: 1.4;
+      word-break: break-word;
     }
-    .subtask-card .priority-pill {
-      font-size: 10px;
-      padding: 2px 6px;
+    .subtask-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
+    .subtask-meta-spacer { flex: 1; }
 
     /* Parent priority color on subtask left border */
     .subtask-card.parent-high { border-left-color: var(--danger); }
@@ -446,6 +444,46 @@
     .status-dot-in-progress { background: var(--info); }
     .status-dot-open { background: var(--muted); }
     .status-dot-review { background: var(--warn); }
+
+    /* Clickable status dot wrapper */
+    .status-dot-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      position: relative;
+      transition: background var(--duration-fast);
+    }
+    .status-dot-wrap:hover { background: rgba(255,255,255,.08); }
+
+    /* Status popover */
+    .status-popover {
+      position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: 2px; padding: 6px;
+      width: max-content;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md);
+      box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
+      z-index: 100;
+      animation: popIn var(--duration-fast) var(--ease-out);
+    }
+    .status-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px; border-radius: var(--radius-sm);
+      font-size: 11px; color: var(--muted); cursor: pointer;
+      white-space: nowrap; transition: all var(--duration-fast);
+    }
+    .status-option:hover { background: var(--bg-hover); color: var(--text); }
+    .status-option.current { color: var(--text-strong); }
+
+    /* Smaller spec badges on subtask cards */
+    .spec-badge-sm { width: 22px; height: 22px; }
+    .spec-badge-sm svg { width: 12px; height: 12px; }
+    .subtask-card .spec-badge-add { opacity: 0; }
+    .subtask-card:hover .spec-badge-add { opacity: 0.5; }
+    .subtask-card:hover .spec-badge-add:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
 
     /* Subtask delete button */
     .subtask-card .delete-btn { width: 20px; height: 20px; }
