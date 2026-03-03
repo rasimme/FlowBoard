@@ -59,6 +59,45 @@ function trimSessionLog(content, maxSessions = 2) {
   return beforeLog + trimmedLog;
 }
 
+/**
+ * Read tasks.json for a project and return a status summary string.
+ * Returns null if no actionable info.
+ */
+function getTaskStatusSummary(workspaceDir, projectName) {
+  const tasksPath = join(workspaceDir, "projects", projectName, "tasks.json");
+  if (!existsSync(tasksPath)) return null;
+
+  let data;
+  try { data = JSON.parse(readFileSync(tasksPath, "utf8")); } catch { return null; }
+  if (!data?.tasks?.length) return null;
+
+  const inProgress = data.tasks.filter(t => t.status === "in-progress");
+  const review = data.tasks.filter(t => t.status === "review");
+  const open = data.tasks.filter(t => t.status === "open");
+
+  const lines = [];
+  if (inProgress.length) {
+    lines.push("**⚡ In Progress:**");
+    for (const t of inProgress) {
+      lines.push(`- ${t.id}: ${t.title}${t.specFile ? ` (spec: ${t.specFile})` : ""}`);
+    }
+  }
+  if (review.length) {
+    lines.push("**🔍 Waiting for Review:**");
+    for (const t of review) {
+      lines.push(`- ${t.id}: ${t.title}`);
+    }
+  }
+  if (!inProgress.length && !review.length) {
+    lines.push(`**💡 No task in-progress.** ${open.length} open task(s) available — pick one and set it to in-progress before starting work.`);
+  }
+
+  lines.push("");
+  lines.push("**Reminder:** Always set a task to `in-progress` before starting work. Set to `review` when done. Never leave tasks in stale states.");
+
+  return lines.join("\n");
+}
+
 function updateBootstrapWithProjectContext(workspaceDir) {
   if (!workspaceDir) return;
 
@@ -103,6 +142,12 @@ function updateBootstrapWithProjectContext(workspaceDir) {
   const sections = [`# Active Project: ${projectName}\n`];
   if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
+
+  // Add task status summary
+  const taskSummary = getTaskStatusSummary(workspaceDir, projectName);
+  if (taskSummary) {
+    sections.push(`## Current Task Status\n\n${taskSummary}\n`);
+  }
 
   try {
     writeFileSync(bootstrapPath, sections.join("\n"));
