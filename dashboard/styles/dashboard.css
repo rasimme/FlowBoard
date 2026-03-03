@@ -322,26 +322,37 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
     }
-    /* Tree-line dot + branch for add-subtask form */
+    /* Tree-line for add-subtask form — matches subtask-card exactly */
     .subtask-container .add-subtask-form::before {
       content: '';
       position: absolute;
       left: -15px;
       top: -4px;
       bottom: 50%;
-      width: 1px;
-      background: #555;
+      width: 1.5px;
+      background: var(--tree-line);
+      pointer-events: none;
     }
     .subtask-container .add-subtask-form::after {
       content: '';
       position: absolute;
-      left: -19px;
+      left: -14px;
       top: 50%;
-      width: 9px;
-      height: 9px;
+      width: 10px;
+      height: 1.5px;
+      background: var(--tree-line);
+      transform: translateY(-50%);
+    }
+    .subtask-container .add-subtask-form .tree-dot-form {
+      position: absolute;
+      left: -6px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
-      background: #555;
-      transform: translate(0, -50%);
+      background: var(--tree-line);
+      transform: translateY(-50%);
+      pointer-events: none;
     }
     .add-subtask-form .subtask-input {
       width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);

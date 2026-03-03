@@ -156,6 +156,7 @@ export function updateBoard(state) {
       if (parentCard) {
         const form = document.createElement('div');
         form.className = 'add-subtask-form';
+        form.insertAdjacentHTML('afterbegin', '<div class="tree-dot-form"></div>');
         // Place form inside subtask-container (for tree-line continuity) or create one
         const nextEl = parentCard.nextElementSibling;
         let container = (nextEl && nextEl.classList.contains('subtask-container') && nextEl.dataset.parentId === kanbanState.addingSubtaskParentId)
