@@ -358,7 +358,13 @@ function taskWithSpecStatus(projectName, task) {
 }
 
 function enrichTasks(projectName, tasks = []) {
-  return tasks.map(task => taskWithSpecStatus(projectName, task));
+  return tasks.map(task => {
+    const enriched = taskWithSpecStatus(projectName, task);
+    if (task.subtaskIds && task.subtaskIds.length > 0) {
+      enriched.progress = getSubtaskProgress(tasks, task.id);
+    }
+    return enriched;
+  });
 }
 
 function writeTasksFile(projectName, data) {
@@ -518,18 +524,20 @@ app.get('/api/projects/:name/tasks', (req, res) => {
 
   // Task status nudge
   try {
-    const inProgress = result.filter(t => t.status === 'in-progress');
-    const review = result.filter(t => t.status === 'review');
-    const open = result.filter(t => t.status === 'open');
+    const topLevel = result.filter(t => !t.parentId);
+    const inProgress = topLevel.filter(t => t.status === 'in-progress');
+    const review = topLevel.filter(t => t.status === 'review');
+    const open = topLevel.filter(t => t.status === 'open');
 
     if (inProgress.length > 0) {
       const t = inProgress[0];
-      response.taskContext = `⚡ Currently in-progress: ${t.id} — ${t.title}. Remember to set to review when done.`;
+      const subInfo = t.progress ? ` (${t.progress.done}/${t.progress.total} subtasks done)` : '';
+      response.taskContext = `\u26A1 Currently in-progress: ${t.id}${subInfo} \u2014 ${t.title}. Remember to set to review when done.`;
     } else if (review.length > 0) {
       const titles = review.map(t => `${t.id}`).join(', ');
-      response.taskContext = `🔍 ${review.length} task(s) in review (${titles}). Confirm done or continue working. ${open.length} open task(s) available.`;
+      response.taskContext = `\uD83D\uDD0D ${review.length} task(s) in review (${titles}). Confirm done or continue working. ${open.length} open task(s) available.`;
     } else if (open.length > 0) {
-      response.taskContext = `💡 No task in-progress. ${open.length} open task(s) available — set one to in-progress before starting work.`;
+      response.taskContext = `\uD83D\uDCA1 No task in-progress. ${open.length} open task(s) available \u2014 set one to in-progress before starting work.`;
     }
   } catch (e) { console.warn('[taskContext]', e); }
 
