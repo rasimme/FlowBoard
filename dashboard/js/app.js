@@ -3,8 +3,9 @@ import {
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
   createTask, saveTitle, setPriority,
   confirmDelete, createSpec, onDrop, toggleExpand,
+  startAddSubtask, cancelAddSubtask, submitSubtask,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=6';
+} from './kanban.js?v=7';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
@@ -252,6 +253,20 @@ window._toggleExpand = function(id) {
   toggleExpand(id);
   updateBoard(state);
 };
+window._addSubtask = function(id) {
+  if (startAddSubtask(id)) updateBoard(state);
+};
+window._cancelSubtask = function() {
+  if (cancelAddSubtask()) updateBoard(state);
+};
+window._submitSubtask = function() {
+  submitSubtask(state).then(changed => {
+    if (changed) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
+    }
+  });
+};
 window._openSpec = function(specPath, taskId) {
   if (!specPath) {
     toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
@@ -290,7 +305,7 @@ window._deleteCurrentFile = function() {
 
 // --- User Interaction Detection ---
 function isUserInteracting() {
-  if (kanbanState.addingTask || kanbanState.editingTaskId) return true;
+  if (kanbanState.addingTask || kanbanState.editingTaskId || kanbanState.addingSubtaskParentId) return true;
   if (document.getElementById('modalOverlay')) return true;
   if (canvasState.editingId || canvasState.sidebarNoteId) return true;
   const active = document.activeElement;
