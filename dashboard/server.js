@@ -564,11 +564,18 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     taskId = nextTaskId(data.tasks);
   }
 
+  // Subtasks inherit parent priority; top-level tasks use provided or default 'medium'
+  let effectivePriority = priority || 'medium';
+  if (parentId) {
+    const parent = data.tasks.find(t => t.id === parentId);
+    if (parent) effectivePriority = parent.priority;
+  }
+
   const task = {
     id: taskId,
     title,
     status: 'open',
-    priority: priority || 'medium',
+    priority: effectivePriority,
     parentId: parentId || null,
     specFile: null,
     created: new Date().toISOString().slice(0, 10),

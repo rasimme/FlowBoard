@@ -1,11 +1,11 @@
 import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=5';
 import {
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
-  createTask, saveTitle, setPriority,
+  createTask, saveTitle, setPriority, setSubtaskStatus,
   confirmDelete, createSpec, onDrop, toggleExpand,
   startAddSubtask, cancelAddSubtask, submitSubtask,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=7';
+} from './kanban.js?v=8';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
@@ -239,6 +239,14 @@ window._saveTitle = function(id, el) {
 window._setPriority = function(id, priority) {
   setPriority(id, priority, state);
   prevTasksJson = JSON.stringify(state.tasks);
+};
+window._setSubtaskStatus = function(id, status) {
+  setSubtaskStatus(id, status, state).then(changed => {
+    if (changed) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
+    }
+  });
 };
 window._confirmDelete = function(id, deleteSpec = false, mode = null) {
   confirmDelete(id, state, deleteSpec, mode).then(changed => {

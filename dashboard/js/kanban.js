@@ -297,11 +297,19 @@ function cardInnerHTML(task) {
 }
 
 function subtaskCardInner(task) {
-  return `<span class="status-dot status-dot-${task.status}"></span>
-    <span class="task-id mono">${task.id}</span>
-    <span class="subtask-title">${escHtml(task.title)}</span>
-    <span class="priority-pill priority-${task.priority}">${task.priority}</span>
-    <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICON_TRASH}</button>`;
+  const hasUsableSpec = task.specFile && task.specExists !== false;
+  const specBadge = hasUsableSpec
+    ? `<span class="spec-badge spec-badge-sm" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
+    : `<span class="spec-badge spec-badge-add spec-badge-sm" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
+  return `<div class="subtask-title">${escHtml(task.title)}</div>
+    <div class="subtask-meta">
+      <span class="status-dot-wrap" data-action="toggle-status" data-id="${task.id}" data-status="${task.status}">
+        <span class="status-dot status-dot-${task.status}"></span>
+      </span>
+      ${specBadge}
+      <span class="subtask-meta-spacer"></span>
+      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICON_TRASH}</button>
+    </div>`;
 }
 
 function renderAddTaskForm() {
@@ -476,6 +484,60 @@ export function togglePriorityPopover(e, id, current) {
     };
     document.addEventListener('click', close);
   }, 0);
+}
+
+// --- Status popover (subtask status dot) ---
+const STATUS_OPTIONS = [
+  { key: 'open', label: 'Open' },
+  { key: 'in-progress', label: 'In Progress' },
+  { key: 'review', label: 'Review' },
+  { key: 'done', label: 'Done' }
+];
+
+export function toggleStatusPopover(e, id, current) {
+  e.stopPropagation();
+  document.querySelectorAll('.status-popover').forEach(p => p.remove());
+  const wrap = e.target.closest('.status-dot-wrap');
+  if (!wrap) return;
+  const popover = document.createElement('div');
+  popover.className = 'status-popover';
+  STATUS_OPTIONS.forEach(s => {
+    const opt = document.createElement('span');
+    opt.className = `status-option${s.key === current ? ' current' : ''}`;
+    opt.innerHTML = `<span class="status-dot status-dot-${s.key}"></span> ${s.label}`;
+    opt.dataset.action = 'set-status';
+    opt.dataset.id = id;
+    opt.dataset.status = s.key;
+    popover.appendChild(opt);
+  });
+  wrap.appendChild(popover);
+  setTimeout(() => {
+    const close = (ev) => {
+      if (!popover.contains(ev.target)) { popover.remove(); document.removeEventListener('click', close); }
+    };
+    document.addEventListener('click', close);
+  }, 0);
+}
+
+export async function setSubtaskStatus(id, status, state) {
+  document.querySelectorAll('.status-popover').forEach(p => p.remove());
+  const task = state.tasks.find(t => t.id === id);
+  if (task) {
+    task.status = status;
+    if (status === 'done') task.completed = new Date().toISOString().slice(0, 10);
+    else task.completed = null;
+  }
+  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+    method: 'PUT', body: { status }
+  });
+  if (res.ok) {
+    toast(`${STATUS_LABELS[status]}`, 'success');
+    _h('light');
+    return true;
+  } else {
+    toast(res.error || 'Failed', 'error');
+    _hn('error');
+  }
 }
 
 export async function setPriority(id, priority, state) {
@@ -665,6 +727,8 @@ export function bindKanbanEvents(container) {
       case 'open-spec':       if (window._openSpec) window._openSpec(file, id); break;
       case 'toggle-priority': togglePriorityPopover(e, id, priority); break;
       case 'set-priority':    if (window._setPriority) window._setPriority(id, priority); break;
+      case 'toggle-status':   toggleStatusPopover(e, id, btn.dataset.status); break;
+      case 'set-status':      if (window._setSubtaskStatus) window._setSubtaskStatus(id, btn.dataset.status); break;
       case 'create-task':     if (window._createTask) window._createTask(); break;
       case 'cancel-add':      if (window._cancelAdd) window._cancelAdd(); break;
       case 'start-add':       if (window._startAdd) window._startAdd(); break;
