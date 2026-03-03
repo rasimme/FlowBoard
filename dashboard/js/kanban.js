@@ -154,19 +154,24 @@ export function updateBoard(state) {
     if (kanbanState.addingSubtaskParentId) {
       const parentCard = body.querySelector(`.task-card[data-id="${kanbanState.addingSubtaskParentId}"]`);
       if (parentCard) {
-        let anchor = parentCard;
-        const nextEl = anchor.nextElementSibling;
-        if (nextEl && nextEl.classList.contains('subtask-container') && nextEl.dataset.parentId === kanbanState.addingSubtaskParentId) {
-          anchor = nextEl;
-        }
         const form = document.createElement('div');
         form.className = 'add-subtask-form';
+        // Place form inside subtask-container (for tree-line continuity) or create one
+        const nextEl = parentCard.nextElementSibling;
+        let container = (nextEl && nextEl.classList.contains('subtask-container') && nextEl.dataset.parentId === kanbanState.addingSubtaskParentId)
+          ? nextEl : null;
+        if (!container) {
+          container = document.createElement('div');
+          container.className = 'subtask-container';
+          container.dataset.parentId = kanbanState.addingSubtaskParentId;
+          parentCard.after(container);
+        }
         form.innerHTML = `<input class="subtask-input" placeholder="Subtask title..." data-parent="${kanbanState.addingSubtaskParentId}">
           <div class="form-actions" style="margin-top:6px">
             <button class="btn btn-primary btn-sm" data-action="submit-subtask" data-id="${kanbanState.addingSubtaskParentId}">Add</button>
             <button class="btn btn-secondary btn-sm" data-action="cancel-subtask">Cancel</button>
           </div>`;
-        anchor.after(form);
+        container.appendChild(form);
         setTimeout(() => {
           const inp = form.querySelector('.subtask-input');
           if (inp) {
