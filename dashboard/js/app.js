@@ -1,10 +1,10 @@
-import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=4';
+import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=5';
 import {
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
   createTask, saveTitle, setPriority,
   confirmDelete, createSpec, onDrop,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=4';
+} from './kanban.js?v=5';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
