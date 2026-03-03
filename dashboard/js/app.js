@@ -239,8 +239,8 @@ window._setPriority = function(id, priority) {
   setPriority(id, priority, state);
   prevTasksJson = JSON.stringify(state.tasks);
 };
-window._confirmDelete = function(id) {
-  confirmDelete(id, state).then(changed => {
+window._confirmDelete = function(id, deleteSpec = false) {
+  confirmDelete(id, state, deleteSpec).then(changed => {
     if (changed) {
       prevTasksJson = JSON.stringify(state.tasks);
       updateBoard(state);
