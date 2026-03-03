@@ -236,6 +236,11 @@ function updateCardContent(card, task) {
     card.innerHTML = cardInnerHTML(task);
     return;
   }
+  // Demoted parent: was rendered as parent but no longer is — full re-render
+  if (card.querySelector('.expand-chevron') || card.querySelector('.progress-bar')) {
+    card.innerHTML = cardInnerHTML(task);
+    return;
+  }
   const titleEl = card.querySelector('.task-title');
   const pillEl = card.querySelector('.priority-pill');
   if (titleEl && titleEl.textContent !== task.title) titleEl.textContent = task.title;
