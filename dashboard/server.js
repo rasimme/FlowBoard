@@ -428,130 +428,6 @@ function nextTaskId(tasks) {
   return `T-${String(max + 1).padStart(3, '0')}`;
 }
 
-// --- Project Context Helpers ---
-
-/**
- * Trim SESSION LOG in PROJECT.md to only the last N session entries.
- * Keeps everything before "## Session Log" intact, then appends
- * only the last N "### ..." entries from the log.
- */
-function trimSessionLog(content, maxSessions = 2) {
-  const sessionLogMatch = content.match(/^(## Session Log)\s*$/m);
-  if (!sessionLogMatch) return content;
-
-  const splitIndex = sessionLogMatch.index;
-  const beforeLog = content.slice(0, splitIndex);
-  const logSection = content.slice(splitIndex);
-
-  const entryPattern = /^### .+$/gm;
-  const matches = [];
-  let match;
-  while ((match = entryPattern.exec(logSection)) !== null) {
-    matches.push(match.index);
-  }
-
-  if (matches.length === 0) return content;
-
-  const entries = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i];
-    const end = i + 1 < matches.length ? matches[i + 1] : logSection.length;
-    entries.push(logSection.slice(start, end).trimEnd());
-  }
-
-  const kept = entries.slice(0, maxSessions);
-  const trimmedLog = `## Session Log\n\n${kept.join('\n\n')}\n`;
-  return beforeLog + trimmedLog;
-}
-
-function updateBootstrapMd(projectName) {
-  if (!projectName) {
-    // No active project — clear BOOTSTRAP.md
-    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch {}
-    return;
-  }
-
-  const rulesPath = path.join(PROJECTS_DIR, 'PROJECT-RULES.md');
-  const projectMdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
-
-  let rulesContent = '';
-  let projectContent = '';
-  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch {}
-  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch {}
-
-  // Smart Session Log trimming: keep only last 2 sessions in bootstrap
-  if (projectContent) {
-    projectContent = trimSessionLog(projectContent, 2);
-  }
-
-  const sections = [`# Active Project: ${projectName}\n`];
-  if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
-  if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
-
-  try {
-    fs.writeFileSync(BOOTSTRAP_FILE, sections.join('\n'));
-    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName}`);
-  } catch (err) {
-    console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
-  }
-}
-
-async function sendWakeEvent(text) {
-  if (!HOOKS_TOKEN) {
-    console.log('[wake] No OPENCLAW_HOOKS_TOKEN set, skipping wake event');
-    return;
-  }
-  try {
-    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/hooks/wake`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${HOOKS_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ text, mode: 'now' })
-    });
-    if (res.ok) {
-      console.log(`[wake] Sent wake event: ${text.slice(0, 80)}...`);
-    } else {
-      console.error(`[wake] Failed (${res.status}): ${await res.text()}`);
-    }
-  } catch (err) {
-    console.error(`[wake] Error:`, err.message);
-  }
-}
-
-// --- Routes ---
-
-// GET /api/status
-app.get('/api/status', (req, res) => {
-  res.json({ activeProject: readActiveProject() });
-});
-
-// PUT /api/status
-app.put('/api/status', async (req, res) => {
-  const { project } = req.body;
-  const previousProject = readActiveProject();
-  try {
-    const effectiveProject = (project && project !== 'none') ? project : null;
-    writeActiveProject(effectiveProject);
-    updateBootstrapMd(effectiveProject);
-
-    // Send wake event to notify agent of project switch
-    if (effectiveProject) {
-      const wakeText = previousProject && previousProject !== project
-        ? `Projekt gewechselt von ${previousProject} auf ${project}. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den neuen Projekt-Context.`
-        : `Projekt ${project} aktiviert. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den Projekt-Context.`;
-      sendWakeEvent(wakeText);
-    } else if (previousProject) {
-      sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
-    }
-
-    res.json({ ok: true, activeProject: effectiveProject });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = readActiveProject();
@@ -625,7 +501,12 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   if (updates.status && updates.status !== 'done' && task.status === 'done') {
     updates.completed = null;
   }
-  Object.assign(task, updates);
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed'];
+  for (const key of ALLOWED) {
+    if (Object.prototype.hasOwnProperty.call(updates, key)) {
+      task[key] = updates[key];
+    }
+  }
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
