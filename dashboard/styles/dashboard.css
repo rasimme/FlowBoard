@@ -334,6 +334,101 @@
     .file-preview-actions .delete-btn:hover { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
 
+    /* Subtask Progress Bar (on parent cards) */
+    .subtask-progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+    .expand-chevron {
+      font-size: 10px;
+      color: var(--muted);
+      transition: transform var(--duration-fast);
+      width: 12px;
+      flex-shrink: 0;
+    }
+    .expand-chevron.expanded { transform: rotate(90deg); }
+
+    .progress-bar {
+      flex: 1;
+      height: 4px;
+      background: var(--secondary);
+      border-radius: 2px;
+      overflow: hidden;
+      display: flex;
+    }
+    .progress-done {
+      background: var(--ok);
+      height: 100%;
+      transition: width var(--duration-normal);
+    }
+    .progress-active {
+      background: var(--info);
+      height: 100%;
+      transition: width var(--duration-normal);
+    }
+    .progress-text {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    /* Subtask Cards (inline below parent) */
+    .subtask-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      margin-left: 12px;
+      border-left: 2px solid var(--border);
+      background: var(--bg-accent);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      transition: background var(--duration-normal);
+    }
+    .subtask-card:hover { background: var(--bg-hover); }
+    .subtask-card .task-id { margin-bottom: 0; font-size: 10px; }
+    .subtask-card .subtask-title {
+      flex: 1;
+      font-size: 12px;
+      color: var(--text);
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .subtask-card .priority-pill {
+      font-size: 10px;
+      padding: 2px 6px;
+    }
+
+    /* Parent priority color on subtask left border */
+    .subtask-card.parent-high { border-left-color: var(--danger); }
+    .subtask-card.parent-medium { border-left-color: var(--warn); }
+    .subtask-card.parent-low { border-left-color: var(--ok); }
+
+    /* Status dots (subtask status indicator) */
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: var(--radius-full);
+      flex-shrink: 0;
+    }
+    .status-dot-done { background: var(--ok); }
+    .status-dot-in-progress { background: var(--info); }
+    .status-dot-open { background: var(--muted); }
+    .status-dot-review { background: var(--warn); }
+
+    /* Subtask delete button */
+    .subtask-card .delete-btn { width: 20px; height: 20px; }
+    .subtask-card:hover .delete-btn { opacity: 0.6; }
+    .subtask-card:hover .delete-btn:hover { opacity: 1; }
+
     /* Add Task */
     .add-task-btn {
       border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
