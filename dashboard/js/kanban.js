@@ -13,7 +13,8 @@ export const kanbanState = {
   editingTaskId: null,
   selectedPriority: 'medium',
   boardBuilt: false,
-  newCardIds: new Set()
+  newCardIds: new Set(),
+  expandedParents: new Set()
 };
 
 // --- Sort ---
@@ -176,6 +177,11 @@ function createCardElement(task) {
 
 function updateCardContent(card, task) {
   if (kanbanState.editingTaskId === task.id) return;
+  // Parent cards: always re-render (progress bar needs fresh data)
+  if (task.subtaskIds && task.subtaskIds.length > 0) {
+    card.innerHTML = cardInnerHTML(task);
+    return;
+  }
   const titleEl = card.querySelector('.task-title');
   const pillEl = card.querySelector('.priority-pill');
   if (titleEl && titleEl.textContent !== task.title) titleEl.textContent = task.title;
@@ -202,9 +208,27 @@ function cardInnerHTML(task) {
   const specBadge = hasUsableSpec
     ? `<span class="spec-badge" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
     : `<span class="spec-badge spec-badge-add" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
+
+  let progressHtml = '';
+  if (task.progress && task.progress.total > 0) {
+    const { done, inProgress, total } = task.progress;
+    const isExpanded = kanbanState.expandedParents.has(task.id);
+    const donePct = (done / total) * 100;
+    const activePct = (inProgress / total) * 100;
+    progressHtml = `<div class="subtask-progress" data-action="toggle-expand" data-id="${task.id}">
+      <span class="expand-chevron${isExpanded ? ' expanded' : ''}">&#9654;</span>
+      <div class="progress-bar">
+        <div class="progress-done" style="width:${donePct}%"></div>
+        <div class="progress-active" style="width:${activePct}%"></div>
+      </div>
+      <span class="progress-text">${done}/${total}</span>
+    </div>`;
+  }
+
+  const subtaskCount = task.subtaskIds ? task.subtaskIds.length : 0;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
-      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" title="Delete task">${ICON_TRASH}</button>
+      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICON_TRASH}</button>
     </div>
     ${isEditing
       ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
@@ -214,7 +238,7 @@ function cardInnerHTML(task) {
         <span class="priority-pill priority-${task.priority}" data-action="toggle-priority" data-id="${task.id}" data-priority="${task.priority}">${task.priority}</span>
       </span>
       ${specBadge}
-    </div>`;
+    </div>${progressHtml}`;
 }
 
 function renderAddTaskForm() {
@@ -254,6 +278,15 @@ export function selectPriority(p) {
 export function onAddKey(e) {
   if (e.key === 'Enter') return 'create';
   if (e.key === 'Escape') return 'cancel';
+}
+
+export function toggleExpand(id) {
+  if (kanbanState.expandedParents.has(id)) {
+    kanbanState.expandedParents.delete(id);
+  } else {
+    kanbanState.expandedParents.add(id);
+  }
+  return true; // Signal re-render
 }
 
 export async function createTask(state) {
