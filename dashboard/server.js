@@ -704,9 +704,13 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
     const parent = data.tasks.find(t => t.id === task.parentId);
     if (parent && parent.subtaskIds) {
       parent.subtaskIds = parent.subtaskIds.filter(id => id !== task.id);
+      // Auto-demote: if no subtasks left, parent becomes a normal task
+      if (parent.subtaskIds.length === 0) {
+        delete parent.subtaskIds;
+      }
     }
     data.tasks = data.tasks.filter(t => t.id !== task.id);
-    if (parent) {
+    if (parent && parent.subtaskIds) {
       try { recalcParentStatus(data.tasks, parent.id); } catch (e) { console.warn('[recalcParent]', e); }
     }
   } else {

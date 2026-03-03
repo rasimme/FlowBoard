@@ -422,18 +422,23 @@
       flex-direction: column;
       gap: 4px;
     }
-    /* Single vertical trunk line — spans from top of first card to center of last */
-    .subtask-container::before {
+    /* Vertical trunk line — drawn per-card so it always spans first to last dot */
+
+    /* Each subtask card draws a vertical segment from above to its bottom */
+    .subtask-card::before {
       content: '';
       position: absolute;
-      left: 7px;
+      left: -15px;
       top: -4px;
-      bottom: 50%;
+      bottom: 0;
       width: 1.5px;
       background: var(--tree-line);
       pointer-events: none;
     }
-    /* Only-child: trunk still needed for the horizontal branch connection */
+    /* Last card: line stops at center (where horizontal branch connects) */
+    .subtask-card:last-child::before {
+      bottom: 50%;
+    }
 
     /* Subtask Cards — compact mini-cards with card outline */
     .subtask-card {
@@ -449,8 +454,6 @@
       transition: background var(--duration-normal);
     }
     .subtask-card:hover { background: var(--bg-hover); }
-
-    /* No per-card vertical segments — container::before handles it */
 
     /* Tree-line: horizontal branch from trunk to card */
     .subtask-card::after {
