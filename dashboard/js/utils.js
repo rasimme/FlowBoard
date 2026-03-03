@@ -64,20 +64,27 @@ export function toast(msg, type = 'info') {
 }
 
 // --- Modal ---
-export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger') {
+export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger', secondaryAction = null) {
   const root = document.getElementById('modalRoot');
+  const secondaryBtn = secondaryAction
+    ? `<button class="btn btn-ghost btn-sm" id="modalSecondary">${secondaryAction.label}</button>`
+    : '';
   root.innerHTML = `<div class="modal-overlay" id="modalOverlay">
     <div class="modal">
       <div class="modal-title">${title}</div>
       <div class="modal-body">${body}</div>
       <div class="modal-actions">
         <button class="btn btn-ghost btn-sm" id="modalCancel">Cancel</button>
+        ${secondaryBtn}
         <button class="btn ${confirmClass} btn-sm" id="modalConfirm">${confirmLabel}</button>
       </div>
     </div>
   </div>`;
   document.getElementById('modalCancel').onclick = closeModal;
   document.getElementById('modalConfirm').onclick = () => { closeModal(); onConfirm(); };
+  if (secondaryAction) {
+    document.getElementById('modalSecondary').onclick = () => { closeModal(); secondaryAction.onAction(); };
+  }
   document.getElementById('modalOverlay').onclick = (e) => {
     if (e.target === e.currentTarget) closeModal();
   };

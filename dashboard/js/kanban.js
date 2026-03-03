@@ -204,7 +204,7 @@ function cardInnerHTML(task) {
     : `<span class="spec-badge spec-badge-add" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
-      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" title="Delete task">${ICON_TRASH}</button>
+      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" title="Delete task">${ICON_TRASH}</button>
     </div>
     ${isEditing
       ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
@@ -361,21 +361,37 @@ export async function setPriority(id, priority, state) {
   });
 }
 
-export function startDelete(id, title) {
-  showModal(
-    'Delete task?',
-    `<strong>${id}</strong>: ${title}<br>This action cannot be undone.`,
-    () => { if (window._confirmDelete) window._confirmDelete(id); }
-  );
+export function startDelete(id, title, specFile) {
+  if (specFile) {
+    showModal(
+      `🗑️ Delete task?`,
+      `<strong>${id}</strong>: ${title}<br>This task has a spec file. Delete it too?`,
+      () => { if (window._confirmDelete) window._confirmDelete(id, true); },
+      'Delete everything',
+      'btn-danger',
+      { label: 'Keep spec', onAction: () => { if (window._confirmDelete) window._confirmDelete(id, false); } }
+    );
+  } else {
+    showModal(
+      'Delete task?',
+      `<strong>${id}</strong>: ${title}<br>This action cannot be undone.`,
+      () => { if (window._confirmDelete) window._confirmDelete(id, false); }
+    );
+  }
 }
 
-export async function confirmDelete(id, state) {
+export async function confirmDelete(id, state, deleteSpec = false) {
   const card = document.querySelector(`.task-card[data-id="${id}"]`);
   if (card) card.classList.add('removing');
   await new Promise(r => setTimeout(r, 250));
+  const task = state.tasks.find(t => t.id === id);
+  const specFile = task?.specFile;
   const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, { method: 'DELETE' });
   if (res.ok) {
     state.tasks = state.tasks.filter(t => t.id !== id);
+    if (deleteSpec && specFile) {
+      await api(`/projects/${state.viewedProject}/files/${specFile}`, { method: 'DELETE' });
+    }
     toast('Task deleted', 'success');
     return true; // Signal re-render
   }
@@ -470,7 +486,7 @@ export function bindKanbanEvents(container) {
     const { action, id, title, priority, file } = btn.dataset;
     switch (action) {
       case 'edit-task':       startEdit(id); break;
-      case 'delete-task':     startDelete(id, title); break;
+      case 'delete-task':     startDelete(id, title, btn.dataset.spec || null); break;
       case 'create-spec':     if (window._createSpec) window._createSpec(id); break;
       case 'open-spec':       if (window._openSpec) window._openSpec(file, id); break;
       case 'toggle-priority': togglePriorityPopover(e, id, priority); break;
