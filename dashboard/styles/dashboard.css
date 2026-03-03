@@ -39,7 +39,7 @@
       --status-in-progress: #f0c000;
       --status-review: #e07020;
       --status-done: #d04040;
-      --tree-line: rgba(113, 113, 122, 0.3);
+      --tree-line: #3f3f46;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -422,7 +422,7 @@
       flex-direction: column;
       gap: 4px;
     }
-    /* Vertical trunk line from parent card bottom to last subtask */
+    /* Single vertical trunk line — spans from top of first card to center of last */
     .subtask-container::before {
       content: '';
       position: absolute;
@@ -433,7 +433,7 @@
       background: var(--tree-line);
       pointer-events: none;
     }
-    .subtask-container:has(> .subtask-card:only-child)::before { display: none; }
+    /* Only-child: trunk still needed for the horizontal branch connection */
 
     /* Subtask Cards — compact mini-cards with card outline */
     .subtask-card {
@@ -450,21 +450,9 @@
     }
     .subtask-card:hover { background: var(--bg-hover); }
 
-    /* Tree-line: vertical segment on each card */
-    .subtask-card::before {
-      content: '';
-      position: absolute;
-      left: -15px;
-      top: -2px;
-      bottom: -2px;
-      width: 1.5px;
-      background: var(--tree-line);
-    }
-    .subtask-container > .subtask-card:first-child::before { top: -6px; }
-    .subtask-container > .subtask-card:last-child::before { bottom: 50%; }
-    .subtask-container > .subtask-card:only-child::before { top: -6px; bottom: 50%; }
+    /* No per-card vertical segments — container::before handles it */
 
-    /* Tree-line: horizontal branch */
+    /* Tree-line: horizontal branch from trunk to card */
     .subtask-card::after {
       content: '';
       position: absolute;
@@ -484,7 +472,7 @@
       width: 5px;
       height: 5px;
       border-radius: 50%;
-      background: rgba(113, 113, 122, 0.4);
+      background: var(--tree-line);
       transform: translateY(-50%);
       pointer-events: none;
     }
@@ -509,6 +497,8 @@
       outline: none;
       font-family: inherit;
       line-height: 1.4;
+      resize: none;
+      overflow: hidden;
     }
     .subtask-actions {
       display: flex;
@@ -516,6 +506,10 @@
       align-items: center;
       flex-shrink: 0;
     }
+    /* Hide actions when subtask card is in edit mode */
+    .subtask-card.editing { align-items: flex-start; }
+    .subtask-card.editing .subtask-actions { display: none; }
+    .subtask-card.editing .subtask-title-input { flex: 1; }
 
     /* Status dots (subtask status indicator) */
     .status-dot {

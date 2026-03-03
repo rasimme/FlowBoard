@@ -317,7 +317,7 @@ function subtaskCardInner(task) {
       <span class="status-dot status-dot-${task.status}"></span>
     </span>
     ${isEditing
-      ? `<input class="subtask-title-input" value="${escHtml(task.title)}" autofocus>`
+      ? `<textarea class="subtask-title-input" rows="1">${escHtml(task.title)}</textarea>`
       : `<span class="subtask-title" data-action="edit-subtask" data-id="${task.id}">${escHtml(task.title)}</span>`}
     <span class="subtask-actions">
       ${specBadge}
@@ -453,12 +453,15 @@ export function startEditSubtask(id) {
   kanbanState.editingTaskId = id;
   const card = document.querySelector(`.subtask-card[data-id="${id}"]`);
   if (card) {
+    card.classList.add('editing');
     const task = window.appState.tasks.find(t => t.id === id);
     if (task) card.innerHTML = subtaskCardInner(task);
     setTimeout(() => {
       const inp = card.querySelector('.subtask-title-input');
       if (inp) {
+        _autoGrowTextarea(inp);
         inp.focus(); inp.select();
+        inp.addEventListener('input', () => _autoGrowTextarea(inp));
         inp.addEventListener('keydown', e => onSubtaskTitleKey(e, id));
         inp.addEventListener('blur', () => { if (window._saveTitle) window._saveTitle(id, inp); });
       }
@@ -467,13 +470,19 @@ export function startEditSubtask(id) {
 }
 
 function onSubtaskTitleKey(e, id) {
-  if (e.key === 'Enter') e.target.blur();
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.target.blur(); }
   if (e.key === 'Escape') {
     kanbanState.editingTaskId = null;
     const card = document.querySelector(`.subtask-card[data-id="${id}"]`);
+    if (card) card.classList.remove('editing');
     const task = window.appState.tasks.find(t => t.id === id);
     if (card && task) card.innerHTML = subtaskCardInner(task);
   }
+}
+
+function _autoGrowTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
 }
 
 export function onTitleKey(e, id) {
@@ -500,7 +509,10 @@ export async function saveTitle(id, el, state) {
   const card = document.querySelector(`.task-card[data-id="${id}"]`);
   if (card && task) { card.innerHTML = cardInnerHTML(task); return; }
   const subcard = document.querySelector(`.subtask-card[data-id="${id}"]`);
-  if (subcard && task) subcard.innerHTML = subtaskCardInner(task);
+  if (subcard) {
+    subcard.classList.remove('editing');
+    if (task) subcard.innerHTML = subtaskCardInner(task);
+  }
 }
 
 export function togglePriorityPopover(e, id, current) {
