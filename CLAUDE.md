@@ -38,6 +38,13 @@ docs/
   plans/              — Design docs and implementation plans (gitignored, local only)
 ```
 
+## Canvas Module Dependencies
+The canvas modules have intentional circular imports that ES modules handle via live bindings:
+- `notes.js` ↔ `toolbar.js` (notes imports updateToolbar/renderPromoteButton; toolbar imports note CRUD)
+- `connections.js` ↔ `toolbar.js` (connections imports renderPromoteButton/updateToolbar; toolbar imports renderConnections)
+
+These work because no module calls imported functions at module-evaluation time. Do NOT attempt to "fix" these cycles — they are intentional and functional.
+
 ## Global State Pattern
 - **`window.appState`** — The single global app state object (projects, tasks, currentTab, viewedProject, etc.)
 - Canvas modules access project context via `window.appState.viewedProject` (not via canvasState)

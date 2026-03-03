@@ -69,7 +69,7 @@ the escape direction AND there's no perpendicular segment separating them
 (both escape points on same coordinate), use Z-shape instead.
 
 ### Parallel — Same Side (U-Shape)
-Both dots on the same side (right→right, left→left). **4 bends**.
+Both dots on the same side (right→right, left→left, bottom→bottom). **4 bends**.
 
 ```
   Source (right)
@@ -80,14 +80,20 @@ Both dots on the same side (right→right, left→left). **4 bends**.
   Target (right)
 ```
 
-Midpoint placed **beyond both escapes** in the shared escape direction:
-`mx = max(sx, ex) + E` for right-side connections.
+**Horizontal (right→right, left→left):** Midpoint placed beyond both escapes
+in the shared escape direction: `mx = max(sx, ex) + E` for right-side.
+
+**Vertical (bottom→bottom):** Midpoint placed below both escapes:
+`my = max(sy, ey) + E`. Two sub-cases:
+
+- **Normal (|sx − ex| ≥ 2·r):** Standard U-shape `[[sx, my], [ex, my]]`
+- **Overlapping (|sx − ex| < 2·r):** Arms overlap on same X → C-shape detour.
+  Route to one side: `armX = max(sx, ex) + E`, `mid = [[armX, sy], [armX, ey]]`
 
 ### Parallel — Opposite Facing
 Source and target face each other (right→left, left→right).
 
-**Facing each other** (escapes point toward each other): **S-shape, 2 bends**.
-Midpoint at `(sx + ex) / 2` — always between the two escape points.
+**Facing each other** (escapes point toward each other): S-shape or direct route.
 
 ```
   Source (right)         Target (left)
@@ -96,8 +102,16 @@ Midpoint at `(sx + ex) / 2` — always between the two escape points.
           ┗━━━━━━━━━━┛
 ```
 
-**Facing away** (escapes point away from each other): **Z-shape, 4 bends**.
-Midpoint at `(sy + ey) / 2` on the perpendicular axis.
+Two sub-cases based on escape gap (`escGap = |sx − ex|`):
+
+- **Wide gap (≥ 4·r = 48px):** S-shape with midpoint `mx = (sx + ex) / 2`.
+  Two bends, vertical line centered between escapes.
+- **Narrow gap (< 4·r):** Direct route skipping both escape stubs.
+  Path: `[source dot] → [mx, sy] → [mx, y2] → [target dot]`.
+  The centered midpoint `mx` ensures no visual jump at the threshold,
+  and all segments stay long enough for full corner radii.
+
+**Facing away** (escapes point away from each other): Z-shape.
 
 ```
             ┏━━━━━━━━━━━━━┓
@@ -106,12 +120,19 @@ Midpoint at `(sy + ey) / 2` on the perpendicular axis.
   Source (right)          Target (left)
 ```
 
+Midpoint at `(sy + ey) / 2` on the perpendicular axis. One sub-case:
+
+- **Same level (|sy − ey| < 2·r):** Midpoint would collapse onto escape level,
+  producing a degenerate straight line through both cards. Route above instead:
+  `my = min(sy, ey) − E`.
+
 ## Path Generation Pipeline
 
 1. Compute escape points `(sx, sy)` and `(ex, ey)`
 2. Classify connection (perpendicular / same-side / opposite)
 3. Apply extension optimization (perpendicular only, with cross-axis check)
 4. Generate waypoints: `[dot, escape, ...mid, escape, dot]`
+   - Narrow-gap opposite-facing: early-return with direct route (skips escape stubs)
 5. Remove consecutive duplicate points
 6. Render via `ptsToRoundedPath()` → SVG path with quadratic Bézier corners
 
@@ -120,11 +141,12 @@ Midpoint at `(sy + ey) / 2` on the perpendicular axis.
 Converts waypoints to an SVG path string with rounded corners:
 - Each corner gets a quadratic Bézier curve (`Q` command)
 - Corner radius is `min(r, segment1/2, segment2/2)` — adapts to short segments
+- Corners with radius < 1px fall back to straight `L` command
 - Consecutive duplicate points are filtered out
 
 ## File References
 
-- **Implementation**: `dashboard/js/idea-canvas.js` → `routePath()`, `ptsToRoundedPath()`
-- **Constants**: `MIN_ESCAPE = 28`, `CORNER_RADIUS = 12`
+- **Implementation**: `dashboard/js/canvas/connections.js` → `routePath()`, `ptsToRoundedPath()`
+- **Constants**: `dashboard/js/canvas/state.js` → `MIN_ESCAPE = 28`, `CORNER_RADIUS = 12`
 - **Rendering**: `renderConnections()` calls `routePath()` for each connection
-- **Preview**: Drag handler calls `routePath()` for live preview during connection creation
+- **Preview**: Drag handler in `events.js` calls `routePath()` for live preview

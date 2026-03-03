@@ -6,18 +6,19 @@ import {
 import {
   createNoteAt, startNoteEdit, saveNoteText, closeSidebar, openSidebar,
   saveNotePosition
-} from './notes.js?v=1';
+} from './notes.js?v=2';
 import {
   renderConnections, removeTempConnectionLine, saveConnection, routePath,
   deleteConnection
-} from './connections.js?v=1';
+} from './connections.js?v=2';
 import {
   updateToolbar, renderPromoteButton, toolbarDelete,
   copySelectedToClipboard, pasteFromClipboard, duplicateSelected
-} from './toolbar.js?v=1';
+} from './toolbar.js?v=2';
 
 // AbortController for document-level listeners (re-created on each bindCanvasEvents)
 let _canvasAbort = null;
+let _renderPending = false;
 
 export function bindCanvasEvents() {
   // Abort previous document-level listeners to prevent accumulation across tab switches
@@ -259,7 +260,7 @@ function onCanvasMouseMove(e) {
         }
       }
     }
-    renderConnections();
+    if (!_renderPending) { _renderPending = true; requestAnimationFrame(() => { _renderPending = false; renderConnections(); }); }
     updateToolbar();
     return;
   }
@@ -285,6 +286,7 @@ function onCanvasMouseMove(e) {
       const targetNote = canvasState.notes.find(n => n.id === targetId);
       if (!targetNote) return;
       const tBl = noteEl.clientLeft || 1;
+      const tBt = noteEl.clientTop || 1;
 
       // Only 3 sides (no top), snap to the FREE dot (last slot) on each side
       ['right', 'bottom', 'left'].forEach(port => {
@@ -293,8 +295,8 @@ function onCanvasMouseMove(e) {
         const dLeft = parseFloat(freeDot.dataset.dotLeft);
         const dTop  = parseFloat(freeDot.dataset.dotTop);
         if (isNaN(dLeft) || isNaN(dTop)) return;
-        // Canvas coords = note position + border + CSS offset
-        const portPos = { x: targetNote.x + tBl + dLeft, y: targetNote.y + tBl + dTop };
+        // Canvas coords: X = note.x + clientLeft + CSS_left, Y = note.y + clientTop + CSS_top
+        const portPos = { x: targetNote.x + tBl + dLeft, y: targetNote.y + tBt + dTop };
         const d = Math.hypot(pos.x - portPos.x, pos.y - portPos.y);
         if (d < nearestDist) {
           nearestDist = d;
@@ -672,7 +674,7 @@ function onTouchMove(e) {
           }
         }
       }
-      renderConnections();
+      if (!_renderPending) { _renderPending = true; requestAnimationFrame(() => { _renderPending = false; renderConnections(); }); }
       updateToolbar();
     } else if (canvasState.panning) {
       const d = canvasState.panning;

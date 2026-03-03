@@ -38,10 +38,15 @@ export async function api(path, opts = {}) {
     document.getElementById('content').innerHTML = `
       <div class="empty-state" style="flex-direction:column;gap:12px">
         <span style="font-size:32px">🔒</span>
-        <span>Session abgelaufen</span>
-        <span style="font-size:12px;color:var(--muted)">Bitte über Telegram neu öffnen.</span>
+        <span>Session expired</span>
+        <span style="font-size:12px;color:var(--muted)">Please reopen via Telegram.</span>
       </div>`;
     throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    console.warn('API error', res.status, path, data.error || '');
+    return data;
   }
   return res.json();
 }
@@ -99,10 +104,6 @@ const ICONS = {
 };
 
 export { ICONS };
-
-export function renderDeleteBtn(onclick, title = 'Delete') {
-  return `<button class="delete-btn" onclick="${onclick}" title="${title}">${ICONS.trash}</button>`;
-}
 
 // --- Helpers ---
 export function escHtml(s) {

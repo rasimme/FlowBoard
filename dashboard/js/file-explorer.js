@@ -33,7 +33,7 @@ export async function loadFileContent(filePath, state) {
   try {
     const data = await api(`/projects/${state.viewedProject}/files/${filePath}`);
     if (data?.error) {
-      toast(`Datei nicht gefunden: ${filePath}`, 'warn');
+      toast(`File not found: ${filePath}`, 'warn');
       console.warn('Failed to load file:', data.error);
       return;
     }
@@ -58,7 +58,7 @@ export async function loadFileContent(filePath, state) {
       if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   } catch (err) {
-    toast(`Fehler beim Laden: ${filePath}`, 'error');
+    toast(`Failed to load: ${filePath}`, 'error');
     console.error('Failed to load file:', err);
   }
 }
@@ -158,7 +158,7 @@ export function renderFileTree() {
     if (entry.type === 'directory') {
       const expanded = fileState.expandedDirs.has(entry.path);
       const icon = expanded ? '📂' : '📁';
-      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" data-action="toggle-dir" data-path="${entry.path}">
+      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" data-action="toggle-dir" data-path="${escHtml(entry.path)}">
         <span class="tree-icon">${icon}</span>
         <span class="tree-name">${escHtml(entry.name)}</span>
         <span class="tree-meta">${entry.children.length}</span>
@@ -171,7 +171,7 @@ export function renderFileTree() {
       const sizeStr = formatSize(entry.size);
       const ext = entry.name.split('.').pop();
       const icon = ext === 'json' ? '{ }' : ext === 'md' ? '📝' : '📄';
-      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" data-action="load-file" data-path="${entry.path}">
+      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" data-action="load-file" data-path="${escHtml(entry.path)}">
         <span class="tree-badge ${entry.category}"></span>
         <span class="tree-icon">${icon}</span>
         <span class="tree-name">${escHtml(entry.name)}</span>
@@ -373,8 +373,10 @@ function _bindScroll(scrollEl, track, thumb, signal) {
     thumb.style.top = (scrollRatio * (trackH - thumbH)) + 'px';
   }
   scrollEl.addEventListener('scroll', update, { passive: true });
-  new ResizeObserver(update).observe(scrollEl);
-  new MutationObserver(update).observe(scrollEl, { childList: true, subtree: true });
+  const ro = new ResizeObserver(update);
+  ro.observe(scrollEl);
+  const mo = new MutationObserver(update);
+  mo.observe(scrollEl, { childList: true, subtree: true });
   thumb.addEventListener('mousedown', (e) => {
     e.preventDefault(); e.stopPropagation();
     dragging = true; startY = e.clientY; startScroll = scrollEl.scrollTop;
@@ -396,7 +398,7 @@ function _bindScroll(scrollEl, track, thumb, signal) {
     scrollEl.scrollTop = ((e.clientY - rect.top) / rect.height) * (scrollEl.scrollHeight - scrollEl.clientHeight);
   });
   requestAnimationFrame(() => requestAnimationFrame(update));
-  return update;
+  return { update, ro, mo };
 }
 
 function cscrollWrap(el) {
@@ -412,8 +414,10 @@ function cscrollWrap(el) {
   el.style.overflowY = 'auto';
   const { track, thumb } = _makeTrack();
   wrap.appendChild(track);
-  const updateFn = _bindScroll(el, track, thumb);
+  wrap._cscrollAbort = new AbortController();
+  const { update: updateFn, ro, mo } = _bindScroll(el, track, thumb, wrap._cscrollAbort.signal);
   wrap._cscrollUpdate = updateFn;
+  wrap._cscrollObservers = { ro, mo };
 }
 
 function cscrollBind(scrollEl, trackHost) {
@@ -421,12 +425,17 @@ function cscrollBind(scrollEl, trackHost) {
   trackHost.style.position = 'relative';
   // Abort previous window-level listeners before creating new ones
   if (trackHost._cscrollAbort) trackHost._cscrollAbort.abort();
+  if (trackHost._cscrollObservers) {
+    trackHost._cscrollObservers.ro.disconnect();
+    trackHost._cscrollObservers.mo.disconnect();
+  }
   trackHost._cscrollAbort = new AbortController();
   const old = trackHost.querySelector(':scope > .cscroll-track');
   if (old) old.remove();
   const { track, thumb } = _makeTrack();
   trackHost.appendChild(track);
-  _bindScroll(scrollEl, track, thumb, trackHost._cscrollAbort.signal);
+  const { ro, mo } = _bindScroll(scrollEl, track, thumb, trackHost._cscrollAbort.signal);
+  trackHost._cscrollObservers = { ro, mo };
 }
 
 let _staticDone = false;

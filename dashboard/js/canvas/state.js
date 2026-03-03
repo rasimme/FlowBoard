@@ -1,6 +1,6 @@
 // canvas/state.js — Canvas state, constants, and coordinate helpers
 
-import { api, toast, ICONS } from '../utils.js?v=3';
+import { api, toast } from '../utils.js?v=4';
 
 // --- Constants ---
 export const NOTE_WIDTH = 160;
@@ -36,7 +36,8 @@ export const canvasState = {
   panning: null,
   lassoState: null,
   posSaveTimers: {},
-  sidebarNoteId: null
+  sidebarNoteId: null,
+  _nativeScroll: false
 };
 
 // --- Coordinate helpers ---
