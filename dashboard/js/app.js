@@ -2,9 +2,9 @@ import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames
 import {
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
   createTask, saveTitle, setPriority,
-  confirmDelete, createSpec, onDrop,
+  confirmDelete, createSpec, onDrop, toggleExpand,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=5';
+} from './kanban.js?v=6';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
@@ -239,8 +239,8 @@ window._setPriority = function(id, priority) {
   setPriority(id, priority, state);
   prevTasksJson = JSON.stringify(state.tasks);
 };
-window._confirmDelete = function(id, deleteSpec = false) {
-  confirmDelete(id, state, deleteSpec).then(changed => {
+window._confirmDelete = function(id, deleteSpec = false, mode = null) {
+  confirmDelete(id, state, deleteSpec, mode).then(changed => {
     if (changed) {
       prevTasksJson = JSON.stringify(state.tasks);
       updateBoard(state);
@@ -248,6 +248,10 @@ window._confirmDelete = function(id, deleteSpec = false) {
   });
 };
 window._onDrop = function(e) { onDrop(e, state); };
+window._toggleExpand = function(id) {
+  toggleExpand(id);
+  updateBoard(state);
+};
 window._openSpec = function(specPath, taskId) {
   if (!specPath) {
     toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
