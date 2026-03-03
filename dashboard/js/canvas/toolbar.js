@@ -621,9 +621,9 @@ export function showPromoteModal(noteIds) {
       <input id="promoteTitle" class="task-title-input" placeholder="Task title\u2026"
         style="margin-bottom:0;font-size:13px" autofocus>
       <div class="priority-selector" id="promotePrioritySelector">
-        <button class="priority-option"          data-p="low"    onclick="promotePriorityPick('low')">low</button>
-        <button class="priority-option selected" data-p="medium" onclick="promotePriorityPick('medium')">medium</button>
-        <button class="priority-option"          data-p="high"   onclick="promotePriorityPick('high')">high</button>
+        <button class="priority-option"          data-p="low"    data-action="promote-priority" data-priority="low">low</button>
+        <button class="priority-option selected" data-p="medium" data-action="promote-priority" data-priority="medium">medium</button>
+        <button class="priority-option"          data-p="high"   data-action="promote-priority" data-priority="high">high</button>
       </div>
     </div>`,
     () => {
@@ -635,12 +635,17 @@ export function showPromoteModal(noteIds) {
     'Promote',
     'btn-primary'
   );
-  // Expose priority picker to window (inside modal, inline onclick)
-  window.promotePriorityPick = (p) => {
+  // Delegated listener for priority picker inside modal
+  const modalRoot = document.getElementById('modalRoot');
+  const promoteHandler = e => {
+    const btn = e.target.closest('[data-action="promote-priority"]');
+    if (!btn) return;
+    const p = btn.dataset.priority;
     document.querySelectorAll('#promotePrioritySelector .priority-option').forEach(b => {
       b.classList.toggle('selected', b.dataset.p === p);
     });
   };
+  modalRoot.addEventListener('click', promoteHandler);
   setTimeout(() => document.getElementById('promoteTitle')?.focus(), 50);
 }
 

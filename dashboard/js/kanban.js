@@ -1,6 +1,6 @@
 // kanban.js — Task Board Logic
 
-import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, renderDeleteBtn } from './utils.js?v=4';
+import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=4';
 
 // Telegram Haptic Feedback (no-op if not in Telegram)
 const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);
@@ -41,7 +41,7 @@ export function buildBoard() {
   const content = document.getElementById('content');
   content.innerHTML = `<div class="kanban" id="kanban">
     ${STATUS_KEYS.map(status => `<div class="column" data-status="${status}"
-      ondragover="window.onDragOver(event)" ondragleave="window.onDragLeave(event)" ondrop="window.onDrop(event)">
+>
       <div class="column-header">
         <span class="column-title">${STATUS_LABELS[status]}</span>
         <span class="column-count" id="count-${status}">0</span>
@@ -138,6 +138,13 @@ export function updateBoard(state) {
           setTimeout(() => {
             const inp = document.getElementById('newTaskTitle');
             if (inp && !inp.value) inp.focus();
+            if (inp) {
+              inp.addEventListener('keydown', e => {
+                const action = onAddKey(e);
+                if (action === 'create') { if (window._createTask) window._createTask(); }
+                if (action === 'cancel') { if (window._cancelAdd) window._cancelAdd(); }
+              });
+            }
           }, 50);
         }
       } else {
@@ -147,7 +154,7 @@ export function updateBoard(state) {
           else body.appendChild(existingBtn);
         } else {
           body.insertAdjacentHTML(kanbanState.sortNewestFirst ? 'afterbegin' : 'beforeend',
-            `<button class="add-task-btn" onclick="window.startAdd()">+ New Task</button>`);
+            `<button class="add-task-btn" data-action="start-add">+ New Task</button>`);
         }
       }
     }
@@ -161,8 +168,8 @@ function createCardElement(task) {
   div.className = 'task-card';
   div.draggable = true;
   div.dataset.id = task.id;
-  div.setAttribute('ondragstart', 'window.onDragStart(event)');
-  div.setAttribute('ondragend', 'window.onDragEnd(event)');
+  div.addEventListener('dragstart', e => onDragStart(e));
+  div.addEventListener('dragend', e => onDragEnd(e));
   div.innerHTML = cardInnerHTML(task);
   return div;
 }
@@ -177,12 +184,15 @@ function updateCardContent(card, task) {
     if (pillEl.className !== newClass || pillEl.textContent !== task.priority) {
       pillEl.className = newClass;
       pillEl.textContent = task.priority;
-      pillEl.setAttribute('onclick', `window.togglePriorityPopover(event, '${task.id}', '${task.priority}')`);
+      pillEl.dataset.action = 'toggle-priority';
+      pillEl.dataset.id = task.id;
+      pillEl.dataset.priority = task.priority;
     }
   }
 }
 
 // Lucide-style SVG icons (24x24, stroke-based, matching Gateway Dashboard)
+const ICON_TRASH = ICONS.trash;
 const ICON_SPEC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 13h4"/><path d="M10 17h4"/></svg>`;
 const ICON_SPEC_ADD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>`;
 
@@ -190,20 +200,18 @@ function cardInnerHTML(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
   const hasUsableSpec = task.specFile && task.specExists !== false;
   const specBadge = hasUsableSpec
-    ? `<span class="spec-badge" onclick="window.openSpec('${escHtml(task.specFile)}', '${task.id}')" title="Open spec file">${ICON_SPEC}</span>`
-    : `<span class="spec-badge spec-badge-add" onclick="window.createSpec('${task.id}')" title="Create spec file">${ICON_SPEC_ADD}</span>`;
+    ? `<span class="spec-badge" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
+    : `<span class="spec-badge spec-badge-add" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
-      ${renderDeleteBtn(`window.startDelete('${task.id}', '${escHtml(task.title)}')`, 'Delete task')}
-      </button>
+      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" title="Delete task">${ICON_TRASH}</button>
     </div>
     ${isEditing
-      ? `<input class="task-title-input" value="${escHtml(task.title)}"
-              onkeydown="window.onTitleKey(event, '${task.id}')" onblur="window.saveTitle('${task.id}', this)" autofocus>`
-      : `<div class="task-title" onclick="window.startEdit('${task.id}')">${escHtml(task.title)}</div>`}
+      ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
+      : `<div class="task-title" data-action="edit-task" data-id="${task.id}">${escHtml(task.title)}</div>`}
     <div class="task-meta">
       <span class="priority-pill-wrap">
-        <span class="priority-pill priority-${task.priority}" onclick="window.togglePriorityPopover(event, '${task.id}', '${task.priority}')">${task.priority}</span>
+        <span class="priority-pill priority-${task.priority}" data-action="toggle-priority" data-id="${task.id}" data-priority="${task.priority}">${task.priority}</span>
       </span>
       ${specBadge}
     </div>`;
@@ -211,15 +219,15 @@ function cardInnerHTML(task) {
 
 function renderAddTaskForm() {
   return `<div class="add-task-form">
-    <input id="newTaskTitle" placeholder="Task title..." onkeydown="window.onAddKey(event)">
+    <input id="newTaskTitle" placeholder="Task title...">
     <div class="priority-selector">
-      <button class="priority-option" data-p="low" onclick="window.selectPriority('low')">low</button>
-      <button class="priority-option selected" data-p="medium" onclick="window.selectPriority('medium')">medium</button>
-      <button class="priority-option" data-p="high" onclick="window.selectPriority('high')">high</button>
+      <button class="priority-option" data-p="low" data-action="select-priority" data-priority="low">low</button>
+      <button class="priority-option selected" data-p="medium" data-action="select-priority" data-priority="medium">medium</button>
+      <button class="priority-option" data-p="high" data-action="select-priority" data-priority="high">high</button>
     </div>
     <div class="form-actions">
-      <button class="btn btn-primary btn-sm" onclick="window.createTask()">Create</button>
-      <button class="btn btn-secondary btn-sm" onclick="window.cancelAdd()">Cancel</button>
+      <button class="btn btn-primary btn-sm" data-action="create-task">Create</button>
+      <button class="btn btn-secondary btn-sm" data-action="cancel-add">Cancel</button>
     </div>
   </div>`;
 }
@@ -276,7 +284,11 @@ export function startEdit(id) {
     if (task) card.innerHTML = cardInnerHTML(task);
     setTimeout(() => {
       const inp = card.querySelector('.task-title-input');
-      if (inp) { inp.focus(); inp.select(); }
+      if (inp) {
+        inp.focus(); inp.select();
+        inp.addEventListener('keydown', e => onTitleKey(e, id));
+        inp.addEventListener('blur', () => { if (window._saveTitle) window._saveTitle(id, inp); });
+      }
     }, 50);
   }
 }
@@ -317,7 +329,9 @@ export function togglePriorityPopover(e, id, current) {
     const pill = document.createElement('span');
     pill.className = `priority-pill priority-${p}${p === current ? ' current' : ''}`;
     pill.textContent = p;
-    pill.onclick = (ev) => { ev.stopPropagation(); window.setPriority(id, p); };
+    pill.dataset.action = 'set-priority';
+    pill.dataset.id = id;
+    pill.dataset.priority = p;
     popover.appendChild(pill);
   });
   wrap.appendChild(popover);
@@ -336,7 +350,9 @@ export async function setPriority(id, priority, state) {
   if (pill) {
     pill.className = `priority-pill priority-${priority}`;
     pill.textContent = priority;
-    pill.setAttribute('onclick', `window.togglePriorityPopover(event, '${id}', '${priority}')`);
+    pill.dataset.action = 'toggle-priority';
+    pill.dataset.id = id;
+    pill.dataset.priority = priority;
   }
   const task = state.tasks.find(t => t.id === id);
   if (task) task.priority = priority;
@@ -349,7 +365,7 @@ export function startDelete(id, title) {
   showModal(
     'Delete task?',
     `<strong>${id}</strong>: ${title}<br>This action cannot be undone.`,
-    () => window.confirmDelete(id)
+    () => { if (window._confirmDelete) window._confirmDelete(id); }
   );
 }
 
@@ -440,8 +456,44 @@ export async function onDrop(e, state) {
 export function renderTabBarRight() {
   const el = document.getElementById('tabBarRight');
   if (!el) return;
-  el.innerHTML = `<button class="btn btn-ghost btn-sm" onclick="window.toggleSort()" title="Toggle sort order"
+  el.innerHTML = `<button class="btn btn-ghost btn-sm" data-action="toggle-sort" title="Toggle sort order"
     style="font-size:11px;display:flex;align-items:center;gap:4px;">
     <span id="sortIcon">${kanbanState.sortNewestFirst ? '↓' : '↑'}</span> <span id="sortLabel">${kanbanState.sortNewestFirst ? 'Newest first' : 'Oldest first'}</span>
   </button>`;
+}
+
+// --- Delegated event listener ---
+export function bindKanbanEvents(container) {
+  container.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const { action, id, title, priority, file } = btn.dataset;
+    switch (action) {
+      case 'edit-task':       startEdit(id); break;
+      case 'delete-task':     startDelete(id, title); break;
+      case 'create-spec':     if (window._createSpec) window._createSpec(id); break;
+      case 'open-spec':       if (window._openSpec) window._openSpec(file, id); break;
+      case 'toggle-priority': togglePriorityPopover(e, id, priority); break;
+      case 'set-priority':    if (window._setPriority) window._setPriority(id, priority); break;
+      case 'create-task':     if (window._createTask) window._createTask(); break;
+      case 'cancel-add':      if (window._cancelAdd) window._cancelAdd(); break;
+      case 'start-add':       if (window._startAdd) window._startAdd(); break;
+      case 'select-priority': selectPriority(priority); break;
+      case 'toggle-sort':     if (window._toggleSort) window._toggleSort(); break;
+    }
+  });
+
+  // Column drag events (delegated)
+  container.addEventListener('dragover', e => {
+    const col = e.target.closest('.column');
+    if (col) onDragOver(e);
+  });
+  container.addEventListener('dragleave', e => {
+    const col = e.target.closest('.column');
+    if (col) onDragLeave(e);
+  });
+  container.addEventListener('drop', e => {
+    const col = e.target.closest('.column');
+    if (col) { if (window._onDrop) window._onDrop(e); }
+  });
 }

@@ -1,6 +1,6 @@
 // file-explorer.js — File Tree + Preview
 
-import { api, toast, escHtml, formatSize, renderDeleteBtn, showModal } from './utils.js?v=4';
+import { api, toast, escHtml, formatSize, ICONS, showModal } from './utils.js?v=4';
 
 // File loading categories
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
@@ -158,7 +158,7 @@ export function renderFileTree() {
     if (entry.type === 'directory') {
       const expanded = fileState.expandedDirs.has(entry.path);
       const icon = expanded ? '📂' : '📁';
-      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" onclick="window.toggleDir('${entry.path}')">
+      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" data-action="toggle-dir" data-path="${entry.path}">
         <span class="tree-icon">${icon}</span>
         <span class="tree-name">${escHtml(entry.name)}</span>
         <span class="tree-meta">${entry.children.length}</span>
@@ -171,7 +171,7 @@ export function renderFileTree() {
       const sizeStr = formatSize(entry.size);
       const ext = entry.name.split('.').pop();
       const icon = ext === 'json' ? '{ }' : ext === 'md' ? '📝' : '📄';
-      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" onclick="window.loadFileContent('${entry.path}')">
+      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" data-action="load-file" data-path="${entry.path}">
         <span class="tree-badge ${entry.category}"></span>
         <span class="tree-icon">${icon}</span>
         <span class="tree-name">${escHtml(entry.name)}</span>
@@ -217,14 +217,14 @@ function renderFilePreview() {
 
   const unsavedDot = fileState.fileUnsaved ? '<span class="unsaved-dot" title="Unsaved changes"></span>' : '';
   const saveBtn = fileState.fileUnsaved
-    ? '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>'
+    ? '<button class="btn btn-primary btn-sm" data-action="save-file" style="font-size:11px">Save</button>'
     : '';
   const canDelete = (f.path.startsWith('context/') || f.path.startsWith('specs/')) && !fileState.fileEditing;
-  const deleteBtn = canDelete ? renderDeleteBtn("window.deleteCurrentFile()", 'Delete file') : '';
+  const deleteBtn = canDelete ? `<button class="delete-btn" data-action="delete-file" title="Delete file">${ICONS.trash}</button>` : '';
 
   container.innerHTML = `
     <div class="file-preview-header">
-      <button class="file-back-btn" onclick="window.fileBackToTree()">← Files</button>
+      <button class="file-back-btn" data-action="back-to-tree">← Files</button>
       <div class="file-preview-info">
         <span class="file-preview-name">${escHtml(f.path)}${unsavedDot}</span>
         <span class="file-preview-size">${formatSize(f.size)}</span>
@@ -232,7 +232,7 @@ function renderFilePreview() {
       </div>
       <div class="file-preview-actions">
         ${saveBtn}
-        <button class="btn btn-ghost btn-sm" onclick="window.toggleFileEdit()">
+        <button class="btn btn-ghost btn-sm" data-action="toggle-edit">
           ${fileState.fileEditing ? 'Preview' : 'Edit'}
         </button>
         ${deleteBtn}
@@ -260,7 +260,7 @@ function renderFilePreview() {
       if (actions) {
         const existing = actions.querySelector('.btn-primary');
         if (fileState.fileUnsaved && !existing) {
-          actions.insertAdjacentHTML('afterbegin', '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>');
+          actions.insertAdjacentHTML('afterbegin', '<button class="btn btn-primary btn-sm" data-action="save-file" style="font-size:11px">Save</button>');
         } else if (!fileState.fileUnsaved && existing) {
           existing.remove();
         }
@@ -269,10 +269,10 @@ function renderFilePreview() {
     editor.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        window.saveFileContent();
+        if (window._saveFileContent) window._saveFileContent();
       }
       if (e.key === 'Escape') {
-        window.toggleFileEdit();
+        toggleFileEdit();
       }
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -477,4 +477,21 @@ function applyFileScrollbars() {
     const body = document.querySelector('.file-preview-body');
     if (body) cscrollBind(body, preview);
   }
+}
+
+// --- Delegated event listener ---
+export function bindFileExplorerEvents(container) {
+  container.addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const { action, path } = el.dataset;
+    switch (action) {
+      case 'toggle-dir':   toggleDir(path); break;
+      case 'load-file':    if (window._loadFileContent) window._loadFileContent(path); break;
+      case 'save-file':    if (window._saveFileContent) window._saveFileContent(); break;
+      case 'toggle-edit':  toggleFileEdit(); break;
+      case 'back-to-tree': fileBackToTree(); break;
+      case 'delete-file':  if (window._deleteCurrentFile) window._deleteCurrentFile(); break;
+    }
+  });
 }

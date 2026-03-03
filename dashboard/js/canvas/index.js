@@ -3,9 +3,9 @@
 import { ICONS } from '../utils.js?v=3';
 import { canvasState, loadCanvas, applyTransform, resetCanvasState } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
-         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=1';
-import { renderConnections, startConnectionDrag } from './connections.js?v=1';
-import { renderPromoteButton, showPromoteModal, bindToolbarEvents, updateToolbar } from './toolbar.js?v=1';
+         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=2';
+import { renderConnections, startConnectionDrag } from './connections.js?v=2';
+import { renderPromoteButton, showPromoteModal, bindToolbarEvents, updateToolbar } from './toolbar.js?v=2';
 import { bindCanvasEvents } from './events.js?v=1';
 
 // Inject canvas.css once at module load
@@ -34,7 +34,7 @@ async function renderIdeaCanvas(state) {
   content.innerHTML = `
     <div class="canvas-wrap" id="canvasWrap">
       <div class="canvas-toolbar">
-        <button class="btn btn-primary btn-sm" onclick="window.addNote()" ontouchend="event.preventDefault(); window.addNote()">+ Note</button>
+        <button class="btn btn-primary btn-sm" data-action="add-note">+ Note</button>
       </div>
       <div class="canvas-viewport" id="canvasViewport">
         <svg id="canvasSvg" class="canvas-svg canvas-svg-underlay">
@@ -68,7 +68,7 @@ async function renderIdeaCanvas(state) {
         <div class="canvas-sidebar-header">
           <span class="canvas-sidebar-color-bar" id="sidebarColorBar"></span>
           <span class="canvas-sidebar-id" id="sidebarNoteId"></span>
-          <button class="canvas-sidebar-close" onclick="window.closeSidebar()">\u2715</button>
+          <button class="canvas-sidebar-close" data-action="close-sidebar">\u2715</button>
         </div>
         <div class="canvas-sidebar-body">
           <textarea class="canvas-sidebar-textarea" id="sidebarTextarea"></textarea>
@@ -78,6 +78,21 @@ async function renderIdeaCanvas(state) {
 
   bindCanvasEvents();
   bindToolbarEvents();
+
+  // Canvas wrap delegation (toolbar + sidebar actions)
+  const wrap = document.getElementById('canvasWrap');
+  wrap.addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const { action } = el.dataset;
+    if (action === 'add-note') addNote(state);
+    if (action === 'close-sidebar') closeSidebar();
+  });
+  // Touch support for add-note button (prevent ghost tap)
+  wrap.addEventListener('touchend', e => {
+    const el = e.target.closest('[data-action="add-note"]');
+    if (el) { e.preventDefault(); addNote(state); }
+  });
 
   // Sidebar textarea events
   const sidebarTa = document.getElementById('sidebarTextarea');
