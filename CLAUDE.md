@@ -102,6 +102,7 @@ When modifying a JS or CSS file, increment its version in all import/script/link
 - **Branch:** Develop on `dev`, `main` is stable. Never commit to `main` directly.
 - **Commit messages:** Conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`)
 - **Keep commits atomic** — one concern per commit
+- **Author:** Always commit as: `git commit --author="Simeon <simeon.ortmueller@arcor.de>"`
 
 ## Privacy (MANDATORY)
 - **Never hardcode** private domains, IPs, Telegram IDs, tokens, or hostnames
