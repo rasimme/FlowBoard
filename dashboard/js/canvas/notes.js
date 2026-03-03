@@ -140,7 +140,8 @@ export function renderNotes() {
 export function renderEmptyState() {
   const vp = document.getElementById('canvasViewport');
   if (!vp) return;
-  const existing = vp.querySelector('.canvas-empty');
+  const wrap = document.getElementById('canvasWrap');
+  const existing = (wrap || vp).querySelector('.canvas-empty');
   if (canvasState.notes.length === 0) {
     if (!existing) {
       const el = document.createElement('div');
