@@ -307,6 +307,7 @@ function cardInnerHTML(task) {
 }
 
 function subtaskCardInner(task) {
+  const isEditing = kanbanState.editingTaskId === task.id;
   const hasUsableSpec = task.specFile && task.specExists !== false;
   const specBadge = hasUsableSpec
     ? `<span class="spec-badge spec-badge-sm" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
@@ -315,7 +316,9 @@ function subtaskCardInner(task) {
     <span class="status-dot-wrap" data-action="toggle-status" data-id="${task.id}" data-status="${task.status}">
       <span class="status-dot status-dot-${task.status}"></span>
     </span>
-    <span class="subtask-title">${escHtml(task.title)}</span>
+    ${isEditing
+      ? `<input class="subtask-title-input" value="${escHtml(task.title)}" autofocus>`
+      : `<span class="subtask-title" data-action="edit-subtask" data-id="${task.id}">${escHtml(task.title)}</span>`}
     <span class="subtask-actions">
       ${specBadge}
       <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICON_TRASH}</button>
@@ -446,6 +449,33 @@ export function startEdit(id) {
   }
 }
 
+export function startEditSubtask(id) {
+  kanbanState.editingTaskId = id;
+  const card = document.querySelector(`.subtask-card[data-id="${id}"]`);
+  if (card) {
+    const task = window.appState.tasks.find(t => t.id === id);
+    if (task) card.innerHTML = subtaskCardInner(task);
+    setTimeout(() => {
+      const inp = card.querySelector('.subtask-title-input');
+      if (inp) {
+        inp.focus(); inp.select();
+        inp.addEventListener('keydown', e => onSubtaskTitleKey(e, id));
+        inp.addEventListener('blur', () => { if (window._saveTitle) window._saveTitle(id, inp); });
+      }
+    }, 50);
+  }
+}
+
+function onSubtaskTitleKey(e, id) {
+  if (e.key === 'Enter') e.target.blur();
+  if (e.key === 'Escape') {
+    kanbanState.editingTaskId = null;
+    const card = document.querySelector(`.subtask-card[data-id="${id}"]`);
+    const task = window.appState.tasks.find(t => t.id === id);
+    if (card && task) card.innerHTML = subtaskCardInner(task);
+  }
+}
+
 export function onTitleKey(e, id) {
   if (e.key === 'Enter') e.target.blur();
   if (e.key === 'Escape') {
@@ -468,7 +498,9 @@ export async function saveTitle(id, el, state) {
     toast('Title updated', 'success');
   }
   const card = document.querySelector(`.task-card[data-id="${id}"]`);
-  if (card && task) card.innerHTML = cardInnerHTML(task);
+  if (card && task) { card.innerHTML = cardInnerHTML(task); return; }
+  const subcard = document.querySelector(`.subtask-card[data-id="${id}"]`);
+  if (subcard && task) subcard.innerHTML = subtaskCardInner(task);
 }
 
 export function togglePriorityPopover(e, id, current) {
@@ -731,6 +763,7 @@ export function bindKanbanEvents(container) {
     const { action, id, title, priority, file } = btn.dataset;
     switch (action) {
       case 'edit-task':       startEdit(id); break;
+      case 'edit-subtask':    startEditSubtask(id); break;
       case 'delete-task':     startDelete(id, title, btn.dataset.spec || null, parseInt(btn.dataset.subtasks) || 0); break;
       case 'toggle-expand':   if (window._toggleExpand) window._toggleExpand(id); break;
       case 'create-spec':     if (window._createSpec) window._createSpec(id); break;

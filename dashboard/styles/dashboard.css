@@ -422,14 +422,27 @@
       flex-direction: column;
       gap: 4px;
     }
+    /* Vertical trunk line from parent card bottom to last subtask */
+    .subtask-container::before {
+      content: '';
+      position: absolute;
+      left: 7px;
+      top: -4px;
+      bottom: 50%;
+      width: 1.5px;
+      background: var(--tree-line);
+      pointer-events: none;
+    }
+    .subtask-container:has(> .subtask-card:only-child)::before { display: none; }
 
     /* Subtask Cards — compact mini-cards with card outline */
     .subtask-card {
       position: relative;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 8px;
       padding: 7px 10px;
+      min-height: 34px;
       background: var(--bg-accent);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
@@ -447,9 +460,9 @@
       width: 1.5px;
       background: var(--tree-line);
     }
-    .subtask-container > .subtask-card:first-child::before { top: 50%; }
+    .subtask-container > .subtask-card:first-child::before { top: -6px; }
     .subtask-container > .subtask-card:last-child::before { bottom: 50%; }
-    .subtask-container > .subtask-card:only-child::before { display: none; }
+    .subtask-container > .subtask-card:only-child::before { top: -6px; bottom: 50%; }
 
     /* Tree-line: horizontal branch */
     .subtask-card::after {
@@ -483,6 +496,19 @@
       color: var(--text);
       line-height: 1.4;
       word-break: break-word;
+    }
+    .subtask-title-input {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      padding: 2px 6px;
+      outline: none;
+      font-family: inherit;
+      line-height: 1.4;
     }
     .subtask-actions {
       display: flex;
