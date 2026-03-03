@@ -540,13 +540,28 @@ app.get('/api/projects/:name/tasks', (req, res) => {
 app.post('/api/projects/:name/tasks', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  const { title, priority } = req.body;
+  const { title, priority, parentId } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
+
+  let taskId;
+  if (parentId) {
+    const parent = data.tasks.find(t => t.id === parentId);
+    if (!parent) return res.status(400).json({ error: 'Parent task not found' });
+    if (parent.parentId) return res.status(400).json({ error: 'Cannot nest subtasks (max 1 level)' });
+    const existingSubtaskIds = parent.subtaskIds || [];
+    taskId = nextSubtaskId(parentId, existingSubtaskIds);
+    if (!parent.subtaskIds) parent.subtaskIds = [];
+    parent.subtaskIds.push(taskId);
+  } else {
+    taskId = nextTaskId(data.tasks);
+  }
+
   const task = {
-    id: nextTaskId(data.tasks),
+    id: taskId,
     title,
     status: 'open',
     priority: priority || 'medium',
+    parentId: parentId || null,
     specFile: null,
     created: new Date().toISOString().slice(0, 10),
     completed: null
