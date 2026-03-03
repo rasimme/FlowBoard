@@ -98,6 +98,9 @@ When modifying a JS or CSS file, increment its version in all import/script/link
 - `cscrollBind()` in file-explorer.js manages its own controller per scroll container
 - Element-level listeners (`el.addEventListener`) don't need AbortController — they're garbage collected with the element
 
+## Templates
+When modifying files that have a corresponding template in `templates/` (e.g. PROJECT-RULES, PROJECT.md, spec.md, DECISIONS.md), always update the template too so new projects get the latest version.
+
 ## Git Conventions
 - **Branch:** Develop on `dev`, `main` is stable. Never commit to `main` directly.
 - **Commit messages:** Conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`)
