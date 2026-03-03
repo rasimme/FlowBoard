@@ -360,7 +360,7 @@ function _makeTrack() {
   return { track, thumb };
 }
 
-function _bindScroll(scrollEl, track, thumb) {
+function _bindScroll(scrollEl, track, thumb, signal) {
   let dragging = false, startY = 0, startScroll = 0;
   function update() {
     const sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight;
@@ -385,11 +385,11 @@ function _bindScroll(scrollEl, track, thumb) {
     const sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight, trackH = track.clientHeight;
     const thumbH = Math.max(24, trackH * (ch / sh));
     scrollEl.scrollTop = startScroll + (e.clientY - startY) * ((sh - ch) / (trackH - thumbH));
-  });
+  }, { signal });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false; thumb.classList.remove('dragging');
-  });
+  }, { signal });
   track.addEventListener('mousedown', (e) => {
     if (e.target === thumb) return;
     const rect = track.getBoundingClientRect();
@@ -419,11 +419,14 @@ function cscrollWrap(el) {
 function cscrollBind(scrollEl, trackHost) {
   if (!scrollEl || !trackHost) return;
   trackHost.style.position = 'relative';
+  // Abort previous window-level listeners before creating new ones
+  if (trackHost._cscrollAbort) trackHost._cscrollAbort.abort();
+  trackHost._cscrollAbort = new AbortController();
   const old = trackHost.querySelector(':scope > .cscroll-track');
   if (old) old.remove();
   const { track, thumb } = _makeTrack();
   trackHost.appendChild(track);
-  _bindScroll(scrollEl, track, thumb);
+  _bindScroll(scrollEl, track, thumb, trackHost._cscrollAbort.signal);
 }
 
 let _staticDone = false;

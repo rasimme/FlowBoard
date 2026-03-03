@@ -47,6 +47,9 @@ export const canvasState = {
   _state: null         // ref to global app state, set on renderIdeaCanvas
 };
 
+// AbortController for document/window-level event listeners (re-created on each renderIdeaCanvas)
+let _canvasAbort = null;
+
 // --- Markdown renderer (note subset: bold, lists, links only) ---
 function renderNoteMarkdown(text) {
   if (!text) return '';
@@ -1265,6 +1268,11 @@ function insertNumberedPrefix(ta) {
 
 // --- Canvas mouse/touch events ---
 function bindCanvasEvents() {
+  // Abort previous document-level listeners to prevent accumulation across tab switches
+  if (_canvasAbort) _canvasAbort.abort();
+  _canvasAbort = new AbortController();
+  const signal = _canvasAbort.signal;
+
   const wrap = document.getElementById('canvasWrap');
   if (!wrap) return;
   wrap.addEventListener('dblclick',   onCanvasDblClick);
@@ -1342,7 +1350,7 @@ function bindCanvasEvents() {
     if (canvasState.selectedIds.size === 0) return;
     e.preventDefault();
     toolbarDelete();
-  });
+  }, { signal });
 }
 
 function onCanvasDblClick(e) {
