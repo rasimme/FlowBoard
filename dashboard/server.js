@@ -469,7 +469,27 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/:name/tasks', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  res.json({ ...data, tasks: enrichTasks(req.params.name, data.tasks) });
+  const result = enrichTasks(req.params.name, data.tasks);
+  const response = { ...data, tasks: result };
+
+  // Task status nudge
+  try {
+    const inProgress = result.filter(t => t.status === 'in-progress');
+    const review = result.filter(t => t.status === 'review');
+    const open = result.filter(t => t.status === 'open');
+
+    if (inProgress.length > 0) {
+      const t = inProgress[0];
+      response.taskContext = `⚡ Currently in-progress: ${t.id} — ${t.title}. Remember to set to review when done.`;
+    } else if (review.length > 0) {
+      const titles = review.map(t => `${t.id}`).join(', ');
+      response.taskContext = `🔍 ${review.length} task(s) in review (${titles}). Confirm done or continue working. ${open.length} open task(s) available.`;
+    } else if (open.length > 0) {
+      response.taskContext = `💡 No task in-progress. ${open.length} open task(s) available — set one to in-progress before starting work.`;
+    }
+  } catch (e) { console.warn('[taskContext]', e); }
+
+  res.json(response);
 });
 
 // POST /api/projects/:name/tasks
