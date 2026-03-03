@@ -413,18 +413,18 @@ export function onDragEnd(e) {
 export function onDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
-  const col = e.currentTarget.closest('.column');
+  const col = e.target.closest('.column');
   if (col) col.classList.add('drag-over');
 }
 
 export function onDragLeave(e) {
-  const col = e.currentTarget.closest('.column');
+  const col = e.target.closest('.column');
   if (col && !col.contains(e.relatedTarget)) col.classList.remove('drag-over');
 }
 
 export async function onDrop(e, state) {
   e.preventDefault();
-  const col = e.currentTarget.closest('.column');
+  const col = e.target.closest('.column');
   if (!col || !draggedId) return;
   col.classList.remove('drag-over');
 

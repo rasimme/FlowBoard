@@ -548,8 +548,10 @@ export function startConnectionDragTouch(e, noteId, port) {
   e.stopPropagation();
   e.preventDefault();
   // Synthesize a mouse-like event for the shared drag logic
+  // Include target so startConnectionDrag can read dot data attributes
   const touch = e.touches[0];
   const synth = { clientX: touch.clientX, clientY: touch.clientY,
+                  target: e.target,
                   stopPropagation: () => {}, preventDefault: () => {} };
   startConnectionDrag(synth, noteId, port);
 }
