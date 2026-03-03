@@ -105,8 +105,8 @@ function repositionZeroNote(note) {
   note.x = cx + (Math.random() - 0.5) * 200;
   note.y = cy + (Math.random() - 0.5) * 100;
   // Persist in background — failure is silent, next refresh recalculates
-  if (!canvasState._state?.viewedProject) return;
-  api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${note.id}`, {
+  if (!window.appState?.viewedProject) return;
+  api(`/projects/${window.appState.viewedProject}/canvas/notes/${note.id}`, {
     method: 'PUT', body: { x: Math.round(note.x), y: Math.round(note.y) }
   }).catch(() => {});
 }
@@ -157,9 +157,9 @@ export function renderEmptyState() {
 
 // --- Create note ---
 export async function createNoteAt(x, y) {
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    const res = await api(`/projects/${canvasState._state.viewedProject}/canvas/notes`, {
+    const res = await api(`/projects/${window.appState.viewedProject}/canvas/notes`, {
       method: 'POST',
       body: { text: '', x: Math.round(x), y: Math.round(y), color: 'grey' }
     });
@@ -203,12 +203,12 @@ export function startDeleteNote(id) {
 }
 
 export async function confirmDeleteNote(id) {
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   const el = document.getElementById('note-' + id);
   if (el) el.style.opacity = '0.4';
   try {
     const res = await api(
-      `/projects/${canvasState._state.viewedProject}/canvas/notes/${id}`,
+      `/projects/${window.appState.viewedProject}/canvas/notes/${id}`,
       { method: 'DELETE' }
     );
     if (res.ok) {
@@ -360,9 +360,9 @@ export async function saveNoteText(id, text) {
   renderConnections();
   updateToolbar(); // hide format section
 
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${id}`, {
+    await api(`/projects/${window.appState.viewedProject}/canvas/notes/${id}`, {
       method: 'PUT', body: { text }
     });
   } catch { /* silent — data is in memory */ }
@@ -415,9 +415,9 @@ export function schedulePositionSave(noteId) {
   clearTimeout(canvasState.posSaveTimers[noteId]);
   canvasState.posSaveTimers[noteId] = setTimeout(async () => {
     const note = canvasState.notes.find(n => n.id === noteId);
-    if (!note || !canvasState._state?.viewedProject) return;
+    if (!note || !window.appState?.viewedProject) return;
     try {
-      await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${noteId}`, {
+      await api(`/projects/${window.appState.viewedProject}/canvas/notes/${noteId}`, {
         method: 'PUT', body: { x: Math.round(note.x), y: Math.round(note.y) }
       });
     } catch { /* silent */ }
@@ -427,9 +427,9 @@ export function schedulePositionSave(noteId) {
 /** Immediately persists a note's current canvas position to the server. */
 export async function saveNotePosition(noteId) {
   const note = canvasState.notes.find(n => n.id === noteId);
-  if (!note || !canvasState._state?.viewedProject) return;
+  if (!note || !window.appState?.viewedProject) return;
   try {
-    await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${noteId}`, {
+    await api(`/projects/${window.appState.viewedProject}/canvas/notes/${noteId}`, {
       method: 'PUT', body: { x: Math.round(note.x), y: Math.round(note.y) }
     });
   } catch {
@@ -445,9 +445,9 @@ export async function setNoteColor(noteId, color) {
   if (el) {
     el.className = `note color-${color}${note.size === 'medium' ? ' size-medium' : ''}${canvasState.selectedIds.has(noteId) ? ' selected' : ''}`;
   }
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${noteId}`, {
+    await api(`/projects/${window.appState.viewedProject}/canvas/notes/${noteId}`, {
       method: 'PUT', body: { color }
     });
   } catch { /* silent */ }
@@ -464,9 +464,9 @@ export async function setNoteSize(noteId, size) {
     requestAnimationFrame(() => checkTruncation(el));
   }
   renderConnections();
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    await api(`/projects/${canvasState._state.viewedProject}/canvas/notes/${noteId}`, {
+    await api(`/projects/${window.appState.viewedProject}/canvas/notes/${noteId}`, {
       method: 'PUT', body: { size }
     });
   } catch { /* silent */ }

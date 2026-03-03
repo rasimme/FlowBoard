@@ -28,7 +28,6 @@ function renderAll() {
 
 // --- Main entry point called from switchTab ---
 async function renderIdeaCanvas(state) {
-  canvasState._state = state;
   const content = document.getElementById('content');
   content.style.overflow = 'hidden';
 

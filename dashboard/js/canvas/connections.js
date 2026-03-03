@@ -620,9 +620,9 @@ export function removeTempConnectionLine() {
 }
 
 export async function saveConnection(fromId, toId, fromPort, toPort) {
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    const res = await api(`/projects/${canvasState._state.viewedProject}/canvas/connections`, {
+    const res = await api(`/projects/${window.appState.viewedProject}/canvas/connections`, {
       method: 'POST', body: { from: fromId, to: toId, fromPort: fromPort || null, toPort: toPort || null }
     });
     if (res.ok && res.updated) {
@@ -708,9 +708,9 @@ export function showConnectionDeleteBtn(from, to, svgPath) {
 }
 
 export async function deleteConnection(from, to) {
-  if (!canvasState._state?.viewedProject) return;
+  if (!window.appState?.viewedProject) return;
   try {
-    await api(`/projects/${canvasState._state.viewedProject}/canvas/connections`, {
+    await api(`/projects/${window.appState.viewedProject}/canvas/connections`, {
       method: 'DELETE', body: { from, to }
     });
     canvasState.connections = canvasState.connections.filter(
