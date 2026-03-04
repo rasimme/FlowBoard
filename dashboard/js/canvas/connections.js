@@ -6,6 +6,7 @@ import {
   CORNER_RADIUS, PORT_SPACING, MIN_ESCAPE, MAX_PORTS_PER_SIDE
 } from './state.js?v=1';
 import { renderPromoteButton, updateToolbar } from './toolbar.js?v=2';
+import { renderClusterFrames } from './clusters.js?v=1';
 
 /**
  * Convert an array of [x,y] waypoints into a rounded-corner SVG path.
@@ -404,6 +405,9 @@ export function renderConnections() {
 
   // Remove all existing connection groups
   svg.querySelectorAll('.conn-line-group').forEach(g => g.remove());
+
+  // Render cluster frames (before connection lines so frames are behind)
+  renderClusterFrames();
 
   // Clear old connected-port markers
   document.querySelectorAll('.conn-dot-connected').forEach(d => d.classList.remove('conn-dot-connected'));
