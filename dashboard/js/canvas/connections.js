@@ -5,7 +5,7 @@ import {
   canvasState, getNoteDotPosition, COLOR_STROKE,
   CORNER_RADIUS, PORT_SPACING, MIN_ESCAPE, MAX_PORTS_PER_SIDE
 } from './state.js?v=1';
-import { renderPromoteButton, updateToolbar } from './toolbar.js?v=2';
+import { renderPromoteButton, updateToolbar } from './toolbar.js?v=3';
 import { renderClusterFrames } from './clusters.js?v=1';
 
 /**

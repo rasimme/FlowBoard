@@ -4,7 +4,7 @@ import { ICONS } from '../utils.js?v=5';
 import { canvasState, loadCanvas, applyTransform, resetCanvasState } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
          startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=3';
-import { renderConnections, startConnectionDrag } from './connections.js?v=2';
+import { renderConnections, startConnectionDrag } from './connections.js?v=3';
 import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar } from './toolbar.js?v=3';
 import { bindCanvasEvents } from './events.js?v=1';
 import { renderClusterFrames } from './clusters.js?v=1';
@@ -13,7 +13,7 @@ import { renderClusterFrames } from './clusters.js?v=1';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=9';
+  _l.href = './styles/canvas.css?v=10';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }

@@ -2,8 +2,8 @@
 
 import { api, toast, showModal, escHtml, ICONS } from '../utils.js?v=4';
 import { canvasState, NOTE_WIDTH, screenToCanvas } from './state.js?v=1';
-import { renderConnections } from './connections.js?v=2';
-import { updateToolbar, renderPromoteButton } from './toolbar.js?v=2';
+import { renderConnections } from './connections.js?v=3';
+import { updateToolbar, renderPromoteButton } from './toolbar.js?v=3';
 
 // --- Markdown renderer (note subset: bold, lists, links only) ---
 export function renderNoteMarkdown(text) {

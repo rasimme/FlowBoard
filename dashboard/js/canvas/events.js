@@ -10,11 +10,11 @@ import {
 import {
   renderConnections, removeTempConnectionLine, saveConnection, routePath,
   deleteConnection
-} from './connections.js?v=2';
+} from './connections.js?v=3';
 import {
   updateToolbar, renderPromoteButton, toolbarDelete,
   copySelectedToClipboard, pasteFromClipboard, duplicateSelected
-} from './toolbar.js?v=2';
+} from './toolbar.js?v=3';
 
 // AbortController for document-level listeners (re-created on each bindCanvasEvents)
 let _canvasAbort = null;

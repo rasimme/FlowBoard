@@ -7,7 +7,7 @@ import {
   createNoteElement, startNoteEdit, saveNoteText, renderNotes,
   renderEmptyState, checkTruncation
 } from './notes.js?v=2';
-import { renderConnections } from './connections.js?v=2';
+import { renderConnections } from './connections.js?v=3';
 
 export function updateToolbar() {
   const toolbar = document.getElementById('canvasToolbar');
