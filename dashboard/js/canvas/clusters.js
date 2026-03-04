@@ -1,7 +1,7 @@
 // canvas/clusters.js — Cluster auto-frames, cluster promote buttons
 
 import { canvasState, COLOR_STROKE } from './state.js?v=1';
-import { getAllClusters } from './connections.js?v=2';
+import { getAllClusters } from './connections.js?v=3';
 import { updateToolbar, renderPromoteButton, sendPromote } from './toolbar.js?v=3';
 
 const FRAME_PAD = 20;
