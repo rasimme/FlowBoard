@@ -634,6 +634,9 @@ export function startConnectionDrag(e, noteId, port) {
   const _srcNoteEl = document.getElementById('note-' + noteId);
   if (_srcNoteEl) _srcNoteEl.style.zIndex = '3';
 
+  // Hide promote buttons during connection drag
+  document.querySelectorAll('.canvas-promote-btn, .cluster-promote-btn').forEach(b => b.style.display = 'none');
+
   canvasState.connecting = { fromId: noteId, fromPort: port, fromPt: { x: pt.x, y: pt.y }, _noteEl: _srcNoteEl };
   // Store active dot ref after object creation
   const _dotEl = (e.target?.closest?.('.conn-dot') || e.target);

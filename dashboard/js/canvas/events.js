@@ -245,6 +245,8 @@ function onCanvasMouseMove(e) {
       // Note drag started — dismiss any open connection delete button
       document.querySelectorAll('.conn-delete-overlay').forEach(el => el.remove());
       canvasState.selectedConn = null;
+      // Hide promote buttons during drag
+      document.querySelectorAll('.canvas-promote-btn, .cluster-promote-btn').forEach(b => b.style.display = 'none');
     }
     d.moved = true;
 
@@ -394,6 +396,8 @@ function onCanvasMouseUp(e) {
       } else {
         saveNotePosition(noteId);
       }
+      // Re-show promote buttons after drag
+      renderPromoteButton();
     } else {
       // Click without drag — select/toggle
       const noteEl = document.getElementById('note-' + noteId);
@@ -438,6 +442,7 @@ function onCanvasMouseUp(e) {
     removeTempConnectionLine();
     canvasState.connecting = null;
     updateToolbar(); // restore toolbar after connection drag
+    renderPromoteButton(); // re-show promote buttons after connection drag
     return;
   }
 
