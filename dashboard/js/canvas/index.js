@@ -7,6 +7,7 @@ import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
 import { renderConnections, startConnectionDrag } from './connections.js?v=2';
 import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar } from './toolbar.js?v=3';
 import { bindCanvasEvents } from './events.js?v=1';
+import { renderClusterFrames } from './clusters.js?v=1';
 
 // Inject canvas.css once at module load
 if (!document.querySelector('link[data-canvas]')) {
