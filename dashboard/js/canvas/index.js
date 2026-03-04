@@ -5,7 +5,7 @@ import { canvasState, loadCanvas, applyTransform, resetCanvasState } from './sta
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
          startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=3';
 import { renderConnections, startConnectionDrag } from './connections.js?v=2';
-import { renderPromoteButton, showPromoteModal, bindToolbarEvents, updateToolbar } from './toolbar.js?v=2';
+import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar } from './toolbar.js?v=3';
 import { bindCanvasEvents } from './events.js?v=1';
 
 // Inject canvas.css once at module load
@@ -157,5 +157,5 @@ export {
   startNoteEdit,
   saveNoteText,
   startConnectionDrag,
-  showPromoteModal
+  sendPromote
 };
