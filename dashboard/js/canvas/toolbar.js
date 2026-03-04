@@ -583,6 +583,8 @@ export function insertNumberedPrefix(ta) {
 }
 
 // --- Promote button ---
+const PLUS_CIRCLE_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
+
 export function renderPromoteButton() {
   const vp = document.getElementById('canvasViewport');
   if (!vp) return;
@@ -603,87 +605,61 @@ export function renderPromoteButton() {
   }
   if (!isFinite(maxX)) return;
 
+  // Detect if selected notes are part of a cluster
+  const idSet = new Set(selIds);
+  const hasClusterConn = canvasState.connections.some(
+    c => idSet.has(c.from) && idSet.has(c.to)
+  );
+  const mode = hasClusterConn ? 'cluster' : 'single';
+
   const btn = document.createElement('button');
   btn.className = 'canvas-promote-btn';
-  btn.textContent = '\u2192 Task';
+  btn.innerHTML = `${PLUS_CIRCLE_ICON} Task`;
   btn.style.left = (maxX - 56) + 'px';
   btn.style.top  = (maxY + 8)  + 'px';
-  // Stop mousedown from bubbling to canvasWrap — prevents selectedIds from being cleared
   btn.addEventListener('mousedown', e => e.stopPropagation());
+  btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   btn.addEventListener('click', e => {
     e.stopPropagation();
-    showPromoteModal(selIds);
+    sendPromote(selIds, mode);
   });
   vp.appendChild(btn);
 
   updateToolbar();
 }
 
-// --- Promote modal ---
-export function showPromoteModal(noteIds) {
-  // Use existing showModal — body contains a mini-form
-  showModal(
-    'Promote to Task',
-    `<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
-      <input id="promoteTitle" class="task-title-input" placeholder="Task title\u2026"
-        style="margin-bottom:0;font-size:13px" autofocus>
-      <div class="priority-selector" id="promotePrioritySelector">
-        <button class="priority-option"          data-p="low"    data-action="promote-priority" data-priority="low">low</button>
-        <button class="priority-option selected" data-p="medium" data-action="promote-priority" data-priority="medium">medium</button>
-        <button class="priority-option"          data-p="high"   data-action="promote-priority" data-priority="high">high</button>
-      </div>
-    </div>`,
-    () => {
-      const title    = document.getElementById('promoteTitle')?.value?.trim();
-      const priority = document.querySelector('.modal .priority-option.selected')?.dataset?.p || 'medium';
-      if (!title) { toast('Task title required', 'warn'); return; }
-      promoteNotes(noteIds, title, priority);
-    },
-    'Promote',
-    'btn-primary'
-  );
-  // Delegated listener for priority picker inside modal
-  const modalRoot = document.getElementById('modalRoot');
-  const promoteHandler = e => {
-    const btn = e.target.closest('[data-action="promote-priority"]');
-    if (!btn) return;
-    const p = btn.dataset.priority;
-    document.querySelectorAll('#promotePrioritySelector .priority-option').forEach(b => {
-      b.classList.toggle('selected', b.dataset.p === p);
-    });
-  };
-  modalRoot.addEventListener('click', promoteHandler);
-  setTimeout(() => document.getElementById('promoteTitle')?.focus(), 50);
-}
+// --- Promote to task (agent-assisted via session bridge) ---
+export async function sendPromote(noteIds, mode = 'single') {
+  const project = window.appState?.viewedProject;
+  if (!project) return;
 
-export async function promoteNotes(noteIds, title, priority) {
-  if (!window.appState?.viewedProject) return;
+  // Collect note data, filter empty notes
+  const notes = noteIds
+    .map(id => canvasState.notes.find(n => n.id === id))
+    .filter(n => n && n.text?.trim());
+  if (notes.length === 0) {
+    toast('No notes with text to promote', 'warn');
+    return;
+  }
+
+  // Collect connections within the selected set
+  const idSet = new Set(noteIds);
+  const connections = canvasState.connections.filter(
+    c => idSet.has(c.from) && idSet.has(c.to)
+  );
+
   try {
-    const res = await api(`/projects/${window.appState.viewedProject}/canvas/promote`, {
-      method: 'POST', body: { noteIds, title, priority }
+    const res = await api(`/projects/${project}/canvas/promote`, {
+      method: 'POST',
+      body: {
+        notes: notes.map(n => ({ id: n.id, text: n.text, color: n.color || 'grey' })),
+        connections: connections.map(c => ({ from: c.from, to: c.to })),
+        mode
+      }
     });
     if (res.ok) {
-      // Remove promoted notes from local state
-      const deletedSet = new Set(res.deletedNotes || noteIds);
-      canvasState.notes = canvasState.notes.filter(n => !deletedSet.has(n.id));
-      canvasState.connections = canvasState.connections.filter(
-        c => !deletedSet.has(c.from) && !deletedSet.has(c.to)
-      );
-      canvasState.selectedIds.clear();
-
-      // Re-render canvas (individual calls to avoid circular dep with index.js)
-      renderNotes();
-      applyTransform();
-      renderEmptyState();
-      renderPromoteButton();
-      requestAnimationFrame(renderConnections);
-      toast(`Task ${res.task.id} created`, 'success');
+      toast('Idea sent to agent', 'success');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
-
-      // Update tasks state so kanban reflects the new task
-      if (window.appState) {
-        window.appState.tasks.push(res.task);
-      }
     } else {
       toast(res.error || 'Promote failed', 'error');
     }
