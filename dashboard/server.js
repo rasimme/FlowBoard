@@ -1179,6 +1179,27 @@ app.post('/api/projects/:name/canvas/promote', (req, res) => {
   }
 });
 
+// DELETE /api/projects/:name/canvas/notes/batch
+app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
+  const { noteIds } = req.body;
+  if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
+    return res.status(400).json({ error: 'noteIds array required' });
+  }
+  const data = readCanvasFile(req.params.name);
+  const deleteSet = new Set(noteIds);
+  data.notes = data.notes.filter(n => !deleteSet.has(n.id));
+  const remainingIds = new Set(data.notes.map(n => n.id));
+  data.connections = data.connections.filter(
+    c => remainingIds.has(c.from) && remainingIds.has(c.to)
+  );
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`Dashboard API running on http://${HOST}:${PORT}`);
 });
