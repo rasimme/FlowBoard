@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
@@ -381,6 +382,16 @@ function syncDashboardData(projectName) {
     tasks: data ? data.tasks : []
   };
   fs.writeFileSync(DASHBOARD_DATA_FILE, JSON.stringify(out, null, 2));
+}
+
+/** Promisified execFile for CLI bridge calls. */
+function execAsync(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err, stdout, stderr) => {
+      if (err) { err.stderr = stderr; reject(err); }
+      else resolve(stdout);
+    });
+  });
 }
 
 function getDisplayName(projectName) {
@@ -1122,60 +1133,51 @@ app.delete('/api/projects/:name/canvas/connections', (req, res) => {
   }
 });
 
-// POST /api/projects/:name/canvas/promote
-app.post('/api/projects/:name/canvas/promote', (req, res) => {
-  const { noteIds, title, priority } = req.body;
-  if (!noteIds || !noteIds.length || !title) {
-    return res.status(400).json({ error: 'noteIds array and title required' });
+// POST /api/projects/:name/canvas/promote — session bridge to OpenClaw agent
+app.post('/api/projects/:name/canvas/promote', async (req, res) => {
+  const { notes, connections, mode } = req.body;
+  if (!notes || !Array.isArray(notes) || notes.length === 0) {
+    return res.status(400).json({ error: 'notes array required' });
   }
-
-  const canvasData = readCanvasFile(req.params.name);
-  const notesToPromote = canvasData.notes.filter(n => noteIds.includes(n.id));
-  if (notesToPromote.length === 0) return res.status(404).json({ error: 'No matching notes found' });
-
-  const tasksData = readTasksFile(req.params.name);
+  // Verify project exists
+  const projectName = req.params.name;
+  const tasksData = readTasksFile(projectName);
   if (!tasksData) return res.status(404).json({ error: 'Project not found' });
 
-  const task = {
-    id: nextTaskId(tasksData.tasks),
-    title,
-    status: 'open',
-    priority: priority || 'medium',
-    specFile: null,
-    created: new Date().toISOString().slice(0, 10),
-    completed: null
-  };
-  tasksData.tasks.push(task);
+  // Format structured message for agent
+  const noteLines = notes
+    .map(n => `- ${n.id} (${n.color || 'grey'}): "${(n.text || '').replace(/"/g, '\\"')}"`)
+    .join('\n');
+  const connLines = (connections || [])
+    .map(c => `${c.from} → ${c.to}`)
+    .join(', ') || 'none';
 
-  const specsDir = path.join(PROJECTS_DIR, req.params.name, 'specs');
-  fs.mkdirSync(specsDir, { recursive: true });
-  const slug = title.toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-')
-    .slice(0, 40).replace(/-$/, '');
-  const specFilename = `${task.id}-${slug}.md`;
-  const specPath = path.join(specsDir, specFilename);
-  const date = new Date().toISOString().slice(0, 10);
-  const noteContents = notesToPromote
-    .map(n => `### Note ${n.id}\n${n.text || '(empty)'}`)
-    .join('\n\n');
-  fs.writeFileSync(specPath, `# ${task.id}: ${title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Context (from Idea Canvas)\n\n${noteContents}\n\n## Log\n- ${date}: Spec created from ${notesToPromote.length} canvas note${notesToPromote.length > 1 ? 's' : ''}\n`);
-  task.specFile = `specs/${specFilename}`;
+  const message = `[CANVAS_PROMOTE]
+Project: ${projectName}
+Mode: ${mode || 'single'}
+Notes:
+${noteLines}
+Connections: ${connLines}
 
-  writeTasksFile(req.params.name, tasksData);
-  syncDashboardData(req.params.name);
+--- Agent Instructions ---
+Decide based on content and complexity:
+1. Simple idea (1-2 short notes, clear scope) → Task with title + priority only
+2. Detailed idea (notes contain specifics) → Task + spec file (template: # T-{id}: {Title} / ## Goal / ## Done When / ## Approach / ## Log)
+3. Multiple topics detected (different colors, loose connections) → Parent task + subtasks (subtasks may have own specs)
+4. Unclear or incomplete → Ask clarifying questions in chat before creating task
 
-  const promotedIds = new Set(noteIds);
-  canvasData.notes = canvasData.notes.filter(n => !promotedIds.has(n.id));
-  const remainingIds = new Set(canvasData.notes.map(n => n.id));
-  canvasData.connections = canvasData.connections.filter(
-    c => remainingIds.has(c.from) && remainingIds.has(c.to)
-  );
+After task creation, clean up canvas:
+DELETE /api/projects/${projectName}/canvas/notes/batch { "noteIds": [${notes.map(n => `"${n.id}"`).join(', ')}] }`;
 
   try {
-    writeCanvasFile(req.params.name, canvasData);
-    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task), deletedNotes: Array.from(promotedIds) });
+    await execAsync('openclaw', ['system', 'event', '--text', message, '--mode', 'now', '--timeout', '5000'], { timeout: 6000 });
+    res.json({ ok: true, message: 'Idea sent to agent' });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Promote bridge error:', err.message || err);
+    if (err.killed) {
+      return res.status(504).json({ error: 'Agent timeout — try again later' });
+    }
+    res.status(503).json({ error: 'Agent unreachable — try again later' });
   }
 });
 
