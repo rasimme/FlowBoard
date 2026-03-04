@@ -590,6 +590,9 @@ export function renderPromoteButton() {
   if (!vp) return;
   vp.querySelectorAll('.canvas-promote-btn').forEach(b => b.remove());
 
+  // Don't render during drag or connection draw
+  if (canvasState.dragging?.moved || canvasState.connecting) return;
+
   const selIds = [...canvasState.selectedIds];
   if (selIds.length === 0) { updateToolbar(); return; }
 

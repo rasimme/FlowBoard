@@ -20,6 +20,9 @@ export function renderClusterFrames() {
   svg.querySelectorAll('.cluster-frame').forEach(f => f.remove());
   vp.querySelectorAll('.cluster-promote-btn').forEach(b => b.remove());
 
+  // Don't render promote buttons during drag or connection draw
+  const isDragging = !!(canvasState.dragging?.moved) || !!canvasState.connecting;
+
   const clusters = getAllClusters();
 
   for (const cluster of clusters) {
@@ -61,6 +64,8 @@ export function renderClusterFrames() {
     else svg.appendChild(rect);
 
     // --- HTML promote button (hidden, shown on hover) ---
+    // Skip button creation during drag/connection operations
+    if (isDragging) continue;
     const clusterIds = [...cluster];
     const btn = document.createElement('button');
     btn.className = 'cluster-promote-btn';
