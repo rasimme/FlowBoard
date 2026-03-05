@@ -659,7 +659,7 @@ export function startDelete(id, title, specFile, subtaskCount = 0) {
   } else if (specFile) {
     showModal(
       `\uD83D\uDDD1\uFE0F Delete task?`,
-      `<strong>${id}</strong>: ${title}<br>This task has a spec file. Delete it too?`,
+      `<strong>${id}</strong>: ${escHtml(title)}<br>This task has a spec file. Delete it too?`,
       () => { if (window._confirmDelete) window._confirmDelete(id, true); },
       'Delete everything',
       'btn-danger',
@@ -668,7 +668,7 @@ export function startDelete(id, title, specFile, subtaskCount = 0) {
   } else {
     showModal(
       'Delete task?',
-      `<strong>${id}</strong>: ${title}<br>This action cannot be undone.`,
+      `<strong>${id}</strong>: ${escHtml(title)}<br>This action cannot be undone.`,
       () => { if (window._confirmDelete) window._confirmDelete(id, false); }
     );
   }
