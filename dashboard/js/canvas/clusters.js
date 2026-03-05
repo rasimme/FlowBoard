@@ -2,27 +2,22 @@
 
 import { canvasState, COLOR_STROKE } from './state.js?v=1';
 import { getAllClusters } from './connections.js?v=3';
-import { updateToolbar, renderPromoteButton, sendPromote } from './toolbar.js?v=10';
-import { showModal } from '../utils.js?v=5';
+import { updateToolbar, renderPromoteButton } from './toolbar.js?v=10';
 
 const FRAME_PAD = 20;
-const PLUS_CIRCLE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
 
 /**
- * Renders SVG frame rects + HTML promote buttons for each cluster.
- * Called from renderConnections() so frames stay in sync with connection changes.
+ * Renders SVG frame rects for each cluster.
+ * Click/tap on frame → select all notes in cluster.
+ * Promote button appears via renderPromoteButton() (toolbar.js) — not here.
  */
 export function renderClusterFrames() {
   const svg = document.getElementById('canvasSvg');
   const vp = document.getElementById('canvasViewport');
   if (!svg || !vp) return;
 
-  // Remove old frames and cluster buttons
+  // Remove old frames
   svg.querySelectorAll('.cluster-frame').forEach(f => f.remove());
-  vp.querySelectorAll('.cluster-promote-btn').forEach(b => b.remove());
-
-  // Don't render promote buttons during drag or connection draw
-  const isDragging = !!(canvasState.dragging?.moved) || !!canvasState.connecting;
 
   const clusters = getAllClusters();
 
@@ -64,48 +59,9 @@ export function renderClusterFrames() {
     if (firstConn) svg.insertBefore(rect, firstConn);
     else svg.appendChild(rect);
 
-    // --- HTML promote button (hidden, shown on hover) ---
-    // Skip button creation during drag/connection operations
-    if (isDragging) continue;
-    const clusterIds = [...cluster];
-    const btn = document.createElement('button');
-    btn.className = 'cluster-promote-btn';
-    btn.innerHTML = `${PLUS_CIRCLE} Task`;
-    btn.style.left = (maxX - 56) + 'px';
-    btn.style.top = (maxY + FRAME_PAD + 4) + 'px';
-    // Prevent canvas mousedown from clearing selection
-    btn.addEventListener('mousedown', e => e.stopPropagation());
-    btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const noteCount = clusterIds.length;
-      showModal(
-        'Create Task from Cluster',
-        `Create task(s) from ${noteCount} connected ideas? The agent will decide the task structure (single task, or parent with subtasks). Notes will be removed from canvas after creation.`,
-        () => sendPromote(clusterIds, 'cluster'),
-        'Create Task',
-        'btn-primary'
-      );
-    });
-    vp.appendChild(btn);
-
-    // Hover interaction (desktop): show button on frame hover
-    rect.style.pointerEvents = 'all';
-    rect.addEventListener('mouseenter', () => btn.classList.add('visible'));
-    rect.addEventListener('mouseleave', () => {
-      // Delay to allow cursor to move from frame to button
-      setTimeout(() => {
-        if (!btn.matches(':hover')) btn.classList.remove('visible');
-      }, 80);
-    });
-    btn.addEventListener('mouseleave', () => {
-      // Delay to allow cursor to move from button back to frame
-      setTimeout(() => {
-        if (!rect.matches(':hover')) btn.classList.remove('visible');
-      }, 80);
-    });
-
     // Click on frame → select all notes in cluster
+    const clusterIds = [...cluster];
+    rect.style.pointerEvents = 'all';
     rect.addEventListener('mousedown', e => {
       e.stopPropagation();
       canvasState.selectedIds.clear();

@@ -13,7 +13,7 @@ import { renderClusterFrames } from './clusters.js?v=1';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=12';
+  _l.href = './styles/canvas.css?v=13';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
