@@ -358,6 +358,51 @@ The file explorer lets you browse your entire project structure, preview Markdow
 
 ---
 
+## Canvas → Task Promote (Agent-Assisted)
+
+The Ideas Canvas includes a **Promote** feature that converts canvas notes into structured tasks using your OpenClaw agent. The agent decides the task structure based on content complexity:
+
+- **Simple idea** → Task with title only
+- **Detailed idea** → Task + spec file
+- **Multiple related ideas** (connected notes) → Parent task + subtasks
+
+### How it works
+
+1. Select a note (or a cluster of connected notes) on the canvas
+2. Click the **+ Task** button → confirmation modal appears
+3. Confirm → the note content is sent to your OpenClaw agent via webhook
+4. The agent creates task(s) + spec(s) and removes the notes from the canvas
+5. You get a notification in your chat (Telegram, Discord, etc.)
+
+### Setup
+
+This feature requires **OpenClaw webhooks** to be enabled:
+
+**1. Enable webhooks in `~/.openclaw/openclaw.json`:**
+```json5
+{
+  hooks: {
+    enabled: true,
+    token: "your-secret-token",  // generate with: openssl rand -hex 16
+    path: "/hooks"
+  }
+}
+```
+
+**2. Set environment variables for the dashboard:**
+```bash
+OPENCLAW_HOOKS_TOKEN=your-secret-token    # Must match hooks.token above
+OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789  # Default gateway URL
+OPENCLAW_DELIVER_CHANNEL=telegram         # Or: last, discord, whatsapp, slack
+OPENCLAW_DELIVER_TO=123456789             # Your chat/channel ID (optional)
+```
+
+**3. Restart the dashboard**
+
+Without these variables, the promote button will show an error ("Agent not configured"). The rest of FlowBoard works without webhooks.
+
+---
+
 ## Changelog
 
 ### v3.1.0 (2026-02-27) - UX & Mobile Improvements
