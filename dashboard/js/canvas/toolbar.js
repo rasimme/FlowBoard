@@ -638,8 +638,15 @@ export function renderPromoteButton() {
   const btn = document.createElement('button');
   btn.className = 'canvas-promote-btn';
   btn.innerHTML = `${PLUS_CIRCLE_ICON} Task`;
-  btn.style.left = (maxX - 56) + 'px';
-  btn.style.top  = (maxY + (mode === 'cluster' ? FRAME_PAD + 8 : 8)) + 'px';
+  if (mode === 'cluster') {
+    // Right-align with cluster frame edge
+    btn.style.left = (maxX + FRAME_PAD) + 'px';
+    btn.style.top  = (maxY + FRAME_PAD + 8) + 'px';
+    btn.style.transform = 'translateX(-100%)';
+  } else {
+    btn.style.left = (maxX - 56) + 'px';
+    btn.style.top  = (maxY + 8) + 'px';
+  }
   btn.addEventListener('mousedown', e => e.stopPropagation());
   btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   btn.addEventListener('click', e => {
