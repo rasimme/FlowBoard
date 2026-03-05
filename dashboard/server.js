@@ -9,8 +9,8 @@ const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 
 const app = express();
-const PORT = 18790;
-const HOST = '0.0.0.0';
+const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
+const HOST = process.env.FLOWBOARD_HOST || '0.0.0.0';
 
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..');
 const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
@@ -1182,7 +1182,7 @@ Connections: ${connLines}
 
 --- Agent Instructions ---
 You are creating tasks for FlowBoard project management.
-Dashboard API base: http://localhost:18790/api
+Dashboard API base: http://localhost:${PORT}/api
 
 Decide based on content and complexity:
 1. Simple idea (1-2 short notes) → Create task: POST /api/projects/${projectName}/tasks {"title": "...", "priority": "medium"}
@@ -1199,7 +1199,7 @@ Spec template:
 ## Log
 
 After ALL tasks are created, clean up canvas notes:
-DELETE http://localhost:18790/api/projects/${projectName}/canvas/notes/batch
+DELETE http://localhost:${PORT}/api/projects/${projectName}/canvas/notes/batch
 Body: { "noteIds": [${notes.map(n => `"${n.id}"`).join(', ')}] }
 
 Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
@@ -1223,14 +1223,13 @@ Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${hooksToken}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         message,
         name: 'Canvas Promote',
         deliver: true,
-        channel: 'telegram',
-        to: '15707748',
+        channel: process.env.OPENCLAW_DELIVER_CHANNEL || 'last',
         wakeMode: 'now',
-      }),
+      }, process.env.OPENCLAW_DELIVER_TO ? { to: process.env.OPENCLAW_DELIVER_TO } : {})),
     });
     if (!hookRes.ok) {
       console.error('Promote webhook error:', hookRes.status, await hookRes.text());
