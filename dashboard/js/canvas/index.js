@@ -1,7 +1,7 @@
 // canvas/index.js — Entry point, orchestrator, CSS injection, public API re-exports
 
 import { ICONS } from '../utils.js?v=5';
-import { canvasState, loadCanvas, applyTransform, resetCanvasState } from './state.js?v=1';
+import { canvasState, loadCanvas, applyTransform, resetCanvasState, SCALE_MIN, SCALE_MAX } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
          startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=4';
 import { renderConnections, startConnectionDrag } from './connections.js?v=3';
@@ -24,6 +24,36 @@ function renderAll() {
   applyTransform();
   renderEmptyState();
   renderPromoteButton();
+  requestAnimationFrame(renderConnections);
+}
+
+function fitCanvasToNotes() {
+  const wrap = document.getElementById('canvasWrap');
+  if (!wrap || canvasState.notes.length === 0) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const note of canvasState.notes) {
+    const el = document.getElementById('note-' + note.id);
+    const w = el?.offsetWidth || 160;
+    const h = el?.offsetHeight || 120;
+    minX = Math.min(minX, note.x);
+    minY = Math.min(minY, note.y);
+    maxX = Math.max(maxX, note.x + w);
+    maxY = Math.max(maxY, note.y + h);
+  }
+
+  const pad = 40;
+  const contentW = Math.max(1, maxX - minX + pad * 2);
+  const contentH = Math.max(1, maxY - minY + pad * 2);
+  const scale = Math.min(wrap.clientWidth / contentW, wrap.clientHeight / contentH, 1);
+  canvasState.scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, scale));
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  canvasState.pan.x = wrap.clientWidth / 2 - centerX * canvasState.scale;
+  canvasState.pan.y = wrap.clientHeight / 2 - centerY * canvasState.scale;
+
+  applyTransform();
   requestAnimationFrame(renderConnections);
 }
 
@@ -137,6 +167,7 @@ async function renderIdeaCanvas(state) {
     await loadCanvas(state);
   }
   renderAll();
+  fitCanvasToNotes();
 }
 
 // --- Called from refresh polling when canvas data changes ---
