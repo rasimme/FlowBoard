@@ -168,9 +168,16 @@ export async function createNoteAt(x, y) {
       canvasState.notes.push(res.note);
       const vp = document.getElementById('canvasViewport');
       if (vp) {
-        vp.appendChild(createNoteElement(res.note));
+        const el = createNoteElement(res.note);
+        vp.appendChild(el);
+        // Select the newly created note
+        canvasState.selectedIds.clear();
+        document.querySelectorAll('.note.selected').forEach(n => n.classList.remove('selected'));
+        canvasState.selectedIds.add(res.note.id);
+        el.classList.add('selected');
         renderEmptyState();
         renderPromoteButton();
+        updateToolbar();
         // Auto-focus the new note for editing
         setTimeout(() => startNoteEdit(res.note.id), 50);
       }

@@ -3,7 +3,7 @@
 import { ICONS } from '../utils.js?v=5';
 import { canvasState, loadCanvas, applyTransform, resetCanvasState } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
-         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=3';
+         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=4';
 import { renderConnections, startConnectionDrag } from './connections.js?v=3';
 import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar } from './toolbar.js?v=3';
 import { bindCanvasEvents } from './events.js?v=1';
