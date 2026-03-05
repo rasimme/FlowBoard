@@ -663,12 +663,13 @@ export function startDelete(id, title, specFile, subtaskCount = 0) {
 
   if (hasSpec || hasSubs) {
     // Build checkbox options for combined modal
+    const checkSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
     let options = '';
     if (hasSubs) {
-      options += `<label class="modal-checkbox"><input type="checkbox" id="delSubtasks" checked> Delete ${subtaskCount} subtask(s)</label>`;
+      options += `<label class="modal-checkbox"><input type="checkbox" id="delSubtasks" checked><span class="check-box">${checkSvg}</span> Delete ${subtaskCount} subtask(s)</label>`;
     }
     if (hasSpec) {
-      options += `<label class="modal-checkbox"><input type="checkbox" id="delSpec" checked> Delete spec file</label>`;
+      options += `<label class="modal-checkbox"><input type="checkbox" id="delSpec" checked><span class="check-box">${checkSvg}</span> Delete spec file</label>`;
     }
 
     showModal(
