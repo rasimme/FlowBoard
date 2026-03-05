@@ -339,15 +339,19 @@ export function bindToolbarEvents() {
   toolbar.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   toolbar.addEventListener('wheel', e => e.stopPropagation(), { passive: false });
 
+  // Keep edit mode active when using toolbar actions
+  toolbar.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('mousedown', e => e.preventDefault());
+  });
+
   // Button handlers
   document.getElementById('tbColor')?.addEventListener('click', showColorPopover);
   document.getElementById('tbSize')?.addEventListener('click', showSizePopover);
   document.getElementById('tbDelete')?.addEventListener('click', toolbarDelete);
   document.getElementById('tbDuplicate')?.addEventListener('click', duplicateSelected);
 
-  // Format buttons: preventDefault on mousedown keeps textarea focus
+  // Format buttons
   toolbar.querySelectorAll('[data-fmt]').forEach(btn => {
-    btn.addEventListener('mousedown', e => e.preventDefault());
     btn.addEventListener('click', () => applyFormatting(btn.dataset.fmt));
   });
 }
