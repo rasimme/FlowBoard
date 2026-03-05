@@ -808,7 +808,8 @@ export function renderTabBarRight() {
 
 // --- Delegated event listener ---
 export function bindKanbanEvents(container) {
-  container.addEventListener('click', e => {
+  let lastTouchTs = 0;
+  const handleAction = (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { action, id, title, priority, file } = btn.dataset;
@@ -832,6 +833,16 @@ export function bindKanbanEvents(container) {
       case 'select-priority': selectPriority(priority); break;
       case 'toggle-sort':     if (window._toggleSort) window._toggleSort(); break;
     }
+  };
+
+  container.addEventListener('touchstart', e => {
+    lastTouchTs = Date.now();
+    handleAction(e);
+  }, { passive: true });
+
+  container.addEventListener('click', e => {
+    if (Date.now() - lastTouchTs < 500) return; // ignore synthetic click after touch
+    handleAction(e);
   });
 
   // Column drag events (delegated)
