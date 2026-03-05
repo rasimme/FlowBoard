@@ -848,25 +848,14 @@ export function bindKanbanEvents(container) {
     }
   };
 
-  container.addEventListener('touchstart', e => {
-    lastTouchTs = Date.now();
-    handleAction(e);
-  }, { passive: true });
-
   container.addEventListener('click', e => {
-    if (Date.now() - lastTouchTs < 500) return; // ignore synthetic click after touch
     handleAction(e);
   });
 
-  // Global delegation for popovers rendered on body
+  // Global delegation for popovers rendered on body (e.g. priority popover)
   if (!_globalActionsBound) {
     _globalActionsBound = true;
-    document.body.addEventListener('touchstart', e => {
-      lastTouchTs = Date.now();
-      handleAction(e);
-    }, { passive: true });
     document.body.addEventListener('click', e => {
-      if (Date.now() - lastTouchTs < 500) return;
       handleAction(e);
     });
   }
