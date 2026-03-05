@@ -376,7 +376,7 @@
       width: max-content;
       background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md);
       box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
-      z-index: 100;
+      z-index: 1200;
       animation: popIn var(--duration-fast) var(--ease-out);
     }
     .priority-popover .priority-pill { opacity: 0.5; transition: opacity var(--duration-fast); white-space: nowrap; }
