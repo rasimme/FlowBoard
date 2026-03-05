@@ -46,8 +46,10 @@ function fitCanvasToNotes() {
   const contentW = Math.max(1, maxX - minX + pad * 2);
   const contentH = Math.max(1, maxY - minY + pad * 2);
   const scale = Math.min(wrap.clientWidth / contentW, wrap.clientHeight / contentH, 1);
-  canvasState.scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, scale));
+  const clamped = Math.max(SCALE_MIN, Math.min(SCALE_MAX, scale));
+  canvasState.scale = clamped;
 
+  // Always center content bounds, even if clamped
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
   canvasState.pan.x = wrap.clientWidth / 2 - centerX * canvasState.scale;
