@@ -1160,25 +1160,62 @@ ${noteLines}
 Connections: ${connLines}
 
 --- Agent Instructions ---
-Decide based on content and complexity:
-1. Simple idea (1-2 short notes, clear scope) → Task with title + priority only
-2. Detailed idea (notes contain specifics) → Task + spec file (template: # T-{id}: {Title} / ## Goal / ## Done When / ## Approach / ## Log)
-3. Multiple topics detected (different colors, loose connections) → Parent task + subtasks (subtasks may have own specs)
-4. Unclear or incomplete → Ask clarifying questions in chat before creating task
+You are creating tasks for FlowBoard project management.
+Dashboard API base: http://localhost:18790/api
 
-After task creation, clean up canvas:
-DELETE /api/projects/${projectName}/canvas/notes/batch { "noteIds": [${notes.map(n => `"${n.id}"`).join(', ')}] }`;
+Decide based on content and complexity:
+1. Simple idea (1-2 short notes) → Create task: POST /api/projects/${projectName}/tasks {"title": "...", "priority": "medium"}
+2. Detailed idea (notes with specifics) → Create task + spec: POST /api/projects/${projectName}/specs/{taskId} then write spec content
+3. Multiple topics (different colors, loose connections) → Parent task + subtasks with parentId
+4. Complex cluster → Parent (with spec) + subtasks (with own specs)
+
+Spec template:
+# T-{id}: {Title}
+## Goal
+## Done When
+- [ ] ...
+## Approach
+## Log
+
+After ALL tasks are created, clean up canvas notes:
+DELETE http://localhost:18790/api/projects/${projectName}/canvas/notes/batch
+Body: { "noteIds": [${notes.map(n => `"${n.id}"`).join(', ')}] }
+
+Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
+
+  // Fire-and-forget: respond immediately, webhook runs async
+  const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789';
+  const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN;
+
+  if (!hooksToken) {
+    console.error('Promote bridge: OPENCLAW_HOOKS_TOKEN not set');
+    return res.status(503).json({ error: 'Agent not configured — hooks token missing' });
+  }
+
+  // Send immediately, don't await
+  res.json({ ok: true, message: 'Idea sent to agent' });
 
   try {
-    const openclawBin = process.env.OPENCLAW_BIN || '/home/jetson/.npm-global/bin/openclaw';
-    await execAsync(openclawBin, ['system', 'event', '--text', message, '--mode', 'now', '--timeout', '15000'], { timeout: 20000 });
-    res.json({ ok: true, message: 'Idea sent to agent' });
-  } catch (err) {
-    console.error('Promote bridge error:', err.message || err);
-    if (err.killed) {
-      return res.status(504).json({ error: 'Agent timeout — try again later' });
+    const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hooksToken}`,
+      },
+      body: JSON.stringify({
+        message,
+        name: 'Canvas Promote',
+        deliver: true,
+        channel: 'telegram',
+        to: '15707748',
+        wakeMode: 'now',
+      }),
+    });
+    if (!hookRes.ok) {
+      console.error('Promote webhook error:', hookRes.status, await hookRes.text());
     }
-    res.status(503).json({ error: 'Agent unreachable — try again later' });
+  } catch (err) {
+    console.error('Promote webhook error:', err.message || err);
   }
 });
 
