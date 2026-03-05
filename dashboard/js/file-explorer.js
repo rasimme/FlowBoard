@@ -187,12 +187,12 @@ export function renderFileTree() {
   if (footer && fileState.fileTree) {
     const total = fileState.fileTree.totalSize;
     const recommended = 50 * 1024;
-    const pct = Math.min(100, Math.round((total / recommended) * 100));
-    const color = pct > 80 ? 'var(--warn)' : pct > 100 ? 'var(--danger)' : 'var(--ok)';
+    const pct = Math.round((total / recommended) * 100);
+    const color = pct > 100 ? 'var(--danger)' : pct > 80 ? 'var(--warn)' : 'var(--ok)';
     footer.innerHTML = `
       <div>${fileState.fileTree.fileCount} files · ${formatSize(total)}</div>
       <div class="context-bar">
-        <div class="context-bar-fill" style="width:${pct}%;background:${color}"></div>
+        <div class="context-bar-fill" style="width:${Math.min(100, pct)}%;background:${color}"></div>
       </div>
     `;
   }
