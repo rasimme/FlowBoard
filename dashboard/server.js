@@ -1171,7 +1171,7 @@ DELETE /api/projects/${projectName}/canvas/notes/batch { "noteIds": [${notes.map
 
   try {
     const openclawBin = process.env.OPENCLAW_BIN || '/home/jetson/.npm-global/bin/openclaw';
-    await execAsync(openclawBin, ['system', 'event', '--text', message, '--mode', 'now', '--timeout', '5000'], { timeout: 6000 });
+    await execAsync(openclawBin, ['system', 'event', '--text', message, '--mode', 'now', '--timeout', '15000'], { timeout: 20000 });
     res.json({ ok: true, message: 'Idea sent to agent' });
   } catch (err) {
     console.error('Promote bridge error:', err.message || err);
