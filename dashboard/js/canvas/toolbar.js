@@ -91,7 +91,7 @@ export function showColorPopover() {
     const swatch = document.createElement('span');
     swatch.className = `color-swatch color-swatch-${color}${color === currentColor ? ' selected' : ''}`;
     swatch.title = color;
-    swatch.addEventListener('mousedown', ev => ev.preventDefault());
+    swatch.addEventListener('mousedown', ev => { ev.preventDefault(); ev.stopPropagation(); });
     swatch.addEventListener('click', ev => {
       ev.stopPropagation();
       for (const id of canvasState.selectedIds) {
@@ -154,7 +154,7 @@ export function showSizePopover() {
     sizeBtn.className = `toolbar-size-btn${currentSize === size ? ' active' : ''}`;
     sizeBtn.textContent = size === 'small' ? 'S' : 'M';
     sizeBtn.title = size === 'small' ? 'Small (160px)' : 'Medium (280px)';
-    sizeBtn.addEventListener('mousedown', ev => ev.preventDefault());
+    sizeBtn.addEventListener('mousedown', ev => { ev.preventDefault(); ev.stopPropagation(); });
     sizeBtn.addEventListener('click', ev => {
       ev.stopPropagation();
       for (const id of canvasState.selectedIds) {
@@ -207,6 +207,7 @@ export async function duplicateSelected() {
   if (ids.length === 0) return;
   const project = window.appState?.viewedProject;
   if (!project) return;
+  const wasEditing = !!canvasState.editingId;
 
   // Calculate bounding box center for offset
   const notes = ids.map(id => canvasState.notes.find(n => n.id === id)).filter(Boolean);
@@ -247,6 +248,10 @@ export async function duplicateSelected() {
     renderEmptyState();
     renderPromoteButton();
     updateToolbar();
+    if (wasEditing) {
+      const firstNewId = [...newIds][0];
+      if (firstNewId) startNoteEdit(firstNewId);
+    }
   }
 }
 
