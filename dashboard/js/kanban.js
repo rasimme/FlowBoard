@@ -542,12 +542,25 @@ export function togglePriorityPopover(e, id, current) {
     pill.dataset.priority = p;
     popover.appendChild(pill);
   });
-  wrap.appendChild(popover);
+
+  // Render popover at body level to avoid clipping by scroll containers
+  const rect = wrap.getBoundingClientRect();
+  popover.style.position = 'fixed';
+  popover.style.left = `${rect.left + rect.width / 2}px`;
+  popover.style.top = `${rect.top - 6}px`;
+  popover.style.transform = 'translate(-50%, -100%)';
+  document.body.appendChild(popover);
+
   setTimeout(() => {
     const close = (ev) => {
-      if (!popover.contains(ev.target)) { popover.remove(); document.removeEventListener('click', close); }
+      if (!popover.contains(ev.target)) {
+        popover.remove();
+        document.removeEventListener('click', close);
+        window.removeEventListener('scroll', close, true);
+      }
     };
     document.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
   }, 0);
 }
 
