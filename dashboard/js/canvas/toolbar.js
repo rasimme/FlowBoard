@@ -91,6 +91,7 @@ export function showColorPopover() {
     const swatch = document.createElement('span');
     swatch.className = `color-swatch color-swatch-${color}${color === currentColor ? ' selected' : ''}`;
     swatch.title = color;
+    swatch.addEventListener('mousedown', ev => ev.preventDefault());
     swatch.addEventListener('click', ev => {
       ev.stopPropagation();
       for (const id of canvasState.selectedIds) {
@@ -109,8 +110,8 @@ export function showColorPopover() {
   pop.style.left = '-9999px';
   pop.style.top = '-9999px';
   pop.style.zIndex = '40';
-  pop.addEventListener('mousedown', e => e.stopPropagation());
-  pop.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
+  pop.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+  pop.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
   wrap.appendChild(pop);
   // Ensure toolbar visible for accurate getBoundingClientRect measurement
   // (on mobile, toolbar may be hidden between touchend and synthesized click)
@@ -153,6 +154,7 @@ export function showSizePopover() {
     sizeBtn.className = `toolbar-size-btn${currentSize === size ? ' active' : ''}`;
     sizeBtn.textContent = size === 'small' ? 'S' : 'M';
     sizeBtn.title = size === 'small' ? 'Small (160px)' : 'Medium (280px)';
+    sizeBtn.addEventListener('mousedown', ev => ev.preventDefault());
     sizeBtn.addEventListener('click', ev => {
       ev.stopPropagation();
       for (const id of canvasState.selectedIds) {
@@ -171,8 +173,8 @@ export function showSizePopover() {
   pop.style.left = '-9999px';
   pop.style.top = '-9999px';
   pop.style.zIndex = '40';
-  pop.addEventListener('mousedown', e => e.stopPropagation());
-  pop.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
+  pop.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); });
+  pop.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
   wrap.appendChild(pop);
   // Ensure toolbar visible for accurate getBoundingClientRect measurement
   toolbar.style.display = 'flex';
