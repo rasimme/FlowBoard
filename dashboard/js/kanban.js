@@ -548,6 +548,8 @@ export function togglePriorityPopover(e, id, current) {
   popover.style.position = 'fixed';
   popover.style.left = `${rect.left + rect.width / 2}px`;
   popover.style.top = `${rect.top - 6}px`;
+  popover.style.bottom = 'auto';
+  popover.style.right = 'auto';
   popover.style.transform = 'translate(-50%, -100%)';
   document.body.appendChild(popover);
 
