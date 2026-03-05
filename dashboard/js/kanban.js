@@ -630,6 +630,8 @@ export async function setSubtaskStatus(id, status, state) {
 
 export async function setPriority(id, priority, state) {
   document.querySelectorAll('.priority-popover').forEach(p => p.remove());
+  const task = state.tasks.find(t => t.id === id);
+  const oldPriority = task?.priority;
   const card = document.querySelector(`.task-card[data-id="${id}"]`);
   const pill = card?.querySelector('.priority-pill');
   if (pill) {
@@ -639,11 +641,20 @@ export async function setPriority(id, priority, state) {
     pill.dataset.id = id;
     pill.dataset.priority = priority;
   }
-  const task = state.tasks.find(t => t.id === id);
   if (task) task.priority = priority;
-  await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, {
     method: 'PUT', body: { priority }
   });
+  if (!res.ok) {
+    if (task) task.priority = oldPriority;
+    if (pill && oldPriority) {
+      pill.className = `priority-pill priority-${oldPriority}`;
+      pill.textContent = oldPriority;
+      pill.dataset.priority = oldPriority;
+    }
+    toast('Failed to set priority', 'error');
+    _hn('error');
+  }
 }
 
 export function startDelete(id, title, specFile, subtaskCount = 0) {
