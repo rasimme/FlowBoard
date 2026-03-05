@@ -484,6 +484,7 @@ export async function setNoteSize(noteId, size) {
       checkTruncation(el);
       renderConnections();
       updateToolbar();
+      renderPromoteButton();
     }));
   } else {
     renderConnections();
