@@ -482,6 +482,7 @@ export async function setNoteSize(noteId, size) {
     requestAnimationFrame(() => checkTruncation(el));
   }
   renderConnections();
+  requestAnimationFrame(() => updateToolbar());
   if (!window.appState?.viewedProject) return;
   try {
     await api(`/projects/${window.appState.viewedProject}/canvas/notes/${noteId}`, {

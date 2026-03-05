@@ -14,7 +14,7 @@ import {
 import {
   canvasState, renderIdeaCanvas,
   refreshCanvas, resetCanvasState
-} from './canvas/index.js?v=4';
+} from './canvas/index.js?v=5';
 
 // Global state
 const state = {
