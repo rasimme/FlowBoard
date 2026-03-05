@@ -296,6 +296,7 @@ window._createSpec = function(taskId) {
 
 // --- File Explorer bridge callbacks ---
 window._loadFileContent = function(path) { loadFileContent(path, state); };
+window.refreshCanvas = refreshCanvas;
 window._saveFileContent = function() { saveFileContent(state); };
 window._deleteCurrentFile = function() {
   const filePath = fileState?.selectedFile;
