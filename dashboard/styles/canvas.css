@@ -1,0 +1,389 @@
+/* canvas.css — Idea Canvas style overrides
+   Injected programmatically by idea-canvas.js — do NOT add to index.html */
+
+/* Selection state — white border, no red glow */
+.note.selected {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Dot-pattern background + visible frame */
+.canvas-wrap {
+  background-color: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-sizing: border-box;
+}
+
+/* Outline-only note cards — override dashboard.css color fills */
+.canvas-viewport .note {
+  background: var(--bg);
+  border-width: 1.5px;
+  border-left-width: 1.5px;
+  border-style: solid;
+}
+.canvas-viewport .note.color-yellow {
+  background: var(--bg);
+  border-color: var(--warn);
+}
+.canvas-viewport .note.color-blue {
+  background: var(--bg);
+  border-color: var(--info);
+}
+.canvas-viewport .note.color-green {
+  background: var(--bg);
+  border-color: var(--ok);
+}
+.canvas-viewport .note.color-red {
+  background: var(--bg);
+  border-color: var(--danger);
+}
+.canvas-viewport .note.color-teal {
+  background: var(--bg);
+  border-color: var(--accent-2);
+}
+.canvas-viewport .note.color-grey {
+  background: var(--bg);
+  border-color: var(--border-strong);
+}
+
+/* Z-order: underlay SVG (0) → note cards (1) → overlay SVG (2) */
+.canvas-svg-underlay {
+  z-index: 0;
+}
+.note {
+  z-index: 1;
+}
+.canvas-svg-overlay {
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Underlay connection paths (solid, colored) */
+.conn-path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  cursor: pointer;
+  pointer-events: stroke;
+  transition: opacity 0.15s;
+}
+.conn-path:hover {
+  opacity: 0.7;
+}
+
+/* Wide invisible hit target — easier click on thin line */
+.conn-path-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 20;
+  cursor: pointer;
+  pointer-events: stroke;
+}
+
+/* Overlay preview path (dashed, while dragging a new connection) */
+.conn-preview-path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+/* Target ports visible during connection drag (not highlighted) */
+.canvas-viewport .conn-dot.conn-dot-target-active {
+  opacity: 1;
+}
+
+/* Nearest port grows during connection drag */
+.canvas-viewport .conn-dot.conn-dot-snap {
+  transform: translate(-50%, -50%) scale(1.5);
+}
+
+/* Port color matches card border color */
+.note.color-yellow .conn-dot { background: var(--warn);         color: var(--warn); }
+.note.color-blue   .conn-dot { background: var(--info);         color: var(--info); }
+.note.color-green  .conn-dot { background: var(--ok);           color: var(--ok); }
+.note.color-red    .conn-dot { background: var(--danger);       color: var(--danger); }
+.note.color-teal   .conn-dot { background: var(--accent-2);     color: var(--accent-2); }
+.note.color-grey   .conn-dot { background: var(--border-strong); color: var(--border-strong); }
+
+/* Free dots: dark fill + colored inner ring + dark outer shadow (ring style) */
+.canvas-viewport .conn-dot.conn-dot-free {
+  background: var(--bg);
+  border: 2px solid currentColor;        /* colored ring inside */
+  box-shadow: 0 0 0 1.5px var(--bg);    /* dark outer ring via shadow */
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.note:hover .conn-dot-free,
+.note.selected .conn-dot-free { opacity: 0.85; }
+
+/* Active dot: the dot being dragged from — stays visible even when hover leaves */
+.canvas-viewport .conn-dot.conn-dot-active { opacity: 1; }
+
+/* Connected dots: filled with line color + dark outer shadow ring */
+.canvas-viewport .conn-dot.conn-dot-connected {
+  box-shadow: 0 0 0 1.5px var(--bg);
+  opacity: 1;
+}
+
+/* --- Floating toolbar (T-085) --- */
+.canvas-floating-toolbar {
+  position: absolute;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  user-select: none;
+}
+.toolbar-section { display: flex; align-items: center; gap: 2px; }
+.toolbar-separator { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+.toolbar-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text); font-size: 14px; padding: 4px 6px;
+  border-radius: var(--radius-sm); line-height: 1;
+}
+.toolbar-btn:hover { background: var(--bg-hover); }
+.toolbar-btn-danger:hover { color: var(--danger); }
+
+/* Toolbar popovers */
+.toolbar-popover {
+  position: absolute;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  display: flex;
+  gap: 6px;
+  box-shadow: var(--shadow-lg);
+  animation: toolbarPopIn 0.12s ease-out;
+}
+@keyframes toolbarPopIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toolbar-size-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.toolbar-size-btn.active {
+  background: var(--border);
+  color: var(--text-strong);
+}
+.toolbar-size-btn:hover {
+  border-color: var(--text);
+}
+
+/* Card sizes */
+.note.size-medium {
+  width: 280px;
+}
+
+/* Max-height with fade for overflow */
+.note-body {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+}
+.note.size-medium .note-body {
+  max-height: 300px;
+}
+
+/* Hovered cards: no scroll unless selected */
+.note:hover .note-body {
+  overflow-y: hidden;
+}
+
+/* Show fade overlay when truncated (not hovered) */
+.note-body.truncated ~ .note-overflow-fade {
+  display: block;
+}
+.note:hover .note-overflow-fade {
+  /* Keep fade visible on hover — only hide when selected */
+}
+
+/* Fade gradient at bottom when truncated — real DOM element so it doesn't scroll with content */
+.note-overflow-fade {
+  display: none;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: linear-gradient(transparent, var(--bg));
+  pointer-events: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  z-index: 2;
+}
+.note-overflow-fade::after {
+  content: '\22EF';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+/* Overflow sidebar — true overlay, no layout shift */
+.canvas-sidebar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 320px;
+  height: 100%;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.2s ease-out;
+  pointer-events: none;
+}
+.canvas-sidebar.open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+@media (max-width: 600px) {
+  /* Mobile: treat sidebar as a modal overlay (no slide animation) */
+  .canvas-sidebar {
+    width: 100%;
+    left: 0;
+    right: 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    transition: none;
+    transform: none;
+    opacity: 0;
+    visibility: hidden;
+  }
+  .canvas-sidebar.open {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+.canvas-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.canvas-sidebar-color-bar {
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+}
+.sidebar-color-yellow { background: var(--warn); }
+.sidebar-color-blue   { background: var(--info); }
+.sidebar-color-green  { background: var(--ok); }
+.sidebar-color-red    { background: var(--danger); }
+.sidebar-color-teal   { background: var(--accent-2); }
+.sidebar-color-grey   { background: var(--border-strong); }
+
+.canvas-sidebar-id {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: "JetBrains Mono", monospace;
+  flex: 1;
+}
+
+.canvas-sidebar-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  line-height: 1;
+}
+.canvas-sidebar-close:hover {
+  color: var(--text);
+}
+
+.canvas-sidebar-body {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.canvas-sidebar-format {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.canvas-sidebar-textarea {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: inherit;
+  resize: none;
+}
+
+/* Hide hover/free dots when note is in edit mode */
+.canvas-viewport .note.editing .conn-dot-free {
+  display: none;
+}
+
+/* Bigger touch target for connection dots on mobile (44px recommended by Apple) */
+.conn-dot::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 36px; height: 36px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+}
+
+/* Selected notes also get scroll on touch devices */
+.note.selected .note-body {
+  overflow-y: auto;
+}
+
+/* Hide overflow fade on selected notes (content is scrollable) */
+.canvas-viewport .note.selected .note-overflow-fade {
+  display: none;
+}
+
+/* --- Cluster frames --- */
+.cluster-frame {
+  fill-opacity: 0.04;
+  stroke-opacity: 0.35;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 3;
+  rx: 12;
+}
+
+/* Cluster promote buttons removed — promote is now always via selection + renderPromoteButton */
+

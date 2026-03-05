@@ -2,14 +2,15 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 
 const app = express();
-const PORT = 18790;
-const HOST = '0.0.0.0';
+const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
+const HOST = process.env.FLOWBOARD_HOST || '0.0.0.0';
 
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..');
 const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
@@ -104,6 +105,7 @@ app.use('/api/', rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1', // localhost immer erlauben
   keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
   message: { error: 'Too many requests, please slow down.' }
 }));
@@ -130,6 +132,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Serve index.html with injected config
+app.get('/', (req, res) => {
+  const fs = require('fs');
+  let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  const localHostname = process.env.LOCAL_HOSTNAME || '';
+  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};</script></head>`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(html);
+});
+
 app.use(express.static(__dirname, {
   setHeaders: (res, filePath) => {
     // Never cache HTML — Telegram WebApp ignores query-param versioning on the HTML itself
@@ -142,123 +154,35 @@ app.use(express.static(__dirname, {
 // Health-Endpoint (kein Auth)
 const startTime = Date.now();
 const pkg = require('./package.json');
-app.get('/api/health', (req, res) => {
-  res.json({
-    ok: true,
-    version: pkg.version,
-    auth: AUTH_ENABLED,
-    authAlways: AUTH_ALWAYS,
-    uptime: Math.floor((Date.now() - startTime) / 1000)
-  });
-});
+// --- Canvas Helpers ---
 
-// Auth-Endpoint (vor dem generellen API-Auth)
-app.post('/api/auth', telegramAuthMiddleware, (req, res) => {
-  res.json({ ok: true, user: req.user });
-});
-
-// Auth auf alle weiteren API-Routes
-app.use('/api/', telegramAuthMiddleware);
-
-// --- Helpers ---
-
-function readActiveProject() {
+function readCanvasFile(projectName) {
+  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
   try {
-    const text = fs.readFileSync(ACTIVE_PROJECT_FILE, 'utf8');
-    const match = text.match(/^project:\s*(.+)$/m);
-    const name = match ? match[1].trim() : 'none';
-    return name === 'none' ? null : name;
-  } catch { return null; }
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    // Garbage-collect orphaned connections on every load
+    const noteIds = new Set((data.notes || []).map(n => n.id));
+    data.connections = (data.connections || []).filter(
+      c => noteIds.has(c.from) && noteIds.has(c.to)
+    );
+    return data;
+  } catch {
+    return { notes: [], connections: [] };
+  }
 }
 
-function writeActiveProject(name) {
-  const content = name ? `project: ${name}\nsince: ${new Date().toISOString().slice(0, 10)}\n` : 'project: none\n';
-  fs.writeFileSync(ACTIVE_PROJECT_FILE, content);
-}
-
-function readTasksFile(projectName) {
-  const file = path.join(PROJECTS_DIR, projectName, 'tasks.json');
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch { return null; }
-}
-
-function taskWithSpecStatus(projectName, task) {
-  const specFile = task?.specFile;
-  const hasSpec = Boolean(specFile);
-  const specExists = hasSpec && fs.existsSync(path.join(PROJECTS_DIR, projectName, specFile));
-  return { ...task, specExists };
-}
-
-function enrichTasks(projectName, tasks = []) {
-  return tasks.map(task => taskWithSpecStatus(projectName, task));
-}
-
-function writeTasksFile(projectName, data) {
-  const file = path.join(PROJECTS_DIR, projectName, 'tasks.json');
+function writeCanvasFile(projectName, data) {
+  const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-function syncDashboardData(projectName) {
-  const active = readActiveProject();
-  const data = readTasksFile(projectName);
-  const out = {
-    project: projectName,
-    active: active === projectName,
-    tasks: data ? data.tasks : []
-  };
-  fs.writeFileSync(DASHBOARD_DATA_FILE, JSON.stringify(out, null, 2));
-}
-
-function getDisplayName(projectName) {
-  try {
-    const mdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
-    const firstLine = fs.readFileSync(mdPath, 'utf8').split('\n')[0];
-    let title = firstLine.replace(/^#\s*/, '').trim();
-    // Strip subtitle after em-dash or en-dash
-    title = title.split(/\s*[—–]\s*/)[0].trim();
-    return title || projectName;
-  } catch { return projectName; }
-}
-
-function parseIndexMd() {
-  try {
-    const text = fs.readFileSync(INDEX_FILE, 'utf8');
-    const lines = text.split('\n');
-    const projects = [];
-    for (const line of lines) {
-      const match = line.match(/^\|\s*(\w[\w-]*)\s*\|\s*(\w+)\s*\|\s*(.+?)\s*\|$/);
-      if (match && match[1] !== 'Project') {
-        projects.push({
-          name: match[1],
-          displayName: getDisplayName(match[1]),
-          status: match[2],
-          description: match[3]
-        });
-      }
-    }
-    return projects;
-  } catch { return []; }
-}
-
-function getTaskCounts(projectName) {
-  const data = readTasksFile(projectName);
-  const counts = { open: 0, 'in-progress': 0, review: 0, done: 0 };
-  if (data && data.tasks) {
-    for (const t of data.tasks) {
-      if (counts[t.status] !== undefined) counts[t.status]++;
-    }
-  }
-  return counts;
-}
-
-function nextTaskId(tasks) {
+function nextNoteId(notes) {
   let max = 0;
-  for (const t of tasks) {
-    const m = t.id.match(/T-(\d+)/);
+  for (const n of notes) {
+    const m = n.id.match(/N-(\d+)/);
     if (m) max = Math.max(max, parseInt(m[1]));
   }
-  return `T-${String(max + 1).padStart(3, '0')}`;
+  return `N-${String(max + 1).padStart(3, '0')}`;
 }
 
 // --- Project Context Helpers ---
@@ -300,7 +224,7 @@ function trimSessionLog(content, maxSessions = 2) {
 function updateBootstrapMd(projectName) {
   if (!projectName) {
     // No active project — clear BOOTSTRAP.md
-    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch {}
+    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch (e) { console.warn(e); }
     return;
   }
 
@@ -309,8 +233,8 @@ function updateBootstrapMd(projectName) {
 
   let rulesContent = '';
   let projectContent = '';
-  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch {}
-  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch {}
+  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch (e) { console.warn(e); }
+  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch (e) { console.warn(e); }
 
   // Smart Session Log trimming: keep only last 2 sessions in bootstrap
   if (projectContent) {
@@ -385,6 +309,213 @@ app.put('/api/status', async (req, res) => {
   }
 });
 
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    version: pkg.version,
+    auth: AUTH_ENABLED,
+    authAlways: AUTH_ALWAYS,
+    uptime: Math.floor((Date.now() - startTime) / 1000)
+  });
+});
+
+// Auth-Endpoint (vor dem generellen API-Auth)
+app.post('/api/auth', telegramAuthMiddleware, (req, res) => {
+  res.json({ ok: true, user: req.user });
+});
+
+// Auth auf alle weiteren API-Routes
+app.use('/api/', telegramAuthMiddleware);
+
+// --- Helpers ---
+
+function readActiveProject() {
+  try {
+    const text = fs.readFileSync(ACTIVE_PROJECT_FILE, 'utf8');
+    const match = text.match(/^project:\s*(.+)$/m);
+    const name = match ? match[1].trim() : 'none';
+    return name === 'none' ? null : name;
+  } catch { return null; }
+}
+
+function writeActiveProject(name) {
+  const content = name ? `project: ${name}\nsince: ${new Date().toISOString().slice(0, 10)}\n` : 'project: none\n';
+  fs.writeFileSync(ACTIVE_PROJECT_FILE, content);
+}
+
+function readTasksFile(projectName) {
+  const file = path.join(PROJECTS_DIR, projectName, 'tasks.json');
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch { return null; }
+}
+
+function taskWithSpecStatus(projectName, task) {
+  const specFile = task?.specFile;
+  const hasSpec = Boolean(specFile);
+  const specExists = hasSpec && fs.existsSync(path.join(PROJECTS_DIR, projectName, specFile));
+  return { ...task, specExists };
+}
+
+function enrichTasks(projectName, tasks = []) {
+  return tasks.map(task => {
+    const enriched = taskWithSpecStatus(projectName, task);
+    if (task.subtaskIds && task.subtaskIds.length > 0) {
+      enriched.progress = getSubtaskProgress(tasks, task.id);
+    }
+    return enriched;
+  });
+}
+
+function writeTasksFile(projectName, data) {
+  const file = path.join(PROJECTS_DIR, projectName, 'tasks.json');
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function syncDashboardData(projectName) {
+  const active = readActiveProject();
+  const data = readTasksFile(projectName);
+  const out = {
+    project: projectName,
+    active: active === projectName,
+    tasks: data ? data.tasks : []
+  };
+  fs.writeFileSync(DASHBOARD_DATA_FILE, JSON.stringify(out, null, 2));
+}
+
+/** Promisified execFile for CLI bridge calls. */
+function execAsync(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err, stdout, stderr) => {
+      if (err) { err.stderr = stderr; reject(err); }
+      else resolve(stdout);
+    });
+  });
+}
+
+function getDisplayName(projectName) {
+  try {
+    const mdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
+    const firstLine = fs.readFileSync(mdPath, 'utf8').split('\n')[0];
+    let title = firstLine.replace(/^#\s*/, '').trim();
+    // Strip subtitle after em-dash or en-dash
+    title = title.split(/\s*[—–]\s*/)[0].trim();
+    return title || projectName;
+  } catch { return projectName; }
+}
+
+function parseIndexMd() {
+  try {
+    const text = fs.readFileSync(INDEX_FILE, 'utf8');
+    const lines = text.split('\n');
+    const projects = [];
+    for (const line of lines) {
+      const match = line.match(/^\|\s*(\w[\w-]*)\s*\|\s*(\w+)\s*\|\s*(.+?)\s*\|$/);
+      if (match && match[1] !== 'Project') {
+        projects.push({
+          name: match[1],
+          displayName: getDisplayName(match[1]),
+          status: match[2],
+          description: match[3]
+        });
+      }
+    }
+    return projects;
+  } catch { return []; }
+}
+
+function getTaskCounts(projectName) {
+  const data = readTasksFile(projectName);
+  const counts = { open: 0, 'in-progress': 0, review: 0, done: 0 };
+  if (data && data.tasks) {
+    for (const t of data.tasks) {
+      if (counts[t.status] !== undefined) counts[t.status]++;
+    }
+  }
+  return counts;
+}
+
+function nextTaskId(tasks) {
+  let max = 0;
+  for (const t of tasks) {
+    const m = t.id.match(/T-(\d+)/);
+    if (m) max = Math.max(max, parseInt(m[1]));
+  }
+  return `T-${String(max + 1).padStart(3, '0')}`;
+}
+
+function nextSubtaskId(parentId, existingSubtaskIds) {
+  const nums = existingSubtaskIds.map(id => {
+    const parts = id.split('-');
+    return parseInt(parts[parts.length - 1], 10);
+  }).filter(n => !isNaN(n));
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  return `${parentId}-${next}`;
+}
+
+function recalcParentStatus(tasks, parentId) {
+  const parent = tasks.find(t => t.id === parentId);
+  if (!parent || parent.status === 'done') return null;
+
+  const subtasks = tasks.filter(t => t.parentId === parentId);
+  if (subtasks.length === 0) return null;
+
+  const allDone = subtasks.every(t => t.status === 'done');
+  const anyStarted = subtasks.some(t => t.status !== 'open');
+
+  let newStatus = parent.status;
+  if (allDone) {
+    newStatus = 'review';
+  } else if (anyStarted && parent.status === 'open') {
+    newStatus = 'in-progress';
+  } else if (!allDone && parent.status === 'review') {
+    newStatus = 'in-progress';
+  }
+
+  if (newStatus !== parent.status) {
+    parent.status = newStatus;
+    return { id: parent.id, status: newStatus };
+  }
+  return null;
+}
+
+function getSubtaskProgress(tasks, parentId) {
+  const subtasks = tasks.filter(t => t.parentId === parentId);
+  return {
+    done: subtasks.filter(t => t.status === 'done').length,
+    inProgress: subtasks.filter(t => t.status === 'in-progress' || t.status === 'review').length,
+    total: subtasks.length
+  };
+}
+
+/**
+ * Return a contextual reminder string for task lifecycle events.
+ * @param {object} task - The task object (after any mutations)
+ * @param {'create'|'status-change'} action - What triggered the call
+ * @param {string|undefined} newStatus - The new status (only for status-change)
+ * @param {string|undefined} prevStatus - The previous status (only for status-change)
+ * @returns {string|null}
+ */
+function getTaskReminder(task, action, newStatus, prevStatus) {
+  if (action === 'create') {
+    return '\u{1F4A1} Evaluate: does this task need a spec? Consider: multiple files affected, new UI pattern, unclear scope, or complex logic \u2192 create a spec. Simple fix or config change \u2192 title is enough.';
+  }
+  if (action === 'status-change' && newStatus && newStatus !== prevStatus) {
+    if (newStatus === 'in-progress') {
+      return task.specFile
+        ? `\u{1F4CB} This task has a spec \u2014 read it before starting: ${task.specFile}`
+        : '\u{1F4A1} No spec for this task. If it\'s complex (multiple files, new patterns), consider creating one first.';
+    }
+    if (newStatus === 'done') {
+      return task.specFile
+        ? `\u26A0\uFE0F Before confirming done: read the spec (${task.specFile}), verify all Done-When criteria are met, and update checkboxes.`
+        : '\u2705 No spec to verify. Confirm the task title accurately describes what was delivered.';
+    }
+  }
+  return null;
+}
+
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = readActiveProject();
@@ -399,20 +530,64 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/:name/tasks', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  res.json({ ...data, tasks: enrichTasks(req.params.name, data.tasks) });
+  const result = enrichTasks(req.params.name, data.tasks);
+  const response = { ...data, tasks: result };
+
+  // Task status nudge
+  try {
+    const topLevel = result.filter(t => !t.parentId);
+    const inProgress = topLevel.filter(t => t.status === 'in-progress');
+    const review = topLevel.filter(t => t.status === 'review');
+    const open = topLevel.filter(t => t.status === 'open');
+
+    if (inProgress.length > 0) {
+      const t = inProgress[0];
+      const subInfo = t.progress ? ` (${t.progress.done}/${t.progress.total} subtasks done)` : '';
+      response.taskContext = `\u26A1 Currently in-progress: ${t.id}${subInfo} \u2014 ${t.title}. Remember to set to review when done.`;
+    } else if (review.length > 0) {
+      const titles = review.map(t => `${t.id}`).join(', ');
+      response.taskContext = `\uD83D\uDD0D ${review.length} task(s) in review (${titles}). Confirm done or continue working. ${open.length} open task(s) available.`;
+    } else if (open.length > 0) {
+      response.taskContext = `\uD83D\uDCA1 No task in-progress. ${open.length} open task(s) available \u2014 set one to in-progress before starting work.`;
+    }
+  } catch (e) { console.warn('[taskContext]', e); }
+
+  res.json(response);
 });
 
 // POST /api/projects/:name/tasks
 app.post('/api/projects/:name/tasks', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  const { title, priority } = req.body;
+  const { title, priority, parentId } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
+
+  let taskId;
+  if (parentId) {
+    const parent = data.tasks.find(t => t.id === parentId);
+    if (!parent) return res.status(400).json({ error: 'Parent task not found' });
+    if (parent.parentId) return res.status(400).json({ error: 'Cannot nest subtasks (max 1 level)' });
+    const existingSubtaskIds = parent.subtaskIds || [];
+    taskId = nextSubtaskId(parentId, existingSubtaskIds);
+    if (!parent.subtaskIds) parent.subtaskIds = [];
+    parent.subtaskIds.push(taskId);
+  } else {
+    taskId = nextTaskId(data.tasks);
+  }
+
+  // Subtasks inherit parent priority; top-level tasks use provided or default 'medium'
+  let effectivePriority = priority || 'medium';
+  if (parentId) {
+    const parent = data.tasks.find(t => t.id === parentId);
+    if (parent) effectivePriority = parent.priority;
+  }
+
   const task = {
-    id: nextTaskId(data.tasks),
+    id: taskId,
     title,
     status: 'open',
-    priority: priority || 'medium',
+    priority: effectivePriority,
+    parentId: parentId || null,
     specFile: null,
     created: new Date().toISOString().slice(0, 10),
     completed: null
@@ -421,7 +596,12 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
-    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
+    const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
+    try {
+      const r = getTaskReminder(task, 'create');
+      if (r) response.reminder = r;
+    } catch (e) { console.warn('[reminder]', e); }
+    res.json(response);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -452,17 +632,49 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     }
   }
 
+  const prevStatus = task.status;
   if (updates.status === 'done' && task.status !== 'done') {
     updates.completed = new Date().toISOString().slice(0, 10);
   }
   if (updates.status && updates.status !== 'done' && task.status === 'done') {
     updates.completed = null;
   }
-  Object.assign(task, updates);
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed'];
+  for (const key of ALLOWED) {
+    if (Object.prototype.hasOwnProperty.call(updates, key)) {
+      task[key] = updates[key];
+    }
+  }
+
+  // Cascade priority change to subtasks
+  if (updates.priority && task.subtaskIds && task.subtaskIds.length > 0) {
+    for (const subId of task.subtaskIds) {
+      const sub = data.tasks.find(t => t.id === subId);
+      if (sub) sub.priority = updates.priority;
+    }
+  }
+
+  // Recalculate parent status if this is a subtask and status changed
+  let parentUpdated = null;
+  if (task.parentId && updates.status && updates.status !== prevStatus) {
+    try {
+      parentUpdated = recalcParentStatus(data.tasks, task.parentId);
+      if (parentUpdated) {
+        parentUpdated.progress = getSubtaskProgress(data.tasks, task.parentId);
+      }
+    } catch (e) { console.warn('[recalcParent]', e); }
+  }
+
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
-    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
+    const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
+    if (parentUpdated) response.parentUpdated = parentUpdated;
+    try {
+      const r = getTaskReminder(task, 'status-change', updates.status, prevStatus);
+      if (r) response.reminder = r;
+    } catch (e) { console.warn('[reminder]', e); }
+    res.json(response);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -472,9 +684,59 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 app.delete('/api/projects/:name/tasks/:id', (req, res) => {
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
-  const idx = data.tasks.findIndex(t => t.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Task not found' });
-  data.tasks.splice(idx, 1);
+  const task = data.tasks.find(t => t.id === req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  if (task.subtaskIds && task.subtaskIds.length > 0) {
+    // Parent with subtasks — require mode
+    const mode = req.query.mode;
+    if (!mode) {
+      return res.status(400).json({
+        error: 'Task has subtasks',
+        subtaskCount: task.subtaskIds.length
+      });
+    }
+
+    if (mode === 'all') {
+      const idsToDelete = new Set([task.id, ...task.subtaskIds]);
+      for (const t of data.tasks) {
+        if (idsToDelete.has(t.id) && t.specFile) {
+          try {
+            const specPath = path.join(PROJECTS_DIR, req.params.name, t.specFile);
+            if (fs.existsSync(specPath)) fs.unlinkSync(specPath);
+          } catch (e) { console.warn('[delete-spec]', e); }
+        }
+      }
+      data.tasks = data.tasks.filter(t => !idsToDelete.has(t.id));
+    } else if (mode === 'keep-children') {
+      for (const t of data.tasks) {
+        if (t.parentId === task.id) {
+          t.parentId = null;
+        }
+      }
+      data.tasks = data.tasks.filter(t => t.id !== task.id);
+    } else {
+      return res.status(400).json({ error: 'Invalid mode. Use "all" or "keep-children"' });
+    }
+  } else if (task.parentId) {
+    // Subtask — remove from parent's subtaskIds, recalc parent
+    const parent = data.tasks.find(t => t.id === task.parentId);
+    if (parent && parent.subtaskIds) {
+      parent.subtaskIds = parent.subtaskIds.filter(id => id !== task.id);
+      // Auto-demote: if no subtasks left, parent becomes a normal task
+      if (parent.subtaskIds.length === 0) {
+        parent.subtaskIds = undefined;
+      }
+    }
+    data.tasks = data.tasks.filter(t => t.id !== task.id);
+    if (parent && parent.subtaskIds) {
+      try { recalcParentStatus(data.tasks, parent.id); } catch (e) { console.warn('[recalcParent]', e); }
+    }
+  } else {
+    // Simple task — no subtasks, no parent
+    data.tasks = data.tasks.filter(t => t.id !== task.id);
+  }
+
   try {
     writeTasksFile(req.params.name, data);
     syncDashboardData(req.params.name);
@@ -632,7 +894,7 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
 
   const { content } = req.body;
   if (content === undefined) return res.status(400).json({ error: 'Content required' });
-  if (content.length > 100 * 1024) return res.status(413).json({ error: 'Content too large (max 100KB)' });
+  if (Buffer.byteLength(content, 'utf8') > 100 * 1024) return res.status(413).json({ error: 'Content too large (max 100KB)' });
 
   try {
     // Ensure parent directory exists
@@ -732,7 +994,11 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
 
   const specPath = path.join(specsDir, specFilename);
   const date = new Date().toISOString().slice(0, 10);
-  const customContent = req.body?.content;
+  let customContent = req.body?.content;
+  // Defensive: replace literal '\n' (escaped newlines from callers) with real newlines
+  if (customContent && customContent.includes('\\n')) {
+    customContent = customContent.replace(/\\n/g, '\n');
+  }
   const template = customContent || `# ${taskId}: ${task.title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Approach\n\n\n## Log\n- ${date}: Spec created\n`;
 
   fs.writeFileSync(specPath, template);
@@ -743,6 +1009,243 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
 
   res.json({ ok: true, specFile: task.specFile, taskId, task: taskWithSpecStatus(req.params.name, task) });
 });
+
+
+// GET /api/projects/:name/canvas
+app.get('/api/projects/:name/canvas', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+  res.json(readCanvasFile(req.params.name));
+});
+
+// POST /api/projects/:name/canvas/notes
+app.post('/api/projects/:name/canvas/notes', (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+  const data = readCanvasFile(req.params.name);
+  const { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = req.body;
+  if (typeof text === 'string' && Buffer.byteLength(text, 'utf8') > 50 * 1024) {
+    return res.status(413).json({ error: 'Note text too large (max 50KB)' });
+  }
+  const note = {
+    id: nextNoteId(data.notes),
+    text,
+    x,
+    y,
+    color,
+    size,
+    created: new Date().toISOString().slice(0, 10)
+  };
+  data.notes.push(note);
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true, note });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/projects/:name/canvas/notes/:id
+app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const note = data.notes.find(n => n.id === req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+  if (typeof req.body.text === 'string' && Buffer.byteLength(req.body.text, 'utf8') > 50 * 1024) {
+    return res.status(413).json({ error: 'Note text too large (max 50KB)' });
+  }
+  const allowed = ['text', 'x', 'y', 'color', 'size'];
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(req.body, k)) note[k] = req.body[k];
+  }
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true, note });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/projects/:name/canvas/notes/batch (MUST be before :id route)
+app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
+  const { noteIds } = req.body;
+  if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
+    return res.status(400).json({ error: 'noteIds array required' });
+  }
+  const data = readCanvasFile(req.params.name);
+  const deleteSet = new Set(noteIds);
+  data.notes = data.notes.filter(n => !deleteSet.has(n.id));
+  const remainingIds = new Set(data.notes.map(n => n.id));
+  data.connections = data.connections.filter(
+    c => remainingIds.has(c.from) && remainingIds.has(c.to)
+  );
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.status(204).end();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/projects/:name/canvas/notes/:id
+app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const idx = data.notes.findIndex(n => n.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Note not found' });
+  data.notes.splice(idx, 1);
+  const noteIds = new Set(data.notes.map(n => n.id));
+  data.connections = data.connections.filter(c => noteIds.has(c.from) && noteIds.has(c.to));
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/canvas/connections
+app.post('/api/projects/:name/canvas/connections', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const { from, to, fromPort, toPort } = req.body;
+  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
+  if (from === to) return res.status(400).json({ error: 'Cannot connect note to itself' });
+  const noteIds = new Set(data.notes.map(n => n.id));
+  if (!noteIds.has(from) || !noteIds.has(to)) return res.status(404).json({ error: 'Note not found' });
+  const existing = data.connections.find(
+    c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
+  );
+  if (existing) {
+    // Connection exists — update ports if different (allows re-routing)
+    if (fromPort || toPort) {
+      if (existing.from === from) {
+        existing.fromPort = fromPort || existing.fromPort;
+        existing.toPort = toPort || existing.toPort;
+      } else {
+        existing.fromPort = toPort || existing.fromPort;
+        existing.toPort = fromPort || existing.toPort;
+      }
+      try {
+        writeCanvasFile(req.params.name, data);
+        return res.json({ ok: true, updated: true, connection: existing });
+      } catch (err) {
+        return res.status(500).json({ error: err.message });
+      }
+    }
+    return res.json({ ok: true, duplicate: true });
+  }
+  const conn = { from, to };
+  if (fromPort) conn.fromPort = fromPort;
+  if (toPort) conn.toPort = toPort;
+  data.connections.push(conn);
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true, connection: conn });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/projects/:name/canvas/connections
+app.delete('/api/projects/:name/canvas/connections', (req, res) => {
+  const data = readCanvasFile(req.params.name);
+  const { from, to } = req.body;
+  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
+  data.connections = data.connections.filter(
+    c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
+  );
+  try {
+    writeCanvasFile(req.params.name, data);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/canvas/promote — session bridge to OpenClaw agent
+app.post('/api/projects/:name/canvas/promote', async (req, res) => {
+  const { notes, connections, mode } = req.body;
+  if (!notes || !Array.isArray(notes) || notes.length === 0) {
+    return res.status(400).json({ error: 'notes array required' });
+  }
+  // Verify project exists
+  const projectName = req.params.name;
+  const tasksData = readTasksFile(projectName);
+  if (!tasksData) return res.status(404).json({ error: 'Project not found' });
+
+  // Format structured message for agent
+  const noteLines = notes
+    .map(n => `- ${n.id} (${n.color || 'grey'}): "${(n.text || '').replace(/"/g, '\\"')}"`)
+    .join('\n');
+  const connLines = (connections || [])
+    .map(c => `${c.from} → ${c.to}`)
+    .join(', ') || 'none';
+
+  const message = `[CANVAS_PROMOTE]
+Project: ${projectName}
+Mode: ${mode || 'single'}
+Notes:
+${noteLines}
+Connections: ${connLines}
+
+--- Agent Instructions ---
+You are creating tasks for FlowBoard project management.
+Dashboard API base: http://localhost:${PORT}/api
+
+Decide based on content and complexity:
+1. Simple idea (1-2 short notes) → Create task: POST /api/projects/${projectName}/tasks {"title": "...", "priority": "medium"}
+2. Detailed idea (notes with specifics) → Create task + spec: POST /api/projects/${projectName}/specs/{taskId} then write spec content
+3. Multiple topics (different colors, loose connections) → Parent task + subtasks with parentId
+4. Complex cluster → Parent (with spec) + subtasks (with own specs)
+
+Spec template:
+# T-{id}: {Title}
+## Goal
+## Done When
+- [ ] ...
+## Approach
+## Log
+
+After ALL tasks are created, clean up canvas notes:
+DELETE http://localhost:${PORT}/api/projects/${projectName}/canvas/notes/batch
+Body: { "noteIds": [${notes.map(n => `"${n.id}"`).join(', ')}] }
+
+Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
+
+  // Fire-and-forget: respond immediately, webhook runs async
+  const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789';
+  const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN;
+
+  if (!hooksToken) {
+    console.error('Promote bridge: OPENCLAW_HOOKS_TOKEN not set');
+    return res.status(503).json({ error: 'Agent not configured — hooks token missing' });
+  }
+
+  // Send immediately, don't await
+  res.json({ ok: true, message: 'Idea sent to agent' });
+
+  try {
+    const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${hooksToken}`,
+      },
+      body: JSON.stringify(Object.assign({
+        message,
+        name: 'Canvas Promote',
+        deliver: true,
+        channel: process.env.OPENCLAW_DELIVER_CHANNEL || 'last',
+        wakeMode: 'now',
+      }, process.env.OPENCLAW_DELIVER_TO ? { to: process.env.OPENCLAW_DELIVER_TO } : {})),
+    });
+    if (!hookRes.ok) {
+      console.error('Promote webhook error:', hookRes.status, await hookRes.text());
+    }
+  } catch (err) {
+    console.error('Promote webhook error:', err.message || err);
+  }
+});
+
+// (batch delete route is above the :id route to prevent Express param capture)
 
 app.listen(PORT, HOST, () => {
   console.log(`Dashboard API running on http://${HOST}:${PORT}`);

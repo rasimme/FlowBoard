@@ -14,3 +14,8 @@ dashboard/dashboard-data.json
 # OS
 .DS_Store
 Thumbs.db
+docs/plans/
+docs/reviews/
+docs/code-analysis-*.md
+docs/connection-routing.md
+CLAUDE.md
