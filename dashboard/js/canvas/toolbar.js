@@ -92,6 +92,7 @@ export function showColorPopover() {
     swatch.className = `color-swatch color-swatch-${color}${color === currentColor ? ' selected' : ''}`;
     swatch.title = color;
     swatch.addEventListener('mousedown', ev => { ev.preventDefault(); ev.stopPropagation(); });
+    swatch.addEventListener('touchstart', ev => { ev.preventDefault(); ev.stopPropagation(); }, { passive: false });
     swatch.addEventListener('click', ev => {
       ev.stopPropagation();
       for (const id of canvasState.selectedIds) {
@@ -155,6 +156,7 @@ export function showSizePopover() {
     sizeBtn.textContent = size === 'small' ? 'S' : 'M';
     sizeBtn.title = size === 'small' ? 'Small (160px)' : 'Medium (280px)';
     sizeBtn.addEventListener('mousedown', ev => { ev.preventDefault(); ev.stopPropagation(); });
+    sizeBtn.addEventListener('touchstart', ev => { ev.preventDefault(); ev.stopPropagation(); }, { passive: false });
     sizeBtn.addEventListener('click', ev => {
       ev.stopPropagation();
       for (const id of canvasState.selectedIds) {
@@ -349,6 +351,7 @@ export function bindToolbarEvents() {
   // Keep edit mode active when using toolbar actions
   toolbar.querySelectorAll('button').forEach(btn => {
     btn.addEventListener('mousedown', e => e.preventDefault());
+    btn.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); }, { passive: false });
   });
 
   // Button handlers
