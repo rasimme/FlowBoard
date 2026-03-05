@@ -853,9 +853,11 @@ export function bindKanbanEvents(container) {
   });
 
   // Global delegation for popovers rendered on body (e.g. priority popover)
+  // Only handle actions that originate OUTSIDE the container (body-level popovers)
   if (!_globalActionsBound) {
     _globalActionsBound = true;
     document.body.addEventListener('click', e => {
+      if (container.contains(e.target)) return; // already handled by container listener
       handleAction(e);
     });
   }
