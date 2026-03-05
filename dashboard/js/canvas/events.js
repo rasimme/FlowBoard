@@ -6,7 +6,7 @@ import {
 import {
   createNoteAt, startNoteEdit, saveNoteText, closeSidebar, openSidebar,
   saveNotePosition
-} from './notes.js?v=2';
+} from './notes.js?v=4';
 import {
   renderConnections, removeTempConnectionLine, saveConnection, routePath,
   deleteConnection

@@ -3,7 +3,7 @@
 import { canvasState, COLOR_STROKE } from './state.js?v=1';
 import { getAllClusters } from './connections.js?v=3';
 import { updateToolbar, renderPromoteButton, sendPromote } from './toolbar.js?v=10';
-import { showModal } from '../utils.js?v=1';
+import { showModal } from '../utils.js?v=5';
 
 const FRAME_PAD = 20;
 const PLUS_CIRCLE = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';

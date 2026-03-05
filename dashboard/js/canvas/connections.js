@@ -1,6 +1,6 @@
 // canvas/connections.js — Connection routing, SVG rendering, ports, drag, save/delete
 
-import { api, toast } from '../utils.js?v=4';
+import { api, toast } from '../utils.js?v=5';
 import {
   canvasState, getNoteDotPosition, COLOR_STROKE,
   CORNER_RADIUS, PORT_SPACING, MIN_ESCAPE, MAX_PORTS_PER_SIDE
