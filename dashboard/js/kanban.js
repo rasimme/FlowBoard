@@ -658,23 +658,31 @@ export async function setPriority(id, priority, state) {
 }
 
 export function startDelete(id, title, specFile, subtaskCount = 0) {
-  if (subtaskCount > 0) {
+  const hasSpec = !!specFile;
+  const hasSubs = subtaskCount > 0;
+
+  if (hasSpec || hasSubs) {
+    // Build checkbox options for combined modal
+    let options = '';
+    if (hasSubs) {
+      options += `<label class="modal-checkbox"><input type="checkbox" id="delSubtasks" checked> Delete ${subtaskCount} subtask(s)</label>`;
+    }
+    if (hasSpec) {
+      options += `<label class="modal-checkbox"><input type="checkbox" id="delSpec" checked> Delete spec file</label>`;
+    }
+
     showModal(
-      'Delete parent task?',
-      `<strong>${id}</strong>: ${escHtml(title)}<br>This task has <strong>${subtaskCount}</strong> subtask(s).`,
-      () => { if (window._confirmDelete) window._confirmDelete(id, false, 'all'); },
-      'Delete all',
-      'btn-danger',
-      { label: 'Keep subtasks', onAction: () => { if (window._confirmDelete) window._confirmDelete(id, false, 'keep-children'); } }
-    );
-  } else if (specFile) {
-    showModal(
-      `\uD83D\uDDD1\uFE0F Delete task?`,
-      `<strong>${id}</strong>: ${escHtml(title)}<br>This task has a spec file. Delete it too?`,
-      () => { if (window._confirmDelete) window._confirmDelete(id, true); },
-      'Delete everything',
-      'btn-danger',
-      { label: 'Keep spec', onAction: () => { if (window._confirmDelete) window._confirmDelete(id, false); } }
+      '🗑️ Delete task?',
+      `<strong>${id}</strong>: ${escHtml(title)}<div class="modal-options">${options}</div>`,
+      () => {
+        const deleteSpec = hasSpec && (document.getElementById('delSpec')?.checked ?? false);
+        const mode = hasSubs
+          ? (document.getElementById('delSubtasks')?.checked ? 'all' : 'keep-children')
+          : null;
+        if (window._confirmDelete) window._confirmDelete(id, deleteSpec, mode);
+      },
+      'Delete',
+      'btn-danger'
     );
   } else {
     showModal(
