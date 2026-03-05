@@ -3,7 +3,7 @@
 import { ICONS } from '../utils.js?v=5';
 import { canvasState, loadCanvas, applyTransform, resetCanvasState, SCALE_MIN, SCALE_MAX } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
-         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=4';
+         startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=5';
 import { renderConnections, startConnectionDrag } from './connections.js?v=3';
 import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar, applyFormattingToTextarea } from './toolbar.js?v=10';
 import { bindCanvasEvents } from './events.js?v=1';
@@ -192,10 +192,16 @@ async function renderIdeaCanvas(state) {
 function refreshCanvas() {
   const vp = document.getElementById('canvasViewport');
   if (!vp) return;
-  // Clear selection — promoted notes may no longer exist
-  canvasState.selectedIds.clear();
-  document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
+  // Only remove selected IDs for notes that no longer exist (e.g. promoted/deleted)
+  const noteIds = new Set(canvasState.notes.map(n => n.id));
+  for (const id of [...canvasState.selectedIds]) {
+    if (!noteIds.has(id)) canvasState.selectedIds.delete(id);
+  }
   renderAll();
+  // Re-apply selection classes after render
+  for (const id of canvasState.selectedIds) {
+    document.getElementById('note-' + id)?.classList.add('selected');
+  }
   renderPromoteButton();
   updateToolbar();
 }

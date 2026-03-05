@@ -6,7 +6,7 @@ import {
   setNoteColor, setNoteSize, confirmDeleteNote, startDeleteNote,
   createNoteElement, startNoteEdit, saveNoteText, renderNotes,
   renderEmptyState, checkTruncation
-} from './notes.js?v=4';
+} from './notes.js?v=5';
 import { renderConnections } from './connections.js?v=3';
 
 export function updateToolbar() {
