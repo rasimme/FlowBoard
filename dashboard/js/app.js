@@ -303,7 +303,7 @@ window._deleteCurrentFile = function() {
   if (!filePath) return;
   showModal('Delete File', `Delete <strong>${filePath}</strong>?`, async () => {
     try {
-      const res = await fetch(`/api/projects/${state.activeProject}/files/${filePath}`, { method: 'DELETE' });
+      const res = await fetch(`/api/projects/${state.viewedProject}/files/${filePath}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) { toast(data.error || 'Delete failed', 'error'); return; }
       toast(`Deleted ${filePath}`, 'success');
