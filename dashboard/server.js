@@ -894,7 +894,7 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
 
   const { content } = req.body;
   if (content === undefined) return res.status(400).json({ error: 'Content required' });
-  if (content.length > 100 * 1024) return res.status(413).json({ error: 'Content too large (max 100KB)' });
+  if (Buffer.byteLength(content, 'utf8') > 100 * 1024) return res.status(413).json({ error: 'Content too large (max 100KB)' });
 
   try {
     // Ensure parent directory exists
@@ -1024,6 +1024,9 @@ app.post('/api/projects/:name/canvas/notes', (req, res) => {
   if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
   const data = readCanvasFile(req.params.name);
   const { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = req.body;
+  if (typeof text === 'string' && Buffer.byteLength(text, 'utf8') > 50 * 1024) {
+    return res.status(413).json({ error: 'Note text too large (max 50KB)' });
+  }
   const note = {
     id: nextNoteId(data.notes),
     text,
@@ -1047,6 +1050,9 @@ app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
   const data = readCanvasFile(req.params.name);
   const note = data.notes.find(n => n.id === req.params.id);
   if (!note) return res.status(404).json({ error: 'Note not found' });
+  if (typeof req.body.text === 'string' && Buffer.byteLength(req.body.text, 'utf8') > 50 * 1024) {
+    return res.status(413).json({ error: 'Note text too large (max 50KB)' });
+  }
   const allowed = ['text', 'x', 'y', 'color', 'size'];
   for (const k of allowed) {
     if (Object.prototype.hasOwnProperty.call(req.body, k)) note[k] = req.body[k];
