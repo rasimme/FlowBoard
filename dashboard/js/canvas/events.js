@@ -725,6 +725,7 @@ function onTouchEnd(e) {
     }
     if (canvasState.dragging) {
       const { noteId, moved, startPositions } = canvasState.dragging;
+      canvasState.dragging = null;
       if (moved) {
         if (startPositions) {
           for (const selId of startPositions.keys()) {
@@ -735,12 +736,16 @@ function onTouchEnd(e) {
           clearTimeout(canvasState.posSaveTimers[noteId]);
           saveNotePosition(noteId);
         }
+        // Re-show promote buttons after touch drag (selection preserved)
+        renderPromoteButton();
       } else {
         // Tap without drag — close sidebar if open
         if (canvasState.sidebarNoteId) closeSidebar();
       }
+      canvasState.panning = null;
+      _pinchDist = 0;
+      return;
     }
-    canvasState.dragging = null;
     canvasState.panning  = null;
     _pinchDist = 0;
   }
