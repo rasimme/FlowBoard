@@ -849,15 +849,15 @@ export function bindKanbanEvents(container) {
   };
 
   container.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (btn) e.stopPropagation(); // prevent body listener from double-firing
     handleAction(e);
   });
 
   // Global delegation for popovers rendered on body (e.g. priority popover)
-  // Only handle actions that originate OUTSIDE the container (body-level popovers)
   if (!_globalActionsBound) {
     _globalActionsBound = true;
     document.body.addEventListener('click', e => {
-      if (container.contains(e.target)) return; // already handled by container listener
       handleAction(e);
     });
   }
