@@ -143,7 +143,12 @@ async function renderIdeaCanvas(state) {
 function refreshCanvas() {
   const vp = document.getElementById('canvasViewport');
   if (!vp) return;
+  // Clear selection — promoted notes may no longer exist
+  canvasState.selectedIds.clear();
+  document.querySelectorAll('.note.selected').forEach(el => el.classList.remove('selected'));
   renderAll();
+  renderPromoteButton();
+  updateToolbar();
 }
 
 // --- Public API re-exports ---
