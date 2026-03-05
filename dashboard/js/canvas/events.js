@@ -663,6 +663,10 @@ function onTouchMove(e) {
       const d = canvasState.dragging;
       const dist = Math.abs(t.clientX - d.startMouseX) + Math.abs(t.clientY - d.startMouseY);
       if (!d.moved && dist < 5) return;
+      if (!d.moved) {
+        // Touch drag started — hide promote buttons
+        document.querySelectorAll('.canvas-promote-btn, .cluster-promote-btn').forEach(b => b.style.display = 'none');
+      }
       d.moved = true;
       clearTimeout(_longPressTimer);
 
