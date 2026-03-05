@@ -5,7 +5,7 @@ import { canvasState, loadCanvas, applyTransform, resetCanvasState, SCALE_MIN, S
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
          startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=4';
 import { renderConnections, startConnectionDrag } from './connections.js?v=3';
-import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar, applyFormattingToTextarea } from './toolbar.js?v=4';
+import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar, applyFormattingToTextarea } from './toolbar.js?v=5';
 import { bindCanvasEvents } from './events.js?v=1';
 import { renderClusterFrames } from './clusters.js?v=1';
 
