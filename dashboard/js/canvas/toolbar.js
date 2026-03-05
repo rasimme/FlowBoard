@@ -651,6 +651,12 @@ export async function sendPromote(noteIds, mode = 'single') {
     c => idSet.has(c.from) && idSet.has(c.to)
   );
 
+  // Show persistent loading toast
+  const loadingEl = document.createElement('div');
+  loadingEl.className = 'toast loading';
+  loadingEl.innerHTML = '<span class="toast-spinner"></span> Creating task…';
+  document.getElementById('toastContainer').appendChild(loadingEl);
+
   try {
     const res = await api(`/projects/${project}/canvas/promote`, {
       method: 'POST',
@@ -660,13 +666,41 @@ export async function sendPromote(noteIds, mode = 'single') {
         mode
       }
     });
-    if (res.ok) {
-      toast('Idea sent to agent', 'success');
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
-    } else {
+    if (!res.ok) {
+      loadingEl.remove();
       toast(res.error || 'Promote failed', 'error');
+      return;
     }
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
+
+    // Poll: wait for notes to disappear from canvas (agent batch-deletes them)
+    const promotedIds = new Set(notes.map(n => n.id));
+    let elapsed = 0;
+    const poll = setInterval(async () => {
+      elapsed += 3000;
+      try {
+        const data = await api(`/projects/${project}/canvas`);
+        const remaining = (data.notes || []).filter(n => promotedIds.has(n.id));
+        if (remaining.length === 0) {
+          clearInterval(poll);
+          loadingEl.classList.remove('loading');
+          loadingEl.classList.add('success');
+          loadingEl.innerHTML = '✓ Task created';
+          setTimeout(() => { loadingEl.classList.add('removing'); setTimeout(() => loadingEl.remove(), 200); }, 3000);
+          // Refresh canvas to remove promoted notes
+          if (window.refreshCanvas) window.refreshCanvas();
+        }
+      } catch { /* ignore poll errors */ }
+      if (elapsed >= 60000) {
+        clearInterval(poll);
+        loadingEl.classList.remove('loading');
+        loadingEl.classList.add('warn');
+        loadingEl.textContent = 'Task creation in progress…';
+        setTimeout(() => { loadingEl.classList.add('removing'); setTimeout(() => loadingEl.remove(), 200); }, 5000);
+      }
+    }, 3000);
   } catch {
+    loadingEl.remove();
     toast('Promote failed', 'error');
   }
 }

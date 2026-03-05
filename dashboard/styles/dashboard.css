@@ -653,7 +653,15 @@
     .toast.success { border-left-color: var(--ok); }
     .toast.error { border-left-color: var(--danger); }
     .toast.info { border-left-color: var(--info); }
+    .toast.warn { border-left-color: #f0ad4e; }
+    .toast.loading { border-left-color: var(--accent); display: flex; align-items: center; gap: 8px; }
     .toast.removing { animation: slideDown 0.2s var(--ease-out) forwards; }
+    .toast-spinner {
+      width: 14px; height: 14px; border: 2px solid var(--border-strong);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Modal */
     .modal-overlay {
