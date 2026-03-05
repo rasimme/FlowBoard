@@ -14,7 +14,7 @@ import {
 import {
   updateToolbar, renderPromoteButton, toolbarDelete,
   copySelectedToClipboard, pasteFromClipboard, duplicateSelected
-} from './toolbar.js?v=3';
+} from './toolbar.js?v=4';
 
 // AbortController for document-level listeners (re-created on each bindCanvasEvents)
 let _canvasAbort = null;

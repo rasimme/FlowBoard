@@ -5,7 +5,7 @@ import { canvasState, loadCanvas, applyTransform, resetCanvasState, SCALE_MIN, S
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
          startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=4';
 import { renderConnections, startConnectionDrag } from './connections.js?v=3';
-import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar } from './toolbar.js?v=3';
+import { renderPromoteButton, sendPromote, bindToolbarEvents, updateToolbar, applyFormattingToTextarea } from './toolbar.js?v=4';
 import { bindCanvasEvents } from './events.js?v=1';
 import { renderClusterFrames } from './clusters.js?v=1';
 
@@ -13,7 +13,7 @@ import { renderClusterFrames } from './clusters.js?v=1';
 if (!document.querySelector('link[data-canvas]')) {
   const _l = document.createElement('link');
   _l.rel = 'stylesheet';
-  _l.href = './styles/canvas.css?v=10';
+  _l.href = './styles/canvas.css?v=11';
   _l.dataset.canvas = '1';
   document.head.appendChild(_l);
 }
@@ -102,6 +102,13 @@ async function renderIdeaCanvas(state) {
           <button class="canvas-sidebar-close" data-action="close-sidebar">\u2715</button>
         </div>
         <div class="canvas-sidebar-body">
+          <div class="canvas-sidebar-format">
+            <button class="toolbar-btn" data-sidebar-fmt="bold" title="Bold"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 010 8H6z"/><path d="M6 12h9a4 4 0 010 8H6z"/></svg></button>
+            <button class="toolbar-btn" data-sidebar-fmt="italic" title="Italic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg></button>
+            <button class="toolbar-btn" data-sidebar-fmt="bullet" title="Bullet list"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></button>
+            <button class="toolbar-btn" data-sidebar-fmt="number" title="Numbered list"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></button>
+            <button class="toolbar-btn" data-sidebar-fmt="link" title="Link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg></button>
+          </div>
           <textarea class="canvas-sidebar-textarea" id="sidebarTextarea"></textarea>
         </div>
       </div>
@@ -112,7 +119,16 @@ async function renderIdeaCanvas(state) {
 
   // Canvas wrap delegation (toolbar + sidebar actions)
   const wrap = document.getElementById('canvasWrap');
+  wrap.addEventListener('mousedown', e => {
+    if (e.target.closest('[data-sidebar-fmt]')) e.preventDefault();
+  });
   wrap.addEventListener('click', e => {
+    const fmtBtn = e.target.closest('[data-sidebar-fmt]');
+    if (fmtBtn) {
+      const ta = document.getElementById('sidebarTextarea');
+      applyFormattingToTextarea(ta, fmtBtn.dataset.sidebarFmt);
+      return;
+    }
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const { action } = el.dataset;

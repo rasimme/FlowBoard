@@ -356,6 +356,11 @@ export function bindToolbarEvents() {
 export function applyFormatting(type) {
   const ta = document.getElementById('note-ta-' + canvasState.editingId);
   if (!ta) return;
+  applyFormattingToTextarea(ta, type);
+}
+
+export function applyFormattingToTextarea(ta, type) {
+  if (!ta) return;
   const start = ta.selectionStart;
   const end   = ta.selectionEnd;
   const val   = ta.value;
