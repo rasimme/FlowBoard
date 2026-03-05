@@ -479,10 +479,16 @@ export async function setNoteSize(noteId, size) {
   if (el) {
     el.classList.toggle('size-medium', size === 'medium');
     el.style.width = size === 'medium' ? '280px' : '';
-    requestAnimationFrame(() => checkTruncation(el));
+    // Double rAF: first frame applies layout, second reads final dimensions
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      checkTruncation(el);
+      renderConnections();
+      updateToolbar();
+    }));
+  } else {
+    renderConnections();
+    updateToolbar();
   }
-  renderConnections();
-  requestAnimationFrame(() => updateToolbar());
   if (!window.appState?.viewedProject) return;
   try {
     await api(`/projects/${window.appState.viewedProject}/canvas/notes/${noteId}`, {
