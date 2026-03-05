@@ -12,6 +12,8 @@
       --border-strong: #3f3f46;
       --accent: #ff5c5c;
       --accent-subtle: rgba(255, 92, 92, .15);
+      --accent-2: #14b8a6;
+      --accent-2-subtle: rgba(20, 184, 166, 0.12);
       --ok: #22c55e;
       --ok-subtle: rgba(34, 197, 94, .12);
       --warn: #f59e0b;
@@ -28,11 +30,16 @@
       --radius-md: 8px;
       --radius-lg: 12px;
       --radius-full: 9999px;
-      --radius: 8px;
+      --duration-fast: 0.12s;
       --duration-normal: 0.2s;
       --duration-slow: 0.35s;
       --ease-out: cubic-bezier(.16, 1, .3, 1);
       --sidebar-width: 220px;
+      --status-open: #888;
+      --status-in-progress: #f0c000;
+      --status-review: #e07020;
+      --status-done: #d04040;
+      --tree-line: #3f3f46;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -77,7 +84,7 @@
     /* Layout */
     .app {
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
+      grid-template-rows: auto auto 1fr;
       grid-template-columns: var(--sidebar-width) 1fr;
       height: 100dvh;
       transition: grid-template-columns var(--duration-normal) var(--ease-out);
@@ -297,6 +304,63 @@
     .task-card:hover .spec-badge-add { opacity: 0.5; border-color: var(--border); }
     .task-card:hover .spec-badge-add:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
 
+    .task-meta-actions { display: flex; gap: 4px; align-items: center; }
+
+    .subtask-add-btn {
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: var(--radius-sm);
+      opacity: 0; color: var(--muted); background: transparent;
+      border: 1px solid transparent; transition: all var(--duration-fast);
+    }
+    .task-card:hover .subtask-add-btn { opacity: 0.5; border-color: var(--border); }
+    .task-card:hover .subtask-add-btn:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
+
+    .add-subtask-form {
+      position: relative;
+      margin-left: 0;
+      padding: 8px 12px; background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    /* Tree-line for add-subtask form — matches subtask-card exactly */
+    .subtask-container .add-subtask-form::before {
+      content: '';
+      position: absolute;
+      left: -15px;
+      top: -4px;
+      bottom: 50%;
+      width: 1.5px;
+      background: var(--tree-line);
+      pointer-events: none;
+    }
+    .subtask-container .add-subtask-form::after {
+      content: '';
+      position: absolute;
+      left: -14px;
+      top: 50%;
+      width: 10px;
+      height: 1.5px;
+      background: var(--tree-line);
+      transform: translateY(-50%);
+    }
+    .subtask-container .add-subtask-form .tree-dot-form {
+      position: absolute;
+      left: -6px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--tree-line);
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .add-subtask-form .subtask-input {
+      width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 6px 8px; color: var(--text);
+      font-size: 12px; font-family: inherit; outline: none;
+    }
+    .add-subtask-form .subtask-input:focus { border-color: var(--accent); }
+
     .priority-pill {
       display: inline-flex; padding: 4px 10px; border-radius: var(--radius-full);
       font-size: 11px; font-weight: 500; cursor: pointer;
@@ -310,9 +374,9 @@
       position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
       display: flex; flex-direction: row; flex-wrap: nowrap; gap: 4px; padding: 6px;
       width: max-content;
-      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md);
       box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
-      z-index: 100;
+      z-index: 1200;
       animation: popIn var(--duration-fast) var(--ease-out);
     }
     .priority-popover .priority-pill { opacity: 0.5; transition: opacity var(--duration-fast); white-space: nowrap; }
@@ -331,6 +395,214 @@
     .file-preview-actions .delete-btn { opacity: 0.6; }
     .file-preview-actions .delete-btn:hover { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
+
+    /* Subtask Progress Bar (on parent cards) */
+    .subtask-progress {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }
+    .expand-chevron {
+      font-size: 10px;
+      color: var(--muted);
+      transition: transform var(--duration-fast);
+      width: 12px;
+      flex-shrink: 0;
+    }
+    .expand-chevron.expanded { transform: rotate(90deg); }
+
+    .progress-bar {
+      flex: 1;
+      height: 4px;
+      background: var(--secondary);
+      border-radius: 2px;
+      overflow: hidden;
+      display: flex;
+    }
+    .progress-done {
+      background: var(--status-done);
+      height: 100%;
+      transition: width var(--duration-normal);
+    }
+    .progress-review {
+      background: var(--status-review);
+      height: 100%;
+      transition: width var(--duration-normal);
+    }
+    .progress-active {
+      background: var(--status-in-progress);
+      height: 100%;
+      transition: width var(--duration-normal);
+    }
+    .progress-text {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    /* Subtask container — wraps all subtask cards for a parent */
+    .subtask-container {
+      position: relative;
+      margin-left: 14px;
+      padding-left: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    /* Vertical trunk line — drawn per-card so it always spans first to last dot */
+
+    /* Each subtask card draws a vertical segment from above to its bottom */
+    .subtask-card::before {
+      content: '';
+      position: absolute;
+      left: -15px;
+      top: -4px;
+      bottom: 0;
+      width: 1.5px;
+      background: var(--tree-line);
+      pointer-events: none;
+    }
+    /* Last card: line stops at center (where horizontal branch connects) */
+    .subtask-card:last-child::before {
+      bottom: 50%;
+    }
+
+    /* Subtask Cards — compact mini-cards with card outline */
+    .subtask-card {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      min-height: 34px;
+      background: var(--bg-accent);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: background var(--duration-normal);
+    }
+    .subtask-card:hover { background: var(--bg-hover); }
+
+    /* Tree-line: horizontal branch from trunk to card */
+    .subtask-card::after {
+      content: '';
+      position: absolute;
+      left: -14px;
+      top: 50%;
+      width: 10px;
+      height: 1.5px;
+      background: var(--tree-line);
+      transform: translateY(-50%);
+    }
+
+    /* Tree-line: dot connector */
+    .tree-dot {
+      position: absolute;
+      left: -6px;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--tree-line);
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
+    .subtask-card .subtask-title {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--text);
+      line-height: 1.4;
+      word-break: break-word;
+    }
+    .subtask-title-input {
+      flex: 1;
+      min-width: 0;
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--accent);
+      border-radius: 3px;
+      padding: 2px 6px;
+      outline: none;
+      font-family: inherit;
+      line-height: 1.4;
+      resize: none;
+      overflow: hidden;
+    }
+    .subtask-actions {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    /* Hide actions when subtask card is in edit mode */
+    .subtask-card.editing { align-items: flex-start; }
+    .subtask-card.editing .subtask-actions { display: none; }
+    .subtask-card.editing .subtask-title-input { flex: 1; }
+
+    /* Status dots (subtask status indicator) */
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: var(--radius-full);
+      flex-shrink: 0;
+    }
+    .status-dot-done { background: var(--status-done); }
+    .status-dot-in-progress { background: var(--status-in-progress); }
+    .status-dot-open { background: var(--status-open); }
+    .status-dot-review { background: var(--status-review); }
+
+    /* Clickable status dot wrapper */
+    .status-dot-wrap {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      position: relative;
+      transition: background var(--duration-fast);
+    }
+    .status-dot-wrap:hover { background: rgba(255,255,255,.08); }
+
+    /* Status popover */
+    .status-popover {
+      position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      display: flex; flex-direction: column; gap: 2px; padding: 6px;
+      width: max-content;
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md);
+      box-shadow: 0 12px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.03);
+      z-index: 100;
+      animation: popIn var(--duration-fast) var(--ease-out);
+    }
+    .status-option {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 10px; border-radius: var(--radius-sm);
+      font-size: 11px; color: var(--muted); cursor: pointer;
+      white-space: nowrap; transition: all var(--duration-fast);
+    }
+    .status-option:hover { background: var(--bg-hover); color: var(--text); }
+    .status-option.current { color: var(--text-strong); }
+
+    /* Smaller spec badges on subtask cards */
+    .spec-badge-sm { width: 22px; height: 22px; }
+    .spec-badge-sm svg { width: 12px; height: 12px; }
+    .subtask-card .spec-badge-add { opacity: 0; }
+    .subtask-card:hover .spec-badge-add { opacity: 0.5; }
+    .subtask-card:hover .spec-badge-add:hover { opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong); }
+
+    /* Subtask delete button */
+    .subtask-card .delete-btn { width: 20px; height: 20px; opacity: 0; }
+    .subtask-card:hover .delete-btn { opacity: 0.6; }
+    .subtask-card:hover .delete-btn:hover { opacity: 1; }
 
     /* Add Task */
     .add-task-btn {
@@ -366,14 +638,6 @@
 
     .form-actions { display: flex; gap: 8px; }
 
-    /* Footer */
-    .footer {
-      grid-column: 1 / -1;
-      padding: 10px 22px; text-align: center;
-      font-size: 11px; color: var(--muted);
-      border-top: 1px solid var(--border);
-    }
-
     /* Toast — bottom-right */
     .toast-container {
       position: fixed; bottom: 16px; right: 16px; z-index: 900;
@@ -389,7 +653,15 @@
     .toast.success { border-left-color: var(--ok); }
     .toast.error { border-left-color: var(--danger); }
     .toast.info { border-left-color: var(--info); }
+    .toast.warn { border-left-color: #f0ad4e; }
+    .toast.loading { border-left-color: var(--accent); display: flex; align-items: center; gap: 8px; }
     .toast.removing { animation: slideDown 0.2s var(--ease-out) forwards; }
+    .toast-spinner {
+      width: 14px; height: 14px; border: 2px solid var(--border-strong);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Modal */
     .modal-overlay {
@@ -406,6 +678,17 @@
     }
     .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
     .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .modal-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .modal-checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); cursor: pointer; user-select: none; }
+    .modal-checkbox input[type="checkbox"] { display: none; }
+    .modal-checkbox .check-box {
+      width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--border-strong);
+      background: var(--bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .modal-checkbox .check-box svg { opacity: 0; transition: opacity 0.15s; }
+    .modal-checkbox input:checked + .check-box { background: var(--accent); border-color: var(--accent); }
+    .modal-checkbox input:checked + .check-box svg { opacity: 1; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
     @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -760,4 +1043,220 @@
         width: 36px; height: 36px;
         font-size: 18px;
       }
+    }
+
+    /* ============================================================
+       IDEA CANVAS
+       ============================================================ */
+
+    /* Canvas container */
+    .canvas-wrap {
+      width: 100%; height: 100%;
+      position: relative; overflow: hidden;
+      background: var(--bg);
+      cursor: default;
+      user-select: none;
+    }
+    .canvas-viewport {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      transform-origin: 0 0;
+    }
+    .canvas-svg {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%; overflow: visible;
+      pointer-events: none;
+    }
+    .canvas-svg .conn-line {
+      stroke: var(--border-strong); stroke-width: 2;
+      fill: none; cursor: pointer;
+      pointer-events: stroke;
+    }
+    .canvas-svg .conn-line:hover { stroke: var(--accent); }
+    .canvas-svg .conn-line-temp {
+      stroke: var(--muted); stroke-width: 2;
+      stroke-dasharray: 6 4; fill: none;
+      pointer-events: none;
+    }
+
+    /* Empty state */
+    .canvas-empty {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      color: var(--muted); font-size: 14px;
+      pointer-events: none; text-align: center;
+    }
+    .canvas-empty-icon { font-size: 32px; opacity: 0.4; }
+
+    /* Canvas toolbar (top-right) */
+    .canvas-toolbar {
+      position: absolute; top: 12px; right: 12px;
+      display: flex; gap: 6px; z-index: 10;
+    }
+
+    /* Notes */
+    .note {
+      position: absolute; width: 160px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      border-left-width: 4px;
+      box-shadow: var(--shadow-md);
+      display: flex; flex-direction: column;
+      transition: box-shadow var(--duration-normal);
+    }
+    .note:hover { box-shadow: var(--shadow-lg); }
+    .note.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Note color variants */
+    .note.color-yellow { background: var(--warn-subtle);  border-left-color: var(--warn); }
+    .note.color-blue   { background: rgba(59,130,246,.12); border-left-color: var(--info); }
+    .note.color-green  { background: var(--ok-subtle);    border-left-color: var(--ok); }
+    .note.color-red    { background: var(--danger-subtle); border-left-color: var(--danger); }
+    .note.color-teal   { background: var(--accent-2-subtle); border-left-color: var(--accent-2); }
+
+    /* Note header (drag handle) */
+    .note-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 6px 5px 8px; height: 28px;
+      cursor: grab; user-select: none; flex-shrink: 0;
+    }
+    .note-header:active { cursor: grabbing; }
+
+    /* Color dot in header */
+    .note-color-dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      cursor: pointer; flex-shrink: 0;
+      transition: transform var(--duration-normal);
+    }
+    .note-color-dot:hover { transform: scale(1.2); }
+    .note.color-yellow .note-color-dot { background: var(--warn); }
+    .note.color-blue   .note-color-dot { background: var(--info); }
+    .note.color-green  .note-color-dot { background: var(--ok); }
+    .note.color-red    .note-color-dot { background: var(--danger); }
+    .note.color-teal   .note-color-dot { background: var(--accent-2); }
+
+    /* Note ID label */
+    .note-id {
+      font-size: 9px; color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      opacity: 0.5; flex: 1; margin-left: 4px;
+    }
+
+    /* Note body (text area) */
+    .note-body {
+      padding: 4px 10px 8px;
+      min-height: 40px; cursor: grab; flex: 1;
+    }
+    .note-text {
+      font-size: 12px; line-height: 1.5; color: var(--text);
+      min-height: 20px; white-space: pre-wrap; word-break: break-word;
+    }
+    /* Compact md-content overrides for notes */
+    .note-text.md-content p  { margin: 0; }
+    .note-text.md-content br { display: block; content: ''; }
+    .note-text.md-content ul { margin: 2px 0; padding-left: 14px; }
+    .note-text.md-content li { margin: 1px 0; }
+
+    .note-textarea {
+      width: 100%; min-height: 60px;
+      /* Fill full available note-body height when editing */
+      height: 100%;
+      background: transparent; border: none; outline: none;
+      font-size: 12px; line-height: 1.5; color: var(--text);
+      font-family: inherit; resize: none;
+      display: block;
+    }
+
+    /* Edit mode: body sizes freely to textarea content (grows + shrinks) */
+    .note.editing .note-body {
+      max-height: none !important;
+      overflow: visible !important;
+      padding-bottom: 0 !important;
+      cursor: text !important;
+    }
+    .note.editing .note-body::after,
+    .note.editing .note-body::before {
+      display: none !important;
+    }
+    .note.editing .note-textarea {
+      padding-bottom: 10px !important;
+      display: block !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      min-height: 60px !important;
+    }
+
+    /* Note delete button: hidden until hover/selected */
+    .note .delete-btn { width: 18px; height: 18px; opacity: 0; }
+    .note:hover .delete-btn,
+    .note.selected .delete-btn { opacity: 0.5; }
+    .note .delete-btn:hover { opacity: 1 !important; }
+
+    /* Connection dots — base styles (visibility managed by canvas.css) */
+    .conn-dot {
+      position: absolute; width: 8px; height: 8px;
+      border-radius: 50%; background: var(--accent);
+      box-sizing: border-box; /* border included in 10px — fixes translate(-50%) centering */
+      cursor: crosshair; z-index: 5;
+      transform: translate(-50%, -50%);
+      transition: opacity var(--duration-normal), transform var(--duration-normal);
+      opacity: 0;
+    }
+    .conn-dot:hover { transform: translate(-50%, -50%) scale(1.5); }
+    /* 44px touch targets on mobile */
+    .conn-dot::after {
+      content: ''; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 44px; height: 44px;
+    }
+
+    /* Selection promote button */
+    .canvas-promote-btn {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: var(--radius-full);
+      padding: 5px 12px; font-size: 11px; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+      box-shadow: var(--shadow-md);
+      transition: background var(--duration-normal);
+      z-index: 10; white-space: nowrap;
+    }
+    .canvas-promote-btn:hover { background: #ff4040; }
+
+    /* Color popover */
+    .color-popover {
+      position: absolute; z-index: 200;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 8px;
+      display: flex; gap: 6px;
+      box-shadow: var(--shadow-lg);
+      animation: popIn var(--duration-normal) var(--ease-out);
+    }
+    .color-swatch {
+      width: 18px; height: 18px; border-radius: 50%;
+      cursor: pointer; border: 2px solid transparent;
+      transition: transform var(--duration-normal), border-color var(--duration-normal);
+    }
+    .color-swatch:hover { transform: scale(1.2); }
+    .color-swatch.selected { border-color: var(--text-strong); }
+    .color-swatch-yellow { background: var(--warn); }
+    .color-swatch-blue   { background: var(--info); }
+    .color-swatch-green  { background: var(--ok); }
+    .color-swatch-red    { background: var(--danger); }
+    .color-swatch-teal   { background: var(--accent-2); }
+    .color-swatch-grey   { background: var(--border-strong); }
+
+    /* Lasso selection rectangle */
+    .canvas-lasso {
+      position: absolute; border: 1px dashed var(--accent);
+      background: var(--accent-subtle);
+      pointer-events: none; z-index: 5;
+      display: none;
+    }
+
+    @media (max-width: 600px) {
+      .conn-dot { width: 12px; height: 12px; box-sizing: border-box; }
     }

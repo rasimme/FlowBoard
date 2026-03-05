@@ -1,6 +1,6 @@
 // file-explorer.js — File Tree + Preview
 
-import { api, toast, escHtml, formatSize, renderDeleteBtn, showModal } from './utils.js?v=4';
+import { api, toast, escHtml, formatSize, ICONS, showModal } from './utils.js?v=6';
 
 // File loading categories
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
@@ -33,7 +33,7 @@ export async function loadFileContent(filePath, state) {
   try {
     const data = await api(`/projects/${state.viewedProject}/files/${filePath}`);
     if (data?.error) {
-      toast(`Datei nicht gefunden: ${filePath}`, 'warn');
+      toast(`File not found: ${filePath}`, 'warn');
       console.warn('Failed to load file:', data.error);
       return;
     }
@@ -58,7 +58,7 @@ export async function loadFileContent(filePath, state) {
       if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   } catch (err) {
-    toast(`Fehler beim Laden: ${filePath}`, 'error');
+    toast(`Failed to load: ${filePath}`, 'error');
     console.error('Failed to load file:', err);
   }
 }
@@ -158,7 +158,7 @@ export function renderFileTree() {
     if (entry.type === 'directory') {
       const expanded = fileState.expandedDirs.has(entry.path);
       const icon = expanded ? '📂' : '📁';
-      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" onclick="window.toggleDir('${entry.path}')">
+      html += `<div class="tree-item directory" style="padding-left:${14 + indent}px" data-action="toggle-dir" data-path="${escHtml(entry.path)}">
         <span class="tree-icon">${icon}</span>
         <span class="tree-name">${escHtml(entry.name)}</span>
         <span class="tree-meta">${entry.children.length}</span>
@@ -171,7 +171,7 @@ export function renderFileTree() {
       const sizeStr = formatSize(entry.size);
       const ext = entry.name.split('.').pop();
       const icon = ext === 'json' ? '{ }' : ext === 'md' ? '📝' : '📄';
-      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" onclick="window.loadFileContent('${entry.path}')">
+      html += `<div class="tree-item${isSelected ? ' selected' : ''}" style="padding-left:${14 + indent}px" data-action="load-file" data-path="${escHtml(entry.path)}">
         <span class="tree-badge ${entry.category}"></span>
         <span class="tree-icon">${icon}</span>
         <span class="tree-name">${escHtml(entry.name)}</span>
@@ -187,12 +187,12 @@ export function renderFileTree() {
   if (footer && fileState.fileTree) {
     const total = fileState.fileTree.totalSize;
     const recommended = 50 * 1024;
-    const pct = Math.min(100, Math.round((total / recommended) * 100));
-    const color = pct > 80 ? 'var(--warn)' : pct > 100 ? 'var(--danger)' : 'var(--ok)';
+    const pct = Math.round((total / recommended) * 100);
+    const color = pct > 100 ? 'var(--danger)' : pct > 80 ? 'var(--warn)' : 'var(--ok)';
     footer.innerHTML = `
       <div>${fileState.fileTree.fileCount} files · ${formatSize(total)}</div>
       <div class="context-bar">
-        <div class="context-bar-fill" style="width:${pct}%;background:${color}"></div>
+        <div class="context-bar-fill" style="width:${Math.min(100, pct)}%;background:${color}"></div>
       </div>
     `;
   }
@@ -217,14 +217,14 @@ function renderFilePreview() {
 
   const unsavedDot = fileState.fileUnsaved ? '<span class="unsaved-dot" title="Unsaved changes"></span>' : '';
   const saveBtn = fileState.fileUnsaved
-    ? '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>'
+    ? '<button class="btn btn-primary btn-sm" data-action="save-file" style="font-size:11px">Save</button>'
     : '';
   const canDelete = (f.path.startsWith('context/') || f.path.startsWith('specs/')) && !fileState.fileEditing;
-  const deleteBtn = canDelete ? renderDeleteBtn("window.deleteCurrentFile()", 'Delete file') : '';
+  const deleteBtn = canDelete ? `<button class="delete-btn" data-action="delete-file" title="Delete file">${ICONS.trash}</button>` : '';
 
   container.innerHTML = `
     <div class="file-preview-header">
-      <button class="file-back-btn" onclick="window.fileBackToTree()">← Files</button>
+      <button class="file-back-btn" data-action="back-to-tree">← Files</button>
       <div class="file-preview-info">
         <span class="file-preview-name">${escHtml(f.path)}${unsavedDot}</span>
         <span class="file-preview-size">${formatSize(f.size)}</span>
@@ -232,7 +232,7 @@ function renderFilePreview() {
       </div>
       <div class="file-preview-actions">
         ${saveBtn}
-        <button class="btn btn-ghost btn-sm" onclick="window.toggleFileEdit()">
+        <button class="btn btn-ghost btn-sm" data-action="toggle-edit">
           ${fileState.fileEditing ? 'Preview' : 'Edit'}
         </button>
         ${deleteBtn}
@@ -260,7 +260,7 @@ function renderFilePreview() {
       if (actions) {
         const existing = actions.querySelector('.btn-primary');
         if (fileState.fileUnsaved && !existing) {
-          actions.insertAdjacentHTML('afterbegin', '<button class="btn btn-primary btn-sm" onclick="window.saveFileContent()" style="font-size:11px">Save</button>');
+          actions.insertAdjacentHTML('afterbegin', '<button class="btn btn-primary btn-sm" data-action="save-file" style="font-size:11px">Save</button>');
         } else if (!fileState.fileUnsaved && existing) {
           existing.remove();
         }
@@ -269,10 +269,10 @@ function renderFilePreview() {
     editor.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        window.saveFileContent();
+        if (window._saveFileContent) window._saveFileContent();
       }
       if (e.key === 'Escape') {
-        window.toggleFileEdit();
+        toggleFileEdit();
       }
       if (e.key === 'Tab') {
         e.preventDefault();
@@ -360,7 +360,7 @@ function _makeTrack() {
   return { track, thumb };
 }
 
-function _bindScroll(scrollEl, track, thumb) {
+function _bindScroll(scrollEl, track, thumb, signal) {
   let dragging = false, startY = 0, startScroll = 0;
   function update() {
     const sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight;
@@ -373,8 +373,10 @@ function _bindScroll(scrollEl, track, thumb) {
     thumb.style.top = (scrollRatio * (trackH - thumbH)) + 'px';
   }
   scrollEl.addEventListener('scroll', update, { passive: true });
-  new ResizeObserver(update).observe(scrollEl);
-  new MutationObserver(update).observe(scrollEl, { childList: true, subtree: true });
+  const ro = new ResizeObserver(update);
+  ro.observe(scrollEl);
+  const mo = new MutationObserver(update);
+  mo.observe(scrollEl, { childList: true, subtree: true });
   thumb.addEventListener('mousedown', (e) => {
     e.preventDefault(); e.stopPropagation();
     dragging = true; startY = e.clientY; startScroll = scrollEl.scrollTop;
@@ -385,18 +387,18 @@ function _bindScroll(scrollEl, track, thumb) {
     const sh = scrollEl.scrollHeight, ch = scrollEl.clientHeight, trackH = track.clientHeight;
     const thumbH = Math.max(24, trackH * (ch / sh));
     scrollEl.scrollTop = startScroll + (e.clientY - startY) * ((sh - ch) / (trackH - thumbH));
-  });
+  }, { signal });
   window.addEventListener('mouseup', () => {
     if (!dragging) return;
     dragging = false; thumb.classList.remove('dragging');
-  });
+  }, { signal });
   track.addEventListener('mousedown', (e) => {
     if (e.target === thumb) return;
     const rect = track.getBoundingClientRect();
     scrollEl.scrollTop = ((e.clientY - rect.top) / rect.height) * (scrollEl.scrollHeight - scrollEl.clientHeight);
   });
   requestAnimationFrame(() => requestAnimationFrame(update));
-  return update;
+  return { update, ro, mo };
 }
 
 function cscrollWrap(el) {
@@ -412,18 +414,28 @@ function cscrollWrap(el) {
   el.style.overflowY = 'auto';
   const { track, thumb } = _makeTrack();
   wrap.appendChild(track);
-  const updateFn = _bindScroll(el, track, thumb);
+  wrap._cscrollAbort = new AbortController();
+  const { update: updateFn, ro, mo } = _bindScroll(el, track, thumb, wrap._cscrollAbort.signal);
   wrap._cscrollUpdate = updateFn;
+  wrap._cscrollObservers = { ro, mo };
 }
 
 function cscrollBind(scrollEl, trackHost) {
   if (!scrollEl || !trackHost) return;
   trackHost.style.position = 'relative';
+  // Abort previous window-level listeners before creating new ones
+  if (trackHost._cscrollAbort) trackHost._cscrollAbort.abort();
+  if (trackHost._cscrollObservers) {
+    trackHost._cscrollObservers.ro.disconnect();
+    trackHost._cscrollObservers.mo.disconnect();
+  }
+  trackHost._cscrollAbort = new AbortController();
   const old = trackHost.querySelector(':scope > .cscroll-track');
   if (old) old.remove();
   const { track, thumb } = _makeTrack();
   trackHost.appendChild(track);
-  _bindScroll(scrollEl, track, thumb);
+  const { ro, mo } = _bindScroll(scrollEl, track, thumb, trackHost._cscrollAbort.signal);
+  trackHost._cscrollObservers = { ro, mo };
 }
 
 let _staticDone = false;
@@ -474,4 +486,21 @@ function applyFileScrollbars() {
     const body = document.querySelector('.file-preview-body');
     if (body) cscrollBind(body, preview);
   }
+}
+
+// --- Delegated event listener ---
+export function bindFileExplorerEvents(container) {
+  container.addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const { action, path } = el.dataset;
+    switch (action) {
+      case 'toggle-dir':   toggleDir(path); break;
+      case 'load-file':    if (window._loadFileContent) window._loadFileContent(path); break;
+      case 'save-file':    if (window._saveFileContent) window._saveFileContent(); break;
+      case 'toggle-edit':  toggleFileEdit(); break;
+      case 'back-to-tree': fileBackToTree(); break;
+      case 'delete-file':  if (window._deleteCurrentFile) window._deleteCurrentFile(); break;
+    }
+  });
 }

@@ -38,10 +38,15 @@ export async function api(path, opts = {}) {
     document.getElementById('content').innerHTML = `
       <div class="empty-state" style="flex-direction:column;gap:12px">
         <span style="font-size:32px">🔒</span>
-        <span>Session abgelaufen</span>
-        <span style="font-size:12px;color:var(--muted)">Bitte über Telegram neu öffnen.</span>
+        <span>Session expired</span>
+        <span style="font-size:12px;color:var(--muted)">Please reopen via Telegram.</span>
       </div>`;
     throw new Error('Unauthorized');
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    console.warn('API error', res.status, path, data.error || '');
+    return data;
   }
   return res.json();
 }
@@ -59,41 +64,53 @@ export function toast(msg, type = 'info') {
 }
 
 // --- Modal ---
-export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger') {
+export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger', secondaryAction = null) {
   const root = document.getElementById('modalRoot');
+  const secondaryBtn = secondaryAction
+    ? `<button class="btn btn-ghost btn-sm" id="modalSecondary">${secondaryAction.label}</button>`
+    : '';
   root.innerHTML = `<div class="modal-overlay" id="modalOverlay">
     <div class="modal">
       <div class="modal-title">${title}</div>
       <div class="modal-body">${body}</div>
       <div class="modal-actions">
         <button class="btn btn-ghost btn-sm" id="modalCancel">Cancel</button>
+        ${secondaryBtn}
         <button class="btn ${confirmClass} btn-sm" id="modalConfirm">${confirmLabel}</button>
       </div>
     </div>
   </div>`;
   document.getElementById('modalCancel').onclick = closeModal;
-  document.getElementById('modalConfirm').onclick = () => { closeModal(); onConfirm(); };
+  document.getElementById('modalConfirm').onclick = () => { onConfirm(); closeModal(); };
+  if (secondaryAction) {
+    document.getElementById('modalSecondary').onclick = () => { closeModal(); secondaryAction.onAction(); };
+  }
   document.getElementById('modalOverlay').onclick = (e) => {
     if (e.target === e.currentTarget) closeModal();
   };
-  document.addEventListener('keydown', modalEscHandler);
+  document.addEventListener('keydown', modalKeyHandler);
 }
 
 export function closeModal() {
   document.getElementById('modalRoot').innerHTML = '';
-  document.removeEventListener('keydown', modalEscHandler);
+  document.removeEventListener('keydown', modalKeyHandler);
 }
 
-function modalEscHandler(e) { if (e.key === 'Escape') closeModal(); }
+function modalKeyHandler(e) {
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.getElementById('modalConfirm')?.click();
+  }
+}
 
 // --- Shared UI Components ---
 const ICONS = {
   trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>',
+  lightbulb: '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 00-4 12.7V17h8v-2.3A7 7 0 0012 2z"/></svg>',
 };
 
-export function renderDeleteBtn(onclick, title = 'Delete') {
-  return `<button class="delete-btn" onclick="${onclick}" title="${title}">${ICONS.trash}</button>`;
-}
+export { ICONS };
 
 // --- Helpers ---
 export function escHtml(s) {
@@ -120,9 +137,3 @@ export function formatSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export function updateTimestamp() {
-  const el = document.getElementById('lastRefresh');
-  if (el) {
-    el.textContent = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  }
-}
