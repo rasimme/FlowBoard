@@ -451,12 +451,20 @@ async function init() {
   bindFileExplorerEvents(content);
 
   // Tab bar delegation
-  document.getElementById('tabBar').addEventListener('click', e => {
+  const tabBar = document.getElementById('tabBar');
+  tabBar.addEventListener('click', e => {
     const tab = e.target.closest('[data-tab]');
     if (tab) switchTab(tab.dataset.tab);
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (action === 'toggle-sort') window._toggleSort();
   });
+  tabBar.addEventListener('touchstart', e => {
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'toggle-sort') {
+      e.preventDefault();
+      window._toggleSort();
+    }
+  }, { passive: false });
 
   // Sidebar delegation
   document.getElementById('sidebar').addEventListener('click', e => {
