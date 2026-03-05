@@ -807,6 +807,8 @@ export function renderTabBarRight() {
 }
 
 // --- Delegated event listener ---
+let _globalActionsBound = false;
+
 export function bindKanbanEvents(container) {
   let lastTouchTs = 0;
   const handleAction = (e) => {
@@ -844,6 +846,19 @@ export function bindKanbanEvents(container) {
     if (Date.now() - lastTouchTs < 500) return; // ignore synthetic click after touch
     handleAction(e);
   });
+
+  // Global delegation for popovers rendered on body
+  if (!_globalActionsBound) {
+    _globalActionsBound = true;
+    document.body.addEventListener('touchstart', e => {
+      lastTouchTs = Date.now();
+      handleAction(e);
+    }, { passive: true });
+    document.body.addEventListener('click', e => {
+      if (Date.now() - lastTouchTs < 500) return;
+      handleAction(e);
+    });
+  }
 
   // Column drag events (delegated)
   container.addEventListener('dragover', e => {
