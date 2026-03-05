@@ -1,5 +1,19 @@
 # Changelog
 
+### v4.0.0 (2026-03-05) — Agent-Native Workflows + Idea Canvas
+- **Idea Canvas (sticky notes + connections + clusters)** — Visual ideation space with auto-framing for connected notes
+- **Canvas → Task Promote (Agent-Assisted)** — Select a note or cluster → send structured payload → agent creates tasks/specs/subtasks and cleans up notes
+- **OpenClaw Webhook Session Bridge** — Promote delivery via `POST /hooks/agent` (fast, fire-and-forget, no CLI cold-start)
+- **Parent Tasks + Subtasks UX** — Expand/collapse, progress indicator, delete flows support subtasks
+- **Unified Delete Modal** — When a task has subtasks and/or a spec, modal shows checkboxes (delete spec, delete subtasks)
+- **Mobile/touch hardening** — Fixed regressions around popovers, expand toggles, sort toggle, and canvas toolbar interactions
+- **Security + robustness fixes (from review)**
+  - XSS hardening in modals (escape user-provided titles)
+  - Canvas note text length validation (prevents disk fill)
+  - Correct byte-size checks for file writes (`Buffer.byteLength`)
+- **Kanban UI fixes** — Priority popover rendered at body level (no clipping) + optimistic update revert on failure
+- **Docs refresh** — New README pitch, updated screenshots, extracted `CHANGELOG.md`
+
 ### v3.1.0 (2026-02-27) - UX & Mobile Improvements
 - **Delete files** - Remove files from `context/` and `specs/` directly in the dashboard
 - **Spec pre-fill** - `POST /specs/:taskId` accepts optional content body for programmatic creation
