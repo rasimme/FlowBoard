@@ -679,8 +679,16 @@
     .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
     .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
     .modal-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .modal-checkbox { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg); cursor: pointer; }
-    .modal-checkbox input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+    .modal-checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); cursor: pointer; user-select: none; }
+    .modal-checkbox input[type="checkbox"] { display: none; }
+    .modal-checkbox .check-box {
+      width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--border-strong);
+      background: var(--bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .modal-checkbox .check-box svg { opacity: 0; transition: opacity 0.15s; }
+    .modal-checkbox input:checked + .check-box { background: var(--accent); border-color: var(--accent); }
+    .modal-checkbox input:checked + .check-box svg { opacity: 1; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
     @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
