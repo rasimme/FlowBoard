@@ -853,7 +853,7 @@ export function bindKanbanEvents(container) {
       case 'submit-subtask':  if (window._submitSubtask) window._submitSubtask(); break;
       case 'cancel-subtask':  if (window._cancelSubtask) window._cancelSubtask(); break;
       case 'select-priority': selectPriority(priority); break;
-      case 'toggle-sort':     if (window._toggleSort) window._toggleSort(); break;
+      // toggle-sort handled by tabBar listener in app.js — not here
     }
   };
 
