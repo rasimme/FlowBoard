@@ -51,14 +51,6 @@ export function bindCanvasEvents() {
   wrap.addEventListener('touchmove',  onTouchMove,   { passive: false });
   wrap.addEventListener('touchend',   onTouchEnd);
 
-  // Scrollable note-body: intercept wheel to scroll content instead of canvas zoom
-  wrap.addEventListener('wheel', e => {
-    const body = e.target.closest('.note .note-body');
-    if (body && body.scrollHeight > body.clientHeight) {
-      e.stopPropagation(); // scroll note content, not canvas zoom
-    }
-  }, { passive: false, capture: true });
-
   // Delete/Backspace key: trigger delete modal for selected notes
   document.addEventListener('keydown', e => {
     // Don't intercept if user is typing in an input/textarea
