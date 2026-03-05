@@ -16,35 +16,35 @@
 }
 
 /* Outline-only note cards — override dashboard.css color fills */
-.note {
-  background: var(--bg) !important;
-  border-width: 1.5px !important;
-  border-left-width: 1.5px !important;
-  border-style: solid !important;
+.canvas-viewport .note {
+  background: var(--bg);
+  border-width: 1.5px;
+  border-left-width: 1.5px;
+  border-style: solid;
 }
-.note.color-yellow {
-  background: var(--bg) !important;
-  border-color: var(--warn) !important;
+.canvas-viewport .note.color-yellow {
+  background: var(--bg);
+  border-color: var(--warn);
 }
-.note.color-blue {
-  background: var(--bg) !important;
-  border-color: var(--info) !important;
+.canvas-viewport .note.color-blue {
+  background: var(--bg);
+  border-color: var(--info);
 }
-.note.color-green {
-  background: var(--bg) !important;
-  border-color: var(--ok) !important;
+.canvas-viewport .note.color-green {
+  background: var(--bg);
+  border-color: var(--ok);
 }
-.note.color-red {
-  background: var(--bg) !important;
-  border-color: var(--danger) !important;
+.canvas-viewport .note.color-red {
+  background: var(--bg);
+  border-color: var(--danger);
 }
-.note.color-teal {
-  background: var(--bg) !important;
-  border-color: var(--accent-2) !important;
+.canvas-viewport .note.color-teal {
+  background: var(--bg);
+  border-color: var(--accent-2);
 }
-.note.color-grey {
-  background: var(--bg) !important;
-  border-color: var(--border-strong) !important;
+.canvas-viewport .note.color-grey {
+  background: var(--bg);
+  border-color: var(--border-strong);
 }
 
 /* Z-order: underlay SVG (0) → note cards (1) → overlay SVG (2) */
@@ -93,13 +93,13 @@
 }
 
 /* Target ports visible during connection drag (not highlighted) */
-.conn-dot-target-active {
-  opacity: 1 !important;
+.canvas-viewport .conn-dot.conn-dot-target-active {
+  opacity: 1;
 }
 
 /* Nearest port grows during connection drag */
-.conn-dot-snap {
-  transform: translate(-50%, -50%) scale(1.5) !important;
+.canvas-viewport .conn-dot.conn-dot-snap {
+  transform: translate(-50%, -50%) scale(1.5);
 }
 
 /* Port color matches card border color */
@@ -111,8 +111,8 @@
 .note.color-grey   .conn-dot { background: var(--border-strong); color: var(--border-strong); }
 
 /* Free dots: dark fill + colored inner ring + dark outer shadow (ring style) */
-.conn-dot-free {
-  background: var(--bg) !important;
+.canvas-viewport .conn-dot.conn-dot-free {
+  background: var(--bg);
   border: 2px solid currentColor;        /* colored ring inside */
   box-shadow: 0 0 0 1.5px var(--bg);    /* dark outer ring via shadow */
   opacity: 0;
@@ -122,12 +122,12 @@
 .note.selected .conn-dot-free { opacity: 0.85; }
 
 /* Active dot: the dot being dragged from — stays visible even when hover leaves */
-.conn-dot-active { opacity: 1 !important; }
+.canvas-viewport .conn-dot.conn-dot-active { opacity: 1; }
 
 /* Connected dots: filled with line color + dark outer shadow ring */
-.conn-dot-connected {
+.canvas-viewport .conn-dot.conn-dot-connected {
   box-shadow: 0 0 0 1.5px var(--bg);
-  opacity: 1 !important;
+  opacity: 1;
 }
 
 /* --- Floating toolbar (T-085) --- */
@@ -352,8 +352,8 @@
 }
 
 /* Hide hover/free dots when note is in edit mode */
-.note.editing .conn-dot-free {
-  display: none !important;
+.canvas-viewport .note.editing .conn-dot-free {
+  display: none;
 }
 
 /* Bigger touch target for connection dots on mobile (44px recommended by Apple) */
@@ -372,8 +372,8 @@
 }
 
 /* Hide overflow fade on selected notes (content is scrollable) */
-.note.selected .note-overflow-fade {
-  display: none !important;
+.canvas-viewport .note.selected .note-overflow-fade {
+  display: none;
 }
 
 /* --- Cluster frames --- */
