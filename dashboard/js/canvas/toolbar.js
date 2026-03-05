@@ -624,7 +624,15 @@ export function renderPromoteButton() {
   btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   btn.addEventListener('click', e => {
     e.stopPropagation();
-    sendPromote(selIds, mode);
+    const noteCount = selIds.length;
+    const label = noteCount === 1 ? 'this idea' : `these ${noteCount} ideas`;
+    showModal(
+      'Create Task',
+      `Create task from ${label}? The agent will decide the task structure. Notes will be removed from canvas after creation.`,
+      () => sendPromote(selIds, mode),
+      'Create Task',
+      'btn-primary'
+    );
   });
   vp.appendChild(btn);
 
