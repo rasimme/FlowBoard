@@ -1,6 +1,6 @@
 // canvas/toolbar.js — Floating toolbar, formatting, popovers, clipboard, promote
 
-import { api, toast, showModal, escHtml } from '../utils.js?v=5';
+import { api, toast, showModal, escHtml } from '../utils.js?v=6';
 import { canvasState, NOTE_COLORS, applyTransform } from './state.js?v=1';
 import {
   setNoteColor, setNoteSize, confirmDeleteNote, startDeleteNote,

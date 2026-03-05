@@ -81,7 +81,7 @@ export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confi
     </div>
   </div>`;
   document.getElementById('modalCancel').onclick = closeModal;
-  document.getElementById('modalConfirm').onclick = () => { closeModal(); onConfirm(); };
+  document.getElementById('modalConfirm').onclick = () => { onConfirm(); closeModal(); };
   if (secondaryAction) {
     document.getElementById('modalSecondary').onclick = () => { closeModal(); secondaryAction.onAction(); };
   }

@@ -1,6 +1,6 @@
 // canvas/index.js — Entry point, orchestrator, CSS injection, public API re-exports
 
-import { ICONS } from '../utils.js?v=5';
+import { ICONS } from '../utils.js?v=6';
 import { canvasState, loadCanvas, applyTransform, resetCanvasState, SCALE_MIN, SCALE_MAX } from './state.js?v=1';
 import { renderNotes, renderEmptyState, addNote, startDeleteNote, setNoteColor,
          startNoteEdit, saveNoteText, closeSidebar } from './notes.js?v=5';
