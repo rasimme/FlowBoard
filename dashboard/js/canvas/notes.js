@@ -3,7 +3,7 @@
 import { api, toast, showModal, escHtml, ICONS } from '../utils.js?v=4';
 import { canvasState, NOTE_WIDTH, screenToCanvas } from './state.js?v=1';
 import { renderConnections } from './connections.js?v=3';
-import { updateToolbar, renderPromoteButton } from './toolbar.js?v=4';
+import { updateToolbar, renderPromoteButton } from './toolbar.js?v=5';
 
 // --- Markdown renderer (note subset: bold, lists, links only) ---
 export function renderNoteMarkdown(text) {
@@ -214,6 +214,16 @@ export async function confirmDeleteNote(id) {
   if (!window.appState?.viewedProject) return;
   const el = document.getElementById('note-' + id);
   if (el) el.style.opacity = '0.4';
+
+  // If deleting the active editor/sidebar note, clear state first
+  if (canvasState.editingId === id) {
+    canvasState.editingId = null;
+  }
+  if (canvasState.sidebarNoteId === id) {
+    const sidebar = document.getElementById('canvasSidebar');
+    if (sidebar) sidebar.classList.remove('open');
+    canvasState.sidebarNoteId = null;
+  }
   try {
     const res = await api(
       `/projects/${window.appState.viewedProject}/canvas/notes/${id}`,
@@ -259,6 +269,7 @@ export function startNoteEdit(id) {
     if (prevTa) saveNoteText(canvasState.editingId, prevTa.value);
   }
   canvasState.editingId = id;
+  renderPromoteButton();
   const note = canvasState.notes.find(n => n.id === id);
   if (!note) return;
 
@@ -367,6 +378,7 @@ export async function saveNoteText(id, text) {
   }
   renderConnections();
   updateToolbar(); // hide format section
+  renderPromoteButton();
 
   if (!window.appState?.viewedProject) return;
   try {
