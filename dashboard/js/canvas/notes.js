@@ -3,7 +3,7 @@
 import { api, toast, showModal, escHtml, ICONS } from '../utils.js?v=5';
 import { canvasState, NOTE_WIDTH, screenToCanvas } from './state.js?v=1';
 import { renderConnections } from './connections.js?v=3';
-import { updateToolbar, renderPromoteButton } from './toolbar.js?v=10';
+import { updateToolbar, renderPromoteButton } from './toolbar.js?v=11';
 
 // --- Markdown renderer (note subset: bold, lists, links only) ---
 export function renderNoteMarkdown(text) {

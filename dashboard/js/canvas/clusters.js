@@ -2,7 +2,7 @@
 
 import { canvasState, COLOR_STROKE } from './state.js?v=1';
 import { getAllClusters } from './connections.js?v=3';
-import { updateToolbar, renderPromoteButton } from './toolbar.js?v=10';
+import { updateToolbar, renderPromoteButton } from './toolbar.js?v=11';
 
 const FRAME_PAD = 20;
 

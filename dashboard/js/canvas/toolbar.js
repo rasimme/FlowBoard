@@ -634,11 +634,12 @@ export function renderPromoteButton() {
   );
   const mode = hasClusterConn ? 'cluster' : 'single';
 
+  const FRAME_PAD = 20; // must match clusters.js
   const btn = document.createElement('button');
   btn.className = 'canvas-promote-btn';
   btn.innerHTML = `${PLUS_CIRCLE_ICON} Task`;
   btn.style.left = (maxX - 56) + 'px';
-  btn.style.top  = (maxY + 8)  + 'px';
+  btn.style.top  = (maxY + (mode === 'cluster' ? FRAME_PAD + 8 : 8)) + 'px';
   btn.addEventListener('mousedown', e => e.stopPropagation());
   btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: false });
   btn.addEventListener('click', e => {
