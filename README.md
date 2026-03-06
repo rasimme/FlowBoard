@@ -1,7 +1,7 @@
 <h1 align="center">FlowBoard</h1>
 
 <p align="center">
-  <strong>Project management for AI agents. Built for <a href="https://github.com/openclaw/openclaw">OpenClaw</a>.</strong>
+  <strong>Project workspaces for AI agents. Built for <a href="https://github.com/openclaw/openclaw">OpenClaw</a>.</strong>
 </p>
 
 <p align="center">
@@ -20,12 +20,13 @@
 
 ---
 
-Most project management tools are built for humans. Your AI agent can't use Trello. It can't drag cards in Notion. It can't update Jira.
+Your agent loses context every session. What was I building? What decisions did I make? What's the next task? All gone.
 
-**FlowBoard is different.** Your AI agent creates tasks, writes specs, updates status, and breaks down work into subtasks — autonomously. You see everything live on a Kanban board.
+**FlowBoard fixes that.**
 
-> Other tools: *"AI helps you manage tasks."*
-> FlowBoard: *"Your AI agent manages tasks. You watch."*
+- **📂 Project context on demand** — Activate a project and your agent gets goals, decisions, tasks, and specs. Lazy-loaded to save tokens.
+- **📋 Kanban you both use** — Your agent creates tasks, writes specs, moves cards, breaks work into subtasks. You see progress live.
+- **💡 Idea Canvas** — Brainstorm together visually. One click turns connected ideas into tasks with specs and subtasks.
 
 ![FlowBoard Kanban](docs/screenshot-kanban.png)
 
@@ -33,28 +34,34 @@ Most project management tools are built for humans. Your AI agent can't use Trel
 
 ## Features
 
-### 📋 Agent-Native Task Management
+### 📂 Project Workspaces
 
-Your OpenClaw agent doesn't just assist — it operates the board. It creates tasks, sets priorities, writes detailed specs, and moves cards through the workflow. Parent tasks with subtasks, progress tracking, priority pills — all managed by the agent, visible to you in real-time.
+Activate a project and the agent instantly gets the context it needs — goal, scope, architecture, decisions, task status, specs. Everything is loaded on demand: the agent pulls in what it needs, when it needs it, keeping token usage low. Switch between projects without losing track.
 
-- Tasks with structured workflow: `open → in-progress → review → done`
-- Parent tasks with subtasks and progress bars
+- Structured workspace: `PROJECT.md` → `DECISIONS.md` → `tasks.json` → `specs/`
+- Lazy loading — zero overhead when no project is active
+- Session handoff — pick up exactly where you left off
+
+### 📋 Agent-Native Kanban
+
+Your agent operates the board through the same REST API as the dashboard. It creates tasks, sets priorities, writes specs with acceptance criteria, and updates status as it works.
+
+- Tasks with workflow: `open → in-progress → review → done`
+- Parent tasks with subtasks and progress tracking
 - Spec files with acceptance criteria and logs
-- Agent updates status as it works — you see progress live
+- Real-time visibility into what the agent is doing
 
-### 💡 Idea Canvas → Task Pipeline
+### 💡 Idea Canvas
 
-Brainstorm visually. Connect ideas. Let the agent do the rest.
+A node-based brainstorming space. Sticky notes with connections form clusters. One click sends them to your agent, who analyzes the ideas and creates:
 
 ![FlowBoard Canvas](docs/screenshot-canvas.png)
 
-The Idea Canvas is a node-based brainstorming space (inspired by [ComfyUI](https://github.com/comfyanonymous/ComfyUI)). Sticky notes with connections form clusters. One click sends them to your agent, who analyzes the ideas and autonomously creates:
-
 - **Simple idea** → Task with title and priority
-- **Detailed idea** → Task + spec file with acceptance criteria
+- **Detailed idea** → Task + spec with acceptance criteria
 - **Complex cluster** → Parent task + subtasks with specs
 
-No other project management tool converts visual brainstorming into structured tasks with AI — zero manual overhead.
+Visual brainstorming → structured tasks, zero manual overhead.
 
 ### 📁 File Explorer
 
@@ -241,7 +248,7 @@ systemctl --user restart dashboard
 
 ## Contributing
 
-Contributions welcome! Please read the codebase conventions in `CLAUDE.md` before submitting PRs.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ```bash
 git checkout -b feat/your-feature
