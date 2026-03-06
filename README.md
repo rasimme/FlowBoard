@@ -14,7 +14,7 @@
   <a href="#quick-start">Quick Start</a> •
   <a href="#features">Features</a> •
   <a href="#idea-canvas">Idea Canvas</a> •
-  <a href="#remote-access">Remote Access</a> •
+  <a href="#remote-access-telegram-mini-app">Remote Access</a> •
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
