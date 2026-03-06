@@ -157,12 +157,24 @@ Without these, everything works except canvas promote.
 
 ## Commands
 
+Tell your agent:
+
 | Command | What it does |
 |---------|-------------|
 | `Project: [Name]` | Activate project (loads full context) |
 | `New project: [Name]` | Create project with folder structure |
 | `End project` | Deactivate, save session summary |
 | `Projects` | List all projects |
+
+The agent also handles these autonomously while working:
+
+| Action | What happens |
+|--------|-------------|
+| Create task | Agent calls API, sets priority, optionally writes spec |
+| Create subtasks | Agent breaks a task into subtasks with a parent |
+| Update status | Agent moves tasks through `open → in-progress → review → done` |
+| Write spec | Agent creates `specs/T-xxx-slug.md` with acceptance criteria |
+| Canvas promote | Agent receives cluster notes, decides task structure |
 
 ---
 
