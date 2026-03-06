@@ -1,21 +1,35 @@
 # Security Policy
 
+## Supported Versions
+
+| Version | Supported |
+|---------|-----------|
+| 4.x     | ✅ Active  |
+| < 4.0   | ❌ No patches |
+
 ## Reporting a Vulnerability
 
 If you discover a security issue, please **do not** open a public issue.
 
-Instead, contact the maintainer privately:
-- **GitHub:** open a private security advisory (preferred)
+**Preferred:** Open a [private security advisory](https://github.com/rasimme/FlowBoard/security/advisories/new) on GitHub.
 
-We aim to respond within **72 hours**.
+**Fallback:** Email `simeon.ortmueller@arcor.de` with subject `[SECURITY] FlowBoard`.
 
-## Scope / Notes
+Please include:
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
 
-FlowBoard is designed to be **local-first** and typically runs on a private machine.
+We aim to respond within **72 hours** and will coordinate disclosure with you.
 
-Common sensitive data includes:
-- OpenClaw webhook tokens (`OPENCLAW_HOOKS_TOKEN`)
-- Telegram bot tokens (`TELEGRAM_BOT_TOKEN`)
-- JWT secrets (`JWT_SECRET`)
+## Scope
 
-**Policy:** never hardcode secrets in the repo. Use environment variables only.
+FlowBoard is designed to be **local-first** and typically runs on a private machine. Common sensitive data:
+
+| Secret | Source |
+|--------|--------|
+| `OPENCLAW_HOOKS_TOKEN` | Webhook authentication |
+| `TELEGRAM_BOT_TOKEN` | Telegram Mini App auth |
+| `JWT_SECRET` | Session tokens |
+
+**Policy:** All secrets must use environment variables. Never hardcode tokens in source code.
