@@ -2,7 +2,7 @@
 
 These rules apply whenever a project is active.
 
-**Context Loading:** Automatic via project-context Hook → writes BOOTSTRAP.md on startup/reset.
+**Context Loading:** Automatic via project-context Hook → writes BOOTSTRAP.md on startup/reset/compaction.
 
 ---
 
