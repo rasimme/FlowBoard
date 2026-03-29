@@ -1474,23 +1474,25 @@ async function startServer() {
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
 
-    // Auto-migrate: if tasks.json files exist and HZL cache is empty, migrate them
-    const cacheSize = hzlService.getCacheSize ? hzlService.getCacheSize() : 0;
-    if (cacheSize === 0) {
-      const projectsDir = path.join(WORKSPACE, 'projects');
-      const hasTasksJson = fs.readdirSync(projectsDir).some(name =>
-        fs.existsSync(path.join(projectsDir, name, 'tasks.json'))
-      );
-      if (hasTasksJson) {
-        console.log('[auto-migrate] Fresh HZL DB detected with tasks.json files — migrating...');
-        try {
-          const { autoMigrate } = require('./migrate-tasks');
-          const result = await autoMigrate(hzlService, HZL_DB_PATH);
-          console.log(`[auto-migrate] Done: ${result.totalCreated} created, ${result.totalSkipped} skipped, ${result.totalErrors} errors, ${result.renamed.length} projects renamed`);
-        } catch (e) {
-          console.error('[auto-migrate] Migration failed:', e.message);
-          console.error('[auto-migrate] Server continues with empty HZL DB. Run migrate-tasks.js manually.');
+    // Auto-migrate: if any tasks.json files exist, migrate them (idempotent per-task)
+    const projectsDir = path.join(WORKSPACE, 'projects');
+    const hasTasksJson = fs.readdirSync(projectsDir).some(name =>
+      fs.existsSync(path.join(projectsDir, name, 'tasks.json'))
+    );
+    if (hasTasksJson) {
+      console.log('[auto-migrate] Found tasks.json files — migrating...');
+      try {
+        const { autoMigrate } = require('./migrate-tasks');
+        const result = await autoMigrate(hzlService, HZL_DB_PATH);
+        console.log(`[auto-migrate] Done: ${result.totalCreated} created, ${result.totalSkipped} skipped, ${result.totalErrors} errors, ${result.renamed.length} projects renamed`);
+        // Rebuild RAM cache to pick up patched created dates
+        if (result.totalCreated > 0) {
+          await hzlService.rebuildCache();
+          console.log('[auto-migrate] RAM cache rebuilt with corrected dates.');
         }
+      } catch (e) {
+        console.error('[auto-migrate] Migration failed:', e.message);
+        console.error('[auto-migrate] Server continues with current HZL state. Run migrate-tasks.js manually.');
       }
     }
   }
