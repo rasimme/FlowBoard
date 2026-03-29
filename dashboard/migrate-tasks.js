@@ -104,8 +104,11 @@ async function initCore(dbPath) {
  * Finds the ULID by querying the cache DB for the given project+flowboardId,
  * then emits a TaskUpdated event with the corrected metadata.
  */
+/**
+ * @returns {boolean} true on success, false on failure
+ */
 function patchCreatedDate(project, flowboardId, originalCreated) {
-  if (!originalCreated || !_coreDb) return;
+  if (!originalCreated || !_coreDb) return false;
 
   // Find the task in the cache DB
   let row;
@@ -121,20 +124,20 @@ function patchCreatedDate(project, flowboardId, originalCreated) {
     });
   } catch (e) {
     console.warn(`  [warn] patchCreatedDate query failed for ${flowboardId}: ${e.message}`);
-    return;
+    return false;
   }
 
   if (!row) {
     console.warn(`  [warn] patchCreatedDate: task ${flowboardId} not found in cache`);
-    return;
+    return false;
   }
 
   let meta;
   try {
     meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
-  } catch { return; }
+  } catch { return false; }
 
-  if (meta?.flowboard?.created === originalCreated) return; // already correct
+  if (meta?.flowboard?.created === originalCreated) return true; // already correct
 
   const newMeta = { ...meta, flowboard: { ...meta.flowboard, created: originalCreated } };
   try {
@@ -144,8 +147,10 @@ function patchCreatedDate(project, flowboardId, originalCreated) {
       data: { field: 'metadata', old_value: meta, new_value: newMeta },
     });
     _coreProjEngine.applyEvent(event);
+    return true;
   } catch (e) {
     console.warn(`  [warn] patchCreatedDate event failed for ${flowboardId}: ${e.message}`);
+    return false;
   }
 }
 
@@ -210,7 +215,10 @@ async function migrateProject(hzl, projectName) {
 
       // Preserve original created date (createTask always uses today)
       if (task.created && task.created !== created.created) {
-        patchCreatedDate(projectName, task.id, task.created);
+        const patched = patchCreatedDate(projectName, task.id, task.created);
+        if (!patched) {
+          stats.errors.push(`${task.id}: failed to patch created date (original: ${task.created})`);
+        }
       }
 
       // Preserve completed date
