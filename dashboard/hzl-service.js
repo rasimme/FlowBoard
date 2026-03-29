@@ -6,6 +6,9 @@ const fs = require('fs');
 // --- Module-level state (set during init, never before) ---
 let _taskService = null;
 let _projectService = null;
+let _eventStore = null;
+let _projectionEngine = null;
+let _EventType = null; // EventType enum from hzl-core (loaded dynamically)
 
 // RAM cache: flowboardId (string like "T-042") → full FlowBoard task object
 const _cache = new Map();
@@ -129,11 +132,31 @@ function _saveSpecsIndex(project, index) {
   _specsIndex.set(project, index);
 }
 
+// --- Metadata update helper ---
+// hzl-core's updateTask() does not emit events for metadata field changes.
+// The projection (TasksCurrentProjector) DOES support it via SAFE_COLUMNS + JSON_FIELDS.
+// We emit the TaskUpdated event directly to work around this gap.
+function _updateMetadata(ulid, newMetadata) {
+  if (!_eventStore || !_projectionEngine || !_EventType) {
+    throw new Error('[hzl-service] Not initialized — call init() first');
+  }
+  const current = _taskService.getTaskById(ulid);
+  if (!current) throw new Error(`[hzl-service] Task not found: ${ulid}`);
+  const oldMeta = current.metadata || {};
+  const event = _eventStore.append({
+    task_id: ulid,
+    type: _EventType.TaskUpdated,
+    data: { field: 'metadata', old_value: oldMeta, new_value: newMetadata },
+  });
+  _projectionEngine.applyEvent(event);
+}
+
 // --- Init ---
 
 async function init(dbPath) {
   const { createDatastore } = await import('hzl-core/db/datastore.js');
   const { EventStore }       = await import('hzl-core/events/store.js');
+  const { EventType }        = await import('hzl-core/events/types.js');
   const { ProjectionEngine } = await import('hzl-core/projections/engine.js');
   const { TasksCurrentProjector }  = await import('hzl-core/projections/tasks-current.js');
   const { DependenciesProjector }  = await import('hzl-core/projections/dependencies.js');
@@ -154,15 +177,16 @@ async function init(dbPath) {
     cache:  { path: cacheDbPath },
   });
 
-  const eventStore       = new EventStore(datastore.eventsDb);
-  const projectionEngine = new ProjectionEngine(datastore.cacheDb, datastore.eventsDb);
-  projectionEngine.register(new TasksCurrentProjector());
-  projectionEngine.register(new DependenciesProjector());
-  projectionEngine.register(new TagsProjector());
-  projectionEngine.register(new ProjectsProjector());
+  _eventStore       = new EventStore(datastore.eventsDb);
+  _projectionEngine = new ProjectionEngine(datastore.cacheDb, datastore.eventsDb);
+  _projectionEngine.register(new TasksCurrentProjector());
+  _projectionEngine.register(new DependenciesProjector());
+  _projectionEngine.register(new TagsProjector());
+  _projectionEngine.register(new ProjectsProjector());
+  _EventType = EventType;
 
-  _projectService = new ProjectService(datastore.cacheDb, eventStore, projectionEngine);
-  _taskService    = new TaskService(datastore.cacheDb, eventStore, projectionEngine, _projectService, datastore.eventsDb);
+  _projectService = new ProjectService(datastore.cacheDb, _eventStore, _projectionEngine);
+  _taskService    = new TaskService(datastore.cacheDb, _eventStore, _projectionEngine, _projectService, datastore.eventsDb);
 
   await rebuildCache();
 
@@ -281,9 +305,12 @@ function listTasks(project, opts = {}) {
 /**
  * Get a single task by FlowBoard ID.
  */
-function getTask(project, flowboardId) {
+function getTask(project, flowboardId, opts = {}) {
   const task = _cache.get(`${project}:${flowboardId}`);
-  return task ? _publicTask(task) : null;
+  if (!task) return null;
+  // Archived tasks are kept in cache for ID-reuse prevention but hidden by default
+  if (!opts.includeArchived && task.status === 'archived') return null;
+  return _publicTask(task);
 }
 
 function _publicTask(t) {
@@ -402,10 +429,13 @@ function updateTask(project, flowboardId, updates) {
     metaUpdates.flowboard.completed = updates.completed;
   }
 
-  hzlUpdates.metadata = metaUpdates;
+  // Write scalar updates (title, priority, etc.) via updateTask — metadata handled separately
+  if (Object.keys(hzlUpdates).length > 0) {
+    _taskService.updateTask(ulid, hzlUpdates);
+  }
 
-  // Write metadata + scalar updates
-  _taskService.updateTask(ulid, hzlUpdates);
+  // Write metadata via direct event emission (hzl-core updateTask ignores metadata)
+  _updateMetadata(ulid, metaUpdates);
 
   // Update HZL native status via changeStatus (separate call required)
   if (updates.status !== undefined) {
@@ -447,11 +477,17 @@ function deleteTask(project, flowboardId, mode) {
       for (const subId of [...cached.subtaskIds]) {
         const subUlid = _fbToUlid.get(`${project}:${subId}`);
         if (subUlid) {
-          try { _taskService.archiveTask(subUlid); } catch (e) { console.warn(e); }
+          // Update metadata before archiving so status persists across restarts
+          try {
+            const subFull = _taskService.getTaskById(subUlid);
+            const subMeta = { ...(subFull?.metadata || {}), flowboard: { ...(subFull?.metadata?.flowboard || {}), status: 'archived' } };
+            _updateMetadata(subUlid, subMeta);
+            _taskService.archiveTask(subUlid);
+          } catch (e) { console.warn(e); }
           _ulidToFb.delete(subUlid); // Fix #5: clean up reverse map
         }
         _cache.delete(`${project}:${subId}`);
-        _fbToUlid.delete(`${project}:${subId}`);
+        // Note: _fbToUlid entry kept intentionally — _nextTaskId scans it to prevent ID reuse
       }
     } else if (mode === 'keep-children') {
       // Fix #2: use orphanSubtasks instead of manual reparenting (parent_id: null is rejected by hzl-core)
@@ -472,10 +508,15 @@ function deleteTask(project, flowboardId, mode) {
     }
   }
 
-  // Archive the task itself
+  // Update metadata before archiving so status persists across restarts
+  try {
+    const currentFull = _taskService.getTaskById(ulid);
+    const archiveMeta = { ...(currentFull?.metadata || {}), flowboard: { ...(currentFull?.metadata?.flowboard || {}), status: 'archived' } };
+    _updateMetadata(ulid, archiveMeta);
+  } catch (e) { console.warn('[hzl-service] metadata update before archive:', e.message); }
   try { _taskService.archiveTask(ulid); } catch (e) { console.warn('[hzl-service] archiveTask:', e.message); }
   _cache.delete(`${project}:${flowboardId}`);
-  _fbToUlid.delete(`${project}:${flowboardId}`);
+  // Note: _fbToUlid entry kept intentionally — _nextTaskId scans it to prevent ID reuse
   _ulidToFb.delete(ulid); // Fix #5: clean up reverse map
 
   return { ok: true };
