@@ -25,17 +25,24 @@ const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || '';
 
 // Auth config (from env vars — never hardcoded)
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_BOT_TOKENS = [
+  BOT_TOKEN,
+  ...(process.env.TELEGRAM_BOT_TOKENS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+].filter(Boolean);
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
 const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
-const AUTH_ENABLED = !!(BOT_TOKEN && JWT_SECRET && ALLOWED_USER_IDS.length);
+const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
 
 // --- Auth helpers ---
 
 function validateTelegramWebApp(initData) {
-  if (!initData || !BOT_TOKEN) return null;
+  if (!initData || !TELEGRAM_BOT_TOKENS.length) return null;
   const params = new URLSearchParams(initData);
   const hash = params.get('hash');
   if (!hash) return null;
@@ -45,9 +52,14 @@ function validateTelegramWebApp(initData) {
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${v}`).join('\n');
-  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
-  const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-  if (checkHash !== hash) return null;
+
+  const isValid = TELEGRAM_BOT_TOKENS.some((token) => {
+    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+    const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+    return checkHash === hash;
+  });
+
+  if (!isValid) return null;
   const user = JSON.parse(params.get('user') || 'null');
   if (!user || !ALLOWED_USER_IDS.includes(user.id)) return null;
   return user;
