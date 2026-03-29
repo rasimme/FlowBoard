@@ -486,6 +486,110 @@ async function run() {
     'Counts include all expected status keys');
 
   // ============================================================
+  console.log('\n═══ PHASE 18: keep-children + restart ═══');
+  // ============================================================
+
+  // Create parent with subtasks, delete with keep-children, restart, verify children have parentId=null
+  const keepParent = hzl.createTask(PROJECT, { title: 'Parent for keep-children test' });
+  const keepChild1 = hzl.createTask(PROJECT, { title: 'Keep child 1', parentId: keepParent.id });
+  const keepChild2 = hzl.createTask(PROJECT, { title: 'Keep child 2', parentId: keepParent.id });
+  hzl.deleteTask(PROJECT, keepParent.id, 'keep-children');
+  // Verify immediately
+  const orphan1 = hzl.getTask(PROJECT, keepChild1.id);
+  const orphan2 = hzl.getTask(PROJECT, keepChild2.id);
+  assert(orphan1 !== null, 'keep-children: child 1 still exists');
+  assertEqual(orphan1.parentId, null, 'keep-children: child 1 parentId=null immediately');
+  assert(orphan2 !== null, 'keep-children: child 2 still exists');
+  assertEqual(orphan2.parentId, null, 'keep-children: child 2 parentId=null immediately');
+  // Restart and verify
+  await hzl.init(DB_PATH);
+  const orphan1Post = hzl.getTask(PROJECT, keepChild1.id);
+  const orphan2Post = hzl.getTask(PROJECT, keepChild2.id);
+  assert(orphan1Post !== null, 'keep-children restart: child 1 still exists after restart');
+  assertEqual(orphan1Post.parentId, null, 'keep-children restart: child 1 parentId=null after restart');
+  assert(orphan2Post !== null, 'keep-children restart: child 2 still exists after restart');
+  assertEqual(orphan2Post.parentId, null, 'keep-children restart: child 2 parentId=null after restart');
+  // Verify children appear in top-level list (no parentId)
+  const topLevel18 = hzl.listTasks(PROJECT).filter(t => !t.parentId);
+  assert(topLevel18.some(t => t.id === keepChild1.id), 'keep-children restart: child 1 in top-level list');
+  assert(topLevel18.some(t => t.id === keepChild2.id), 'keep-children restart: child 2 in top-level list');
+
+  // ============================================================
+  console.log('\n═══ PHASE 19: Invalid Status Rejection ═══');
+  // ============================================================
+
+  let yoloThrew = false;
+  try { hzl.updateTask(PROJECT, 'T-001', { status: 'yolo' }); } catch (e) { yoloThrew = true; }
+  assert(yoloThrew, 'updateTask with status "yolo" throws');
+
+  let invalidCreateThrew = false;
+  try { hzl.createTask(PROJECT, { title: 'Bad status task', status: 'notareal' }); } catch (e) { invalidCreateThrew = true; }
+  assert(invalidCreateThrew, 'createTask with invalid status throws');
+
+  // Valid statuses must not throw
+  let validThrew = false;
+  try { hzl.updateTask(PROJECT, 'T-001', { status: 'in-progress' }); } catch (e) { validThrew = true; }
+  assert(!validThrew, 'updateTask with valid status "in-progress" does not throw');
+
+  // ============================================================
+  console.log('\n═══ PHASE 20: Duplicate Detection with Archived Tasks ═══');
+  // ============================================================
+
+  // Create T-dup-001, delete (archive) it, verify next task skips it
+  const dupProj = 'dup-test-project';
+  const dup1 = hzl.createTask(dupProj, { title: 'Dup test task 1' });
+  assertEqual(dup1.id, 'T-001', 'dup project: first task is T-001');
+  hzl.deleteTask(dupProj, dup1.id);
+  // Next task must NOT reuse T-001
+  const dup2 = hzl.createTask(dupProj, { title: 'Dup test task 2' });
+  assertEqual(dup2.id, 'T-002', 'After archiving T-001, next task is T-002 not T-001');
+  // Restart and verify no ID collision
+  await hzl.init(DB_PATH);
+  const dup3 = hzl.createTask(dupProj, { title: 'After restart dup test' });
+  assert(dup3.id !== 'T-001', 'After restart, new task does not reuse archived T-001');
+  assert(dup3.id !== 'T-002', 'After restart, new task does not reuse active T-002');
+  assertEqual(dup3.id, 'T-003', 'After restart with archived T-001 and active T-002, next is T-003');
+
+  // ============================================================
+  console.log('\n═══ PHASE 21: Parent Validation ═══');
+  // ============================================================
+
+  // createTask with non-existent parentId must throw
+  let badParentThrew = false;
+  try { hzl.createTask(PROJECT, { title: 'Bad parent', parentId: 'T-999' }); } catch (e) { badParentThrew = true; }
+  assert(badParentThrew, 'createTask with non-existent parentId throws');
+
+  // Subtask of subtask must throw (max 1 nesting level)
+  // T-002-3 exists (created in Phase 15), so T-002-3 is a subtask
+  const deepNestThrew = (() => {
+    try { hzl.createTask(PROJECT, { title: 'Deep nest', parentId: 'T-002-3' }); return false; } catch { return true; }
+  })();
+  assert(deepNestThrew, 'createTask with subtask as parent throws (max 1 nesting level)');
+
+  // ============================================================
+  console.log('\n═══ PHASE 22: Status Validation on Create ═══');
+  // ============================================================
+
+  // All valid statuses must work
+  for (const st of ['open', 'in-progress', 'backlog', 'blocked']) {
+    let threw = false;
+    let created;
+    try { created = hzl.createTask(PROJECT, { title: `Valid status ${st}`, status: st }); } catch (e) { threw = true; }
+    assert(!threw, `createTask with valid status "${st}" does not throw`);
+    if (created) {
+      assertEqual(created.status, st, `createTask status "${st}" reflected in returned task`);
+      hzl.deleteTask(PROJECT, created.id);
+    }
+  }
+
+  // Invalid statuses must throw
+  for (const bad of ['yolo', 'OPEN', 'pending', '']) {
+    let threw = false;
+    try { hzl.createTask(PROJECT, { title: 'Invalid', status: bad }); } catch { threw = true; }
+    assert(threw, `createTask with invalid status "${bad}" throws`);
+  }
+
+  // ============================================================
   console.log('\n═══ RESULTS ═══');
   // ============================================================
   console.log(`\n  ${passed} passed, ${failed} failed, ${passed + failed} total\n`);

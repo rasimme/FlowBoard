@@ -46,11 +46,7 @@ const HZL_TO_FB = {
   'archived':    'archived',
 };
 
-function _fbStatus(hzlTask) {
-  return hzlTask.metadata?.flowboard?.status
-    || HZL_TO_FB[hzlTask.status]
-    || 'open';
-}
+const VALID_STATUSES = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'blocked', 'archived']);
 
 // --- Convert a raw HZL task to FlowBoard format ---
 function _toFbTask(hzlTask, project) {
@@ -211,9 +207,22 @@ async function rebuildCache() {
     byProject.get(t.project).push(t);
   }
 
-  // Check for duplicate flowboard.id values per project — hard fail
+  // Load archived task IDs for duplicate detection (before building active cache)
+  let archivedForDupCheck = [];
+  try {
+    archivedForDupCheck = _taskService.db.prepare(
+      "SELECT task_id, project, metadata FROM tasks_current WHERE status = 'archived'"
+    ).all().map(row => {
+      try {
+        const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
+        return { task_id: row.task_id, project: row.project, metadata: meta };
+      } catch { return null; }
+    }).filter(Boolean);
+  } catch (e) { console.warn('[hzl-service] archived dup-check query:', e.message); }
+
+  // Check for duplicate flowboard.id values per project over ALL tasks (active + archived) — hard fail
   const seen = new Map();
-  for (const t of allTasks) {
+  for (const t of [...allTasks, ...archivedForDupCheck]) {
     const fbId = t.metadata?.flowboard?.id;
     if (!fbId) continue;
     const scopedKey = `${t.project}:${fbId}`;
@@ -326,6 +335,16 @@ function _publicTask(t) {
  */
 function createTask(project, opts) {
   const { title, priority = 'medium', parentId = null, status = 'open' } = opts;
+  if (!VALID_STATUSES.has(status)) throw new Error(`Invalid status: "${status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
+
+  // Validate parent if provided
+  if (parentId) {
+    const parentUlid = _fbToUlid.get(`${project}:${parentId}`);
+    if (!parentUlid) throw new Error(`Parent task not found: ${parentId}`);
+    // Enforce max 1 nesting level — parent must not itself be a subtask
+    const parentCached = _cache.get(`${project}:${parentId}`);
+    if (parentCached && parentCached.parentId) throw new Error(`Cannot create subtask of subtask (max 1 nesting level): ${parentId} is already a subtask`);
+  }
 
   // Generate next FlowBoard ID
   let newId;
@@ -361,9 +380,9 @@ function createTask(project, opts) {
     tags: [],
   });
 
-  // If HZL created with a different status, force it
+  // If HZL created with a different status, force it — throw on failure to avoid inconsistent state
   if (hzlTask.status !== hzlStatus) {
-    try { _taskService.setStatus(hzlTask.task_id, hzlStatus); } catch (e) { console.warn('[hzl-service] changeStatus on create:', e.message); }
+    _taskService.setStatus(hzlTask.task_id, hzlStatus);
   }
 
   // Build FB task and add to cache
@@ -414,6 +433,7 @@ function updateTask(project, flowboardId, updates) {
   if (updates.priority !== undefined) hzlUpdates.priority = _priorityToInt(updates.priority);
 
   if (updates.status !== undefined) {
+    if (!VALID_STATUSES.has(updates.status)) throw new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
     metaUpdates.flowboard.status = updates.status;
     if (updates.status === 'done') {
       const completedDate = updates.completed || new Date().toISOString().slice(0, 10);
@@ -434,18 +454,14 @@ function updateTask(project, flowboardId, updates) {
     _taskService.updateTask(ulid, hzlUpdates);
   }
 
-  // Write metadata via direct event emission (hzl-core updateTask ignores metadata)
-  _updateMetadata(ulid, metaUpdates);
-
-  // Update HZL native status via changeStatus (separate call required)
+  // Update HZL native status FIRST — if this fails, metadata is NOT written
   if (updates.status !== undefined) {
     const targetHzlStatus = FB_TO_HZL[updates.status] || 'ready';
-    try {
-      _taskService.setStatus(ulid, targetHzlStatus);
-    } catch (e) {
-      console.warn(`[hzl-service] changeStatus(${ulid}, ${targetHzlStatus}) failed:`, e.message);
-    }
+    _taskService.setStatus(ulid, targetHzlStatus);
   }
+
+  // Write metadata via direct event emission (hzl-core updateTask ignores metadata)
+  _updateMetadata(ulid, metaUpdates);
 
   // Update cache
   const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed'];
@@ -490,10 +506,19 @@ function deleteTask(project, flowboardId, mode) {
         // Note: _fbToUlid entry kept intentionally — _nextTaskId scans it to prevent ID reuse
       }
     } else if (mode === 'keep-children') {
-      // Fix #2: use orphanSubtasks instead of manual reparenting (parent_id: null is rejected by hzl-core)
       try { _taskService.orphanSubtasks(ulid); } catch (e) { console.warn('[hzl-service] orphanSubtasks:', e.message); }
-      // Update RAM cache for each child
+      // Update metadata + RAM cache for each child so parentId=null survives restart
       for (const subId of cached.subtaskIds) {
+        const subUlid = _fbToUlid.get(`${project}:${subId}`);
+        if (subUlid) {
+          try {
+            const subFull = _taskService.getTaskById(subUlid);
+            if (subFull) {
+              const subMeta = { ...(subFull.metadata || {}), flowboard: { ...(subFull.metadata?.flowboard || {}), parentId: null } };
+              _updateMetadata(subUlid, subMeta);
+            }
+          } catch (e) { console.warn('[hzl-service] orphan metadata update:', e.message); }
+        }
         const subCached = _cache.get(`${project}:${subId}`);
         if (subCached) subCached.parentId = null;
       }
@@ -514,10 +539,11 @@ function deleteTask(project, flowboardId, mode) {
     const archiveMeta = { ...(currentFull?.metadata || {}), flowboard: { ...(currentFull?.metadata?.flowboard || {}), status: 'archived' } };
     _updateMetadata(ulid, archiveMeta);
   } catch (e) { console.warn('[hzl-service] metadata update before archive:', e.message); }
-  try { _taskService.archiveTask(ulid); } catch (e) { console.warn('[hzl-service] archiveTask:', e.message); }
+  // If archiveTask throws, do NOT touch cache/maps — task is still in DB
+  _taskService.archiveTask(ulid);
   _cache.delete(`${project}:${flowboardId}`);
   // Note: _fbToUlid entry kept intentionally — _nextTaskId scans it to prevent ID reuse
-  _ulidToFb.delete(ulid); // Fix #5: clean up reverse map
+  _ulidToFb.delete(ulid);
 
   return { ok: true };
 }
@@ -654,8 +680,10 @@ function recalcParentStatus(project, parentId) {
   } else if (!allDone && parent.status === 'review') {
     newStatus = 'in-progress';
   } else if (!anyStarted && (parent.status === 'in-progress' || parent.status === 'review')) {
-    // Demotion: all subtasks back to open/backlog → parent reverts to open
-    newStatus = 'open';
+    // Demotion: all subtasks back to open/backlog
+    // If all subtasks are backlog (none open), parent reverts to backlog; otherwise open
+    const allSubtasksBacklog = subtasks.every(t => t.status === 'backlog');
+    newStatus = allSubtasksBacklog ? 'backlog' : 'open';
   }
 
   if (newStatus !== parent.status) {

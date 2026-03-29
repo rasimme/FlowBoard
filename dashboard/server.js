@@ -719,6 +719,13 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       }
     }
 
+    if (hzlUpdates.status !== undefined) {
+      const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'blocked', 'archived']);
+      if (!VALID.has(hzlUpdates.status)) {
+        return res.status(400).json({ error: `Invalid status: "${hzlUpdates.status}"` });
+      }
+    }
+
     try {
       const updatedTask = hzlService.updateTask(req.params.name, req.params.id, hzlUpdates);
 
@@ -836,28 +843,37 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
       });
     }
 
+    // Collect spec info before deletion (task will disappear from cache after delete)
     const idsToDeleteSpecs = task.subtaskIds && req.query.mode === 'all'
       ? [task.id, ...task.subtaskIds]
       : [task.id];
+    const specsToClean = [];
     for (const id of idsToDeleteSpecs) {
       const t = hzlService.getTask(req.params.name, id);
-      if (t && t.specFile) {
+      if (t && t.specFile) specsToClean.push({ id, specFile: t.specFile });
+      else specsToClean.push({ id, specFile: null });
+    }
+
+    try {
+      hzlService.deleteTask(req.params.name, req.params.id, req.query.mode);
+    } catch (err) {
+      if (err.subtaskCount) return res.status(400).json({ error: err.message, subtaskCount: err.subtaskCount });
+      return res.status(500).json({ error: err.message });
+    }
+
+    // Delete spec files/links only after successful task deletion
+    for (const { id, specFile } of specsToClean) {
+      if (specFile) {
         try {
-          const specPath = path.join(PROJECTS_DIR, req.params.name, t.specFile);
+          const specPath = path.join(PROJECTS_DIR, req.params.name, specFile);
           if (fs.existsSync(specPath)) fs.unlinkSync(specPath);
         } catch (e) { console.warn('[delete-spec]', e); }
       }
       hzlService.setSpecLink(req.params.name, id, null);
     }
 
-    try {
-      hzlService.deleteTask(req.params.name, req.params.id, req.query.mode);
-      syncDashboardData(req.params.name);
-      return res.json({ ok: true });
-    } catch (err) {
-      if (err.subtaskCount) return res.status(400).json({ error: err.message, subtaskCount: err.subtaskCount });
-      return res.status(500).json({ error: err.message });
-    }
+    syncDashboardData(req.params.name);
+    return res.json({ ok: true });
   }
 
   const data = readTasksFile(req.params.name);
