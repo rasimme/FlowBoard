@@ -334,7 +334,7 @@ function _publicTask(t) {
  * Returns FlowBoard-format task.
  */
 function createTask(project, opts) {
-  const { title, priority = 'medium', parentId = null, status = 'open' } = opts;
+  const { title, priority = 'medium', parentId = null, status = 'open', forceId = null } = opts;
   if (!VALID_STATUSES.has(status)) throw new Error(`Invalid status: "${status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
 
   // Validate parent if provided
@@ -346,9 +346,13 @@ function createTask(project, opts) {
     if (parentCached && parentCached.parentId) throw new Error(`Cannot create subtask of subtask (max 1 nesting level): ${parentId} is already a subtask`);
   }
 
-  // Generate next FlowBoard ID
+  // Generate or force FlowBoard ID
   let newId;
-  if (parentId) {
+  if (forceId) {
+    // Migration mode: use exact ID, check for duplicates
+    if (_fbToUlid.has(`${project}:${forceId}`)) throw new Error(`Duplicate forceId: ${forceId}`);
+    newId = forceId;
+  } else if (parentId) {
     newId = _nextSubtaskId(project, parentId);
   } else {
     newId = _nextTaskId(project);
@@ -704,6 +708,9 @@ function ensureProject(projectName) {
   }
 }
 
+/** Returns total number of tasks in RAM cache (all projects, incl. archived). */
+function getCacheSize() { return _cache.size; }
+
 module.exports = {
   init,
   rebuildCache,
@@ -718,4 +725,5 @@ module.exports = {
   getSpecsIndex,
   recalcParentStatus,
   ensureProject,
+  getCacheSize,
 };

@@ -45,11 +45,16 @@ function parentOf(id) {
   return id.replace(/-\d+$/, '');
 }
 
-/** Sort key: T-042 → 42000, T-042-3 → 42003 (parents always before their subtasks) */
+/** Sort key: parents before subtasks, numeric order within each level.
+ *  T-042 → 42000, T-042-3 → 42003, T-007-H1 → 7001 (alpha suffix → sequential) */
 function sortKey(id) {
+  // Standard: T-042 or T-042-3
   const m = id.match(/^T-(\d+)(?:-(\d+))?$/);
-  if (!m) return 0;
-  return parseInt(m[1], 10) * 10000 + (m[2] ? parseInt(m[2], 10) : 0);
+  if (m) return parseInt(m[1], 10) * 10000 + (m[2] ? parseInt(m[2], 10) : 0);
+  // Custom subtask: T-007-H1 → parent 7, sub-index from trailing digits
+  const m2 = id.match(/^T-(\d+)-[A-Za-z]+(\d+)$/);
+  if (m2) return parseInt(m2[1], 10) * 10000 + parseInt(m2[2], 10);
+  return 0;
 }
 
 function readTasksJson(projectName) {
@@ -156,7 +161,10 @@ async function migrateProject(hzl, projectName) {
 
   const stats = { created: 0, skipped: 0, errors: [] };
 
-  if (DRY_RUN) {
+  // Dry-run when called from CLI without --execute, or when no hzl service passed
+  const isDryRun = !hzl;
+
+  if (isDryRun) {
     for (const task of sorted) {
       const sub = isSubtask(task.id);
       console.log(
@@ -182,21 +190,23 @@ async function migrateProject(hzl, projectName) {
     }
 
     try {
-      const parentId = isSubtask(task.id) ? parentOf(task.id) : null;
-      const status   = task.status   || 'open';
+      // Use explicit parentId from tasks.json, fall back to ID pattern detection
+      const parentId = task.parentId || (isSubtask(task.id) ? parentOf(task.id) : null);
+      const rawStatus = task.status || 'open';
+      // Map legacy statuses to valid HZL statuses
+      const STATUS_MAP = { 'icebox': 'backlog' };
+      const status   = STATUS_MAP[rawStatus] || rawStatus;
       const priority = task.priority || 'medium';
 
+      // hzl-core has a 128-char title limit; truncate with ellipsis
+      const title = task.title.length > 128 ? task.title.slice(0, 125) + '...' : task.title;
       const created = hzl.createTask(projectName, {
-        title:    task.title,
+        title,
         priority,
         parentId,
         status,
+        forceId: task.id,
       });
-
-      // Verify assigned ID matches expected
-      if (created.id !== task.id) {
-        throw new Error(`ID mismatch: expected ${task.id}, got ${created.id} — aborting project`);
-      }
 
       // Preserve original created date (createTask always uses today)
       if (task.created && task.created !== created.created) {
@@ -300,7 +310,67 @@ async function main() {
   if (totalErrors > 0) process.exit(1);
 }
 
-main().catch(e => {
-  console.error('Fatal:', e.message);
-  process.exit(1);
-});
+// --- Exports for auto-migration from server.js ---
+/**
+ * Auto-migrate all projects that have tasks.json.
+ * Expects hzl-service already initialized.
+ * Returns { totalCreated, totalSkipped, totalErrors, renamed: [...] }
+ */
+async function autoMigrate(hzlSvc, dbPath) {
+  await initCore(dbPath);
+  const projectsDir = path.join(
+    process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..'),
+    'projects'
+  );
+  const projects = fs.readdirSync(projectsDir)
+    .filter(name => {
+      const p = path.join(projectsDir, name);
+      return fs.statSync(p).isDirectory() &&
+             fs.existsSync(path.join(p, 'tasks.json'));
+    })
+    .sort();
+
+  let totalCreated = 0, totalSkipped = 0, totalErrors = 0;
+  const renamed = [];
+
+  for (const projectName of projects) {
+    try {
+      // Temporarily override DRY_RUN context — migrateProject uses the hzl arg
+      const stats = await migrateProject(hzlSvc, projectName);
+      if (!stats) continue;
+      totalCreated += stats.created;
+      totalSkipped += stats.skipped;
+      totalErrors  += stats.errors.length;
+
+      if (stats.errors.length === 0 && stats.created > 0) {
+        // Rename tasks.json → tasks.json.migrated
+        const src = path.join(projectsDir, projectName, 'tasks.json');
+        const dst = src + '.migrated';
+        fs.renameSync(src, dst);
+        renamed.push(projectName);
+        console.log(`  [auto-migrate] ${projectName}: ${stats.created} tasks migrated, tasks.json renamed`);
+      } else if (stats.skipped > 0 && stats.created === 0) {
+        // All tasks already exist — rename anyway (idempotent re-run)
+        const src = path.join(projectsDir, projectName, 'tasks.json');
+        const dst = src + '.migrated';
+        fs.renameSync(src, dst);
+        renamed.push(projectName);
+        console.log(`  [auto-migrate] ${projectName}: all ${stats.skipped} tasks already in HZL, tasks.json renamed`);
+      }
+    } catch (e) {
+      console.error(`  [auto-migrate] ${projectName} FAILED: ${e.message}`);
+      totalErrors++;
+    }
+  }
+  return { totalCreated, totalSkipped, totalErrors, renamed };
+}
+
+module.exports = { autoMigrate, migrateProject, initCore };
+
+// --- CLI entry point ---
+if (require.main === module) {
+  main().catch(e => {
+    console.error('Fatal:', e.message);
+    process.exit(1);
+  });
+}
