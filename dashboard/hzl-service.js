@@ -187,15 +187,16 @@ async function rebuildCache() {
     byProject.get(t.project).push(t);
   }
 
-  // Check for duplicate flowboard.id values — hard fail
+  // Check for duplicate flowboard.id values per project — hard fail
   const seen = new Map();
   for (const t of allTasks) {
     const fbId = t.metadata?.flowboard?.id;
     if (!fbId) continue;
-    if (seen.has(fbId)) {
-      throw new Error(`[hzl-service] DUPLICATE flowboard.id detected: ${fbId} on ULIDs ${seen.get(fbId)} and ${t.task_id}`);
+    const scopedKey = `${t.project}:${fbId}`;
+    if (seen.has(scopedKey)) {
+      throw new Error(`[hzl-service] DUPLICATE flowboard.id detected: ${fbId} in project ${t.project} on ULIDs ${seen.get(scopedKey)} and ${t.task_id}`);
     }
-    seen.set(fbId, t.task_id);
+    seen.set(scopedKey, t.task_id);
   }
 
   // Build raw FB tasks per project
@@ -214,8 +215,8 @@ async function rebuildCache() {
       const fbTask = _toFbTask(fullTask, project);
       if (!fbTask) continue;
 
-      _fbToUlid.set(fbTask.id, fullTask.task_id);
-      _ulidToFb.set(fullTask.task_id, fbTask.id);
+      _fbToUlid.set(`${project}:${fbTask.id}`, fullTask.task_id);
+      _ulidToFb.set(fullTask.task_id, `${project}:${fbTask.id}`);
       fbTasks.push(fbTask);
     }
 
@@ -231,6 +232,31 @@ async function rebuildCache() {
     }
 
     fbByProject.set(project, fbTasks);
+  }
+
+  // Fix #3: Load archived tasks into ID maps + cache to prevent ID reuse after restart
+  const archivedRows = _taskService.db.prepare(
+    "SELECT * FROM tasks_current WHERE status = 'archived'"
+  ).all();
+  for (const row of archivedRows) {
+    let hzlTask;
+    try { hzlTask = _taskService.rowToTask(row); } catch { continue; }
+    if (!hzlTask) continue;
+    const fbId = hzlTask.metadata?.flowboard?.id;
+    if (!fbId) continue;
+    const proj = hzlTask.project;
+    const mapKey = `${proj}:${fbId}`;
+    if (_fbToUlid.has(mapKey)) continue; // active version already loaded
+    _fbToUlid.set(mapKey, hzlTask.task_id);
+    _ulidToFb.set(hzlTask.task_id, mapKey);
+    // Build and store in cache (for includeArchived support)
+    if (!_specsIndex.has(proj)) _loadSpecsIndex(proj);
+    const fbTask = _toFbTask(hzlTask, proj);
+    if (fbTask) {
+      const specsIdx = _specsIndex.get(proj) || {};
+      fbTask.specFile = specsIdx[fbId] || null;
+      _cache.set(mapKey, fbTask);
+    }
   }
 
   return fbByProject;
@@ -303,7 +329,7 @@ function createTask(project, opts) {
       }
     },
     priority: _priorityToInt(priority),
-    ...(parentId && _fbToUlid.get(parentId) ? { parent_id: _fbToUlid.get(parentId) } : {}),
+    ...(parentId && _fbToUlid.get(`${project}:${parentId}`) ? { parent_id: _fbToUlid.get(`${project}:${parentId}`) } : {}),
     initial_status: hzlStatus,
     tags: [],
   });
@@ -328,8 +354,8 @@ function createTask(project, opts) {
     _project: project,
   };
 
-  _fbToUlid.set(newId, hzlTask.task_id);
-  _ulidToFb.set(hzlTask.task_id, newId);
+  _fbToUlid.set(`${project}:${newId}`, hzlTask.task_id);
+  _ulidToFb.set(hzlTask.task_id, `${project}:${newId}`);
   _cache.set(`${project}:${newId}`, fbTask);
 
   // If subtask: add to parent's subtaskIds in cache
@@ -348,7 +374,7 @@ function createTask(project, opts) {
  * Handles dual status sync: both HZL native + metadata.flowboard.status.
  */
 function updateTask(project, flowboardId, updates) {
-  const ulid = _fbToUlid.get(flowboardId);
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found in ID map: ${flowboardId}`);
 
   const cached = _cache.get(`${project}:${flowboardId}`);
@@ -407,7 +433,7 @@ function updateTask(project, flowboardId, updates) {
  * mode: 'all' | 'keep-children' | undefined (simple task)
  */
 function deleteTask(project, flowboardId, mode) {
-  const ulid = _fbToUlid.get(flowboardId);
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
 
   const cached = _cache.get(`${project}:${flowboardId}`);
@@ -419,28 +445,21 @@ function deleteTask(project, flowboardId, mode) {
     if (mode === 'all') {
       // Delete all subtasks first
       for (const subId of [...cached.subtaskIds]) {
-        const subUlid = _fbToUlid.get(subId);
+        const subUlid = _fbToUlid.get(`${project}:${subId}`);
         if (subUlid) {
           try { _taskService.archiveTask(subUlid); } catch (e) { console.warn(e); }
+          _ulidToFb.delete(subUlid); // Fix #5: clean up reverse map
         }
         _cache.delete(`${project}:${subId}`);
-        _fbToUlid.delete(subId);
+        _fbToUlid.delete(`${project}:${subId}`);
       }
     } else if (mode === 'keep-children') {
-      // Reparent subtasks: clear their parentId
+      // Fix #2: use orphanSubtasks instead of manual reparenting (parent_id: null is rejected by hzl-core)
+      try { _taskService.orphanSubtasks(ulid); } catch (e) { console.warn('[hzl-service] orphanSubtasks:', e.message); }
+      // Update RAM cache for each child
       for (const subId of cached.subtaskIds) {
         const subCached = _cache.get(`${project}:${subId}`);
-        if (subCached) {
-          subCached.parentId = null;
-          const subUlid = _fbToUlid.get(subId);
-          if (subUlid) {
-            try {
-              const subFull = _taskService.getTaskById(subUlid);
-              const meta = { flowboard: { ...(subFull?.metadata?.flowboard || {}), parentId: null } };
-              _taskService.updateTask(subUlid, { metadata: meta, parent_id: null });
-            } catch (e) { console.warn('[hzl-service] reparent:', e.message); }
-          }
-        }
+        if (subCached) subCached.parentId = null;
       }
     } else {
       throw new Error('Invalid mode. Use "all" or "keep-children"');
@@ -456,7 +475,8 @@ function deleteTask(project, flowboardId, mode) {
   // Archive the task itself
   try { _taskService.archiveTask(ulid); } catch (e) { console.warn('[hzl-service] archiveTask:', e.message); }
   _cache.delete(`${project}:${flowboardId}`);
-  _fbToUlid.delete(flowboardId);
+  _fbToUlid.delete(`${project}:${flowboardId}`);
+  _ulidToFb.delete(ulid); // Fix #5: clean up reverse map
 
   return { ok: true };
 }
@@ -509,9 +529,12 @@ function _nextTaskId(project) {
     const m = id.match(/^T-(\d+)$/);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
-  // Also scan _fbToUlid for archived IDs in this project (check cache key existence)
-  for (const fbId of _fbToUlid.keys()) {
-    if (_cache.has(`${project}:${fbId}`)) continue; // already counted above
+  // Also scan _fbToUlid for IDs in this project not yet in cache
+  const prefix = `${project}:`;
+  for (const key of _fbToUlid.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const fbId = key.slice(prefix.length);
+    if (_cache.has(key)) continue; // already counted above
     const m = fbId.match(/^T-(\d+)$/);
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
