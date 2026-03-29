@@ -1473,6 +1473,26 @@ async function startServer() {
     console.log('[hzl-service] HZL_ENABLED=true, initializing...');
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
+
+    // Auto-migrate: if tasks.json files exist and HZL cache is empty, migrate them
+    const cacheSize = hzlService.getCacheSize ? hzlService.getCacheSize() : 0;
+    if (cacheSize === 0) {
+      const projectsDir = path.join(WORKSPACE, 'projects');
+      const hasTasksJson = fs.readdirSync(projectsDir).some(name =>
+        fs.existsSync(path.join(projectsDir, name, 'tasks.json'))
+      );
+      if (hasTasksJson) {
+        console.log('[auto-migrate] Fresh HZL DB detected with tasks.json files — migrating...');
+        try {
+          const { autoMigrate } = require('./migrate-tasks');
+          const result = await autoMigrate(hzlService, HZL_DB_PATH);
+          console.log(`[auto-migrate] Done: ${result.totalCreated} created, ${result.totalSkipped} skipped, ${result.totalErrors} errors, ${result.renamed.length} projects renamed`);
+        } catch (e) {
+          console.error('[auto-migrate] Migration failed:', e.message);
+          console.error('[auto-migrate] Server continues with empty HZL DB. Run migrate-tasks.js manually.');
+        }
+      }
+    }
   }
   app.listen(PORT, HOST, () => {
     console.log(`Dashboard API running on http://${HOST}:${PORT}`);
