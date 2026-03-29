@@ -586,14 +586,22 @@ function _nextTaskId(project) {
  * Generate next subtask ID (T-042-1, T-042-2, etc.)
  */
 function _nextSubtaskId(project, parentId) {
-  const parent = _cache.get(`${project}:${parentId}`);
-  const existingSubtaskIds = parent?.subtaskIds || [];
-  const nums = existingSubtaskIds.map(id => {
-    const parts = id.split('-');
-    return parseInt(parts[parts.length - 1], 10);
-  }).filter(n => !isNaN(n));
-  const next = nums.length ? Math.max(...nums) + 1 : 1;
-  return `${parentId}-${next}`;
+  // Scan both cache (live) and _fbToUlid (includes archived/deleted) to prevent ID reuse
+  const prefix = `${project}:${parentId}-`;
+  let maxNum = 0;
+  for (const key of _cache.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const suffix = key.slice(prefix.length);
+    const n = parseInt(suffix, 10);
+    if (!isNaN(n) && n > maxNum) maxNum = n;
+  }
+  for (const key of _fbToUlid.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const suffix = key.slice(prefix.length);
+    const n = parseInt(suffix, 10);
+    if (!isNaN(n) && n > maxNum) maxNum = n;
+  }
+  return `${parentId}-${maxNum + 1}`;
 }
 
 /**
@@ -645,6 +653,9 @@ function recalcParentStatus(project, parentId) {
     newStatus = 'in-progress';
   } else if (!allDone && parent.status === 'review') {
     newStatus = 'in-progress';
+  } else if (!anyStarted && (parent.status === 'in-progress' || parent.status === 'review')) {
+    // Demotion: all subtasks back to open/backlog → parent reverts to open
+    newStatus = 'open';
   }
 
   if (newStatus !== parent.status) {

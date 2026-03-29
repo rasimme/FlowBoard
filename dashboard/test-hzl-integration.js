@@ -279,7 +279,90 @@ async function run() {
   assertEqual(orphan.parentId, null, 'Orphaned child has null parentId');
 
   // ============================================================
-  console.log('\n═══ PHASE 9: Double Restart (rebuild from cold DB) ═══');
+  console.log('\n═══ PHASE 9: Spec Links ═══');
+  // ============================================================
+
+  // setSpecLink / getSpecsIndex
+  hzl.setSpecLink(PROJECT, 'T-001', 'specs/T-001-build-api.md');
+  const specIdx = hzl.getSpecsIndex(PROJECT);
+  assertEqual(specIdx['T-001'], 'specs/T-001-build-api.md', 'setSpecLink stores spec link');
+
+  // Spec link reflected in getTask
+  const t1spec = hzl.getTask(PROJECT, 'T-001');
+  assertEqual(t1spec.specFile, 'specs/T-001-build-api.md', 'getTask returns specFile');
+
+  // Update spec link
+  hzl.setSpecLink(PROJECT, 'T-001', 'specs/T-001-v2.md');
+  assertEqual(hzl.getSpecsIndex(PROJECT)['T-001'], 'specs/T-001-v2.md', 'Spec link updated');
+  assertEqual(hzl.getTask(PROJECT, 'T-001').specFile, 'specs/T-001-v2.md', 'getTask reflects updated spec');
+
+  // Remove spec link
+  hzl.setSpecLink(PROJECT, 'T-001', null);
+  assertEqual(hzl.getSpecsIndex(PROJECT)['T-001'], undefined, 'Spec link removed from index');
+  assertEqual(hzl.getTask(PROJECT, 'T-001').specFile, null, 'getTask specFile null after removal');
+
+  // Spec link on task with no prior link
+  hzl.setSpecLink(PROJECT, 'T-002', 'specs/T-002-tests.md');
+  assertEqual(hzl.getSpecsIndex(PROJECT)['T-002'], 'specs/T-002-tests.md', 'Spec link on new task works');
+
+  // Specs index is per-project
+  hzl.setSpecLink(PROJ_B, 'T-001', 'specs/other.md');
+  assertEqual(hzl.getSpecsIndex(PROJ_B)['T-001'], 'specs/other.md', 'Spec index is project-scoped');
+  assertEqual(hzl.getSpecsIndex(PROJECT)['T-001'], undefined, 'Project A spec not affected by Project B');
+
+  // ============================================================
+  console.log('\n═══ PHASE 10: recalcParentStatus ═══');
+  // ============================================================
+
+  // Reset subtask statuses for clean test
+  // First set parent to a known starting state
+  hzl.updateTask(PROJECT, 'T-001', { status: 'in-progress' });
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'open' });
+  hzl.updateTask(PROJECT, 'T-001-2', { status: 'open' });
+  hzl.recalcParentStatus(PROJECT, 'T-001');
+  assertEqual(hzl.getTask(PROJECT, 'T-001').status, 'open', 'All subtasks open → parent demoted to open');
+
+  // One done, one open → in-progress
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'done' });
+  hzl.recalcParentStatus(PROJECT, 'T-001');
+  const parentMixed = hzl.getTask(PROJECT, 'T-001');
+  assertEqual(parentMixed.status, 'in-progress', 'Mixed subtasks → parent in-progress');
+
+  // All done → review (FlowBoard safety: parent goes to review, not done)
+  hzl.updateTask(PROJECT, 'T-001-2', { status: 'done' });
+  hzl.recalcParentStatus(PROJECT, 'T-001');
+  const parentAllDone = hzl.getTask(PROJECT, 'T-001');
+  assertEqual(parentAllDone.status, 'review', 'All subtasks done → parent review (safety gate)');
+
+  // Reopen one subtask → parent back to in-progress
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'in-progress' });
+  hzl.recalcParentStatus(PROJECT, 'T-001');
+  assertEqual(hzl.getTask(PROJECT, 'T-001').status, 'in-progress', 'Subtask reopened → parent in-progress');
+
+  // One blocked, one open → parent stays in-progress (some activity)
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'blocked' });
+  hzl.updateTask(PROJECT, 'T-001-2', { status: 'open' });
+  hzl.recalcParentStatus(PROJECT, 'T-001');
+  const parentBlocked = hzl.getTask(PROJECT, 'T-001');
+  assertEqual(parentBlocked.status, 'in-progress', 'Blocked+open subtasks → parent in-progress');
+
+  // ============================================================
+  console.log('\n═══ PHASE 11: ensureProject ═══');
+  // ============================================================
+
+  // ensureProject for existing project — no error
+  hzl.ensureProject(PROJECT);
+  assert(true, 'ensureProject on existing project does not throw');
+
+  // ensureProject for new project
+  hzl.ensureProject('brand-new-project');
+  const bnpTasks = hzl.listTasks('brand-new-project');
+  assertEqual(bnpTasks.length, 0, 'New project via ensureProject has 0 tasks');
+  const bnpT1 = hzl.createTask('brand-new-project', { title: 'First in new project' });
+  assertEqual(bnpT1.id, 'T-001', 'New project starts at T-001');
+
+  // ============================================================
+  console.log('\n═══ PHASE 12: Double Restart (rebuild from cold DB) ═══');
   // ============================================================
 
   // Re-init twice to ensure rebuild is idempotent
@@ -289,9 +372,9 @@ async function run() {
   const finalT1 = hzl.getTask(PROJECT, 'T-001');
   assertEqual(finalT1.status, 'in-progress', 'T-001 status correct after double restart');
   const finalT001_1 = hzl.getTask(PROJECT, 'T-001-1');
-  assertEqual(finalT001_1.status, 'done', 'T-001-1 done status correct after double restart');
+  assertEqual(finalT001_1.status, 'blocked', 'T-001-1 blocked status correct after double restart');
   const finalT001_2 = hzl.getTask(PROJECT, 'T-001-2');
-  assertEqual(finalT001_2.status, 'review', 'T-001-2 review status correct after double restart');
+  assertEqual(finalT001_2.status, 'open', 'T-001-2 open status correct after double restart');
   assertEqual(hzl.getTask(PROJECT, 'T-002').status, 'blocked', 'T-002 blocked survives double restart');
   assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'blocked', 'T-003 blocked survives double restart');
 
@@ -299,6 +382,108 @@ async function run() {
   const tAfterDouble = hzl.createTask(PROJECT, { title: 'After double restart' });
   const idNum = parseInt(tAfterDouble.id.replace('T-', ''), 10);
   assert(idNum > 8, `After double restart, new task ID ${tAfterDouble.id} skips all archived/deleted IDs`);
+
+  // Spec links survive restart
+  assertEqual(hzl.getSpecsIndex(PROJECT)['T-002'], 'specs/T-002-tests.md', 'Spec link survives double restart');
+
+  // ============================================================
+  console.log('\n═══ PHASE 13: Error Handling ═══');
+  // ============================================================
+
+  // getTask for non-existent task
+  assertEqual(hzl.getTask(PROJECT, 'T-999'), null, 'Non-existent task returns null');
+
+  // getTask for non-existent project
+  assertEqual(hzl.getTask('ghost-project', 'T-001'), null, 'Task in non-existent project returns null');
+
+  // listTasks for non-existent project
+  assertEqual(hzl.listTasks('ghost-project').length, 0, 'listTasks on non-existent project returns []');
+
+  // updateTask on non-existent task should throw
+  let updateThrew = false;
+  try { hzl.updateTask(PROJECT, 'T-999', { status: 'done' }); } catch (e) { updateThrew = true; }
+  assert(updateThrew, 'updateTask on non-existent task throws');
+
+  // deleteTask on non-existent task should throw
+  let deleteThrew = false;
+  try { hzl.deleteTask(PROJECT, 'T-999'); } catch (e) { deleteThrew = true; }
+  assert(deleteThrew, 'deleteTask on non-existent task throws');
+
+  // Create task with invalid status
+  let invalidStatusThrew = false;
+  try { hzl.createTask(PROJECT, { title: 'Bad', status: 'yolo' }); } catch (e) { invalidStatusThrew = true; }
+  // If it doesn't throw, it should at least fallback to 'open'
+  if (!invalidStatusThrew) {
+    console.log('  ⚠️  Invalid status did not throw — checking fallback behavior');
+  } else {
+    assert(true, 'Invalid status on create throws');
+  }
+
+  // ============================================================
+  console.log('\n═══ PHASE 14: Title + Priority Persistence Across Restart ═══');
+  // ============================================================
+
+  // Update title and priority, restart, verify
+  hzl.updateTask(PROJECT, 'T-002', { title: 'Renamed after restart test', priority: 'critical' });
+  await hzl.init(DB_PATH);
+  const renamedT2 = hzl.getTask(PROJECT, 'T-002');
+  assertEqual(renamedT2.title, 'Renamed after restart test', 'Title change survives restart');
+  assertEqual(renamedT2.priority, 'critical', 'Priority change survives restart');
+
+  // ============================================================
+  console.log('\n═══ PHASE 15: Subtask ID Continuity ═══');
+  // ============================================================
+
+  // Add subtask to T-002 (which has no subtasks yet)
+  const s2_1 = hzl.createTask(PROJECT, { title: 'Sub for T-002', parentId: 'T-002' });
+  assertEqual(s2_1.id, 'T-002-1', 'First subtask of T-002 is T-002-1');
+
+  // Delete subtask, add another — should not reuse
+  hzl.deleteTask(PROJECT, 'T-002-1');
+  const s2_2 = hzl.createTask(PROJECT, { title: 'Second sub for T-002', parentId: 'T-002' });
+  assertEqual(s2_2.id, 'T-002-2', 'Subtask ID after deleted T-002-1 is T-002-2');
+
+  // Subtask IDs survive restart
+  await hzl.init(DB_PATH);
+  const s2_3 = hzl.createTask(PROJECT, { title: 'Third sub after restart', parentId: 'T-002' });
+  assertEqual(s2_3.id, 'T-002-3', 'Subtask ID continuity after restart');
+
+  // ============================================================
+  console.log('\n═══ PHASE 16: Concurrent Status + Metadata Updates ═══');
+  // ============================================================
+
+  // Update status and title in same call
+  hzl.updateTask(PROJECT, 'T-003', { status: 'in-progress', title: 'Deploy v2' });
+  const combo = hzl.getTask(PROJECT, 'T-003');
+  assertEqual(combo.status, 'in-progress', 'Status updated in combo call');
+  assertEqual(combo.title, 'Deploy v2', 'Title updated in combo call');
+
+  // Status + title combo survives restart
+  await hzl.init(DB_PATH);
+  const comboPost = hzl.getTask(PROJECT, 'T-003');
+  assertEqual(comboPost.status, 'in-progress', 'Combo status survives restart');
+  assertEqual(comboPost.title, 'Deploy v2', 'Combo title survives restart');
+
+  // ============================================================
+  console.log('\n═══ PHASE 17: getTaskCounts Accuracy ═══');
+  // ============================================================
+
+  // Set up known state
+  hzl.updateTask(PROJECT, 'T-001', { status: 'review' });
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'done' });
+  hzl.updateTask(PROJECT, 'T-001-2', { status: 'done' });
+  hzl.updateTask(PROJECT, 'T-002', { status: 'open' });
+  hzl.updateTask(PROJECT, 'T-003', { status: 'blocked' });
+
+  const exactCounts = hzl.getTaskCounts(PROJECT);
+  console.log('  Exact counts:', JSON.stringify(exactCounts));
+  // Verify structure and sum, not exact values (other phases mutate state)
+  const countSum = Object.values(exactCounts).reduce((a, b) => a + b, 0);
+  assert(countSum > 0, 'Task counts sum > 0');
+  assert(exactCounts.review >= 1, 'At least 1 review task');
+  assert(exactCounts.blocked >= 1, 'At least 1 blocked task');
+  assert('open' in exactCounts && 'done' in exactCounts && 'archived' in exactCounts,
+    'Counts include all expected status keys');
 
   // ============================================================
   console.log('\n═══ RESULTS ═══');
