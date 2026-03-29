@@ -19,6 +19,10 @@ const BOOTSTRAP_FILE = path.join(WORKSPACE, 'BOOTSTRAP.md');
 const DASHBOARD_DATA_FILE = path.join(__dirname, 'dashboard-data.json');
 const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 
+const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
+const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
+const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
+
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
 const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || '';
@@ -387,11 +391,17 @@ function writeTasksFile(projectName, data) {
 
 function syncDashboardData(projectName) {
   const active = readActiveProject();
-  const data = readTasksFile(projectName);
+  let tasks;
+  if (HZL_ENABLED) {
+    tasks = hzlService.listTasks(projectName);
+  } else {
+    const data = readTasksFile(projectName);
+    tasks = data ? data.tasks : [];
+  }
   const out = {
     project: projectName,
     active: active === projectName,
-    tasks: data ? data.tasks : []
+    tasks
   };
   fs.writeFileSync(DASHBOARD_DATA_FILE, JSON.stringify(out, null, 2));
 }
@@ -438,6 +448,7 @@ function parseIndexMd() {
 }
 
 function getTaskCounts(projectName) {
+  if (HZL_ENABLED) return hzlService.getTaskCounts(projectName);
   const data = readTasksFile(projectName);
   const counts = { open: 0, 'in-progress': 0, review: 0, done: 0 };
   if (data && data.tasks) {
@@ -540,10 +551,20 @@ app.get('/api/projects', (req, res) => {
 
 // GET /api/projects/:name/tasks
 app.get('/api/projects/:name/tasks', (req, res) => {
-  const data = readTasksFile(req.params.name);
-  if (!data) return res.status(404).json({ error: 'Project not found' });
-  const result = enrichTasks(req.params.name, data.tasks);
-  const response = { ...data, tasks: result };
+  let tasks, responseBase;
+  if (HZL_ENABLED) {
+    const projectDir = path.join(PROJECTS_DIR, req.params.name);
+    if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+    tasks = hzlService.listTasks(req.params.name);
+    responseBase = {};
+  } else {
+    const data = readTasksFile(req.params.name);
+    if (!data) return res.status(404).json({ error: 'Project not found' });
+    tasks = data.tasks;
+    responseBase = data;
+  }
+  const result = enrichTasks(req.params.name, tasks);
+  const response = { ...responseBase, tasks: result };
 
   // Task status nudge
   try {
@@ -569,6 +590,43 @@ app.get('/api/projects/:name/tasks', (req, res) => {
 
 // POST /api/projects/:name/tasks
 app.post('/api/projects/:name/tasks', (req, res) => {
+  if (HZL_ENABLED) {
+    const projectDir = path.join(PROJECTS_DIR, req.params.name);
+    if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+    const { title, priority, parentId } = req.body;
+    if (!title) return res.status(400).json({ error: 'Title required' });
+
+    if (parentId) {
+      const parent = hzlService.getTask(req.params.name, parentId);
+      if (!parent) return res.status(400).json({ error: 'Parent task not found' });
+      if (parent.parentId) return res.status(400).json({ error: 'Cannot nest subtasks (max 1 level)' });
+    }
+
+    let effectivePriority = priority || 'medium';
+    if (parentId) {
+      const parent = hzlService.getTask(req.params.name, parentId);
+      if (parent) effectivePriority = parent.priority;
+    }
+
+    try {
+      const task = hzlService.createTask(req.params.name, {
+        title,
+        priority: effectivePriority,
+        parentId: parentId || null,
+        status: 'open',
+      });
+      syncDashboardData(req.params.name);
+      const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
+      try {
+        const r = getTaskReminder(task, 'create');
+        if (r) response.reminder = r;
+      } catch (e) { console.warn('[reminder]', e); }
+      return res.json(response);
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
   const { title, priority, parentId } = req.body;
@@ -621,6 +679,79 @@ app.post('/api/projects/:name/tasks', (req, res) => {
 
 // PUT /api/projects/:name/tasks/:id
 app.put('/api/projects/:name/tasks/:id', (req, res) => {
+  if (HZL_ENABLED) {
+    const task = hzlService.getTask(req.params.name, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const updates = req.body;
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'specFile')) {
+      const nextSpec = updates.specFile;
+      if (nextSpec !== null) {
+        if (typeof nextSpec !== 'string' || !nextSpec.trim()) {
+          return res.status(400).json({ error: 'specFile must be a non-empty string or null' });
+        }
+        const resolvedSpec = path.resolve(PROJECTS_DIR, req.params.name, nextSpec);
+        const projectRoot = path.resolve(PROJECTS_DIR, req.params.name) + path.sep;
+        if (!resolvedSpec.startsWith(projectRoot)) {
+          return res.status(400).json({ error: 'specFile path traversal not allowed' });
+        }
+        if (!fs.existsSync(resolvedSpec) || fs.statSync(resolvedSpec).isDirectory()) {
+          return res.status(400).json({ error: `specFile target not found: ${nextSpec}` });
+        }
+      }
+      hzlService.setSpecLink(req.params.name, req.params.id, nextSpec);
+    }
+
+    const prevStatus = task.status;
+
+    if (updates.status === 'done' && task.status !== 'done') {
+      updates.completed = new Date().toISOString().slice(0, 10);
+    }
+    if (updates.status && updates.status !== 'done' && task.status === 'done') {
+      updates.completed = null;
+    }
+
+    const ALLOWED = ['title', 'status', 'priority', 'completed'];
+    const hzlUpdates = {};
+    for (const key of ALLOWED) {
+      if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        hzlUpdates[key] = updates[key];
+      }
+    }
+
+    try {
+      const updatedTask = hzlService.updateTask(req.params.name, req.params.id, hzlUpdates);
+
+      if (updates.priority && updatedTask.subtaskIds && updatedTask.subtaskIds.length > 0) {
+        for (const subId of updatedTask.subtaskIds) {
+          try { hzlService.updateTask(req.params.name, subId, { priority: updates.priority }); } catch (e) { console.warn('[priority-cascade]', e); }
+        }
+      }
+
+      let parentUpdated = null;
+      if (updatedTask.parentId && updates.status && updates.status !== prevStatus) {
+        try {
+          parentUpdated = hzlService.recalcParentStatus(req.params.name, updatedTask.parentId);
+          if (parentUpdated) {
+            const allTasks = hzlService.listTasks(req.params.name);
+            parentUpdated.progress = getSubtaskProgress(allTasks, updatedTask.parentId);
+          }
+        } catch (e) { console.warn('[recalcParent]', e); }
+      }
+
+      syncDashboardData(req.params.name);
+      const response = { ok: true, task: taskWithSpecStatus(req.params.name, updatedTask) };
+      if (parentUpdated) response.parentUpdated = parentUpdated;
+      try {
+        const r = getTaskReminder(updatedTask, 'status-change', updates.status, prevStatus);
+        if (r) response.reminder = r;
+      } catch (e) { console.warn('[reminder]', e); }
+      return res.json(response);
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
   const task = data.tasks.find(t => t.id === req.params.id);
@@ -694,6 +825,41 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 
 // DELETE /api/projects/:name/tasks/:id
 app.delete('/api/projects/:name/tasks/:id', (req, res) => {
+  if (HZL_ENABLED) {
+    const task = hzlService.getTask(req.params.name, req.params.id);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+
+    if (task.subtaskIds && task.subtaskIds.length > 0 && !req.query.mode) {
+      return res.status(400).json({
+        error: 'Task has subtasks',
+        subtaskCount: task.subtaskIds.length
+      });
+    }
+
+    const idsToDeleteSpecs = task.subtaskIds && req.query.mode === 'all'
+      ? [task.id, ...task.subtaskIds]
+      : [task.id];
+    for (const id of idsToDeleteSpecs) {
+      const t = hzlService.getTask(req.params.name, id);
+      if (t && t.specFile) {
+        try {
+          const specPath = path.join(PROJECTS_DIR, req.params.name, t.specFile);
+          if (fs.existsSync(specPath)) fs.unlinkSync(specPath);
+        } catch (e) { console.warn('[delete-spec]', e); }
+      }
+      hzlService.setSpecLink(req.params.name, id, null);
+    }
+
+    try {
+      hzlService.deleteTask(req.params.name, req.params.id, req.query.mode);
+      syncDashboardData(req.params.name);
+      return res.json({ ok: true });
+    } catch (err) {
+      if (err.subtaskCount) return res.status(400).json({ error: err.message, subtaskCount: err.subtaskCount });
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   const data = readTasksFile(req.params.name);
   if (!data) return res.status(404).json({ error: 'Project not found' });
   const task = data.tasks.find(t => t.id === req.params.id);
@@ -953,15 +1119,21 @@ app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
   try {
     fs.unlinkSync(resolved);
 
-    // If it was a spec file, clean up the specFile link in tasks.json
-    if (filePath.startsWith('specs/')) {
-      const tasksFile = path.join(projectDir, 'tasks.json');
-      if (fs.existsSync(tasksFile)) {
-        const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
-        const task = tasksData.tasks.find(t => t.specFile === filePath);
-        if (task) {
-          task.specFile = null;
-          fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
+    // If it was a spec file, clean up the specFile link
+    if (filePath.startsWith('specs/') && filePath !== 'specs/_index.json') {
+      if (HZL_ENABLED) {
+        const index = hzlService.getSpecsIndex(req.params.name);
+        const taskId = Object.keys(index).find(id => index[id] === filePath);
+        if (taskId) hzlService.setSpecLink(req.params.name, taskId, null);
+      } else {
+        const tasksFile = path.join(projectDir, 'tasks.json');
+        if (fs.existsSync(tasksFile)) {
+          const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+          const task = tasksData.tasks.find(t => t.specFile === filePath);
+          if (task) {
+            task.specFile = null;
+            fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
+          }
         }
       }
     }
@@ -978,18 +1150,26 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
 
   const taskId = req.params.taskId;
-  const tasksFile = path.join(projectDir, 'tasks.json');
-  if (!fs.existsSync(tasksFile)) return res.status(404).json({ error: 'tasks.json not found' });
 
-  const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
-  const task = tasksData.tasks.find(t => t.id === taskId);
-  if (!task) return res.status(404).json({ error: `Task ${taskId} not found` });
+  // Get task (from HZL or tasks.json)
+  let task;
+  if (HZL_ENABLED) {
+    task = hzlService.getTask(req.params.name, taskId);
+    if (!task) return res.status(404).json({ error: `Task ${taskId} not found` });
+  } else {
+    const tasksFile = path.join(projectDir, 'tasks.json');
+    if (!fs.existsSync(tasksFile)) return res.status(404).json({ error: 'tasks.json not found' });
+    const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+    task = tasksData.tasks.find(t => t.id === taskId);
+    if (!task) return res.status(404).json({ error: `Task ${taskId} not found` });
+  }
+
   if (task.specFile) {
     const existingSpec = path.join(projectDir, task.specFile);
     if (fs.existsSync(existingSpec) && !fs.statSync(existingSpec).isDirectory()) {
       return res.status(409).json({ error: 'Task already has a spec file', specFile: task.specFile });
     }
-    // stale link: allow recreation and relink to a fresh spec file
+    // stale link — allow recreation
   }
 
   // Generate slug from title
@@ -1015,11 +1195,20 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
 
   fs.writeFileSync(specPath, template);
 
-  // Link spec to task
-  task.specFile = `specs/${specFilename}`;
-  fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
+  const specFileRelPath = `specs/${specFilename}`;
 
-  res.json({ ok: true, specFile: task.specFile, taskId, task: taskWithSpecStatus(req.params.name, task) });
+  if (HZL_ENABLED) {
+    hzlService.setSpecLink(req.params.name, taskId, specFileRelPath);
+    const updatedTask = hzlService.getTask(req.params.name, taskId);
+    return res.json({ ok: true, specFile: specFileRelPath, taskId, task: taskWithSpecStatus(req.params.name, updatedTask) });
+  } else {
+    const tasksFile = path.join(projectDir, 'tasks.json');
+    const tasksData = JSON.parse(fs.readFileSync(tasksFile, 'utf8'));
+    const legacyTask = tasksData.tasks.find(t => t.id === taskId);
+    legacyTask.specFile = specFileRelPath;
+    fs.writeFileSync(tasksFile, JSON.stringify(tasksData, null, 2));
+    return res.json({ ok: true, specFile: specFileRelPath, taskId, task: taskWithSpecStatus(req.params.name, legacyTask) });
+  }
 });
 
 
@@ -1180,8 +1369,12 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
   }
   // Verify project exists
   const projectName = req.params.name;
-  const tasksData = readTasksFile(projectName);
-  if (!tasksData) return res.status(404).json({ error: 'Project not found' });
+  if (HZL_ENABLED) {
+    if (!fs.existsSync(path.join(PROJECTS_DIR, projectName))) return res.status(404).json({ error: 'Project not found' });
+  } else {
+    const tasksData = readTasksFile(projectName);
+    if (!tasksData) return res.status(404).json({ error: 'Project not found' });
+  }
 
   // Format structured message for agent
   const noteLines = notes
@@ -1259,6 +1452,17 @@ Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
 
 // (batch delete route is above the :id route to prevent Express param capture)
 
-app.listen(PORT, HOST, () => {
-  console.log(`Dashboard API running on http://${HOST}:${PORT}`);
+async function startServer() {
+  if (HZL_ENABLED) {
+    console.log('[hzl-service] HZL_ENABLED=true, initializing...');
+    await hzlService.init(HZL_DB_PATH);
+    console.log('[hzl-service] Ready.');
+  }
+  app.listen(PORT, HOST, () => {
+    console.log(`Dashboard API running on http://${HOST}:${PORT}`);
+  });
+}
+startServer().catch(err => {
+  console.error('Startup failed:', err);
+  process.exit(1);
 });

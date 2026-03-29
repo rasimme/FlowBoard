@@ -285,6 +285,11 @@ function createTask(project, opts) {
   const hzlStatus = FB_TO_HZL[status] || 'ready';
   const created = new Date().toISOString().slice(0, 10);
 
+  // Ensure project exists in HZL (lazy creation on first task)
+  if (!_projectService.projectExists(project)) {
+    try { _projectService.createProject(project); } catch (e) { console.warn('[hzl-service] createProject:', e.message); }
+  }
+
   const hzlTask = _taskService.createTask({
     title,
     project,
@@ -298,14 +303,14 @@ function createTask(project, opts) {
       }
     },
     priority: _priorityToInt(priority),
-    parent_id: parentId ? (_fbToUlid.get(parentId) || null) : null,
+    ...(parentId && _fbToUlid.get(parentId) ? { parent_id: _fbToUlid.get(parentId) } : {}),
     initial_status: hzlStatus,
     tags: [],
   });
 
   // If HZL created with a different status, force it
   if (hzlTask.status !== hzlStatus) {
-    try { _taskService.changeStatus(hzlTask.task_id, hzlStatus); } catch (e) { console.warn('[hzl-service] changeStatus on create:', e.message); }
+    try { _taskService.setStatus(hzlTask.task_id, hzlStatus); } catch (e) { console.warn('[hzl-service] changeStatus on create:', e.message); }
   }
 
   // Build FB task and add to cache
@@ -358,9 +363,12 @@ function updateTask(project, flowboardId, updates) {
   if (updates.status !== undefined) {
     metaUpdates.flowboard.status = updates.status;
     if (updates.status === 'done') {
-      metaUpdates.flowboard.completed = updates.completed || new Date().toISOString().slice(0, 10);
-    } else if (updates.completed === null) {
+      const completedDate = updates.completed || new Date().toISOString().slice(0, 10);
+      metaUpdates.flowboard.completed = completedDate;
+      updates.completed = completedDate; // ensure cache gets updated below
+    } else if (updates.status !== 'done' && cached.status === 'done') {
       metaUpdates.flowboard.completed = null;
+      updates.completed = null; // ensure cache gets updated below
     }
   }
 
@@ -377,7 +385,7 @@ function updateTask(project, flowboardId, updates) {
   if (updates.status !== undefined) {
     const targetHzlStatus = FB_TO_HZL[updates.status] || 'ready';
     try {
-      _taskService.changeStatus(ulid, targetHzlStatus);
+      _taskService.setStatus(ulid, targetHzlStatus);
     } catch (e) {
       console.warn(`[hzl-service] changeStatus(${ulid}, ${targetHzlStatus}) failed:`, e.message);
     }
