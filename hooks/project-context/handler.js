@@ -7,15 +7,29 @@
  * On gateway:startup: same — ensures BOOTSTRAP.md has current project context.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-function resolveWorkspace() {
-  // Try common workspace locations
-  const candidates = [
-    join(homedir(), ".openclaw", "workspace"),
-  ];
+function resolveWorkspace(event) {
+  // Prefer workspace directory from event context (supports multi-agent workspaces)
+  if (event?.context?.workspaceDir) {
+    const dir = event.context.workspaceDir;
+    if (existsSync(join(dir, "ACTIVE-PROJECT.md"))) return dir;
+  }
+
+  // Fallback: scan common workspace locations
+  const base = join(homedir(), ".openclaw");
+  const candidates = [join(base, "workspace")];
+  try {
+    // Also check workspace-* directories (multi-agent setups)
+    const entries = readdirSync(base, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory() && e.name.startsWith("workspace-")) {
+        candidates.push(join(base, e.name));
+      }
+    }
+  } catch {}
   for (const dir of candidates) {
     if (existsSync(join(dir, "ACTIVE-PROJECT.md"))) return dir;
   }
@@ -158,14 +172,23 @@ function updateBootstrapWithProjectContext(workspaceDir) {
 }
 
 const handler = async (event) => {
-  // Trigger on /new, /reset, and gateway startup
+  // Trigger on /new, /reset, gateway startup, and after compaction
   if (event.type === "command" && (event.action === "new" || event.action === "reset")) {
-    const workspaceDir = event.context?.workspaceDir || resolveWorkspace();
+    const workspaceDir = resolveWorkspace(event);
     updateBootstrapWithProjectContext(workspaceDir);
   }
   
   if (event.type === "gateway" && event.action === "startup") {
-    updateBootstrapWithProjectContext(resolveWorkspace());
+    updateBootstrapWithProjectContext(resolveWorkspace(event));
+  }
+
+  // T-121: Regenerate project context after compaction so rules survive LCM
+  if (event.type === "session" && event.action === "compact:after") {
+    const workspaceDir = resolveWorkspace(event);
+    if (workspaceDir) {
+      console.log("[project-context] Regenerating BOOTSTRAP.md after compaction");
+      updateBootstrapWithProjectContext(workspaceDir);
+    }
   }
 };
 

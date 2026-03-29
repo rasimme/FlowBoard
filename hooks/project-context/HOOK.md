@@ -1,7 +1,7 @@
 ---
 name: project-context
 description: "Auto-injects active project context (PROJECT-RULES.md + PROJECT.md) into bootstrap files"
-metadata: { "openclaw": { "emoji": "📋", "events": ["command:new", "command:reset", "gateway:startup"], "requires": { "config": ["workspace.dir"] } } }
+metadata: { "openclaw": { "emoji": "📋", "events": ["command:new", "command:reset", "gateway:startup", "session:compact:after"], "requires": { "config": ["workspace.dir"] } } }
 ---
 
 # Project Context Hook
