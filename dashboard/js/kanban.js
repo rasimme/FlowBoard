@@ -91,13 +91,7 @@ export function updateBoard(state) {
       counts[t.status]++;
     }
   }
-  // Include archived subtasks in archive section
-  for (const t of allTasks) {
-    if (t.parentId && t.status === 'archived') {
-      archivedCount++;
-      archivedTasks.push(t);
-    }
-  }
+  // Note: archived subtasks are NOT shown individually — they cascade with parent
 
   // Update archive toggle count
   const archiveCountEl = document.getElementById('count-archived');
@@ -207,27 +201,7 @@ export function updateBoard(state) {
           }
         }
 
-        // Render orphaned archived subtasks (parent not archived) — show parent as context header
-        for (const [parentId, subs] of Object.entries(byParent)) {
-          const parent = allTasks.find(t => t.id === parentId);
-          const group = document.createElement('div');
-          group.className = 'archive-group';
-          group.innerHTML = `<div class="archive-parent-header">
-            <span class="task-id mono">${parentId}</span>
-            <span class="task-title" style="color:var(--muted);font-size:12px;margin:0 0 0 6px">${parent ? escHtml(parent.title) : 'Unknown'}</span>
-          </div>`;
-          const container = document.createElement('div');
-          container.className = 'subtask-container archive-group';
-          for (const st of subs) {
-            const el = document.createElement('div');
-            el.className = 'subtask-card is-archived';
-            el.dataset.id = st.id;
-            el.innerHTML = archivedSubtaskInner(st);
-            container.appendChild(el);
-          }
-          group.appendChild(container);
-          body.appendChild(group);
-        }
+        // No orphan rendering needed — subtasks always cascade with parent
       }
     }
 
@@ -437,14 +411,6 @@ function archivedCardInnerHTML(task) {
     <div class="task-meta">
       <span class="priority-pill priority-${task.priority}" style="opacity:0.4">${task.priority}</span>
     </div>`;
-}
-
-function archivedSubtaskInner(task) {
-  return `<span class="tree-dot"></span>
-    <span class="subtask-title" style="color:var(--muted)">${escHtml(task.title)}</span>
-    <span class="subtask-actions">
-      <button class="btn btn-ghost btn-sm restore-btn" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:10px;pointer-events:auto">${ICONS.archiveRestore}</button>
-    </span>`;
 }
 
 function subtaskCardInner(task) {
@@ -703,7 +669,7 @@ const STATUS_OPTIONS = [
   { key: 'in-progress', label: 'In Progress' },
   { key: 'review', label: 'Review' },
   { key: 'done', label: 'Done' },
-  { key: 'archive', label: 'Archive', doneOnly: true }
+  // Archive is not in status popover — only available via archive button on top-level done cards
 ];
 
 export function toggleStatusPopover(e, id, current) {
@@ -714,17 +680,11 @@ export function toggleStatusPopover(e, id, current) {
   const popover = document.createElement('div');
   popover.className = 'status-popover';
   STATUS_OPTIONS.forEach(s => {
-    if (s.doneOnly && current !== 'done') return;
     const opt = document.createElement('span');
     opt.className = `status-option${s.key === current ? ' current' : ''}`;
-    if (s.key === 'archive') {
-      opt.innerHTML = s.label;
-      opt.dataset.action = 'archive-task';
-    } else {
-      opt.innerHTML = `<span class="status-dot status-dot-${s.key}"></span> ${s.label}`;
-      opt.dataset.action = 'set-status';
-      opt.dataset.status = s.key;
-    }
+    opt.innerHTML = `<span class="status-dot status-dot-${s.key}"></span> ${s.label}`;
+    opt.dataset.action = 'set-status';
+    opt.dataset.status = s.key;
     opt.dataset.id = id;
     popover.appendChild(opt);
   });

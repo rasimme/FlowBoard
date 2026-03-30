@@ -133,6 +133,27 @@ function _saveSpecsIndex(project, index) {
 // hzl-core's updateTask() does not emit events for metadata field changes.
 // The projection (TasksCurrentProjector) DOES support it via SAFE_COLUMNS + JSON_FIELDS.
 // We emit the TaskUpdated event directly to work around this gap.
+// Internal helpers for cascading archive/restore on children (no recursion, no validation)
+function _archiveChild(project, cached) {
+  const ulid = _fbToUlid.get(`${project}:${cached.id}`);
+  if (!ulid) return;
+  _taskService.archiveTask(ulid);
+  const meta = { flowboard: { ...(_taskService.getTaskById(ulid)?.metadata?.flowboard || {}), status: 'archived' } };
+  _updateMetadata(ulid, meta);
+  cached.status = 'archived';
+}
+
+function _restoreChild(project, cached) {
+  const ulid = _fbToUlid.get(`${project}:${cached.id}`);
+  if (!ulid) return;
+  // Direct event emission — hzl-core rejects setStatus from archived
+  const event = _eventStore.append({ task_id: ulid, type: 'status_changed', data: { from: 'archived', to: 'done' } });
+  _projectionEngine.applyEvent(event);
+  const meta = { flowboard: { ...(_taskService.getTaskById(ulid)?.metadata?.flowboard || {}), status: 'done' } };
+  _updateMetadata(ulid, meta);
+  cached.status = 'done';
+}
+
 function _updateMetadata(ulid, newMetadata) {
   if (!_eventStore || !_projectionEngine || !_EventType) {
     throw new Error('[hzl-service] Not initialized — call init() first');
@@ -442,41 +463,39 @@ function updateTask(project, flowboardId, updates) {
   if (updates.status !== undefined) {
     if (!VALID_STATUSES.has(updates.status)) throw new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
 
-    // Archive validation: can only archive from done status
+    // Archive validation
     if (updates.status === 'archived') {
+      // Subtasks cannot be archived individually — only via parent
+      if (cached.parentId) throw new Error('Cannot archive subtasks individually. Archive the parent task instead.');
       if (cached.status !== 'done') throw new Error('Can only archive tasks with status "done"');
-      // Parent archival: block if any child is not done/archived
+      // All children must be done (or already archived)
       if (cached.subtaskIds && cached.subtaskIds.length > 0) {
         const children = cached.subtaskIds.map(id => _cache.get(`${project}:${id}`)).filter(Boolean);
         const blocking = children.filter(c => c.status !== 'done' && c.status !== 'archived');
         if (blocking.length > 0) {
-          throw new Error(`Cannot archive: ${blocking.length} subtask(s) not done/archived (${blocking.map(c => c.id).join(', ')})`);
+          throw new Error(`Cannot archive: ${blocking.length} subtask(s) not done (${blocking.map(c => c.id).join(', ')})`);
         }
-        // Auto-archive all done children
+        // Auto-archive all children
         for (const child of children) {
-          if (child.status === 'done') {
-            try { updateTask(project, child.id, { status: 'archived' }); } catch (e) { console.warn('[hzl-service] auto-archive child:', e.message); }
+          if (child.status !== 'archived') {
+            try { _archiveChild(project, child); } catch (e) { console.warn('[hzl-service] auto-archive child:', e.message); }
           }
         }
-        // Clear parent subtaskIds since all children are now archived
         cached.subtaskIds = [];
       }
     }
 
-    // Restore from archived: auto-restore all archived children to done
+    // Restore from archived: auto-restore all children to done
     if (cached.status === 'archived' && updates.status !== 'archived') {
       const restoredChildIds = [];
-      // Find archived children by scanning cache (subtaskIds may be empty for archived parents)
-      const prefix = `${project}:${flowboardId}-`;
       for (const [key, child] of _cache) {
-        if (key.startsWith(prefix) && child.parentId === flowboardId && child.status === 'archived') {
+        if (child._project === project && child.parentId === flowboardId && child.status === 'archived') {
           try {
-            updateTask(project, child.id, { status: 'done' });
+            _restoreChild(project, child);
             restoredChildIds.push(child.id);
           } catch (e) { console.warn('[hzl-service] auto-restore child:', e.message); }
         }
       }
-      // Rebuild parent's subtaskIds (cache may be stale after children were archived)
       if (restoredChildIds.length > 0) {
         cached.subtaskIds = restoredChildIds.sort((a, b) => {
           const na = parseInt(a.split('-').pop(), 10);
