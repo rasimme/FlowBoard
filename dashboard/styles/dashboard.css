@@ -35,10 +35,12 @@
       --duration-slow: 0.35s;
       --ease-out: cubic-bezier(.16, 1, .3, 1);
       --sidebar-width: 220px;
+      --status-backlog: #666;
       --status-open: #888;
       --status-in-progress: #f0c000;
       --status-review: #e07020;
       --status-done: #d04040;
+      --status-blocked: #ef4444;
       --tree-line: #3f3f46;
     }
 
@@ -232,7 +234,7 @@
     }
 
     /* Kanban */
-    .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .kanban { display: grid; grid-template-columns: repeat(5, minmax(240px, 1fr)); gap: 12px; overflow-x: auto; }
 
     .column {
       background: var(--bg-accent); border: 1px solid var(--border);
@@ -252,6 +254,7 @@
       font-weight: 600; color: var(--text);
     }
 
+    .column-header-right { display: flex; align-items: center; gap: 4px; }
     .column-count {
       background: var(--secondary); border-radius: var(--radius-full);
       padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--muted);
@@ -273,6 +276,47 @@
     .task-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
     .task-card.dragging { opacity: 0.4; }
     .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
+    .task-card.is-blocked { border-left: 3px solid var(--status-blocked); }
+    .task-card.is-archived { opacity: 0.5; }
+    .task-card.is-archived .task-title,
+    .task-card.is-archived .priority-pill,
+    .task-card.is-archived .spec-badge,
+    .task-card.is-archived .subtask-add-btn,
+    .task-card.is-archived .delete-btn,
+    .task-card.is-archived .blocked-toggle { pointer-events: none; }
+
+    .blocked-badge {
+      position: absolute; top: 6px; right: 6px;
+      background: rgba(239, 68, 68, 0.15); color: var(--status-blocked);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: var(--radius-sm); padding: 1px 5px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      pointer-events: none;
+    }
+
+    .blocked-toggle {
+      background: none; border: none; cursor: pointer; padding: 2px 4px;
+      color: var(--muted); opacity: 0; border-radius: var(--radius-sm);
+      display: inline-flex; align-items: center; font-size: 13px; line-height: 1;
+      transition: opacity var(--duration-fast), background var(--duration-fast);
+    }
+    .task-card:hover .blocked-toggle { opacity: 0.6; }
+    .task-card:hover .blocked-toggle:hover { opacity: 1; background: rgba(239, 68, 68, 0.12); color: var(--status-blocked); }
+    .task-card.is-blocked .blocked-toggle { opacity: 1; color: var(--status-blocked); }
+
+    .archive-toggle {
+      background: none; border: none; cursor: pointer; padding: 2px 6px;
+      color: var(--muted); border-radius: var(--radius-sm); font-size: 11px;
+      display: inline-flex; align-items: center; gap: 3px;
+      transition: color var(--duration-fast), background var(--duration-fast);
+    }
+    .archive-toggle:hover { color: var(--text); background: rgba(255,255,255,.06); }
+    .archive-toggle.active { color: var(--text); }
+
+    .archive-divider {
+      border: none; border-top: 1px dashed var(--border);
+      margin: 6px 0; opacity: 0.5;
+    }
 
     .task-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
     .task-title {
@@ -558,6 +602,7 @@
     .status-dot-in-progress { background: var(--status-in-progress); }
     .status-dot-open { background: var(--status-open); }
     .status-dot-review { background: var(--status-review); }
+    .status-dot-backlog { background: var(--status-backlog); }
 
     /* Clickable status dot wrapper */
     .status-dot-wrap {
