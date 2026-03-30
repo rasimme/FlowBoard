@@ -74,15 +74,24 @@ function trimSessionLog(content, maxSessions = 2) {
 }
 
 /**
- * Read tasks.json for a project and return a status summary string.
+ * Fetch tasks from FlowBoard API (HZL-backed) and return a status summary string.
+ * Falls back gracefully if the server is unreachable (e.g. during gateway startup).
  * Returns null if no actionable info.
  */
-function getTaskStatusSummary(workspaceDir, projectName) {
-  const tasksPath = join(workspaceDir, "projects", projectName, "tasks.json");
-  if (!existsSync(tasksPath)) return null;
+const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
 
+async function getTaskStatusSummary(projectName) {
   let data;
-  try { data = JSON.parse(readFileSync(tasksPath, "utf8")); } catch { return null; }
+  try {
+    const res = await fetch(`http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    data = await res.json();
+  } catch {
+    console.log("[project-context] FlowBoard API unreachable — skipping task summary");
+    return null;
+  }
   if (!data?.tasks?.length) return null;
 
   const topLevel = data.tasks.filter(t => !t.parentId);
@@ -91,7 +100,6 @@ function getTaskStatusSummary(workspaceDir, projectName) {
   const inProgress = topLevel.filter(t => t.status === "in-progress");
   const review = topLevel.filter(t => t.status === "review");
   const done = topLevel.filter(t => t.status === "done");
-  const archived = topLevel.filter(t => t.status === "archived");
   const blocked = topLevel.filter(t => t.blocked === true);
 
   // Status counts summary line
@@ -107,7 +115,6 @@ function getTaskStatusSummary(workspaceDir, projectName) {
     countParts.push(`Review: ${review.length}${bCount ? ` (${bCount} blocked)` : ""}`);
   }
   if (done.length) countParts.push(`Done: ${done.length}`);
-  if (archived.length) countParts.push(`Archived: ${archived.length}`);
 
   const lines = [];
   if (countParts.length) lines.push(`**Task counts:** ${countParts.join(" | ")}`);
@@ -140,7 +147,7 @@ function getTaskStatusSummary(workspaceDir, projectName) {
   return lines.join("\n");
 }
 
-function updateBootstrapWithProjectContext(workspaceDir) {
+async function updateBootstrapWithProjectContext(workspaceDir) {
   if (!workspaceDir) return;
 
   const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
@@ -185,8 +192,8 @@ function updateBootstrapWithProjectContext(workspaceDir) {
   if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
-  // Add task status summary
-  const taskSummary = getTaskStatusSummary(workspaceDir, projectName);
+  // Add task status summary (fetched from FlowBoard API / HZL backend)
+  const taskSummary = await getTaskStatusSummary(projectName);
   if (taskSummary) {
     sections.push(`## Current Task Status\n\n${taskSummary}\n`);
   }
@@ -203,11 +210,11 @@ const handler = async (event) => {
   // Trigger on /new, /reset, gateway startup, and after compaction
   if (event.type === "command" && (event.action === "new" || event.action === "reset")) {
     const workspaceDir = resolveWorkspace(event);
-    updateBootstrapWithProjectContext(workspaceDir);
+    await updateBootstrapWithProjectContext(workspaceDir);
   }
   
   if (event.type === "gateway" && event.action === "startup") {
-    updateBootstrapWithProjectContext(resolveWorkspace(event));
+    await updateBootstrapWithProjectContext(resolveWorkspace(event));
   }
 
   // T-121: Regenerate project context after compaction so rules survive LCM
@@ -215,7 +222,7 @@ const handler = async (event) => {
     const workspaceDir = resolveWorkspace(event);
     if (workspaceDir) {
       console.log("[project-context] Regenerating BOOTSTRAP.md after compaction");
-      updateBootstrapWithProjectContext(workspaceDir);
+      await updateBootstrapWithProjectContext(workspaceDir);
     }
   }
 };
