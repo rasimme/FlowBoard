@@ -458,6 +458,31 @@ function updateTask(project, flowboardId, updates) {
             try { updateTask(project, child.id, { status: 'archived' }); } catch (e) { console.warn('[hzl-service] auto-archive child:', e.message); }
           }
         }
+        // Clear parent subtaskIds since all children are now archived
+        cached.subtaskIds = [];
+      }
+    }
+
+    // Restore from archived: auto-restore all archived children to done
+    if (cached.status === 'archived' && updates.status !== 'archived') {
+      const restoredChildIds = [];
+      // Find archived children by scanning cache (subtaskIds may be empty for archived parents)
+      const prefix = `${project}:${flowboardId}-`;
+      for (const [key, child] of _cache) {
+        if (key.startsWith(prefix) && child.parentId === flowboardId && child.status === 'archived') {
+          try {
+            updateTask(project, child.id, { status: 'done' });
+            restoredChildIds.push(child.id);
+          } catch (e) { console.warn('[hzl-service] auto-restore child:', e.message); }
+        }
+      }
+      // Rebuild parent's subtaskIds (cache may be stale after children were archived)
+      if (restoredChildIds.length > 0) {
+        cached.subtaskIds = restoredChildIds.sort((a, b) => {
+          const na = parseInt(a.split('-').pop(), 10);
+          const nb = parseInt(b.split('-').pop(), 10);
+          return (isNaN(na) || isNaN(nb)) ? a.localeCompare(b) : na - nb;
+        });
       }
     }
 
