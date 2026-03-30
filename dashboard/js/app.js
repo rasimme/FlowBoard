@@ -4,8 +4,9 @@ import {
   createTask, saveTitle, setPriority, setSubtaskStatus,
   confirmDelete, createSpec, onDrop, toggleExpand,
   startAddSubtask, cancelAddSubtask, submitSubtask,
+  toggleBlocked, toggleArchived, archiveTask, restoreTask,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=23';
+} from './kanban.js?v=24';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
@@ -125,7 +126,7 @@ async function viewProject(name) {
   prevFilesMeta = null; // Reset so next refresh re-baselines for new project
   resetCanvasState();
   prevCanvasJson = '';
-  const data = await api(`/projects/${name}/tasks`);
+  const data = await api(`/projects/${name}/tasks?includeArchived=true`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
   renderAll();
@@ -256,7 +257,9 @@ window._confirmDelete = function(id, deleteSpec = false, mode = null) {
     }
   });
 };
-window._onDrop = function(e) { onDrop(e, state); };
+window._onDrop = function(e) {
+  onDrop(e, state).then(() => { prevTasksJson = JSON.stringify(state.tasks); });
+};
 window._toggleExpand = function(id) {
   toggleExpand(id);
   updateBoard(state);
@@ -290,6 +293,28 @@ window._createSpec = function(taskId) {
       updateBoard(state);
       fileState.pendingOpen = specFile;
       switchTab('files');
+    }
+  });
+};
+window._toggleBlocked = function(id) {
+  toggleBlocked(id, state).then(() => {
+    prevTasksJson = JSON.stringify(state.tasks);
+  });
+};
+window._toggleArchived = function() { toggleArchived(state); };
+window._archiveTask = function(id) {
+  archiveTask(id, state).then(changed => {
+    if (changed) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
+    }
+  });
+};
+window._restoreTask = function(id) {
+  restoreTask(id, state).then(changed => {
+    if (changed) {
+      prevTasksJson = JSON.stringify(state.tasks);
+      updateBoard(state);
     }
   });
 };
@@ -343,7 +368,7 @@ async function refresh() {
 
     let tasksChanged = false;
     if (state.viewedProject) {
-      const taskData = await api(`/projects/${state.viewedProject}/tasks`);
+      const taskData = await api(`/projects/${state.viewedProject}/tasks?includeArchived=true`);
       const newTasks = taskData.tasks || [];
       const tasksJson = JSON.stringify(newTasks);
       if (tasksJson !== prevTasksJson) {
@@ -433,7 +458,7 @@ async function init() {
   else if (state.projects.length > 0) state.viewedProject = state.projects[0].name;
 
   if (state.viewedProject) {
-    const taskData = await api(`/projects/${state.viewedProject}/tasks`);
+    const taskData = await api(`/projects/${state.viewedProject}/tasks?includeArchived=true`);
     state.tasks = taskData.tasks || [];
     prevTasksJson = JSON.stringify(state.tasks);
 

@@ -9,6 +9,7 @@ const _hn = (t='success') => window.Telegram?.WebApp?.HapticFeedback?.notificati
 // Export state (shared with main)
 export const kanbanState = {
   sortNewestFirst: localStorage.getItem('sortNewestFirst') !== 'false',
+  showArchived: localStorage.getItem('showArchived') === 'true',
   addingTask: false,
   editingTaskId: null,
   selectedPriority: 'medium',
@@ -42,11 +43,13 @@ function sortTasks(tasks) {
 export function buildBoard() {
   const content = document.getElementById('content');
   content.innerHTML = `<div class="kanban" id="kanban">
-    ${STATUS_KEYS.map(status => `<div class="column" data-status="${status}"
->
+    ${STATUS_KEYS.map(status => `<div class="column" data-status="${status}">
       <div class="column-header">
         <span class="column-title">${STATUS_LABELS[status]}</span>
-        <span class="column-count" id="count-${status}">0</span>
+        <span class="column-header-right">
+          <span class="column-count" id="count-${status}">0</span>
+          ${status === 'done' ? `<button class="archive-toggle${kanbanState.showArchived ? ' active' : ''}" data-action="toggle-archived" id="archiveToggle" title="Show/hide archived tasks">📦 <span id="count-archived">0</span></button>` : ''}
+        </span>
       </div>
       <div class="column-body" id="col-${status}"></div>
     </div>`).join('')}
@@ -74,13 +77,26 @@ export function updateBoard(state) {
   const tasks = allTasks.filter(t => !t.parentId);
   const counts = {};
   STATUS_KEYS.forEach(s => counts[s] = 0);
+  let archivedCount = 0;
 
   const grouped = {};
   STATUS_KEYS.forEach(s => grouped[s] = []);
+  const archivedTasks = [];
   for (const t of tasks) {
-    if (grouped[t.status]) grouped[t.status].push(t);
-    counts[t.status]++;
+    if (t.status === 'archived') {
+      archivedCount++;
+      archivedTasks.push(t);
+    } else if (grouped[t.status] !== undefined) {
+      grouped[t.status].push(t);
+      counts[t.status]++;
+    }
   }
+
+  // Update archive toggle count
+  const archiveCountEl = document.getElementById('count-archived');
+  if (archiveCountEl) archiveCountEl.textContent = archivedCount;
+  const archiveToggleEl = document.getElementById('archiveToggle');
+  if (archiveToggleEl) archiveToggleEl.classList.toggle('active', kanbanState.showArchived);
 
   STATUS_KEYS.forEach(status => {
     const sorted = sortTasks(grouped[status]);
@@ -88,12 +104,15 @@ export function updateBoard(state) {
     const countEl = document.getElementById(`count-${status}`);
     if (countEl) countEl.textContent = counts[status];
 
+    // For done column, also collect archived cards to keep/remove
     const existingCards = {};
     body.querySelectorAll('.task-card').forEach(el => { existingCards[el.dataset.id] = el; });
 
-    const newIds = new Set(sorted.map(t => t.id));
+    const activeIds = new Set(sorted.map(t => t.id));
+    const archivedIds = new Set((status === 'done' && kanbanState.showArchived) ? archivedTasks.map(t => t.id) : []);
+    const visibleIds = new Set([...activeIds, ...archivedIds]);
     for (const [id, el] of Object.entries(existingCards)) {
-      if (!newIds.has(id)) el.remove();
+      if (!visibleIds.has(id)) el.remove();
     }
 
     const emptyEl = body.querySelector('.column-empty');
@@ -125,7 +144,37 @@ export function updateBoard(state) {
         updateCardContent(card, task);
         body.insertBefore(card, insertBefore);
       }
+      card.classList.toggle('is-blocked', !!task.blocked);
+      card.classList.remove('is-archived');
       insertBefore = card;
+    }
+
+    // Render archived tasks at bottom of Done column
+    if (status === 'done') {
+      // Remove old archive divider
+      body.querySelectorAll('.archive-divider').forEach(el => el.remove());
+      if (kanbanState.showArchived && archivedTasks.length > 0) {
+        const divider = document.createElement('hr');
+        divider.className = 'archive-divider';
+        body.appendChild(divider);
+        const sortedArchived = sortTasks(archivedTasks);
+        for (const task of sortedArchived) {
+          let card = body.querySelector(`.task-card[data-id="${task.id}"]`);
+          if (!card) {
+            card = document.createElement('div');
+            card.className = 'task-card is-archived';
+            card.draggable = false;
+            card.dataset.id = task.id;
+            card.innerHTML = archivedCardInnerHTML(task);
+            body.appendChild(card);
+          } else {
+            card.classList.add('is-archived');
+            card.draggable = false;
+            card.innerHTML = archivedCardInnerHTML(task);
+            body.appendChild(card);
+          }
+        }
+      }
     }
 
     // Render subtask cards for expanded parents
@@ -186,7 +235,7 @@ export function updateBoard(state) {
       }
     }
 
-    if (status === 'open') {
+    if (status === 'open') { // only Open column gets the add-task button (not Backlog)
       const existingBtn = body.querySelector('.add-task-btn');
       const existingForm = body.querySelector('.add-task-form');
       if (kanbanState.addingTask) {
@@ -227,10 +276,12 @@ export function updateBoard(state) {
 function createCardElement(task) {
   const div = document.createElement('div');
   div.className = 'task-card';
-  div.draggable = true;
+  div.draggable = task.status !== 'archived';
   div.dataset.id = task.id;
-  div.addEventListener('dragstart', e => onDragStart(e));
-  div.addEventListener('dragend', e => onDragEnd(e));
+  if (task.status !== 'archived') {
+    div.addEventListener('dragstart', e => onDragStart(e));
+    div.addEventListener('dragend', e => onDragEnd(e));
+  }
   div.innerHTML = cardInnerHTML(task);
   return div;
 }
@@ -268,6 +319,8 @@ const ICON_SPEC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 const ICON_SPEC_ADD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>`;
 const ICON_SUBTASK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12h-8"/><path d="M21 6h-8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg>`;
 
+const ICON_BLOCKED = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`;
+
 function cardInnerHTML(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
   const hasUsableSpec = task.specFile && task.specExists !== false;
@@ -275,6 +328,9 @@ function cardInnerHTML(task) {
     ? `<span class="spec-badge" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
     : `<span class="spec-badge spec-badge-add" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
   const subtaskBtn = `<span class="subtask-add-btn" data-action="add-subtask" data-id="${task.id}" title="Add subtask">${ICON_SUBTASK}</span>`;
+  const canBlock = task.status === 'open' || task.status === 'in-progress' || task.status === 'review';
+  const blockedBadge = task.blocked ? `<span class="blocked-badge">BLOCKED</span>` : '';
+  const blockedToggle = canBlock ? `<button class="blocked-toggle" data-action="toggle-blocked" data-id="${task.id}" title="${task.blocked ? 'Unblock task' : 'Block task'}">${ICON_BLOCKED}</button>` : '';
 
   let progressHtml = '';
   if (task.subtaskIds && task.subtaskIds.length > 0) {
@@ -302,9 +358,9 @@ function cardInnerHTML(task) {
   }
 
   const subtaskCount = task.subtaskIds ? task.subtaskIds.length : 0;
-  return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
+  return `${blockedBadge}<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
-      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICON_TRASH}</button>
+      <span style="display:flex;align-items:center;gap:2px">${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICON_TRASH}</button></span>
     </div>
     ${isEditing
       ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
@@ -315,6 +371,17 @@ function cardInnerHTML(task) {
       </span>
       <span class="task-meta-actions">${subtaskBtn}${specBadge}</span>
     </div>${progressHtml}`;
+}
+
+function archivedCardInnerHTML(task) {
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div class="task-id mono">${task.id}</div>
+      <button class="btn btn-ghost btn-sm" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:11px;pointer-events:auto">Restore</button>
+    </div>
+    <div class="task-title" style="color:var(--muted)">${escHtml(task.title)}</div>
+    <div class="task-meta">
+      <span class="priority-pill priority-${task.priority}" style="opacity:0.5">${task.priority}</span>
+    </div>`;
 }
 
 function subtaskCardInner(task) {
@@ -568,10 +635,12 @@ export function togglePriorityPopover(e, id, current) {
 
 // --- Status popover (subtask status dot) ---
 const STATUS_OPTIONS = [
+  { key: 'backlog', label: 'Backlog' },
   { key: 'open', label: 'Open' },
   { key: 'in-progress', label: 'In Progress' },
   { key: 'review', label: 'Review' },
-  { key: 'done', label: 'Done' }
+  { key: 'done', label: 'Done' },
+  { key: 'archive', label: '📦 Archive', doneOnly: true }
 ];
 
 export function toggleStatusPopover(e, id, current) {
@@ -582,12 +651,18 @@ export function toggleStatusPopover(e, id, current) {
   const popover = document.createElement('div');
   popover.className = 'status-popover';
   STATUS_OPTIONS.forEach(s => {
+    if (s.doneOnly && current !== 'done') return;
     const opt = document.createElement('span');
     opt.className = `status-option${s.key === current ? ' current' : ''}`;
-    opt.innerHTML = `<span class="status-dot status-dot-${s.key}"></span> ${s.label}`;
-    opt.dataset.action = 'set-status';
+    if (s.key === 'archive') {
+      opt.innerHTML = s.label;
+      opt.dataset.action = 'archive-task';
+    } else {
+      opt.innerHTML = `<span class="status-dot status-dot-${s.key}"></span> ${s.label}`;
+      opt.dataset.action = 'set-status';
+      opt.dataset.status = s.key;
+    }
     opt.dataset.id = id;
-    opt.dataset.status = s.key;
     popover.appendChild(opt);
   });
   wrap.appendChild(popover);
@@ -795,25 +870,106 @@ export async function onDrop(e, state) {
   const newStatus = col.dataset.status;
   const task = state.tasks.find(t => t.id === draggedId);
   if (!task || task.status === newStatus) return;
+  if (task.status === 'archived') return; // archived not draggable
 
   const oldStatus = task.status;
+  const oldBlocked = task.blocked;
+
   task.status = newStatus;
   if (newStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
   if (oldStatus === 'done' && newStatus !== 'done') task.completed = null;
 
+  // Auto-unblock when dropping to done or backlog (AD-5)
+  const autoUnblock = task.blocked && (newStatus === 'done' || newStatus === 'backlog');
+  if (autoUnblock) task.blocked = false;
+
   updateBoard(state);
 
+  const body = { status: newStatus };
+  if (autoUnblock) body.blocked = false;
   const res = await api(`/projects/${state.viewedProject}/tasks/${draggedId}`, {
-    method: 'PUT', body: { status: newStatus }
+    method: 'PUT', body
   });
   if (!res.ok) {
     task.status = oldStatus;
+    task.blocked = oldBlocked;
     toast('Failed to move task', 'error');
     _hn('error');
     updateBoard(state);
   } else {
-    toast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
+    const oldLabel = STATUS_LABELS[oldStatus] || oldStatus;
+    const newLabel = STATUS_LABELS[newStatus] || newStatus;
+    toast(`${task.title}: ${oldLabel} → ${newLabel}`, 'success');
     _h('medium');
+  }
+}
+
+export async function toggleBlocked(id, state) {
+  const task = state.tasks.find(t => t.id === id);
+  if (!task) return;
+  const oldBlocked = task.blocked;
+  task.blocked = !task.blocked;
+  const card = document.querySelector(`.task-card[data-id="${id}"]`);
+  if (card) {
+    card.classList.toggle('is-blocked', task.blocked);
+    card.innerHTML = cardInnerHTML(task);
+  }
+  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+    method: 'PUT', body: { blocked: task.blocked }
+  });
+  if (!res.ok) {
+    task.blocked = oldBlocked;
+    if (card) { card.classList.toggle('is-blocked', oldBlocked); card.innerHTML = cardInnerHTML(task); }
+    toast('Failed to update blocked status', 'error');
+    _hn('error');
+  } else {
+    toast(task.blocked ? 'Task blocked' : 'Task unblocked', 'success');
+    _h('light');
+  }
+}
+
+export function toggleArchived(state) {
+  kanbanState.showArchived = !kanbanState.showArchived;
+  localStorage.setItem('showArchived', kanbanState.showArchived);
+  updateBoard(state);
+}
+
+export async function archiveTask(id, state) {
+  document.querySelectorAll('.status-popover').forEach(p => p.remove());
+  const task = state.tasks.find(t => t.id === id);
+  if (!task) return;
+  const oldStatus = task.status;
+  task.status = 'archived';
+  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+    method: 'PUT', body: { status: 'archived' }
+  });
+  if (!res.ok) {
+    task.status = oldStatus;
+    toast(res.error || 'Failed to archive task', 'error');
+    _hn('error');
+  } else {
+    toast(`${task.id} archived`, 'success');
+    _h('light');
+    return true;
+  }
+}
+
+export async function restoreTask(id, state) {
+  const task = state.tasks.find(t => t.id === id);
+  if (!task) return;
+  const oldStatus = task.status;
+  task.status = 'done';
+  const res = await api(`/projects/${state.viewedProject}/tasks/${id}`, {
+    method: 'PUT', body: { status: 'done' }
+  });
+  if (!res.ok) {
+    task.status = oldStatus;
+    toast(res.error || 'Failed to restore task', 'error');
+    _hn('error');
+  } else {
+    toast(`${task.id} restored to Done`, 'success');
+    _h('light');
+    return true;
   }
 }
 
@@ -853,6 +1009,10 @@ export function bindKanbanEvents(container) {
       case 'submit-subtask':  if (window._submitSubtask) window._submitSubtask(); break;
       case 'cancel-subtask':  if (window._cancelSubtask) window._cancelSubtask(); break;
       case 'select-priority': selectPriority(priority); break;
+      case 'toggle-blocked':  if (window._toggleBlocked) window._toggleBlocked(id); break;
+      case 'toggle-archived': if (window._toggleArchived) window._toggleArchived(); break;
+      case 'archive-task':    if (window._archiveTask) window._archiveTask(id); break;
+      case 'restore-task':    if (window._restoreTask) window._restoreTask(id); break;
       // toggle-sort handled by tabBar listener in app.js — not here
     }
   };

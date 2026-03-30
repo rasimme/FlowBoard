@@ -7,8 +7,8 @@ export const API = API_HOST + '/api';
 
 export const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
 export const PRIORITY_CYCLE = { low: 'medium', medium: 'high', high: 'low' };
-export const STATUS_KEYS = ['open', 'in-progress', 'review', 'done'];
-export const STATUS_LABELS = { 'open': 'Open', 'in-progress': 'In Progress', 'review': 'Review', 'done': 'Done' };
+export const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
+export const STATUS_LABELS = { 'backlog': 'Backlog', 'open': 'Open', 'in-progress': 'In Progress', 'review': 'Review', 'done': 'Done' };
 
 // --- API Helper ---
 export async function api(path, opts = {}) {
