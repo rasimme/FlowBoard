@@ -148,7 +148,13 @@ export function updateBoard(state) {
         if (kanbanState.newCardIds.has(task.id)) card.classList.add('new-card');
         body.insertBefore(card, insertBefore);
       } else {
-        updateCardContent(card, task);
+        // Full re-render if card was previously archived (different innerHTML layout)
+        if (card.classList.contains('is-archived')) {
+          card.innerHTML = cardInnerHTML(task);
+          card.draggable = true;
+        } else {
+          updateCardContent(card, task);
+        }
         body.insertBefore(card, insertBefore);
       }
       card.classList.toggle('is-blocked', !!task.blocked);
@@ -156,36 +162,77 @@ export function updateBoard(state) {
       insertBefore = card;
     }
 
-    // Render archived tasks at bottom of Done column
+    // Render archived tasks at bottom of Done column — grouped by parent
     if (status === 'done') {
-      // Remove old archive divider
-      body.querySelectorAll('.archive-divider').forEach(el => el.remove());
+      body.querySelectorAll('.archive-divider, .archive-group').forEach(el => el.remove());
+      // Also remove stale standalone archived cards from previous render
+      body.querySelectorAll('.task-card.is-archived').forEach(el => el.remove());
       if (kanbanState.showArchived && archivedTasks.length > 0) {
         const divider = document.createElement('hr');
         divider.className = 'archive-divider';
         body.appendChild(divider);
-        const sortedArchived = sortTasks(archivedTasks);
-        for (const task of sortedArchived) {
-          let card = body.querySelector(`.task-card[data-id="${task.id}"]`);
-          if (!card) {
-            card = document.createElement('div');
-            card.className = 'task-card is-archived';
-            card.draggable = false;
-            card.dataset.id = task.id;
-            card.innerHTML = archivedCardInnerHTML(task);
-            body.appendChild(card);
-          } else {
-            card.classList.add('is-archived');
-            card.draggable = false;
-            card.innerHTML = archivedCardInnerHTML(task);
-            body.appendChild(card);
+
+        // Separate top-level and subtask archived tasks
+        const topLevel = archivedTasks.filter(t => !t.parentId);
+        const subtasks = archivedTasks.filter(t => t.parentId);
+
+        // Group subtasks by parent
+        const byParent = {};
+        for (const st of subtasks) {
+          if (!byParent[st.parentId]) byParent[st.parentId] = [];
+          byParent[st.parentId].push(st);
+        }
+
+        // Render top-level archived tasks (with their archived subtasks inline)
+        for (const task of sortTasks(topLevel)) {
+          const card = document.createElement('div');
+          card.className = 'task-card is-archived';
+          card.draggable = false;
+          card.dataset.id = task.id;
+          card.innerHTML = archivedCardInnerHTML(task);
+          body.appendChild(card);
+          // Render archived subtasks of this parent
+          if (byParent[task.id]) {
+            const container = document.createElement('div');
+            container.className = 'subtask-container archive-group';
+            for (const st of byParent[task.id]) {
+              const el = document.createElement('div');
+              el.className = 'subtask-card is-archived';
+              el.dataset.id = st.id;
+              el.innerHTML = archivedSubtaskInner(st);
+              container.appendChild(el);
+            }
+            body.appendChild(container);
+            delete byParent[task.id]; // consumed
           }
+        }
+
+        // Render orphaned archived subtasks (parent not archived) — show parent as context header
+        for (const [parentId, subs] of Object.entries(byParent)) {
+          const parent = allTasks.find(t => t.id === parentId);
+          const group = document.createElement('div');
+          group.className = 'archive-group';
+          group.innerHTML = `<div class="archive-parent-header">
+            <span class="task-id mono">${parentId}</span>
+            <span class="task-title" style="color:var(--muted);font-size:12px;margin:0 0 0 6px">${parent ? escHtml(parent.title) : 'Unknown'}</span>
+          </div>`;
+          const container = document.createElement('div');
+          container.className = 'subtask-container archive-group';
+          for (const st of subs) {
+            const el = document.createElement('div');
+            el.className = 'subtask-card is-archived';
+            el.dataset.id = st.id;
+            el.innerHTML = archivedSubtaskInner(st);
+            container.appendChild(el);
+          }
+          group.appendChild(container);
+          body.appendChild(group);
         }
       }
     }
 
-    // Render subtask cards for expanded parents
-    body.querySelectorAll('.subtask-container').forEach(el => el.remove());
+    // Render subtask cards for expanded parents (skip archive-group containers)
+    body.querySelectorAll('.subtask-container:not(.archive-group)').forEach(el => el.remove());
     for (const task of sorted) {
       if (!task.subtaskIds?.length || !kanbanState.expandedParents.has(task.id)) continue;
       const parentCard = body.querySelector(`.task-card[data-id="${task.id}"]`);
@@ -382,15 +429,22 @@ function cardInnerHTML(task) {
 }
 
 function archivedCardInnerHTML(task) {
-  const parentRef = task.parentId ? `<span class="archived-parent-ref">→ ${task.parentId}</span>` : '';
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div class="task-id mono">${task.id}${parentRef}</div>
+      <div class="task-id mono">${task.id}</div>
       <button class="btn btn-ghost btn-sm restore-btn" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:11px;pointer-events:auto">${ICONS.archiveRestore} Restore</button>
     </div>
-    <div class="task-title" style="color:var(--muted);text-decoration:line-through">${escHtml(task.title)}</div>
+    <div class="task-title" style="color:var(--muted)">${escHtml(task.title)}</div>
     <div class="task-meta">
       <span class="priority-pill priority-${task.priority}" style="opacity:0.4">${task.priority}</span>
     </div>`;
+}
+
+function archivedSubtaskInner(task) {
+  return `<span class="tree-dot"></span>
+    <span class="subtask-title" style="color:var(--muted)">${escHtml(task.title)}</span>
+    <span class="subtask-actions">
+      <button class="btn btn-ghost btn-sm restore-btn" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:10px;pointer-events:auto">${ICONS.archiveRestore}</button>
+    </span>`;
 }
 
 function subtaskCardInner(task) {

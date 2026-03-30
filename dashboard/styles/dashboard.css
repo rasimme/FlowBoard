@@ -293,6 +293,9 @@
     .task-card.is-archived .subtask-add-btn,
     .task-card.is-archived .delete-btn,
     .task-card.is-archived .blocked-toggle { pointer-events: none; }
+    .subtask-card.is-archived { opacity: 0.8; }
+    .subtask-card.is-archived .restore-btn { pointer-events: auto; opacity: 0.7; }
+    .subtask-card.is-archived .restore-btn:hover { opacity: 1; }
 
     .blocked-badge {
       display: inline-block; margin-left: 6px; vertical-align: middle;
@@ -334,8 +337,10 @@
     .task-card:hover .archive-btn { opacity: 0.6; }
     .task-card:hover .archive-btn:hover { opacity: 1; background: rgba(255,255,255,.08); color: var(--text); }
 
-    .archived-parent-ref {
-      margin-left: 6px; color: var(--muted); font-size: 10px; font-weight: 400;
+    .archive-group { opacity: 0.35; }
+    .archive-parent-header {
+      display: flex; align-items: center; padding: 4px 8px;
+      border-bottom: 1px solid var(--border); margin-bottom: 2px;
     }
 
     .archive-divider {
