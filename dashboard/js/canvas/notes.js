@@ -1,6 +1,6 @@
 // canvas/notes.js — Note CRUD, rendering, markdown, editing, sidebar
 
-import { api, toast, showModal, escHtml, ICONS } from '../utils.js?v=6';
+import { api, toast, showModal, escHtml, ICONS } from '../utils.js?v=7';
 import { canvasState, NOTE_WIDTH, screenToCanvas } from './state.js?v=1';
 import { renderConnections } from './connections.js?v=3';
 import { updateToolbar, renderPromoteButton } from './toolbar.js?v=11';

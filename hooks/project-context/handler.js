@@ -85,22 +85,50 @@ function getTaskStatusSummary(workspaceDir, projectName) {
   try { data = JSON.parse(readFileSync(tasksPath, "utf8")); } catch { return null; }
   if (!data?.tasks?.length) return null;
 
-  const inProgress = data.tasks.filter(t => t.status === "in-progress");
-  const review = data.tasks.filter(t => t.status === "review");
-  const open = data.tasks.filter(t => t.status === "open");
+  const topLevel = data.tasks.filter(t => !t.parentId);
+  const backlog = topLevel.filter(t => t.status === "backlog");
+  const open = topLevel.filter(t => t.status === "open");
+  const inProgress = topLevel.filter(t => t.status === "in-progress");
+  const review = topLevel.filter(t => t.status === "review");
+  const done = topLevel.filter(t => t.status === "done");
+  const archived = topLevel.filter(t => t.status === "archived");
+  const blocked = topLevel.filter(t => t.blocked === true);
+
+  // Status counts summary line
+  const countParts = [];
+  if (backlog.length) countParts.push(`Backlog: ${backlog.length}`);
+  if (open.length) countParts.push(`Open: ${open.length}`);
+  if (inProgress.length) {
+    const bCount = inProgress.filter(t => t.blocked).length;
+    countParts.push(`In Progress: ${inProgress.length}${bCount ? ` (${bCount} blocked)` : ""}`);
+  }
+  if (review.length) {
+    const bCount = review.filter(t => t.blocked).length;
+    countParts.push(`Review: ${review.length}${bCount ? ` (${bCount} blocked)` : ""}`);
+  }
+  if (done.length) countParts.push(`Done: ${done.length}`);
+  if (archived.length) countParts.push(`Archived: ${archived.length}`);
 
   const lines = [];
+  if (countParts.length) lines.push(`**Task counts:** ${countParts.join(" | ")}`);
+  lines.push("");
+
   if (inProgress.length) {
     lines.push("**⚡ In Progress:**");
     for (const t of inProgress) {
-      lines.push(`- ${t.id}: ${t.title}${t.specFile ? ` (spec: ${t.specFile})` : ""}`);
+      const blockedTag = t.blocked ? " 🚫 BLOCKED" : "";
+      lines.push(`- ${t.id}: ${t.title}${blockedTag}${t.specFile ? ` (spec: ${t.specFile})` : ""}`);
     }
   }
   if (review.length) {
     lines.push("**🔍 Waiting for Review:**");
     for (const t of review) {
-      lines.push(`- ${t.id}: ${t.title}`);
+      const blockedTag = t.blocked ? " 🚫 BLOCKED" : "";
+      lines.push(`- ${t.id}: ${t.title}${blockedTag}`);
     }
+  }
+  if (blocked.length && !inProgress.length && !review.length) {
+    lines.push(`**🚫 Blocked tasks:** ${blocked.map(t => `${t.id} (${t.status})`).join(", ")}`);
   }
   if (!inProgress.length && !review.length) {
     lines.push(`**💡 No task in-progress.** ${open.length} open task(s) available — pick one and set it to in-progress before starting work.`);
