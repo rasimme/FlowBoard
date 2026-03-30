@@ -22,6 +22,7 @@ const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
 const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
 const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
+const specifySession = require('./specify-sessions');
 
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
@@ -1408,37 +1409,6 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
     .map(c => `${c.from} → ${c.to}`)
     .join(', ') || 'none';
 
-  const message = `[CANVAS_PROMOTE]
-Project: ${projectName}
-Mode: ${mode || 'single'}
-Notes:
-${noteLines}
-Connections: ${connLines}
-
---- Agent Instructions ---
-You are creating tasks for FlowBoard project management.
-Dashboard API base: http://localhost:${PORT}/api
-
-Decide based on content and complexity:
-1. Simple idea (1-2 short notes) → Create task: POST /api/projects/${projectName}/tasks {"title": "...", "priority": "medium"}
-2. Detailed idea (notes with specifics) → Create task + spec: POST /api/projects/${projectName}/specs/{taskId} then write spec content
-3. Multiple topics (different colors, loose connections) → Parent task + subtasks with parentId
-4. Complex cluster → Parent (with spec) + subtasks (with own specs)
-
-Spec template:
-# T-{id}: {Title}
-## Goal
-## Done When
-- [ ] ...
-## Approach
-## Log
-
-After ALL tasks are created, clean up canvas notes:
-DELETE http://localhost:${PORT}/api/projects/${projectName}/canvas/notes/batch
-Body: { "noteIds": [${notes.map(n => `"${n.id}"`).join(', ')}] }
-
-Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
-
   // Fire-and-forget: respond immediately, webhook runs async
   const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789';
   const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN;
@@ -1448,8 +1418,52 @@ Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
     return res.status(503).json({ error: 'Agent not configured — hooks token missing' });
   }
 
+  const sourceNoteIds = notes.map(n => n.id);
+  const agentId = req.body.agentId || 'default';
+
+  // Create Specify session (errors on duplicate notes or concurrent agent session)
+  let session;
+  try {
+    session = specifySession.createSession({
+      project: projectName,
+      origin: 'canvas',
+      sourceNoteIds,
+      agentId,
+    });
+  } catch (err) {
+    return res.status(409).json({ error: err.message });
+  }
+
+  const message = `[SPECIFY_SESSION]
+Session: ${session.id}
+Project: ${projectName}
+Origin: canvas
+Mode: ${mode || 'single'}
+
+Notes:
+${noteLines}
+Connections: ${connLines}
+
+--- Specify Instructions ---
+Start a Specify session for this input. Follow the Specify workflow from context/specify-prompt.md:
+
+1. ANALYZE: Assess the input across 5 categories (Scope, Users, Data, Behavior, Constraints). Decide: Simple or Complex.
+2. CLARIFY (if Complex): Ask max 4 questions, one at a time, with recommended answer.
+3. GENERATE: Write a spec following context/specify-spec-template.md. Decide task structure (1 task, parent+subtasks, or parent+subtasks with individual specs).
+4. CONFIRM: Show summary to user. Wait for explicit confirmation before persisting.
+5. PERSIST (in order): Write spec file(s) → Create task(s) via API → Delete canvas notes via batch-delete.
+6. DONE: Send confirmation message.
+
+Dashboard API: http://localhost:${PORT}/api
+Source Note IDs for cleanup: ${JSON.stringify(sourceNoteIds)}
+
+If user cancels: persist nothing, notes stay. Call POST /api/specify/sessions/${session.id}/abort
+If spec write fails: stop, inform user. Call POST /api/specify/sessions/${session.id}/abort
+If task create fails: delete spec file, inform user. Call POST /api/specify/sessions/${session.id}/abort
+When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
+
   // Send immediately, don't await
-  res.json({ ok: true, message: 'Idea sent to agent' });
+  res.json({ ok: true, message: 'Idea sent to agent', sessionId: session.id });
 
   try {
     const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
@@ -1475,6 +1489,54 @@ Do NOT ask clarifying questions. Make your best judgment and create the tasks.`;
 });
 
 // (batch delete route is above the :id route to prevent Express param capture)
+
+// --- Specify Session Management Routes ---
+
+// GET /api/specify/sessions — list sessions (optional ?project=, ?status= filters)
+app.get('/api/specify/sessions', (req, res) => {
+  try {
+    const sessions = specifySession.listSessions({
+      project: req.query.project || undefined,
+      status: req.query.status || undefined,
+    });
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/specify/sessions/:id — get session details
+app.get('/api/specify/sessions/:id', (req, res) => {
+  try {
+    const session = specifySession.getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/specify/sessions/:id/abort — abort a session
+app.post('/api/specify/sessions/:id/abort', (req, res) => {
+  try {
+    const session = specifySession.abortSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/specify/sessions/:id/complete — mark session as done
+app.post('/api/specify/sessions/:id/complete', (req, res) => {
+  try {
+    const session = specifySession.completeSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+    res.json(session);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 async function startServer() {
   if (HZL_ENABLED) {
@@ -1504,6 +1566,12 @@ async function startServer() {
       }
     }
   }
+  // Cleanup expired Specify sessions every 30 minutes
+  setInterval(() => {
+    const aborted = specifySession.cleanupExpired();
+    if (aborted > 0) console.log(`[specify] Cleaned up ${aborted} expired sessions`);
+  }, 30 * 60 * 1000);
+
   app.listen(PORT, HOST, () => {
     console.log(`Dashboard API running on http://${HOST}:${PORT}`);
   });
