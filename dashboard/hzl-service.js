@@ -26,13 +26,13 @@ const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
 // --- Status mapping helpers ---
 
 // FlowBoard status → HZL native status
+// Note: 'blocked' is NOT a status — it's a boolean flag on metadata.flowboard.blocked
 const FB_TO_HZL = {
   'open':        'ready',
   'in-progress': 'in_progress',
   'review':      'in_progress',
   'done':        'done',
   'backlog':     'backlog',
-  'blocked':     'blocked',
   'archived':    'archived',
 };
 
@@ -42,11 +42,11 @@ const HZL_TO_FB = {
   'in_progress': 'in-progress',
   'done':        'done',
   'backlog':     'backlog',
-  'blocked':     'blocked',
+  'blocked':     'open', // HZL blocked → treat as open (blocked flag is separate)
   'archived':    'archived',
 };
 
-const VALID_STATUSES = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'blocked', 'archived']);
+const VALID_STATUSES = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
 
 // --- Convert a raw HZL task to FlowBoard format ---
 function _toFbTask(hzlTask, project) {
@@ -59,6 +59,7 @@ function _toFbTask(hzlTask, project) {
     id,
     title: hzlTask.title,
     status: fb.status || HZL_TO_FB[hzlTask.status] || 'open',
+    blocked: fb.blocked === true,
     priority: _priorityFromInt(hzlTask.priority),
     parentId: fb.parentId || null,
     subtaskIds: [], // populated by _populateSubtaskIds after full build
@@ -323,8 +324,9 @@ function getTask(project, flowboardId, opts = {}) {
 }
 
 function _publicTask(t) {
-  // Return a copy without internal fields
+  // Return a copy without internal fields; ensure blocked is always present
   const { _ulid, _project, ...pub } = t;
+  pub.blocked = pub.blocked === true;
   return pub;
 }
 
@@ -394,6 +396,7 @@ function createTask(project, opts) {
     id: newId,
     title,
     status,
+    blocked: false,
     priority,
     parentId,
     subtaskIds: [],
@@ -438,6 +441,26 @@ function updateTask(project, flowboardId, updates) {
 
   if (updates.status !== undefined) {
     if (!VALID_STATUSES.has(updates.status)) throw new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
+
+    // Archive validation: can only archive from done status
+    if (updates.status === 'archived') {
+      if (cached.status !== 'done') throw new Error('Can only archive tasks with status "done"');
+      // Parent archival: block if any child is not done/archived
+      if (cached.subtaskIds && cached.subtaskIds.length > 0) {
+        const children = cached.subtaskIds.map(id => _cache.get(`${project}:${id}`)).filter(Boolean);
+        const blocking = children.filter(c => c.status !== 'done' && c.status !== 'archived');
+        if (blocking.length > 0) {
+          throw new Error(`Cannot archive: ${blocking.length} subtask(s) not done/archived (${blocking.map(c => c.id).join(', ')})`);
+        }
+        // Auto-archive all done children
+        for (const child of children) {
+          if (child.status === 'done') {
+            try { updateTask(project, child.id, { status: 'archived' }); } catch (e) { console.warn('[hzl-service] auto-archive child:', e.message); }
+          }
+        }
+      }
+    }
+
     metaUpdates.flowboard.status = updates.status;
     if (updates.status === 'done') {
       const completedDate = updates.completed || new Date().toISOString().slice(0, 10);
@@ -447,6 +470,16 @@ function updateTask(project, flowboardId, updates) {
       metaUpdates.flowboard.completed = null;
       updates.completed = null; // ensure cache gets updated below
     }
+    // Clear blocked flag when moving to done or backlog (AD-5)
+    if (updates.status === 'done' || updates.status === 'backlog') {
+      metaUpdates.flowboard.blocked = false;
+      updates.blocked = false;
+    }
+  }
+
+  // Handle blocked flag update
+  if (Object.prototype.hasOwnProperty.call(updates, 'blocked')) {
+    metaUpdates.flowboard.blocked = updates.blocked === true;
   }
 
   if (Object.prototype.hasOwnProperty.call(updates, 'completed')) {
@@ -468,10 +501,10 @@ function updateTask(project, flowboardId, updates) {
   _updateMetadata(ulid, metaUpdates);
 
   // Update cache
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
-      cached[key] = updates[key];
+      cached[key] = key === 'blocked' ? updates[key] === true : updates[key];
     }
   }
 
@@ -561,17 +594,20 @@ function getTaskSummary(project) {
     if (!key.startsWith(`${project}:`)) continue;
     if (!task.parentId) tasks.push(task); // top-level only
   }
-  const counts = { backlog: 0, open: 0, 'in-progress': 0, review: 0, done: 0, blocked: 0, archived: 0 };
+  const counts = { backlog: 0, open: 0, 'in-progress': 0, review: 0, done: 0, archived: 0 };
+  let blockedCount = 0;
   for (const t of tasks) {
     if (counts[t.status] !== undefined) counts[t.status]++;
+    if (t.blocked) blockedCount++;
   }
   const parts = [];
   if (counts.backlog)        parts.push(`${counts.backlog} backlog`);
   if (counts.open)           parts.push(`${counts.open} open`);
   if (counts['in-progress']) parts.push(`${counts['in-progress']} in-progress`);
   if (counts.review)         parts.push(`${counts.review} review`);
-  if (counts.blocked)        parts.push(`${counts.blocked} blocked`);
+  if (blockedCount)          parts.push(`${blockedCount} blocked`);
   if (counts.done)           parts.push(`${counts.done} done`);
+  if (counts.archived)       parts.push(`${counts.archived} archived`);
   return parts.join(', ') || 'no tasks';
 }
 
@@ -579,11 +615,13 @@ function getTaskSummary(project) {
  * Get task counts per status for the project list sidebar.
  */
 function getTaskCounts(project) {
-  const counts = { open: 0, 'in-progress': 0, review: 0, done: 0, backlog: 0, blocked: 0, archived: 0 };
+  const counts = { open: 0, 'in-progress': 0, review: 0, done: 0, backlog: 0, archived: 0, blocked: 0 };
   for (const [key, task] of _cache) {
     if (!key.startsWith(`${project}:`)) continue;
     if (task.parentId) continue; // top-level only for badge counts
+    // blocked tasks count in their base lane
     if (counts[task.status] !== undefined) counts[task.status]++;
+    if (task.blocked) counts.blocked++;
   }
   return counts;
 }
