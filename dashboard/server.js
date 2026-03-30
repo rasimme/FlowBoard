@@ -682,7 +682,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
 // PUT /api/projects/:name/tasks/:id
 app.put('/api/projects/:name/tasks/:id', (req, res) => {
   if (HZL_ENABLED) {
-    const task = hzlService.getTask(req.params.name, req.params.id);
+    const task = hzlService.getTask(req.params.name, req.params.id, { includeArchived: true });
     if (!task) return res.status(404).json({ error: 'Task not found' });
     const updates = req.body;
 
