@@ -120,7 +120,8 @@ export function updateBoard(state) {
     const addBtn = body.querySelector('.add-task-btn');
     const addForm = body.querySelector('.add-task-form');
 
-    if (sorted.length === 0 && !(status === 'backlog' && kanbanState.addingTask)) {
+    const hasArchivedContent = status === 'done' && kanbanState.showArchived && archivedTasks.length > 0;
+    if (sorted.length === 0 && !hasArchivedContent && !(status === 'backlog' && kanbanState.addingTask)) {
       if (!emptyEl) {
         const placeholder = document.createElement('div');
         placeholder.className = 'column-empty';
