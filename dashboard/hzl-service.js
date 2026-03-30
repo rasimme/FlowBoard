@@ -494,7 +494,17 @@ function updateTask(project, flowboardId, updates) {
   // Update HZL native status FIRST — if this fails, metadata is NOT written
   if (updates.status !== undefined) {
     const targetHzlStatus = FB_TO_HZL[updates.status] || 'ready';
-    _taskService.setStatus(ulid, targetHzlStatus);
+    if (cached.status === 'archived') {
+      // hzl-core setStatus() rejects transitions from archived — emit StatusChanged directly
+      const event = _eventStore.append({
+        task_id: ulid,
+        type: 'status_changed',
+        data: { from: 'archived', to: targetHzlStatus },
+      });
+      _projectionEngine.applyEvent(event);
+    } else {
+      _taskService.setStatus(ulid, targetHzlStatus);
+    }
   }
 
   // Write metadata via direct event emission (hzl-core updateTask ignores metadata)
