@@ -276,8 +276,17 @@
     .task-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
     .task-card.dragging { opacity: 0.4; }
     .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
-    .task-card.is-blocked { border-left: 3px solid var(--status-blocked); }
-    .task-card.is-archived { opacity: 0.5; }
+    .task-card.is-blocked {
+      border: 1px dashed var(--status-blocked);
+      opacity: 0.65;
+      background: rgba(239, 68, 68, 0.04);
+    }
+    .task-card.is-blocked:hover { border-color: var(--status-blocked); box-shadow: none; }
+    .task-card.is-archived {
+      opacity: 0.35;
+      padding: 8px 10px;
+    }
+    .task-card.is-archived:hover { border-color: var(--border); box-shadow: none; }
     .task-card.is-archived .task-title,
     .task-card.is-archived .priority-pill,
     .task-card.is-archived .spec-badge,
@@ -286,12 +295,12 @@
     .task-card.is-archived .blocked-toggle { pointer-events: none; }
 
     .blocked-badge {
-      position: absolute; top: 6px; right: 6px;
+      display: inline-block; margin-left: 6px; vertical-align: middle;
       background: rgba(239, 68, 68, 0.15); color: var(--status-blocked);
       border: 1px solid rgba(239, 68, 68, 0.3);
-      border-radius: var(--radius-sm); padding: 1px 5px;
-      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-      pointer-events: none;
+      border-radius: var(--radius-full); padding: 1px 6px;
+      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      pointer-events: none; line-height: 1.4;
     }
 
     .blocked-toggle {
@@ -312,6 +321,9 @@
     }
     .archive-toggle:hover { color: var(--text); background: rgba(255,255,255,.06); }
     .archive-toggle.active { color: var(--text); }
+
+    .restore-btn { display: inline-flex; align-items: center; gap: 3px; }
+    .restore-btn svg { flex-shrink: 0; }
 
     .archive-divider {
       border: none; border-top: 1px dashed var(--border);

@@ -1,6 +1,6 @@
 // canvas/state.js — Canvas state, constants, and coordinate helpers
 
-import { api, toast } from '../utils.js?v=7';
+import { api, toast } from '../utils.js?v=8';
 
 // --- Constants ---
 export const NOTE_WIDTH = 160;

@@ -336,7 +336,7 @@ function _publicTask(t) {
  * Returns FlowBoard-format task.
  */
 function createTask(project, opts) {
-  const { title, priority = 'medium', parentId = null, status = 'open', forceId = null } = opts;
+  const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null } = opts;
   if (!VALID_STATUSES.has(status)) throw new Error(`Invalid status: "${status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
 
   // Validate parent if provided
