@@ -1,6 +1,6 @@
 // kanban.js — Task Board Logic
 
-import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=7';
+import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=8';
 
 // Telegram Haptic Feedback (no-op if not in Telegram)
 const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);
@@ -48,7 +48,7 @@ export function buildBoard() {
         <span class="column-title">${STATUS_LABELS[status]}</span>
         <span class="column-header-right">
           <span class="column-count" id="count-${status}">0</span>
-          ${status === 'done' ? `<button class="archive-toggle${kanbanState.showArchived ? ' active' : ''}" data-action="toggle-archived" id="archiveToggle" title="Show/hide archived tasks">📦 <span id="count-archived">0</span></button>` : ''}
+          ${status === 'done' ? `<button class="archive-toggle${kanbanState.showArchived ? ' active' : ''}" data-action="toggle-archived" id="archiveToggle" title="Show/hide archived tasks">${ICONS.archive} <span id="count-archived">0</span></button>` : ''}
         </span>
       </div>
       <div class="column-body" id="col-${status}"></div>
@@ -119,7 +119,7 @@ export function updateBoard(state) {
     const addBtn = body.querySelector('.add-task-btn');
     const addForm = body.querySelector('.add-task-form');
 
-    if (sorted.length === 0 && !(status === 'open' && kanbanState.addingTask)) {
+    if (sorted.length === 0 && !(status === 'backlog' && kanbanState.addingTask)) {
       if (!emptyEl) {
         const placeholder = document.createElement('div');
         placeholder.className = 'column-empty';
@@ -235,7 +235,7 @@ export function updateBoard(state) {
       }
     }
 
-    if (status === 'open') { // only Open column gets the add-task button (not Backlog)
+    if (status === 'backlog') { // Backlog column gets the add-task button
       const existingBtn = body.querySelector('.add-task-btn');
       const existingForm = body.querySelector('.add-task-form');
       if (kanbanState.addingTask) {
@@ -319,7 +319,7 @@ const ICON_SPEC = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" s
 const ICON_SPEC_ADD = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="M9 15h6"/></svg>`;
 const ICON_SUBTASK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12h-8"/><path d="M21 6h-8"/><path d="M21 18h-8"/><path d="M3 6v4c0 1.1.9 2 2 2h3"/><path d="M3 10v6c0 1.1.9 2 2 2h3"/></svg>`;
 
-const ICON_BLOCKED = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`;
+
 
 function cardInnerHTML(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
@@ -330,7 +330,7 @@ function cardInnerHTML(task) {
   const subtaskBtn = `<span class="subtask-add-btn" data-action="add-subtask" data-id="${task.id}" title="Add subtask">${ICON_SUBTASK}</span>`;
   const canBlock = task.status === 'open' || task.status === 'in-progress' || task.status === 'review';
   const blockedBadge = task.blocked ? `<span class="blocked-badge">BLOCKED</span>` : '';
-  const blockedToggle = canBlock ? `<button class="blocked-toggle" data-action="toggle-blocked" data-id="${task.id}" title="${task.blocked ? 'Unblock task' : 'Block task'}">${ICON_BLOCKED}</button>` : '';
+  const blockedToggle = canBlock ? `<button class="blocked-toggle" data-action="toggle-blocked" data-id="${task.id}" title="${task.blocked ? 'Unblock task' : 'Block task'}">${ICONS.ban}</button>` : '';
 
   let progressHtml = '';
   if (task.subtaskIds && task.subtaskIds.length > 0) {
@@ -358,9 +358,9 @@ function cardInnerHTML(task) {
   }
 
   const subtaskCount = task.subtaskIds ? task.subtaskIds.length : 0;
-  return `${blockedBadge}<div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div class="task-id mono">${task.id}</div>
-      <span style="display:flex;align-items:center;gap:2px">${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICON_TRASH}</button></span>
+  return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div class="task-id mono">${task.id}${blockedBadge}</div>
+      <span style="display:flex;align-items:center;gap:2px">${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICONS.trash}</button></span>
     </div>
     ${isEditing
       ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
@@ -376,11 +376,11 @@ function cardInnerHTML(task) {
 function archivedCardInnerHTML(task) {
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}</div>
-      <button class="btn btn-ghost btn-sm" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:11px;pointer-events:auto">Restore</button>
+      <button class="btn btn-ghost btn-sm restore-btn" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:11px;pointer-events:auto">${ICONS.archiveRestore} Restore</button>
     </div>
-    <div class="task-title" style="color:var(--muted)">${escHtml(task.title)}</div>
+    <div class="task-title" style="color:var(--muted);text-decoration:line-through">${escHtml(task.title)}</div>
     <div class="task-meta">
-      <span class="priority-pill priority-${task.priority}" style="opacity:0.5">${task.priority}</span>
+      <span class="priority-pill priority-${task.priority}" style="opacity:0.4">${task.priority}</span>
     </div>`;
 }
 
@@ -640,7 +640,7 @@ const STATUS_OPTIONS = [
   { key: 'in-progress', label: 'In Progress' },
   { key: 'review', label: 'Review' },
   { key: 'done', label: 'Done' },
-  { key: 'archive', label: '📦 Archive', doneOnly: true }
+  { key: 'archive', label: 'Archive', doneOnly: true }
 ];
 
 export function toggleStatusPopover(e, id, current) {
