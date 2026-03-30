@@ -325,6 +325,19 @@
     .restore-btn { display: inline-flex; align-items: center; gap: 3px; }
     .restore-btn svg { flex-shrink: 0; }
 
+    .archive-btn {
+      background: none; border: none; cursor: pointer; padding: 2px 4px;
+      color: var(--muted); opacity: 0; border-radius: var(--radius-sm);
+      display: inline-flex; align-items: center; font-size: 13px; line-height: 1;
+      transition: opacity var(--duration-fast), background var(--duration-fast);
+    }
+    .task-card:hover .archive-btn { opacity: 0.6; }
+    .task-card:hover .archive-btn:hover { opacity: 1; background: rgba(255,255,255,.08); color: var(--text); }
+
+    .archived-parent-ref {
+      margin-left: 6px; color: var(--muted); font-size: 10px; font-weight: 400;
+    }
+
     .archive-divider {
       border: none; border-top: 1px dashed var(--border);
       margin: 6px 0; opacity: 0.5;

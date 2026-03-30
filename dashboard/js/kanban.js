@@ -91,6 +91,13 @@ export function updateBoard(state) {
       counts[t.status]++;
     }
   }
+  // Include archived subtasks in archive section
+  for (const t of allTasks) {
+    if (t.parentId && t.status === 'archived') {
+      archivedCount++;
+      archivedTasks.push(t);
+    }
+  }
 
   // Update archive toggle count
   const archiveCountEl = document.getElementById('count-archived');
@@ -183,7 +190,7 @@ export function updateBoard(state) {
       if (!task.subtaskIds?.length || !kanbanState.expandedParents.has(task.id)) continue;
       const parentCard = body.querySelector(`.task-card[data-id="${task.id}"]`);
       if (!parentCard) continue;
-      const subtasks = allTasks.filter(t => t.parentId === task.id);
+      const subtasks = allTasks.filter(t => t.parentId === task.id && t.status !== 'archived');
       const container = document.createElement('div');
       container.className = 'subtask-container';
       container.dataset.parentId = task.id;
@@ -331,11 +338,12 @@ function cardInnerHTML(task) {
   const canBlock = task.status === 'open' || task.status === 'in-progress' || task.status === 'review';
   const blockedBadge = task.blocked ? `<span class="blocked-badge">BLOCKED</span>` : '';
   const blockedToggle = canBlock ? `<button class="blocked-toggle" data-action="toggle-blocked" data-id="${task.id}" title="${task.blocked ? 'Unblock task' : 'Block task'}">${ICONS.ban}</button>` : '';
+  const archiveBtn = task.status === 'done' ? `<button class="archive-btn" data-action="archive-task" data-id="${task.id}" title="Archive task">${ICONS.archive}</button>` : '';
 
   let progressHtml = '';
   if (task.subtaskIds && task.subtaskIds.length > 0) {
     const allTasks = window.appState.tasks;
-    const subtasks = allTasks.filter(t => t.parentId === task.id);
+    const subtasks = allTasks.filter(t => t.parentId === task.id && t.status !== 'archived');
     const total = subtasks.length;
     if (total > 0) {
       const done = subtasks.filter(t => t.status === 'done').length;
@@ -360,7 +368,7 @@ function cardInnerHTML(task) {
   const subtaskCount = task.subtaskIds ? task.subtaskIds.length : 0;
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div class="task-id mono">${task.id}${blockedBadge}</div>
-      <span style="display:flex;align-items:center;gap:2px">${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICONS.trash}</button></span>
+      <span style="display:flex;align-items:center;gap:2px">${archiveBtn}${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICONS.trash}</button></span>
     </div>
     ${isEditing
       ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
@@ -374,8 +382,9 @@ function cardInnerHTML(task) {
 }
 
 function archivedCardInnerHTML(task) {
+  const parentRef = task.parentId ? `<span class="archived-parent-ref">→ ${task.parentId}</span>` : '';
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div class="task-id mono">${task.id}</div>
+      <div class="task-id mono">${task.id}${parentRef}</div>
       <button class="btn btn-ghost btn-sm restore-btn" data-action="restore-task" data-id="${task.id}" title="Restore to Done" style="font-size:11px;pointer-events:auto">${ICONS.archiveRestore} Restore</button>
     </div>
     <div class="task-title" style="color:var(--muted);text-decoration:line-through">${escHtml(task.title)}</div>
