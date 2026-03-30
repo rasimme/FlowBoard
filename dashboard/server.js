@@ -371,7 +371,8 @@ function taskWithSpecStatus(projectName, task) {
   const specFile = task?.specFile;
   const hasSpec = Boolean(specFile);
   const specExists = hasSpec && fs.existsSync(path.join(PROJECTS_DIR, projectName, specFile));
-  return { ...task, specExists };
+  // Ensure blocked field is always present in API response
+  return { ...task, specExists, blocked: task?.blocked === true };
 }
 
 function enrichTasks(projectName, tasks = []) {
@@ -555,7 +556,8 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   if (HZL_ENABLED) {
     const projectDir = path.join(PROJECTS_DIR, req.params.name);
     if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
-    tasks = hzlService.listTasks(req.params.name);
+    const includeArchived = req.query.includeArchived === 'true';
+    tasks = hzlService.listTasks(req.params.name, { includeArchived });
     responseBase = {};
   } else {
     const data = readTasksFile(req.params.name);
@@ -718,12 +720,18 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
         hzlUpdates[key] = updates[key];
       }
     }
+    // blocked is handled separately below (not in ALLOWED to keep whitelist clean)
 
     if (hzlUpdates.status !== undefined) {
-      const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'blocked', 'archived']);
+      const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
       if (!VALID.has(hzlUpdates.status)) {
         return res.status(400).json({ error: `Invalid status: "${hzlUpdates.status}"` });
       }
+    }
+
+    // Pass blocked flag through
+    if (Object.prototype.hasOwnProperty.call(updates, 'blocked')) {
+      hzlUpdates.blocked = updates.blocked === true;
     }
 
     try {
