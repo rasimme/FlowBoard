@@ -1472,16 +1472,15 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${hooksToken}`,
       },
-      body: JSON.stringify(Object.assign({
+      body: JSON.stringify({
         message,
-        name: 'Canvas Promote',
-        deliver: true,
-        channel: process.env.OPENCLAW_DELIVER_CHANNEL || 'last',
+        name: 'Canvas Specify',
+        agentId: process.env.OPENCLAW_AGENT_ID || undefined,
+        sessionKey: process.env.OPENCLAW_AGENT_ID
+          ? `agent:${process.env.OPENCLAW_AGENT_ID}:main`
+          : undefined,
         wakeMode: 'now',
-      },
-        process.env.OPENCLAW_DELIVER_TO ? { to: process.env.OPENCLAW_DELIVER_TO } : {},
-        process.env.OPENCLAW_AGENT_ID ? { agentId: process.env.OPENCLAW_AGENT_ID } : {},
-      )),
+      }),
     });
     if (!hookRes.ok) {
       console.error('Promote webhook error:', hookRes.status, await hookRes.text());
