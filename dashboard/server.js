@@ -616,7 +616,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
         title,
         priority: effectivePriority,
         parentId: parentId || null,
-        status: 'open',
+        status: req.body.status || 'backlog',
       });
       syncDashboardData(req.params.name);
       const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
