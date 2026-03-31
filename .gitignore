@@ -19,3 +19,8 @@ docs/reviews/
 docs/code-analysis-*.md
 docs/connection-routing.md
 CLAUDE.md
+
+# HZL database files
+data/*.db
+data/*.db-shm
+data/*.db-wal

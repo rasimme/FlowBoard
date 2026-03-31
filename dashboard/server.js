@@ -1540,6 +1540,139 @@ app.post('/api/specify/sessions/:id/complete', (req, res) => {
   }
 });
 
+// =============================================================================
+// Phase 5: Coordination Primitives — Claim, Checkpoint, Complete, Comment, Stuck, Handoff
+// =============================================================================
+
+// POST /api/projects/:name/tasks/:id/claim
+app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { agent, lease } = req.body;
+    const task = hzlService.claimTask(req.params.name, req.params.id, { agent, lease });
+    res.json({ ok: true, task });
+  } catch (err) {
+    const status = err.code === 'PARENT_NOT_CLAIMABLE' ? 409
+                 : err.code === 'ROUTING_MISMATCH' ? 403
+                 : err.code === 'ALREADY_CLAIMED' ? 409
+                 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/release
+app.post('/api/projects/:name/tasks/:id/release', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { agent, force } = req.body;
+    const result = hzlService.releaseTask(req.params.name, req.params.id, { agent, force });
+    res.json(result);
+  } catch (err) {
+    const status = err.code === 'NOT_OWNER' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/complete
+app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { agent } = req.body;
+    const task = hzlService.completeTask(req.params.name, req.params.id, { agent });
+    // Recalculate parent status if this is a subtask
+    const full = hzlService.getTask(req.params.name, req.params.id);
+    if (full && full.parentId) {
+      hzlService.recalcParentStatus(req.params.name, full.parentId);
+    }
+    res.json({ ok: true, task });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/checkpoint
+app.post('/api/projects/:name/tasks/:id/checkpoint', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { message, agent, progress } = req.body;
+    const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent, progress });
+    res.json({ ok: true, checkpoint });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:name/tasks/:id/checkpoints
+app.get('/api/projects/:name/tasks/:id/checkpoints', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const checkpoints = hzlService.getCheckpoints(req.params.name, req.params.id);
+    res.json({ ok: true, checkpoints });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/comment
+app.post('/api/projects/:name/tasks/:id/comment', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { message, author } = req.body;
+    const comment = hzlService.addComment(req.params.name, req.params.id, { message, author });
+    res.json({ ok: true, comment });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:name/tasks/:id/comments
+app.get('/api/projects/:name/tasks/:id/comments', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const comments = hzlService.getComments(req.params.name, req.params.id);
+    res.json({ ok: true, comments });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// GET /api/tasks/stuck — cross-project stuck tasks (stale + expired)
+app.get('/api/tasks/stuck', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const staleThreshold = parseInt(req.query.staleThreshold) || 10;
+    const stuck = hzlService.getStuckTasks({ staleThreshold });
+    res.json({ ok: true, stuck });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:name/tasks/:id/handoff — handoff context for CC/ACP spawning
+app.get('/api/projects/:name/tasks/:id/handoff', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const context = hzlService.getHandoffContext(req.params.name, req.params.id);
+    res.json({ ok: true, ...context });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/route — route a task to a specific agent
+app.post('/api/projects/:name/tasks/:id/route', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { agent } = req.body;
+    const task = hzlService.routeTask(req.params.name, req.params.id, agent);
+    res.json({ ok: true, task });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// =============================================================================
+
 async function startServer() {
   if (HZL_ENABLED) {
     console.log('[hzl-service] HZL_ENABLED=true, initializing...');

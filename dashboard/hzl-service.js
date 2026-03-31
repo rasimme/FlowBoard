@@ -66,6 +66,15 @@ function _toFbTask(hzlTask, project) {
     specFile: null, // populated from specs index
     created: fb.created || null,
     completed: fb.completed || null,
+    // Claim/Lease fields from HZL native columns
+    agent: hzlTask.agent || null,
+    claimedAt: hzlTask.claimed_at || null,
+    leaseUntil: hzlTask.lease_until || null,
+    // Checkpoint tracking
+    lastCheckpointAt: fb.lastCheckpointAt || null,
+    checkpointCount: fb.checkpointCount || 0,
+    // Agent routing (explicit pre-assignment, separate from claim ownership)
+    routedAgent: fb.routedAgent || null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -180,6 +189,7 @@ async function init(dbPath) {
   const { DependenciesProjector }  = await import('hzl-core/projections/dependencies.js');
   const { TagsProjector }          = await import('hzl-core/projections/tags.js');
   const { ProjectsProjector }      = await import('hzl-core/projections/projects.js');
+  const { CommentsCheckpointsProjector } = await import('hzl-core/projections/comments-checkpoints.js');
   const { TaskService }    = await import('hzl-core/services/task-service.js');
   const { ProjectService } = await import('hzl-core/services/project-service.js');
 
@@ -201,6 +211,7 @@ async function init(dbPath) {
   _projectionEngine.register(new DependenciesProjector());
   _projectionEngine.register(new TagsProjector());
   _projectionEngine.register(new ProjectsProjector());
+  _projectionEngine.register(new CommentsCheckpointsProjector());
   _EventType = EventType;
 
   _projectService = new ProjectService(datastore.cacheDb, _eventStore, _projectionEngine);
@@ -348,6 +359,13 @@ function _publicTask(t) {
   // Return a copy without internal fields; ensure blocked is always present
   const { _ulid, _project, ...pub } = t;
   pub.blocked = pub.blocked === true;
+  // Ensure claim/checkpoint fields are always present
+  pub.agent = pub.agent || null;
+  pub.claimedAt = pub.claimedAt || null;
+  pub.leaseUntil = pub.leaseUntil || null;
+  pub.lastCheckpointAt = pub.lastCheckpointAt || null;
+  pub.checkpointCount = pub.checkpointCount || 0;
+  pub.routedAgent = pub.routedAgent || null;
   return pub;
 }
 
@@ -424,6 +442,12 @@ function createTask(project, opts) {
     specFile: null,
     created,
     completed: null,
+    agent: null,
+    claimedAt: null,
+    leaseUntil: null,
+    lastCheckpointAt: null,
+    checkpointCount: 0,
+    routedAgent: null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -800,6 +824,407 @@ function ensureProject(projectName) {
   }
 }
 
+// =============================================================================
+// Phase 5: Coordination Primitives (T-128)
+// Uses hzl-core native claim/release/complete/checkpoint/comment APIs
+// =============================================================================
+
+/**
+ * Claim a task for an agent with a lease.
+ * Uses hzl-core native claimTask() which handles atomic status transitions.
+ * @param {string} project
+ * @param {string} flowboardId
+ * @param {object} opts - { agent: string, lease?: number (minutes, default 30) }
+ */
+function claimTask(project, flowboardId, opts) {
+  const { agent, lease = 30 } = opts;
+  if (!agent) throw new Error('Agent name is required');
+
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  // Validation: Parent tasks (with subtasks) are not claimable
+  if (cached.subtaskIds && cached.subtaskIds.length > 0) {
+    throw Object.assign(new Error('Cannot claim parent task — claim subtasks instead'), { code: 'PARENT_NOT_CLAIMABLE' });
+  }
+
+  // Validation: Agent routing enforcement
+  if (cached.routedAgent && cached.routedAgent !== agent) {
+    throw Object.assign(new Error(`Task is routed to agent "${cached.routedAgent}", not "${agent}"`), { code: 'ROUTING_MISMATCH' });
+  }
+
+  // Validation: Already claimed by another agent — allow re-claim only if lease expired
+  const hzlTask = _taskService.getTaskById(ulid);
+  if (hzlTask && hzlTask.agent && hzlTask.agent !== agent && hzlTask.status === 'in_progress') {
+    const leaseExpired = hzlTask.lease_until && new Date(hzlTask.lease_until).getTime() < Date.now();
+    if (!leaseExpired) {
+      throw Object.assign(new Error(`Task already claimed by "${hzlTask.agent}"`), { code: 'ALREADY_CLAIMED' });
+    }
+    // Lease expired — allow re-claim (steal)
+  }
+
+  // Calculate lease_until ISO timestamp
+  const leaseUntil = new Date(Date.now() + lease * 60 * 1000).toISOString();
+
+  // Use hzl-core native claimTask
+  const result = _taskService.claimTask(ulid, {
+    agent_id: agent,
+    author: agent,
+    lease_until: leaseUntil,
+  });
+
+  // Update FlowBoard metadata
+  const meta = {
+    flowboard: {
+      ...(result.metadata?.flowboard || {}),
+      status: 'in-progress',
+      lastCheckpointAt: new Date().toISOString(), // claim starts the stale timer
+    }
+  };
+  _updateMetadata(ulid, meta);
+
+  // Update RAM cache
+  cached.status = 'in-progress';
+  cached.agent = agent;
+  cached.claimedAt = result.claimed_at || new Date().toISOString();
+  cached.leaseUntil = leaseUntil;
+  cached.lastCheckpointAt = meta.flowboard.lastCheckpointAt;
+
+  return _publicTask(cached);
+}
+
+/**
+ * Release a claimed task.
+ * Uses hzl-core native releaseTask() which transitions in_progress → ready.
+ */
+function releaseTask(project, flowboardId, opts = {}) {
+  const { agent, force = false } = opts;
+
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  // Only owning agent or force can release
+  if (!force && agent && cached.agent && cached.agent !== agent) {
+    throw Object.assign(new Error(`Only the owning agent "${cached.agent}" can release (or use force=true)`), { code: 'NOT_OWNER' });
+  }
+
+  // Use hzl-core native releaseTask
+  _taskService.releaseTask(ulid, { agent_id: agent, author: agent });
+
+  // Update FlowBoard metadata — status back to open
+  const hzlTask = _taskService.getTaskById(ulid);
+  const meta = {
+    flowboard: {
+      ...(hzlTask?.metadata?.flowboard || {}),
+      status: 'open',
+    }
+  };
+  _updateMetadata(ulid, meta);
+
+  // Update RAM cache
+  cached.status = 'open';
+  cached.agent = null;
+  cached.claimedAt = null;
+  cached.leaseUntil = null;
+  cached.lastCheckpointAt = null;
+
+  return { ok: true };
+}
+
+/**
+ * Complete a task (agent says "done implementing").
+ * Uses hzl-core native completeTask() which transitions in_progress/blocked → done.
+ * FlowBoard maps this to "review" status (human approval comes later).
+ */
+function completeTask(project, flowboardId, opts = {}) {
+  const { agent } = opts;
+
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  // Use hzl-core native completeTask (validates status transition)
+  _taskService.completeTask(ulid, { agent_id: agent, author: agent });
+
+  // Update FlowBoard metadata — "review" not "done" (human approval needed)
+  const completedDate = new Date().toISOString().slice(0, 10);
+  const hzlTask = _taskService.getTaskById(ulid);
+  const meta = {
+    flowboard: {
+      ...(hzlTask?.metadata?.flowboard || {}),
+      status: 'review',
+      completed: completedDate,
+    }
+  };
+  _updateMetadata(ulid, meta);
+
+  // Update RAM cache
+  cached.status = 'review';
+  cached.completed = completedDate;
+  cached.agent = null;
+  cached.claimedAt = null;
+  cached.leaseUntil = null;
+
+  return _publicTask(cached);
+}
+
+/**
+ * Add a checkpoint to a task.
+ * Uses hzl-core native addCheckpoint().
+ */
+function addCheckpoint(project, flowboardId, opts) {
+  const { message, agent, progress } = opts;
+  if (!message) throw new Error('Checkpoint message is required');
+
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  // Use hzl-core native addCheckpoint (name=message, data={})
+  const result = _taskService.addCheckpoint(ulid, message, {}, {
+    agent_id: agent,
+    author: agent,
+    ...(progress !== undefined ? { progress } : {}),
+  });
+
+  // Update lastCheckpointAt in FlowBoard metadata
+  const now = new Date().toISOString();
+  const hzlTask = _taskService.getTaskById(ulid);
+  const fb = hzlTask?.metadata?.flowboard || {};
+  const meta = {
+    flowboard: {
+      ...fb,
+      lastCheckpointAt: now,
+      checkpointCount: (fb.checkpointCount || 0) + 1,
+    }
+  };
+  _updateMetadata(ulid, meta);
+
+  // Update RAM cache
+  cached.lastCheckpointAt = now;
+  cached.checkpointCount = meta.flowboard.checkpointCount;
+
+  return {
+    id: result.event_rowid,
+    taskId: flowboardId,
+    message,
+    agent: agent || null,
+    timestamp: result.timestamp,
+  };
+}
+
+/**
+ * Get all checkpoints for a task.
+ * Uses hzl-core native getCheckpoints().
+ */
+function getCheckpoints(project, flowboardId) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const rows = _taskService.getCheckpoints(ulid);
+  return rows.map(r => ({
+    id: r.event_rowid,
+    taskId: flowboardId,
+    message: r.name,
+    data: r.data,
+    timestamp: r.timestamp,
+  }));
+}
+
+/**
+ * Add a comment to a task.
+ * Uses hzl-core native addComment().
+ */
+function addComment(project, flowboardId, opts) {
+  const { message, author } = opts;
+  if (!message) throw new Error('Comment message is required');
+
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const result = _taskService.addComment(ulid, message, {
+    author: author || null,
+  });
+
+  return {
+    id: result.event_rowid,
+    taskId: flowboardId,
+    message,
+    author: author || null,
+    timestamp: result.timestamp,
+  };
+}
+
+/**
+ * Get all comments for a task.
+ * Uses hzl-core native getComments().
+ */
+function getComments(project, flowboardId) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const rows = _taskService.getComments(ulid);
+  return rows.map(r => ({
+    id: r.event_rowid,
+    taskId: flowboardId,
+    message: r.text,
+    author: r.author || r.agent_id || null,
+    timestamp: r.timestamp,
+  }));
+}
+
+/**
+ * Get stuck tasks (stale + expired leases) across all projects.
+ * Stale = in_progress + lastCheckpointAt older than threshold.
+ * Expired = leaseUntil in the past.
+ * Returns combined list with reason field.
+ */
+function getStuckTasks(opts = {}) {
+  const { staleThreshold = 10 } = opts; // minutes
+  const now = Date.now();
+  const stuck = [];
+
+  for (const [key, task] of _cache) {
+    if (task.status !== 'in-progress') continue;
+    if (task.status === 'archived') continue;
+
+    const entry = {
+      project: task._project,
+      taskId: task.id,
+      title: task.title,
+      agent: task.agent || null,
+      status: task.status,
+    };
+
+    // Check stale (no checkpoint for > threshold minutes)
+    if (task.lastCheckpointAt) {
+      const lastCp = new Date(task.lastCheckpointAt).getTime();
+      const staleMs = now - lastCp;
+      if (staleMs > staleThreshold * 60 * 1000) {
+        stuck.push({
+          ...entry,
+          reason: 'stale',
+          lastCheckpointAt: task.lastCheckpointAt,
+          staleMinutes: Math.floor(staleMs / 60000),
+        });
+        continue; // Don't double-list as stale AND expired
+      }
+    }
+
+    // Check expired lease
+    if (task.leaseUntil) {
+      const leaseEnd = new Date(task.leaseUntil).getTime();
+      if (leaseEnd < now) {
+        stuck.push({
+          ...entry,
+          reason: 'expired',
+          leaseUntil: task.leaseUntil,
+          expiredMinutes: Math.floor((now - leaseEnd) / 60000),
+        });
+      }
+    }
+  }
+
+  return stuck;
+}
+
+/**
+ * Get handoff context for spawning a CC/ACP session.
+ * Assembles spec, repo path, CLAUDE.md, constraints, and recent checkpoints.
+ */
+function getHandoffContext(project, flowboardId) {
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found: ${flowboardId}`);
+
+  const projectDir = path.join(PROJECTS_DIR, project);
+  let spec = null;
+  let repo = null;
+  let claudeMd = null;
+  const constraints = [];
+
+  // Read spec file
+  if (cached.specFile) {
+    const specPath = path.join(projectDir, cached.specFile);
+    try { spec = fs.readFileSync(specPath, 'utf8'); } catch { /* graceful */ }
+  }
+
+  // Read PROJECT.md for repo path
+  const projectMdPath = path.join(projectDir, 'PROJECT.md');
+  try {
+    const projectMd = fs.readFileSync(projectMdPath, 'utf8');
+    // Extract repo path from "## Git Repositories" section
+    const repoMatch = projectMd.match(/(?:Repo|Repository|Git)[:\s]+[`"]?([~/][^\s`"]+)/i);
+    if (repoMatch) {
+      repo = repoMatch[1].replace('~', process.env.HOME || '/home/jetson');
+    }
+
+    // Extract constraints
+    const constraintMatch = projectMd.match(/## Constraints\n([\s\S]*?)(?=\n## |\n---|\Z)/);
+    if (constraintMatch) {
+      constraintMatch[1].split('\n').filter(l => l.trim().startsWith('-')).forEach(l => {
+        constraints.push(l.trim().replace(/^-\s*/, ''));
+      });
+    }
+  } catch { /* graceful */ }
+
+  // Read CLAUDE.md from repo
+  if (repo) {
+    const claudePath = path.join(repo, 'CLAUDE.md');
+    try { claudeMd = fs.readFileSync(claudePath, 'utf8'); } catch { /* graceful */ }
+  }
+
+  // Get recent checkpoints
+  let checkpoints = [];
+  try { checkpoints = getCheckpoints(project, flowboardId); } catch { /* graceful */ }
+
+  return {
+    spec,
+    repo,
+    claudeMd,
+    constraints: constraints.length > 0 ? constraints : null,
+    taskId: flowboardId,
+    project,
+    checkpoints: checkpoints.length > 0 ? checkpoints : null,
+  };
+}
+
+/**
+ * Route a task to a specific agent.
+ * Sets metadata.flowboard.routedAgent — enforced by claimTask().
+ */
+function routeTask(project, flowboardId, agent) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  const hzlTask = _taskService.getTaskById(ulid);
+  const meta = {
+    flowboard: {
+      ...(hzlTask?.metadata?.flowboard || {}),
+      routedAgent: agent || null,
+    }
+  };
+  _updateMetadata(ulid, meta);
+
+  // Also set hzl-core native agent field for claimNext routing
+  _taskService.updateTask(ulid, { assignee: agent || null });
+
+  cached.routedAgent = agent || null;
+  return _publicTask(cached);
+}
+
 /** Returns total number of tasks in RAM cache (all projects, incl. archived). */
 function getCacheSize() { return _cache.size; }
 
@@ -818,4 +1243,15 @@ module.exports = {
   recalcParentStatus,
   ensureProject,
   getCacheSize,
+  // Phase 5: Coordination primitives
+  claimTask,
+  releaseTask,
+  completeTask,
+  addCheckpoint,
+  getCheckpoints,
+  addComment,
+  getComments,
+  getStuckTasks,
+  getHandoffContext,
+  routeTask,
 };
