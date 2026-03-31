@@ -1478,7 +1478,10 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
         deliver: true,
         channel: process.env.OPENCLAW_DELIVER_CHANNEL || 'last',
         wakeMode: 'now',
-      }, process.env.OPENCLAW_DELIVER_TO ? { to: process.env.OPENCLAW_DELIVER_TO } : {})),
+      },
+        process.env.OPENCLAW_DELIVER_TO ? { to: process.env.OPENCLAW_DELIVER_TO } : {},
+        process.env.OPENCLAW_AGENT_ID ? { agentId: process.env.OPENCLAW_AGENT_ID } : {},
+      )),
     });
     if (!hookRes.ok) {
       console.error('Promote webhook error:', hookRes.status, await hookRes.text());
