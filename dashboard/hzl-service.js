@@ -874,6 +874,18 @@ function claimTask(project, flowboardId, opts) {
     throw Object.assign(new Error(`Task is routed to agent "${cached.routedAgent}", not "${agent}"`), { code: 'ROUTING_MISMATCH' });
   }
 
+  // Validation: Status must be claimable
+  const CLAIMABLE_STATUSES = new Set(['open', 'in-progress', 'backlog']);
+  if (!CLAIMABLE_STATUSES.has(cached.status)) {
+    throw Object.assign(new Error(`Cannot claim task in status "${cached.status}"`), { code: 'NOT_CLAIMABLE' });
+  }
+
+  // Validation: Lease must be positive finite number (minutes)
+  if (typeof lease !== 'number' || !Number.isFinite(lease) || lease <= 0) {
+    throw Object.assign(new Error('Lease must be a positive number of minutes'), { code: 'INVALID_LEASE' });
+  }
+  const clampedLease = Math.min(Math.max(lease, 1), 1440); // 1min..24h
+
   // Validation: Already claimed by another agent — allow re-claim only if lease expired
   const hzlTask = _taskService.getTaskById(ulid);
   if (hzlTask && hzlTask.agent && hzlTask.agent !== agent && hzlTask.status === 'in_progress') {
@@ -885,7 +897,7 @@ function claimTask(project, flowboardId, opts) {
   }
 
   // Calculate lease_until ISO timestamp
-  const leaseUntil = new Date(Date.now() + lease * 60 * 1000).toISOString();
+  const leaseUntil = new Date(Date.now() + clampedLease * 60 * 1000).toISOString();
 
   // Use hzl-core native claimTask
   const result = _taskService.claimTask(ulid, {
@@ -899,6 +911,7 @@ function claimTask(project, flowboardId, opts) {
     flowboard: {
       ...(result.metadata?.flowboard || {}),
       status: 'in-progress',
+      previousStatus: cached.status, // remember for release rollback
       lastCheckpointAt: new Date().toISOString(), // claim starts the stale timer
     }
   };
@@ -935,18 +948,21 @@ function releaseTask(project, flowboardId, opts = {}) {
   // Use hzl-core native releaseTask
   _taskService.releaseTask(ulid, { agent_id: agent, author: agent });
 
-  // Update FlowBoard metadata — status back to open
+  // Update FlowBoard metadata — restore previous status (default to 'open')
   const hzlTask = _taskService.getTaskById(ulid);
+  const fb = hzlTask?.metadata?.flowboard || {};
+  const restoreStatus = fb.previousStatus || 'open';
   const meta = {
     flowboard: {
-      ...(hzlTask?.metadata?.flowboard || {}),
-      status: 'open',
+      ...fb,
+      status: restoreStatus,
+      previousStatus: null, // clear
     }
   };
   _updateMetadata(ulid, meta);
 
   // Update RAM cache
-  cached.status = 'open';
+  cached.status = restoreStatus;
   cached.agent = null;
   cached.claimedAt = null;
   cached.leaseUntil = null;
@@ -968,6 +984,12 @@ function completeTask(project, flowboardId, opts = {}) {
 
   const cached = _cache.get(`${project}:${flowboardId}`);
   if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  // Owner check: if task is claimed, only the owning agent can complete
+  if (cached.agent) {
+    if (!agent) throw Object.assign(new Error('Agent is required to complete a claimed task'), { code: 'AGENT_REQUIRED' });
+    if (cached.agent !== agent) throw Object.assign(new Error(`Only the owning agent "${cached.agent}" can complete`), { code: 'NOT_OWNER' });
+  }
 
   // Use hzl-core native completeTask (validates status transition)
   _taskService.completeTask(ulid, { agent_id: agent, author: agent });
@@ -1020,6 +1042,11 @@ function addCheckpoint(project, flowboardId, opts) {
 
   const cached = _cache.get(`${project}:${flowboardId}`);
   if (!cached) throw new Error(`Task not found in cache: ${flowboardId}`);
+
+  // Owner check: only the claiming agent can checkpoint (prevents lease hijacking)
+  if (cached.agent && agent && cached.agent !== agent) {
+    throw Object.assign(new Error(`Only the owning agent "${cached.agent}" can checkpoint`), { code: 'NOT_OWNER' });
+  }
 
   // Use hzl-core native addCheckpoint (name=message, data={})
   const result = _taskService.addCheckpoint(ulid, message, {}, {
@@ -1183,10 +1210,12 @@ function getHandoffContext(project, flowboardId) {
   let claudeMd = null;
   const constraints = [];
 
-  // Read spec file
+  // Read spec file (with path traversal guard)
   if (cached.specFile) {
-    const specPath = path.join(projectDir, cached.specFile);
-    try { spec = fs.readFileSync(specPath, 'utf8'); } catch { /* graceful */ }
+    const specPath = path.resolve(projectDir, cached.specFile);
+    if (specPath.startsWith(projectDir + path.sep)) {
+      try { spec = fs.readFileSync(specPath, 'utf8'); } catch { /* graceful */ }
+    }
   }
 
   // Read PROJECT.md for repo path

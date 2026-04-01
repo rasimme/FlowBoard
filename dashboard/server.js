@@ -1586,7 +1586,10 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
     }
     res.json({ ok: true, task });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message.includes('not found') ? 404
+                 : err.code === 'AGENT_REQUIRED' || err.code === 'NOT_OWNER' ? 403
+                 : 400;
+    res.status(status).json({ error: err.message });
   }
 });
 
@@ -1598,7 +1601,8 @@ app.post('/api/projects/:name/tasks/:id/checkpoint', (req, res) => {
     const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent, progress });
     res.json({ ok: true, checkpoint });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
+    res.status(status).json({ error: err.message });
   }
 });
 
@@ -1609,7 +1613,8 @@ app.get('/api/projects/:name/tasks/:id/checkpoints', (req, res) => {
     const checkpoints = hzlService.getCheckpoints(req.params.name, req.params.id);
     res.json({ ok: true, checkpoints });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ error: err.message });
   }
 });
 
@@ -1621,7 +1626,8 @@ app.post('/api/projects/:name/tasks/:id/comment', (req, res) => {
     const comment = hzlService.addComment(req.params.name, req.params.id, { message, author });
     res.json({ ok: true, comment });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ error: err.message });
   }
 });
 
