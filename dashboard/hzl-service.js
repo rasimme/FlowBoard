@@ -8,7 +8,11 @@ let _taskService = null;
 let _projectService = null;
 let _eventStore = null;
 let _projectionEngine = null;
+let _hookDrainService = null;
 let _EventType = null; // EventType enum from hzl-core (loaded dynamically)
+
+// Completion callback — set via setOnComplete() by server.js for notifications
+let _onCompleteCallback = null;
 
 // RAM cache: flowboardId (string like "T-042") → full FlowBoard task object
 const _cache = new Map();
@@ -192,6 +196,7 @@ async function init(dbPath) {
   const { CommentsCheckpointsProjector } = await import('hzl-core/projections/comments-checkpoints.js');
   const { TaskService }    = await import('hzl-core/services/task-service.js');
   const { ProjectService } = await import('hzl-core/services/project-service.js');
+  const { HookDrainService } = await import('hzl-core');
 
   // Ensure DB directory exists
   const dbDir = path.dirname(dbPath);
@@ -214,8 +219,21 @@ async function init(dbPath) {
   _projectionEngine.register(new CommentsCheckpointsProjector());
   _EventType = EventType;
 
+  // Configure on_done hook — posts to FlowBoard's own receiver endpoint
+  const hookPort = process.env.PORT || 18790;
+  const onDoneHook = {
+    url: `http://127.0.0.1:${hookPort}/api/hooks/task-complete`,
+    headers: {},
+  };
+
   _projectService = new ProjectService(datastore.cacheDb, _eventStore, _projectionEngine);
-  _taskService    = new TaskService(datastore.cacheDb, _eventStore, _projectionEngine, _projectService, datastore.eventsDb);
+  _taskService    = new TaskService(datastore.cacheDb, _eventStore, _projectionEngine, _projectService, datastore.eventsDb, { onDone: onDoneHook });
+
+  // Initialize HookDrainService for outbox processing
+  _hookDrainService = new HookDrainService(datastore.cacheDb, {
+    requestTimeoutMs: 5000,
+    maxAttempts: 3,
+  });
 
   await rebuildCache();
 
@@ -967,11 +985,24 @@ function completeTask(project, flowboardId, opts = {}) {
   _updateMetadata(ulid, meta);
 
   // Update RAM cache
+  const completingAgent = cached.agent; // save before clearing
   cached.status = 'review';
   cached.completed = completedDate;
   cached.agent = null;
   cached.claimedAt = null;
   cached.leaseUntil = null;
+
+  // Fire completion callback (for notifications)
+  if (_onCompleteCallback) {
+    try {
+      _onCompleteCallback({
+        project,
+        taskId: flowboardId,
+        title: cached.title,
+        agent: completingAgent || agent,
+      });
+    } catch (e) { console.warn('[hzl-service] onComplete callback error:', e.message); }
+  }
 
   return _publicTask(cached);
 }
@@ -1225,6 +1256,15 @@ function routeTask(project, flowboardId, agent) {
   return _publicTask(cached);
 }
 
+/** Set the completion notification callback */
+function setOnComplete(fn) { _onCompleteCallback = fn; }
+
+/** Drain pending hook_outbox entries (call periodically from server.js) */
+async function drainHooks() {
+  if (!_hookDrainService) return { delivered: 0 };
+  return _hookDrainService.drain();
+}
+
 /** Returns total number of tasks in RAM cache (all projects, incl. archived). */
 function getCacheSize() { return _cache.size; }
 
@@ -1254,4 +1294,6 @@ module.exports = {
   getStuckTasks,
   getHandoffContext,
   routeTask,
+  setOnComplete,
+  drainHooks,
 };
