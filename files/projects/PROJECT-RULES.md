@@ -28,18 +28,34 @@ These rules apply whenever a project is active.
 
 ### Workflow
 ```
-open → in-progress → review → done
+backlog → open → in-progress → review → done → (archived)
+                      ↕ blocked (flag, not status)
 ```
 
-- ONE task in-progress at a time
+- ONE task in-progress at a time per agent
 - **Any active work = in-progress** (includes brainstorming, design, research — not just code)
 - Complete → set "review" (user confirms → "done")
 - Mention status changes briefly
+- **Backlog:** Planned but not actively scheduled. New tasks default here.
+- **Blocked:** Flag on any active task (not a status). Set/unset via API.
+- **Archived:** Only from done. Parent archive cascades to all children.
 
 ### Subtasks
 - Parent + subtasks: when parent moves to in-progress, update relevant subtasks too
 - When subtask completes: check if parent status needs updating
 - Delete modal supports checkboxes for spec + subtask deletion
+
+### Task Execution Protocol
+When working on a task:
+1. **Claim** the task: `POST /api/projects/:name/tasks/:id/claim {"agent":"<your-id>","lease":60}`
+2. **Checkpoint** at milestones: `POST /api/projects/:name/tasks/:id/checkpoint {"message":"...","agent":"<your-id>"}`
+3. **Complete** when done: `POST /api/projects/:name/tasks/:id/complete {"agent":"<your-id>"}`
+4. If you need to stop mid-task: `POST /api/projects/:name/tasks/:id/release {"agent":"<your-id>"}`
+
+**Safety nets (automatic):**
+- Stale detection: no checkpoint for 30min → warning notification
+- Lease expiry: time exceeded → task eligible for recovery
+- Completion notification: gateway alert on task complete
 
 ### API Access (MANDATORY)
 Dashboard server manages all data. **Always use API for mutations:**
@@ -55,6 +71,16 @@ Dashboard server manages all data. **Always use API for mutations:**
 | Canvas connections | `GET/POST/DELETE /api/projects/:name/canvas/connections[/:id]` |
 | Batch delete notes | `DELETE /api/projects/:name/canvas/notes/batch` `{noteIds:[...]}` |
 | Promote notes | `POST /api/projects/:name/canvas/promote` `{notes, connections, mode}` |
+| Claim task | `POST /api/projects/:name/tasks/:id/claim` `{agent, lease}` |
+| Release task | `POST /api/projects/:name/tasks/:id/release` `{agent}` |
+| Complete task | `POST /api/projects/:name/tasks/:id/complete` `{agent}` |
+| Checkpoint | `POST /api/projects/:name/tasks/:id/checkpoint` `{message, agent}` |
+| Comment | `POST /api/projects/:name/tasks/:id/comment` `{message, author}` |
+| Get checkpoints | `GET /api/projects/:name/tasks/:id/checkpoints` |
+| Get comments | `GET /api/projects/:name/tasks/:id/comments` |
+| Stuck tasks | `GET /api/tasks/stuck[?staleThreshold=30]` |
+| Handoff context | `GET /api/projects/:name/tasks/:id/handoff` |
+| Route task | `POST /api/projects/:name/tasks/:id/route` `{agent}` |
 
 **Reading tasks:** Prefer BOOTSTRAP.md (contains filtered active tasks). Only use API/file as fallback. Never read tasks.json directly — at scale (100+ tasks) it wastes context.
 
@@ -76,22 +102,27 @@ The Idea Canvas is a visual brainstorming space. Notes can be promoted to tasks.
 - **Connections:** Lines between notes (create by dragging between connection dots)
 - **Clusters:** Connected notes get an auto-frame; click frame to select all
 
-### Promote Flow (Agent-Assisted)
+### Promote Flow → Specify Session
 1. User selects note(s) → clicks "Task" button
-2. Dashboard sends structured payload to OpenClaw webhook (`/hooks/agent`)
-3. Isolated agent session decides task structure:
-   - Simple idea → Task with title only
-   - Detailed idea → Task + spec file
-   - Complex cluster → Parent task + subtasks
-4. Agent creates tasks via API, then batch-deletes promoted notes
-5. Agent does NOT ask follow-up questions — decides autonomously
+2. Dashboard creates a Specify session, sends webhook to agent's main session
+3. Agent runs **Specify dialog** (see `context/specify-prompt.md`):
+   - Analyzes notes, assesses complexity (Simple / Medium / Complex)
+   - Simple: generates spec summary, confirms with user, creates 1 Task + 1 Spec
+   - Complex: asks 1-3 clarifying questions, then generates Full Spec with User Stories + FRs
+4. Agent creates tasks + specs via API, then batch-deletes promoted notes
+5. Agent completes the Specify session via `POST /api/specify/sessions/:id/complete`
 
-### When Agent Receives `[CANVAS_PROMOTE]`
-- Read the notes and connections
-- Assess complexity → choose appropriate task structure
-- Create via FlowBoard API (localhost:18790)
-- Delete promoted notes via batch-delete endpoint
-- Deliver summary to user
+### Manual Specify (Chat-Triggered)
+Trigger phrases: "Neues Feature: X", "Spezifiziere: X", "Specify: X"
+→ Same flow as Canvas Promote, but without canvas notes. Uses active project from ACTIVE-PROJECT.md.
+
+### Specify Session API
+| Action | Endpoint |
+|--------|----------|
+| List sessions | `GET /api/specify/sessions` |
+| Get session | `GET /api/specify/sessions/:id` |
+| Abort session | `POST /api/specify/sessions/:id/abort` |
+| Complete session | `POST /api/specify/sessions/:id/complete` |
 
 ---
 
@@ -106,7 +137,7 @@ The Idea Canvas is a visual brainstorming space. Notes can be promoted to tasks.
 
 - Missing ACTIVE-PROJECT.md → no project active
 - Missing project folder → notify user, offer recreate
-- Missing/corrupt tasks.json → create empty `{"tasks":[]}`
+- Missing/corrupt tasks.json → auto-migrated to HZL on startup
 - Task ID not found → notify user, show available
 
 ---
