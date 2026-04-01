@@ -1672,12 +1672,73 @@ app.post('/api/projects/:name/tasks/:id/route', (req, res) => {
 });
 
 // =============================================================================
+// Hook Receiver — receives on_done callbacks from HZL's hook_outbox
+// =============================================================================
+
+app.post('/api/hooks/task-complete', (req, res) => {
+  // Called by HookDrainService when a task transitions to done/archived
+  const payload = req.body;
+  console.log('[hook] Task complete notification:', JSON.stringify(payload));
+  res.json({ ok: true });
+});
+
+// =============================================================================
 
 async function startServer() {
   if (HZL_ENABLED) {
     console.log('[hzl-service] HZL_ENABLED=true, initializing...');
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
+
+    // Completion notification callback — sends to gateway when a task is completed
+    hzlService.setOnComplete(({ project, taskId, title, agent }) => {
+      const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
+      const token = process.env.HOOKS_TOKEN || '';
+      const msg = `✅ Task ${taskId} "${title}" completed by ${agent || 'unknown'} (${project})`;
+      fetch(`${gatewayUrl}/hooks/agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          text: msg,
+          agentId: process.env.OPENCLAW_AGENT_ID || undefined,
+          sessionKey: process.env.OPENCLAW_AGENT_ID ? `agent:${process.env.OPENCLAW_AGENT_ID}:main` : undefined,
+        }),
+      }).catch(e => console.warn('[notify] Gateway unreachable:', e.message));
+    });
+
+    // Hook drain — process outbox every 2 minutes
+    setInterval(async () => {
+      try {
+        const result = await hzlService.drainHooks();
+        if (result.delivered > 0) console.log(`[hook-drain] Delivered ${result.delivered} hooks`);
+      } catch (e) { console.warn('[hook-drain] Error:', e.message); }
+    }, 2 * 60 * 1000);
+
+    // Stale-check — detect stuck tasks every 5 minutes, notify via gateway
+    setInterval(() => {
+      try {
+        const staleMinutes = parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30;
+        const stuck = hzlService.getStuckTasks({ staleThreshold: staleMinutes });
+        if (stuck.stale.length > 0 || stuck.expired.length > 0) {
+          const parts = [];
+          for (const t of stuck.stale) parts.push(`⚠️ Stale: ${t.id} "${t.title}" (${t.agent}, ${t.staleSinceMinutes}min ohne Checkpoint)`);
+          for (const t of stuck.expired) parts.push(`🔴 Lease expired: ${t.id} "${t.title}" (${t.agent})`);
+          const msg = `🔍 Stuck-Check:\n${parts.join('\n')}`;
+
+          const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
+          const token = process.env.HOOKS_TOKEN || '';
+          fetch(`${gatewayUrl}/hooks/agent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({
+              text: msg,
+              agentId: process.env.OPENCLAW_AGENT_ID || undefined,
+              sessionKey: process.env.OPENCLAW_AGENT_ID ? `agent:${process.env.OPENCLAW_AGENT_ID}:main` : undefined,
+            }),
+          }).catch(e => console.warn('[stale-check] Gateway unreachable:', e.message));
+        }
+      } catch (e) { console.warn('[stale-check] Error:', e.message); }
+    }, 5 * 60 * 1000);
 
     // Auto-migrate: if any tasks.json files exist, migrate them (idempotent per-task)
     const projectsDir = path.join(WORKSPACE, 'projects');
