@@ -22,6 +22,7 @@ const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
 const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
 const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
+const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
 const specifySession = require('./specify-sessions');
 
 // Gateway webhook config (for project-switch wake events)
@@ -544,10 +545,21 @@ function getTaskReminder(task, action, newStatus, prevStatus) {
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = readActiveProject();
-  const projects = parseIndexMd().map(p => ({
-    ...p,
-    taskCounts: getTaskCounts(p.name)
-  }));
+  let projects;
+  if (HZL_ENABLED) {
+    try {
+      const hzlProjects = hzlService.listHzlProjects();
+      projects = fbMeta.listProjects(hzlProjects).map(p => ({
+        ...p,
+        taskCounts: getTaskCounts(p.name),
+      }));
+    } catch (e) {
+      console.warn('[projects] HZL list failed, falling back to _index.md:', e.message);
+      projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
+    }
+  } else {
+    projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
+  }
   res.json({ activeProject: active, projects });
 });
 
@@ -1695,6 +1707,10 @@ async function startServer() {
     console.log('[hzl-service] HZL_ENABLED=true, initializing...');
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
+
+    // T-131-1: init FlowBoard metadata table and migrate from _index.md
+    fbMeta.init(hzlService.getCacheDb());
+    fbMeta.migrateFromIndexMd(INDEX_FILE, getDisplayName);
 
     // Completion notification callback — sends to gateway when a task is completed
     hzlService.setOnComplete(({ project, taskId, title, agent }) => {
