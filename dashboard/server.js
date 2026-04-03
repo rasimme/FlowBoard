@@ -23,6 +23,7 @@ const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
 const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
 const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
 const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
+const AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
 const specifySession = require('./specify-sessions');
 
 // Gateway webhook config (for project-switch wake events)
@@ -299,17 +300,48 @@ async function sendWakeEvent(text) {
 
 // GET /api/status
 app.get('/api/status', (req, res) => {
-  res.json({ activeProject: readActiveProject() });
+  const agentId = req.query.agentId || AGENT_ID;
+  let activeProject;
+  if (HZL_ENABLED) {
+    // T-131-3: DB is canonical; file is migration fallback when no DB row yet
+    activeProject = fbMeta.getAgentActiveProject(agentId);
+    if (activeProject === null) activeProject = readActiveProject();
+  } else {
+    activeProject = readActiveProject();
+  }
+  res.json({ activeProject, agentId });
 });
 
 // PUT /api/status
 app.put('/api/status', async (req, res) => {
-  const { project } = req.body;
-  const previousProject = readActiveProject();
+  const { project, agentId: bodyAgentId } = req.body;
+  const agentId = bodyAgentId || AGENT_ID;
+  const effectiveProject = (project && project !== 'none') ? project : null;
+
+  // Read previous state from canonical source
+  let previousProject;
+  if (HZL_ENABLED) {
+    previousProject = fbMeta.getAgentActiveProject(agentId) ?? readActiveProject();
+  } else {
+    previousProject = readActiveProject();
+  }
+
   try {
-    const effectiveProject = (project && project !== 'none') ? project : null;
+    // T-131-3: write DB state (canonical)
+    if (HZL_ENABLED) {
+      fbMeta.setAgentActiveProject(agentId, effectiveProject);
+    }
+    // Also write file during migration transition (supports hook file-fallback)
     writeActiveProject(effectiveProject);
-    updateBootstrapMd(effectiveProject);
+
+    // Regenerate BOOTSTRAP.md — surface failure explicitly rather than silently swallowing it
+    let bootstrapWarning = null;
+    try {
+      updateBootstrapMd(effectiveProject);
+    } catch (err) {
+      bootstrapWarning = err.message;
+      console.error('[project-context] Bootstrap regeneration failed:', err.message);
+    }
 
     // Send wake event to notify agent of project switch
     if (effectiveProject) {
@@ -321,12 +353,24 @@ app.put('/api/status', async (req, res) => {
       sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
     }
 
-    res.json({ ok: true, activeProject: effectiveProject });
+    const body = { ok: true, activeProject: effectiveProject, agentId };
+    if (bootstrapWarning) body.bootstrapWarning = bootstrapWarning;
+    res.json(body);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+
+// GET /api/agents — list all known agents and their active project (T-131-3)
+app.get('/api/agents', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    res.json({ ok: true, agents: fbMeta.listAgents() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -1724,6 +1768,9 @@ async function startServer() {
     } else {
       console.log('[flowboard-meta] Existing metadata rows found — skipping _index.md migration');
     }
+
+    // T-131-3: backfill active project from ACTIVE-PROJECT.md if no DB row exists yet
+    fbMeta.backfillAgentFromFile(AGENT_ID, ACTIVE_PROJECT_FILE);
 
     // Completion notification callback — sends to gateway when a task is completed
     hzlService.setOnComplete(({ project, taskId, title, agent }) => {
