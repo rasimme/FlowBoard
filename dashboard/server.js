@@ -515,6 +515,17 @@ function getSubtaskProgress(tasks, parentId) {
   };
 }
 
+function projectExists(projectName) {
+  if (HZL_ENABLED) {
+    try {
+      return hzlService.listHzlProjects().some(p => p.name === projectName);
+    } catch {
+      return false;
+    }
+  }
+  return !!readTasksFile(projectName);
+}
+
 /**
  * Return a contextual reminder string for task lifecycle events.
  * @param {object} task - The task object (after any mutations)
@@ -545,21 +556,20 @@ function getTaskReminder(task, action, newStatus, prevStatus) {
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = readActiveProject();
-  let projects;
   if (HZL_ENABLED) {
     try {
       const hzlProjects = hzlService.listHzlProjects();
-      projects = fbMeta.listProjects(hzlProjects).map(p => ({
+      const projects = fbMeta.listProjects(hzlProjects).map(p => ({
         ...p,
         taskCounts: getTaskCounts(p.name),
       }));
+      return res.json({ activeProject: active, projects });
     } catch (e) {
-      console.warn('[projects] HZL list failed, falling back to _index.md:', e.message);
-      projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
+      console.error('[projects] Failed to list DB-backed projects:', e.message);
+      return res.status(500).json({ error: 'Failed to load projects from HZL/FlowBoard metadata' });
     }
-  } else {
-    projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
   }
+  const projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
   res.json({ activeProject: active, projects });
 });
 
@@ -567,8 +577,7 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/:name/tasks', (req, res) => {
   let tasks, responseBase;
   if (HZL_ENABLED) {
-    const projectDir = path.join(PROJECTS_DIR, req.params.name);
-    if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+    if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
     const includeArchived = req.query.includeArchived === 'true';
     tasks = hzlService.listTasks(req.params.name, { includeArchived });
     responseBase = {};
@@ -606,8 +615,7 @@ app.get('/api/projects/:name/tasks', (req, res) => {
 // POST /api/projects/:name/tasks
 app.post('/api/projects/:name/tasks', (req, res) => {
   if (HZL_ENABLED) {
-    const projectDir = path.join(PROJECTS_DIR, req.params.name);
-    if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+    if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
     const { title, priority, parentId } = req.body;
     if (!title) return res.status(400).json({ error: 'Title required' });
 
@@ -1708,9 +1716,14 @@ async function startServer() {
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
 
-    // T-131-1: init FlowBoard metadata table and migrate from _index.md
+    // T-131-1: init FlowBoard metadata table and migrate from _index.md once at cutover
     fbMeta.init(hzlService.getCacheDb());
-    fbMeta.migrateFromIndexMd(INDEX_FILE, getDisplayName);
+    if (fbMeta.shouldRunIndexMigration()) {
+      fbMeta.migrateFromIndexMd(INDEX_FILE, getDisplayName);
+      console.log('[flowboard-meta] Cutover active: project metadata now served from DB');
+    } else {
+      console.log('[flowboard-meta] Existing metadata rows found — skipping _index.md migration');
+    }
 
     // Completion notification callback — sends to gateway when a task is completed
     hzlService.setOnComplete(({ project, taskId, title, agent }) => {
