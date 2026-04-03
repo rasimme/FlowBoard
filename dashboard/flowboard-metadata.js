@@ -158,10 +158,14 @@ function _parseJson(str, defaultVal) {
 /**
  * Return the active project name for the given agent, or null if none set.
  */
-function getAgentActiveProject(agentId) {
+function getAgentRow(agentId) {
   if (!_db) return null;
-  const row = _db.prepare('SELECT active_project FROM flowboard_agents WHERE agent_id = ?').get(agentId);
-  return row?.active_project || null;
+  return _db.prepare('SELECT agent_id, active_project, activated_at FROM flowboard_agents WHERE agent_id = ?').get(agentId) || null;
+}
+
+function getAgentActiveProject(agentId) {
+  const row = getAgentRow(agentId);
+  return row ? (row.active_project || null) : null;
 }
 
 /**
@@ -221,6 +225,7 @@ module.exports = {
   upsertProject,
   migrateFromIndexMd,
   listProjects,
+  getAgentRow,
   getAgentActiveProject,
   setAgentActiveProject,
   backfillAgentFromFile,
