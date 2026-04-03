@@ -29,6 +29,16 @@ function init(db) {
   console.log('[flowboard-meta] Table ready: flowboard_projects');
 }
 
+function countProjects() {
+  if (!_db) return 0;
+  const row = _db.prepare('SELECT COUNT(*) AS count FROM flowboard_projects').get();
+  return row?.count || 0;
+}
+
+function shouldRunIndexMigration() {
+  return countProjects() === 0;
+}
+
 function getProject(name) {
   if (!_db) return null;
   return _db.prepare('SELECT * FROM flowboard_projects WHERE name = ?').get(name) || null;
@@ -133,4 +143,4 @@ function _parseJson(str, defaultVal) {
   try { return JSON.parse(str); } catch { return defaultVal; }
 }
 
-module.exports = { init, getProject, upsertProject, migrateFromIndexMd, listProjects };
+module.exports = { init, countProjects, shouldRunIndexMigration, getProject, upsertProject, migrateFromIndexMd, listProjects };
