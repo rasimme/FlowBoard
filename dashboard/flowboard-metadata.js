@@ -1,7 +1,8 @@
 'use strict';
 
-// flowboard-metadata.js — FlowBoard-owned project metadata table in HZL SQLite DB
+// flowboard-metadata.js — FlowBoard-owned project metadata tables in HZL SQLite DB
 // T-131-1: replaces _index.md as live source of truth for project metadata
+// T-131-3: adds flowboard_agents for DB-backed per-agent active project state
 
 const fs = require('fs');
 
@@ -19,6 +20,14 @@ const CREATE_TABLE_SQL = `
   )
 `;
 
+const CREATE_AGENTS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_agents (
+    agent_id        TEXT PRIMARY KEY,
+    active_project  TEXT,
+    activated_at    TEXT
+  )
+`;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -26,7 +35,8 @@ const CREATE_TABLE_SQL = `
 function init(db) {
   _db = db;
   _db.prepare(CREATE_TABLE_SQL).run();
-  console.log('[flowboard-meta] Table ready: flowboard_projects');
+  _db.prepare(CREATE_AGENTS_TABLE_SQL).run();
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents');
 }
 
 function countProjects() {
@@ -143,4 +153,76 @@ function _parseJson(str, defaultVal) {
   try { return JSON.parse(str); } catch { return defaultVal; }
 }
 
-module.exports = { init, countProjects, shouldRunIndexMigration, getProject, upsertProject, migrateFromIndexMd, listProjects };
+// --- Agent state (T-131-3) ---
+
+/**
+ * Return the active project name for the given agent, or null if none set.
+ */
+function getAgentActiveProject(agentId) {
+  if (!_db) return null;
+  const row = _db.prepare('SELECT active_project FROM flowboard_agents WHERE agent_id = ?').get(agentId);
+  return row?.active_project || null;
+}
+
+/**
+ * Upsert the active project for an agent. Pass null/undefined to clear.
+ * activated_at is always set to current UTC ISO-8601 timestamp.
+ */
+function setAgentActiveProject(agentId, projectName) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const now = new Date().toISOString();
+  _db.prepare(`
+    INSERT INTO flowboard_agents (agent_id, active_project, activated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(agent_id) DO UPDATE SET
+      active_project = excluded.active_project,
+      activated_at   = excluded.activated_at
+  `).run(agentId, projectName || null, now);
+}
+
+/**
+ * One-time migration: read active project from ACTIVE-PROJECT.md and insert into
+ * flowboard_agents if no row exists yet for this agent.
+ * Returns the imported project name, or null if skipped/not found.
+ */
+function backfillAgentFromFile(agentId, activeProjectFilePath) {
+  if (!_db) return null;
+  const existing = _db.prepare('SELECT active_project FROM flowboard_agents WHERE agent_id = ?').get(agentId);
+  if (existing) return null; // already in DB — skip
+
+  let projectName = null;
+  try {
+    const text = fs.readFileSync(activeProjectFilePath, 'utf8');
+    const match = text.match(/^project:\s*(.+)$/m);
+    const name = match ? match[1].trim() : null;
+    projectName = (name && name !== 'none') ? name : null;
+  } catch {
+    return null; // file not found — nothing to migrate
+  }
+
+  setAgentActiveProject(agentId, projectName);
+  console.log(`[flowboard-meta] Backfilled agent "${agentId}": active_project=${projectName || 'null'}`);
+  return projectName;
+}
+
+/**
+ * List all agent rows ordered by agent_id.
+ */
+function listAgents() {
+  if (!_db) return [];
+  return _db.prepare('SELECT agent_id, active_project, activated_at FROM flowboard_agents ORDER BY agent_id').all();
+}
+
+module.exports = {
+  init,
+  countProjects,
+  shouldRunIndexMigration,
+  getProject,
+  upsertProject,
+  migrateFromIndexMd,
+  listProjects,
+  getAgentActiveProject,
+  setAgentActiveProject,
+  backfillAgentFromFile,
+  listAgents,
+};

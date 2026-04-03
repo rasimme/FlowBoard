@@ -80,6 +80,26 @@ function trimSessionLog(content, maxSessions = 2) {
  */
 const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
 
+function resolveAgentId(event) {
+  return event?.context?.agentId || process.env.OPENCLAW_AGENT_ID || 'main';
+}
+
+/**
+ * T-131-3: Query FlowBoard API for the active project of the given agent.
+ * Returns project name string or null. Fails soft if server is unreachable.
+ */
+async function resolveActiveProjectFromApi(agentId) {
+  try {
+    const url = `http://localhost:${FLOWBOARD_PORT}/api/status?agentId=${encodeURIComponent(agentId)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.activeProject || null;
+  } catch {
+    return null;
+  }
+}
+
 async function getTaskStatusSummary(projectName) {
   let data;
   try {
@@ -147,21 +167,31 @@ async function getTaskStatusSummary(projectName) {
   return lines.join("\n");
 }
 
-async function updateBootstrapWithProjectContext(workspaceDir) {
+async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
   if (!workspaceDir) return;
 
-  const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
-  if (!existsSync(activeProjectPath)) return;
+  // T-131-3: resolve active project from DB (via API) first; file is migration fallback
+  let projectName = await resolveActiveProjectFromApi(agentId || 'main');
 
-  let content;
-  try { content = readFileSync(activeProjectPath, "utf8"); } catch { return; }
+  if (projectName !== null) {
+    console.log(`[project-context] Active project from DB (agent: ${agentId}): ${projectName || 'none'}`);
+  } else {
+    // File-based fallback: used during migration or when server is not yet running
+    const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
+    if (existsSync(activeProjectPath)) {
+      try {
+        const content = readFileSync(activeProjectPath, "utf8");
+        const match = content.match(/^project:\s*(.+)$/m);
+        const name = match?.[1]?.trim();
+        projectName = (name && name !== "none") ? name : null;
+        if (projectName) console.log(`[project-context] Active project from file (fallback): ${projectName}`);
+      } catch { /* no file — treat as no active project */ }
+    }
+  }
 
-  const match = content.match(/^project:\s*(.+)$/m);
-  const projectName = match?.[1]?.trim();
-  
   const bootstrapPath = join(workspaceDir, "BOOTSTRAP.md");
 
-  if (!projectName || projectName === "none") {
+  if (!projectName) {
     // No active project — clear BOOTSTRAP.md
     try { writeFileSync(bootstrapPath, ""); } catch {}
     return;
@@ -207,14 +237,16 @@ async function updateBootstrapWithProjectContext(workspaceDir) {
 }
 
 const handler = async (event) => {
+  const agentId = resolveAgentId(event);
+
   // Trigger on /new, /reset, gateway startup, and after compaction
   if (event.type === "command" && (event.action === "new" || event.action === "reset")) {
     const workspaceDir = resolveWorkspace(event);
-    await updateBootstrapWithProjectContext(workspaceDir);
+    await updateBootstrapWithProjectContext(workspaceDir, agentId);
   }
-  
+
   if (event.type === "gateway" && event.action === "startup") {
-    await updateBootstrapWithProjectContext(resolveWorkspace(event));
+    await updateBootstrapWithProjectContext(resolveWorkspace(event), agentId);
   }
 
   // T-121: Regenerate project context after compaction so rules survive LCM
@@ -222,7 +254,7 @@ const handler = async (event) => {
     const workspaceDir = resolveWorkspace(event);
     if (workspaceDir) {
       console.log("[project-context] Regenerating BOOTSTRAP.md after compaction");
-      await updateBootstrapWithProjectContext(workspaceDir);
+      await updateBootstrapWithProjectContext(workspaceDir, agentId);
     }
   }
 };
