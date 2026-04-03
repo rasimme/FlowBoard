@@ -303,9 +303,13 @@ app.get('/api/status', (req, res) => {
   const agentId = req.query.agentId || AGENT_ID;
   let activeProject;
   if (HZL_ENABLED) {
-    // T-131-3: DB is canonical; file is migration fallback when no DB row yet
-    activeProject = fbMeta.getAgentActiveProject(agentId);
-    if (activeProject === null) activeProject = readActiveProject();
+    // T-131-3: DB is canonical. File fallback is only for agents not yet backfilled.
+    const row = fbMeta.getAgentRow(agentId);
+    if (row) {
+      activeProject = row.active_project || null;
+    } else {
+      activeProject = readActiveProject();
+    }
   } else {
     activeProject = readActiveProject();
   }
@@ -331,16 +335,22 @@ app.put('/api/status', async (req, res) => {
     if (HZL_ENABLED) {
       fbMeta.setAgentActiveProject(agentId, effectiveProject);
     }
-    // Also write file during migration transition (supports hook file-fallback)
-    writeActiveProject(effectiveProject);
+    // Transitional compat only for the local runtime agent/workspace.
+    // ACTIVE-PROJECT.md is no longer canonical when HZL is enabled.
+    if (!HZL_ENABLED || agentId === AGENT_ID) {
+      writeActiveProject(effectiveProject);
+    }
 
-    // Regenerate BOOTSTRAP.md — surface failure explicitly rather than silently swallowing it
+    // Regenerate BOOTSTRAP.md for the local runtime agent/workspace only.
+    // If this fails, DB state is still canonical; bootstrap can be retried.
     let bootstrapWarning = null;
-    try {
-      updateBootstrapMd(effectiveProject);
-    } catch (err) {
-      bootstrapWarning = err.message;
-      console.error('[project-context] Bootstrap regeneration failed:', err.message);
+    if (!HZL_ENABLED || agentId === AGENT_ID) {
+      try {
+        updateBootstrapMd(effectiveProject);
+      } catch (err) {
+        bootstrapWarning = `DB state updated, but bootstrap regeneration failed: ${err.message}`;
+        console.error('[project-context] Bootstrap regeneration failed after DB update:', err.message);
+      }
     }
 
     // Send wake event to notify agent of project switch
@@ -1769,7 +1779,8 @@ async function startServer() {
       console.log('[flowboard-meta] Existing metadata rows found — skipping _index.md migration');
     }
 
-    // T-131-3: backfill active project from ACTIVE-PROJECT.md if no DB row exists yet
+    // T-131-3: minimal migration backfill for the current runtime agent only.
+    // Multi-agent/global backfill is intentionally deferred to a later migration step.
     fbMeta.backfillAgentFromFile(AGENT_ID, ACTIVE_PROJECT_FILE);
 
     // Completion notification callback — sends to gateway when a task is completed
