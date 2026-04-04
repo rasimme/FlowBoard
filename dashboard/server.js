@@ -1791,18 +1791,22 @@ async function startServer() {
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
 
-    // T-131-1: init FlowBoard metadata table and migrate from _index.md once at cutover
+    // Init FlowBoard metadata tables (creates flowboard_projects, flowboard_agents, flowboard_migrations)
     fbMeta.init(hzlService.getCacheDb());
-    if (fbMeta.shouldRunIndexMigration()) {
-      fbMeta.migrateFromIndexMd(INDEX_FILE, getDisplayName);
-      console.log('[flowboard-meta] Cutover active: project metadata now served from DB');
-    } else {
-      console.log('[flowboard-meta] Existing metadata rows found — skipping _index.md migration');
-    }
 
-    // T-131-3: minimal migration backfill for the current runtime agent only.
-    // Multi-agent/global backfill is intentionally deferred to a later migration step.
-    fbMeta.backfillAgentFromFile(AGENT_ID, ACTIVE_PROJECT_FILE);
+    // Run all pending migrations via the registry
+    const migrations = require('./migrations.js');
+    migrations.runPending(hzlService.getCacheDb(), {
+      hzlService,
+      fbMeta,
+      projectsDir:       PROJECTS_DIR,
+      indexFile:         INDEX_FILE,
+      getDisplayName,
+      agentId:           AGENT_ID,
+      activeProjectFile: ACTIVE_PROJECT_FILE,
+      opeclawHome:       OPENCLAW_HOME,
+      sharedProjectsDir: SHARED_PROJECTS_DIR,
+    });
 
     // Completion notification callback — sends to gateway when a task is completed
     hzlService.setOnComplete(({ project, taskId, title, agent }) => {

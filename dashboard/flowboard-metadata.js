@@ -28,6 +28,14 @@ const CREATE_AGENTS_TABLE_SQL = `
   )
 `;
 
+const CREATE_MIGRATIONS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_migrations (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    applied_at  TEXT NOT NULL
+  )
+`;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -36,7 +44,8 @@ function init(db) {
   _db = db;
   _db.prepare(CREATE_TABLE_SQL).run();
   _db.prepare(CREATE_AGENTS_TABLE_SQL).run();
-  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents');
+  _db.prepare(CREATE_MIGRATIONS_TABLE_SQL).run();
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations');
 }
 
 function countProjects() {
