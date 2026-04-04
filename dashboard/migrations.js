@@ -57,7 +57,64 @@ const migrations = [
     },
   },
 
-  // m004-project-path (T-131-2): filesystem migration — will be added here with filesystem: true
+
+  {
+    id:         'm004-project-path',
+    name:       'Move project files to shared root ~/.openclaw/projects/',
+    filesystem: true,
+    run: (_db, { openclawHome, projectsDir }) => {
+      const newRoot = path.join(openclawHome, 'projects');
+
+      // Idempotency: if target already exists and has content, nothing to do.
+      // (Server already uses newRoot via PROJECTS_DIR fallback logic.)
+      if (fs.existsSync(newRoot)) {
+        const entries = fs.readdirSync(newRoot);
+        if (entries.length > 0) {
+          console.log('[m004] Target already populated — skipping copy.');
+          return;
+        }
+      }
+
+      // Old workspace-relative projects path (source of truth before this migration)
+      const oldRoot = projectsDir; // still points to workspace/projects at this point
+
+      if (!fs.existsSync(oldRoot)) {
+        console.log('[m004] No existing projects directory found — nothing to migrate.');
+        return;
+      }
+
+      console.log(`[m004] Copying ${oldRoot} → ${newRoot} ...`);
+      fs.mkdirSync(newRoot, { recursive: true });
+      try {
+        fs.cpSync(oldRoot, newRoot, { recursive: true, preserveTimestamps: true });
+      } catch (err) {
+        console.warn('[m004] Copy failed — removing partial newRoot before retry.');
+        fs.rmSync(newRoot, { recursive: true, force: true });
+        throw err;
+      }
+
+      // Verify: every top-level entry in old root should exist in new root
+      const oldEntries = fs.readdirSync(oldRoot);
+      const newEntries = new Set(fs.readdirSync(newRoot));
+      const missing = oldEntries.filter(e => !newEntries.has(e));
+      if (missing.length > 0) {
+        throw new Error(`[m004] Verification failed — missing in new root: ${missing.join(', ')}`);
+      }
+
+      // Backup old root (rename, not delete — safe rollback)
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const backupPath = `${oldRoot}.bak-${ts}`;
+      console.log(`[m004] Renaming old root to ${backupPath} ...`);
+      fs.renameSync(oldRoot, backupPath);
+
+      // Compatibility symlink so any tool still using the old path keeps working
+      console.log(`[m004] Creating symlink ${oldRoot} → ${newRoot} ...`);
+      fs.symlinkSync(newRoot, oldRoot);
+
+      console.log(`[m004] Migration complete. ${oldEntries.length} entries moved.`);
+      console.log(`[m004] Backup preserved at: ${backupPath}`);
+    },
+  },
 ];
 
 /**
