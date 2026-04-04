@@ -261,18 +261,17 @@ function updateBootstrapMd(projectName, workspaceDir = WORKSPACE) {
     return;
   }
 
-  const rulesPath = path.join(PROJECTS_DIR, 'PROJECT-RULES.md');
+  // Canonical: docs/project-mode/PROJECT-RULES.md in repo; fallback: symlink in PROJECTS_DIR
+  const REPO_ROOT = path.resolve(__dirname, '..');
+  const canonicalRulesPath = path.join(REPO_ROOT, 'docs', 'project-mode', 'PROJECT-RULES.md');
+  const fallbackRulesPath = path.join(PROJECTS_DIR, 'PROJECT-RULES.md');
+  const rulesPath = fs.existsSync(canonicalRulesPath) ? canonicalRulesPath : fallbackRulesPath;
   const projectMdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
 
   let rulesContent = '';
   let projectContent = '';
   try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch (e) { console.warn(e); }
   try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch (e) { console.warn(e); }
-
-  // Smart Session Log trimming: keep only last 2 sessions in bootstrap
-  if (projectContent) {
-    projectContent = trimSessionLog(projectContent, 2);
-  }
 
   const sections = [`# Active Project: ${projectName}\n`];
   if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
