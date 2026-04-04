@@ -46,41 +46,8 @@ function resolveWorkspace(event) {
 }
 
 /**
- * Trim SESSION LOG in PROJECT.md to only the last N session entries.
- * Keeps everything before "## Session Log" intact, then appends
- * only the last N "### ..." entries from the log.
+ * NOTE: trimSessionLog removed by T-131-4/m005 — session logs now live in SESSIONS.md
  */
-function trimSessionLog(content, maxSessions = 2) {
-  const sessionLogMatch = content.match(/^(## Session Log)\s*$/m);
-  if (!sessionLogMatch) return content; // no session log section
-
-  const splitIndex = sessionLogMatch.index;
-  const beforeLog = content.slice(0, splitIndex);
-  const logSection = content.slice(splitIndex);
-
-  // Split log into entries by ### headers
-  const entryPattern = /^### .+$/gm;
-  const entries = [];
-  let match;
-  const matches = [];
-  while ((match = entryPattern.exec(logSection)) !== null) {
-    matches.push(match.index);
-  }
-
-  if (matches.length === 0) return content; // no entries, keep as-is
-
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i];
-    const end = i + 1 < matches.length ? matches[i + 1] : logSection.length;
-    entries.push(logSection.slice(start, end).trimEnd());
-  }
-
-  // Keep only first N entries (newest are at the top, prepended by agent)
-  const kept = entries.slice(0, maxSessions);
-  const trimmedLog = `## Session Log\n\n${kept.join("\n\n")}\n`;
-
-  return beforeLog + trimmedLog;
-}
 
 /**
  * Fetch tasks from FlowBoard API (HZL-backed) and return a status summary string.
