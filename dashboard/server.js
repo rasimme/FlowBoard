@@ -314,12 +314,15 @@ app.get('/api/status', (req, res) => {
   const agentId = req.query.agentId || AGENT_ID;
   let activeProject;
   if (HZL_ENABLED) {
-    // T-131-3: DB is canonical. File fallback is only for agents not yet backfilled.
+    // T-131-3: DB is canonical. File fallback exists only for the local runtime agent
+    // during migration; foreign/unknown agents must not inherit local file state.
     const row = fbMeta.getAgentRow(agentId);
     if (row) {
       activeProject = row.active_project || null;
-    } else {
+    } else if (agentId === AGENT_ID) {
       activeProject = readActiveProject();
+    } else {
+      activeProject = null;
     }
   } else {
     activeProject = readActiveProject();
@@ -383,7 +386,7 @@ app.put('/api/status', async (req, res) => {
 
 
 // GET /api/agents — list all known agents and their active project (T-131-3)
-app.get('/api/agents', (req, res) => {
+app.get('/api/agents', telegramAuthMiddleware, (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     res.json({ ok: true, agents: fbMeta.listAgents() });
