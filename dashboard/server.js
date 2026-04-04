@@ -599,6 +599,27 @@ function getTaskReminder(task, action, newStatus, prevStatus) {
   return null;
 }
 
+// POST /api/projects — T-131-6: canonical project creation
+app.post('/api/projects', (req, res) => {
+  if (!HZL_ENABLED) return res.status(501).json({ error: 'Project creation requires HZL_ENABLED=true' });
+  const lifecycle = require('./project-lifecycle.js');
+  try {
+    const result = lifecycle.createProject(req.body, {
+      hzlService,
+      fbMeta,
+      projectsDir: PROJECTS_DIR,
+    });
+    const response = { project: result.project };
+    if (result.warnings.length > 0) response.warnings = result.warnings;
+    return res.status(201).json(response);
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: e.message });
+    if (e.code === 'DUPLICATE') return res.status(409).json({ error: e.message });
+    console.error('[projects] createProject failed:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = getCanonicalActiveProject();
