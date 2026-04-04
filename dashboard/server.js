@@ -240,10 +240,18 @@ function trimSessionLog(content, maxSessions = 2) {
   return beforeLog + trimmedLog;
 }
 
-function updateBootstrapMd(projectName) {
+function resolveAgentWorkspace(agentId) {
+  const base = path.join(path.dirname(WORKSPACE), '.');
+  if (!agentId || agentId === 'main') return WORKSPACE;
+  const byAgent = path.join(base, `workspace-${agentId}`);
+  return fs.existsSync(byAgent) ? byAgent : WORKSPACE;
+}
+
+function updateBootstrapMd(projectName, workspaceDir = WORKSPACE) {
+  const bootstrapFile = path.join(workspaceDir, 'BOOTSTRAP.md');
   if (!projectName) {
     // No active project — clear BOOTSTRAP.md
-    try { fs.writeFileSync(BOOTSTRAP_FILE, ''); } catch (e) { console.warn(e); }
+    try { fs.writeFileSync(bootstrapFile, ''); } catch (e) { console.warn(e); throw e; }
     return;
   }
 
@@ -265,10 +273,11 @@ function updateBootstrapMd(projectName) {
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
   try {
-    fs.writeFileSync(BOOTSTRAP_FILE, sections.join('\n'));
-    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName}`);
+    fs.writeFileSync(bootstrapFile, sections.join('\n'));
+    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName} (workspace: ${workspaceDir})`);
   } catch (err) {
     console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
+    throw err;
   }
 }
 
@@ -325,7 +334,7 @@ app.put('/api/status', async (req, res) => {
   // Read previous state from canonical source
   let previousProject;
   if (HZL_ENABLED) {
-    previousProject = fbMeta.getAgentActiveProject(agentId) ?? readActiveProject();
+    previousProject = getCanonicalActiveProject(agentId);
   } else {
     previousProject = readActiveProject();
   }
@@ -341,16 +350,15 @@ app.put('/api/status', async (req, res) => {
       writeActiveProject(effectiveProject);
     }
 
-    // Regenerate BOOTSTRAP.md for the local runtime agent/workspace only.
+    // Regenerate BOOTSTRAP.md for the addressed agent/workspace.
     // If this fails, DB state is still canonical; bootstrap can be retried.
     let bootstrapWarning = null;
-    if (!HZL_ENABLED || agentId === AGENT_ID) {
-      try {
-        updateBootstrapMd(effectiveProject);
-      } catch (err) {
-        bootstrapWarning = `DB state updated, but bootstrap regeneration failed: ${err.message}`;
-        console.error('[project-context] Bootstrap regeneration failed after DB update:', err.message);
-      }
+    try {
+      const targetWorkspace = resolveAgentWorkspace(agentId);
+      updateBootstrapMd(effectiveProject, targetWorkspace);
+    } catch (err) {
+      bootstrapWarning = `DB state updated, but bootstrap regeneration failed: ${err.message}`;
+      console.error('[project-context] Bootstrap regeneration failed after DB update:', err.message);
     }
 
     // Send wake event to notify agent of project switch
@@ -411,6 +419,14 @@ function readActiveProject() {
   } catch { return null; }
 }
 
+function getCanonicalActiveProject(agentId = AGENT_ID) {
+  if (HZL_ENABLED) {
+    const row = fbMeta.getAgentRow(agentId);
+    if (row) return row.active_project || null;
+  }
+  return readActiveProject();
+}
+
 function writeActiveProject(name) {
   const content = name ? `project: ${name}\nsince: ${new Date().toISOString().slice(0, 10)}\n` : 'project: none\n';
   fs.writeFileSync(ACTIVE_PROJECT_FILE, content);
@@ -447,7 +463,7 @@ function writeTasksFile(projectName, data) {
 }
 
 function syncDashboardData(projectName) {
-  const active = readActiveProject();
+  const active = getCanonicalActiveProject();
   let tasks;
   if (HZL_ENABLED) {
     tasks = hzlService.listTasks(projectName);
@@ -609,7 +625,7 @@ function getTaskReminder(task, action, newStatus, prevStatus) {
 
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
-  const active = readActiveProject();
+  const active = getCanonicalActiveProject();
   if (HZL_ENABLED) {
     try {
       const hzlProjects = hzlService.listHzlProjects();
