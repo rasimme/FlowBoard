@@ -11,9 +11,10 @@ Automatically loads project context when a session starts, compacts, or recovers
 ## What It Does
 
 1. Listens to `agent:bootstrap` events
-2. Reads `ACTIVE-PROJECT.md` from the workspace
-3. If a project is active, reads `PROJECT-RULES.md` and `projects/[name]/PROJECT.md`
-4. Injects both files as additional bootstrap files into the session context
+2. Resolves active project from FlowBoard API (DB-backed); file fallback during migration
+3. Reads `PROJECT-RULES.md` from canonical repo location (`docs/project-mode/`); symlink fallback
+4. Reads per-project `PROJECT.md` (post-m005: no longer contains session log)
+5. Injects both files as additional bootstrap files into the session context
 
 ## Why
 

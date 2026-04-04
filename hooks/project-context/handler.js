@@ -206,25 +206,25 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
     return { ok: true, projectName: null, bootstrapUpdated: true };
   }
 
-  // Read PROJECT-RULES.md
+  // Read PROJECT-RULES.md — canonical location: repo docs/project-mode/; fallback: shared projects dir
   const projectRoot = existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : join(workspaceDir, "projects");
 
-  const rulesPath = join(projectRoot, "PROJECT-RULES.md");
+  // Resolve canonical rules path from FlowBoard repo if available
+  const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || join(homedir(), "repos", "FlowBoard");
+  const canonicalRulesPath = join(FLOWBOARD_REPO, "docs", "project-mode", "PROJECT-RULES.md");
+  const fallbackRulesPath = join(projectRoot, "PROJECT-RULES.md");
+  const rulesPath = existsSync(canonicalRulesPath) ? canonicalRulesPath : fallbackRulesPath;
+
   let rulesContent = "";
   if (existsSync(rulesPath)) {
     try { rulesContent = readFileSync(rulesPath, "utf8"); } catch {}
   }
 
-  // Read PROJECT.md (smart: trim session log to last N entries)
+  // Read PROJECT.md (post-m005: session log lives in SESSIONS.md, not bootstrapped)
   const projectMdPath = join(projectRoot, projectName, "PROJECT.md");
   let projectContent = "";
   if (existsSync(projectMdPath)) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
-  }
-
-  // Smart Session Log trimming: keep only last 2 sessions in bootstrap
-  if (projectContent) {
-    projectContent = trimSessionLog(projectContent, 2);
   }
 
   if (!rulesContent && !projectContent) return { ok: false, projectName, bootstrapUpdated: false, error: 'Project context files missing' };

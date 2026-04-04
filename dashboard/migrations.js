@@ -15,6 +15,11 @@
 const fs   = require('fs');
 const path = require('path');
 
+const SYSTEM_DOCS = [
+  'PROJECT-RULES.md', 'tasks-api.md', 'canvas-and-notes.md',
+  'specify-workflow.md', 'project-files.md', 'agent-bridge.md',
+];
+
 const migrations = [
   {
     id:   'm001-hzl-tasks',
@@ -113,6 +118,95 @@ const migrations = [
 
       console.log(`[m004] Migration complete. ${oldEntries.length} entries moved.`);
       console.log(`[m004] Backup preserved at: ${backupPath}`);
+    },
+  },
+  {
+    id:         'm005-project-doc-structure',
+    name:       'System docs → docs/project-mode/, session log extraction, bootstrap alignment',
+    filesystem: true,
+    run: (_db, { projectsDir, openclawHome }) => {
+      // --- Part A: Verify system docs exist in repo docs/project-mode/ ---
+      // The canonical docs are shipped in the repo. This migration validates
+      // they're present (they were placed there by the commit that added this migration).
+      const repoRoot = path.resolve(__dirname, '..');
+      const systemDocsDir = path.join(repoRoot, 'docs', 'project-mode');
+      for (const doc of SYSTEM_DOCS) {
+        const p = path.join(systemDocsDir, doc);
+        if (!fs.existsSync(p)) {
+          console.warn(`[m005] System doc missing (expected in repo): ${p}`);
+        }
+      }
+
+      // --- Part B: Update symlink so PROJECT-RULES.md in shared projects dir points to new location ---
+      const sharedRulesPath = path.join(projectsDir, 'PROJECT-RULES.md');
+      const canonicalRulesPath = path.join(systemDocsDir, 'PROJECT-RULES.md');
+      try {
+        const stat = fs.lstatSync(sharedRulesPath);
+        if (stat.isSymbolicLink()) {
+          // Re-point symlink to new canonical location
+          fs.unlinkSync(sharedRulesPath);
+          fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
+          console.log(`[m005] Re-pointed symlink: ${sharedRulesPath} → ${canonicalRulesPath}`);
+        } else {
+          // Regular file — back up and replace with symlink
+          const bak = sharedRulesPath + '.bak-m005';
+          fs.renameSync(sharedRulesPath, bak);
+          fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
+          console.log(`[m005] Replaced file with symlink: ${sharedRulesPath} (backup: ${bak})`);
+        }
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          // No existing file — just create symlink
+          fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
+          console.log(`[m005] Created symlink: ${sharedRulesPath} → ${canonicalRulesPath}`);
+        } else {
+          throw e;
+        }
+      }
+
+      // --- Part C: Extract session logs from PROJECT.md → SESSIONS.md ---
+      if (!fs.existsSync(projectsDir)) return;
+      const projects = fs.readdirSync(projectsDir, { withFileTypes: true })
+        .filter(e => e.isDirectory());
+
+      for (const entry of projects) {
+        const projectDir = path.join(projectsDir, entry.name);
+        const projectMd = path.join(projectDir, 'PROJECT.md');
+        const sessionsMd = path.join(projectDir, 'SESSIONS.md');
+
+        if (!fs.existsSync(projectMd)) continue;
+
+        let content;
+        try { content = fs.readFileSync(projectMd, 'utf8'); } catch { continue; }
+
+        const logMatch = content.match(/^(## Session Log)\s*$/m);
+        if (!logMatch) continue; // No session log — skip
+
+        const splitIndex = logMatch.index;
+        const beforeLog = content.slice(0, splitIndex).trimEnd();
+        const logSection = content.slice(splitIndex);
+
+        // Safety: don't overwrite existing SESSIONS.md
+        if (fs.existsSync(sessionsMd)) {
+          console.log(`[m005] ${entry.name}: SESSIONS.md already exists — skipping extraction, removing log from PROJECT.md`);
+        } else {
+          // Write SESSIONS.md first (safe ordering: write new file before modifying old one)
+          const sessionsContent = `# Session Log — ${entry.name}\n\n${logSection.trim()}\n`;
+          const tmpPath = sessionsMd + '.tmp-m005';
+          fs.writeFileSync(tmpPath, sessionsContent, 'utf8');
+          fs.renameSync(tmpPath, sessionsMd);
+          console.log(`[m005] ${entry.name}: Extracted session log → SESSIONS.md`);
+        }
+
+        // Remove session log from PROJECT.md
+        const slimContent = beforeLog + '\n';
+        const tmpProjectMd = projectMd + '.tmp-m005';
+        fs.writeFileSync(tmpProjectMd, slimContent, 'utf8');
+        fs.renameSync(tmpProjectMd, projectMd);
+        console.log(`[m005] ${entry.name}: Trimmed SESSION LOG from PROJECT.md`);
+      }
+
+      console.log('[m005] Migration complete.');
     },
   },
 ];
