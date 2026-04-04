@@ -844,6 +844,17 @@ function ensureProject(projectName) {
   }
 }
 
+/**
+ * Explicitly create a HZL project. Throws if project already exists or if not initialized.
+ * Used by project-lifecycle.js for canonical project creation (T-131-6).
+ * @param {string} name
+ * @param {string|null} description
+ */
+function createProject(name, description) {
+  if (!_projectService) throw new Error('[hzl-service] Not initialized — call init() first');
+  _projectService.createProject(name, description ? { description } : undefined);
+}
+
 // =============================================================================
 // Phase 5: Coordination Primitives (T-128)
 // Uses hzl-core native claim/release/complete/checkpoint/comment APIs
@@ -1322,6 +1333,7 @@ module.exports = {
   getSpecsIndex,
   recalcParentStatus,
   ensureProject,
+  createProject,
   getCacheSize,
   // Phase 5: Coordination primitives
   claimTask,
