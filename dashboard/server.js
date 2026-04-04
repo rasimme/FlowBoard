@@ -1804,7 +1804,7 @@ async function startServer() {
       getDisplayName,
       agentId:           AGENT_ID,
       activeProjectFile: ACTIVE_PROJECT_FILE,
-      opeclawHome:       OPENCLAW_HOME,
+      openclawHome:      OPENCLAW_HOME,
       sharedProjectsDir: SHARED_PROJECTS_DIR,
     });
 
