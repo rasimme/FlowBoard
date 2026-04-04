@@ -13,7 +13,9 @@ const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
 const HOST = process.env.FLOWBOARD_HOST || '0.0.0.0';
 
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..');
-const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
+const OPENCLAW_HOME = path.resolve(WORKSPACE, '..');
+const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(OPENCLAW_HOME, 'projects');
+const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : path.join(WORKSPACE, 'projects');
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
 const BOOTSTRAP_FILE = path.join(WORKSPACE, 'BOOTSTRAP.md');
 const DASHBOARD_DATA_FILE = path.join(__dirname, 'dashboard-data.json');
@@ -364,8 +366,8 @@ app.put('/api/status', async (req, res) => {
     // Send wake event to notify agent of project switch
     if (effectiveProject) {
       const wakeText = previousProject && previousProject !== project
-        ? `Projekt gewechselt von ${previousProject} auf ${project}. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den neuen Projekt-Context.`
-        : `Projekt ${project} aktiviert. Lies BOOTSTRAP.md bzw. projects/${project}/PROJECT.md für den Projekt-Context.`;
+        ? `Projekt gewechselt von ${previousProject} auf ${project}. Lies BOOTSTRAP.md bzw. PROJECT.md des aktiven Projekts für den neuen Projektkontext.`
+        : `Projekt ${project} aktiviert. Lies BOOTSTRAP.md bzw. PROJECT.md des aktiven Projekts für den Projektkontext.`;
       sendWakeEvent(wakeText);
     } else if (previousProject) {
       sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);

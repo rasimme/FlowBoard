@@ -11,6 +11,9 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+const OPENCLAW_HOME = join(homedir(), ".openclaw");
+const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
+
 function resolveWorkspace(event) {
   // Prefer workspace directory from event context (supports multi-agent workspaces)
   if (event?.context?.workspaceDir) {
@@ -18,7 +21,7 @@ function resolveWorkspace(event) {
   }
 
   const agentId = event?.context?.agentId || process.env.OPENCLAW_AGENT_ID;
-  const base = join(homedir(), ".openclaw");
+  const base = OPENCLAW_HOME;
 
   // Agent-specific workspace convention: workspace-<agentId>
   if (agentId) {
@@ -204,14 +207,16 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
   }
 
   // Read PROJECT-RULES.md
-  const rulesPath = join(workspaceDir, "projects", "PROJECT-RULES.md");
+  const projectRoot = existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : join(workspaceDir, "projects");
+
+  const rulesPath = join(projectRoot, "PROJECT-RULES.md");
   let rulesContent = "";
   if (existsSync(rulesPath)) {
     try { rulesContent = readFileSync(rulesPath, "utf8"); } catch {}
   }
 
   // Read PROJECT.md (smart: trim session log to last N entries)
-  const projectMdPath = join(workspaceDir, "projects", projectName, "PROJECT.md");
+  const projectMdPath = join(projectRoot, projectName, "PROJECT.md");
   let projectContent = "";
   if (existsSync(projectMdPath)) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
