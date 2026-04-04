@@ -77,8 +77,12 @@ function validateTelegramWebApp(initData) {
 function telegramAuthMiddleware(req, res, next) {
   if (!AUTH_ENABLED) return next(); // Auth nicht konfiguriert → offen lassen
   // AUTH_ALWAYS: Auth bei jedem Request (für ngrok, Tailscale, etc.)
-  // Ohne AUTH_ALWAYS: nur externe Requests via Cloudflare Tunnel (CF-Ray Header)
-  if (!AUTH_ALWAYS && !req.headers['cf-ray']) return next();
+  // Ohne AUTH_ALWAYS: lokale Requests erlauben, externe Requests via Cloudflare Tunnel authentifizieren
+  // NOTE: If FlowBoard later runs behind a reverse proxy/container, revisit req.ip handling / trust proxy.
+  if (!AUTH_ALWAYS && !req.headers['cf-ray']) {
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
+  }
   // Optional: allow a custom hostname without auth (e.g. for LAN access via Cloudflare Tunnel)
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
