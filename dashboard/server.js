@@ -212,39 +212,7 @@ function nextNoteId(notes) {
 
 // --- Project Context Helpers ---
 
-/**
- * Trim SESSION LOG in PROJECT.md to only the last N session entries.
- * Keeps everything before "## Session Log" intact, then appends
- * only the last N "### ..." entries from the log.
- */
-function trimSessionLog(content, maxSessions = 2) {
-  const sessionLogMatch = content.match(/^(## Session Log)\s*$/m);
-  if (!sessionLogMatch) return content;
-
-  const splitIndex = sessionLogMatch.index;
-  const beforeLog = content.slice(0, splitIndex);
-  const logSection = content.slice(splitIndex);
-
-  const entryPattern = /^### .+$/gm;
-  const matches = [];
-  let match;
-  while ((match = entryPattern.exec(logSection)) !== null) {
-    matches.push(match.index);
-  }
-
-  if (matches.length === 0) return content;
-
-  const entries = [];
-  for (let i = 0; i < matches.length; i++) {
-    const start = matches[i];
-    const end = i + 1 < matches.length ? matches[i + 1] : logSection.length;
-    entries.push(logSection.slice(start, end).trimEnd());
-  }
-
-  const kept = entries.slice(0, maxSessions);
-  const trimmedLog = `## Session Log\n\n${kept.join('\n\n')}\n`;
-  return beforeLog + trimmedLog;
-}
+// NOTE: trimSessionLog removed by T-131-4/m005 — session logs now live in SESSIONS.md
 
 function resolveAgentWorkspace(agentId) {
   const base = path.join(path.dirname(WORKSPACE), '.');
