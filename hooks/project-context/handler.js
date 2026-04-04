@@ -14,15 +14,21 @@ import { homedir } from "node:os";
 function resolveWorkspace(event) {
   // Prefer workspace directory from event context (supports multi-agent workspaces)
   if (event?.context?.workspaceDir) {
-    const dir = event.context.workspaceDir;
-    if (existsSync(join(dir, "ACTIVE-PROJECT.md"))) return dir;
+    return event.context.workspaceDir;
   }
 
-  // Fallback: scan common workspace locations
+  const agentId = event?.context?.agentId || process.env.OPENCLAW_AGENT_ID;
   const base = join(homedir(), ".openclaw");
+
+  // Agent-specific workspace convention: workspace-<agentId>
+  if (agentId) {
+    const byAgent = join(base, `workspace-${agentId}`);
+    if (existsSync(byAgent)) return byAgent;
+  }
+
+  // Fallback: main workspace, then any workspace-* directory
   const candidates = [join(base, "workspace")];
   try {
-    // Also check workspace-* directories (multi-agent setups)
     const entries = readdirSync(base, { withFileTypes: true });
     for (const e of entries) {
       if (e.isDirectory() && e.name.startsWith("workspace-")) {
@@ -31,7 +37,7 @@ function resolveWorkspace(event) {
     }
   } catch {}
   for (const dir of candidates) {
-    if (existsSync(join(dir, "ACTIVE-PROJECT.md"))) return dir;
+    if (existsSync(dir)) return dir;
   }
   return null;
 }
@@ -194,7 +200,7 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
   if (!projectName) {
     // No active project — clear BOOTSTRAP.md
     try { writeFileSync(bootstrapPath, ""); } catch {}
-    return;
+    return { ok: true, projectName: null, bootstrapUpdated: true };
   }
 
   // Read PROJECT-RULES.md
@@ -216,7 +222,7 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
     projectContent = trimSessionLog(projectContent, 2);
   }
 
-  if (!rulesContent && !projectContent) return;
+  if (!rulesContent && !projectContent) return { ok: false, projectName, bootstrapUpdated: false, error: 'Project context files missing' };
 
   const sections = [`# Active Project: ${projectName}\n`];
   if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
@@ -231,8 +237,10 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
   try {
     writeFileSync(bootstrapPath, sections.join("\n"));
     console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName}`);
+    return { ok: true, projectName, bootstrapUpdated: true };
   } catch (err) {
     console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
+    return { ok: false, projectName, bootstrapUpdated: false, error: err.message };
   }
 }
 
