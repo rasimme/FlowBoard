@@ -39,9 +39,9 @@ Project registry and per-agent active-project state are DB-backed in FlowBoard r
 - **"Projekt: [Name]"** → Activate via FlowBoard API
 - **"Projekt beenden"** → Deactivate via FlowBoard API
 - **"Projekte"** → Show project list, indicate active
-- **"Neues Projekt: [Name]"** → Create project structure and activate
+- **"Neues Projekt: [Name]"** → Create via the canonical `POST /api/projects` path, then optionally activate as a separate action
 
-Always use FlowBoard API for project activation state.
+Always use FlowBoard API for project lifecycle and activation state.
 
 ---
 
@@ -99,9 +99,11 @@ See `tasks-api.md` for endpoints and `agent-bridge.md` for behavioral rules and 
 
 FlowBoard server owns all operational project/task mutations.
 
-- Use API endpoints for creates, updates, status changes, claims, specs
+- Use API endpoints for project creation, activation, updates, status changes, claims, specs
+- `POST /api/projects` is the canonical creation path — never create projects via manual `mkdir` / ad-hoc file scaffolding
+- Project creation and project activation are separate actions
 - Read from `BOOTSTRAP.md` first; pull deeper detail only when needed
-- Never edit `tasks.json` or state files directly
+- Never edit state files directly
 
 See `tasks-api.md` for endpoint reference.
 

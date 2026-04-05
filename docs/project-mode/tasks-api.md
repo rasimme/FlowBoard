@@ -87,9 +87,17 @@ Rules:
 
 | Method | Path | Description |
 |--------|------|-------------|
+| `POST` | `/projects` | Canonical project creation path. Creates HZL project + FlowBoard metadata + post-m005 filesystem scaffold |
 | `GET` | `/projects` | List all projects with task counts |
 | `GET` | `/status` | Active project for agent. Query: `?agentId=` |
 | `PUT` | `/status` | Set active project. Body: `{ project, agentId? }` |
 | `GET` | `/agents` | List all agents and their active projects |
 
 Canonical project registry and per-agent active-project state are DB-backed (`flowboard_projects`, `flowboard_agents`). Active project = context loading, not access control.
+
+### Project creation semantics
+- Project creation is API-first: use `POST /api/projects`
+- Project creation and project activation are separate actions
+- New projects are scaffolded directly in the post-m005 structure: `PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, plus default `context/`, `specs/`, `canvas.json`
+- Chat flows and future dashboard UI should call this API rather than manually creating directories/files
+- Planned UI direction: modal/form-first create flow; richer conversational setup remains future work

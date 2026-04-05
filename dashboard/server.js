@@ -162,7 +162,7 @@ app.get('/', (req, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const localHostname = process.env.LOCAL_HOSTNAME || '';
-  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};</script></head>`);
+  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
