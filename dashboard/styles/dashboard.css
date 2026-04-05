@@ -1515,8 +1515,29 @@
   line-height: 1.5;
   background: var(--bg-elevated);
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 0 8px 8px 0;
   border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+}
+.item-comment .activity-body { border-left-color: var(--accent); }
+.item-checkpoint .activity-body { border-left-color: var(--accent-2); }
+.item-status .activity-body { border-left-color: var(--warn); }
+
+.activity-icon {
+  font-size: 12px;
+  margin-right: 4px;
+  opacity: 0.85;
+}
+.activity-empty {
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+.activity-loading {
+  padding: 24px;
+  opacity: 0.5;
+  font-size: 13px;
 }
 
 .detail-section-title {
