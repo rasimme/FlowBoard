@@ -7,9 +7,21 @@ export const detailState = {
   activeProject: null
 };
 
+let _pollInterval = null;
+
+function fmtTime(ts) {
+  if (!ts) return '--:--';
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const HH = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}.${mm}. ${HH}:${min}`;
+}
+
 export function initDetail(project) {
   detailState.activeProject = project;
-  
+
   const closeBtn = document.getElementById('closeDetail');
   if (closeBtn) closeBtn.onclick = closeTaskDetail;
 
@@ -29,22 +41,23 @@ export function initDetail(project) {
 
 export async function openTaskDetail(taskId) {
   detailState.activeTaskId = taskId;
+  _stopPolling();
+
   const panel = document.getElementById('taskDetailPanel');
   const overlay = document.querySelector('.board-overlay') || createOverlay();
-  
+
   panel.classList.remove('hide');
   overlay.classList.add('active');
-  
+
   // Initial UI state
   document.getElementById('detailTaskId').textContent = taskId;
   document.getElementById('detailTitle').textContent = 'Lade...';
-  document.getElementById('activityFeed').innerHTML = '<div style="opacity:0.5;padding:24px">Daten werden geladen...</div>';
+  document.getElementById('activityFeed').innerHTML = '<div class="activity-loading">Daten werden geladen…</div>';
 
   try {
-    // 1. Task Data (from current state if lucky, or fetch)
     const task = await fetchTask(taskId);
     if (!task) throw new Error('Task nicht gefunden');
-    
+
     document.getElementById('detailTitle').textContent = task.title;
     const descEl = document.getElementById('detailDescription');
     if (descEl) {
@@ -55,8 +68,8 @@ export async function openTaskDetail(taskId) {
       `;
     }
 
-    // 2. Comments / Checkpoints (HZL Activity)
-    loadActivity(taskId);
+    await loadActivity(taskId);
+    _startPolling(taskId);
   } catch (err) {
     toast('Fehler beim Laden: ' + err.message, 'danger');
     closeTaskDetail();
@@ -64,12 +77,30 @@ export async function openTaskDetail(taskId) {
 }
 
 export function closeTaskDetail() {
+  _stopPolling();
   detailState.activeTaskId = null;
   const panel = document.getElementById('taskDetailPanel');
   const overlay = document.querySelector('.board-overlay');
-  
+
   panel.classList.add('hide');
   if (overlay) overlay.classList.remove('active');
+}
+
+function _startPolling(taskId) {
+  _pollInterval = setInterval(() => {
+    if (detailState.activeTaskId === taskId) {
+      loadActivity(taskId);
+    } else {
+      _stopPolling();
+    }
+  }, 12000);
+}
+
+function _stopPolling() {
+  if (_pollInterval !== null) {
+    clearInterval(_pollInterval);
+    _pollInterval = null;
+  }
 }
 
 async function fetchTask(taskId) {
@@ -80,42 +111,61 @@ async function fetchTask(taskId) {
 
 async function loadActivity(taskId) {
   const container = document.getElementById('activityFeed');
-  
-  try {
-    // Current T-128 API returns checkpoints in task metadata OR separate endpoint
-    // Let's assume GET /api/projects/:name/tasks/:id/comments in Phase 5
-    const data = await api(`/projects/${detailState.activeProject}/tasks/${taskId}/comments`);
-    const comments = Array.isArray(data?.comments) ? data.comments : Array.isArray(data) ? data : [];
-    
-    if (comments.length > 0) {
-      renderActivity(comments, container);
-    } else {
-      container.innerHTML = '<div style="opacity:0.3;padding:24px;text-align:center">Keine Aktivitäten bisher.</div>';
-    }
-  } catch (err) {
-    container.innerHTML = '<div style="opacity:0.5;padding:24px;color:var(--danger)">Fehler beim Laden des Feeds.</div>';
-  }
+
+  const [commentsResult, checkpointsResult] = await Promise.allSettled([
+    api(`/projects/${detailState.activeProject}/tasks/${taskId}/comments`),
+    api(`/projects/${detailState.activeProject}/tasks/${taskId}/checkpoints`),
+  ]);
+
+  const comments = commentsResult.status === 'fulfilled'
+    ? (Array.isArray(commentsResult.value?.comments) ? commentsResult.value.comments : [])
+    : [];
+
+  const checkpoints = checkpointsResult.status === 'fulfilled'
+    ? (Array.isArray(checkpointsResult.value?.checkpoints) ? checkpointsResult.value.checkpoints : [])
+    : [];
+
+  const feed = [
+    ...comments.map(c => ({ ...c, type: 'comment' })),
+    ...checkpoints.map(c => ({ ...c, type: 'checkpoint' })),
+  ].sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return ta - tb;
+  });
+
+  renderActivity(feed, container);
 }
 
-function renderActivity(comments, container) {
+const ACTIVITY_ICON = {
+  comment: '💬',
+  checkpoint: '✓',
+  status: '→',
+};
+
+function renderActivity(items, container) {
+  if (items.length === 0) {
+    container.innerHTML = '<div class="activity-empty">📭 Noch keine Aktivität</div>';
+    return;
+  }
+
   container.innerHTML = '';
-  
-  comments.forEach(item => {
+  items.forEach(item => {
     const div = document.createElement('div');
     div.className = `activity-item item-${item.type || 'comment'}`;
-    
-    const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--:--';
-    const date = item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '';
+
+    const icon = ACTIVITY_ICON[item.type] || '·';
+    const author = escHtml(item.author || item.agent || 'System');
+    const time = fmtTime(item.timestamp);
 
     div.innerHTML = `
       <div class="activity-dot"></div>
       <div class="activity-meta">
-        <span class="activity-author">${escHtml(item.author || item.agent || 'System')}</span>
-        <span class="activity-time">${date} ${time}</span>
+        <span class="activity-icon">${icon}</span>
+        <span class="activity-author">${author}</span>
+        <span class="activity-time">${time}</span>
       </div>
-      <div class="activity-body">
-        ${escHtml(item.message)}
-      </div>
+      <div class="activity-body">${escHtml(item.message || '')}</div>
     `;
     container.appendChild(div);
   });
@@ -128,7 +178,7 @@ async function submitComment() {
 
   const btn = document.getElementById('sendComment');
   btn.disabled = true;
-  
+
   try {
     const result = await api(`/projects/${detailState.activeProject}/tasks/${detailState.activeTaskId}/comment`, {
       method: 'POST',
@@ -140,6 +190,7 @@ async function submitComment() {
 
     if (!result?.error) {
       input.value = '';
+      toast('Kommentar gesendet', 'success');
       loadActivity(detailState.activeTaskId);
     } else {
       toast('Senden fehlgeschlagen', 'danger');
@@ -161,9 +212,9 @@ function createOverlay() {
     backdrop-filter: blur(2px);
   `;
   document.body.appendChild(div);
-  
+
   div.onclick = closeTaskDetail;
-  
+
   // Dynamic CSS addition for .active
   const style = document.createElement('style');
   style.textContent = '.board-overlay.active { opacity: 1; pointer-events: auto; }';
