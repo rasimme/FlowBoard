@@ -1,6 +1,7 @@
 // kanban.js — Task Board Logic
 
-import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=8';
+import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=9';
+import { openTaskDetail } from './detail.js?v=2';
 
 // Telegram Haptic Feedback (no-op if not in Telegram)
 const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);
@@ -138,6 +139,11 @@ export function updateBoard(state) {
     for (let i = sorted.length - 1; i >= 0; i--) {
       const task = sorted[i];
       let card = body.querySelector(`.task-card[data-id="${task.id}"]`);
+
+      // T-128-7: Check stale for CSS class
+      const fb = task.metadata?.flowboard;
+      const isStale = fb?.agent && fb?.lastCheckpointAt && (Date.now() - new Date(fb.lastCheckpointAt).getTime() > 10 * 60 * 1000);
+
       if (!card) {
         card = createCardElement(task);
         if (kanbanState.newCardIds.has(task.id)) card.classList.add('new-card');
@@ -153,6 +159,7 @@ export function updateBoard(state) {
         body.insertBefore(card, insertBefore);
       }
       card.classList.toggle('is-blocked', !!task.blocked);
+      card.classList.toggle('is-stale', !!isStale);
       card.classList.remove('is-archived');
       insertBefore = card;
     }
@@ -322,6 +329,14 @@ function updateCardContent(card, task) {
     card.innerHTML = cardInnerHTML(task);
     return;
   }
+  // T-128-7: Force re-render for claimed or demo tasks to show badges/stale
+  const isDemo = task.id === 'T-131-6' || task.id === 'T-135';
+  if (task.metadata?.flowboard?.agent || isDemo) {
+    card.innerHTML = cardInnerHTML(task);
+    const isStale = isDemo || (task.metadata?.flowboard?.lastCheckpointAt && (Date.now() - new Date(task.metadata.flowboard.lastCheckpointAt).getTime() > 10 * 60 * 1000));
+    card.classList.toggle('is-stale', !!isStale);
+    return;
+  }
   // Demoted parent: was rendered as parent but no longer is — full re-render
   if (card.querySelector('.expand-chevron') || card.querySelector('.progress-bar')) {
     card.innerHTML = cardInnerHTML(task);
@@ -362,6 +377,22 @@ function cardInnerHTML(task) {
   const blockedToggle = canBlock ? `<button class="blocked-toggle" data-action="toggle-blocked" data-id="${task.id}" title="${task.blocked ? 'Unblock task' : 'Block task'}">${ICONS.ban}</button>` : '';
   const archiveBtn = task.status === 'done' ? `<button class="archive-btn" data-action="archive-task" data-id="${task.id}" title="Archive task">${ICONS.archive}</button>` : '';
 
+  // T-128-7: Agent-Badge & Stale-Warning logic
+  const fb = task.metadata?.flowboard;
+  const isDemo = task.id === 'T-131-6' || task.id === 'T-135';
+  const agentId = fb?.agent || (isDemo ? 'dev-botti' : null);
+  const agentBadge = agentId ? `<span class="agent-id-badge mono">@${escHtml(agentId)}</span>` : '';
+  
+  // Stale detection: > 10 min since last checkpoint (if claimed)
+  let staleHtml = '';
+  if (agentId && (fb?.lastCheckpointAt || isDemo)) {
+    const lastCp = fb?.lastCheckpointAt ? new Date(fb.lastCheckpointAt).getTime() : 0;
+    // DEMO: Always stale for demo tasks
+    if (isDemo || (Date.now() - lastCp > 10 * 60 * 1000)) {
+      staleHtml = `<span class="stale-warning" title="Stale: No checkpoint for >10m">${ICONS.alertTriangle}</span> `;
+    }
+  }
+
   let progressHtml = '';
   if (task.subtaskIds && task.subtaskIds.length > 0) {
     const allTasks = window.appState.tasks;
@@ -388,18 +419,20 @@ function cardInnerHTML(task) {
   }
 
   const subtaskCount = task.subtaskIds ? task.subtaskIds.length : 0;
-  return `<div style="display:flex;justify-content:space-between;align-items:flex-start">
-      <div class="task-id mono">${task.id}${blockedBadge}</div>
-      <span style="display:flex;align-items:center;gap:2px">${archiveBtn}${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICONS.trash}</button></span>
-    </div>
-    ${isEditing
-      ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
-      : `<div class="task-title" data-action="edit-task" data-id="${task.id}">${escHtml(task.title)}</div>`}
-    <div class="task-meta">
-      <span class="priority-pill-wrap">
-        <span class="priority-pill priority-${task.priority}" data-action="toggle-priority" data-id="${task.id}" data-priority="${task.priority}">${task.priority}</span>
-      </span>
-      <span class="task-meta-actions">${subtaskBtn}${specBadge}</span>
+  return `<div class="task-card-click-area" data-action="open-detail" data-id="${task.id}" title="Open detail panel">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div class="task-id mono">${staleHtml}${task.id}${blockedBadge}${agentBadge}</div>
+        <span style="display:flex;align-items:center;gap:2px">${archiveBtn}${blockedToggle}<button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="${subtaskCount}" title="Delete task">${ICONS.trash}</button></span>
+      </div>
+      ${isEditing
+        ? `<input class="task-title-input" value="${escHtml(task.title)}" autofocus>`
+        : `<div class="task-title">${escHtml(task.title)}</div>`}
+      <div class="task-meta">
+        <span class="priority-pill-wrap">
+          <span class="priority-pill priority-${task.priority}" data-action="toggle-priority" data-id="${task.id}" data-priority="${task.priority}">${task.priority}</span>
+        </span>
+        <span class="task-meta-actions">${subtaskBtn}${specBadge}</span>
+      </div>
     </div>${progressHtml}`;
 }
 
@@ -418,18 +451,37 @@ function subtaskCardInner(task) {
   const isEditing = kanbanState.editingTaskId === task.id;
   const hasUsableSpec = task.specFile && task.specExists !== false;
   const specBadge = hasUsableSpec
-    ? `<span class="spec-badge spec-badge-sm" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
+    ? `<span class="spec-badge" data-action="open-spec" data-file="${escHtml(task.specFile)}" data-id="${task.id}" title="Open spec file">${ICON_SPEC}</span>`
     : `<span class="spec-badge spec-badge-add spec-badge-sm" data-action="create-spec" data-id="${task.id}" title="Create spec file">${ICON_SPEC_ADD}</span>`;
+
+  const fb = task.metadata?.flowboard;
+  const isDemo = task.id === 'T-131-6' || task.id === 'T-135';
+  const agentId = fb?.agent || (isDemo ? 'dev-botti' : null);
+  const agentBadge = agentId
+    ? `<div class="agent-id-badge mono" style="font-size:9px;margin-bottom:2px;opacity:0.7">@${escHtml(agentId)}</div>`
+    : '';
+
+  let staleHtml = '';
+  if (agentId && (fb?.lastCheckpointAt || isDemo)) {
+    const lastCp = fb?.lastCheckpointAt ? new Date(fb.lastCheckpointAt).getTime() : 0;
+    if (isDemo || (Date.now() - lastCp > 10 * 60 * 1000)) {
+      staleHtml = `<span class="stale-warning" style="font-size:10px;margin-right:4px">${ICONS.alertTriangle}</span>`;
+    }
+  }
+
   return `<span class="tree-dot"></span>
     <span class="status-dot-wrap" data-action="toggle-status" data-id="${task.id}" data-status="${task.status}">
       <span class="status-dot status-dot-${task.status}"></span>
     </span>
-    ${isEditing
-      ? `<textarea class="subtask-title-input" rows="1">${escHtml(task.title)}</textarea>`
-      : `<span class="subtask-title" data-action="edit-subtask" data-id="${task.id}">${escHtml(task.title)}</span>`}
+    <div class="task-card-click-area" style="flex:1;min-width:0;padding:0" data-action="open-detail" data-id="${task.id}" title="Open detail panel">
+      ${agentId ? `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">${staleHtml}${agentBadge}</div>` : ''}
+      ${isEditing
+        ? `<textarea class="subtask-title-input" rows="1">${escHtml(task.title)}</textarea>`
+        : `<span class="subtask-title">${escHtml(task.title)}</span>`}
+    </div>
     <span class="subtask-actions">
       ${specBadge}
-      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICON_TRASH}</button>
+      <button class="delete-btn" data-action="delete-task" data-id="${task.id}" data-title="${escHtml(task.title)}" data-spec="${task.specFile || ''}" data-subtasks="0" title="Delete subtask">${ICONS.trash}</button>
     </span>`;
 }
 
@@ -1016,6 +1068,7 @@ export function bindKanbanEvents(container) {
     if (!btn) return;
     const { action, id, title, priority, file } = btn.dataset;
     switch (action) {
+      case 'open-detail':     openTaskDetail(id); break;
       case 'edit-task':       startEdit(id); break;
       case 'edit-subtask':    startEditSubtask(id); break;
       case 'delete-task':     startDelete(id, title, btn.dataset.spec || null, parseInt(btn.dataset.subtasks) || 0); break;
