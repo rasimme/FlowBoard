@@ -1,4 +1,4 @@
-import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=8';
+import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=9';
 import {
   kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
   createTask, saveTitle, setPriority, setSubtaskStatus,
@@ -6,7 +6,7 @@ import {
   startAddSubtask, cancelAddSubtask, submitSubtask,
   toggleBlocked, toggleArchived, archiveTask, restoreTask,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=24';
+} from './kanban.js?v=25';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
@@ -16,6 +16,7 @@ import {
   canvasState, renderIdeaCanvas,
   refreshCanvas, resetCanvasState
 } from './canvas/index.js?v=5';
+import { initDetail } from './detail.js?v=3';
 
 // Global state
 const state = {
@@ -126,6 +127,7 @@ async function viewProject(name) {
   prevFilesMeta = null; // Reset so next refresh re-baselines for new project
   resetCanvasState();
   prevCanvasJson = '';
+  initDetail(name); // Keep detailState.activeProject in sync with viewed project
   const data = await api(`/projects/${name}/tasks?includeArchived=true`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
@@ -451,6 +453,7 @@ async function init() {
   state.projects = data.projects || [];
   registerDisplayNames(state.projects);
   state.activeProject = data.activeProject;
+  if (state.activeProject) initDetail(state.activeProject);
   prevProjectsJson = JSON.stringify(state.projects);
   prevActiveProject = state.activeProject;
 
