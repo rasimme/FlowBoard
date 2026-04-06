@@ -1,7 +1,7 @@
 // kanban.js — Task Board Logic
 
 import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=9';
-import { openTaskDetail } from './detail.js?v=3';
+import { openTaskDetail } from './detail.js?v=4';
 
 // Telegram Haptic Feedback (no-op if not in Telegram)
 const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);

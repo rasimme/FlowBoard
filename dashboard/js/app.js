@@ -6,7 +6,7 @@ import {
   startAddSubtask, cancelAddSubtask, submitSubtask,
   toggleBlocked, toggleArchived, archiveTask, restoreTask,
   renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=25';
+} from './kanban.js?v=26';
 import {
   fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
   renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
@@ -16,7 +16,7 @@ import {
   canvasState, renderIdeaCanvas,
   refreshCanvas, resetCanvasState
 } from './canvas/index.js?v=5';
-import { initDetail } from './detail.js?v=3';
+import { initDetail } from './detail.js?v=4';
 
 // Global state
 const state = {
@@ -31,6 +31,10 @@ const state = {
 
 // Make state accessible to modules
 window.appState = state;
+// Bridge callback for detail panel actions to refresh the kanban board
+window.appState._refreshBoard = () => {
+  if (state.currentTab === 'tasks') updateBoard(state);
+};
 
 let prevProjectsJson = '';
 let prevTasksJson = '';

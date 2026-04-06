@@ -1407,6 +1407,44 @@
 }
 .btn-close-detail:hover { background: var(--bg-hover); }
 
+/* --- Detail Action Bar --- */
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  flex-wrap: wrap;
+}
+.detail-actions.hide { display: none; }
+.detail-action-btn {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.detail-action-btn:hover { background: var(--bg-hover); }
+.detail-action-btn:active { transform: scale(0.97); }
+.detail-action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.detail-action-btn:disabled:hover { background: rgba(255,255,255,0.04); }
+.action-claim { color: var(--accent-2); border-color: rgba(20, 184, 166, 0.4); }
+.action-claim:hover { background: var(--accent-2-subtle); }
+.action-release { color: var(--muted); }
+.action-complete { color: var(--accent-2); border-color: rgba(20, 184, 166, 0.4); }
+.action-complete:hover { background: var(--accent-2-subtle); }
+.action-blocked { color: var(--warn); border-color: rgba(245, 158, 11, 0.4); }
+.action-blocked:hover { background: var(--warn-subtle); }
+.action-blocked.is-active { background: var(--warn-subtle); border-color: var(--warn); }
+
 .detail-scroll-area {
   flex: 1;
   overflow-y: auto;
