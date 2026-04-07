@@ -14,12 +14,14 @@ const sizes = {
 export default function Button({
   variant = 'primary',
   size = 'md',
+  type = 'button',
   className = '',
   children,
   ...props
 }) {
   return (
     <button
+      type={type}
       className={[
         'inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-md)]',
         'font-medium transition-all duration-[var(--duration-fast)] cursor-pointer',

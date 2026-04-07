@@ -8,17 +8,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Map to existing CSS custom properties for consistency
-        surface: 'var(--surface)',
-        'surface-alt': 'var(--surface-alt)',
+        // Map to existing CSS custom properties from dashboard.css
+        surface: 'var(--card)',
+        'surface-alt': 'var(--bg-elevated)',
         border: 'var(--border)',
         accent: 'var(--accent)',
-        'accent-hover': 'var(--accent-hover)',
         'text-primary': 'var(--text)',
         'text-muted': 'var(--muted)',
         danger: 'var(--danger)',
-        success: 'var(--success)',
-        warning: 'var(--warning)',
+        success: 'var(--ok)',
+        warning: 'var(--warn)',
       },
       fontFamily: {
         sans: ['Space Grotesk', 'sans-serif'],
