@@ -20,6 +20,9 @@ docs/code-analysis-*.md
 docs/connection-routing.md
 CLAUDE.md
 
+# Vite build output
+dashboard/dist/
+
 # HZL database files
 data/*.db
 data/*.db-shm
