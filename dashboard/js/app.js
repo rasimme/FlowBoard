@@ -63,6 +63,9 @@ function toggleSidebar() {
 
 // --- Render functions ---
 function renderSidebar() {
+  // When React owns the shell, skip legacy DOM render and notify React instead
+  if (window._reactOwnsShell) { window._notifyReact?.(); return; }
+
   const list = document.getElementById('projectList');
   if (state.projects.length === 0) {
     list.innerHTML = '<div class="sidebar-empty">No projects</div>';
@@ -92,6 +95,9 @@ function renderSidebar() {
 }
 
 function renderHeader() {
+  // When React owns the shell, skip legacy DOM render and notify React instead
+  if (window._reactOwnsShell) { window._notifyReact?.(); return; }
+
   const el = document.getElementById('headerRight');
   if (!state.viewedProject) { el.innerHTML = ''; return; }
   const isActive = state.viewedProject === state.activeProject;
@@ -324,6 +330,12 @@ window._restoreTask = function(id) {
     }
   });
 };
+
+// --- Shell bridge callbacks (React Header + Sidebar) ---
+window._viewProject = viewProject;
+window._activateProject = activateProject;
+window._deactivateProject = deactivateProject;
+window._toggleSidebar = toggleSidebar;
 
 // --- File Explorer bridge callbacks ---
 window._loadFileContent = function(path) { loadFileContent(path, state); };
