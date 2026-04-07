@@ -9,6 +9,11 @@ export const detailState = {
   _hzlAvailable: true // assume available until proven otherwise
 };
 
+/** Get current user agent name from auth context, fallback to 'unknown' */
+function _currentAgent() {
+  return window.appState?.authUser || 'unknown';
+}
+
 let _pollInterval = null;
 
 function fmtTime(ts) {
@@ -173,6 +178,7 @@ function getActionBarState(task) {
   };
 }
 
+// Uses kanban cache (refreshed every 5s) — acceptable staleness for UI gating
 function _allSubtasksDone(task) {
   if (!task.subtaskIds || task.subtaskIds.length === 0) return true;
   const allTasks = window.appState?.tasks || [];
@@ -234,25 +240,31 @@ async function handleClaim() {
   const proj = detailState.activeProject;
 
   // Optimistic update
+  const agent = _currentAgent();
   const oldAgent = task.agent;
   const oldStatus = task.status;
-  task.agent = 'simeon';
+  task.agent = agent;
   if (task.status === 'open' || task.status === 'ready') task.status = 'in-progress';
   renderActionBar(task);
 
   try {
     const res = await api(`/projects/${proj}/tasks/${task.id}/claim`, {
       method: 'POST',
-      body: { agent: 'simeon', lease: 60 }
+      body: { agent, lease: 60 }
     });
     if (res?.error) throw new Error(res.error);
 
-    // Sync with server response
-    if (res.task) Object.assign(task, res.task);
+    // Sync known fields from server response (avoid blind Object.assign)
+    if (res.task) {
+      task.status = res.task.status ?? task.status;
+      task.agent = res.task.agent ?? task.agent;
+      task.blocked = res.task.blocked ?? task.blocked;
+      task.previousStatus = res.task.previousStatus ?? task.previousStatus;
+    }
     detailState._task = task;
     renderActionBar(task);
     _refreshKanban();
-    _addSyntheticFeedItem('status', 'Task claimed by simeon');
+    _addSyntheticFeedItem('status', `Task claimed by ${agent}`);
     toast('Task claimed', 'success');
   } catch (err) {
     // Revert
@@ -272,15 +284,17 @@ async function handleRelease() {
   if (!task) return;
   const proj = detailState.activeProject;
 
+  const agent = _currentAgent();
   const oldAgent = task.agent;
   const oldStatus = task.status;
   task.agent = null;
+  task.status = task.previousStatus || 'open';
   renderActionBar(task);
 
   try {
     const res = await api(`/projects/${proj}/tasks/${task.id}/release`, {
       method: 'POST',
-      body: { agent: 'simeon', force: true }
+      body: { agent, force: true }
     });
     if (res?.error) throw new Error(res.error);
 
@@ -320,16 +334,22 @@ async function handleComplete() {
   renderActionBar(task);
 
   try {
-    // Complete requires agent; use 'simeon' if task was claimed by simeon,
-    // otherwise pass current agent or simeon as fallback
-    const agent = oldAgent || 'simeon';
+    // Complete requires agent; prefer current claim, fallback to session user
+    const agent = oldAgent || _currentAgent();
     const res = await api(`/projects/${proj}/tasks/${task.id}/complete`, {
       method: 'POST',
       body: { agent }
     });
     if (res?.error) throw new Error(res.error);
 
-    if (res.task) Object.assign(task, res.task);
+    // Sync known fields from server response (avoid blind Object.assign)
+    if (res.task) {
+      task.status = res.task.status ?? task.status;
+      task.agent = res.task.agent ?? task.agent;
+      task.blocked = res.task.blocked ?? task.blocked;
+      task.completed = res.task.completed ?? task.completed;
+      task.previousStatus = res.task.previousStatus ?? task.previousStatus;
+    }
     detailState._task = task;
     renderActionBar(task);
     _updateDetailMeta(task);
@@ -419,7 +439,7 @@ function _addSyntheticFeedItem(type, message) {
     <div class="activity-dot"></div>
     <div class="activity-meta">
       <span class="activity-icon">${ACTIVITY_ICON[type] || '→'}</span>
-      <span class="activity-author">SIMEON</span>
+      <span class="activity-author">${escHtml(_currentAgent().toUpperCase())}</span>
       <span class="activity-time">${time}</span>
     </div>
     <div class="activity-body">${escHtml(message)}</div>
@@ -517,7 +537,7 @@ async function submitComment() {
       method: 'POST',
       body: {
         message: text,
-        author: 'simeon'
+        author: _currentAgent()
       }
     });
 

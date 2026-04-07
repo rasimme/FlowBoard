@@ -16,7 +16,7 @@ import {
   canvasState, renderIdeaCanvas,
   refreshCanvas, resetCanvasState
 } from './canvas/index.js?v=5';
-import { initDetail } from './detail.js?v=4';
+import { initDetail } from './detail.js?v=5';
 
 // Global state
 const state = {
@@ -568,10 +568,12 @@ document.addEventListener('click', e => {
     applyTelegramTheme();
     tg.onEvent?.('themeChanged', applyTelegramTheme);
     try {
-      await fetch('/api/auth', {
+      const authRes = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'X-Telegram-Init-Data': tg.initData }
       });
+      const authData = await authRes.json().catch(() => null);
+      if (authData?.user?.username) state.authUser = authData.user.username;
     } catch (e) { console.warn('Auth failed:', e); }
   }
   await init();

@@ -1439,8 +1439,8 @@
 .action-claim { color: var(--accent-2); border-color: rgba(20, 184, 166, 0.4); }
 .action-claim:hover { background: var(--accent-2-subtle); }
 .action-release { color: var(--muted); }
-.action-complete { color: var(--accent-2); border-color: rgba(20, 184, 166, 0.4); }
-.action-complete:hover { background: var(--accent-2-subtle); }
+.action-complete { color: var(--ok); border-color: rgba(34, 197, 94, 0.4); }
+.action-complete:hover { background: var(--ok-subtle); }
 .action-blocked { color: var(--warn); border-color: rgba(245, 158, 11, 0.4); }
 .action-blocked:hover { background: var(--warn-subtle); }
 .action-blocked.is-active { background: var(--warn-subtle); border-color: var(--warn); }
