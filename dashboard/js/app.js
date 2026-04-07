@@ -166,9 +166,12 @@ const savedKanbanScroll = { top: 0, colIndex: 0, columns: {} };
 
 function switchTab(tab) {
   state.currentTab = tab;
-  document.querySelectorAll('.tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.tab === tab);
-  });
+  // React TabBar owns the active class when _reactOwnsShell is set
+  if (!window._reactOwnsShell) {
+    document.querySelectorAll('.tab').forEach(t => {
+      t.classList.toggle('active', t.dataset.tab === tab);
+    });
+  }
   if (tab === 'tasks') {
     kanbanState.boardBuilt = false;
     renderTabBarRight();
