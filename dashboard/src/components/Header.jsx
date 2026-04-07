@@ -12,7 +12,6 @@ export default function Header() {
     if (el) {
       el.innerHTML = '';
       setContainer(el);
-      window._reactOwnsShell = true;
     }
   }, []);
 

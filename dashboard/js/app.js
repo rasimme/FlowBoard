@@ -512,6 +512,7 @@ async function init() {
 
   // Sidebar delegation
   document.getElementById('sidebar').addEventListener('click', e => {
+    if (window._reactOwnsShell) return; // React handles sidebar clicks
     const el = e.target.closest('[data-action]');
     if (!el) return;
     const { action, project } = el.dataset;
