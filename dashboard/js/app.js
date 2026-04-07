@@ -331,11 +331,12 @@ window._restoreTask = function(id) {
   });
 };
 
-// --- Shell bridge callbacks (React Header + Sidebar) ---
+// --- Shell bridge callbacks (React Header + Sidebar + TabBar) ---
 window._viewProject = viewProject;
 window._activateProject = activateProject;
 window._deactivateProject = deactivateProject;
 window._toggleSidebar = toggleSidebar;
+window._switchTab = switchTab;
 
 // --- File Explorer bridge callbacks ---
 window._loadFileContent = function(path) { loadFileContent(path, state); };
@@ -494,11 +495,14 @@ async function init() {
   bindKanbanEvents(content);
   bindFileExplorerEvents(content);
 
-  // Tab bar delegation
+  // Tab bar delegation — React owns tab buttons when _reactOwnsShell is set;
+  // legacy handler only needed for sort toggle and non-React fallback
   const tabBar = document.getElementById('tabBar');
   tabBar.addEventListener('click', e => {
-    const tab = e.target.closest('[data-tab]');
-    if (tab) switchTab(tab.dataset.tab);
+    if (!window._reactOwnsShell) {
+      const tab = e.target.closest('[data-tab]');
+      if (tab) switchTab(tab.dataset.tab);
+    }
     const action = e.target.closest('[data-action]')?.dataset.action;
     if (action === 'toggle-sort') window._toggleSort();
   });
