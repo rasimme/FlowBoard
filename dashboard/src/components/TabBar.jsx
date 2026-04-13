@@ -46,17 +46,25 @@ export default function TabBar() {
 
   return createPortal(
     <>
-      {VIEWS.map(view => (
-        <button
-          key={view.id}
-          className={`tab${currentTab === view.id ? ' active' : ''}`}
-          data-tab={view.id}
-          onClick={() => handleTabClick(view.id)}
-        >
-          {view.label}
-        </button>
-      ))}
-      <span className="tab-bar-spacer" />
+      {VIEWS.map(view => {
+        const isActive = currentTab === view.id;
+        return (
+          <button
+            key={view.id}
+            className={[
+              'flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium cursor-pointer border rounded-full transition-all bg-surface font-[inherit]',
+              isActive
+                ? 'text-white bg-accent border-accent hover:bg-[#ff4040]'
+                : 'text-text-primary border-border hover:bg-bg-hover hover:border-border-strong',
+            ].join(' ')}
+            data-tab={view.id}
+            onClick={() => handleTabClick(view.id)}
+          >
+            {view.label}
+          </button>
+        );
+      })}
+      <span className="flex-1" />
       <span id="tabBarRight" ref={rightSlotRef} />
     </>,
     container
