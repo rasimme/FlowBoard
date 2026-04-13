@@ -37,32 +37,34 @@ export default function Sidebar() {
 
   return createPortal(
     <>
-      <div className="sidebar-label">Projects</div>
+      <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted font-semibold mb-2">Projects</div>
       <div id="projectList">
         {projects.length === 0 ? (
-          <div className="sidebar-empty">No projects</div>
+          <div className="text-text-muted text-xs p-3 text-center">No projects</div>
         ) : (
           projects.map(p => {
             const isActive = p.name === activeProject;
             const isViewed = p.name === viewedProject;
             const openCount = (p.taskCounts?.open || 0) + (p.taskCounts?.['in-progress'] || 0);
-            let cls = 'project-item';
-            if (isActive) cls += ' agent-active';
-            if (isViewed) cls += ' viewed';
             return (
               <div
                 key={p.name}
-                className={cls}
+                className={[
+                  'flex items-center justify-between px-3.5 py-2 rounded-lg text-[13px] font-medium text-text-muted cursor-pointer transition-all border border-transparent mb-0.5 hover:bg-bg-hover hover:text-text-strong',
+                  isViewed && 'bg-accent-subtle text-text-strong',
+                  isActive && 'border-accent text-text-strong shadow-[0_0_12px_rgba(255,92,92,.15)]',
+                  isActive && isViewed && 'shadow-[0_0_12px_rgba(255,92,92,.15),inset_0_1px_0_rgba(255,92,92,.1)]',
+                ].filter(Boolean).join(' ')}
                 onClick={() => handleViewProject(p.name)}
               >
                 <span>{formatDisplayName(p.name, projects)}</span>
-                {openCount > 0 && <span className="project-badge">{openCount}</span>}
+                {openCount > 0 && <span className="bg-secondary rounded-full px-2 py-0.5 text-[11px] font-medium text-text-muted">{openCount}</span>}
               </div>
             );
           })
         )}
       </div>
-      <div className="sidebar-actions" id="sidebarActions">
+      <div className="mt-3 pt-3 border-t border-border" id="sidebarActions">
         {showActivate && (
           <Button
             variant="primary"
