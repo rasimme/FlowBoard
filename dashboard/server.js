@@ -201,11 +201,13 @@ function telegramAuthMiddleware(req, res, next) {
 app.use(cookieParser());
 app.use(express.json());
 
-// DEBUG: Log all /api/ requests
-app.use('/api/', (req, res, next) => {
-  console.log(`[REQ] ${req.method} ${req.originalUrl} ip=${req.ip} cf-ray=${req.headers['cf-ray'] || 'none'}`);
-  next();
-});
+// S-15: Request logger — only in development or when explicitly enabled
+if (process.env.LOG_REQUESTS === 'true' || process.env.DEBUG || process.env.NODE_ENV !== 'production') {
+  app.use('/api/', (req, res, next) => {
+    console.log(`[REQ] ${req.method} ${req.originalUrl} ip=${req.ip} cf-ray=${req.headers['cf-ray'] || 'none'}`);
+    next();
+  });
+}
 
 // Global auth on all /api/ routes (except /health which is unauthenticated)
 app.use('/api/', (req, res, next) => {
@@ -263,18 +265,22 @@ app.use('/api/', rateLimit({
 }));
 
 // Security + Cache Headers
+// S-25: Nonce-based CSP replaces unsafe-inline for script-src
 app.use((req, res, next) => {
   // No-cache für JS/HTML
   if (req.path.endsWith('.js') || req.path.endsWith('.html') || req.path.endsWith('.css') || req.path === '/') {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   }
+  // Generate per-request nonce for inline scripts
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.locals.cspNonce = nonce;
   // Security Headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://telegram.org",
+    `script-src 'self' 'nonce-${nonce}' https://telegram.org`,
     "connect-src 'self'",
     "img-src 'self' data: https://t.me",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
@@ -288,7 +294,10 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
   let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
   const localHostname = process.env.LOCAL_HOSTNAME || '';
-  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
+  const nonce = res.locals.cspNonce;
+  // Inject nonce into existing inline scripts and add config script
+  html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
+  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
@@ -313,10 +322,12 @@ app.get('/*path', (req, res, next) => {
     return next();
   }
 
-  // Fallback to dist/index.html with injected config
+  // Fallback to dist/index.html with injected config + CSP nonce
   let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
   const localHostname = process.env.LOCAL_HOSTNAME || '';
-  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
+  const nonce = res.locals.cspNonce;
+  html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
+  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
@@ -339,8 +350,6 @@ app.param('name', (req, res, next, name) => {
 });
 
 // Health-Endpoint (kein Auth)
-const startTime = Date.now();
-const pkg = require('./package.json');
 // --- Canvas Helpers ---
 
 function readCanvasFile(projectName) {
@@ -528,14 +537,9 @@ app.get('/api/agents', (req, res) => {
   }
 });
 
+// S-07: Health endpoint — minimal response, no version/uptime/auth info leak
 app.get('/api/health', (req, res) => {
-  res.json({
-    ok: true,
-    version: pkg.version,
-    auth: AUTH_ENABLED,
-    authAlways: AUTH_ALWAYS,
-    uptime: Math.floor((Date.now() - startTime) / 1000)
-  });
+  res.json({ ok: true });
 });
 
 // Auth-Endpoint (vor dem generellen API-Auth)
