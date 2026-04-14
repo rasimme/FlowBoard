@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles/dashboard.css?v=25">
+  <link rel="stylesheet" href="./styles/dashboard.css?v=26">
   <!-- Telegram WebApp SDK (loads tg object, also used for graceful degradation check) -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -68,29 +68,14 @@
 <div id="modalRoot"></div>
 <div id="react-root"></div>
 
-  <!-- Task Detail Panel (Slide-over) -->
-  <div id="taskDetailPanel" class="task-detail-panel hide">
-    <div class="detail-header">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-        <span id="detailTaskId" class="mono" style="opacity:0.6;font-size:12px">T-XXX</span>
-        <button id="closeDetail" class="btn-close-detail">✕</button>
-      </div>
-      <h2 id="detailTitle" style="margin:0;font-size:18px;line-height:1.3">Task Title</h2>
-    </div>
-    <div id="detailActions" class="detail-actions"></div>
-    <div id="detailScroll" class="detail-scroll-area">
-      <div id="detailDescription" class="detail-section" style="padding: 16px; border-bottom: 1px solid var(--border)"></div>
-      <div id="activityFeed" class="activity-feed"></div>
-    </div>
-    <div class="detail-footer">
-      <div class="comment-input-wrap">
-        <textarea id="commentText" placeholder="Schreibe einen Kommentar..." rows="1"></textarea>
-        <button id="sendComment" class="btn-send-comment">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"></path></svg>
-        </button>
-      </div>
-    </div>
-  </div>
+  <!-- Bridge stub: queue openTaskDetail calls until React registers the real handler -->
+  <script>
+  (function() {
+    var q = [];
+    window.openTaskDetail = function(id) { q.push(id); };
+    window._detailQueue = q;
+  })();
+  </script>
 
   <script type="module" src="./js/app.js?v=28"></script>
   <!-- React entry: JSX runs only under Vite dev server; production requires a build step (T-137) -->

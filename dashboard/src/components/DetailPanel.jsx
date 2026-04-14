@@ -112,7 +112,7 @@ export default function DetailPanel() {
 
   // --- Expose window.openTaskDetail for vanilla JS bridge ---
   useEffect(() => {
-    window.openTaskDetail = (id) => {
+    const handler = (id) => {
       setTaskId(id);
       setTask(null);
       setFeed([]);
@@ -120,6 +120,12 @@ export default function DetailPanel() {
       setHzlAvailable(true);
       setLoading(true);
     };
+    window.openTaskDetail = handler;
+    // Drain any calls that arrived before React mounted
+    if (window._detailQueue && window._detailQueue.length > 0) {
+      window._detailQueue.forEach(handler);
+      window._detailQueue.length = 0;
+    }
     return () => { delete window.openTaskDetail; };
   }, []);
 
@@ -222,7 +228,7 @@ export default function DetailPanel() {
     ]);
   }
 
-  // --- Action Handlers (optimistic updates matching detail.js exactly) ---
+  // --- Action Handlers (optimistic updates) ---
 
   async function handleClaim() {
     const t = taskRef.current;
