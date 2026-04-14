@@ -19,7 +19,7 @@ const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(OPEN
 const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : path.join(WORKSPACE, 'projects');
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
 const BOOTSTRAP_FILE = path.join(WORKSPACE, 'BOOTSTRAP.md');
-const DASHBOARD_DATA_FILE = path.join(__dirname, 'dashboard-data.json');
+const DASHBOARD_DATA_FILE = path.join(process.env.HOME, '.flowboard', 'dashboard-data.json');
 const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 
 const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
@@ -75,7 +75,7 @@ function validateTelegramWebApp(initData) {
   const hash = params.get('hash');
   if (!hash) return null;
   const authDate = parseInt(params.get('auth_date'), 10);
-  if (!authDate || Date.now() / 1000 - authDate > 3600) return null;
+  if (!authDate || Date.now() / 1000 - authDate > 300) return null;
   params.delete('hash');
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
