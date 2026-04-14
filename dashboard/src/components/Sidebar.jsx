@@ -67,7 +67,7 @@ export default function Sidebar() {
       <div className="mt-3 pt-3 border-t border-border" id="sidebarActions">
         {showActivate && (
           <Button
-            variant="primary"
+            variant="accent"
             size="sm"
             className="w-full"
             onClick={handleActivate}

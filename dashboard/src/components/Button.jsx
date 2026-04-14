@@ -1,10 +1,10 @@
 const variants = {
   accent: 'bg-accent text-white hover:bg-accent-hover active:bg-accent-hover',
   secondary: 'bg-bg-elevated text-text hover:bg-bg-hover',
-  danger: 'bg-danger text-white hover:bg-red-600',
+  danger: 'bg-danger text-white hover:brightness-110',
   ghost: [
     'bg-transparent text-text border border-transparent',
-    'hover:bg-[#ffffff0f] hover:border-border-strong',
+    'hover:bg-bg-hover hover:border-border-strong',
   ].join(' '),
 };
 

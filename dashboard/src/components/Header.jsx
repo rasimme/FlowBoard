@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Menu } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { formatDisplayName } from '../utils.js';
 
@@ -23,14 +24,14 @@ export default function Header() {
     <>
       <div className="flex items-center gap-3">
         <button
-          className="w-9 h-9 flex items-center justify-center border-none bg-transparent text-muted cursor-pointer rounded-[6px] transition-all duration-200 text-lg hover:text-text hover:bg-bg-hover"
+          className="w-9 h-9 flex items-center justify-center border-none bg-transparent text-muted cursor-pointer rounded-[6px] transition-all duration-normal text-lg hover:text-text hover:bg-bg-hover"
           title="Toggle sidebar"
           onClick={() => {
             document.getElementById('app')?.classList.toggle('sidebar-collapsed');
             window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
           }}
         >
-          ☰
+          <Menu size={18} />
         </button>
         <span className="leading-none flex items-center max-[600px]:hidden">
           <img src="./favicon.svg" alt="FlowBoard" className="h-[30px] w-auto align-middle" />
@@ -46,7 +47,7 @@ export default function Header() {
             <span className="text-[13px] font-semibold text-text-strong tracking-[0.02em]">
               {formatDisplayName(state.viewedProject, state.projects)}
             </span>
-            {isActive && <span className="inline-flex px-2.5 py-[3px] rounded-full text-[10px] font-semibold text-accent border border-[#ff5c5c59] bg-accent-subtle uppercase tracking-[0.04em]">Active</span>}
+            {isActive && <span className="inline-flex px-2.5 py-[3px] rounded-full text-[10px] font-semibold text-accent border border-accent-subtle bg-accent-subtle uppercase tracking-[0.04em]">Active</span>}
           </>
         )}
       </div>

@@ -8,42 +8,51 @@ export default {
   theme: {
     extend: {
       colors: {
+        // All colors reference CSS custom properties in dashboard.css (single source of truth).
+        // Trade-off: Tailwind opacity modifiers (e.g. bg-accent/50) won't work —
+        // use explicit subtle/hover token variants instead.
         bg: {
-          DEFAULT: '#12141a',
-          elevated: '#1a1d25',
-          hover: '#262a35',
+          DEFAULT: 'var(--bg)',
+          accent: 'var(--bg-accent)',
+          elevated: 'var(--bg-elevated)',
+          hover: 'var(--bg-hover)',
         },
-        card: '#181b22',
+        card: {
+          DEFAULT: 'var(--card)',
+          highlight: 'var(--card-highlight)',
+        },
+        secondary: 'var(--secondary)',
         accent: {
-          DEFAULT: '#ff5c5c',
-          hover: '#ff7070',
-          subtle: 'rgba(255, 92, 92, 0.15)',
-          2: '#14b8a6',
+          DEFAULT: 'var(--accent)',
+          hover: 'var(--accent-hover)',
+          subtle: 'var(--accent-subtle)',
+          2: 'var(--accent-2)',
+          '2-subtle': 'var(--accent-2-subtle)',
         },
         text: {
-          DEFAULT: '#e4e4e7',
-          strong: '#fafafa',
+          DEFAULT: 'var(--text)',
+          strong: 'var(--text-strong)',
         },
-        muted: '#71717a',
+        muted: 'var(--muted)',
         border: {
-          DEFAULT: '#27272a',
-          strong: '#3f3f46',
+          DEFAULT: 'var(--border)',
+          strong: 'var(--border-strong)',
         },
         ok: {
-          DEFAULT: '#22c55e',
-          subtle: 'rgba(34, 197, 94, 0.12)',
+          DEFAULT: 'var(--ok)',
+          subtle: 'var(--ok-subtle)',
         },
         warn: {
-          DEFAULT: '#f59e0b',
-          subtle: 'rgba(245, 158, 11, 0.12)',
+          DEFAULT: 'var(--warn)',
+          subtle: 'var(--warn-subtle)',
         },
         danger: {
-          DEFAULT: '#ef4444',
-          subtle: 'rgba(239, 68, 68, 0.12)',
+          DEFAULT: 'var(--danger)',
+          subtle: 'var(--danger-subtle)',
         },
         info: {
-          DEFAULT: '#3b82f6',
-          subtle: 'rgba(59, 130, 246, 0.12)',
+          DEFAULT: 'var(--info)',
+          subtle: 'var(--info-subtle)',
         },
       },
       fontFamily: {
@@ -51,15 +60,18 @@ export default {
         mono: ['JetBrains Mono', 'monospace'],
       },
       borderRadius: {
-        sm: '6px',
-        md: '8px',
-        lg: '12px',
-        full: '9999px',
+        sm: 'var(--radius-sm)',
+        md: 'var(--radius-md)',
+        lg: 'var(--radius-lg)',
+        full: 'var(--radius-full)',
       },
       boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
         card: '0 12px 28px rgba(0, 0, 0, 0.35)',
-        'focus-accent': '0 0 0 3px color-mix(in srgb, #ff5c5c 25%, transparent)',
-        'focus-danger': '0 0 0 3px color-mix(in srgb, #ef4444 25%, transparent)',
+        'focus-accent': '0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent)',
+        'focus-danger': '0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent)',
       },
       keyframes: {
         'slide-in-right': {
@@ -72,11 +84,16 @@ export default {
         },
       },
       animation: {
-        'slide-in-right': 'slide-in-right 0.3s ease-out',
-        'scale-in': 'scale-in 150ms ease-out',
+        'slide-in-right': 'slide-in-right var(--duration-slow) var(--ease-out)',
+        'scale-in': 'scale-in var(--duration-fast) var(--ease-out)',
       },
       transitionDuration: {
-        fast: '150ms',
+        fast: 'var(--duration-fast)',
+        normal: 'var(--duration-normal)',
+        slow: 'var(--duration-slow)',
+      },
+      transitionTimingFunction: {
+        out: 'var(--ease-out)',
       },
     },
   },

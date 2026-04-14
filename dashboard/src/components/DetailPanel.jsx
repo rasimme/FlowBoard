@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { X, Send } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
@@ -433,19 +434,19 @@ export default function DetailPanel() {
       />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 z-[1600] h-full w-full max-w-[480px] bg-[var(--card)] border-l border-[var(--border)] shadow-[-4px_0_24px_rgba(0,0,0,0.3)] flex flex-col animate-slide-in-right">
+      <div className="fixed top-0 right-0 z-[1600] h-full w-full max-w-[480px] bg-card border-l border-border shadow-[-4px_0_24px_rgba(0,0,0,0.3)] flex flex-col animate-slide-in-right">
         {/* Header */}
-        <div className="px-5 pt-5 pb-3 border-b border-[var(--border)]">
+        <div className="px-5 pt-5 pb-3 border-b border-border">
           <div className="flex justify-between items-start mb-3">
-            <span className="font-mono text-xs text-[var(--muted)]">{taskId}</span>
+            <span className="font-mono text-xs text-muted">{taskId}</span>
             <button
               onClick={close}
-              className="w-8 h-8 flex items-center justify-center rounded-[var(--radius-md)] text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--bg-hover)] transition-colors border-0 bg-transparent cursor-pointer text-base"
+              className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover transition-colors border-0 bg-transparent cursor-pointer"
             >
-              &#x2715;
+              <X size={16} />
             </button>
           </div>
-          <h2 className="m-0 text-lg leading-tight text-[var(--text-strong)] font-semibold">
+          <h2 className="m-0 text-lg leading-tight text-text-strong font-semibold">
             {loading ? 'Lade...' : (task?.title || 'Task Title')}
           </h2>
         </div>
@@ -465,10 +466,10 @@ export default function DetailPanel() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           {/* Description / Meta */}
           {task && (
-            <div className="px-4 py-4 border-b border-[var(--border)]">
-              <div className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)] mb-2">Task</div>
-              <div className="text-sm leading-relaxed text-[var(--text)]">{task.title}</div>
-              <div className="mt-2.5 text-xs text-[var(--muted)]">
+            <div className="px-4 py-4 border-b border-border">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Task</div>
+              <div className="text-sm leading-relaxed text-text">{task.title}</div>
+              <div className="mt-2.5 text-xs text-muted">
                 {task.id} &middot; {task.status || ''} &middot; {task.priority || ''}
               </div>
             </div>
@@ -477,10 +478,10 @@ export default function DetailPanel() {
           {/* Activity Feed */}
           <div className="px-4 py-3">
             {loading && (
-              <div className="text-sm text-[var(--muted)] py-4 text-center">Daten werden geladen\u2026</div>
+              <div className="text-sm text-muted py-4 text-center">Daten werden geladen\u2026</div>
             )}
             {!loading && allFeedItems.length === 0 && (
-              <div className="text-sm text-[var(--muted)] py-4 text-center">{'\u{1F4ED}'} Noch keine Aktivit\u00e4t</div>
+              <div className="text-sm text-muted py-4 text-center">{'\u{1F4ED}'} Noch keine Aktivit\u00e4t</div>
             )}
             {allFeedItems.map((item, i) => (
               <ActivityItem key={`${item.timestamp}-${i}`} item={item} />
@@ -489,7 +490,7 @@ export default function DetailPanel() {
         </div>
 
         {/* Comment Footer */}
-        <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--card)]">
+        <div className="px-4 py-3 border-t border-border bg-card">
           <div className="flex gap-2 items-end">
             <textarea
               value={comment}
@@ -497,16 +498,14 @@ export default function DetailPanel() {
               onKeyDown={handleCommentKeyDown}
               placeholder="Schreibe einen Kommentar..."
               rows={1}
-              className="flex-1 resize-none rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--text)] placeholder:text-[var(--muted)] focus:outline-none focus:border-accent"
+              className="flex-1 resize-none rounded-md border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent"
             />
             <button
               onClick={handleSubmitComment}
               disabled={submitting || !comment.trim()}
-              className="w-9 h-9 flex items-center justify-center rounded-[var(--radius-md)] bg-accent text-white border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition-all shrink-0"
+              className="w-9 h-9 flex items-center justify-center rounded-md bg-accent text-white border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition-all shrink-0"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
-              </svg>
+              <Send size={16} />
             </button>
           </div>
         </div>
@@ -523,9 +522,9 @@ function ActionBar({ bar, onClaim, onRelease, onComplete, onToggleBlocked }) {
   if (!hasButtons) return null;
 
   return (
-    <div className="flex gap-2 px-4 py-2.5 border-b border-[var(--border)]">
+    <div className="flex gap-2 px-4 py-2.5 border-b border-border">
       {bar.claim.show && (
-        <Button size="sm" variant="primary" onClick={onClaim} title="Claim this task">
+        <Button size="sm" variant="accent" onClick={onClaim} title="Claim this task">
           {bar.claim.label}
         </Button>
       )}
@@ -537,7 +536,7 @@ function ActionBar({ bar, onClaim, onRelease, onComplete, onToggleBlocked }) {
       {bar.complete.show && (
         <Button
           size="sm"
-          variant="primary"
+          variant="accent"
           onClick={onComplete}
           disabled={bar.complete.enabled === false}
           title={bar.complete.enabled === false ? 'All subtasks must be done first' : 'Mark complete and move to review'}
@@ -569,10 +568,10 @@ function ActivityItem({ item }) {
       <div className="shrink-0 w-5 text-center">{icon}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-medium text-[var(--text-strong)] text-xs uppercase">{author}</span>
-          <span className="text-xs text-[var(--muted)]">{time}</span>
+          <span className="font-medium text-text-strong text-xs uppercase">{author}</span>
+          <span className="text-xs text-muted">{time}</span>
         </div>
-        <div className="text-[var(--text)] break-words">{item.message || ''}</div>
+        <div className="text-text break-words">{item.message || ''}</div>
       </div>
     </div>
   );
