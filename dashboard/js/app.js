@@ -348,7 +348,7 @@ window._saveFileContent = function() { saveFileContent(state); };
 window._deleteCurrentFile = function() {
   const filePath = fileState?.selectedFile;
   if (!filePath) return;
-  showModal('Delete File', `Delete <strong>${filePath}</strong>?`, async () => {
+  showModal('Delete File', `Delete <strong>${escHtml(filePath)}</strong>?`, async () => {
     try {
       const res = await fetch(`/api/projects/${state.viewedProject}/files/${filePath}`, { method: 'DELETE' });
       const data = await res.json();

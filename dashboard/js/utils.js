@@ -67,16 +67,16 @@ export function toast(msg, type = 'info') {
 export function showModal(title, body, onConfirm, confirmLabel = 'Delete', confirmClass = 'btn-danger', secondaryAction = null) {
   const root = document.getElementById('modalRoot');
   const secondaryBtn = secondaryAction
-    ? `<button class="btn btn-ghost btn-sm" id="modalSecondary">${secondaryAction.label}</button>`
+    ? `<button class="btn btn-ghost btn-sm" id="modalSecondary">${escHtml(secondaryAction.label)}</button>`
     : '';
   root.innerHTML = `<div class="modal-overlay" id="modalOverlay">
     <div class="modal">
-      <div class="modal-title">${title}</div>
+      <div class="modal-title">${escHtml(title)}</div>
       <div class="modal-body">${body}</div>
       <div class="modal-actions">
         <button class="btn btn-ghost btn-sm" id="modalCancel">Cancel</button>
         ${secondaryBtn}
-        <button class="btn ${confirmClass} btn-sm" id="modalConfirm">${confirmLabel}</button>
+        <button class="btn ${confirmClass} btn-sm" id="modalConfirm">${escHtml(confirmLabel)}</button>
       </div>
     </div>
   </div>`;

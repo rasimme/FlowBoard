@@ -312,8 +312,14 @@ function renderMarkdown(text) {
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
   html = html.replace(/^---$/gm, '<hr>');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
+    if (/^(javascript|data|vbscript):/i.test(url)) return alt;
+    return `<img src="${url}" alt="${alt}">`;
+  });
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+    if (/^(javascript|data|vbscript):/i.test(url)) return text;
+    return `<a href="${url}" target="_blank">${text}</a>`;
+  });
   html = html.replace(/^(\|.+\|)\n(\|[-:\s|]+\|)\n((?:\|.+\|\n?)*)/gm, (_, header, sep, body) => {
     const ths = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
     const rows = body.trim().split('\n').map(row => {
