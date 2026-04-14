@@ -23,7 +23,7 @@ export default function Header() {
     <>
       <div className="flex items-center gap-3">
         <button
-          className="w-9 h-9 flex items-center justify-center border-none bg-transparent text-text-muted cursor-pointer rounded-[6px] transition-all duration-200 text-lg hover:text-text-primary hover:bg-bg-hover"
+          className="w-9 h-9 flex items-center justify-center border-none bg-transparent text-muted cursor-pointer rounded-[6px] transition-all duration-200 text-lg hover:text-text hover:bg-bg-hover"
           title="Toggle sidebar"
           onClick={() => {
             document.getElementById('app')?.classList.toggle('sidebar-collapsed');
@@ -37,7 +37,7 @@ export default function Header() {
         </span>
         <div className="flex flex-col">
           <div className="text-[15px] font-bold tracking-[0.05em] text-text-strong uppercase">FlowBoard</div>
-          <div className="text-[10px] text-text-muted uppercase tracking-[0.06em] font-medium">Project Management</div>
+          <div className="text-[10px] text-muted uppercase tracking-[0.06em] font-medium">Project Management</div>
         </div>
       </div>
       <div className="flex items-center gap-2.5" id="headerRight">

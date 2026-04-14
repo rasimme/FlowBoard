@@ -46,16 +46,16 @@ export default function TabBar() {
 
   return createPortal(
     <>
-      {VIEWS.map(view => {
+      {VIEWS.filter(v => !v.hidden).map(view => {
         const isActive = currentTab === view.id;
         return (
           <button
             key={view.id}
             className={[
-              'flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium cursor-pointer border rounded-full transition-all bg-surface font-[inherit]',
+              'flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium cursor-pointer border rounded-full transition-all bg-card font-[inherit]',
               isActive
-                ? 'text-white bg-accent border-accent hover:bg-[#ff4040]'
-                : 'text-text-primary border-border hover:bg-bg-hover hover:border-border-strong',
+                ? 'text-white bg-accent border-accent hover:bg-accent-hover'
+                : 'text-text border-border hover:bg-bg-hover hover:border-border-strong',
             ].join(' ')}
             data-tab={view.id}
             onClick={() => handleTabClick(view.id)}

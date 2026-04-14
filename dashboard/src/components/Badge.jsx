@@ -1,10 +1,10 @@
 const variants = {
-  default: 'bg-[var(--secondary)] text-[var(--muted)]',
-  accent: 'bg-[var(--accent-subtle)] text-accent',
-  success: 'bg-[var(--ok-subtle)] text-[var(--ok)]',
-  warning: 'bg-[var(--warn-subtle)] text-[var(--warn)]',
-  danger: 'bg-[var(--danger-subtle)] text-danger',
-  info: 'bg-[var(--info-subtle)] text-[var(--info)]',
+  default: 'bg-bg-elevated text-muted',
+  accent: 'bg-accent-subtle text-accent',
+  success: 'bg-ok-subtle text-ok',
+  warning: 'bg-warn-subtle text-warn',
+  danger: 'bg-danger-subtle text-danger',
+  info: 'bg-info-subtle text-info',
 };
 
 export default function Badge({
@@ -16,7 +16,7 @@ export default function Badge({
   return (
     <span
       className={[
-        'inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-[var(--radius-full)]',
+        'inline-flex items-center px-[11px] py-[5px] text-[12px] font-medium rounded-full',
         variants[variant],
         className,
       ].join(' ')}

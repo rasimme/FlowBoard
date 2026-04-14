@@ -37,10 +37,10 @@ export default function Sidebar() {
 
   return createPortal(
     <>
-      <div className="text-[10px] uppercase tracking-[0.05em] text-text-muted font-semibold mb-2">Projects</div>
+      <div className="text-[10px] uppercase tracking-[0.05em] text-muted font-semibold mb-2">Projects</div>
       <div id="projectList">
         {projects.length === 0 ? (
-          <div className="text-text-muted text-xs p-3 text-center">No projects</div>
+          <div className="text-muted text-xs p-3 text-center">No projects</div>
         ) : (
           projects.map(p => {
             const isActive = p.name === activeProject;
@@ -50,7 +50,7 @@ export default function Sidebar() {
               <div
                 key={p.name}
                 className={[
-                  'flex items-center justify-between px-3.5 py-2 rounded-lg text-[13px] font-medium text-text-muted cursor-pointer transition-all border border-transparent mb-0.5 hover:bg-bg-hover hover:text-text-strong',
+                  'flex items-center justify-between px-3.5 py-2 rounded-lg text-[13px] font-medium text-muted cursor-pointer transition-all border border-transparent mb-0.5 hover:bg-bg-hover hover:text-text-strong',
                   isViewed && 'bg-accent-subtle text-text-strong',
                   isActive && 'border-accent text-text-strong shadow-[0_0_12px_rgba(255,92,92,.15)]',
                   isActive && isViewed && 'shadow-[0_0_12px_rgba(255,92,92,.15),inset_0_1px_0_rgba(255,92,92,.1)]',
@@ -58,7 +58,7 @@ export default function Sidebar() {
                 onClick={() => handleViewProject(p.name)}
               >
                 <span>{formatDisplayName(p.name, projects)}</span>
-                {openCount > 0 && <span className="bg-secondary rounded-full px-2 py-0.5 text-[11px] font-medium text-text-muted">{openCount}</span>}
+                {openCount > 0 && <span className="bg-bg-elevated rounded-full px-2 py-0.5 text-[11px] font-medium text-muted">{openCount}</span>}
               </div>
             );
           })

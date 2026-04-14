@@ -33,15 +33,15 @@ export default function Modal({
       onClick={handleOverlayClick}
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60"
     >
-      <div className="bg-[var(--card)] border border-[var(--border)] rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)] w-full max-w-md mx-4 overflow-hidden">
+      <div className="bg-card border border-border rounded-md shadow-card w-full max-w-md mx-4 overflow-hidden animate-scale-in">
         {title && (
           <div className="px-5 pt-5 pb-0">
-            <h3 className="text-base font-semibold text-[var(--text-strong)] m-0">
+            <h3 className="text-base font-semibold text-text-strong m-0">
               {title}
             </h3>
           </div>
         )}
-        <div className="px-5 py-4 text-sm text-[var(--text)]">
+        <div className="px-5 py-4 text-sm text-text">
           {children}
         </div>
         {actions && (

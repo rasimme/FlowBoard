@@ -1,3 +1,7 @@
+import { lazy } from 'react';
+
+const DesignTest = lazy(() => import('../pages/DesignTest.jsx'));
+
 /**
  * View registry — single source of truth for top-level dashboard views.
  *
@@ -11,6 +15,7 @@ export const VIEWS = [
   { id: 'ideas', label: 'Ideas', owner: 'legacy' },
   { id: 'tasks', label: 'Tasks', owner: 'legacy' },
   { id: 'files', label: 'Files', owner: 'legacy' },
+  { id: 'design', label: 'Design', owner: 'react', component: DesignTest, hidden: true },
 ];
 
 export function getView(id) {

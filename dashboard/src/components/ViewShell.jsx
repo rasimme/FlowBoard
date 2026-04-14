@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, useRef } from 'react';
+import { useLayoutEffect, useState, useRef, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { getView } from '../config/views.js';
@@ -21,6 +21,15 @@ export default function ViewShell() {
     if (el) setContainer(el);
   }, []);
 
+  useLayoutEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/design-test') {
+      window.dispatchEvent(new CustomEvent('appstate:change', { 
+        detail: { currentTab: 'design' } 
+      }));
+    }
+  }, []);
+
   const currentTab = state?.currentTab || 'tasks';
   const view = getView(currentTab);
   const isReactOwned = view?.owner === 'react';
@@ -40,5 +49,10 @@ export default function ViewShell() {
   const ViewComponent = view.component;
   if (!ViewComponent) return null;
 
-  return createPortal(<ViewComponent />, container);
+  return createPortal(
+    <Suspense fallback={<div className="p-6 text-sm text-muted">Loading...</div>}>
+      <ViewComponent />
+    </Suspense>,
+    container
+  );
 }
