@@ -31,6 +31,9 @@ const specifySession = require('./specify-sessions');
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
 const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || '';
+if (!HOOKS_TOKEN) {
+  console.warn('⚠️  OPENCLAW_HOOKS_TOKEN not set — /api/hooks/task-complete endpoint will reject all calls');
+}
 
 // Auth config (from env vars — never hardcoded)
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
@@ -47,6 +50,15 @@ const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
 const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
 const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
+
+// Fail-closed: refuse to start in production without auth
+if (!AUTH_ENABLED && process.env.NODE_ENV === 'production') {
+  console.error('FATAL: Auth not configured in production. Set TELEGRAM_BOT_TOKEN, JWT_SECRET, and ALLOWED_USER_IDS.');
+  process.exit(1);
+}
+if (!AUTH_ENABLED) {
+  console.warn('⚠️  AUTH DISABLED — only localhost access permitted');
+}
 
 // --- Auth helpers ---
 
@@ -75,7 +87,12 @@ function validateTelegramWebApp(initData) {
 }
 
 function telegramAuthMiddleware(req, res, next) {
-  if (!AUTH_ENABLED) return next(); // Auth nicht konfiguriert → offen lassen
+  if (!AUTH_ENABLED) {
+    // Fail-closed: only allow localhost when auth is not configured
+    const ip = req.ip || req.connection?.remoteAddress || '';
+    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
+    return res.status(403).json({ error: 'Auth not configured — only localhost access permitted' });
+  }
   // AUTH_ALWAYS: Auth bei jedem Request (für ngrok, Tailscale, etc.)
   // Ohne AUTH_ALWAYS: lokale Requests erlauben, externe Requests via Cloudflare Tunnel authentifizieren
   // NOTE: If FlowBoard later runs behind a reverse proxy/container, revisit req.ip handling / trust proxy.
@@ -83,10 +100,16 @@ function telegramAuthMiddleware(req, res, next) {
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
   }
-  // Optional: allow a custom hostname without auth (e.g. for LAN access via Cloudflare Tunnel)
+  // Optional: allow a custom hostname without auth (e.g. for LAN access)
+  // Host header alone is client-controllable — also verify actual source IP is LAN
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
-  if (localHostname && cfHost === localHostname) return next();
+  if (localHostname && cfHost === localHostname) {
+    const srcIp = req.ip || req.connection?.remoteAddress || '';
+    if (srcIp === '127.0.0.1' || srcIp === '::1' || srcIp.startsWith('192.168.') || srcIp.startsWith('10.') || srcIp.startsWith('::ffff:192.168.') || srcIp.startsWith('::ffff:10.')) {
+      return next();
+    }
+  }
   const token = req.cookies?.flowboard_session;
   if (token) {
     try {
@@ -113,6 +136,18 @@ function telegramAuthMiddleware(req, res, next) {
 app.use(cookieParser());
 app.use(express.json());
 
+// DEBUG: Log all /api/ requests
+app.use('/api/', (req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.originalUrl} ip=${req.ip} cf-ray=${req.headers['cf-ray'] || 'none'}`);
+  next();
+});
+
+// Global auth on all /api/ routes (except /health which is unauthenticated)
+app.use('/api/', (req, res, next) => {
+  if (req.path === '/health') return next();
+  return telegramAuthMiddleware(req, res, next);
+});
+
 // CORS — eigene Domain wenn konfiguriert, sonst wildcard (lokaler Zugriff)
 if (DASHBOARD_ORIGIN) {
   app.use(cors({
@@ -130,8 +165,9 @@ app.use('/api/', rateLimit({
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false,
   skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1', // localhost immer erlauben
-  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip,
+  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip || 'unknown',
   message: { error: 'Too many requests, please slow down.' }
 }));
 
@@ -175,6 +211,20 @@ app.use(express.static(__dirname, {
     }
   }
 }));
+
+// SPA Fallback: serve index.html for all routes that aren't API or files
+app.get('/*path', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  
+  // Check if it's a real file in the static directory
+  const filePath = path.join(__dirname, req.path);
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    return next();
+  }
+
+  // Fallback to index.html
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Health-Endpoint (kein Auth)
 const startTime = Date.now();
@@ -357,7 +407,7 @@ app.put('/api/status', async (req, res) => {
 
 
 // GET /api/agents — list all known agents and their active project (T-131-3)
-app.get('/api/agents', telegramAuthMiddleware, (req, res) => {
+app.get('/api/agents', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     res.json({ ok: true, agents: fbMeta.listAgents() });
@@ -377,12 +427,11 @@ app.get('/api/health', (req, res) => {
 });
 
 // Auth-Endpoint (vor dem generellen API-Auth)
-app.post('/api/auth', telegramAuthMiddleware, (req, res) => {
+app.post('/api/auth', (req, res) => {
   res.json({ ok: true, user: req.user });
 });
 
-// Auth auf alle weiteren API-Routes
-app.use('/api/', telegramAuthMiddleware);
+// Auth auf alle API-Routes wird jetzt global oben angewendet (nach Debug-Logger)
 
 // --- Helpers ---
 
@@ -644,7 +693,9 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/:name/tasks', (req, res) => {
   let tasks, responseBase;
   if (HZL_ENABLED) {
-    if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+    if (!projectExists(req.params.name)) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
     const includeArchived = req.query.includeArchived === 'true';
     tasks = hzlService.listTasks(req.params.name, { includeArchived });
     responseBase = {};
@@ -1770,6 +1821,11 @@ app.post('/api/projects/:name/tasks/:id/route', (req, res) => {
 
 app.post('/api/hooks/task-complete', (req, res) => {
   // Called by HookDrainService when a task transitions to done/archived
+  // Requires internal hooks token — Telegram auth alone is not sufficient
+  const hookToken = req.headers['x-hooks-token'];
+  if (!HOOKS_TOKEN || hookToken !== HOOKS_TOKEN) {
+    return res.status(403).json({ error: 'Invalid or missing hooks token' });
+  }
   const payload = req.body;
   console.log('[hook] Task complete notification:', JSON.stringify(payload));
   res.json({ ok: true });
