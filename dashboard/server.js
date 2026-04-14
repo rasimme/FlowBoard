@@ -81,10 +81,14 @@ function validateTelegramWebApp(initData) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => `${k}=${v}`).join('\n');
 
+  // S-01: Timing-safe HMAC comparison to prevent timing side-channel attacks
   const isValid = TELEGRAM_BOT_TOKENS.some((token) => {
     const secretKey = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
     const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-    return checkHash === hash;
+    const checkBuf = Buffer.from(checkHash, 'utf8');
+    const hashBuf = Buffer.from(hash, 'utf8');
+    if (checkBuf.length !== hashBuf.length) return false;
+    return crypto.timingSafeEqual(checkBuf, hashBuf);
   });
 
   if (!isValid) return null;
@@ -158,8 +162,11 @@ function telegramAuthMiddleware(req, res, next) {
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
   }
-  // Optional: allow a custom hostname without auth (e.g. for LAN access)
-  // Only for direct local connections (no cf-ray), verified by LAN IP range
+  // SECURITY WARNING (S-13): LOCAL_HOSTNAME bypass allows unauthenticated LAN access.
+  // This ONLY works when the server listens on 0.0.0.0 (not the default 127.0.0.1).
+  // When FLOWBOARD_HOST=127.0.0.1 (default after S-17), LAN clients cannot reach this
+  // server directly, making this bypass unreachable. If you explicitly bind to 0.0.0.0,
+  // be aware that LOCAL_HOSTNAME enables clear-text unauthenticated access from LAN IPs.
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   if (localHostname && cfHost === localHostname) {
@@ -204,6 +211,24 @@ app.use('/api/', (req, res, next) => {
 app.use('/api/', (req, res, next) => {
   if (req.path === '/health') return next();
   return telegramAuthMiddleware(req, res, next);
+});
+
+// S-06: CSRF mitigation — verify Origin header on mutating requests
+// Browsers send Origin on cross-origin requests; HTML forms cannot set Content-Type: application/json
+app.use('/api/', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const origin = req.headers['origin'];
+    if (origin) {
+      const isLocalOrigin = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:');
+      const allowedOrigins = DASHBOARD_ORIGIN
+        ? [DASHBOARD_ORIGIN, 'https://web.telegram.org']
+        : ['https://web.telegram.org'];
+      if (!isLocalOrigin && !allowedOrigins.includes(origin)) {
+        return res.status(403).json({ error: 'Origin not allowed' });
+      }
+    }
+  }
+  next();
 });
 
 // S-23: CORS — restrict origins when auth is active, no wildcard fallback
@@ -488,7 +513,7 @@ app.put('/api/status', async (req, res) => {
     if (bootstrapWarning) body.bootstrapWarning = bootstrapWarning;
     res.json(body);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -499,7 +524,7 @@ app.get('/api/agents', (req, res) => {
   try {
     res.json({ ok: true, agents: fbMeta.listAgents() });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -752,7 +777,7 @@ app.post('/api/projects', (req, res) => {
     if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: e.message });
     if (e.code === 'DUPLICATE') return res.status(409).json({ error: e.message });
     console.error('[projects] createProject failed:', e.message);
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -851,7 +876,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       } catch (e) { console.warn('[reminder]', e); }
       return res.json(response);
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -901,7 +926,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     } catch (e) { console.warn('[reminder]', e); }
     res.json(response);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -989,7 +1014,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       } catch (e) { console.warn('[reminder]', e); }
       return res.json(response);
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -1060,7 +1085,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     } catch (e) { console.warn('[reminder]', e); }
     res.json(response);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1092,7 +1117,7 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
       hzlService.deleteTask(req.params.name, req.params.id, req.query.mode);
     } catch (err) {
       if (err.subtaskCount) return res.status(400).json({ error: err.message, subtaskCount: err.subtaskCount });
-      return res.status(500).json({ error: err.message });
+      console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
     }
 
     // Delete spec files/links only after successful task deletion
@@ -1170,7 +1195,7 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
     syncDashboardData(req.params.name);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1305,7 +1330,7 @@ app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
       modified: stat.mtime.toISOString()
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1338,7 +1363,7 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
       modified: stat.mtime.toISOString()
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1390,7 +1415,7 @@ app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
 
     res.json({ ok: true, deleted: filePath });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1492,7 +1517,7 @@ app.post('/api/projects/:name/canvas/notes', (req, res) => {
     writeCanvasFile(req.params.name, data);
     res.json({ ok: true, note });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1512,7 +1537,7 @@ app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
     writeCanvasFile(req.params.name, data);
     res.json({ ok: true, note });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1533,7 +1558,7 @@ app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
     writeCanvasFile(req.params.name, data);
     res.status(204).end();
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1549,7 +1574,7 @@ app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
     writeCanvasFile(req.params.name, data);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1578,7 +1603,7 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
         writeCanvasFile(req.params.name, data);
         return res.json({ ok: true, updated: true, connection: existing });
       } catch (err) {
-        return res.status(500).json({ error: err.message });
+        console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
       }
     }
     return res.json({ ok: true, duplicate: true });
@@ -1591,7 +1616,7 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
     writeCanvasFile(req.params.name, data);
     res.json({ ok: true, connection: conn });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1607,7 +1632,7 @@ app.delete('/api/projects/:name/canvas/connections', (req, res) => {
     writeCanvasFile(req.params.name, data);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1728,7 +1753,7 @@ app.get('/api/specify/sessions', (req, res) => {
     });
     res.json(sessions);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1739,7 +1764,7 @@ app.get('/api/specify/sessions/:id', (req, res) => {
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1750,7 +1775,7 @@ app.post('/api/specify/sessions/:id/abort', (req, res) => {
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1761,7 +1786,7 @@ app.post('/api/specify/sessions/:id/complete', (req, res) => {
     if (!session) return res.status(404).json({ error: 'Session not found' });
     res.json(session);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1875,7 +1900,7 @@ app.get('/api/tasks/stuck', (req, res) => {
     const stuck = hzlService.getStuckTasks({ staleThreshold });
     res.json({ ok: true, stuck });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -1909,8 +1934,11 @@ app.post('/api/projects/:name/tasks/:id/route', (req, res) => {
 app.post('/api/hooks/task-complete', (req, res) => {
   // Called by HookDrainService when a task transitions to done/archived
   // Requires internal hooks token — Telegram auth alone is not sufficient
-  const hookToken = req.headers['x-hooks-token'];
-  if (!HOOKS_TOKEN || hookToken !== HOOKS_TOKEN) {
+  // S-02: Timing-safe comparison to prevent timing side-channel attacks
+  const hookToken = req.headers['x-hooks-token'] || '';
+  const hookBuf = Buffer.from(hookToken, 'utf8');
+  const expectedBuf = Buffer.from(HOOKS_TOKEN, 'utf8');
+  if (!HOOKS_TOKEN || hookBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(hookBuf, expectedBuf)) {
     return res.status(403).json({ error: 'Invalid or missing hooks token' });
   }
   const payload = req.body;
