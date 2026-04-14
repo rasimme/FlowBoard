@@ -16,7 +16,7 @@ import {
   canvasState, renderIdeaCanvas,
   refreshCanvas, resetCanvasState
 } from './canvas/index.js?v=5';
-import { initDetail } from './detail.js?v=5';
+// Detail panel now handled by React DetailPanel — no initDetail needed
 
 // Global state
 const state = {
@@ -137,7 +137,7 @@ async function viewProject(name) {
   prevFilesMeta = null; // Reset so next refresh re-baselines for new project
   resetCanvasState();
   prevCanvasJson = '';
-  initDetail(name); // Keep detailState.activeProject in sync with viewed project
+  // Detail panel project sync now handled by React AppStateContext
   const data = await api(`/projects/${name}/tasks?includeArchived=true`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
@@ -473,7 +473,7 @@ async function init() {
   state.projects = data.projects || [];
   registerDisplayNames(state.projects);
   state.activeProject = data.activeProject;
-  if (state.activeProject) initDetail(state.activeProject);
+  // Detail panel project sync now handled by React AppStateContext
   prevProjectsJson = JSON.stringify(state.projects);
   prevActiveProject = state.activeProject;
 

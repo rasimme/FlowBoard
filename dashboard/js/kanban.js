@@ -1,7 +1,7 @@
 // kanban.js — Task Board Logic
 
 import { api, toast, showModal, escHtml, STATUS_KEYS, STATUS_LABELS, ICONS } from './utils.js?v=9';
-import { openTaskDetail } from './detail.js?v=5';
+// Detail panel now handled by React DetailPanel — bridge via window.openTaskDetail
 
 // Telegram Haptic Feedback (no-op if not in Telegram)
 const _h = (t='light') => window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(t);
@@ -1068,7 +1068,7 @@ export function bindKanbanEvents(container) {
     if (!btn) return;
     const { action, id, title, priority, file } = btn.dataset;
     switch (action) {
-      case 'open-detail':     openTaskDetail(id); break;
+      case 'open-detail':     if (window.openTaskDetail) window.openTaskDetail(id); break;
       case 'edit-task':       startEdit(id); break;
       case 'edit-subtask':    startEditSubtask(id); break;
       case 'delete-task':     startDelete(id, title, btn.dataset.spec || null, parseInt(btn.dataset.subtasks) || 0); break;

@@ -3,6 +3,7 @@ import Header from './components/Header.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import TabBar from './components/TabBar.jsx';
 import ViewShell from './components/ViewShell.jsx';
+import DetailPanel from './components/DetailPanel.jsx';
 
 /**
  * React app shell — wraps all React UI with the state bridge.
@@ -19,6 +20,7 @@ export default function App() {
       <Sidebar />
       <TabBar />
       <ViewShell />
+      <DetailPanel />
     </AppStateProvider>
   );
 }
