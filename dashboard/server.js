@@ -10,7 +10,8 @@ const cors = require('cors');
 
 const app = express();
 const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
-const HOST = process.env.FLOWBOARD_HOST || '0.0.0.0';
+// S-17: Default to localhost — Cloudflare Tunnel connects via 127.0.0.1 anyway
+const HOST = process.env.FLOWBOARD_HOST || '127.0.0.1';
 
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..');
 const OPENCLAW_HOME = path.resolve(WORKSPACE, '..');
@@ -50,6 +51,12 @@ const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
 const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
 const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
+
+// S-03: Reject weak JWT secrets when auth is active
+if (AUTH_ENABLED && JWT_SECRET.trim().length < 32) {
+  console.error('FATAL: JWT_SECRET must be at least 32 characters when auth is enabled.');
+  process.exit(1);
+}
 
 // Fail-closed: refuse to start in production without auth
 if (!AUTH_ENABLED && process.env.NODE_ENV === 'production') {
@@ -199,14 +206,22 @@ app.use('/api/', (req, res, next) => {
   return telegramAuthMiddleware(req, res, next);
 });
 
-// CORS — eigene Domain wenn konfiguriert, sonst wildcard (lokaler Zugriff)
+// S-23: CORS — restrict origins when auth is active, no wildcard fallback
 if (DASHBOARD_ORIGIN) {
   app.use(cors({
     origin: DASHBOARD_ORIGIN,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data']
+    allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With']
+  }));
+} else if (AUTH_ENABLED) {
+  console.warn('⚠️  DASHBOARD_ORIGIN not set with AUTH_ENABLED — restricting CORS to Telegram origins');
+  app.use(cors({
+    origin: ['https://web.telegram.org'],
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With']
   }));
 } else {
+  // No auth, local-only — permissive CORS for development
   app.use(cors());
 }
 
@@ -244,37 +259,58 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve index.html with injected config
+// Serve index.html with injected config (from dist/ — never serve raw source)
 app.get('/', (req, res) => {
-  const fs = require('fs');
-  let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
 
-app.use(express.static(__dirname, {
+// S-09: Serve static files ONLY from dist/ — never expose server source, configs, or data files
+app.use(express.static(path.join(__dirname, 'dist'), {
   setHeaders: (res, filePath) => {
-    // Never cache HTML — Telegram WebApp ignores query-param versioning on the HTML itself
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-store');
     }
   }
 }));
 
-// SPA Fallback: serve index.html for all routes that aren't API or files
+// SPA Fallback: serve dist/index.html for all routes that aren't API or static files
 app.get('/*path', (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
-  
-  // Check if it's a real file in the static directory
-  const filePath = path.join(__dirname, req.path);
+
+  // Check if it's a real file in dist/ (express.static above will have served it already,
+  // but this guard handles race conditions with next())
+  const filePath = path.join(__dirname, 'dist', req.path);
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
     return next();
   }
 
-  // Fallback to index.html
-  res.sendFile(path.join(__dirname, 'index.html'));
+  // Fallback to dist/index.html with injected config
+  let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
+  const localHostname = process.env.LOCAL_HOSTNAME || '';
+  html = html.replace('</head>', `<script>window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.send(html);
+});
+
+// S-08/S-22: Central project name validation — prevents path traversal via :name param
+function sanitizeProjectName(name) {
+  if (name == null) return false;
+  if (/[\/\\]/.test(name)) return false;
+  if (name.includes('..')) return false;
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return false;
+  return true;
+}
+
+// All routes with :name are /api/projects/:name/* — validate once here
+app.param('name', (req, res, next, name) => {
+  if (!sanitizeProjectName(name)) {
+    return res.status(400).json({ error: 'Invalid project name' });
+  }
+  next();
 });
 
 // Health-Endpoint (kein Auth)
