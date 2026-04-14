@@ -87,21 +87,72 @@ function validateTelegramWebApp(initData) {
 }
 
 function telegramAuthMiddleware(req, res, next) {
+  // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so IP check can't distinguish
+  // local vs external. cf-ray is ONLY set by Cloudflare edge — if present, request is external.
+  if (req.headers['cf-ray']) {
+    if (!AUTH_ENABLED) {
+      // Auth not configured but request is external via tunnel — block it
+      console.warn(`[auth] Blocked tunnel request — auth not configured. cf-connecting-ip=${req.headers['cf-connecting-ip']} ${new Date().toISOString()}`);
+      return res.status(403).json({ error: 'Auth not configured — tunnel access denied' });
+    }
+    // External request via Cloudflare — must authenticate
+    const token = req.cookies?.flowboard_session;
+    if (token) {
+      try {
+        req.user = jwt.verify(token, JWT_SECRET);
+        return next();
+      } catch { /* abgelaufen */ }
+    }
+    const initData = req.headers['x-telegram-init-data'];
+    const user = validateTelegramWebApp(initData);
+    if (!user) {
+      console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+    res.cookie('flowboard_session', sessionToken, {
+      httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
+    });
+    req.user = user;
+    return next();
+  }
   if (!AUTH_ENABLED) {
-    // Fail-closed: only allow localhost when auth is not configured
+    // Fail-closed: only allow localhost when auth is not configured (direct local access only)
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
     return res.status(403).json({ error: 'Auth not configured — only localhost access permitted' });
   }
-  // AUTH_ALWAYS: Auth bei jedem Request (für ngrok, Tailscale, etc.)
-  // Ohne AUTH_ALWAYS: lokale Requests erlauben, externe Requests via Cloudflare Tunnel authentifizieren
-  // NOTE: If FlowBoard later runs behind a reverse proxy/container, revisit req.ip handling / trust proxy.
-  if (!AUTH_ALWAYS && !req.headers['cf-ray']) {
+  // Requests via Cloudflare Tunnel always require auth (cf-ray header is set by CF edge)
+  // Cloudflared connects locally so req.ip is always 127.0.0.1 — IP cannot distinguish local vs tunnel
+  if (req.headers['cf-ray']) {
+    // External request via Cloudflare — must authenticate
+    const token = req.cookies?.flowboard_session;
+    if (token) {
+      try {
+        req.user = jwt.verify(token, JWT_SECRET);
+        return next();
+      } catch { /* abgelaufen */ }
+    }
+    const initData = req.headers['x-telegram-init-data'];
+    const user = validateTelegramWebApp(initData);
+    if (!user) {
+      console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+    res.cookie('flowboard_session', sessionToken, {
+      httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
+    });
+    req.user = user;
+    return next();
+  }
+  // Direct local requests (no cf-ray) — allow for dev/ops access
+  if (!AUTH_ALWAYS) {
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
   }
   // Optional: allow a custom hostname without auth (e.g. for LAN access)
-  // Host header alone is client-controllable — also verify actual source IP is LAN
+  // Only for direct local connections (no cf-ray), verified by LAN IP range
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   if (localHostname && cfHost === localHostname) {
