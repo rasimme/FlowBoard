@@ -1,22 +1,4 @@
 import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=9';
-import {
-  kanbanState, buildBoard, updateBoard, toggleSort, startAdd, cancelAdd,
-  createTask, saveTitle, setPriority, setSubtaskStatus,
-  confirmDelete, createSpec, onDrop, toggleExpand,
-  startAddSubtask, cancelAddSubtask, submitSubtask,
-  toggleBlocked, toggleArchived, archiveTask, restoreTask,
-  renderTabBarRight, bindKanbanEvents
-} from './kanban.js?v=26';
-import {
-  fileState, loadFileTree, loadFileContent, saveFileContent, toggleFileEdit, toggleDir, fileBackToTree,
-  renderFileExplorer, renderFileTree, applyStaticScrollbars, updateContentScrollbarVisibility,
-  bindFileExplorerEvents
-} from './file-explorer.js?v=8';
-import {
-  canvasState, renderIdeaCanvas,
-  refreshCanvas, resetCanvasState
-} from './canvas/index.js?v=5';
-// Detail panel now handled by React DetailPanel — no initDetail needed
 
 // Global state
 const state = {
@@ -24,36 +6,15 @@ const state = {
   activeProject: null,
   viewedProject: null,
   tasks: [],
-  currentTab: 'tasks',
-  canvasNotes: [],
-  canvasConnections: []
+  currentTab: 'tasks'
 };
 
 // Make state accessible to modules
 window.appState = state;
-// Bridge callback for detail panel actions to refresh the kanban board
-window.appState._refreshBoard = () => {
-  if (state.currentTab === 'tasks') updateBoard(state);
-};
 
 let prevProjectsJson = '';
 let prevTasksJson = '';
 let prevActiveProject = null;
-let prevFilesMeta = null; // flat [{path, mtime, size}] for change detection
-let prevCanvasJson = '';
-
-// Extract flat file fingerprint from a file tree for diffing
-function getFilesMeta(tree) {
-  const files = [];
-  function walk(entries) {
-    for (const e of entries) {
-      if (e.type === 'file') files.push({ path: e.path, mtime: e.modified, size: e.size });
-      if (e.children) walk(e.children);
-    }
-  }
-  walk(tree || []);
-  return files.sort((a, b) => a.path.localeCompare(b.path));
-}
 
 // --- Sidebar toggle ---
 function toggleSidebar() {
@@ -112,46 +73,16 @@ function renderAll() {
   const app = document.querySelector('.app');
   app.setAttribute('data-view', state.currentTab);
   renderHeader();
-  if (state.currentTab === 'tasks') {
-    // React owns the Tasks view — if React has rendered its root marker, skip legacy render.
-    // This avoids coupling vanilla code to the React view registry (views.js).
-    if (!document.querySelector('[data-react-tasks]')) {
-      renderTabBarRight();
-      updateBoard(state);
-    }
-  } else if (state.currentTab === 'files') {
-    // React owns this view — skip legacy render if React has mounted
-    if (!document.querySelector('[data-react-files]')) {
-      document.getElementById('tabBarRight').innerHTML = '';
-      renderFileExplorer(state);
-    }
-  } else if (state.currentTab === 'ideas') {
-    // React owns this view — skip legacy render if React has mounted
-    if (!document.querySelector('[data-react-ideas]')) {
-      document.getElementById('tabBarRight').innerHTML = '';
-      renderIdeaCanvas(state);
-    }
-  }
-  requestAnimationFrame(applyStaticScrollbars);
 }
 
 // --- Actions ---
 async function viewProject(name) {
   state.viewedProject = name;
-  kanbanState.addingTask = false;
-  kanbanState.editingTaskId = null;
-  kanbanState.boardBuilt = false;
-  fileState.fileTree = null;
-  fileState.selectedFile = null;
-  fileState.fileContent = null;
-  prevFilesMeta = null; // Reset so next refresh re-baselines for new project
-  resetCanvasState();
-  prevCanvasJson = '';
-  // Detail panel project sync now handled by React AppStateContext
   const data = await api(`/projects/${name}/tasks?includeArchived=true`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
   renderAll();
+  window._notifyReact?.();
 }
 
 async function activateProject() {
@@ -171,187 +102,16 @@ async function deactivateProject() {
 }
 
 // --- Tab System ---
-// Persisted kanban scroll position across tab switches
-const savedKanbanScroll = { top: 0, colIndex: 0, columns: {} };
-
 function switchTab(tab) {
   state.currentTab = tab;
-  // React TabBar owns the active class when _reactOwnsShell is set
-  if (!window._reactOwnsShell) {
+  if (window._reactOwnsShell) {
+    window._notifyReact?.();
+  } else {
     document.querySelectorAll('.tab').forEach(t => {
       t.classList.toggle('active', t.dataset.tab === tab);
     });
   }
-  if (tab === 'tasks') {
-    // React owns this view — skip legacy kanban render
-    if (!document.querySelector('[data-react-tasks]')) {
-      kanbanState.boardBuilt = false;
-      renderTabBarRight();
-      updateBoard(state);
-      // Restore scroll after board is painted — double rAF ensures layout is complete
-      const saved = { ...savedKanbanScroll };
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        const isMobile = window.matchMedia('(max-width: 900px)').matches;
-        if (isMobile) {
-          const kanban = document.querySelector('.kanban');
-          if (kanban) {
-            // Restore horizontal column position
-            if (saved.colIndex) {
-              const colWidth = kanban.firstElementChild?.offsetWidth || 300;
-              kanban.scrollLeft = saved.colIndex * colWidth;
-            }
-            // Restore each column's vertical scroll
-            if (saved.columns) {
-              kanban.querySelectorAll('.column[data-status]').forEach(col => {
-                const top = saved.columns[col.dataset.status];
-                if (top) col.scrollTop = top;
-              });
-            }
-          }
-        } else {
-          const content = document.getElementById('content');
-          if (content && saved.top) content.scrollTop = saved.top;
-        }
-        updateContentScrollbarVisibility();
-      }));
-    }
-  } else if (tab === 'files') {
-    // Save kanban scroll before leaving
-    const isMobile = window.matchMedia('(max-width: 900px)').matches;
-    if (isMobile) {
-      const kanban = document.querySelector('.kanban');
-      if (kanban) {
-        const colWidth = kanban.firstElementChild?.offsetWidth || 300;
-        savedKanbanScroll.colIndex = Math.round(kanban.scrollLeft / colWidth);
-        // Save each column's vertical scroll position
-        savedKanbanScroll.columns = {};
-        kanban.querySelectorAll('.column[data-status]').forEach(col => {
-          savedKanbanScroll.columns[col.dataset.status] = col.scrollTop;
-        });
-      }
-    } else {
-      const content = document.getElementById('content');
-      if (content) savedKanbanScroll.top = content.scrollTop;
-    }
-    // React owns this view — skip legacy render if React has mounted
-    if (!document.querySelector('[data-react-files]')) {
-      document.getElementById('tabBarRight').innerHTML = '';
-      renderFileExplorer(state);
-    }
-    requestAnimationFrame(updateContentScrollbarVisibility);
-  } else if (tab === 'ideas') {
-    // React owns this view — skip legacy render if React has mounted
-    if (!document.querySelector('[data-react-ideas]')) {
-      document.getElementById('tabBarRight').innerHTML = '';
-      renderIdeaCanvas(state);
-    }
-    requestAnimationFrame(updateContentScrollbarVisibility);
-  }
 }
-
-// --- Kanban bridge callbacks (set on window._ for delegated handlers) ---
-window._toggleSort = function() {
-  if (toggleSort()) {
-    kanbanState.boardBuilt = false;
-    updateBoard(state);
-  }
-};
-window._startAdd = function() { if (startAdd()) updateBoard(state); };
-window._cancelAdd = function() { if (cancelAdd()) updateBoard(state); };
-window._createTask = function() {
-  createTask(state).then(changed => {
-    if (changed) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-    }
-  });
-};
-window._saveTitle = function(id, el) {
-  saveTitle(id, el, state).then(() => {
-    prevTasksJson = JSON.stringify(state.tasks);
-  });
-};
-window._setPriority = function(id, priority) {
-  setPriority(id, priority, state);
-  prevTasksJson = JSON.stringify(state.tasks);
-};
-window._setSubtaskStatus = function(id, status) {
-  setSubtaskStatus(id, status, state).then(changed => {
-    if (changed) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-    }
-  });
-};
-window._confirmDelete = function(id, deleteSpec = false, mode = null) {
-  confirmDelete(id, state, deleteSpec, mode).then(changed => {
-    if (changed) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-    }
-  });
-};
-window._onDrop = function(e) {
-  onDrop(e, state).then(() => { prevTasksJson = JSON.stringify(state.tasks); });
-};
-window._toggleExpand = function(id) {
-  toggleExpand(id);
-  updateBoard(state);
-};
-window._addSubtask = function(id) {
-  if (startAddSubtask(id)) updateBoard(state);
-};
-window._cancelSubtask = function() {
-  if (cancelAddSubtask()) updateBoard(state);
-};
-window._submitSubtask = function() {
-  submitSubtask(state).then(changed => {
-    if (changed) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-    }
-  });
-};
-window._openSpec = function(specPath, taskId) {
-  if (!specPath) {
-    toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
-    return;
-  }
-  fileState.pendingOpen = specPath;
-  switchTab('files');
-};
-window._createSpec = function(taskId) {
-  createSpec(taskId, state).then(specFile => {
-    if (specFile) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-      fileState.pendingOpen = specFile;
-      switchTab('files');
-    }
-  });
-};
-window._toggleBlocked = function(id) {
-  toggleBlocked(id, state).then(() => {
-    prevTasksJson = JSON.stringify(state.tasks);
-  });
-};
-window._toggleArchived = function() { toggleArchived(state); };
-window._archiveTask = function(id) {
-  archiveTask(id, state).then(changed => {
-    if (changed) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-    }
-  });
-};
-window._restoreTask = function(id) {
-  restoreTask(id, state).then(changed => {
-    if (changed) {
-      prevTasksJson = JSON.stringify(state.tasks);
-      updateBoard(state);
-    }
-  });
-};
 
 // --- Shell bridge callbacks (React Header + Sidebar + TabBar) ---
 window._viewProject = viewProject;
@@ -360,29 +120,9 @@ window._deactivateProject = deactivateProject;
 window._toggleSidebar = toggleSidebar;
 window._switchTab = switchTab;
 
-// --- File Explorer bridge callbacks ---
-window._loadFileContent = function(path) { loadFileContent(path, state); };
-window.refreshCanvas = refreshCanvas;
-window._saveFileContent = function() { saveFileContent(state); };
-window._deleteCurrentFile = function() {
-  const filePath = fileState?.selectedFile;
-  if (!filePath) return;
-  showModal('Delete File', `Delete <strong>${escHtml(filePath)}</strong>?`, async () => {
-    try {
-      const res = await fetch(`/api/projects/${state.viewedProject}/files/${filePath}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) { toast(data.error || 'Delete failed', 'error'); return; }
-      toast(`Deleted ${filePath}`, 'success');
-      fileBackToTree();
-    } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
-  });
-};
-
 // --- User Interaction Detection ---
 function isUserInteracting() {
-  if (kanbanState.addingTask || kanbanState.editingTaskId || kanbanState.addingSubtaskParentId) return true;
   if (document.getElementById('modalOverlay')) return true;
-  if (canvasState.editingId || canvasState.sidebarNoteId) return true;
   const active = document.activeElement;
   return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 }
@@ -419,67 +159,14 @@ async function refresh() {
       }
     }
 
-    // --- File tree polling (always, silent update; render only when on files tab) ---
-    let filesChanged = false;
-    let changedFilePath = null;
-    if (state.viewedProject) {
-      try {
-        const filesData = await api(`/projects/${state.viewedProject}/files`);
-        const newMeta = getFilesMeta(filesData.tree);
-        const newMetaJson = JSON.stringify(newMeta);
-        const prevMetaJson = JSON.stringify(prevFilesMeta);
-        if (newMetaJson !== prevMetaJson) {
-          filesChanged = true;
-          // Detect if the currently open file changed
-          if (fileState.selectedFile && prevFilesMeta) {
-            const prev = prevFilesMeta.find(f => f.path === fileState.selectedFile);
-            const next = newMeta.find(f => f.path === fileState.selectedFile);
-            if (next && (!prev || prev.mtime !== next.mtime)) changedFilePath = fileState.selectedFile;
-          }
-          prevFilesMeta = newMeta;
-          fileState.fileTree = filesData; // Update silently (no extra fetch on tab switch)
-        }
-      } catch (e) { /* silent */ }
-    }
-
-    // --- Canvas polling (background, silent) — skip if React owns Ideas view ---
-    if (state.viewedProject && !document.querySelector('[data-react-ideas]')) {
-      try {
-        const canvasData = await api(`/projects/${state.viewedProject}/canvas`);
-        const canvasJson = JSON.stringify(canvasData);
-        if (canvasJson !== prevCanvasJson) {
-          prevCanvasJson = canvasJson;
-          canvasState.notes = canvasData.notes || [];
-          canvasState.connections = canvasData.connections || [];
-          // Only re-render if not actively editing or using sidebar
-          if (state.currentTab === 'ideas' && !canvasState.editingId && !canvasState.sidebarNoteId) {
-            refreshCanvas();
-          }
-        }
-      } catch { /* silent */ }
-    }
-
     if (isUserInteracting() && !projectsChanged) {
       return;
     }
 
-    if (projectsChanged) { renderSidebar(); renderHeader(); }
-    if (tasksChanged && state.currentTab === 'tasks') { updateBoard(state); }
-
-    if (filesChanged && state.currentTab === 'files' && !document.querySelector('[data-react-files]')) {
-      renderFileTree(); // Diff-update tree (new/deleted/renamed files appear instantly)
-
-      // Selected file was deleted → auto-open first available file (same pattern as init)
-      const selectedGone = fileState.selectedFile && !prevFilesMeta?.find(f => f.path === fileState.selectedFile);
-      if (selectedGone) {
-        fileState.selectedFile = null;
-        fileState.fileContent = null;
-        const firstFile = fileState.fileTree?.tree?.find(e => e.type === 'file');
-        if (firstFile) loadFileContent(firstFile.path, state);
-      } else if (changedFilePath && !fileState.fileEditing) {
-        // Reload content if open file changed and not currently editing
-        loadFileContent(changedFilePath, state);
-      }
+    if (projectsChanged || tasksChanged) {
+      renderSidebar();
+      renderHeader();
+      window._notifyReact?.();
     }
   } catch (err) {
     console.error('Refresh error:', err);
@@ -492,7 +179,6 @@ async function init() {
   state.projects = data.projects || [];
   registerDisplayNames(state.projects);
   state.activeProject = data.activeProject;
-  // Detail panel project sync now handled by React AppStateContext
   prevProjectsJson = JSON.stringify(state.projects);
   prevActiveProject = state.activeProject;
 
@@ -503,38 +189,17 @@ async function init() {
     const taskData = await api(`/projects/${state.viewedProject}/tasks?includeArchived=true`);
     state.tasks = taskData.tasks || [];
     prevTasksJson = JSON.stringify(state.tasks);
-
-    // Initialize file meta baseline so first refresh doesn't false-positive
-    try {
-      const filesData = await api(`/projects/${state.viewedProject}/files`);
-      fileState.fileTree = filesData;
-      prevFilesMeta = getFilesMeta(filesData.tree);
-    } catch (e) { /* silent */ }
   }
 
-  // Bind delegated event listeners (once, on persistent containers)
-  const content = document.getElementById('content');
-  bindKanbanEvents(content);
-  bindFileExplorerEvents(content);
-
   // Tab bar delegation — React owns tab buttons when _reactOwnsShell is set;
-  // legacy handler only needed for sort toggle and non-React fallback
+  // legacy handler only needed for non-React fallback
   const tabBar = document.getElementById('tabBar');
   tabBar.addEventListener('click', e => {
     if (!window._reactOwnsShell) {
       const tab = e.target.closest('[data-tab]');
       if (tab) switchTab(tab.dataset.tab);
     }
-    const action = e.target.closest('[data-action]')?.dataset.action;
-    if (action === 'toggle-sort') window._toggleSort();
   });
-  tabBar.addEventListener('touchstart', e => {
-    const action = e.target.closest('[data-action]')?.dataset.action;
-    if (action === 'toggle-sort') {
-      e.preventDefault();
-      window._toggleSort();
-    }
-  }, { passive: false });
 
   // Sidebar delegation
   document.getElementById('sidebar').addEventListener('click', e => {
@@ -583,9 +248,6 @@ function applyTelegramTheme() {
   if (button_color)       r.style.setProperty('--tg-btn', button_color);
   if (secondary_bg_color) r.style.setProperty('--tg-secondary-bg', secondary_bg_color);
 }
-
-// Viewport height now handled by pure CSS (100dvh) — no JS override needed
-// Telegram's viewportStableHeight caused collapse on minimize/resume
 
 // External links via Telegram
 document.addEventListener('click', e => {
