@@ -1,6 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { FolderOpen, Folder, FileText, FileJson, FileCode, File, ChevronRight, ChevronDown } from 'lucide-react';
+import { useHaptic } from '../hooks/useHaptic.js';
+import { FolderOpen, Folder, FileText, FileJson, FileCode, File, ChevronRight, ChevronDown, Pencil, Save, X, Trash2 } from 'lucide-react';
+
+function showToast(msg) {
+  if (window.Telegram?.WebApp?.showToast) window.Telegram.WebApp.showToast(msg);
+  else if (window.showToast) window.showToast(msg);
+}
+
+function isEditablePath(filePath) {
+  if (!filePath) return false;
+  return filePath.startsWith('context/') || filePath.startsWith('specs/');
+}
 
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
 const CATEGORY_COLORS = { always: 'var(--ok)', lazy: 'var(--warn)', optional: 'var(--info)' };
@@ -80,7 +91,88 @@ function TreeNode({ entry, depth, expandedDirs, onToggleDir, selectedFile, onSel
 }
 
 // --- File preview ---
-function FilePreview({ fileData, filePath }) {
+function FilePreview({ fileData, filePath, projectName, onDeleted }) {
+  const haptic = useHaptic();
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const textareaRef = useRef(null);
+
+  // Reset edit state when file changes
+  useEffect(() => {
+    setEditing(false);
+    setEditContent('');
+  }, [filePath]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!editing) return;
+    const handler = (e) => {
+      if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleSave();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancel();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  });
+
+  const handleEdit = () => {
+    haptic.light();
+    setEditContent(fileData.content);
+    setEditing(true);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setEditContent('');
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/projects/${projectName}/files/${filePath}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editContent }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      haptic.medium();
+      showToast('File saved');
+      fileData.content = editContent;
+      fileData.size = new Blob([editContent]).size;
+      setEditing(false);
+    } catch (err) {
+      console.warn('Save error:', err);
+      haptic.error();
+      showToast('Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectName}/files/${filePath}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed');
+      haptic.medium();
+      showToast('File deleted');
+      setShowDeleteModal(false);
+      onDeleted?.();
+    } catch (err) {
+      console.warn('Delete error:', err);
+      haptic.error();
+      showToast('Delete failed');
+      setShowDeleteModal(false);
+    }
+  };
+
   if (!fileData) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--text-3)] text-sm">
@@ -92,12 +184,16 @@ function FilePreview({ fileData, filePath }) {
   const ext = filePath.split('.').pop();
   const catLabel = CATEGORY_LABELS[fileData.category] || '';
   const catColor = CATEGORY_COLORS[fileData.category] || CATEGORY_COLORS.optional;
+  const editable = isEditablePath(filePath);
+  const unsaved = editing && editContent !== fileData.content;
+  const fileName = filePath.split('/').pop();
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5 shrink-0 flex-wrap">
         <span className="text-sm font-medium truncate">{filePath}</span>
+        {unsaved && <span className="w-2 h-2 rounded-full bg-[var(--warn)] shrink-0" title="Unsaved" />}
         <span className="text-xs text-[var(--text-3)] tabular-nums">{formatSize(fileData.size)}</span>
         {catLabel && (
           <span
@@ -107,33 +203,235 @@ function FilePreview({ fileData, filePath }) {
             {catLabel}
           </span>
         )}
+        <div className="ml-auto flex items-center gap-1">
+          {editable && !editing && (
+            <button onClick={handleEdit} className="p-1 rounded hover:bg-white/10 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors" title="Edit">
+              <Pencil size={14} />
+            </button>
+          )}
+          {editing && (
+            <>
+              <button onClick={handleSave} disabled={saving} className="p-1 rounded hover:bg-white/10 text-[var(--ok)] transition-colors" title="Save (Ctrl+S)">
+                <Save size={14} />
+              </button>
+              <button onClick={handleCancel} className="p-1 rounded hover:bg-white/10 text-[var(--text-3)] hover:text-[var(--text-1)] transition-colors" title="Cancel (Esc)">
+                <X size={14} />
+              </button>
+            </>
+          )}
+          {editable && !editing && (
+            <button onClick={() => { haptic.light(); setShowDeleteModal(true); }} className="p-1 rounded hover:bg-white/10 text-[var(--text-3)] hover:text-[var(--danger)] transition-colors" title="Delete">
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
       </div>
       {/* Body */}
       <div className="flex-1 overflow-auto p-3">
-        {ext === 'json' ? (
+        {editing ? (
+          <textarea
+            ref={textareaRef}
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            className="w-full h-full resize-none bg-transparent text-xs leading-relaxed font-[var(--font-mono)] text-[var(--text-2)] outline-none"
+            spellCheck={false}
+          />
+        ) : ext === 'json' ? (
           <JsonPreview content={fileData.content} />
+        ) : ext === 'md' ? (
+          <MarkdownPreview content={fileData.content} />
         ) : (
           <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words font-[var(--font-mono)] text-[var(--text-2)]">
             {fileData.content}
           </pre>
         )}
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-[var(--bg-2)] rounded-xl p-5 w-[min(90vw,320px)] shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold mb-2">Delete {fileName}?</h3>
+            <p className="text-xs text-[var(--text-3)] mb-4">This action cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowDeleteModal(false)} className="px-3 py-1.5 text-xs rounded-lg bg-white/5 hover:bg-white/10 transition-colors">Cancel</button>
+              <button onClick={handleDelete} className="px-3 py-1.5 text-xs rounded-lg bg-[var(--danger)] text-white hover:brightness-110 transition-all">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function JsonPreview({ content }) {
-  let formatted;
-  try {
-    formatted = JSON.stringify(JSON.parse(content), null, 2);
-  } catch {
-    formatted = content;
+function escHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+const JSON_TOKEN_RE = /("(?:[^"\\]|\\.)*")\s*(:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)|([{}\[\],])/g;
+
+function tokenizeJson(jsonStr) {
+  const tokens = [];
+  let lastIndex = 0;
+  let match;
+  JSON_TOKEN_RE.lastIndex = 0;
+  while ((match = JSON_TOKEN_RE.exec(jsonStr)) !== null) {
+    if (match.index > lastIndex) {
+      tokens.push({ type: 'ws', value: jsonStr.slice(lastIndex, match.index) });
+    }
+    if (match[1] !== undefined) {
+      if (match[2] !== undefined) {
+        tokens.push({ type: 'key', value: match[1] });
+        tokens.push({ type: 'ws', value: match[0].slice(match[1].length, -1) });
+        tokens.push({ type: 'punctuation', value: ':' });
+      } else {
+        tokens.push({ type: 'string', value: match[1] });
+      }
+    } else if (match[3] !== undefined) {
+      tokens.push({ type: 'number', value: match[3] });
+    } else if (match[4] !== undefined) {
+      tokens.push({ type: match[4] === 'null' ? 'null' : 'boolean', value: match[4] });
+    } else if (match[5] !== undefined) {
+      tokens.push({ type: 'punctuation', value: match[5] });
+    }
+    lastIndex = JSON_TOKEN_RE.lastIndex;
   }
+  if (lastIndex < jsonStr.length) {
+    tokens.push({ type: 'ws', value: jsonStr.slice(lastIndex) });
+  }
+  return tokens;
+}
+
+function JsonPreview({ content }) {
+  const highlighted = useMemo(() => {
+    let formatted;
+    try {
+      formatted = JSON.stringify(JSON.parse(content), null, 2);
+    } catch {
+      return null;
+    }
+    return tokenizeJson(formatted);
+  }, [content]);
+
+  if (!highlighted) {
+    return (
+      <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words font-[var(--font-mono)] text-[var(--text-2)]">
+        {content}
+      </pre>
+    );
+  }
+
   return (
     <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words font-[var(--font-mono)] text-[var(--text-2)]">
-      {formatted}
+      {highlighted.map((tok, i) =>
+        tok.type === 'ws' ? tok.value : (
+          <span key={i} className={`json-${tok.type}`}>{tok.value}</span>
+        )
+      )}
     </pre>
   );
+}
+
+function MarkdownPreview({ content }) {
+  const html = useMemo(() => {
+    try {
+      const escaped = escHtml(content);
+      const lines = escaped.split('\n');
+      const out = [];
+      let i = 0;
+      let inList = false;
+
+      while (i < lines.length) {
+        const line = lines[i];
+
+        // Code block
+        if (line.match(/^```/)) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          const lang = line.slice(3).trim();
+          const codeLines = [];
+          i++;
+          while (i < lines.length && !lines[i].match(/^```/)) {
+            codeLines.push(lines[i]);
+            i++;
+          }
+          i++; // skip closing ```
+          const cls = lang ? ` class="language-${lang}"` : '';
+          out.push(`<pre class="bg-white/5 rounded-lg p-3 overflow-x-auto my-2"><code${cls} class="text-xs font-[var(--font-mono)] text-[var(--text-2)]">${codeLines.join('\n')}</code></pre>`);
+          continue;
+        }
+
+        // HR
+        if (line.match(/^---+\s*$/)) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          out.push('<hr class="border-white/10 my-4" />');
+          i++;
+          continue;
+        }
+
+        // Headings
+        const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
+        if (headingMatch) {
+          if (inList) { out.push('</ul>'); inList = false; }
+          const level = headingMatch[1].length;
+          const text = inlineFormat(headingMatch[2]);
+          const sizes = { 1: 'text-lg font-bold', 2: 'text-base font-semibold', 3: 'text-sm font-medium' };
+          out.push(`<h${level} class="${sizes[level]} text-[var(--text-1)] mt-4 mb-2">${text}</h${level}>`);
+          i++;
+          continue;
+        }
+
+        // Unordered list item
+        if (line.match(/^[-*]\s+/)) {
+          if (!inList) { out.push('<ul class="list-disc list-inside space-y-1 my-2 text-[var(--text-2)]">'); inList = true; }
+          out.push(`<li class="text-xs leading-relaxed">${inlineFormat(line.replace(/^[-*]\s+/, ''))}</li>`);
+          i++;
+          continue;
+        }
+
+        // Close list if non-list line
+        if (inList) { out.push('</ul>'); inList = false; }
+
+        // Empty line
+        if (line.trim() === '') {
+          i++;
+          continue;
+        }
+
+        // Paragraph — collect consecutive non-empty lines
+        const paraLines = [line];
+        i++;
+        while (i < lines.length && lines[i].trim() !== '' && !lines[i].match(/^#{1,3}\s/) && !lines[i].match(/^[-*]\s+/) && !lines[i].match(/^```/) && !lines[i].match(/^---+\s*$/)) {
+          paraLines.push(lines[i]);
+          i++;
+        }
+        out.push(`<p class="text-xs leading-relaxed text-[var(--text-2)] my-2">${inlineFormat(paraLines.join(' '))}</p>`);
+      }
+
+      if (inList) out.push('</ul>');
+      return out.join('\n');
+    } catch (err) {
+      console.warn('Markdown parse error:', err);
+      return null;
+    }
+  }, [content]);
+
+  if (html === null) {
+    return (
+      <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words font-[var(--font-mono)] text-[var(--text-2)]">
+        {content}
+      </pre>
+    );
+  }
+
+  return <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function inlineFormat(text) {
+  return text
+    .replace(/`([^`]+)`/g, '<code class="bg-white/5 rounded px-1 py-0.5 font-[var(--font-mono)] text-xs">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-[var(--text-1)]">$1</strong>')
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-[var(--accent)] underline decoration-[var(--accent)]/40 hover:decoration-[var(--accent)]">$1</a>');
 }
 
 // --- Main view ---
@@ -150,6 +448,15 @@ export default function FilesView() {
   const abortRef = useRef(null);
 
   // Load file tree
+  const fetchTree = useCallback(() => {
+    if (!viewedProject) return;
+    setTreeLoading(true);
+    fetch(`/api/projects/${viewedProject}/files`)
+      .then(r => r.json())
+      .then(data => { setFileTree(data); setTreeLoading(false); })
+      .catch(err => { console.warn('Failed to load file tree:', err); setTreeLoading(false); });
+  }, [viewedProject]);
+
   useEffect(() => {
     if (!viewedProject) {
       setFileTree(null);
@@ -157,29 +464,16 @@ export default function FilesView() {
       setFileData(null);
       return;
     }
-
-    let cancelled = false;
-    setTreeLoading(true);
-
-    fetch(`/api/projects/${viewedProject}/files`)
-      .then(r => r.json())
-      .then(data => {
-        if (!cancelled) {
-          setFileTree(data);
-          setTreeLoading(false);
-        }
-      })
-      .catch(err => {
-        console.warn('Failed to load file tree:', err);
-        if (!cancelled) setTreeLoading(false);
-      });
-
-    // Reset selection when project changes
+    fetchTree();
     setSelectedFile(null);
     setFileData(null);
+  }, [viewedProject, fetchTree]);
 
-    return () => { cancelled = true; };
-  }, [viewedProject]);
+  const handleFileDeleted = useCallback(() => {
+    setSelectedFile(null);
+    setFileData(null);
+    fetchTree();
+  }, [fetchTree]);
 
   // Toggle directory
   const toggleDir = useCallback((dirPath) => {
@@ -245,6 +539,13 @@ export default function FilesView() {
 
   return (
     <div className="flex h-full" data-react-files>
+      <style>{`
+        .json-key { color: var(--accent); }
+        .json-string { color: var(--ok); }
+        .json-number { color: var(--info); }
+        .json-boolean, .json-null { color: var(--warn); }
+        .json-punctuation { color: var(--text-3); }
+      `}</style>
       {/* File tree pane */}
       <div className="w-[260px] shrink-0 border-r border-white/5 flex flex-col overflow-hidden max-md:w-full max-md:min-w-0">
         <div className="flex-1 overflow-y-auto py-1">
@@ -293,7 +594,7 @@ export default function FilesView() {
         {loading ? (
           <div className="flex items-center justify-center h-full text-[var(--text-3)] text-sm">Loading…</div>
         ) : (
-          <FilePreview fileData={fileData} filePath={selectedFile} />
+          <FilePreview fileData={fileData} filePath={selectedFile} projectName={viewedProject} onDeleted={handleFileDeleted} />
         )}
       </div>
     </div>
