@@ -126,8 +126,11 @@ function renderAll() {
       renderFileExplorer(state);
     }
   } else if (state.currentTab === 'ideas') {
-    document.getElementById('tabBarRight').innerHTML = '';
-    renderIdeaCanvas(state);
+    // React owns this view — skip legacy render if React has mounted
+    if (!document.querySelector('[data-react-ideas]')) {
+      document.getElementById('tabBarRight').innerHTML = '';
+      renderIdeaCanvas(state);
+    }
   }
   requestAnimationFrame(applyStaticScrollbars);
 }
@@ -237,8 +240,11 @@ function switchTab(tab) {
     }
     requestAnimationFrame(updateContentScrollbarVisibility);
   } else if (tab === 'ideas') {
-    document.getElementById('tabBarRight').innerHTML = '';
-    renderIdeaCanvas(state);
+    // React owns this view — skip legacy render if React has mounted
+    if (!document.querySelector('[data-react-ideas]')) {
+      document.getElementById('tabBarRight').innerHTML = '';
+      renderIdeaCanvas(state);
+    }
     requestAnimationFrame(updateContentScrollbarVisibility);
   }
 }
@@ -436,8 +442,8 @@ async function refresh() {
       } catch (e) { /* silent */ }
     }
 
-    // --- Canvas polling (background, silent) ---
-    if (state.viewedProject) {
+    // --- Canvas polling (background, silent) — skip if React owns Ideas view ---
+    if (state.viewedProject && !document.querySelector('[data-react-ideas]')) {
       try {
         const canvasData = await api(`/projects/${state.viewedProject}/canvas`);
         const canvasJson = JSON.stringify(canvasData);

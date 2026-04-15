@@ -3,6 +3,7 @@ import { lazy } from 'react';
 const DesignTest = lazy(() => import('../pages/DesignTest.jsx'));
 const TasksView = lazy(() => import('../pages/TasksView.jsx'));
 const FilesView = lazy(() => import('../pages/FilesView.jsx'));
+const IdeasView = lazy(() => import('../pages/IdeasView.jsx'));
 
 /**
  * View registry — single source of truth for top-level dashboard views.
@@ -14,7 +15,7 @@ const FilesView = lazy(() => import('../pages/FilesView.jsx'));
  * To migrate a view: set owner to 'react' and add a `component` field.
  */
 export const VIEWS = [
-  { id: 'ideas', label: 'Ideas', owner: 'legacy' },
+  { id: 'ideas', label: 'Ideas', owner: 'react', component: IdeasView },
   { id: 'tasks', label: 'Tasks', owner: 'react', component: TasksView },
   { id: 'files', label: 'Files', owner: 'react', component: FilesView },
   { id: 'design', label: 'Design', owner: 'react', component: DesignTest, hidden: true },
