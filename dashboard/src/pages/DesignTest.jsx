@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { Button, Badge, Input, Modal } from '../components/index.js';
+import {
+  Button, Badge, Input, Modal,
+  Label, Spinner, Tag, Textarea, Tooltip,
+  Checkbox, Dropdown, FormGroup, SearchBar,
+} from '../components/index.js';
 
 function Section({ title, children }) {
   return (
@@ -28,6 +32,8 @@ function Card({ title, children }) {
 export default function DesignTest() {
   const [modalOpen, setModalOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [dropdownValue, setDropdownValue] = useState('');
+  const [searchValue, setSearchValue] = useState('');
 
   return (
     <div className="p-6 max-w-4xl mx-auto text-text">
@@ -122,6 +128,101 @@ export default function DesignTest() {
       >
         <p className="m-0">Are you sure you want to delete this item? This action cannot be undone.</p>
       </Modal>
+
+      {/* ── New Atoms (T-139-3) ──────────────────────── */}
+      <Section title="Labels">
+        <Card>
+          <Label>Default label</Label>
+          <Label required>Required label</Label>
+        </Card>
+      </Section>
+
+      <Section title="Spinners">
+        <Card>
+          <Spinner size="sm" />
+          <Spinner size="md" />
+          <Spinner size="lg" />
+        </Card>
+      </Section>
+
+      <Section title="Tags">
+        <Card>
+          <Tag>Default</Tag>
+          <Tag variant="accent">Accent</Tag>
+          <Tag variant="success">Success</Tag>
+          <Tag variant="warning">Warning</Tag>
+          <Tag variant="danger">Danger</Tag>
+          <Tag variant="info">Info</Tag>
+          <Tag variant="accent" onRemove={() => {}}>Removable</Tag>
+        </Card>
+      </Section>
+
+      <Section title="Textarea">
+        <Card title="Default">
+          <Textarea placeholder="Type longer text here…" />
+        </Card>
+        <Card title="Disabled">
+          <Textarea placeholder="Disabled" disabled />
+        </Card>
+      </Section>
+
+      <Section title="Tooltip">
+        <Card>
+          <Tooltip content="Hello from tooltip!">
+            <Button variant="ghost" size="sm">Hover me</Button>
+          </Tooltip>
+          <Tooltip content="Bottom tooltip" placement="bottom">
+            <Badge variant="info">Bottom</Badge>
+          </Tooltip>
+        </Card>
+      </Section>
+
+      {/* ── Molecules (T-139-4) ────────────────────────── */}
+      <Section title="Checkbox">
+        <Card>
+          <Checkbox checked={false} label="Unchecked" onChange={() => {}} />
+          <Checkbox checked={true} label="Checked" onChange={() => {}} />
+          <Checkbox checked={false} label="Disabled" disabled onChange={() => {}} />
+        </Card>
+      </Section>
+
+      <Section title="Dropdown">
+        <Card title="Select">
+          <Dropdown
+            value={dropdownValue}
+            onChange={setDropdownValue}
+            options={[
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+            ]}
+            placeholder="Priority…"
+          />
+        </Card>
+      </Section>
+
+      <Section title="FormGroup">
+        <Card title="With Label + Error">
+          <FormGroup label="Email" htmlFor="email-demo" required error="Required field">
+            <Input id="email-demo" placeholder="you@example.com" />
+          </FormGroup>
+        </Card>
+        <Card title="With Hint">
+          <FormGroup label="Notes" htmlFor="notes-demo" hint="Optional field">
+            <Textarea id="notes-demo" placeholder="Extra notes…" rows={2} />
+          </FormGroup>
+        </Card>
+      </Section>
+
+      <Section title="SearchBar">
+        <Card>
+          <SearchBar
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            placeholder="Search tasks…"
+          />
+        </Card>
+      </Section>
 
       {/* ── Color Palette ───────────────────────────── */}
       <Section title="Color Palette">
