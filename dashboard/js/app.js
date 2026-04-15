@@ -113,8 +113,11 @@ function renderAll() {
   app.setAttribute('data-view', state.currentTab);
   renderHeader();
   if (state.currentTab === 'tasks') {
-    renderTabBarRight();
-    updateBoard(state);
+    // React owns this view — skip legacy kanban render
+    if (!document.querySelector('[data-react-tasks]')) {
+      renderTabBarRight();
+      updateBoard(state);
+    }
   } else if (state.currentTab === 'files') {
     document.getElementById('tabBarRight').innerHTML = '';
     renderFileExplorer(state);
@@ -173,35 +176,38 @@ function switchTab(tab) {
     });
   }
   if (tab === 'tasks') {
-    kanbanState.boardBuilt = false;
-    renderTabBarRight();
-    updateBoard(state);
-    // Restore scroll after board is painted — double rAF ensures layout is complete
-    const saved = { ...savedKanbanScroll };
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const isMobile = window.matchMedia('(max-width: 900px)').matches;
-      if (isMobile) {
-        const kanban = document.querySelector('.kanban');
-        if (kanban) {
-          // Restore horizontal column position
-          if (saved.colIndex) {
-            const colWidth = kanban.firstElementChild?.offsetWidth || 300;
-            kanban.scrollLeft = saved.colIndex * colWidth;
+    // React owns this view — skip legacy kanban render
+    if (!document.querySelector('[data-react-tasks]')) {
+      kanbanState.boardBuilt = false;
+      renderTabBarRight();
+      updateBoard(state);
+      // Restore scroll after board is painted — double rAF ensures layout is complete
+      const saved = { ...savedKanbanScroll };
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const isMobile = window.matchMedia('(max-width: 900px)').matches;
+        if (isMobile) {
+          const kanban = document.querySelector('.kanban');
+          if (kanban) {
+            // Restore horizontal column position
+            if (saved.colIndex) {
+              const colWidth = kanban.firstElementChild?.offsetWidth || 300;
+              kanban.scrollLeft = saved.colIndex * colWidth;
+            }
+            // Restore each column's vertical scroll
+            if (saved.columns) {
+              kanban.querySelectorAll('.column[data-status]').forEach(col => {
+                const top = saved.columns[col.dataset.status];
+                if (top) col.scrollTop = top;
+              });
+            }
           }
-          // Restore each column's vertical scroll
-          if (saved.columns) {
-            kanban.querySelectorAll('.column[data-status]').forEach(col => {
-              const top = saved.columns[col.dataset.status];
-              if (top) col.scrollTop = top;
-            });
-          }
+        } else {
+          const content = document.getElementById('content');
+          if (content && saved.top) content.scrollTop = saved.top;
         }
-      } else {
-        const content = document.getElementById('content');
-        if (content && saved.top) content.scrollTop = saved.top;
-      }
-      updateContentScrollbarVisibility();
-    }));
+        updateContentScrollbarVisibility();
+      }));
+    }
   } else if (tab === 'files') {
     // Save kanban scroll before leaving
     const isMobile = window.matchMedia('(max-width: 900px)').matches;
