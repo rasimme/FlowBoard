@@ -1,8 +1,8 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Badge } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2, ChevronDown } from 'lucide-react';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = {
@@ -103,44 +103,129 @@ function SubtaskCard({ task }) {
 }
 
 // --- Parent task card ---
-function TaskCard({ task, allTasks, expanded, onToggleExpand }) {
+function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskUpdated }) {
   const handleClick = () => {
     if (window.openTaskDetail) window.openTaskDetail(task.id);
   };
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [popover, setPopover] = useState({ type: null, open: false, rect: null });
+  const haptic = useHaptic();
+
   const hasSubtasks = task.subtaskIds && task.subtaskIds.length > 0;
+
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    haptic.light();
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = (deletedId) => {
+    onTaskDeleted?.(deletedId);
+    setShowDeleteModal(false);
+  };
+
+  const handlePopoverOpen = (e, type) => {
+    e.stopPropagation();
+    haptic.light();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopover({ type, open: true, rect });
+  };
+
+  const handlePopoverSelect = async (value) => {
+    if (popover.type === 'priority') {
+      await onTaskUpdated?.(task.id, { priority: value });
+    } else if (popover.type === 'status') {
+      await onTaskUpdated?.(task.id, { status: value });
+    }
+  };
 
   return (
     <div>
-      <button
-        type="button"
-        className="w-full text-left bg-bg-elevated rounded-lg p-3 hover:bg-bg-hover transition-colors cursor-pointer border border-border"
-        onClick={handleClick}
-        data-react-tasks
-      >
-        <div className="flex items-start justify-between gap-2 mb-1">
-          <span className="text-[11px] text-muted font-mono">{task.id}</span>
-          {task.blocked && (
-            <span className="text-[10px] text-danger font-medium uppercase tracking-wide">Blocked</span>
+      <div className="relative group">
+        <button
+          type="button"
+          className="w-full text-left bg-bg-elevated rounded-lg p-3 hover:bg-bg-hover transition-colors cursor-pointer border border-border"
+          onClick={handleClick}
+          data-react-tasks
+        >
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <span className="text-[11px] text-muted font-mono">{task.id}</span>
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 text-muted hover:text-danger transition-opacity cursor-pointer p-0.5"
+              onClick={handleDeleteClick}
+              title="Delete task"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+          <div className="text-sm text-primary font-medium leading-snug mb-2">{task.title}</div>
+          <div className="flex items-center gap-2">
+            {task.priority && (
+              <button
+                type="button"
+                className="cursor-pointer"
+                onClick={(e) => handlePopoverOpen(e, 'priority')}
+                title="Change priority"
+              >
+                <Badge variant={PRIORITY_VARIANT[task.priority] || 'default'}>
+                  {task.priority}
+                </Badge>
+              </button>
+            )}
+            <button
+              type="button"
+              className="text-[10px] text-muted hover:text-secondary flex items-center gap-0.5 cursor-pointer"
+              onClick={(e) => handlePopoverOpen(e, 'status')}
+              title="Change status"
+            >
+              <span>{STATUS_LABELS[task.status]}</span>
+              <ChevronDown size={10} />
+            </button>
+          </div>
+          {hasSubtasks && (
+            <SubtaskProgress
+              task={task}
+              allTasks={allTasks}
+              expanded={expanded}
+              onToggle={onToggleExpand}
+            />
           )}
-        </div>
-        <div className="text-sm text-primary font-medium leading-snug mb-2">{task.title}</div>
-        <div className="flex items-center gap-2">
-          {task.priority && (
-            <Badge variant={PRIORITY_VARIANT[task.priority] || 'default'}>
-              {task.priority}
-            </Badge>
-          )}
-        </div>
-        {hasSubtasks && (
-          <SubtaskProgress
-            task={task}
-            allTasks={allTasks}
-            expanded={expanded}
-            onToggle={onToggleExpand}
-          />
-        )}
-      </button>
+        </button>
+        <Popover
+          open={popover.open && popover.type === 'priority'}
+          onClose={() => setPopover({ ...popover, open: false })}
+          onSelect={handlePopoverSelect}
+          anchorRect={popover.rect}
+          options={[
+            { value: 'high', label: 'High' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'low', label: 'Low' },
+          ]}
+        />
+        <Popover
+          open={popover.open && popover.type === 'status'}
+          onClose={() => setPopover({ ...popover, open: false })}
+          onSelect={handlePopoverSelect}
+          anchorRect={popover.rect}
+          options={[
+            { value: 'backlog', label: 'Backlog' },
+            { value: 'open', label: 'Open' },
+            { value: 'in-progress', label: 'In Progress' },
+            { value: 'review', label: 'Review' },
+            { value: 'done', label: 'Done' },
+          ]}
+        />
+      </div>
+      {showDeleteModal && (
+        <DeleteTaskModal
+          task={task}
+          project={project}
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setShowDeleteModal(false)}
+        />
+      )}
       {hasSubtasks && expanded && (
         <ExpandedSubtasks task={task} allTasks={allTasks} />
       )}
@@ -171,6 +256,107 @@ function ArchivedTaskCard({ task }) {
       {task.priority && (
         <Badge variant="default">{task.priority}</Badge>
       )}
+    </div>
+  );
+}
+
+// --- Delete Task Modal ---
+function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
+  const [deleteSpec, setDeleteSpec] = useState(false);
+  const haptic = useHaptic();
+
+  const handleConfirm = async () => {
+    haptic.medium();
+    const url = `/api/projects/${project}/tasks/${task.id}${deleteSpec ? '?deleteSpec=true' : ''}`;
+    try {
+      const res = await fetch(url, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete task');
+      if (window.showToast) window.showToast(`Deleted ${task.id}`, 'success');
+      onConfirm(task.id);
+    } catch (err) {
+      console.warn('[delete-task]', err);
+      haptic.error();
+      if (window.showToast) window.showToast(err.message, 'error');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-bg-elevated rounded-xl p-5 max-w-sm w-full mx-4 border border-border shadow-xl">
+        <h3 className="text-base font-semibold text-primary mb-2">Delete {task.id}?</h3>
+        <p className="text-sm text-muted mb-3 truncate">{task.title}</p>
+        <label className="flex items-center gap-2 text-sm text-secondary mb-4 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={deleteSpec}
+            onChange={(e) => setDeleteSpec(e.target.checked)}
+            className="w-4 h-4 rounded border-border bg-bg-surface text-accent focus:ring-accent-subtle"
+          />
+          Also delete spec file
+        </label>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className="text-sm text-muted hover:text-secondary px-3 py-1.5 cursor-pointer"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="text-sm bg-danger text-white px-4 py-1.5 rounded-lg hover:brightness-110 cursor-pointer"
+            onClick={handleConfirm}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Priority/Status Popover ---
+function Popover({ open, onClose, options, onSelect, anchorRect }) {
+  const haptic = useHaptic();
+  const popoverRef = useRef(null);
+
+  const handleSelect = (value) => {
+    haptic.medium();
+    onSelect(value);
+    onClose();
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        onClose();
+      }
+    };
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [open, onClose]);
+
+  if (!open || !anchorRect) return null;
+
+  return (
+    <div
+      ref={popoverRef}
+      className="fixed bg-bg-elevated border border-border rounded-lg shadow-xl z-50 py-1 min-w-[120px]"
+      style={{ top: anchorRect.bottom + 4, left: anchorRect.left }}
+    >
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className="w-full text-left text-sm px-3 py-1.5 hover:bg-bg-hover cursor-pointer"
+          onClick={() => handleSelect(opt.value)}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -286,7 +472,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column ---
-function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated }) {
+function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskUpdated }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -329,6 +515,9 @@ function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggle
                 allTasks={allTasks}
                 expanded={expandedParents.has(t.id)}
                 onToggleExpand={onToggleExpand}
+                project={project}
+                onTaskDeleted={onTaskDeleted}
+                onTaskUpdated={onTaskUpdated}
               />
             ))}
             {sortedArchived.length > 0 && (
@@ -385,6 +574,28 @@ export default function TasksView() {
       return next;
     });
   }, []);
+
+  const handleTaskDeleted = useCallback((deletedId) => {
+    // Task will be removed from state via polling refresh
+    if (window.showToast) window.showToast(`Deleted ${deletedId}`, 'success');
+  }, []);
+
+  const handleTaskUpdated = useCallback(async (taskId, updates) => {
+    // Optimistic update would go here, but for now rely on polling refresh
+    try {
+      const res = await fetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update task');
+      // Polling will refresh the state
+    } catch (err) {
+      console.warn('[update-task]', err);
+      if (window.showToast) window.showToast(err.message, 'error');
+    }
+  }, [viewedProject]);
 
   const { grouped, archivedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);
@@ -452,6 +663,8 @@ export default function TasksView() {
             sortNewestFirst={sortNewestFirst}
             project={viewedProject}
             onTaskCreated={() => {}}
+            onTaskDeleted={handleTaskDeleted}
+            onTaskUpdated={handleTaskUpdated}
           />
         ))}
       </div>
