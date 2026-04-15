@@ -57,7 +57,7 @@ function SubtaskProgress({ task, allTasks, expanded, onToggle }) {
 
 // --- Subtask card (compact, uses legacy CSS tree-line system) ---
 const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) {
-  const [popover, setPopover] = useState({ open: false, rect: null });
+  const [popover, setPopover] = useState({ type: null, open: false, rect: null });
   const haptic = useHaptic();
 
   const handleClick = () => {
@@ -67,13 +67,27 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
   const handleDotClick = (e) => {
     e.stopPropagation();
     haptic.light();
-    setPopover({ open: true, rect: e.currentTarget.getBoundingClientRect() });
+    setPopover({ type: 'status', open: true, rect: e.currentTarget.getBoundingClientRect() });
   };
+
+  const handlePriorityClick = (e) => {
+    e.stopPropagation();
+    haptic.light();
+    setPopover({ type: 'priority', open: true, rect: e.currentTarget.getBoundingClientRect() });
+  };
+
+  const handlePopoverClose = () => setPopover(prev => ({ ...prev, open: false }));
 
   const handleStatusSelect = async (status) => {
     haptic.medium();
-    setPopover({ open: false, rect: null });
+    handlePopoverClose();
     await onTaskUpdated?.(task.id, { status });
+  };
+
+  const handlePrioritySelect = async (priority) => {
+    haptic.medium();
+    handlePopoverClose();
+    await onTaskUpdated?.(task.id, { priority });
   };
 
   const handleOpenSpec = (e) => {
@@ -106,6 +120,9 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
         <span className={`status-dot status-dot-${task.status}`} />
       </span>
       <span className="subtask-title">{task.title}</span>
+      {task.priority && (
+        <PriorityPill priority={task.priority} onClick={handlePriorityClick} />
+      )}
       {task.blocked && (
         <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">
           Blocked
@@ -121,11 +138,8 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
             </span>
         }
       </span>
-      <Popover
-        open={popover.open}
-        onClose={() => setPopover({ open: false, rect: null })}
-        anchorRect={popover.rect}
-      >
+      {/* Status popover */}
+      <Popover open={popover.open && popover.type === 'status'} onClose={handlePopoverClose} anchorRect={popover.rect}>
         {['open', 'in-progress', 'review', 'done'].map(s => (
           <Popover.Option key={s} onClick={() => handleStatusSelect(s)}>
             <span className="flex items-center gap-2">
@@ -134,6 +148,15 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
             </span>
           </Popover.Option>
         ))}
+      </Popover>
+      {/* Priority popover */}
+      <Popover open={popover.open && popover.type === 'priority'} onClose={handlePopoverClose} anchorRect={popover.rect}>
+        <div className="flex gap-1 p-1.5">
+          {['low', 'medium', 'high'].map(p => (
+            <PriorityPill key={p} priority={p} onClick={() => handlePrioritySelect(p)}
+              className={p !== task.priority ? 'opacity-50 hover:opacity-100' : ''} />
+          ))}
+        </div>
       </Popover>
     </div>
   );
@@ -456,12 +479,14 @@ function AddTaskForm({ project, onCreated }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create task');
       haptic.medium();
+      // Push new task into local state for instant UI update
+      if (data.task) {
+        window.appState.tasks.push(data.task);
+        window.appState.tasks = [...window.appState.tasks];
+      }
       if (window.showToast) window.showToast(`Created ${data.task?.id || 'task'}`, 'success');
       onCreated?.(data.task?.id);
-      setTitle('');
-      setPriority('medium');
-      setSubmitting(false);
-      setTimeout(() => inputRef.current?.focus(), 0);
+      reset();
     } catch (err) {
       console.warn('[add-task]', err);
       haptic.error();
@@ -658,14 +683,13 @@ export default function TasksView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update task');
+      // Merge server response into local task to prevent stale-data reverts
+      const localTask = window.appState.tasks.find(t => t.id === taskId);
+      if (localTask && data.task) Object.assign(localTask, data.task);
       if (data.parentUpdated) {
         const parent = window.appState.tasks.find(t => t.id === data.parentUpdated.id);
-        if (parent) {
-          parent.status = data.parentUpdated.status;
-          if (data.parentUpdated.progress) parent.progress = data.parentUpdated.progress;
-        }
+        if (parent) Object.assign(parent, data.parentUpdated);
       }
-      // New array reference so useMemo recomputes instantly
       window.appState.tasks = [...window.appState.tasks];
       window.dispatchEvent(new CustomEvent('appstate:change'));
     } catch (err) {
@@ -693,7 +717,12 @@ export default function TasksView() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
     }).then(async (res) => {
-      if (!res.ok) throw new Error('Failed to move task');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to move task');
+      // Merge server response to prevent poll from reverting
+      if (data.task) Object.assign(task, data.task);
+      window.appState.tasks = [...window.appState.tasks];
+      window.dispatchEvent(new CustomEvent('appstate:change'));
       if (window.showToast) {
         window.showToast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
       }
@@ -747,7 +776,7 @@ export default function TasksView() {
 
   return (
     <div className="flex flex-col h-full" data-react-tasks>
-      <div className="flex items-center justify-end px-3 pt-2 pb-1 gap-2 shrink-0">
+      <div className="flex items-center justify-end pb-2 gap-2 shrink-0">
         <button
           type="button"
           className="btn btn-ghost btn-sm"

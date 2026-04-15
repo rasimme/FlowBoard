@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Menu } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { formatDisplayName } from '../utils.js';
+import logoSvg from '/favicon.svg';
 
 export default function Header() {
   const { state } = useAppState();
@@ -34,7 +35,7 @@ export default function Header() {
           <Menu size={18} />
         </button>
         <span className="header-logo">
-          <img src="./favicon.svg" alt="FlowBoard" />
+          <img src={logoSvg} alt="FlowBoard" />
         </span>
         <div className="header-brand">
           <div className="header-title">FlowBoard</div>

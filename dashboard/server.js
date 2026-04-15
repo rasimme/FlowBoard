@@ -221,7 +221,10 @@ app.use('/api/', (req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     const origin = req.headers['origin'];
     if (origin) {
-      const isLocalOrigin = origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:');
+      const localHostname = process.env.LOCAL_HOSTNAME || '';
+      const isLocalOrigin = origin.startsWith('http://localhost:')
+        || origin.startsWith('http://127.0.0.1:')
+        || (localHostname && origin.includes(localHostname));
       const allowedOrigins = DASHBOARD_ORIGIN
         ? [DASHBOARD_ORIGIN, 'https://web.telegram.org']
         : ['https://web.telegram.org'];
