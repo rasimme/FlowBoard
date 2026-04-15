@@ -72,6 +72,7 @@ export default {
         card: '0 12px 28px rgba(0, 0, 0, 0.35)',
         'focus-accent': '0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent)',
         'focus-danger': '0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent)',
+        'card-inset': 'var(--shadow-sm), inset 0 1px 0 var(--card-highlight)',
       },
       keyframes: {
         'slide-in-right': {
@@ -82,10 +83,32 @@ export default {
           from: { transform: 'scale(0.95)', opacity: '0' },
           to: { transform: 'scale(1)', opacity: '1' },
         },
+        'pop-in': {
+          from: { opacity: '0', transform: 'translateY(4px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'rise': {
+          from: { opacity: '0', transform: 'translateY(8px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'shrink': {
+          to: {
+            opacity: '0',
+            transform: 'scale(0.95) translateY(-4px)',
+            height: '0',
+            padding: '0',
+            margin: '0',
+            border: '0',
+            overflow: 'hidden',
+          },
+        },
       },
       animation: {
         'slide-in-right': 'slide-in-right var(--duration-slow) var(--ease-out)',
         'scale-in': 'scale-in var(--duration-fast) var(--ease-out)',
+        'pop-in': 'pop-in var(--duration-fast) var(--ease-out)',
+        'rise': 'rise var(--duration-slow) var(--ease-out) both',
+        'shrink': 'shrink 0.25s var(--ease-out) forwards',
       },
       transitionDuration: {
         fast: 'var(--duration-fast)',

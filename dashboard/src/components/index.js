@@ -8,6 +8,8 @@ export { default as Spinner } from './Spinner.jsx';
 export { default as Tag } from './Tag.jsx';
 export { default as Textarea } from './Textarea.jsx';
 export { default as Tooltip } from './Tooltip.jsx';
+export { default as PriorityPill } from './PriorityPill.jsx';
+export { default as Popover } from './Popover.jsx';
 
 // Molecules
 export { default as Checkbox } from './Checkbox.jsx';

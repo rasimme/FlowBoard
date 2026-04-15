@@ -1,8 +1,8 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { useMemo, useState, useCallback, useRef, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { Badge } from '../components/index.js';
+import { Modal, PriorityPill, Popover } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
-import { Plus, Trash2, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, FileText, FilePlus, Archive } from 'lucide-react';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = {
@@ -13,13 +13,6 @@ const STATUS_LABELS = {
   done: 'Done',
 };
 
-const PRIORITY_VARIANT = {
-  high: 'danger',
-  medium: 'warning',
-  low: 'default',
-};
-
-// Read initial values from localStorage (same keys as legacy kanbanState)
 function getInitialSort() {
   return localStorage.getItem('sortNewestFirst') !== 'false';
 }
@@ -50,81 +43,152 @@ function SubtaskProgress({ task, allTasks, expanded, onToggle }) {
   const activePct = (active / total) * 100;
 
   return (
-    <button
-      type="button"
-      className="flex items-center gap-1.5 w-full mt-1.5 cursor-pointer group"
-      onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
-    >
-      <span
-        className={`text-[10px] text-muted transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
-      >
-        &#9654;
-      </span>
-      <div className="flex-1 h-1.5 bg-bg-surface rounded-full overflow-hidden">
-        <div className="h-full flex">
-          <div className="bg-success" style={{ width: `${donePct}%` }} />
-          <div className="bg-info" style={{ width: `${reviewPct}%` }} />
-          <div className="bg-warning" style={{ width: `${activePct}%` }} />
-        </div>
+    <div className="subtask-progress" onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}>
+      <span className={`expand-chevron${expanded ? ' expanded' : ''}`}>&#9654;</span>
+      <div className="progress-bar">
+        <div className="progress-done" style={{ width: `${donePct}%` }} />
+        <div className="progress-review" style={{ width: `${reviewPct}%` }} />
+        <div className="progress-active" style={{ width: `${activePct}%` }} />
       </div>
-      <span className="text-[10px] text-muted font-mono">{done}/{total}</span>
-    </button>
+      <span className="progress-text">{done}/{total}</span>
+    </div>
   );
 }
 
-// --- Subtask card (compact) ---
-function SubtaskCard({ task }) {
+// --- Subtask card (compact, uses legacy CSS tree-line system) ---
+const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) {
+  const [popover, setPopover] = useState({ open: false, rect: null });
+  const haptic = useHaptic();
+
   const handleClick = () => {
     if (window.openTaskDetail) window.openTaskDetail(task.id);
   };
 
-  const statusColors = {
-    'done': 'bg-success',
-    'review': 'bg-info',
-    'in-progress': 'bg-warning',
-    'open': 'bg-muted',
-    'backlog': 'bg-muted',
+  const handleDotClick = (e) => {
+    e.stopPropagation();
+    haptic.light();
+    setPopover({ open: true, rect: e.currentTarget.getBoundingClientRect() });
   };
+
+  const handleStatusSelect = async (status) => {
+    haptic.medium();
+    setPopover({ open: false, rect: null });
+    await onTaskUpdated?.(task.id, { status });
+  };
+
+  const handleOpenSpec = (e) => {
+    e.stopPropagation();
+    if (window._openSpec) window._openSpec(task.specFile, task.id);
+  };
+
+  const handleCreateSpec = async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/projects/${project}/specs/${task.id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.specFile) {
+        task.specFile = data.specFile;
+        if (window.showToast) window.showToast(`Spec created for ${task.id}`, 'success');
+        if (window._openSpec) window._openSpec(data.specFile, task.id);
+      }
+    } catch (err) {
+      console.warn('[create-spec]', err);
+      if (window.showToast) window.showToast('Failed to create spec', 'error');
+    }
+  };
+
+  const hasUsableSpec = task.specFile && task.specExists !== false;
 
   return (
-    <button
-      type="button"
-      className="w-full text-left bg-bg-surface/60 rounded-md px-2.5 py-1.5 hover:bg-bg-hover transition-colors cursor-pointer border border-border/50 flex items-center gap-2"
-      onClick={handleClick}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColors[task.status] || 'bg-muted'}`} />
-      <span className="text-[11px] text-muted font-mono shrink-0">{task.id}</span>
-      <span className="text-xs text-secondary truncate">{task.title}</span>
+    <div className="subtask-card" onClick={handleClick} style={{ cursor: 'pointer' }}>
+      <span className="tree-dot" />
+      <span className="status-dot-wrap" onClick={handleDotClick}>
+        <span className={`status-dot status-dot-${task.status}`} />
+      </span>
+      <span className="subtask-title">{task.title}</span>
       {task.blocked && (
-        <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">Blocked</span>
+        <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">
+          Blocked
+        </span>
       )}
-    </button>
+      <span className="subtask-actions">
+        {hasUsableSpec
+          ? <span className="spec-badge spec-badge-sm" onClick={handleOpenSpec} title="Open spec file">
+              <FileText size={12} />
+            </span>
+          : <span className="spec-badge spec-badge-add spec-badge-sm" onClick={handleCreateSpec} title="Create spec file">
+              <FilePlus size={12} />
+            </span>
+        }
+      </span>
+      <Popover
+        open={popover.open}
+        onClose={() => setPopover({ open: false, rect: null })}
+        anchorRect={popover.rect}
+      >
+        {['open', 'in-progress', 'review', 'done'].map(s => (
+          <Popover.Option key={s} onClick={() => handleStatusSelect(s)}>
+            <span className="flex items-center gap-2">
+              <span className={`status-dot status-dot-${s}`} />
+              <span>{STATUS_LABELS[s]}</span>
+            </span>
+          </Popover.Option>
+        ))}
+      </Popover>
+    </div>
   );
-}
+});
 
 // --- Parent task card ---
-function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskUpdated }) {
-  const handleClick = () => {
-    if (window.openTaskDetail) window.openTaskDetail(task.id);
-  };
-
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskUpdated, dragRef, isNew }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [animated, setAnimated] = useState(false);
   const [popover, setPopover] = useState({ type: null, open: false, rect: null });
   const haptic = useHaptic();
 
   const hasSubtasks = task.subtaskIds && task.subtaskIds.length > 0;
+  const hasUsableSpec = task.specFile && task.specExists !== false;
 
+  const handleClick = () => {
+    if (window.openTaskDetail) window.openTaskDetail(task.id);
+  };
+
+  // --- Drag handlers ---
+  const handleDragStart = (e) => {
+    dragRef.current = task.id;
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.classList.add('dragging');
+  };
+
+  const handleDragEnd = (e) => {
+    e.currentTarget.classList.remove('dragging');
+    document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
+    dragRef.current = null;
+  };
+
+  // --- Delete with shrink animation ---
   const handleDeleteClick = (e) => {
     e.stopPropagation();
     haptic.light();
     setShowDeleteModal(true);
   };
 
-  const handleDeleteConfirm = (deletedId) => {
-    onTaskDeleted?.(deletedId);
+  const handleDeleteConfirm = () => {
     setShowDeleteModal(false);
+    setRemoving(true);
   };
 
+  const handleAnimationEnd = () => {
+    if (removing) {
+      onTaskDeleted?.(task.id);
+    }
+    if (isNew && !animated) {
+      setAnimated(true);
+    }
+  };
+
+  // --- Popovers ---
   const handlePopoverOpen = (e, type) => {
     e.stopPropagation();
     haptic.light();
@@ -132,57 +196,88 @@ function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDel
     setPopover({ type, open: true, rect });
   };
 
+  const handlePopoverClose = () => {
+    setPopover(prev => ({ ...prev, open: false }));
+  };
+
   const handlePopoverSelect = async (value) => {
+    haptic.medium();
+    handlePopoverClose();
     if (popover.type === 'priority') {
       await onTaskUpdated?.(task.id, { priority: value });
-    } else if (popover.type === 'status') {
-      await onTaskUpdated?.(task.id, { status: value });
     }
   };
+
+  // --- Spec file ---
+  const handleOpenSpec = (e) => {
+    e.stopPropagation();
+    if (window._openSpec) window._openSpec(task.specFile, task.id);
+  };
+
+  const handleCreateSpec = async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/projects/${project}/specs/${task.id}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.specFile) {
+        task.specFile = data.specFile;
+        if (window.showToast) window.showToast(`Spec created for ${task.id}`, 'success');
+        if (window._openSpec) window._openSpec(data.specFile, task.id);
+      }
+    } catch (err) {
+      console.warn('[create-spec]', err);
+      if (window.showToast) window.showToast('Failed to create spec', 'error');
+    }
+  };
+
+  // Build card class
+  let cardClass = 'task-card';
+  if (removing) cardClass += ' animate-shrink overflow-hidden';
+  else if (isNew && !animated) cardClass += ' animate-rise';
 
   return (
     <div>
       <div className="relative group">
-        <button
-          type="button"
-          className="w-full text-left bg-bg-elevated rounded-lg p-3 hover:bg-bg-hover transition-colors cursor-pointer border border-border"
-          onClick={handleClick}
+        <div
+          className={cardClass}
+          draggable={!removing}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onClick={!removing ? handleClick : undefined}
+          onAnimationEnd={handleAnimationEnd}
           data-react-tasks
         >
           <div className="flex items-start justify-between gap-2 mb-1">
-            <span className="text-[11px] text-muted font-mono">{task.id}</span>
+            <span className="task-id mono">{task.id}</span>
             <button
               type="button"
-              className="opacity-0 group-hover:opacity-100 text-muted hover:text-danger transition-opacity cursor-pointer p-0.5"
+              className="delete-btn"
               onClick={handleDeleteClick}
               title="Delete task"
             >
               <Trash2 size={14} />
             </button>
           </div>
-          <div className="text-sm text-primary font-medium leading-snug mb-2">{task.title}</div>
-          <div className="flex items-center gap-2">
-            {task.priority && (
-              <button
-                type="button"
-                className="cursor-pointer"
-                onClick={(e) => handlePopoverOpen(e, 'priority')}
-                title="Change priority"
-              >
-                <Badge variant={PRIORITY_VARIANT[task.priority] || 'default'}>
-                  {task.priority}
-                </Badge>
-              </button>
-            )}
-            <button
-              type="button"
-              className="text-[10px] text-muted hover:text-secondary flex items-center gap-0.5 cursor-pointer"
-              onClick={(e) => handlePopoverOpen(e, 'status')}
-              title="Change status"
-            >
-              <span>{STATUS_LABELS[task.status]}</span>
-              <ChevronDown size={10} />
-            </button>
+          <div className="task-title">{task.title}</div>
+          <div className="task-meta">
+            <span className="priority-pill-wrap">
+              {task.priority && (
+                <PriorityPill
+                  priority={task.priority}
+                  onClick={(e) => handlePopoverOpen(e, 'priority')}
+                />
+              )}
+            </span>
+            <span className="task-meta-actions">
+              {hasUsableSpec
+                ? <span className="spec-badge" onClick={handleOpenSpec} title="Open spec file">
+                    <FileText size={14} />
+                  </span>
+                : <span className="spec-badge spec-badge-add" onClick={handleCreateSpec} title="Create spec file">
+                    <FilePlus size={14} />
+                  </span>
+              }
+            </span>
           </div>
           {hasSubtasks && (
             <SubtaskProgress
@@ -192,31 +287,23 @@ function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDel
               onToggle={onToggleExpand}
             />
           )}
-        </button>
+        </div>
         <Popover
           open={popover.open && popover.type === 'priority'}
-          onClose={() => setPopover({ ...popover, open: false })}
-          onSelect={handlePopoverSelect}
+          onClose={handlePopoverClose}
           anchorRect={popover.rect}
-          options={[
-            { value: 'high', label: 'High' },
-            { value: 'medium', label: 'Medium' },
-            { value: 'low', label: 'Low' },
-          ]}
-        />
-        <Popover
-          open={popover.open && popover.type === 'status'}
-          onClose={() => setPopover({ ...popover, open: false })}
-          onSelect={handlePopoverSelect}
-          anchorRect={popover.rect}
-          options={[
-            { value: 'backlog', label: 'Backlog' },
-            { value: 'open', label: 'Open' },
-            { value: 'in-progress', label: 'In Progress' },
-            { value: 'review', label: 'Review' },
-            { value: 'done', label: 'Done' },
-          ]}
-        />
+        >
+          <div className="flex gap-1 p-1.5">
+            {['low', 'medium', 'high'].map(p => (
+              <PriorityPill
+                key={p}
+                priority={p}
+                onClick={() => handlePopoverSelect(p)}
+                className={p !== task.priority ? 'opacity-50 hover:opacity-100' : ''}
+              />
+            ))}
+          </div>
+        </Popover>
       </div>
       {showDeleteModal && (
         <DeleteTaskModal
@@ -226,21 +313,23 @@ function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDel
           onCancel={() => setShowDeleteModal(false)}
         />
       )}
-      {hasSubtasks && expanded && (
-        <ExpandedSubtasks task={task} allTasks={allTasks} />
+      {hasSubtasks && expanded && !removing && (
+        <ExpandedSubtasks task={task} allTasks={allTasks} project={project} onTaskUpdated={onTaskUpdated} />
       )}
     </div>
   );
-}
+});
 
-// --- Expanded subtask list ---
-function ExpandedSubtasks({ task, allTasks }) {
+// --- Expanded subtask list (uses legacy CSS tree-line system) ---
+function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated }) {
   const subtasks = allTasks.filter(t => t.parentId === task.id && t.status !== 'archived');
   if (subtasks.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-1 ml-3 mt-1 pl-2 border-l-2 border-border/40">
-      {subtasks.map(st => <SubtaskCard key={st.id} task={st} />)}
+    <div className="subtask-container">
+      {subtasks.map(st => (
+        <SubtaskCard key={st.id} task={st} project={project} onTaskUpdated={onTaskUpdated} />
+      ))}
     </div>
   );
 }
@@ -248,30 +337,43 @@ function ExpandedSubtasks({ task, allTasks }) {
 // --- Archived task card (read-only, dimmed) ---
 function ArchivedTaskCard({ task }) {
   return (
-    <div className="w-full text-left bg-bg-elevated/50 rounded-lg p-3 border border-border/40 opacity-50">
+    <div className="w-full text-left bg-card/50 rounded-md p-3 border border-border/40 opacity-50">
       <div className="flex items-start justify-between gap-2 mb-1">
-        <span className="text-[11px] text-muted font-mono">{task.id}</span>
+        <span className="task-id mono">{task.id}</span>
       </div>
       <div className="text-sm text-muted font-medium leading-snug mb-1">{task.title}</div>
       {task.priority && (
-        <Badge variant="default">{task.priority}</Badge>
+        <PriorityPill priority={task.priority} />
       )}
     </div>
   );
 }
 
-// --- Delete Task Modal ---
+// --- Delete Task Modal (subtask-aware, uses shared Modal) ---
 function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
-  const [deleteSpec, setDeleteSpec] = useState(false);
+  const subtaskCount = task.subtaskIds?.length || 0;
+  const hasSubtasks = subtaskCount > 0;
+  const [deleteSubtasks, setDeleteSubtasks] = useState(true);
+  const [deleteSpec, setDeleteSpec] = useState(true);
   const haptic = useHaptic();
 
   const handleConfirm = async () => {
     haptic.medium();
-    const url = `/api/projects/${project}/tasks/${task.id}${deleteSpec ? '?deleteSpec=true' : ''}`;
+    let url = `/api/projects/${project}/tasks/${task.id}`;
+    const params = [];
+    if (hasSubtasks) params.push(`mode=${deleteSubtasks ? 'all' : 'keep-children'}`);
+    if (deleteSpec && task.specFile) params.push('deleteSpec=true');
+    if (params.length) url += '?' + params.join('&');
     try {
       const res = await fetch(url, { method: 'DELETE' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete task');
+      if (!res.ok) {
+        if (data.error === 'Task has subtasks') {
+          if (window.showToast) window.showToast('Choose how to handle subtasks', 'warn');
+          return;
+        }
+        throw new Error(data.error || 'Failed to delete task');
+      }
       if (window.showToast) window.showToast(`Deleted ${task.id}`, 'success');
       onConfirm(task.id);
     } catch (err) {
@@ -282,82 +384,41 @@ function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-bg-elevated rounded-xl p-5 max-w-sm w-full mx-4 border border-border shadow-xl">
-        <h3 className="text-base font-semibold text-primary mb-2">Delete {task.id}?</h3>
-        <p className="text-sm text-muted mb-3 truncate">{task.title}</p>
-        <label className="flex items-center gap-2 text-sm text-secondary mb-4 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={deleteSpec}
-            onChange={(e) => setDeleteSpec(e.target.checked)}
-            className="w-4 h-4 rounded border-border bg-bg-surface text-accent focus:ring-accent-subtle"
-          />
-          Also delete spec file
-        </label>
-        <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            className="text-sm text-muted hover:text-secondary px-3 py-1.5 cursor-pointer"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="text-sm bg-danger text-white px-4 py-1.5 rounded-lg hover:brightness-110 cursor-pointer"
-            onClick={handleConfirm}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- Priority/Status Popover ---
-function Popover({ open, onClose, options, onSelect, anchorRect }) {
-  const haptic = useHaptic();
-  const popoverRef = useRef(null);
-
-  const handleSelect = (value) => {
-    haptic.medium();
-    onSelect(value);
-    onClose();
-  };
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
-        onClose();
-      }
-    };
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [open, onClose]);
-
-  if (!open || !anchorRect) return null;
-
-  return (
-    <div
-      ref={popoverRef}
-      className="fixed bg-bg-elevated border border-border rounded-lg shadow-xl z-50 py-1 min-w-[120px]"
-      style={{ top: anchorRect.bottom + 4, left: anchorRect.left }}
+    <Modal
+      open
+      onClose={onCancel}
+      title={`Delete ${task.id}?`}
+      actions={<>
+        <Modal.Button variant="secondary" onClick={onCancel}>Cancel</Modal.Button>
+        <Modal.Button variant="danger" onClick={handleConfirm}>Delete</Modal.Button>
+      </>}
     >
-      {options.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          className="w-full text-left text-sm px-3 py-1.5 hover:bg-bg-hover cursor-pointer"
-          onClick={() => handleSelect(opt.value)}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
+      <p className="text-sm text-muted truncate mb-3">{task.title}</p>
+      <div className="flex flex-col gap-2">
+        {hasSubtasks && (
+          <label className="flex items-center gap-2 text-sm text-text cursor-pointer">
+            <input
+              type="checkbox"
+              checked={deleteSubtasks}
+              onChange={(e) => setDeleteSubtasks(e.target.checked)}
+              className="w-4 h-4 rounded border-border accent-accent"
+            />
+            Delete {subtaskCount} subtask(s)
+          </label>
+        )}
+        {task.specFile && (
+          <label className="flex items-center gap-2 text-sm text-text cursor-pointer">
+            <input
+              type="checkbox"
+              checked={deleteSpec}
+              onChange={(e) => setDeleteSpec(e.target.checked)}
+              className="w-4 h-4 rounded border-border accent-accent"
+            />
+            Delete spec file
+          </label>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -396,7 +457,7 @@ function AddTaskForm({ project, onCreated }) {
       if (!res.ok) throw new Error(data.error || 'Failed to create task');
       haptic.medium();
       if (window.showToast) window.showToast(`Created ${data.task?.id || 'task'}`, 'success');
-      onCreated?.();
+      onCreated?.(data.task?.id);
       setTitle('');
       setPriority('medium');
       setSubmitting(false);
@@ -416,96 +477,98 @@ function AddTaskForm({ project, onCreated }) {
 
   if (!open) {
     return (
-      <button
-        type="button"
-        className="flex items-center gap-1.5 w-full px-3 py-2 text-xs text-muted hover:text-secondary hover:bg-bg-hover rounded-lg transition-colors cursor-pointer"
-        onClick={handleOpen}
-      >
-        <Plus size={14} />
-        <span>Add Task</span>
+      <button type="button" className="add-task-btn" onClick={handleOpen}>
+        + New Task
       </button>
     );
   }
 
   return (
-    <div className="bg-bg-elevated rounded-lg p-2.5 border border-border flex flex-col gap-2">
+    <div className="add-task-form">
       <input
         ref={inputRef}
+        id="newTaskTitle"
         type="text"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Task title…"
+        placeholder="Task title..."
         disabled={submitting}
-        className="w-full px-2.5 py-1.5 text-sm rounded-md bg-bg-surface text-text border border-border placeholder:text-muted outline-none focus:border-accent-subtle transition-colors"
       />
-      <div className="flex items-center gap-2">
-        <select
-          value={priority}
-          onChange={(e) => setPriority(e.target.value)}
-          disabled={submitting}
-          className="px-2 py-1 text-xs rounded-md bg-bg-surface text-text border border-border outline-none cursor-pointer"
-        >
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <div className="flex-1" />
-        <button
-          type="button"
-          className="text-xs text-muted hover:text-secondary px-2 py-1 cursor-pointer"
-          onClick={reset}
-        >
-          Cancel
+      <div className="priority-selector">
+        {['low', 'medium', 'high'].map(p => (
+          <PriorityPill
+            key={p}
+            priority={p}
+            onClick={() => setPriority(p)}
+            className={priority !== p ? 'opacity-50' : ''}
+          />
+        ))}
+      </div>
+      <div className="form-actions">
+        <button type="button" className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={!title.trim() || submitting}>
+          {submitting ? 'Adding…' : 'Create'}
         </button>
-        <button
-          type="button"
-          className="text-xs bg-accent text-white px-3 py-1 rounded-md hover:brightness-110 disabled:opacity-50 cursor-pointer"
-          onClick={handleSubmit}
-          disabled={!title.trim() || submitting}
-        >
-          {submitting ? 'Adding…' : 'Add'}
-        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={reset}>Cancel</button>
       </div>
     </div>
   );
 }
 
-// --- Column ---
-function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskUpdated }) {
+// --- Column (drop zone) ---
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskUpdated, dragRef, onDrop, lastCreatedId }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
   const sortedArchived = isDone && showArchived ? sortTasks(archivedTasks, sortNewestFirst) : [];
 
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('drag-over');
+  };
+
+  const handleDragLeave = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) {
+      e.currentTarget.classList.remove('drag-over');
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    onDrop?.(status);
+  };
+
   return (
-    <div className="flex flex-col min-w-[260px] max-w-[320px] flex-1 bg-bg-surface rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-        <span className="text-xs font-semibold text-secondary uppercase tracking-wide">
-          {STATUS_LABELS[status]}
-        </span>
+    <div
+      className="column"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="column-header">
+        <span className="column-title">{STATUS_LABELS[status]}</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-muted bg-bg-elevated rounded-full px-2 py-0.5 font-mono">
-            {tasks.length}
-          </span>
+          <span className="column-count">{tasks.length}</span>
           {isDone && archivedCount > 0 && (
             <button
               type="button"
-              className={`text-[11px] font-mono px-1.5 py-0.5 rounded transition-colors ${showArchived ? 'text-accent bg-accent/10' : 'text-muted hover:text-secondary'}`}
+              className={`archive-toggle${showArchived ? ' active' : ''}`}
               onClick={onToggleArchived}
               title="Show/hide archived tasks"
             >
-              &#128451; {archivedCount}
+              <Archive size={12} /> {archivedCount}
             </button>
           )}
         </div>
       </div>
-      <div className="flex flex-col gap-2 p-2 overflow-y-auto flex-1 min-h-0">
+      <div className="column-body">
         {isBacklog && project && (
           <AddTaskForm project={project} onCreated={onTaskCreated} />
         )}
         {tasks.length === 0 && sortedArchived.length === 0 && !isBacklog ? (
-          <div className="text-xs text-muted text-center py-6">No tasks</div>
+          <div className="column-empty">No tasks</div>
         ) : (
           <>
             {tasks.map(t => (
@@ -518,6 +581,8 @@ function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggle
                 project={project}
                 onTaskDeleted={onTaskDeleted}
                 onTaskUpdated={onTaskUpdated}
+                dragRef={dragRef}
+                isNew={t.id === lastCreatedId}
               />
             ))}
             {sortedArchived.length > 0 && (
@@ -531,7 +596,7 @@ function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggle
       </div>
     </div>
   );
-}
+});
 
 export default function TasksView() {
   const { state } = useAppState();
@@ -541,15 +606,16 @@ export default function TasksView() {
   const [sortNewestFirst, setSortNewestFirst] = useState(getInitialSort);
   const [showArchived, setShowArchived] = useState(getInitialArchived);
   const [expandedParents, setExpandedParents] = useState(() => {
-    // Sync initial state from legacy kanbanState if available
     try { return new Set(window.kanbanState?.expandedParents || []); } catch { return new Set(); }
   });
+  const [lastCreatedId, setLastCreatedId] = useState(null);
+
+  const draggedId = useRef(null);
 
   const handleToggleSort = useCallback(() => {
     setSortNewestFirst(prev => {
       const next = !prev;
       localStorage.setItem('sortNewestFirst', next);
-      // Sync to legacy kanbanState so toggling back to legacy view stays consistent
       try { if (window.kanbanState) window.kanbanState.sortNewestFirst = next; } catch { /* noop */ }
       return next;
     });
@@ -569,19 +635,21 @@ export default function TasksView() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      // Sync to legacy kanbanState
       try { if (window.kanbanState) { window.kanbanState.expandedParents = next; } } catch { /* noop */ }
       return next;
     });
   }, []);
 
-  const handleTaskDeleted = useCallback((deletedId) => {
-    // Task will be removed from state via polling refresh
-    if (window.showToast) window.showToast(`Deleted ${deletedId}`, 'success');
+  const handleTaskDeleted = useCallback(() => {
+    window.dispatchEvent(new CustomEvent('appstate:change'));
+  }, []);
+
+  const handleTaskCreated = useCallback((newTaskId) => {
+    if (newTaskId) setLastCreatedId(newTaskId);
+    window.dispatchEvent(new CustomEvent('appstate:change'));
   }, []);
 
   const handleTaskUpdated = useCallback(async (taskId, updates) => {
-    // Optimistic update would go here, but for now rely on polling refresh
     try {
       const res = await fetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
         method: 'PUT',
@@ -590,11 +658,55 @@ export default function TasksView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update task');
-      // Polling will refresh the state
+      if (data.parentUpdated) {
+        const parent = window.appState.tasks.find(t => t.id === data.parentUpdated.id);
+        if (parent) {
+          parent.status = data.parentUpdated.status;
+          if (data.parentUpdated.progress) parent.progress = data.parentUpdated.progress;
+        }
+      }
+      // New array reference so useMemo recomputes instantly
+      window.appState.tasks = [...window.appState.tasks];
+      window.dispatchEvent(new CustomEvent('appstate:change'));
     } catch (err) {
       console.warn('[update-task]', err);
       if (window.showToast) window.showToast(err.message, 'error');
     }
+  }, [viewedProject]);
+
+  const handleDrop = useCallback((newStatus) => {
+    const id = draggedId.current;
+    if (!id) return;
+    const task = window.appState.tasks.find(t => t.id === id);
+    if (!task || task.status === newStatus) return;
+
+    const oldStatus = task.status;
+    task.status = newStatus;
+    if (newStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
+    if (oldStatus === 'done' && newStatus !== 'done') task.completed = null;
+    // New array reference so useMemo recomputes grouped columns instantly
+    window.appState.tasks = [...window.appState.tasks];
+    window.dispatchEvent(new CustomEvent('appstate:change'));
+
+    fetch(`/api/projects/${viewedProject}/tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    }).then(async (res) => {
+      if (!res.ok) throw new Error('Failed to move task');
+      if (window.showToast) {
+        window.showToast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
+      }
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
+    }).catch(() => {
+      task.status = oldStatus;
+      if (oldStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
+      else task.completed = null;
+      window.appState.tasks = [...window.appState.tasks];
+      window.dispatchEvent(new CustomEvent('appstate:change'));
+      if (window.showToast) window.showToast('Failed to move task', 'error');
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
+    });
   }, [viewedProject]);
 
   const { grouped, archivedTopLevel } = useMemo(() => {
@@ -609,7 +721,6 @@ export default function TasksView() {
         groups[t.status].push(t);
       }
     }
-    // Sort each column
     for (const s of STATUS_KEYS) {
       groups[s] = sortTasks(groups[s], sortNewestFirst);
     }
@@ -636,19 +747,18 @@ export default function TasksView() {
 
   return (
     <div className="flex flex-col h-full" data-react-tasks>
-      {/* Control row */}
       <div className="flex items-center justify-end px-3 pt-2 pb-1 gap-2 shrink-0">
         <button
           type="button"
-          className="text-xs text-muted hover:text-secondary transition-colors flex items-center gap-1 px-2 py-1 rounded hover:bg-bg-elevated"
+          className="btn btn-ghost btn-sm"
+          style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
           onClick={handleToggleSort}
         >
           <span>{sortNewestFirst ? '↓' : '↑'}</span>
           <span>{sortNewestFirst ? 'Newest first' : 'Oldest first'}</span>
         </button>
       </div>
-      {/* Kanban columns */}
-      <div className="flex gap-3 px-3 pb-3 flex-1 overflow-x-auto min-h-0">
+      <div className="kanban">
         {STATUS_KEYS.map(status => (
           <Column
             key={status}
@@ -662,9 +772,12 @@ export default function TasksView() {
             onToggleExpand={handleToggleExpand}
             sortNewestFirst={sortNewestFirst}
             project={viewedProject}
-            onTaskCreated={() => {}}
+            onTaskCreated={handleTaskCreated}
             onTaskDeleted={handleTaskDeleted}
             onTaskUpdated={handleTaskUpdated}
+            dragRef={draggedId}
+            onDrop={handleDrop}
+            lastCreatedId={lastCreatedId}
           />
         ))}
       </div>

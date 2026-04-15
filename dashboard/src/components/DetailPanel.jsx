@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send } from 'lucide-react';
+import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
@@ -32,9 +32,9 @@ function fmtTime(ts) {
 }
 
 const ACTIVITY_ICON = {
-  comment: '\u{1F4AC}',
-  checkpoint: '\u2713',
-  status: '\u2192',
+  comment: <MessageSquare size={14} />,
+  checkpoint: <CheckCircle2 size={14} />,
+  status: <ArrowRight size={14} />,
 };
 
 function getActionBarState(task) {
@@ -481,7 +481,7 @@ export default function DetailPanel() {
               <div className="text-sm text-muted py-4 text-center">Daten werden geladen\u2026</div>
             )}
             {!loading && allFeedItems.length === 0 && (
-              <div className="text-sm text-muted py-4 text-center">{'\u{1F4ED}'} Noch keine Aktivit\u00e4t</div>
+              <div className="text-sm text-muted py-4 text-center flex items-center justify-center gap-1.5"><Inbox size={16} /> Noch keine Aktivit&auml;t</div>
             )}
             {allFeedItems.map((item, i) => (
               <ActivityItem key={`${item.timestamp}-${i}`} item={item} />
@@ -559,7 +559,7 @@ function ActionBar({ bar, onClaim, onRelease, onComplete, onToggleBlocked }) {
 }
 
 function ActivityItem({ item }) {
-  const icon = ACTIVITY_ICON[item.type] || '\u00B7';
+  const icon = ACTIVITY_ICON[item.type] || <span>&middot;</span>;
   const author = item.author || item.agent || 'System';
   const time = fmtTime(item.timestamp);
 

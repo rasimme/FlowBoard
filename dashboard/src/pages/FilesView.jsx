@@ -469,6 +469,15 @@ export default function FilesView() {
     setFileData(null);
   }, [viewedProject, fetchTree]);
 
+  // Consume pending spec file from _openSpec bridge
+  useEffect(() => {
+    const pending = window.appState?.pendingSpecFile;
+    if (pending) {
+      delete window.appState.pendingSpecFile;
+      setSelectedFile(pending);
+    }
+  });
+
   const handleFileDeleted = useCallback(() => {
     setSelectedFile(null);
     setFileData(null);

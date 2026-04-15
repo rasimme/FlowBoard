@@ -8,8 +8,8 @@ const AppStateContext = createContext(null);
  */
 function fingerprint(s) {
   if (!s) return '';
-  // Build a compact tasks hash: id+status for every task (catches subtask status changes)
-  const tasksHash = s.tasks ? s.tasks.map(t => t.id + t.status).join(',') : '';
+  // Build a compact tasks hash: id+status+priority for every task
+  const tasksHash = s.tasks ? s.tasks.map(t => t.id + t.status + t.priority).join(',') : '';
   return [
     s.viewedProject,
     s.activeProject,

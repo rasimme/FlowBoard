@@ -33,12 +33,12 @@ export default function Header() {
         >
           <Menu size={18} />
         </button>
-        <span className="leading-none flex items-center max-[600px]:hidden">
-          <img src="./favicon.svg" alt="FlowBoard" className="h-[30px] w-auto align-middle" />
+        <span className="header-logo">
+          <img src="./favicon.svg" alt="FlowBoard" />
         </span>
-        <div className="flex flex-col">
-          <div className="text-[15px] font-bold tracking-[0.05em] text-text-strong uppercase">FlowBoard</div>
-          <div className="text-[10px] text-muted uppercase tracking-[0.06em] font-medium">Project Management</div>
+        <div className="header-brand">
+          <div className="header-title">FlowBoard</div>
+          <div className="header-subtitle">Project Management</div>
         </div>
       </div>
       <div className="flex items-center gap-2.5" id="headerRight">

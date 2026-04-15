@@ -1132,6 +1132,9 @@
         min-height: 44px;
       }
       .task-card .task-actions { opacity: 1; } /* Always show on mobile */
+      .task-card .delete-btn { opacity: 1; }
+      .task-card .spec-badge-add { opacity: 0.5; }
+      .subtask-card .spec-badge-add { opacity: 0.5; }
 
       /* Header */
       .header { padding: 8px 12px; }

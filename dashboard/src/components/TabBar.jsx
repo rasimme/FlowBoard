@@ -51,12 +51,7 @@ export default function TabBar() {
         return (
           <button
             key={view.id}
-            className={[
-              'flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium cursor-pointer border rounded-full transition-all bg-card font-[inherit]',
-              isActive
-                ? 'text-white bg-accent border-accent hover:bg-accent-hover'
-                : 'text-text border-border hover:bg-bg-hover hover:border-border-strong',
-            ].join(' ')}
+            className={['tab', isActive && 'active'].filter(Boolean).join(' ')}
             data-tab={view.id}
             onClick={() => handleTabClick(view.id)}
           >

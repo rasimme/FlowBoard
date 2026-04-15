@@ -120,6 +120,16 @@ window._deactivateProject = deactivateProject;
 window._toggleSidebar = toggleSidebar;
 window._switchTab = switchTab;
 
+// Spec file bridge — sets pending path and switches to files tab
+window._openSpec = function(specPath, taskId) {
+  if (!specPath) {
+    if (window.showToast) window.showToast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
+    return;
+  }
+  window.appState.pendingSpecFile = specPath;
+  switchTab('files');
+};
+
 // --- User Interaction Detection ---
 function isUserInteracting() {
   if (document.getElementById('modalOverlay')) return true;
