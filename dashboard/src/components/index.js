@@ -14,3 +14,9 @@ export { default as Checkbox } from './Checkbox.jsx';
 export { default as Dropdown } from './Dropdown.jsx';
 export { default as FormGroup } from './FormGroup.jsx';
 export { default as SearchBar } from './SearchBar.jsx';
+
+// Organisms
+export { default as Card } from './Card.jsx';
+export { default as Alert } from './Alert.jsx';
+export { default as Panel } from './Panel.jsx';
+export { default as DataList } from './DataList.jsx';

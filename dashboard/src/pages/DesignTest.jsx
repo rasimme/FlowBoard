@@ -3,6 +3,7 @@ import {
   Button, Badge, Input, Modal,
   Label, Spinner, Tag, Textarea, Tooltip,
   Checkbox, Dropdown, FormGroup, SearchBar,
+  Card, Alert, Panel, DataList,
 } from '../components/index.js';
 
 function Section({ title, children }) {
@@ -18,7 +19,7 @@ function Section({ title, children }) {
   );
 }
 
-function Card({ title, children }) {
+function DemoCard({ title, children }) {
   return (
     <div className="bg-card border border-border rounded-md p-4 min-w-[200px]">
       {title && <div className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">{title}</div>}
@@ -42,27 +43,27 @@ export default function DesignTest() {
 
       {/* ── Buttons ─────────────────────────────────── */}
       <Section title="Buttons — Variants">
-        <Card title="Accent (default)">
+        <DemoCard title="Accent (default)">
           <Button size="sm">Small</Button>
           <Button size="md">Medium</Button>
           <Button size="lg">Large</Button>
-        </Card>
-        <Card title="Secondary">
+        </DemoCard>
+        <DemoCard title="Secondary">
           <Button variant="secondary" size="sm">Small</Button>
           <Button variant="secondary" size="md">Medium</Button>
-        </Card>
-        <Card title="Danger">
+        </DemoCard>
+        <DemoCard title="Danger">
           <Button variant="danger" size="sm">Delete</Button>
           <Button variant="danger" size="md">Remove</Button>
-        </Card>
-        <Card title="Ghost">
+        </DemoCard>
+        <DemoCard title="Ghost">
           <Button variant="ghost" size="sm">Cancel</Button>
           <Button variant="ghost" size="md">Dismiss</Button>
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Buttons — Icon (36x36)">
-        <Card>
+        <DemoCard>
           <Button size="icon" variant="ghost" aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </Button>
@@ -72,47 +73,47 @@ export default function DesignTest() {
           <Button size="icon" variant="accent" aria-label="Add">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
           </Button>
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Buttons — States">
-        <Card>
+        <DemoCard>
           <Button disabled>Disabled</Button>
           <Button variant="ghost" disabled>Ghost Disabled</Button>
           <Button variant="danger" disabled>Danger Disabled</Button>
-        </Card>
+        </DemoCard>
       </Section>
 
       {/* ── Badges ──────────────────────────────────── */}
       <Section title="Badges">
-        <Card>
+        <DemoCard>
           <Badge>Default</Badge>
           <Badge variant="accent">Accent</Badge>
           <Badge variant="success">Success</Badge>
           <Badge variant="warning">Warning</Badge>
           <Badge variant="danger">Danger</Badge>
           <Badge variant="info">Info</Badge>
-        </Card>
+        </DemoCard>
       </Section>
 
       {/* ── Inputs ──────────────────────────────────── */}
       <Section title="Inputs">
-        <Card title="Default">
+        <DemoCard title="Default">
           <Input placeholder="Type something..." value={inputValue} onChange={(e) => setInputValue(e.target.value)} />
-        </Card>
-        <Card title="Disabled">
+        </DemoCard>
+        <DemoCard title="Disabled">
           <Input placeholder="Disabled input" disabled />
-        </Card>
-        <Card title="With value">
+        </DemoCard>
+        <DemoCard title="With value">
           <Input value="Pre-filled value" readOnly />
-        </Card>
+        </DemoCard>
       </Section>
 
       {/* ── Modal ───────────────────────────────────── */}
       <Section title="Modal">
-        <Card>
+        <DemoCard>
           <Button onClick={() => setModalOpen(true)}>Open Modal</Button>
-        </Card>
+        </DemoCard>
       </Section>
 
       <Modal
@@ -131,22 +132,22 @@ export default function DesignTest() {
 
       {/* ── New Atoms (T-139-3) ──────────────────────── */}
       <Section title="Labels">
-        <Card>
+        <DemoCard>
           <Label>Default label</Label>
           <Label required>Required label</Label>
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Spinners">
-        <Card>
+        <DemoCard>
           <Spinner size="sm" />
           <Spinner size="md" />
           <Spinner size="lg" />
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Tags">
-        <Card>
+        <DemoCard>
           <Tag>Default</Tag>
           <Tag variant="accent">Accent</Tag>
           <Tag variant="success">Success</Tag>
@@ -154,40 +155,40 @@ export default function DesignTest() {
           <Tag variant="danger">Danger</Tag>
           <Tag variant="info">Info</Tag>
           <Tag variant="accent" onRemove={() => {}}>Removable</Tag>
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Textarea">
-        <Card title="Default">
+        <DemoCard title="Default">
           <Textarea placeholder="Type longer text here…" />
-        </Card>
-        <Card title="Disabled">
+        </DemoCard>
+        <DemoCard title="Disabled">
           <Textarea placeholder="Disabled" disabled />
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Tooltip">
-        <Card>
+        <DemoCard>
           <Tooltip content="Hello from tooltip!">
             <Button variant="ghost" size="sm">Hover me</Button>
           </Tooltip>
           <Tooltip content="Bottom tooltip" placement="bottom">
             <Badge variant="info">Bottom</Badge>
           </Tooltip>
-        </Card>
+        </DemoCard>
       </Section>
 
       {/* ── Molecules (T-139-4) ────────────────────────── */}
       <Section title="Checkbox">
-        <Card>
+        <DemoCard>
           <Checkbox checked={false} label="Unchecked" onChange={() => {}} />
           <Checkbox checked={true} label="Checked" onChange={() => {}} />
           <Checkbox checked={false} label="Disabled" disabled onChange={() => {}} />
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="Dropdown">
-        <Card title="Select">
+        <DemoCard title="Select">
           <Dropdown
             value={dropdownValue}
             onChange={setDropdownValue}
@@ -198,30 +199,91 @@ export default function DesignTest() {
             ]}
             placeholder="Priority…"
           />
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="FormGroup">
-        <Card title="With Label + Error">
+        <DemoCard title="With Label + Error">
           <FormGroup label="Email" htmlFor="email-demo" required error="Required field">
             <Input id="email-demo" placeholder="you@example.com" />
           </FormGroup>
-        </Card>
-        <Card title="With Hint">
+        </DemoCard>
+        <DemoCard title="With Hint">
           <FormGroup label="Notes" htmlFor="notes-demo" hint="Optional field">
             <Textarea id="notes-demo" placeholder="Extra notes…" rows={2} />
           </FormGroup>
-        </Card>
+        </DemoCard>
       </Section>
 
       <Section title="SearchBar">
-        <Card>
+        <DemoCard>
           <SearchBar
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
             placeholder="Search tasks…"
           />
+        </DemoCard>
+      </Section>
+
+      {/* ── Organisms (T-139-5) ──────────────────────── */}
+      <Section title="Card">
+        <Card
+          title="Project Summary"
+          subtitle="Last updated 2 hours ago"
+          actions={<Button variant="ghost" size="sm">Edit</Button>}
+          footer={<div className="flex justify-end gap-2"><Button variant="ghost" size="sm">Cancel</Button><Button size="sm">Save</Button></div>}
+        >
+          <p className="text-sm text-text m-0">This is the card body content. It can contain any React nodes.</p>
         </Card>
+        <Card title="Minimal Card">
+          <p className="text-sm text-text m-0">Card with title and body only — no subtitle, actions, or footer.</p>
+        </Card>
+      </Section>
+
+      <Section title="Alert">
+        <div className="flex flex-col gap-3 w-full">
+          <Alert variant="info" title="Info">This is an informational message.</Alert>
+          <Alert variant="warn" title="Warning">Something may need your attention.</Alert>
+          <Alert variant="success" title="Success">Operation completed successfully.</Alert>
+          <Alert variant="error" title="Error" onDismiss={() => {}}>Something went wrong. Please try again.</Alert>
+        </div>
+      </Section>
+
+      <Section title="Panel">
+        <div className="flex flex-col gap-3 w-full">
+          <Panel title="Expanded Panel" subtitle="Always visible content">
+            <p className="text-sm text-text m-0">This panel is always expanded and has no collapse toggle.</p>
+          </Panel>
+          <Panel title="Collapsible Panel" subtitle="Click header to toggle" collapsible>
+            <p className="text-sm text-text m-0">This panel can be collapsed. Click the header to hide this content.</p>
+          </Panel>
+          <Panel title="Collapsed by Default" collapsible defaultCollapsed>
+            <p className="text-sm text-text m-0">This content is hidden by default.</p>
+          </Panel>
+        </div>
+      </Section>
+
+      <Section title="DataList">
+        <div className="flex gap-4 w-full">
+          <DemoCard title="Normal">
+            <DataList items={[
+              { label: 'Status', value: 'In Progress' },
+              { label: 'Priority', value: 'High' },
+              { label: 'Assignee', value: 'Simeon' },
+              { label: 'Due Date', value: '2026-04-20' },
+              { label: 'Tags', value: '' },
+            ]} />
+          </DemoCard>
+          <DemoCard title="Dense">
+            <DataList dense items={[
+              { label: 'ID', value: 'T-139' },
+              { label: 'Type', value: 'Feature' },
+              { label: 'Sprint', value: 'Sprint 4' },
+              { label: 'Points', value: '5' },
+              { label: 'Empty', value: null },
+            ]} />
+          </DemoCard>
+        </div>
       </Section>
 
       {/* ── Color Palette ───────────────────────────── */}
@@ -263,21 +325,21 @@ export default function DesignTest() {
 
       {/* ── Shadows & Focus ─────────────────────────── */}
       <Section title="Shadows and Focus Rings">
-        <Card title="shadow-card">
+        <DemoCard title="shadow-card">
           <div className="bg-card border border-border rounded-md p-4 shadow-card text-sm text-text">
             Card shadow (popover style)
           </div>
-        </Card>
-        <Card title="focus-accent ring">
+        </DemoCard>
+        <DemoCard title="focus-accent ring">
           <div className="bg-card border border-border rounded-md p-4 shadow-focus-accent text-sm text-text">
             Accent focus ring (color-mix)
           </div>
-        </Card>
-        <Card title="focus-danger ring">
+        </DemoCard>
+        <DemoCard title="focus-danger ring">
           <div className="bg-card border border-border rounded-md p-4 shadow-focus-danger text-sm text-text">
             Danger focus ring (color-mix)
           </div>
-        </Card>
+        </DemoCard>
       </Section>
     </div>
   );
