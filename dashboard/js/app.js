@@ -113,7 +113,8 @@ function renderAll() {
   app.setAttribute('data-view', state.currentTab);
   renderHeader();
   if (state.currentTab === 'tasks') {
-    // React owns this view — skip legacy kanban render
+    // React owns the Tasks view — if React has rendered its root marker, skip legacy render.
+    // This avoids coupling vanilla code to the React view registry (views.js).
     if (!document.querySelector('[data-react-tasks]')) {
       renderTabBarRight();
       updateBoard(state);

@@ -8,17 +8,14 @@ const AppStateContext = createContext(null);
  */
 function fingerprint(s) {
   if (!s) return '';
+  // Build a compact tasks hash: id+status for every task (catches subtask status changes)
+  const tasksHash = s.tasks ? s.tasks.map(t => t.id + t.status).join(',') : '';
   return [
     s.viewedProject,
     s.activeProject,
     s.currentTab,
     s.projects?.length,
-    s.tasks?.length,
-    // Include a rough tasks fingerprint — first and last task IDs + statuses
-    s.tasks?.[0]?.id,
-    s.tasks?.[0]?.status,
-    s.tasks?.[s.tasks.length - 1]?.id,
-    s.tasks?.[s.tasks.length - 1]?.status,
+    tasksHash,
   ].join('|');
 }
 
