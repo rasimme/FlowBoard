@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Badge } from '../components/index.js';
+import { useHaptic } from '../hooks/useHaptic.js';
 import { Plus } from 'lucide-react';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
@@ -181,6 +182,7 @@ function AddTaskForm({ project, onCreated }) {
   const [priority, setPriority] = useState('medium');
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef(null);
+  const haptic = useHaptic();
 
   const handleOpen = () => {
     setOpen(true);
@@ -206,7 +208,7 @@ function AddTaskForm({ project, onCreated }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create task');
-      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
+      haptic.medium();
       if (window.showToast) window.showToast(`Created ${data.task?.id || 'task'}`, 'success');
       onCreated?.();
       setTitle('');
@@ -215,7 +217,7 @@ function AddTaskForm({ project, onCreated }) {
       setTimeout(() => inputRef.current?.focus(), 0);
     } catch (err) {
       console.warn('[add-task]', err);
-      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
+      haptic.error();
       if (window.showToast) window.showToast(err.message, 'error');
       setSubmitting(false);
     }
