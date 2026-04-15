@@ -120,8 +120,11 @@ function renderAll() {
       updateBoard(state);
     }
   } else if (state.currentTab === 'files') {
-    document.getElementById('tabBarRight').innerHTML = '';
-    renderFileExplorer(state);
+    // React owns this view — skip legacy render if React has mounted
+    if (!document.querySelector('[data-react-files]')) {
+      document.getElementById('tabBarRight').innerHTML = '';
+      renderFileExplorer(state);
+    }
   } else if (state.currentTab === 'ideas') {
     document.getElementById('tabBarRight').innerHTML = '';
     renderIdeaCanvas(state);
@@ -227,8 +230,11 @@ function switchTab(tab) {
       const content = document.getElementById('content');
       if (content) savedKanbanScroll.top = content.scrollTop;
     }
-    document.getElementById('tabBarRight').innerHTML = '';
-    renderFileExplorer(state);
+    // React owns this view — skip legacy render if React has mounted
+    if (!document.querySelector('[data-react-files]')) {
+      document.getElementById('tabBarRight').innerHTML = '';
+      renderFileExplorer(state);
+    }
     requestAnimationFrame(updateContentScrollbarVisibility);
   } else if (tab === 'ideas') {
     document.getElementById('tabBarRight').innerHTML = '';
@@ -454,7 +460,7 @@ async function refresh() {
     if (projectsChanged) { renderSidebar(); renderHeader(); }
     if (tasksChanged && state.currentTab === 'tasks') { updateBoard(state); }
 
-    if (filesChanged && state.currentTab === 'files') {
+    if (filesChanged && state.currentTab === 'files' && !document.querySelector('[data-react-files]')) {
       renderFileTree(); // Diff-update tree (new/deleted/renamed files appear instantly)
 
       // Selected file was deleted → auto-open first available file (same pattern as init)
