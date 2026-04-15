@@ -729,6 +729,8 @@ function getSubtaskProgress(tasks, parentId) {
 function projectExists(projectName) {
   if (HZL_ENABLED) {
     try {
+      // Ensure project is loaded into HZL before checking
+      hzlService.ensureProject(projectName);
       return hzlService.listHzlProjects().some(p => p.name === projectName);
     } catch {
       return false;
