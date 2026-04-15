@@ -1,5 +1,16 @@
 import Label from './Label.jsx';
 
+/**
+ * FormGroup — Wraps a form control with label, error message, and hint text.
+ * @param {string} [label] - Label text
+ * @param {string} [htmlFor] - Associated input ID
+ * @param {boolean} [required] - Show required asterisk on label
+ * @param {string} [error] - Error message (shown in red, replaces hint)
+ * @param {string} [hint] - Hint text below input (hidden when error present)
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Form control(s)
+ * @example <FormGroup label="Email" required error="Required"><Input /></FormGroup>
+ */
 export default function FormGroup({
   label,
   htmlFor,

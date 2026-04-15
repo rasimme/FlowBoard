@@ -1,5 +1,14 @@
 import { Check } from 'lucide-react';
 
+/**
+ * Checkbox — Styled checkbox with label, accent check icon, and disabled state.
+ * @param {boolean} checked - Checked state
+ * @param {function} onChange - Change handler
+ * @param {string} [label] - Adjacent label text
+ * @param {boolean} [disabled] - Disable interaction
+ * @param {string} [className] - Extra classes
+ * @example <Checkbox checked={done} onChange={toggle} label="Complete" />
+ */
 export default function Checkbox({
   checked,
   onChange,

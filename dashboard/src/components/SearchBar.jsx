@@ -1,6 +1,16 @@
 import { forwardRef } from 'react';
 import { Search, X } from 'lucide-react';
 
+/**
+ * SearchBar — Text input with search icon and clearable value.
+ * @param {string} value - Current search text
+ * @param {function} onChange - Input change handler
+ * @param {function} [onClear] - Custom clear handler (defaults to empty onChange)
+ * @param {string} [placeholder='Search…'] - Placeholder text
+ * @param {string} [className] - Extra classes
+ * @param {Ref} ref - Forwarded ref
+ * @example <SearchBar value={q} onChange={setQ} placeholder="Search tasks…" />
+ */
 const SearchBar = forwardRef(function SearchBar({
   value,
   onChange,

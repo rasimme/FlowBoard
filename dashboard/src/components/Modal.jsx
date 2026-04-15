@@ -2,6 +2,15 @@ import { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Button from './Button.jsx';
 
+/**
+ * Modal — Portal-based dialog with overlay, Escape-to-close, and action slot.
+ * @param {boolean} open - Whether the modal is visible
+ * @param {function} onClose - Called on overlay click or Escape key
+ * @param {string} [title] - Header title
+ * @param {ReactNode} [actions] - Footer action buttons
+ * @param {ReactNode} children - Modal body content
+ * @example <Modal open={show} onClose={close} title="Confirm">{body}</Modal>
+ */
 export default function Modal({
   open,
   onClose,

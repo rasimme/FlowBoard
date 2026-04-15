@@ -1,3 +1,10 @@
+/**
+ * Badge — Inline status/label pill with semantic color variants.
+ * @param {'default'|'accent'|'success'|'warning'|'danger'|'info'} [variant='default'] - Color variant
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Badge text
+ * @example <Badge variant="success">Active</Badge>
+ */
 const variants = {
   default: 'bg-bg-elevated text-muted',
   accent: 'bg-accent-subtle text-accent',

@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown } from 'lucide-react';
 
+/**
+ * Dropdown — Custom select with click-outside dismiss and keyboard-friendly trigger.
+ * @param {string} value - Currently selected value
+ * @param {function} onChange - Called with new value on selection
+ * @param {Array<{value:string,label:string}|string>} [options=[]] - Option list
+ * @param {string} [placeholder='Select…'] - Placeholder when empty
+ * @param {boolean} [disabled] - Disable interaction
+ * @param {string} [className] - Extra classes
+ * @example <Dropdown value={v} onChange={setV} options={[{value:'a',label:'A'}]} />
+ */
 export default function Dropdown({
   value,
   onChange,

@@ -1,3 +1,13 @@
+/**
+ * Card — Container with optional header/body/footer sections.
+ * @param {string} [title] - Header title
+ * @param {string} [subtitle] - Header subtitle
+ * @param {ReactNode} [actions] - Header action buttons
+ * @param {ReactNode} [footer] - Footer content
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Body content
+ * @example <Card title="Task" footer={<Button>Action</Button>}>Body</Card>
+ */
 export default function Card({
   title,
   subtitle,

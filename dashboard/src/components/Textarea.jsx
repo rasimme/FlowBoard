@@ -1,5 +1,12 @@
 import { forwardRef } from 'react';
 
+/**
+ * Textarea — Multi-line text input with themed styling and resizable handle.
+ * @param {number} [rows=3] - Visible rows
+ * @param {string} [className] - Extra classes
+ * @param {Ref} ref - Forwarded ref
+ * @example <Textarea placeholder="Notes…" rows={4} />
+ */
 const Textarea = forwardRef(function Textarea({
   className = '',
   rows = 3,

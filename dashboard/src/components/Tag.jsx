@@ -1,5 +1,13 @@
 import { X } from 'lucide-react';
 
+/**
+ * Tag — Compact label chip with optional remove button.
+ * @param {'default'|'accent'|'success'|'warning'|'danger'|'info'} [variant='default'] - Color variant
+ * @param {function} [onRemove] - Shows dismiss X when provided
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Tag text
+ * @example <Tag variant="accent" onRemove={handleRemove}>React</Tag>
+ */
 const variants = {
   default: 'bg-bg-elevated text-text border-border',
   accent: 'bg-accent-subtle text-accent border-accent-subtle',

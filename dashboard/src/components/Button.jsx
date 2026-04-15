@@ -1,3 +1,12 @@
+/**
+ * Button — Themed button with variant, size, and disabled support.
+ * @param {'accent'|'secondary'|'danger'|'ghost'} [variant='accent'] - Visual style
+ * @param {'sm'|'md'|'lg'|'icon'} [size='md'] - Size preset
+ * @param {string} [type='button'] - HTML button type
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Button content
+ * @example <Button variant="danger" size="sm">Delete</Button>
+ */
 const variants = {
   accent: 'bg-accent text-white hover:bg-accent-hover active:bg-accent-hover',
   secondary: 'bg-bg-elevated text-text hover:bg-bg-hover',

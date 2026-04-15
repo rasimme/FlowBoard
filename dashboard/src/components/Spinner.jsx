@@ -1,3 +1,9 @@
+/**
+ * Spinner — Animated SVG loading indicator in three sizes.
+ * @param {'sm'|'md'|'lg'} [size='md'] - Spinner diameter (16/20/24px)
+ * @param {string} [className] - Extra classes
+ * @example <Spinner size="sm" />
+ */
 const sizes = {
   sm: 'w-4 h-4',
   md: 'w-5 h-5',

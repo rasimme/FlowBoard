@@ -1,3 +1,10 @@
+/**
+ * DataList — Two-column label/value grid for displaying metadata.
+ * @param {Array<{label:string,value:ReactNode}>} [items=[]] - Label-value pairs
+ * @param {boolean} [dense=false] - Compact spacing and smaller text
+ * @param {string} [className] - Extra classes
+ * @example <DataList items={[{label:'Status',value:'Done'}]} dense />
+ */
 export default function DataList({
   items = [],
   dense = false,

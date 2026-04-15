@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
+/**
+ * Panel — Collapsible content section with header, subtitle, and toggle.
+ * @param {string} title - Header title
+ * @param {string} [subtitle] - Header subtitle
+ * @param {boolean} [collapsible=false] - Enable collapse toggle
+ * @param {boolean} [defaultCollapsed=false] - Start collapsed (requires collapsible)
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Panel body content
+ * @example <Panel title="Details" collapsible>Content here</Panel>
+ */
 export default function Panel({
   title,
   subtitle,

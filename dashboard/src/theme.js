@@ -53,6 +53,30 @@ export const ICON_SIZES = {
 // Used in legacy kanban columns via inline style or CSS class.
 // --status-backlog, --status-open, --status-in-progress,
 // --status-review, --status-done, --status-blocked
+// --- Component Catalog ---
+// Atoms (primitives — no internal dependencies)
+//   Button       — Themed button with variant, size, and disabled support
+//   Badge        — Inline status/label pill with semantic color variants
+//   Input        — Themed text input with focus ring and placeholder styling
+//   Modal        — Portal-based dialog with overlay, Escape-to-close, and action slot
+//   Label        — Form label with optional required-field asterisk
+//   Spinner      — Animated SVG loading indicator in three sizes
+//   Tag          — Compact label chip with optional remove button
+//   Textarea     — Multi-line text input with themed styling and resizable handle
+//   Tooltip      — Hover/focus-triggered popup label, portal-rendered
+//
+// Molecules (composed from atoms)
+//   Checkbox     — Styled checkbox with label and accent check icon
+//   Dropdown     — Custom select with click-outside dismiss
+//   FormGroup    — Wraps a form control with label, error, and hint
+//   SearchBar    — Text input with search icon and clearable value
+//
+// Organisms (complex, self-contained sections)
+//   Card         — Container with optional header/body/footer sections
+//   Alert        — Themed notification banner with icon and dismiss
+//   Panel        — Collapsible content section with header and toggle
+//   DataList     — Two-column label/value grid for metadata
+
 export const STATUS_COLORS = {
   backlog: 'var(--status-backlog)',
   open: 'var(--status-open)',

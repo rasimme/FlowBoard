@@ -1,3 +1,11 @@
+/**
+ * Label — Form label with optional required-field asterisk.
+ * @param {string} [htmlFor] - Associated input ID
+ * @param {boolean} [required] - Show red asterisk
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Label text
+ * @example <Label htmlFor="email" required>Email</Label>
+ */
 export default function Label({
   htmlFor,
   required,

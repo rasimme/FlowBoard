@@ -19,6 +19,16 @@ const variantConfig = {
   },
 };
 
+/**
+ * Alert — Themed notification banner with icon, dismiss button, and action slot.
+ * @param {'info'|'warn'|'success'|'error'} [variant='info'] - Semantic color variant
+ * @param {string} [title] - Bold title line
+ * @param {ReactNode} [action] - Action element (right side)
+ * @param {function} [onDismiss] - Shows dismiss X when provided
+ * @param {string} [className] - Extra classes
+ * @param {ReactNode} children - Alert message body
+ * @example <Alert variant="error" title="Oops" onDismiss={close}>Failed.</Alert>
+ */
 export default function Alert({
   variant = 'info',
   title,

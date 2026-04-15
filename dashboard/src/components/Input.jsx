@@ -1,5 +1,11 @@
 import { forwardRef } from 'react';
 
+/**
+ * Input — Themed text input with focus ring and placeholder styling.
+ * @param {string} [className] - Extra classes
+ * @param {Ref} ref - Forwarded ref
+ * @example <Input placeholder="Enter name…" value={v} onChange={handleChange} />
+ */
 const Input = forwardRef(function Input({
   className = '',
   ...props

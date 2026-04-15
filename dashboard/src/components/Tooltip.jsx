@@ -1,6 +1,13 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
+/**
+ * Tooltip — Hover/focus-triggered popup label, portal-rendered with auto-positioning.
+ * @param {ReactNode} content - Tooltip text or content
+ * @param {'top'|'bottom'|'left'|'right'} [placement='top'] - Preferred placement
+ * @param {ReactNode} children - Trigger element
+ * @example <Tooltip content="Copy link"><Button size="icon">…</Button></Tooltip>
+ */
 export default function Tooltip({ content, placement = 'top', children }) {
   const [visible, setVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
