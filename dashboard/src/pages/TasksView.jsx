@@ -1,6 +1,7 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Badge } from '../components/index.js';
+import { Plus } from 'lucide-react';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = {
@@ -173,9 +174,119 @@ function ArchivedTaskCard({ task }) {
   );
 }
 
+// --- Inline Add-Task form (Backlog only) ---
+function AddTaskForm({ project, onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [priority, setPriority] = useState('medium');
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef(null);
+
+  const handleOpen = () => {
+    setOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const reset = () => {
+    setTitle('');
+    setPriority('medium');
+    setOpen(false);
+    setSubmitting(false);
+  };
+
+  const handleSubmit = async () => {
+    const trimmed = title.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/projects/${project}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: trimmed, priority, status: 'backlog' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create task');
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
+      if (window.showToast) window.showToast(`Created ${data.task?.id || 'task'}`, 'success');
+      onCreated?.();
+      setTitle('');
+      setPriority('medium');
+      setSubmitting(false);
+      setTimeout(() => inputRef.current?.focus(), 0);
+    } catch (err) {
+      console.warn('[add-task]', err);
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
+      if (window.showToast) window.showToast(err.message, 'error');
+      setSubmitting(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); }
+    if (e.key === 'Escape') reset();
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="flex items-center gap-1.5 w-full px-3 py-2 text-xs text-muted hover:text-secondary hover:bg-bg-hover rounded-lg transition-colors cursor-pointer"
+        onClick={handleOpen}
+      >
+        <Plus size={14} />
+        <span>Add Task</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-bg-elevated rounded-lg p-2.5 border border-border flex flex-col gap-2">
+      <input
+        ref={inputRef}
+        type="text"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Task title…"
+        disabled={submitting}
+        className="w-full px-2.5 py-1.5 text-sm rounded-md bg-bg-surface text-text border border-border placeholder:text-muted outline-none focus:border-accent-subtle transition-colors"
+      />
+      <div className="flex items-center gap-2">
+        <select
+          value={priority}
+          onChange={(e) => setPriority(e.target.value)}
+          disabled={submitting}
+          className="px-2 py-1 text-xs rounded-md bg-bg-surface text-text border border-border outline-none cursor-pointer"
+        >
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <div className="flex-1" />
+        <button
+          type="button"
+          className="text-xs text-muted hover:text-secondary px-2 py-1 cursor-pointer"
+          onClick={reset}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="text-xs bg-accent text-white px-3 py-1 rounded-md hover:brightness-110 disabled:opacity-50 cursor-pointer"
+          onClick={handleSubmit}
+          disabled={!title.trim() || submitting}
+        >
+          {submitting ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // --- Column ---
-function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst }) {
+function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated }) {
   const isDone = status === 'done';
+  const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
   const sortedArchived = isDone && showArchived ? sortTasks(archivedTasks, sortNewestFirst) : [];
 
@@ -202,7 +313,10 @@ function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggle
         </div>
       </div>
       <div className="flex flex-col gap-2 p-2 overflow-y-auto flex-1 min-h-0">
-        {tasks.length === 0 && sortedArchived.length === 0 ? (
+        {isBacklog && project && (
+          <AddTaskForm project={project} onCreated={onTaskCreated} />
+        )}
+        {tasks.length === 0 && sortedArchived.length === 0 && !isBacklog ? (
           <div className="text-xs text-muted text-center py-6">No tasks</div>
         ) : (
           <>
@@ -334,6 +448,8 @@ export default function TasksView() {
             expandedParents={expandedParents}
             onToggleExpand={handleToggleExpand}
             sortNewestFirst={sortNewestFirst}
+            project={viewedProject}
+            onTaskCreated={() => {}}
           />
         ))}
       </div>
