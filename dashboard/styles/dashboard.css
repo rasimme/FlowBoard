@@ -231,6 +231,8 @@
       flex-direction: column;
       min-height: 0;
     }
+    /* Canvas uses its own margin — override content padding */
+    .content:has(.canvas-wrap) { padding: 8px 18px 16px 22px; }
     /* Content wrapper (created by cscrollWrap) — legacy, kept for compat */
     .cscroll-wrap.content-wrapper {
       grid-row: 3;

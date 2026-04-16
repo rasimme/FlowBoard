@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
+import '../styles/canvas.css';
 
 // Mark that React owns the shell - legacy renders will delegate to React
 window._reactOwnsShell = true;

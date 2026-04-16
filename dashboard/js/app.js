@@ -1,4 +1,5 @@
 import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=9';
+import { canvasState, renderIdeaCanvas, refreshCanvas, resetCanvasState } from './canvas/index.js?v=5';
 
 // Global state
 const state = {
@@ -6,6 +7,8 @@ const state = {
   activeProject: null,
   viewedProject: null,
   tasks: [],
+  canvasNotes: [],
+  canvasConnections: [],
   currentTab: 'tasks'
 };
 
@@ -14,6 +17,7 @@ window.appState = state;
 
 let prevProjectsJson = '';
 let prevTasksJson = '';
+let prevCanvasJson = '';
 let prevActiveProject = null;
 
 // --- Sidebar toggle ---
@@ -81,6 +85,9 @@ async function viewProject(name) {
   const data = await api(`/projects/${name}/tasks?includeArchived=true`);
   state.tasks = data.tasks || [];
   prevTasksJson = JSON.stringify(state.tasks);
+  // Reset canvas state on project switch
+  resetCanvasState();
+  prevCanvasJson = '';
   renderAll();
   window._notifyReact?.();
 }
@@ -106,6 +113,15 @@ function switchTab(tab) {
   state.currentTab = tab;
   if (window._reactOwnsShell) {
     window._notifyReact?.();
+    // Canvas is legacy — render it when Ideas tab is active
+    if (tab === 'ideas') {
+      setTimeout(() => {
+        const content = document.getElementById('content');
+        if (content && !content.querySelector('.canvas-wrap')) {
+          renderIdeaCanvas(state);
+        }
+      }, 50);
+    }
   } else {
     document.querySelectorAll('.tab').forEach(t => {
       t.classList.toggle('active', t.dataset.tab === tab);
@@ -167,6 +183,26 @@ async function refresh() {
         state.tasks = newTasks;
         prevTasksJson = tasksJson;
       }
+    }
+
+    // Canvas data refresh
+    let canvasChanged = false;
+    if (state.viewedProject && state.currentTab === 'ideas') {
+      try {
+        const canvasData = await api(`/projects/${state.viewedProject}/canvas`);
+        const canvasJson = JSON.stringify(canvasData);
+        if (canvasJson !== prevCanvasJson) {
+          canvasChanged = true;
+          canvasState.notes = canvasData.notes || [];
+          canvasState.connections = canvasData.connections || [];
+          state.canvasNotes = canvasState.notes;
+          state.canvasConnections = canvasState.connections;
+          prevCanvasJson = canvasJson;
+          if (!canvasState.editingId && !canvasState.dragging) {
+            refreshCanvas();
+          }
+        }
+      } catch (e) { console.warn('[canvas-refresh]', e); }
     }
 
     if (isUserInteracting() && !projectsChanged) {

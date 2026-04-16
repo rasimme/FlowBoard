@@ -34,10 +34,18 @@ export default function ViewShell() {
   const view = getView(currentTab);
   const isReactOwned = view?.owner === 'react';
 
-  // When switching FROM a React view TO a legacy view, clear #content
-  // so legacy render has a clean slate
+  // Clean up when switching between view types
   useLayoutEffect(() => {
-    if (prevOwnerRef.current === 'react' && !isReactOwned && container) {
+    if (!container) return;
+    const wasLegacy = prevOwnerRef.current === 'legacy';
+    if (wasLegacy && isReactOwned) {
+      // Legacy → React: remove only legacy-created DOM (canvas-wrap etc.)
+      // Don't use innerHTML='' — that destroys React's portal mount
+      const legacyChildren = container.querySelectorAll('.canvas-wrap');
+      legacyChildren.forEach(el => el.remove());
+    }
+    if (prevOwnerRef.current === 'react' && !isReactOwned) {
+      // React → Legacy: clear so legacy has clean slate
       container.innerHTML = '';
     }
     prevOwnerRef.current = isReactOwned ? 'react' : 'legacy';
