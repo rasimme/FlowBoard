@@ -4,6 +4,7 @@ import { Modal } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
 import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2 } from 'lucide-react';
+import { apiFetch } from '../utils/apiFetch.js';
 
 function isEditablePath(filePath) {
   if (!filePath) return false;
@@ -135,9 +136,8 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
     if (saving) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/projects/${projectName}/files/${filePath}`, {
+      const res = await apiFetch(`/api/projects/${projectName}/files/${filePath}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: editContent }),
       });
       if (!res.ok) throw new Error('Save failed');
@@ -159,7 +159,7 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
 
   const handleDelete = async () => {
     try {
-      const res = await fetch(`/api/projects/${projectName}/files/${filePath}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/projects/${projectName}/files/${filePath}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Delete failed');
       haptic.medium();
       if (window.showToast) window.showToast('File deleted', 'success');
@@ -459,7 +459,7 @@ export default function FilesView() {
   const fetchTree = useCallback(() => {
     if (!viewedProject) return;
     setTreeLoading(true);
-    fetch(`/api/projects/${viewedProject}/files`)
+    apiFetch(`/api/projects/${viewedProject}/files`)
       .then(r => r.json())
       .then(data => { setFileTree(data); setTreeLoading(false); })
       .catch(err => { console.warn('[file-tree]', err); setTreeLoading(false); });
@@ -525,7 +525,7 @@ export default function FilesView() {
     // Auto-expand parent dirs
     setExpandedDirs(prev => expandParentsOf(filePath, prev));
 
-    fetch(`/api/projects/${viewedProject}/files/${filePath}`, { signal: controller.signal })
+    apiFetch(`/api/projects/${viewedProject}/files/${filePath}`, { signal: controller.signal })
       .then(r => r.json())
       .then(data => {
         if (data?.error) {

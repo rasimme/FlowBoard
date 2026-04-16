@@ -281,7 +281,8 @@ document.addEventListener('click', e => {
     try {
       const authRes = await fetch('/api/auth', {
         method: 'POST',
-        headers: { 'X-Telegram-Init-Data': tg.initData }
+        headers: { 'X-Telegram-Init-Data': tg.initData },
+        credentials: 'include'
       });
       const authData = await authRes.json().catch(() => null);
       if (authData?.user?.username) state.authUser = authData.user.username;

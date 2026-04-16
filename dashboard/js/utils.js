@@ -12,9 +12,15 @@ export const STATUS_LABELS = { 'backlog': 'Backlog', 'open': 'Open', 'in-progres
 
 // --- API Helper ---
 export async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  // Telegram WebApp auth — send initData on every request for tunnel/iframe auth
+  const _tg = window.Telegram?.WebApp;
+  if (_tg?.initData) headers['X-Telegram-Init-Data'] = _tg.initData;
+
   const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
     ...opts,
+    headers,
+    credentials: 'include',
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
   if (res.status === 403) {
@@ -23,13 +29,15 @@ export async function api(path, opts = {}) {
     if (tg?.initData) {
       const reauth = await fetch('/api/auth', {
         method: 'POST',
-        headers: { 'X-Telegram-Init-Data': tg.initData }
+        headers: { 'X-Telegram-Init-Data': tg.initData },
+        credentials: 'include'
       });
       if (reauth.ok) {
         // Re-auth succeeded — retry original request
         const retry = await fetch(API + path, {
-          headers: { 'Content-Type': 'application/json' },
           ...opts,
+          headers,
+          credentials: 'include',
           body: opts.body ? JSON.stringify(opts.body) : undefined
         });
         if (retry.ok) return retry.json();

@@ -8,9 +8,15 @@ import Badge from './Badge.jsx';
 const API = '/api';
 
 async function apiFetch(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...opts.headers };
+  // Telegram WebApp auth — send initData on every request
+  const tg = window.Telegram?.WebApp;
+  if (tg?.initData) headers['X-Telegram-Init-Data'] = tg.initData;
+
   const res = await fetch(API + path, {
-    headers: { 'Content-Type': 'application/json' },
     ...opts,
+    headers,
+    credentials: 'include',
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   if (!res.ok) {

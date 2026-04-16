@@ -548,7 +548,8 @@
     /* Subtask container — wraps all subtask cards for a parent */
     .subtask-container {
       position: relative;
-      margin-left: 14px;
+      margin-left: 10px;
+      margin-top: 4px;
       padding-left: 22px;
       display: flex;
       flex-direction: column;

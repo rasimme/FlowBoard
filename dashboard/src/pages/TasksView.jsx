@@ -1,8 +1,9 @@
-import { useMemo, useState, useCallback, useRef, memo } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal, PriorityPill, Popover } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
-import { Plus, Trash2, FileText, FilePlus, Archive } from 'lucide-react';
+import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
+import { apiFetch } from '../utils/apiFetch.js';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = {
@@ -58,9 +59,13 @@ function SubtaskProgress({ task, allTasks, expanded, onToggle }) {
 // --- Subtask card (compact, uses legacy CSS tree-line system) ---
 const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) {
   const [popover, setPopover] = useState({ type: null, open: false, rect: null });
+  const suppressClickRef = useRef(false);
   const haptic = useHaptic();
 
   const handleClick = () => {
+    // Guard: don't open detail panel right after a popover action
+    if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+    if (popover.open) return;
     if (window.openTaskDetail) window.openTaskDetail(task.id);
   };
 
@@ -76,7 +81,12 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
     setPopover({ type: 'priority', open: true, rect: e.currentTarget.getBoundingClientRect() });
   };
 
-  const handlePopoverClose = () => setPopover(prev => ({ ...prev, open: false }));
+  const handlePopoverClose = () => {
+    setPopover(prev => ({ ...prev, open: false }));
+    // Suppress the next card click so closing popover doesn't open detail panel
+    suppressClickRef.current = true;
+    setTimeout(() => { suppressClickRef.current = false; }, 200);
+  };
 
   const handleStatusSelect = async (status) => {
     haptic.medium();
@@ -98,7 +108,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
   const handleCreateSpec = async (e) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`/api/projects/${project}/specs/${task.id}`, { method: 'POST' });
+      const res = await apiFetch(`/api/projects/${project}/specs/${task.id}`, { method: 'POST' });
       const data = await res.json();
       if (data.ok && data.specFile) {
         task.specFile = data.specFile;
@@ -163,7 +173,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskUpdated, dragRef, isNew }) {
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskUpdated, dragRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -240,7 +250,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   const handleCreateSpec = async (e) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`/api/projects/${project}/specs/${task.id}`, { method: 'POST' });
+      const res = await apiFetch(`/api/projects/${project}/specs/${task.id}`, { method: 'POST' });
       const data = await res.json();
       if (data.ok && data.specFile) {
         task.specFile = data.specFile;
@@ -292,6 +302,9 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
               )}
             </span>
             <span className="task-meta-actions">
+              <span className="subtask-add-btn" onClick={(e) => { e.stopPropagation(); onAddSubtask?.(task.id); }} title="Add subtask">
+                <ListTree size={14} />
+              </span>
               {hasUsableSpec
                 ? <span className="spec-badge" onClick={handleOpenSpec} title="Open spec file">
                     <FileText size={14} />
@@ -336,23 +349,101 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           onCancel={() => setShowDeleteModal(false)}
         />
       )}
-      {hasSubtasks && expanded && !removing && (
-        <ExpandedSubtasks task={task} allTasks={allTasks} project={project} onTaskUpdated={onTaskUpdated} />
+      {(hasSubtasks && expanded || addingSubtask) && !removing && (
+        <ExpandedSubtasks
+          task={task} allTasks={allTasks} project={project} onTaskUpdated={onTaskUpdated}
+          showAddForm={addingSubtask}
+          onSubtaskCreated={onSubtaskCreated}
+          onCancelAdd={onCancelAddSubtask}
+        />
       )}
     </div>
   );
 });
 
 // --- Expanded subtask list (uses legacy CSS tree-line system) ---
-function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated }) {
+function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated, showAddForm, onSubtaskCreated, onCancelAdd }) {
   const subtasks = allTasks.filter(t => t.parentId === task.id && t.status !== 'archived');
-  if (subtasks.length === 0) return null;
+
+  if (subtasks.length === 0 && !showAddForm) return null;
 
   return (
     <div className="subtask-container">
       {subtasks.map(st => (
         <SubtaskCard key={st.id} task={st} project={project} onTaskUpdated={onTaskUpdated} />
       ))}
+      {showAddForm && (
+        <AddSubtaskForm parentId={task.id} project={project} onCreated={onSubtaskCreated} onCancel={onCancelAdd} />
+      )}
+    </div>
+  );
+}
+
+// --- Inline add-subtask form (inside subtask-container for tree-line continuity) ---
+function AddSubtaskForm({ parentId, project, onCreated, onCancel }) {
+  const [title, setTitle] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef(null);
+  const haptic = useHaptic();
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, []);
+
+  const handleSubmit = async () => {
+    const trimmed = title.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    try {
+      const res = await apiFetch(`/api/projects/${project}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: trimmed, parentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create subtask');
+      haptic.medium();
+      // Push subtask into local state + update parent's subtaskIds
+      if (data.task) {
+        window.appState.tasks.push(data.task);
+        const parent = window.appState.tasks.find(t => t.id === parentId);
+        if (parent) {
+          if (!parent.subtaskIds) parent.subtaskIds = [];
+          parent.subtaskIds.push(data.task.id);
+        }
+        window.appState.tasks = [...window.appState.tasks];
+      }
+      if (window.showToast) window.showToast(`Subtask ${data.task?.id} created`, 'success');
+      onCreated?.();
+    } catch (err) {
+      console.warn('[add-subtask]', err);
+      haptic.error();
+      if (window.showToast) window.showToast(err.message, 'error');
+      setSubmitting(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); handleSubmit(); }
+    if (e.key === 'Escape') onCancel?.();
+  };
+
+  return (
+    <div className="add-subtask-form">
+      <div className="tree-dot-form" />
+      <input
+        ref={inputRef}
+        className="subtask-input"
+        placeholder="Subtask title..."
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={submitting}
+      />
+      <div className="form-actions" style={{ marginTop: 6 }}>
+        <button className="btn btn-primary btn-sm" onClick={handleSubmit} disabled={!title.trim() || submitting}>Add</button>
+        <button className="btn btn-secondary btn-sm" onClick={onCancel}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -388,7 +479,7 @@ function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
     if (deleteSpec && task.specFile) params.push('deleteSpec=true');
     if (params.length) url += '?' + params.join('&');
     try {
-      const res = await fetch(url, { method: 'DELETE' });
+      const res = await apiFetch(url, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) {
         if (data.error === 'Task has subtasks') {
@@ -471,7 +562,7 @@ function AddTaskForm({ project, onCreated }) {
     if (!trimmed || submitting) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/projects/${project}/tasks`, {
+      const res = await apiFetch(`/api/projects/${project}/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: trimmed, priority, status: 'backlog' }),
@@ -541,7 +632,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskUpdated, dragRef, onDrop, lastCreatedId }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskUpdated, dragRef, onDrop, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -608,6 +699,10 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                 onTaskUpdated={onTaskUpdated}
                 dragRef={dragRef}
                 isNew={t.id === lastCreatedId}
+                addingSubtask={addingSubtaskParentId === t.id}
+                onAddSubtask={onAddSubtask}
+                onSubtaskCreated={onSubtaskCreated}
+                onCancelAddSubtask={onCancelAddSubtask}
               />
             ))}
             {sortedArchived.length > 0 && (
@@ -634,6 +729,7 @@ export default function TasksView() {
     try { return new Set(window.kanbanState?.expandedParents || []); } catch { return new Set(); }
   });
   const [lastCreatedId, setLastCreatedId] = useState(null);
+  const [addingSubtaskParentId, setAddingSubtaskParentId] = useState(null);
 
   const draggedId = useRef(null);
 
@@ -674,9 +770,29 @@ export default function TasksView() {
     window.dispatchEvent(new CustomEvent('appstate:change'));
   }, []);
 
+  const handleAddSubtask = useCallback((parentId) => {
+    setAddingSubtaskParentId(parentId);
+    // Auto-expand parent so form is visible
+    setExpandedParents(prev => {
+      const next = new Set(prev);
+      next.add(parentId);
+      try { if (window.kanbanState) { window.kanbanState.expandedParents = next; } } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
+  const handleSubtaskCreated = useCallback(() => {
+    setAddingSubtaskParentId(null);
+    window.dispatchEvent(new CustomEvent('appstate:change'));
+  }, []);
+
+  const handleCancelAddSubtask = useCallback(() => {
+    setAddingSubtaskParentId(null);
+  }, []);
+
   const handleTaskUpdated = useCallback(async (taskId, updates) => {
     try {
-      const res = await fetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
+      const res = await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
@@ -712,7 +828,7 @@ export default function TasksView() {
     window.appState.tasks = [...window.appState.tasks];
     window.dispatchEvent(new CustomEvent('appstate:change'));
 
-    fetch(`/api/projects/${viewedProject}/tasks/${id}`, {
+    apiFetch(`/api/projects/${viewedProject}/tasks/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus }),
@@ -807,6 +923,10 @@ export default function TasksView() {
             dragRef={draggedId}
             onDrop={handleDrop}
             lastCreatedId={lastCreatedId}
+            addingSubtaskParentId={addingSubtaskParentId}
+            onAddSubtask={handleAddSubtask}
+            onSubtaskCreated={handleSubtaskCreated}
+            onCancelAddSubtask={handleCancelAddSubtask}
           />
         ))}
       </div>

@@ -209,9 +209,11 @@ if (process.env.LOG_REQUESTS === 'true' || process.env.DEBUG || process.env.NODE
   });
 }
 
-// Global auth on all /api/ routes (except /health which is unauthenticated)
+// Global auth on all /api/ routes (except /health and CORS preflight)
 app.use('/api/', (req, res, next) => {
   if (req.path === '/health') return next();
+  // CORS preflight (OPTIONS) must pass without auth — browser sends no credentials on preflight
+  if (req.method === 'OPTIONS') return next();
   return telegramAuthMiddleware(req, res, next);
 });
 
