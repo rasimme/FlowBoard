@@ -106,10 +106,13 @@ export default function DetailPanel() {
   const [submitting, setSubmitting] = useState(false);
   const [hzlAvailable, setHzlAvailable] = useState(true);
   const [syntheticItems, setSyntheticItems] = useState([]);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
   const taskRef = useRef(null); // always-current task for action handlers
+  const titleTextareaRef = useRef(null);
 
   const project = state?.viewedProject;
   const isOpen = taskId !== null;
@@ -212,13 +215,15 @@ export default function DetailPanel() {
     }
   }, [feed, syntheticItems]);
 
-  // Close on Escape
+  // Close on Escape (but not while editing title)
   useEffect(() => {
     if (!isOpen) return;
-    const handler = (e) => { if (e.key === 'Escape') close(); };
+    const handler = (e) => {
+      if (e.key === 'Escape' && !isEditingTitle) close();
+    };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen]);
+  }, [isOpen, isEditingTitle]);
 
   function close() {
     setTaskId(null);
@@ -387,6 +392,68 @@ export default function DetailPanel() {
     }
   }
 
+  // --- Title inline edit ---
+  function startEditingTitle() {
+    if (loading || !task) return;
+    setEditTitle(task.title || '');
+    setIsEditingTitle(true);
+  }
+
+  function cancelEditingTitle() {
+    setIsEditingTitle(false);
+    setEditTitle('');
+  }
+
+  function autoResizeTitleTextarea() {
+    const ta = titleTextareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  }
+
+  async function saveTitle() {
+    const newTitle = editTitle.trim();
+    if (!newTitle || !task || !project) {
+      cancelEditingTitle();
+      return;
+    }
+    if (newTitle === task.title) {
+      setIsEditingTitle(false);
+      return;
+    }
+
+    const oldTitle = task.title;
+    const updated = { ...task, title: newTitle };
+    setTask(updated);
+    taskRef.current = updated;
+    setIsEditingTitle(false);
+
+    try {
+      await apiFetch(`/projects/${project}/tasks/${task.id}`, {
+        method: 'PUT',
+        body: { title: newTitle },
+      });
+      refreshKanban();
+      showToast('Task title updated', 'success');
+      try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light'); } catch {}
+    } catch (err) {
+      const reverted = { ...updated, title: oldTitle };
+      setTask(reverted);
+      taskRef.current = reverted;
+      showToast('Title update failed: ' + (err.message || 'Unknown error'), 'error');
+    }
+  }
+
+  function handleTitleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      saveTitle();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEditingTitle();
+    }
+  }
+
   // --- Comment submission ---
   async function handleSubmitComment() {
     const text = comment.trim();
@@ -452,9 +519,41 @@ export default function DetailPanel() {
               <X size={16} />
             </button>
           </div>
-          <h2 className="m-0 text-lg leading-tight text-text-strong font-semibold">
-            {loading ? 'Lade...' : (task?.title || 'Task Title')}
-          </h2>
+          {loading ? (
+            <h2 className="m-0 text-lg leading-tight text-text-strong font-semibold">Lade...</h2>
+          ) : isEditingTitle ? (
+            <div>
+              <textarea
+                ref={titleTextareaRef}
+                value={editTitle}
+                onChange={(e) => {
+                  setEditTitle(e.target.value);
+                  autoResizeTitleTextarea();
+                }}
+                onBlur={saveTitle}
+                onKeyDown={handleTitleKeyDown}
+                maxLength={128}
+                rows={1}
+                autoFocus
+                onFocus={(e) => {
+                  e.target.select();
+                  autoResizeTitleTextarea();
+                }}
+                className="w-full m-0 p-0 text-lg leading-tight text-text-strong font-semibold bg-transparent border-0 border-b-2 border-accent outline-none resize-none overflow-hidden"
+              />
+              <div className={`text-xs mt-1 ${editTitle.length >= 120 ? 'text-red-400' : 'text-muted'}`}>
+                {editTitle.length}/128 characters
+              </div>
+            </div>
+          ) : (
+            <h2
+              className="m-0 text-lg leading-tight text-text-strong font-semibold cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={startEditingTitle}
+              title="Click to edit title"
+            >
+              {task?.title || 'Task Title'}
+            </h2>
+          )}
         </div>
 
         {/* Action Bar */}
