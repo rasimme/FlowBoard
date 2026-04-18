@@ -573,7 +573,14 @@ export default function DetailPanel() {
           {task && (
             <div className="px-4 py-4 border-b border-border">
               <div className="mt-2.5 text-xs text-muted">
-                {task.id} &middot; {task.status || ''} &middot; {task.priority || ''}
+                {task.id} &middot; {task.status || ''}
+                {!task.parentId && <> &middot; {task.priority || ''}</>}
+                {task.parentId && (
+                  <> &middot; <span className="text-sm text-muted">Priority: {(() => {
+                    const parent = (window.appState?.tasks || []).find(t => t.id === task.parentId);
+                    return parent?.priority || task.priority || '–';
+                  })()} (inherited from {task.parentId})</span></>
+                )}
               </div>
             </div>
           )}

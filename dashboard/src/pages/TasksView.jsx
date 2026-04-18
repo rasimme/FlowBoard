@@ -75,12 +75,6 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
     setPopover({ type: 'status', open: true, rect: e.currentTarget.getBoundingClientRect() });
   };
 
-  const handlePriorityClick = (e) => {
-    e.stopPropagation();
-    haptic.light();
-    setPopover({ type: 'priority', open: true, rect: e.currentTarget.getBoundingClientRect() });
-  };
-
   const handlePopoverClose = () => {
     setPopover(prev => ({ ...prev, open: false }));
     // Suppress the next card click so closing popover doesn't open detail panel
@@ -92,12 +86,6 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
     haptic.medium();
     handlePopoverClose();
     await onTaskUpdated?.(task.id, { status });
-  };
-
-  const handlePrioritySelect = async (priority) => {
-    haptic.medium();
-    handlePopoverClose();
-    await onTaskUpdated?.(task.id, { priority });
   };
 
   const handleOpenSpec = (e) => {
@@ -130,9 +118,6 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
         <span className={`status-dot status-dot-${task.status}`} />
       </span>
       <span className="subtask-title">{task.title}</span>
-      {task.priority && (
-        <PriorityPill priority={task.priority} onClick={handlePriorityClick} />
-      )}
       {task.blocked && (
         <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">
           Blocked
@@ -158,15 +143,6 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
             </span>
           </Popover.Option>
         ))}
-      </Popover>
-      {/* Priority popover */}
-      <Popover open={popover.open && popover.type === 'priority'} onClose={handlePopoverClose} anchorRect={popover.rect}>
-        <div className="flex gap-1 p-1.5">
-          {['low', 'medium', 'high'].map(p => (
-            <PriorityPill key={p} priority={p} onClick={() => handlePrioritySelect(p)}
-              className={p !== task.priority ? 'opacity-50 hover:opacity-100' : ''} />
-          ))}
-        </div>
       </Popover>
     </div>
   );
