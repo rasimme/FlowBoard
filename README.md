@@ -85,23 +85,24 @@ cd FlowBoard/dashboard
 npm install
 ```
 
-### 2. Set up workspace
+### 2. Add agent trigger
+
+Paste the block from `snippets/AGENTS-trigger.md` into your
+`~/.openclaw/workspace/AGENTS.md` (create the file if it doesn't exist).
+Append the block from `snippets/BOOT-extension.md` into your existing
+`BOOT.md`. Both are copy-paste — or let your agent do it.
 
 ```bash
-cp FlowBoard/files/ACTIVE-PROJECT.md ~/.openclaw/workspace/
-cp -r FlowBoard/files/projects ~/.openclaw/workspace/
+cat FlowBoard/snippets/AGENTS-trigger.md    # → paste into AGENTS.md
+cat FlowBoard/snippets/BOOT-extension.md    # → append to BOOT.md
 ```
 
-### 3. Add agent trigger
+> Upgrading from an earlier FlowBoard? After `git pull`, run
+> `node dashboard/snippets-doctor.js` to check your AGENTS.md / BOOT.md for
+> legacy blocks. Add `--apply` to replace byte-identical legacy blocks with
+> the current canonical versions (a `.bak-<timestamp>` is written first).
 
-Add the project trigger to the top of your `~/.openclaw/workspace/AGENTS.md`:
-
-```bash
-cat FlowBoard/snippets/AGENTS-trigger.md
-# → Paste that block into your AGENTS.md
-```
-
-### 4. Install hooks
+### 3. Install hooks
 
 ```bash
 cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
@@ -109,16 +110,20 @@ cp -r FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
 openclaw gateway restart
 ```
 
-### 5. Start the dashboard
+### 4. Start the dashboard
+
+Migrations run automatically on server start (tasks migration, per-agent
+active-project DB setup, PROJECT-RULES canonical-path symlink, legacy-snippet
+advisory).
 
 ```bash
-node server.js
+HZL_ENABLED=true node server.js
 # Or with systemd (auto-start on boot):
 cp templates/dashboard.service ~/.local/share/systemd/user/
 systemctl --user enable --now dashboard
 ```
 
-### 6. Create your first project
+### 5. Create your first project
 
 Open **http://localhost:18790** and tell your agent:
 
