@@ -209,6 +209,46 @@ const migrations = [
       console.log('[m005] Migration complete.');
     },
   },
+  {
+    id:         'm006-snippets-advisory',
+    name:       'Detect legacy AGENTS.md / BOOT.md snippets and recommend update',
+    filesystem: true,
+    run: (_db, { openclawHome }) => {
+      // Read-only check: scans workspace/ and workspace-*/ under OPENCLAW_HOME for
+      // AGENTS.md and BOOT.md files that still reference the pre-lazy-load paths
+      // (ACTIVE-PROJECT.md, projects/PROJECT-RULES.md). Emits a warning pointing
+      // at the doctor CLI; does NOT edit anything. Registry row is written by
+      // the caller so the advisory only fires once per install.
+      let doctor;
+      try { doctor = require('./snippets-doctor.js'); } catch (err) {
+        console.warn('[m006] snippets-doctor module unavailable:', err.message);
+        return;
+      }
+
+      const targets = ['AGENTS.md', 'BOOT.md'];
+      const findings = [];
+      for (const name of targets) {
+        const candidates = doctor.findCandidateFiles(openclawHome, name);
+        for (const file of candidates) {
+          let content = '';
+          try { content = fs.readFileSync(file, 'utf8'); } catch { continue; }
+          if (doctor.detectLegacyMarkers(content)) findings.push(file);
+        }
+      }
+
+      if (findings.length === 0) {
+        console.log('[m006] No legacy snippet markers detected.');
+        return;
+      }
+
+      console.warn(`[m006] Found ${findings.length} file(s) with legacy snippet markers:`);
+      for (const f of findings) console.warn(`  - ${f}`);
+      console.warn('[m006] These reference ACTIVE-PROJECT.md / projects/PROJECT-RULES.md directly.');
+      console.warn('[m006] The lazy-load model uses BOOTSTRAP.md + GET /api/projects/:name/rules/:section instead.');
+      console.warn('[m006] Run `node dashboard/snippets-doctor.js` to preview a safe, byte-match-only replacement.');
+      console.warn('[m006] Manual merge remains the intended path — AGENTS.md is user-owned.');
+    },
+  },
 ];
 
 /**
