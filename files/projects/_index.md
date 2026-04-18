@@ -1,4 +1,0 @@
-# Projects
-
-| Project | Status | Description |
-|---------|--------|-------------|
