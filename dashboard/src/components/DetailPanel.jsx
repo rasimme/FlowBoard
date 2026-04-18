@@ -569,11 +569,9 @@ export default function DetailPanel() {
 
         {/* Scrollable content */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {/* Description / Meta */}
+          {/* Task Meta */}
           {task && (
             <div className="px-4 py-4 border-b border-border">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Task</div>
-              <div className="text-sm leading-relaxed text-text">{task.title}</div>
               <div className="mt-2.5 text-xs text-muted">
                 {task.id} &middot; {task.status || ''} &middot; {task.priority || ''}
               </div>
