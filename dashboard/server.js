@@ -28,6 +28,7 @@ const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
 const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
 const AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
 const specifySession = require('./specify-sessions');
+const rulesApi = require('./rules-api.js');
 
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
@@ -405,20 +406,14 @@ function updateBootstrapMd(projectName, workspaceDir = WORKSPACE) {
     return;
   }
 
-  // Canonical: docs/project-mode/PROJECT-RULES.md in repo; fallback: symlink in PROJECTS_DIR
-  const REPO_ROOT = path.resolve(__dirname, '..');
-  const canonicalRulesPath = path.join(REPO_ROOT, 'docs', 'project-mode', 'PROJECT-RULES.md');
-  const fallbackRulesPath = path.join(PROJECTS_DIR, 'PROJECT-RULES.md');
-  const rulesPath = fs.existsSync(canonicalRulesPath) ? canonicalRulesPath : fallbackRulesPath;
+  // Lazy-load: BOOTSTRAP.md carries the rules manifest only. Detailed sections are
+  // fetched on demand via GET /api/projects/:name/rules/:section.
+  const rulesManifest = rulesApi.buildRulesManifest();
   const projectMdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
-
-  let rulesContent = '';
   let projectContent = '';
-  try { rulesContent = fs.readFileSync(rulesPath, 'utf8'); } catch (e) { console.warn(e); }
   try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch (e) { console.warn(e); }
 
-  const sections = [`# Active Project: ${projectName}\n`];
-  if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
+  const sections = [`# Active Project: ${projectName}\n`, `${rulesManifest}\n`];
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
   try {
@@ -810,6 +805,24 @@ app.get('/api/projects', (req, res) => {
   }
   const projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
   res.json({ activeProject: active, projects });
+});
+
+// GET /api/projects/:name/rules — list available rule sections
+app.get('/api/projects/:name/rules', (req, res) => {
+  res.json({
+    project: req.params.name,
+    sections: rulesApi.listRuleSections(),
+    manifest: rulesApi.buildRulesManifest(),
+  });
+});
+
+// GET /api/projects/:name/rules/:section — fetch one rule section as markdown
+app.get('/api/projects/:name/rules/:section', (req, res) => {
+  const content = rulesApi.readRuleSection(req.params.section);
+  if (content === null) {
+    return res.status(404).json({ error: 'Rule section not found', section: req.params.section });
+  }
+  res.type('text/markdown; charset=utf-8').send(content);
 });
 
 // GET /api/projects/:name/tasks

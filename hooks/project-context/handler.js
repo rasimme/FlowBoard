@@ -10,9 +10,39 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
 
 const OPENCLAW_HOME = join(homedir(), ".openclaw");
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
+const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || join(homedir(), "repos", "FlowBoard");
+
+// Single-source-of-truth: load rules-api.js from the FlowBoard repo so the bootstrap
+// manifest matches the server's. Fall back to an inline minimal manifest if the repo
+// module can't be resolved (e.g. hook runs before the repo is present).
+const require = createRequire(import.meta.url);
+let rulesApi = null;
+try {
+  rulesApi = require(join(FLOWBOARD_REPO, "dashboard", "rules-api.js"));
+} catch (err) {
+  console.warn(`[project-context] rules-api module unavailable (${err.message}); using inline manifest fallback`);
+}
+
+function buildInlineManifestFallback() {
+  return [
+    "## Project Rules (lazy-load)",
+    "",
+    "Rule sections are served on demand. Request content via:",
+    "`GET /api/projects/{project}/rules/{section}` — returns markdown.",
+    "",
+    "Available sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.",
+    "",
+    "Legacy reference: `docs/project-mode/PROJECT-RULES.md` in the FlowBoard repo.",
+  ].join("\n");
+}
+
+function buildRulesManifest() {
+  return rulesApi ? rulesApi.buildRulesManifest() : buildInlineManifestFallback();
+}
 
 function resolveWorkspace(event) {
   // Prefer workspace directory from event context (supports multi-agent workspaces)
@@ -173,19 +203,10 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
     return { ok: true, projectName: null, bootstrapUpdated: true };
   }
 
-  // Read PROJECT-RULES.md — canonical location: repo docs/project-mode/; fallback: shared projects dir
+  // Lazy-load: BOOTSTRAP.md carries only the rules manifest. Detailed sections are
+  // fetched on demand via GET /api/projects/:name/rules/:section.
+  const rulesManifest = buildRulesManifest();
   const projectRoot = existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : join(workspaceDir, "projects");
-
-  // Resolve canonical rules path from FlowBoard repo if available
-  const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || join(homedir(), "repos", "FlowBoard");
-  const canonicalRulesPath = join(FLOWBOARD_REPO, "docs", "project-mode", "PROJECT-RULES.md");
-  const fallbackRulesPath = join(projectRoot, "PROJECT-RULES.md");
-  const rulesPath = existsSync(canonicalRulesPath) ? canonicalRulesPath : fallbackRulesPath;
-
-  let rulesContent = "";
-  if (existsSync(rulesPath)) {
-    try { rulesContent = readFileSync(rulesPath, "utf8"); } catch {}
-  }
 
   // Read PROJECT.md (post-m005: session log lives in SESSIONS.md, not bootstrapped)
   const projectMdPath = join(projectRoot, projectName, "PROJECT.md");
@@ -194,10 +215,7 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
   }
 
-  if (!rulesContent && !projectContent) return { ok: false, projectName, bootstrapUpdated: false, error: 'Project context files missing' };
-
-  const sections = [`# Active Project: ${projectName}\n`];
-  if (rulesContent) sections.push(`## Project Rules\n\n${rulesContent}\n`);
+  const sections = [`# Active Project: ${projectName}\n`, `${rulesManifest}\n`];
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
   // Add task status summary (fetched from FlowBoard API / HZL backend)
