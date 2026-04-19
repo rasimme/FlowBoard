@@ -9,9 +9,9 @@
  * @example <PriorityPill priority="medium" onClick={handleClick} />
  */
 const styles = {
-  high: 'text-danger border-[#ef444459] bg-danger-subtle',
-  medium: 'text-warn border-[#f59e0b59] bg-warn-subtle',
-  low: 'text-ok border-[#22c55e59] bg-ok-subtle',
+  high: 'text-danger border-danger-border bg-danger-subtle',
+  medium: 'text-warn border-warn-border bg-warn-subtle',
+  low: 'text-ok border-ok-border bg-ok-subtle',
 };
 
 export default function PriorityPill({ priority, onClick, className = '' }) {

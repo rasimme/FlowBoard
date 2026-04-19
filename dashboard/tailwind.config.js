@@ -41,14 +41,17 @@ export default {
         ok: {
           DEFAULT: 'var(--ok)',
           subtle: 'var(--ok-subtle)',
+          border: 'var(--ok-border)',
         },
         warn: {
           DEFAULT: 'var(--warn)',
           subtle: 'var(--warn-subtle)',
+          border: 'var(--warn-border)',
         },
         danger: {
           DEFAULT: 'var(--danger)',
           subtle: 'var(--danger-subtle)',
+          border: 'var(--danger-border)',
         },
         info: {
           DEFAULT: 'var(--info)',
