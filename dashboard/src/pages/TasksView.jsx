@@ -427,7 +427,7 @@ function AddSubtaskForm({ parentId, project, onCreated, onCancel }) {
 // --- Archived task card (read-only, dimmed) ---
 function ArchivedTaskCard({ task }) {
   return (
-    <div className="w-full text-left bg-card/50 rounded-md p-3 border border-border/40 opacity-50">
+    <div className="w-full text-left bg-card/50 rounded-lg p-3 border border-border/40 opacity-50">
       <div className="flex items-start justify-between gap-2 mb-1">
         <span className="task-id mono">{task.id}</span>
       </div>

@@ -24,7 +24,7 @@ export default function Panel({
   return (
     <div
       className={[
-        'bg-card border border-border rounded-md shadow-md',
+        'bg-card border border-border rounded-lg shadow-card',
         className,
       ].join(' ')}
     >

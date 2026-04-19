@@ -42,7 +42,7 @@ export default function Modal({
       onClick={handleOverlayClick}
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60"
     >
-      <div className="bg-card border border-border rounded-md shadow-card w-full max-w-md mx-4 overflow-hidden animate-scale-in">
+      <div className="bg-card border border-border rounded-lg shadow-card w-full max-w-md mx-4 overflow-hidden animate-scale-in">
         {title && (
           <div className="px-5 pt-5 pb-0">
             <h3 className="text-base font-semibold text-text-strong m-0">

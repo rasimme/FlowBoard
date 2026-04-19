@@ -514,7 +514,7 @@ export default function DetailPanel() {
             <span className="font-mono text-xs text-muted">{taskId}</span>
             <button
               onClick={close}
-              className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover transition-colors border-0 bg-transparent cursor-pointer"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-text hover:bg-bg-hover transition-colors border-0 bg-transparent cursor-pointer"
             >
               <X size={16} />
             </button>
@@ -608,12 +608,12 @@ export default function DetailPanel() {
               onKeyDown={handleCommentKeyDown}
               placeholder="Schreibe einen Kommentar..."
               rows={1}
-              className="flex-1 resize-none rounded-md border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent"
+              className="flex-1 resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent"
             />
             <button
               onClick={handleSubmitComment}
               disabled={submitting || !comment.trim()}
-              className="w-9 h-9 flex items-center justify-center rounded-md bg-accent text-white border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition-all shrink-0"
+              className="w-9 h-9 flex items-center justify-center rounded-lg bg-accent text-white border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110 transition-all shrink-0"
             >
               <Send size={16} />
             </button>

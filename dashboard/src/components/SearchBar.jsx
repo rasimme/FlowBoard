@@ -32,7 +32,7 @@ const SearchBar = forwardRef(function SearchBar({
         onChange={onChange}
         placeholder={placeholder}
         className={[
-          'w-full pl-8 pr-8 py-2 text-sm rounded-md',
+          'w-full pl-8 pr-8 py-2 text-sm rounded-lg',
           'bg-bg-elevated text-text border border-border',
           'placeholder:text-muted',
           'outline-none focus:border-accent-subtle focus:shadow-focus-accent',

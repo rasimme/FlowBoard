@@ -14,7 +14,7 @@ const Input = forwardRef(function Input({
     <input
       ref={ref}
       className={[
-        'w-full px-3 py-2 text-sm rounded-md',
+        'w-full px-3 py-2 text-sm rounded-lg',
         'bg-bg-elevated text-text border border-border',
         'placeholder:text-muted',
         'outline-none focus:border-accent-subtle focus:shadow-focus-accent',

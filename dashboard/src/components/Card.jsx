@@ -19,7 +19,7 @@ export default function Card({
   return (
     <div
       className={[
-        'bg-card border border-border rounded-md shadow-md overflow-hidden',
+        'bg-card border border-border rounded-lg shadow-card overflow-hidden',
         className,
       ].join(' ')}
     >

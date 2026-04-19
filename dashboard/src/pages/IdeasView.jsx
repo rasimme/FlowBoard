@@ -257,7 +257,7 @@ export default function IdeasView() {
             placeholder="Search ideas…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full px-3 py-1.5 text-sm rounded-md bg-bg-elevated text-text border border-border placeholder:text-muted outline-none focus:border-accent-subtle focus:shadow-focus-accent transition-colors duration-fast"
+            className="w-full px-3 py-1.5 text-sm rounded-lg bg-bg-elevated text-text border border-border placeholder:text-muted outline-none focus:border-accent-subtle focus:shadow-focus-accent transition-colors duration-fast"
           />
         </div>
       )}

@@ -43,7 +43,7 @@ export default function Dropdown({
         disabled={disabled}
         onClick={() => setOpen((p) => !p)}
         className={[
-          'w-full flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-md',
+          'w-full flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-lg',
           'bg-bg-elevated border border-border text-text',
           'outline-none focus:border-accent-subtle focus:shadow-focus-accent',
           'transition-colors duration-fast cursor-pointer',
@@ -59,7 +59,7 @@ export default function Dropdown({
       </button>
 
       {open && (
-        <ul className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-border bg-bg-elevated shadow-md py-1 list-none m-0 p-0">
+        <ul className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-border bg-bg-elevated shadow-card py-1 list-none m-0 p-0">
           {options.map((opt) => {
             const optValue = typeof opt === 'object' ? opt.value : opt;
             const optLabel = typeof opt === 'object' ? opt.label : opt;

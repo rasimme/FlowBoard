@@ -36,7 +36,7 @@ export default function Button({
     <button
       type={type}
       className={[
-        'inline-flex items-center justify-center gap-1.5 rounded-md',
+        'inline-flex items-center justify-center gap-1.5 rounded-lg',
         'font-medium transition-all duration-fast cursor-pointer',
         'border-0 outline-none focus-visible:shadow-focus-accent',
         'disabled:opacity-50 disabled:cursor-not-allowed',
