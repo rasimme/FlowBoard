@@ -1385,3 +1385,507 @@
   position: relative;
   z-index: 2;
 }
+
+/* =========================================================================
+   SNIPPET UPGRADE FLOW — header pill + upgrade modal
+   Added for the FlowBoard system-upgrade feature (see dashboard/snippets-doctor.js,
+   /api/snippets/status, /api/snippets/apply). All selectors prefixed or scoped
+   under .upgrade-modal / .snippet-modal-overlay to avoid collision with the
+   existing generic .modal-overlay / .modal-body rules above.
+   ========================================================================= */
+
+/* Header pill */
+.snippet-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  border: 1px solid rgba(255, 92, 92, 0.35);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--duration-fast);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.snippet-pill:hover {
+  background: rgba(255, 92, 92, 0.22);
+  border-color: rgba(255, 92, 92, 0.5);
+}
+.snippet-pill-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.snippet-pill-icon svg {
+  width: 11px;
+  height: 11px;
+}
+.snippet-pill-icon::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.55);
+  animation: pulse-ring 2.2s var(--ease-out) infinite;
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(255, 92, 92, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0); }
+}
+.snippet-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 0 5px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+/* Divider used between header-right elements */
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+/* Modal overlay (dedicated name to avoid collision with legacy .modal-overlay) */
+.snippet-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: snippetFadeIn 0.18s ease-out;
+  padding: 24px;
+}
+@keyframes snippetFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes snippetModalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.upgrade-modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 1080px;
+  height: 100%;
+  max-height: 720px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  animation: snippetModalIn 0.22s var(--ease-out);
+  overflow: hidden;
+}
+
+/* Modal chrome — all scoped under .upgrade-modal to sit alongside legacy rules */
+.upgrade-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+.upgrade-modal .modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.upgrade-modal .modal-header-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upgrade-modal .modal-header-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.upgrade-modal .modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.01em;
+}
+.upgrade-modal .modal-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.upgrade-modal .modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast);
+}
+.upgrade-modal .modal-close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.upgrade-modal .modal-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Body */
+.upgrade-modal .modal-body-v2 {
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+}
+.upgrade-modal .modal-body-v2::-webkit-scrollbar {
+  display: block !important;
+  width: 5px !important;
+  height: 5px !important;
+}
+.upgrade-modal .modal-body-v2::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.upgrade-modal .modal-body-v2 {
+  scrollbar-width: thin !important;
+}
+
+/* Group */
+.upgrade-modal .group {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.upgrade-modal .group-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-accent);
+  border-bottom: 1px solid var(--border);
+}
+.upgrade-modal .group-header-text { min-width: 0; }
+.upgrade-modal .group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.02em;
+}
+.upgrade-modal .group-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.upgrade-modal .group-header-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upgrade-modal .group-header-icon.warn {
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+.upgrade-modal .group-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Checkbox */
+.upgrade-modal .group-checkbox,
+.upgrade-modal .file-row-checkbox {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.upgrade-modal .group-checkbox input,
+.upgrade-modal .file-row-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+.upgrade-modal .checkbox-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: all var(--duration-fast);
+}
+.upgrade-modal .group-checkbox input:checked + .checkbox-box,
+.upgrade-modal .file-row-checkbox input:checked + .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.upgrade-modal .checkbox-dash {
+  width: 8px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+.upgrade-modal .group-checkbox.indeterminate .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* File row */
+.upgrade-modal .file-row + .file-row {
+  border-top: 1px solid var(--border);
+}
+.upgrade-modal .file-row-main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.upgrade-modal .file-row-main:hover { background: var(--bg-hover); }
+.upgrade-modal .file-row.expanded .file-row-main { background: var(--bg-hover); }
+.upgrade-modal .file-row.upgraded .file-row-main { opacity: 0.55; }
+
+.upgrade-modal .file-row-marker {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upgrade-modal .file-row-marker.warn { color: var(--warn); }
+
+.upgrade-modal .file-row-text { min-width: 0; }
+.upgrade-modal .file-row-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-strong);
+  font-weight: 500;
+}
+.upgrade-modal .file-row-bytes {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+.upgrade-modal .file-row-summary {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.upgrade-modal .file-row-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  white-space: nowrap;
+  font-family: inherit;
+}
+.upgrade-modal .file-row-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-accent);
+}
+.upgrade-modal .file-row-toggle svg { transition: transform var(--duration-fast); }
+.upgrade-modal .file-row-toggle svg.rot { transform: rotate(90deg); }
+
+.upgrade-modal .file-row-detail {
+  padding: 12px 14px 14px 42px;
+  background: var(--bg-accent);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Migration-guide pill (inside a divergent file's detail) */
+.upgrade-modal .migration-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: var(--warn-subtle);
+  color: var(--warn);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  text-decoration: none;
+  transition: all var(--duration-fast);
+  align-self: flex-start;
+}
+.upgrade-modal .migration-link:hover { background: rgba(245, 158, 11, 0.18); }
+.upgrade-modal .migration-link-path {
+  color: var(--warn);
+  opacity: 0.8;
+  font-size: 10.5px;
+}
+
+/* Status chip inside a row ("Upgraded", "Manual") */
+.upgrade-modal .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+.upgrade-modal .chip.ok {
+  color: var(--ok);
+  border-color: rgba(34, 197, 94, 0.35);
+  background: var(--ok-subtle);
+}
+.upgrade-modal .chip.warn {
+  color: var(--warn);
+  border-color: rgba(245, 158, 11, 0.35);
+  background: var(--warn-subtle);
+}
+
+/* Diff block */
+.upgrade-modal .diff {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.upgrade-modal .diff-body { padding: 8px 0; }
+.upgrade-modal .diff-line {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  column-gap: 10px;
+  padding: 0 12px;
+  white-space: pre;
+  color: var(--text);
+}
+.upgrade-modal .diff-line .ln {
+  color: var(--muted);
+  opacity: 0.7;
+  text-align: right;
+  user-select: none;
+}
+.upgrade-modal .diff-line.add { background: rgba(34, 197, 94, 0.08); color: var(--text); }
+.upgrade-modal .diff-line.add::before {
+  content: '+';
+  color: var(--ok);
+  margin-left: -8px;
+  margin-right: 4px;
+  font-weight: 700;
+}
+.upgrade-modal .diff-line.del { background: rgba(239, 68, 68, 0.08); color: var(--text); }
+.upgrade-modal .diff-line.del::before {
+  content: '-';
+  color: var(--danger);
+  margin-left: -8px;
+  margin-right: 4px;
+  font-weight: 700;
+}
+.upgrade-modal .diff-line.ctx { color: var(--muted); }
+.upgrade-modal .diff-line.hunk {
+  color: var(--muted);
+  background: var(--bg-accent);
+  padding: 3px 12px;
+  font-size: 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 4px 0;
+  grid-template-columns: 1fr;
+}
+.upgrade-modal .diff-line.conflict { background: rgba(245, 158, 11, 0.10); }
+.upgrade-modal .diff-line.conflict::before {
+  content: '~';
+  color: var(--warn);
+  margin-left: -8px;
+  margin-right: 4px;
+  font-weight: 700;
+}
+
+/* Footer */
+.upgrade-modal .modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+}
+.upgrade-modal .footer-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+.upgrade-modal .footer-hint { color: var(--muted); }
+.upgrade-modal .footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.upgrade-modal .footer-status.ok { color: var(--ok); }
+.upgrade-modal .footer-actions { display: flex; gap: 8px; }

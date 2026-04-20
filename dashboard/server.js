@@ -29,6 +29,7 @@ const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
 const AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
 const specifySession = require('./specify-sessions');
 const rulesApi = require('./rules-api.js');
+const snippetsDoctor = require('./snippets-doctor.js');
 
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
@@ -805,6 +806,37 @@ app.get('/api/projects', (req, res) => {
   }
   const projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
   res.json({ activeProject: active, projects });
+});
+
+// GET /api/snippets/status — per-workspace legacy snippet scan
+// Returns { ok, total, withMarkers, byteIdentical, divergent, files: [...] }.
+// Only files with legacy markers appear in `files`; clean files are counted.
+app.get('/api/snippets/status', (req, res) => {
+  try {
+    const status = snippetsDoctor.collectStatus(OPENCLAW_HOME);
+    res.json({ ok: true, ...status });
+  } catch (err) {
+    console.error('[snippets/status]', err);
+    res.status(500).json({ error: 'Failed to collect snippet status', detail: err.message });
+  }
+});
+
+// POST /api/snippets/apply — upgrade byte-identical snippet blocks.
+// Body: { ids: string[] } — file IDs from /api/snippets/status.
+// Writes a .bak-<timestamp> backup before modifying. Divergent files are NEVER
+// touched — they appear in `skipped` with reason 'divergent'.
+app.post('/api/snippets/apply', (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Body must include non-empty ids[] array' });
+  }
+  try {
+    const result = snippetsDoctor.applySelected(OPENCLAW_HOME, ids);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('[snippets/apply]', err);
+    res.status(500).json({ error: 'Failed to apply snippet upgrades', detail: err.message });
+  }
 });
 
 // GET /api/projects/:name/rules — list available rule sections

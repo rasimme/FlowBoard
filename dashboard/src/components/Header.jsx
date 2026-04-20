@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Menu } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { formatDisplayName } from '../utils.js';
+import SnippetUpgrade from './SnippetUpgrade.jsx';
 import logoSvg from '/favicon.svg';
 
 export default function Header() {
@@ -43,6 +44,7 @@ export default function Header() {
         </div>
       </div>
       <div className="flex items-center gap-2.5" id="headerRight">
+        <SnippetUpgrade />
         {state.viewedProject && (
           <>
             <span className="text-[13px] font-semibold text-text-strong tracking-[0.02em]">
