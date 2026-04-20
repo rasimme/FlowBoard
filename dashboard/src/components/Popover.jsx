@@ -83,12 +83,18 @@ export default function Popover({ open, onClose, anchorRect, children }) {
  * @param {ReactNode} children - Option label
  */
 Popover.Option = function PopoverOption({ children, onClick, className = '' }) {
+  // Reset classes (bg-transparent, border-0, appearance-none, text-inherit, font-[inherit])
+  // restore what Tailwind preflight would normally do for <button>. Preflight is disabled
+  // project-wide to avoid conflicts with legacy dashboard.css, so we apply the reset per-button.
+  // Without this, browsers render buttons with `appearance: button` — light-gray bg, native
+  // border, ~2px radius — which visually dominates the portaled popover interior.
   return (
     <button
       type="button"
       onClick={onClick}
       className={[
         'w-full text-left text-sm px-3 py-1.5',
+        'bg-transparent border-0 appearance-none text-inherit font-[inherit]',
         'hover:bg-bg-hover cursor-pointer transition-colors duration-fast',
         className,
       ].join(' ')}

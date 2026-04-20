@@ -135,7 +135,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
       </span>
       {/* Status popover */}
       <Popover open={popover.open && popover.type === 'status'} onClose={handlePopoverClose} anchorRect={popover.rect}>
-        {['open', 'in-progress', 'review', 'done'].map(s => (
+        {['backlog', 'open', 'in-progress', 'review', 'done'].map(s => (
           <Popover.Option key={s} onClick={() => handleStatusSelect(s)}>
             <span className="flex items-center gap-2">
               <span className={`status-dot status-dot-${s}`} />
