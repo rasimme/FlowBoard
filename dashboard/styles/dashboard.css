@@ -1786,33 +1786,6 @@
   margin-top: 3px;
   line-height: 1.5;
 }
-/* Wrapper for row-level actions (Dismiss + View diff). Lets them sit together
-   in the file-row-main grid's last column without breaking the grid. */
-.upgrade-modal .file-row-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-/* Dismiss button — ghost style, only shown on rows that support it. */
-.upgrade-modal .file-row-dismiss {
-  display: inline-flex;
-  align-items: center;
-  background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all var(--duration-fast);
-  white-space: nowrap;
-  font-family: inherit;
-}
-.upgrade-modal .file-row-dismiss:hover {
-  color: var(--text);
-  border-color: var(--border);
-  background: var(--bg-accent);
-}
 .upgrade-modal .file-row-toggle {
   display: inline-flex;
   align-items: center;

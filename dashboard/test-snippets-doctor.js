@@ -310,7 +310,7 @@ section('classifyFile() — state machine');
     const pIdentical = path.join(dir, 'workspace', 'AGENTS.md');
     fs.writeFileSync(pIdentical, `# header\n\n${legacyAgents}\n`);
     const cIdent = doctor.classifyFile(pIdentical, target, {
-      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+      legacyBlock: legacyAgents, newBlock: currentAgents,
     });
     assertEqual(cIdent.state, 'identical', 'byte-match legacy → identical');
 
@@ -319,7 +319,7 @@ section('classifyFile() — state machine');
     const drifted = legacyAgents.replace('MANDATORY on EVERY first message of a conversation', 'MANDATORY on EVERY first message of my_custom_agent');
     fs.writeFileSync(pDrifted, drifted);
     const cDrift = doctor.classifyFile(pDrifted, target, {
-      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+      legacyBlock: legacyAgents, newBlock: currentAgents,
     });
     assertEqual(cDrift.state, 'drifted', 'structural legacy + modified → drifted');
 
@@ -327,7 +327,7 @@ section('classifyFile() — state machine');
     const pCurrent = path.join(dir, 'workspace', 'AGENTS-current.md');
     fs.writeFileSync(pCurrent, `# header\n\n${currentAgents}\n`);
     const cCur = doctor.classifyFile(pCurrent, target, {
-      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+      legacyBlock: legacyAgents, newBlock: currentAgents,
     });
     assertEqual(cCur.state, 'current', 'current marker present → current');
 
@@ -335,7 +335,7 @@ section('classifyFile() — state machine');
     const pMixed = path.join(dir, 'workspace', 'AGENTS-mixed.md');
     fs.writeFileSync(pMixed, `# header\n\nSee ACTIVE-PROJECT.md for legacy notes.\n\n${currentAgents}\n`);
     const cMix = doctor.classifyFile(pMixed, target, {
-      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+      legacyBlock: legacyAgents, newBlock: currentAgents,
     });
     assertEqual(cMix.state, 'current', 'current-marker wins over stray legacy text');
 
@@ -343,16 +343,9 @@ section('classifyFile() — state machine');
     const pMissing = path.join(dir, 'workspace', 'AGENTS-missing.md');
     fs.writeFileSync(pMissing, '# my custom AGENTS file\n\njust some notes\n');
     const cMiss = doctor.classifyFile(pMissing, target, {
-      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+      legacyBlock: legacyAgents, newBlock: currentAgents,
     });
     assertEqual(cMiss.state, 'missing', 'no markers → missing');
-
-    // ignored (in dismiss set)
-    const cIgn = doctor.classifyFile(pIdentical, target, {
-      legacyBlock: legacyAgents, newBlock: currentAgents,
-      ignoredPaths: new Set([pIdentical]),
-    });
-    assertEqual(cIgn.state, 'ignored', 'path in ignoredPaths → ignored');
   } finally {
     cleanupTmp();
   }
@@ -409,34 +402,6 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r3.applied.length, 0, 'migrate on missing rejected');
     assertEqual(r3.skipped.length, 1, 'one skipped');
     assert(/state-mismatch/.test(r3.skipped[0].reason), 'reason is state-mismatch');
-  } finally {
-    cleanupTmp();
-  }
-}
-
-section('applyActions() — dismiss via fbMeta stub');
-{
-  const dir = mkTmp();
-  try {
-    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
-    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
-    const p = path.join(dir, 'workspace', 'AGENTS.md');
-    fs.writeFileSync(p, `# header\n\n${legacyAgents}\n`);
-    const status = doctor.collectStatus(dir);
-    const id = status.files[0].id;
-
-    // Stub for fbMeta — record calls without a real DB
-    const calls = [];
-    const stubMeta = {
-      addSnippetIgnore: (path) => { calls.push(['add', path]); },
-      isSnippetIgnored: () => false,
-    };
-    const r = doctor.applyActions(dir, [{ id, action: 'dismiss' }], { fbMeta: stubMeta });
-    assertEqual(r.applied.length, 1, 'dismiss applied');
-    assertEqual(r.applied[0].action, 'dismiss', 'action is dismiss');
-    assertEqual(calls.length, 1, 'fbMeta.addSnippetIgnore called once');
-    assertEqual(calls[0][0], 'add', 'called with add verb');
-    assertEqual(calls[0][1], p, 'called with file path');
   } finally {
     cleanupTmp();
   }

@@ -192,7 +192,7 @@ function makeFileId(openclawHome, filePath) {
 }
 
 // Classify a single workspace file into one of the states. Returns null if
-// the file doesn't exist (caller decides whether to show "missing" entry).
+// the file doesn't exist.
 // States:
 //   'identical'  — byte-matches vendored legacy block → safe auto-upgrade
 //   'drifted'    — has legacy structural markers (heading + key phrase) but
@@ -200,11 +200,7 @@ function makeFileId(openclawHome, filePath) {
 //   'current'    — already has the new canonical block → done, skip in UI
 //   'missing'    — file exists but has no snippet block at all (may still
 //                  contain stray legacy-path references in other contexts)
-//   'ignored'    — path is on the user's dismiss list
-function classifyFile(filePath, target, { legacyBlock, newBlock, ignoredPaths }) {
-  if (ignoredPaths && ignoredPaths.has(filePath)) {
-    return { state: 'ignored' };
-  }
+function classifyFile(filePath, target, { legacyBlock, newBlock }) {
   let content;
   try { content = fs.readFileSync(filePath, 'utf8'); }
   catch { return null; }
@@ -233,9 +229,9 @@ function classifyFile(filePath, target, { legacyBlock, newBlock, ignoredPaths })
 // Chip variants follow the binary model: "Migration required" when any legacy
 // remains; "Finish setup" when no legacy exists and no agent is configured;
 // hidden once at least one agent is on the current snippet and no legacy.
-function collectStatus(openclawHome, { ignoredPaths = new Set() } = {}) {
+function collectStatus(openclawHome) {
   const files = [];
-  const counts = { identical: 0, drifted: 0, missing: 0, current: 0, ignored: 0, total: 0 };
+  const counts = { identical: 0, drifted: 0, missing: 0, current: 0, total: 0 };
   for (const target of TARGETS) {
     let legacyBlock, newBlock, insertBody;
     try {
@@ -248,11 +244,11 @@ function collectStatus(openclawHome, { ignoredPaths = new Set() } = {}) {
     const candidates = findCandidateFiles(openclawHome, target.name);
     for (const filePath of candidates) {
       counts.total++;
-      const cls = classifyFile(filePath, target, { legacyBlock, newBlock, ignoredPaths });
+      const cls = classifyFile(filePath, target, { legacyBlock, newBlock });
       if (!cls) continue;
       counts[cls.state]++;
-      // current & ignored don't need a row in the UI
-      if (cls.state === 'current' || cls.state === 'ignored') continue;
+      // current entries don't need a row in the UI
+      if (cls.state === 'current') continue;
 
       let bytes = '0 B';
       try { bytes = formatBytes(fs.statSync(filePath).size); } catch {}
@@ -293,35 +289,17 @@ function collectStatus(openclawHome, { ignoredPaths = new Set() } = {}) {
 //   'upgrade' — byte-identical legacy → new block (state: identical only)
 //   'migrate' — drifted legacy → new block (state: drifted only, force-replace)
 //   'add'     — insert snippet at end of file (state: missing only)
-//   'dismiss' — add path to ignore list (any state)
 //
-// Every file action writes a `.bak-<timestamp>` before modifying. Unknown IDs,
+// Every action writes a `.bak-<timestamp>` before modifying. Unknown IDs,
 // state mismatches, and filesystem errors are reported in `skipped`.
-function applyActions(openclawHome, actions, { fbMeta, ignoredPaths = new Set() } = {}) {
+function applyActions(openclawHome, actions) {
   const applied = [];
   const skipped = [];
-  const status = collectStatus(openclawHome, { ignoredPaths });
+  const status = collectStatus(openclawHome);
   const byId = new Map(status.files.map(f => [f.id, f]));
 
   for (const { id, action } of Array.isArray(actions) ? actions : []) {
     if (!action) { skipped.push({ id, reason: 'no-action' }); continue; }
-
-    // dismiss is special: ignore list, no file edit
-    if (action === 'dismiss') {
-      const file = byId.get(id);
-      if (!file) { skipped.push({ id, reason: 'not-found' }); continue; }
-      if (fbMeta) {
-        try {
-          fbMeta.addSnippetIgnore(file.path);
-          applied.push({ id, path: file.path, action: 'dismiss' });
-        } catch (err) {
-          skipped.push({ id, reason: `dismiss-failed: ${err.message}` });
-        }
-      } else {
-        skipped.push({ id, reason: 'no-metadata-store' });
-      }
-      continue;
-    }
 
     const file = byId.get(id);
     if (!file) { skipped.push({ id, reason: 'not-found' }); continue; }

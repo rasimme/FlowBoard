@@ -12,7 +12,6 @@
  *   - upgrade  action on identical → new block, backup written, content right
  *   - migrate  action on drifted   → structural replace, backup, content right
  *   - add      action on missing   → append at end, idempotent, backup
- *   - dismiss  action              → path in ignore list, next status skips it
  *   - state-mismatch guards (upgrade-a-missing etc.) report correct skipped reasons
  *   - backup integrity — byte-exact pre-change copy
  *
@@ -49,21 +48,6 @@ function cleanup() {
 }
 process.on('exit', cleanup);
 process.on('uncaughtException', (e) => { console.error('UNCAUGHT:', e); cleanup(); process.exit(1); });
-
-/**
- * In-memory stub of flowboard-metadata's dismiss helpers, so we can
- * verify dismiss actions without spinning up SQLite.
- */
-function makeFbMetaStub() {
-  const ignored = new Set();
-  return {
-    listSnippetIgnore: () => [...ignored],
-    isSnippetIgnored: (p) => ignored.has(p),
-    addSnippetIgnore: (p) => ignored.add(p),
-    removeSnippetIgnore: (p) => ignored.delete(p),
-    _ignored: ignored,
-  };
-}
 
 /** Seed the sandbox with one workspace per state plus a BOOT.md drift case. */
 function seedSandbox(home) {
@@ -127,7 +111,6 @@ section('State classification — every category present');
     assertEqual(status.counts.current, 1, 'one current (workspace-done)');
     assertEqual(status.counts.missing, 3,
       'three missing: workspace-plain, workspace-voice, workspace-claude');
-    assertEqual(status.counts.ignored, 0, 'none ignored yet');
 
     // current not in files list
     assert(!byPath.has(paths.currentPath), 'current file skipped from UI list');
@@ -306,41 +289,6 @@ section('Add action — missing file → append at end, idempotent');
     assertEqual(r2.skipped.length, 1, 'second add is skipped');
     assertEqual(r2.skipped[0].reason, 'not-found',
       'reason is not-found (file now in state current, off the UI list)');
-  } finally { cleanup(); }
-}
-
-// ============================================================
-section('Dismiss action — path added to ignore list');
-// ============================================================
-{
-  const home = mkSandbox();
-  try {
-    const paths = seedSandbox(home);
-    const stub = makeFbMetaStub();
-    const status = doctor.collectStatus(home);
-    const target = status.files.find(f => f.path === paths.foreignPath);
-    assert(target, 'foreign file has an entry in status');
-
-    const r = doctor.applyActions(
-      home,
-      [{ id: target.id, action: 'dismiss' }],
-      { fbMeta: stub }
-    );
-    assertEqual(r.applied.length, 1, 'dismiss applied');
-    assertEqual(r.applied[0].action, 'dismiss', 'action recorded');
-    assert(stub._ignored.has(paths.foreignPath), 'path added to ignore set');
-
-    // Next status call excludes the dismissed file
-    const status2 = doctor.collectStatus(home, {
-      ignoredPaths: new Set(stub.listSnippetIgnore()),
-    });
-    const stillListed = status2.files.find(f => f.path === paths.foreignPath);
-    assertEqual(stillListed, undefined, 'dismissed file not in next status.files');
-    assertEqual(status2.counts.ignored, 1, 'counts.ignored reflects dismissed');
-
-    // File content itself is untouched
-    const content = fs.readFileSync(paths.foreignPath, 'utf8');
-    assert(content.includes('# Voice agent'), 'dismiss did not modify the file');
   } finally { cleanup(); }
 }
 

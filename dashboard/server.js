@@ -813,12 +813,10 @@ app.get('/api/projects', (req, res) => {
 //   counts — { identical, drifted, missing, current, ignored, total }
 //   chip   — { text, variant } | null (null = hidden, setup complete)
 //   files  — entries needing UI attention (identical / drifted / missing);
-//            files in state `current` or `ignored` are excluded from this list
-// Ignored paths are loaded from flowboard_snippet_ignore (via flowboard-metadata).
+//            files in state `current` are excluded from this list.
 app.get('/api/snippets/status', (req, res) => {
   try {
-    const ignoredPaths = fbMeta ? new Set(fbMeta.listSnippetIgnore()) : new Set();
-    const status = snippetsDoctor.collectStatus(OPENCLAW_HOME, { ignoredPaths });
+    const status = snippetsDoctor.collectStatus(OPENCLAW_HOME);
     res.json({ ok: true, ...status });
   } catch (err) {
     console.error('[snippets/status]', err);
@@ -826,14 +824,13 @@ app.get('/api/snippets/status', (req, res) => {
   }
 });
 
-// POST /api/snippets/apply — unified apply endpoint for all snippet actions.
-// Body: { actions: [{ id, action }] } where action ∈ {upgrade, migrate, add, dismiss}
-//   upgrade  — byte-identical legacy → current (state: identical)
-//   migrate  — drifted legacy → current (state: drifted, force-replace)
-//   add      — insert current snippet at end of file (state: missing)
-//   dismiss  — add path to ignore list, skipped by /status from now on
-// Every file-mutating action writes a .bak-<ts> backup first. State-mismatched
-// actions and unknown IDs are reported in `skipped`, never silently applied.
+// POST /api/snippets/apply — unified apply endpoint for snippet actions.
+// Body: { actions: [{ id, action }] } where action ∈ {upgrade, migrate, add}
+//   upgrade — byte-identical legacy → current (state: identical)
+//   migrate — drifted legacy → current (state: drifted, force-replace)
+//   add     — insert current snippet at end of file (state: missing)
+// Every action writes a .bak-<ts> backup first. State-mismatched actions and
+// unknown IDs are reported in `skipped`, never silently applied.
 //
 // Back-compat: if body carries { ids: [...] } instead of { actions: [...] },
 // treat each id as { action: 'upgrade' } — matches the older client contract.
@@ -849,31 +846,11 @@ app.post('/api/snippets/apply', (req, res) => {
     return res.status(400).json({ error: 'Body must include actions[] (or legacy ids[])' });
   }
   try {
-    const ignoredPaths = fbMeta ? new Set(fbMeta.listSnippetIgnore()) : new Set();
-    const result = snippetsDoctor.applyActions(OPENCLAW_HOME, actions, { fbMeta, ignoredPaths });
+    const result = snippetsDoctor.applyActions(OPENCLAW_HOME, actions);
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[snippets/apply]', err);
     res.status(500).json({ error: 'Failed to apply snippet actions', detail: err.message });
-  }
-});
-
-// POST /api/snippets/undismiss — remove a path from the ignore list.
-// Body: { path: "/abs/path" } — the file will reappear in /api/snippets/status.
-app.post('/api/snippets/undismiss', (req, res) => {
-  const { path: p } = req.body || {};
-  if (!p || typeof p !== 'string') {
-    return res.status(400).json({ error: 'Body must include path string' });
-  }
-  if (!fbMeta) {
-    return res.status(503).json({ error: 'Metadata store unavailable (HZL_ENABLED=false)' });
-  }
-  try {
-    fbMeta.removeSnippetIgnore(p);
-    res.json({ ok: true, path: p });
-  } catch (err) {
-    console.error('[snippets/undismiss]', err);
-    res.status(500).json({ error: 'Failed to remove path from ignore list', detail: err.message });
   }
 });
 

@@ -145,19 +145,6 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     setSelectedAdd(next);
   };
 
-  const handleDismiss = async (file) => {
-    setApplying(true);
-    try {
-      await apiFetch('/api/snippets/apply', {
-        method: 'POST',
-        body: JSON.stringify({ actions: [{ id: file.id, action: 'dismiss' }] }),
-      });
-      await onApplied?.();
-    } finally {
-      setApplying(false);
-    }
-  };
-
   const handleApply = async () => {
     if (applying || totalSelected === 0) return;
     const actions = [];
@@ -258,7 +245,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
           {missingFiles.length > 0 && (
             <GroupSection
               title="Add FlowBoard to workspace"
-              sub="These files have no FlowBoard snippet. Check to append the current snippet at the end, or dismiss if this workspace shouldn't use FlowBoard."
+              sub={`${addCount} of ${missingFiles.length} selected · optional — check only workspaces that should use FlowBoard.`}
               icon={<Plus size={13} />}
               iconVariant="info"
               allSelected={allAddSelected}
@@ -271,7 +258,6 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
               onExpand={toggleExpand}
               applied={applied}
               actionLabel="Added"
-              onDismiss={handleDismiss}
             />
           )}
 
@@ -366,7 +352,7 @@ function GroupSection({
   title, sub, icon, iconVariant = 'info',
   allSelected, someSelected, onToggleAll,
   files, selected, onToggleFile,
-  expandedId, onExpand, applied, actionLabel, onDismiss,
+  expandedId, onExpand, applied, actionLabel,
 }) {
   return (
     <div className="group">
@@ -395,7 +381,6 @@ function GroupSection({
             onExpand={() => onExpand(f.id)}
             applied={applied && !!selected[f.id]}
             actionLabel={actionLabel}
-            onDismiss={onDismiss ? () => onDismiss(f) : null}
           />
         ))}
       </div>
@@ -403,7 +388,7 @@ function GroupSection({
   );
 }
 
-function FileRow({ file, checked, onToggle, expanded, onExpand, applied, actionLabel, onDismiss }) {
+function FileRow({ file, checked, onToggle, expanded, onExpand, applied, actionLabel }) {
   const classes = ['file-row'];
   if (expanded) classes.push('expanded');
   if (applied) classes.push('upgraded');
@@ -425,26 +410,14 @@ function FileRow({ file, checked, onToggle, expanded, onExpand, applied, actionL
           </div>
           <div className="file-row-summary">{file.summary}</div>
         </div>
-        <div className="file-row-actions">
-          {onDismiss && (
-            <button
-              type="button"
-              className="file-row-dismiss"
-              onClick={(e) => { e.stopPropagation(); onDismiss?.(); }}
-              title="Dismiss this file — never ask about it again"
-            >
-              Dismiss
-            </button>
-          )}
-          <button
-            type="button"
-            className="file-row-toggle"
-            onClick={(e) => { e.stopPropagation(); onExpand?.(); }}
-          >
-            <ChevronRight size={13} className={expanded ? 'rot' : ''} />
-            <span>{expanded ? 'Hide diff' : 'View diff'}</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          className="file-row-toggle"
+          onClick={(e) => { e.stopPropagation(); onExpand?.(); }}
+        >
+          <ChevronRight size={13} className={expanded ? 'rot' : ''} />
+          <span>{expanded ? 'Hide diff' : 'View diff'}</span>
+        </button>
       </div>
       {expanded && (
         <div className="file-row-detail">
