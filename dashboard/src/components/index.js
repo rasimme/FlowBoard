@@ -10,6 +10,7 @@ export { default as Textarea } from './Textarea.jsx';
 export { default as Tooltip } from './Tooltip.jsx';
 export { default as PriorityPill } from './PriorityPill.jsx';
 export { default as Popover } from './Popover.jsx';
+export { default as ScrollArea } from './ScrollArea.jsx';
 
 // Molecules
 export { default as Checkbox } from './Checkbox.jsx';

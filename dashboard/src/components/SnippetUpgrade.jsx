@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Sparkles, X, Check, AlertTriangle, ChevronRight, FileText, ArrowRight } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
+import ScrollArea from './ScrollArea.jsx';
 
 /**
  * SnippetUpgrade — "FlowBoard update available" header pill + upgrade modal.
@@ -156,8 +157,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
           </button>
         </div>
 
-        {/* Body */}
-        <div className="modal-body-v2">
+        {/* Body — wrapped in ScrollArea so the custom dark-mode scrollbar
+            (position:absolute, no layout width) replaces the native one;
+            this prevents the content-shift-on-scrollbar-appear artifact. */}
+        <ScrollArea className="modal-body-wrap" innerClassName="modal-body-v2">
           {safeFiles.length > 0 && (
             <div className="group">
               <div className="group-header">
@@ -237,7 +240,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
               </div>
             </div>
           )}
-        </div>
+        </ScrollArea>
 
         {/* Footer */}
         <div className="modal-footer">

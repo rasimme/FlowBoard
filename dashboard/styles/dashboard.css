@@ -1564,15 +1564,20 @@
   height: 16px;
 }
 
-/* Body — single scroll surface for the entire modal. */
-.upgrade-modal .modal-body-v2 {
-  overflow-y: auto;
-  /* CRITICAL: without min-height: 0, this flex/grid child refuses to shrink
-     below its content size. The .upgrade-modal grid's `1fr` track then can't
-     cap it, the modal pushes past its max-height, and overflow-y: auto never
-     activates. The overlay becomes pannable on mobile because the page ends
-     up as the effective scroll target. min-height: 0 unlocks the 1fr
-     constraint so the body is bounded and its own overflow scrolls. */
+/* Body — rendered inside <ScrollArea>. The outer .modal-body-wrap is the
+   grid cell (1fr), and .modal-body-v2 is the actual scroll surface. The
+   native scrollbar stays globally hidden; useCustomScroll paints the
+   dark-mode track/thumb on top as position: absolute (no layout width),
+   which means no content shift when the scrollbar appears. */
+.upgrade-modal .modal-body-wrap {
+  /* unlocks the `1fr` grid track so it actually caps the body (see the
+     same pattern elsewhere in this file — min-height: 0 on flex/grid
+     children with overflow is mandatory for scroll to activate) */
+  min-height: 0;
+}
+.upgrade-modal .modal-body-wrap > .modal-body-v2 {
+  /* .cscroll-inner already provides `flex: 1; overflow-y: auto` — here we
+     just add the modal-specific padding/layout. */
   min-height: 0;
   overscroll-behavior: contain;
   padding: 14px 18px 18px;
@@ -1581,18 +1586,6 @@
   flex-direction: column;
   gap: 18px;
   margin: 0;
-}
-.upgrade-modal .modal-body-v2::-webkit-scrollbar {
-  display: block !important;
-  width: 5px !important;
-  height: 5px !important;
-}
-.upgrade-modal .modal-body-v2::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 999px;
-}
-.upgrade-modal .modal-body-v2 {
-  scrollbar-width: thin !important;
 }
 
 /* Group */
@@ -1612,7 +1605,10 @@
 }
 .upgrade-modal .group-header {
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* minmax(0, 1fr) lets the text column shrink below its min-content width
+     so long labels/summaries wrap instead of forcing the grid wider than the
+     modal — which on narrow viewports would cause right-side clipping. */
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
@@ -1698,7 +1694,9 @@
 }
 .upgrade-modal .file-row-main {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  /* minmax(0, 1fr) on the text column so long file paths can wrap instead
+     of pushing the row wider than the modal on narrow viewports. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 11px 14px;
