@@ -344,15 +344,28 @@ function Diff({ diff }) {
   return (
     <div className="diff">
       <div className="diff-body">
-        {diff.map((l, i) => (
-          <div key={i} className={`diff-line ${l.t}`}>
-            {l.t !== 'hunk' && <span className="ln">{l.n ?? ''}</span>}
-            <span>{l.text}</span>
-          </div>
-        ))}
+        {diff.map((l, i) => {
+          if (l.t === 'hunk') {
+            return <div key={i} className="diff-line hunk"><span className="diff-text">{l.text}</span></div>;
+          }
+          return (
+            <div key={i} className={`diff-line ${l.t}`}>
+              <span className="diff-sigil" aria-hidden="true">{sigilFor(l.t)}</span>
+              <span className="diff-ln">{l.n ?? ''}</span>
+              <span className="diff-text">{l.text}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function sigilFor(type) {
+  if (type === 'add') return '+';
+  if (type === 'del') return '-';
+  if (type === 'conflict') return '~';
+  return ' ';
 }
 
 function shortPath(abs) {
