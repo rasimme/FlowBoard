@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Check, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import ScrollArea from './ScrollArea.jsx';
 
 /**
- * SnippetUpgrade — "FlowBoard update available" header pill + upgrade modal.
+ * SnippetUpgrade — FlowBoard setup / migration header chip + modal.
  *
- * - Polls GET /api/snippets/status on mount.
- * - If no files carry legacy markers, renders nothing (no pill, no modal).
- * - Otherwise shows a pulsing pill in the header; click opens a modal that lists
- *   per-workspace AGENTS.md / BOOT.md files grouped by "safe to auto-upgrade" and
- *   "manual merge required". Safe files are checkbox-selected; upgrading POSTs
- *   /api/snippets/apply which writes .bak-<ts> backups server-side.
+ * Polls GET /api/snippets/status on mount. Renders nothing when the server
+ * returns `chip: null` (setup complete, no legacy remaining). Otherwise shows
+ * the chip whose text/variant is driven by server state:
+ *   - "Migration required" (warn) when any legacy snippet (identical / drifted) exists
+ *   - "Finish setup" (info) when no legacy and no current snippet on any agent
+ *
+ * The modal groups rows by state:
+ *   - Upgrade  (identical) — batch safe, default-on checkboxes
+ *   - Migration required (drifted) — per-file opt-in, force-replace
+ *   - Add FlowBoard to workspace (missing) — per-file opt-in OR Dismiss
+ *
+ * On Apply: POST /api/snippets/apply with `{ actions: [{id, action}] }`.
+ * Every mutation writes a server-side `.bak-<timestamp>` first.
  */
 export default function SnippetUpgrade() {
   const [status, setStatus] = useState(null);
@@ -25,7 +32,7 @@ export default function SnippetUpgrade() {
       const data = await res.json();
       setStatus(data);
     } catch {
-      // Fail silently — pill simply doesn't appear
+      // Fail silently — chip simply doesn't appear
     }
   };
 
@@ -33,11 +40,11 @@ export default function SnippetUpgrade() {
     refresh();
   }, []);
 
-  if (!status || !status.withMarkers) return null;
+  if (!status || !status.chip) return null;
 
   return (
     <>
-      <MigrationChip onClick={() => setModalOpen(true)} />
+      <SetupChip chip={status.chip} onClick={() => setModalOpen(true)} />
       <span className="header-divider" />
       <UpgradeModal
         open={modalOpen}
@@ -49,33 +56,43 @@ export default function SnippetUpgrade() {
   );
 }
 
-function MigrationChip({ onClick }) {
+function SetupChip({ chip, onClick }) {
+  const classes = ['migration-chip'];
+  if (chip.variant === 'info') classes.push('migration-chip-info');
   return (
-    <button className="migration-chip" onClick={onClick} title="Migration required">
-      <span className="migration-chip-icon"><AlertTriangle size={13} /></span>
-      <span>Migration required</span>
+    <button className={classes.join(' ')} onClick={onClick} title={chip.text}>
+      <span className="migration-chip-icon">
+        {chip.variant === 'warn' ? <AlertTriangle size={13} /> : <Sparkles size={13} />}
+      </span>
+      <span>{chip.text}</span>
     </button>
   );
 }
 
 function UpgradeModal({ open, onClose, status, onApplied }) {
-  const safeFiles = status.files.filter(f => f.status === 'safe');
-  const manualFiles = status.files.filter(f => f.status === 'manual');
+  const identicalFiles = status.files.filter(f => f.state === 'identical');
+  const driftedFiles = status.files.filter(f => f.state === 'drifted');
+  const missingFiles = status.files.filter(f => f.state === 'missing');
 
-  const [selected, setSelected] = useState({});
-  // Accordion: only one expanded diff at a time. Clicking an expanded row collapses it;
-  // clicking another row switches the expansion. Keeps the modal body from stacking
-  // multiple diffs and squeezing each one.
+  // Selection maps per group. Defaults:
+  //   identical: all-on (safe)
+  //   drifted:   all-off (force-replace is risky, user must opt-in)
+  //   missing:   all-off (add is additive, user chooses which workspaces)
+  const [selectedUpgrade, setSelectedUpgrade] = useState({});
+  const [selectedMigrate, setSelectedMigrate] = useState({});
+  const [selectedAdd, setSelectedAdd] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
-  const masterCheckboxRef = useRef(null);
+  const masterUpgradeRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
-    const initial = {};
-    safeFiles.forEach(f => { initial[f.id] = true; });
-    setSelected(initial);
+    const init = {};
+    identicalFiles.forEach(f => { init[f.id] = true; });
+    setSelectedUpgrade(init);
+    setSelectedMigrate({});
+    setSelectedAdd({});
     setExpandedId(null);
     setResult(null);
     setApplying(false);
@@ -88,33 +105,54 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     return () => document.removeEventListener('keydown', h);
   }, [open, onClose]);
 
-  const selectedCount = safeFiles.filter(f => selected[f.id]).length;
-  const allSelected = safeFiles.length > 0 && selectedCount === safeFiles.length;
-  const someSelected = selectedCount > 0 && !allSelected;
+  const upgradeCount = identicalFiles.filter(f => selectedUpgrade[f.id]).length;
+  const migrateCount = driftedFiles.filter(f => selectedMigrate[f.id]).length;
+  const addCount = missingFiles.filter(f => selectedAdd[f.id]).length;
+  const totalSelected = upgradeCount + migrateCount + addCount;
+
+  const allUpgradeSelected = identicalFiles.length > 0 && upgradeCount === identicalFiles.length;
+  const someUpgradeSelected = upgradeCount > 0 && !allUpgradeSelected;
 
   useEffect(() => {
-    if (masterCheckboxRef.current) masterCheckboxRef.current.indeterminate = someSelected;
-  }, [someSelected]);
+    if (masterUpgradeRef.current) masterUpgradeRef.current.indeterminate = someUpgradeSelected;
+  }, [someUpgradeSelected]);
 
   if (!open) return null;
 
-  const toggleFile = (id) => setSelected(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleUpgrade = (id) => setSelectedUpgrade(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleMigrate = (id) => setSelectedMigrate(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleAdd = (id) => setSelectedAdd(prev => ({ ...prev, [id]: !prev[id] }));
   const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
-  const toggleAll = () => {
+  const toggleAllUpgrade = () => {
     const next = {};
-    if (!allSelected) safeFiles.forEach(f => { next[f.id] = true; });
-    else safeFiles.forEach(f => { next[f.id] = false; });
-    setSelected(next);
+    if (!allUpgradeSelected) identicalFiles.forEach(f => { next[f.id] = true; });
+    setSelectedUpgrade(next);
   };
 
-  const handleUpgrade = async () => {
-    if (applying || selectedCount === 0) return;
-    const ids = safeFiles.filter(f => selected[f.id]).map(f => f.id);
+  const handleDismiss = async (file) => {
+    setApplying(true);
+    try {
+      await apiFetch('/api/snippets/apply', {
+        method: 'POST',
+        body: JSON.stringify({ actions: [{ id: file.id, action: 'dismiss' }] }),
+      });
+      await onApplied?.();
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleApply = async () => {
+    if (applying || totalSelected === 0) return;
+    const actions = [];
+    identicalFiles.forEach(f => { if (selectedUpgrade[f.id]) actions.push({ id: f.id, action: 'upgrade' }); });
+    driftedFiles.forEach(f => { if (selectedMigrate[f.id]) actions.push({ id: f.id, action: 'migrate' }); });
+    missingFiles.forEach(f => { if (selectedAdd[f.id]) actions.push({ id: f.id, action: 'add' }); });
     setApplying(true);
     try {
       const res = await apiFetch('/api/snippets/apply', {
         method: 'POST',
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({ actions }),
       });
       const data = await res.json();
       setResult(data);
@@ -131,7 +169,17 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     }
   };
 
-  const upgraded = !!result?.ok;
+  const applied = !!result?.ok;
+  const appliedCount = result?.applied?.length || 0;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length > 0;
+
+  // Modal title & subtitle follow the chip variant
+  const title = status.chip?.variant === 'warn' ? 'FlowBoard · Migration' : 'FlowBoard · Setup';
+  const subtitle = [
+    identicalFiles.length > 0 && `${identicalFiles.length} safe upgrade${identicalFiles.length !== 1 ? 's' : ''}`,
+    driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,
+    missingFiles.length > 0 && `${missingFiles.length} workspace${missingFiles.length !== 1 ? 's' : ''} to set up`,
+  ].filter(Boolean).join(' · ');
 
   return createPortal(
     <div
@@ -139,16 +187,12 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
     >
       <div className="upgrade-modal" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
-        {/* Header */}
         <div className="modal-header">
           <div className="modal-header-left">
             <div className="modal-header-icon"><Sparkles size={16} /></div>
             <div>
-              <div id="upgrade-title" className="modal-title">FlowBoard update · Lazy-load rules</div>
-              <div className="modal-subtitle">
-                Rule snippets moved from eager loads to on-demand endpoints.
-                {' '}{safeFiles.length} safe · {manualFiles.length} need manual merge
-              </div>
+              <div id="upgrade-title" className="modal-title">{title}</div>
+              <div className="modal-subtitle">{subtitle || 'Nothing to do'}</div>
             </div>
           </div>
           <button className="modal-close" onClick={onClose} aria-label="Close">
@@ -156,122 +200,160 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
           </button>
         </div>
 
-        {/* Body — wrapped in ScrollArea so the custom dark-mode scrollbar
-            (position:absolute, no layout width) replaces the native one;
-            this prevents the content-shift-on-scrollbar-appear artifact. */}
         <ScrollArea className="modal-body-wrap" innerClassName="modal-body-v2">
-          {safeFiles.length > 0 && (
+          {identicalFiles.length > 0 && (
             <div className="group">
               <div className="group-header">
                 <label
-                  className={`group-checkbox${someSelected ? ' indeterminate' : ''}`}
+                  className={`group-checkbox${someUpgradeSelected ? ' indeterminate' : ''}`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <input
-                    ref={masterCheckboxRef}
+                    ref={masterUpgradeRef}
                     type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
+                    checked={allUpgradeSelected}
+                    onChange={toggleAllUpgrade}
                   />
                   <span className="checkbox-box" aria-hidden="true">
-                    {allSelected
+                    {allUpgradeSelected
                       ? <Check size={11} />
-                      : someSelected ? <span className="checkbox-dash" /> : null}
+                      : someUpgradeSelected ? <span className="checkbox-dash" /> : null}
                   </span>
                 </label>
                 <div className="group-header-text">
-                  <div className="group-title">Auto-upgrade</div>
+                  <div className="group-title">Upgrade</div>
                   <div className="group-sub">
-                    {selectedCount} of {safeFiles.length} selected · no conflicts detected
+                    {upgradeCount} of {identicalFiles.length} selected · byte-identical, safe auto-upgrade
                   </div>
                 </div>
               </div>
               <div className="group-body">
-                {safeFiles.map(f => (
+                {identicalFiles.map(f => (
                   <FileRow
                     key={f.id}
                     file={f}
-                    checked={!!selected[f.id]}
-                    onToggle={() => toggleFile(f.id)}
+                    variant="checkbox"
+                    checked={!!selectedUpgrade[f.id]}
+                    onToggle={() => toggleUpgrade(f.id)}
                     expanded={expandedId === f.id}
                     onExpand={() => toggleExpand(f.id)}
-                    upgraded={upgraded && !!selected[f.id]}
+                    applied={applied && !!selectedUpgrade[f.id]}
+                    actionLabel="Upgraded"
                   />
                 ))}
               </div>
             </div>
           )}
 
-          {manualFiles.length > 0 && (
+          {driftedFiles.length > 0 && (
             <div className="group">
               <div className="group-header">
                 <div className="group-header-icon warn">
                   <AlertTriangle size={13} />
                 </div>
                 <div className="group-header-text">
-                  <div className="group-title">Manual merge required</div>
+                  <div className="group-title">Migration required</div>
                   <div className="group-sub">
-                    These files diverge from the shipped snippet. Auto-upgrade is disabled.
+                    These files have a modified legacy block. Check to force-replace
+                    with the current canonical snippet (a .bak backup is written).
                   </div>
                 </div>
               </div>
               <div className="group-body">
-                {manualFiles.map(f => (
+                {driftedFiles.map(f => (
                   <FileRow
                     key={f.id}
                     file={f}
-                    readOnly
+                    variant="checkbox-warn"
+                    checked={!!selectedMigrate[f.id]}
+                    onToggle={() => toggleMigrate(f.id)}
                     expanded={expandedId === f.id}
                     onExpand={() => toggleExpand(f.id)}
+                    applied={applied && !!selectedMigrate[f.id]}
+                    actionLabel="Migrated"
                   />
                 ))}
               </div>
             </div>
           )}
 
-          {safeFiles.length === 0 && manualFiles.length === 0 && (
+          {missingFiles.length > 0 && (
+            <div className="group">
+              <div className="group-header">
+                <div className="group-header-icon info">
+                  <Plus size={13} />
+                </div>
+                <div className="group-header-text">
+                  <div className="group-title">Add FlowBoard to workspace</div>
+                  <div className="group-sub">
+                    These files have no FlowBoard snippet. Check to append the current
+                    snippet at the end, or dismiss if this workspace shouldn't use FlowBoard.
+                  </div>
+                </div>
+              </div>
+              <div className="group-body">
+                {missingFiles.map(f => (
+                  <FileRow
+                    key={f.id}
+                    file={f}
+                    variant="checkbox-add"
+                    checked={!!selectedAdd[f.id]}
+                    onToggle={() => toggleAdd(f.id)}
+                    expanded={expandedId === f.id}
+                    onExpand={() => toggleExpand(f.id)}
+                    applied={applied && !!selectedAdd[f.id]}
+                    actionLabel="Added"
+                    onDismiss={() => handleDismiss(f)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!hasAnything && (
             <div className="group">
               <div className="group-header">
                 <div className="group-header-text">
-                  <div className="group-title">Nothing to upgrade</div>
-                  <div className="group-sub">No workspace files carry legacy snippet markers.</div>
+                  <div className="group-title">Nothing to do</div>
+                  <div className="group-sub">All workspaces are configured correctly.</div>
                 </div>
               </div>
             </div>
           )}
         </ScrollArea>
 
-        {/* Footer */}
         <div className="modal-footer">
           <div className="footer-left">
-            {upgraded ? (
+            {applied ? (
               <span className="footer-status ok">
-                <Check size={12} /> Upgraded {result.applied?.length || 0} file{(result.applied?.length || 0) !== 1 ? 's' : ''}
+                <Check size={12} /> Applied {appliedCount} change{appliedCount !== 1 ? 's' : ''}
               </span>
             ) : result && !result.ok ? (
               <span className="footer-hint" style={{ color: 'var(--danger)' }}>
-                {result.error || 'Upgrade failed — no files were changed'}
+                {result.error || 'Apply failed — no files were changed'}
               </span>
             ) : (
               <span className="footer-hint">
-                Changes apply to your working tree. A .bak-&lt;timestamp&gt; copy is written before each edit.
+                Every change writes a .bak-&lt;timestamp&gt; copy first.
               </span>
             )}
           </div>
           <div className="footer-actions">
             <button className="btn btn-secondary btn-sm" onClick={onClose}>
-              {upgraded ? 'Close' : 'Not now'}
+              {applied ? 'Close' : 'Not now'}
             </button>
             <button
               className="btn btn-primary btn-sm"
-              onClick={handleUpgrade}
-              disabled={selectedCount === 0 || applying || upgraded}
+              onClick={handleApply}
+              disabled={totalSelected === 0 || applying || applied}
             >
-              {upgraded
-                ? 'Upgraded'
+              {applied
+                ? 'Applied'
                 : applying
-                  ? 'Upgrading…'
-                  : `Upgrade ${selectedCount} file${selectedCount !== 1 ? 's' : ''}`}
+                  ? 'Applying…'
+                  : totalSelected === 0
+                    ? 'Nothing selected'
+                    : `Apply ${totalSelected} change${totalSelected !== 1 ? 's' : ''}`}
             </button>
           </div>
         </div>
@@ -281,20 +363,17 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   );
 }
 
-function FileRow({ file, checked, onToggle, readOnly, expanded, onExpand, upgraded }) {
+function FileRow({ file, variant, checked, onToggle, expanded, onExpand, applied, actionLabel, onDismiss }) {
   const classes = ['file-row'];
   if (expanded) classes.push('expanded');
-  if (upgraded) classes.push('upgraded');
-  if (readOnly) classes.push('manual');
+  if (applied) classes.push('upgraded');
+
+  const isCheckbox = variant === 'checkbox' || variant === 'checkbox-warn' || variant === 'checkbox-add';
 
   return (
     <div className={classes.join(' ')}>
       <div className="file-row-main" onClick={onExpand}>
-        {readOnly ? (
-          <span className="file-row-marker warn" title="Manual merge">
-            <AlertTriangle size={12} />
-          </span>
-        ) : (
+        {isCheckbox ? (
           <label
             className="file-row-checkbox"
             onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
@@ -304,22 +383,37 @@ function FileRow({ file, checked, onToggle, readOnly, expanded, onExpand, upgrad
               {checked ? <Check size={11} /> : null}
             </span>
           </label>
+        ) : (
+          <span className="file-row-marker warn" title="Attention">
+            <AlertTriangle size={12} />
+          </span>
         )}
         <div className="file-row-text">
           <div className="file-row-path">
             <span className="mono" title={file.path}>{shortPath(file.path)}</span>
             <span className="file-row-bytes">{file.bytes}</span>
-            {upgraded && <span className="chip ok"><Check size={10} /> Upgraded</span>}
+            {applied && <span className="chip ok"><Check size={10} /> {actionLabel}</span>}
           </div>
           <div className="file-row-summary">{file.summary}</div>
         </div>
-        <button
-          className="file-row-toggle"
-          onClick={(e) => { e.stopPropagation(); onExpand?.(); }}
-        >
-          <ChevronRight size={13} className={expanded ? 'rot' : ''} />
-          <span>{expanded ? 'Hide diff' : 'View diff'}</span>
-        </button>
+        <div className="file-row-actions">
+          {onDismiss && (
+            <button
+              className="file-row-dismiss"
+              onClick={(e) => { e.stopPropagation(); onDismiss?.(); }}
+              title="Dismiss this file — it's not a FlowBoard snippet host"
+            >
+              Dismiss
+            </button>
+          )}
+          <button
+            className="file-row-toggle"
+            onClick={(e) => { e.stopPropagation(); onExpand?.(); }}
+          >
+            <ChevronRight size={13} className={expanded ? 'rot' : ''} />
+            <span>{expanded ? 'Hide diff' : 'View diff'}</span>
+          </button>
+        </div>
       </div>
       {expanded && (
         <div className="file-row-detail">
@@ -362,7 +456,6 @@ function sigilFor(type) {
 }
 
 function shortPath(abs) {
-  // Display workspace-relative label: "workspace/AGENTS.md" or "workspace-alice/AGENTS.md"
   const m = String(abs).match(/\/\.openclaw\/([^/]+)\/([^/]+)$/);
   if (m) return `${m[1]}/${m[2]}`;
   return abs;

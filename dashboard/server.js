@@ -808,12 +808,17 @@ app.get('/api/projects', (req, res) => {
   res.json({ activeProject: active, projects });
 });
 
-// GET /api/snippets/status — per-workspace legacy snippet scan
-// Returns { ok, total, withMarkers, byteIdentical, divergent, files: [...] }.
-// Only files with legacy markers appear in `files`; clean files are counted.
+// GET /api/snippets/status — per-workspace snippet state
+// Returns { ok, counts, chip, files: [...] }.
+//   counts — { identical, drifted, missing, current, ignored, total }
+//   chip   — { text, variant } | null (null = hidden, setup complete)
+//   files  — entries needing UI attention (identical / drifted / missing);
+//            files in state `current` or `ignored` are excluded from this list
+// Ignored paths are loaded from flowboard_snippet_ignore (via flowboard-metadata).
 app.get('/api/snippets/status', (req, res) => {
   try {
-    const status = snippetsDoctor.collectStatus(OPENCLAW_HOME);
+    const ignoredPaths = fbMeta ? new Set(fbMeta.listSnippetIgnore()) : new Set();
+    const status = snippetsDoctor.collectStatus(OPENCLAW_HOME, { ignoredPaths });
     res.json({ ok: true, ...status });
   } catch (err) {
     console.error('[snippets/status]', err);
@@ -821,21 +826,54 @@ app.get('/api/snippets/status', (req, res) => {
   }
 });
 
-// POST /api/snippets/apply — upgrade byte-identical snippet blocks.
-// Body: { ids: string[] } — file IDs from /api/snippets/status.
-// Writes a .bak-<timestamp> backup before modifying. Divergent files are NEVER
-// touched — they appear in `skipped` with reason 'divergent'.
+// POST /api/snippets/apply — unified apply endpoint for all snippet actions.
+// Body: { actions: [{ id, action }] } where action ∈ {upgrade, migrate, add, dismiss}
+//   upgrade  — byte-identical legacy → current (state: identical)
+//   migrate  — drifted legacy → current (state: drifted, force-replace)
+//   add      — insert current snippet at end of file (state: missing)
+//   dismiss  — add path to ignore list, skipped by /status from now on
+// Every file-mutating action writes a .bak-<ts> backup first. State-mismatched
+// actions and unknown IDs are reported in `skipped`, never silently applied.
+//
+// Back-compat: if body carries { ids: [...] } instead of { actions: [...] },
+// treat each id as { action: 'upgrade' } — matches the older client contract.
 app.post('/api/snippets/apply', (req, res) => {
-  const { ids } = req.body || {};
-  if (!Array.isArray(ids) || ids.length === 0) {
-    return res.status(400).json({ error: 'Body must include non-empty ids[] array' });
+  const body = req.body || {};
+  let actions = null;
+  if (Array.isArray(body.actions) && body.actions.length > 0) {
+    actions = body.actions;
+  } else if (Array.isArray(body.ids) && body.ids.length > 0) {
+    actions = body.ids.map(id => ({ id, action: 'upgrade' }));
+  }
+  if (!actions) {
+    return res.status(400).json({ error: 'Body must include actions[] (or legacy ids[])' });
   }
   try {
-    const result = snippetsDoctor.applySelected(OPENCLAW_HOME, ids);
+    const ignoredPaths = fbMeta ? new Set(fbMeta.listSnippetIgnore()) : new Set();
+    const result = snippetsDoctor.applyActions(OPENCLAW_HOME, actions, { fbMeta, ignoredPaths });
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('[snippets/apply]', err);
-    res.status(500).json({ error: 'Failed to apply snippet upgrades', detail: err.message });
+    res.status(500).json({ error: 'Failed to apply snippet actions', detail: err.message });
+  }
+});
+
+// POST /api/snippets/undismiss — remove a path from the ignore list.
+// Body: { path: "/abs/path" } — the file will reappear in /api/snippets/status.
+app.post('/api/snippets/undismiss', (req, res) => {
+  const { path: p } = req.body || {};
+  if (!p || typeof p !== 'string') {
+    return res.status(400).json({ error: 'Body must include path string' });
+  }
+  if (!fbMeta) {
+    return res.status(503).json({ error: 'Metadata store unavailable (HZL_ENABLED=false)' });
+  }
+  try {
+    fbMeta.removeSnippetIgnore(p);
+    res.json({ ok: true, path: p });
+  } catch (err) {
+    console.error('[snippets/undismiss]', err);
+    res.status(500).json({ error: 'Failed to remove path from ignore list', detail: err.message });
   }
 });
 

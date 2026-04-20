@@ -31,21 +31,64 @@ const LEGACY_MARKERS = [
 ];
 
 // Snippet targets: which workspace files are migrated, which vendored/current
-// pair covers them, and a human-readable summary for the dashboard UI.
+// pair covers them, a human-readable summary, and structural markers used to
+// distinguish "this file has a FlowBoard snippet block (possibly drifted)" from
+// "this file merely mentions a legacy path in some other context".
+//
+// structuralMarkers = strings that uniquely identify the LEGACY snippet block
+//   (heading + a distinctive phrase). If both are present in the file → the
+//   file actually has a FlowBoard block; divergence means the user edited it.
+// currentMarkers = strings that uniquely identify the CURRENT (post-migration)
+//   snippet block. Presence means migration is already done for this file.
 const TARGETS = [
   {
     name: 'AGENTS.md',
     vendored: 'AGENTS-trigger.v1.md',
     current: 'AGENTS-trigger.md',
     summary: 'Replace legacy ACTIVE-PROJECT.md reference with the lazy-load rules manifest',
+    addSummary: 'Add the FlowBoard project trigger block (tells the agent to read BOOTSTRAP.md)',
+    // Phrases that appear ONLY in the legacy block — if present, the file has
+    // a drifted FlowBoard snippet (not a false-positive stray marker).
+    legacyStructuralMarkers: [
+      'MANDATORY on EVERY first message',
+    ],
+    // Phrases that appear ONLY in the current block — if present, migration
+    // is already done for this file; no action needed.
+    currentMarkers: [
+      'delivers project context automatically as `BOOTSTRAP.md`',
+    ],
   },
   {
     name: 'BOOT.md',
     vendored: 'BOOT-extension.v1.md',
     current: 'BOOT-extension.md',
     summary: 'Point bootstrap at BOOTSTRAP.md manifest instead of eager PROJECT-RULES load',
+    addSummary: 'Add the FlowBoard gateway-restart recovery block',
+    legacyStructuralMarkers: [
+      '1. Read `ACTIVE-PROJECT.md`',
+    ],
+    currentMarkers: [
+      'regenerated `BOOTSTRAP.md`',
+    ],
   },
 ];
+
+function containsAny(content, markers) {
+  if (!Array.isArray(markers) || markers.length === 0) return false;
+  return markers.some(m => content.includes(m));
+}
+
+// Extract the actual snippet body to INSERT into a user's file. For AGENTS.md
+// the whole current file IS the snippet. For BOOT.md the current file wraps
+// the snippet in a markdown code fence (```markdown ... ```) — extract the
+// content inside the fence.
+function extractInsertBody(target, currentText) {
+  if (target.name === 'BOOT.md') {
+    const m = currentText.match(/```markdown\n([\s\S]*?)```/);
+    if (m) return m[1].trimEnd();
+  }
+  return currentText.trimEnd();
+}
 
 function detectLegacyMarkers(content) {
   if (typeof content !== 'string' || content.length === 0) return false;
@@ -148,70 +191,155 @@ function makeFileId(openclawHome, filePath) {
   return rel;
 }
 
-// Aggregate snippet-upgrade status across all workspace dirs under OPENCLAW_HOME.
-// Returns { total, withMarkers, byteIdentical, divergent, files: [...] }.
-// `total` counts every candidate file present (regardless of legacy markers) —
-// that matches the CLI summary output. Only files with markers appear in `files`.
-function collectStatus(openclawHome) {
-  let total = 0, withMarkers = 0, byteIdentical = 0, divergent = 0;
+// Classify a single workspace file into one of the states. Returns null if
+// the file doesn't exist (caller decides whether to show "missing" entry).
+// States:
+//   'identical'  — byte-matches vendored legacy block → safe auto-upgrade
+//   'drifted'    — has legacy structural markers (heading + key phrase) but
+//                  isn't byte-identical → user-edited snippet, needs migrate
+//   'current'    — already has the new canonical block → done, skip in UI
+//   'missing'    — file exists but has no snippet block at all (may still
+//                  contain stray legacy-path references in other contexts)
+//   'ignored'    — path is on the user's dismiss list
+function classifyFile(filePath, target, { legacyBlock, newBlock, ignoredPaths }) {
+  if (ignoredPaths && ignoredPaths.has(filePath)) {
+    return { state: 'ignored' };
+  }
+  let content;
+  try { content = fs.readFileSync(filePath, 'utf8'); }
+  catch { return null; }
+
+  // Priority order matters: "current" wins over legacy to prevent endless
+  // re-flagging after a post-add file still carries a stray legacy reference.
+  if (containsAny(content, target.currentMarkers)) {
+    return { state: 'current', content };
+  }
+  if (matchesLegacyBlockExactly(content, legacyBlock)) {
+    return { state: 'identical', content };
+  }
+  if (containsAny(content, target.legacyStructuralMarkers)) {
+    return { state: 'drifted', content };
+  }
+  return { state: 'missing', content };
+}
+
+// Aggregate snippet status across all workspace dirs under OPENCLAW_HOME.
+// Returns { counts, chip, files: [...] } where files carries per-file metadata
+// needed by the dashboard UI (path, name, bytes, state, diff, summary).
+//
+// States: identical (State A), drifted (State B), missing (State D), current
+// (State E — skipped from files list), ignored (dismissed — skipped).
+//
+// Chip variants follow the binary model: "Migration required" when any legacy
+// remains; "Finish setup" when no legacy exists and no agent is configured;
+// hidden once at least one agent is on the current snippet and no legacy.
+function collectStatus(openclawHome, { ignoredPaths = new Set() } = {}) {
   const files = [];
+  const counts = { identical: 0, drifted: 0, missing: 0, current: 0, ignored: 0, total: 0 };
   for (const target of TARGETS) {
-    let legacyBlock, newBlock;
+    let legacyBlock, newBlock, insertBody;
     try {
       legacyBlock = readVendored(target.vendored);
       newBlock = readCurrent(target.current);
+      insertBody = extractInsertBody(target, newBlock);
     } catch {
       continue;
     }
     const candidates = findCandidateFiles(openclawHome, target.name);
     for (const filePath of candidates) {
-      total++;
-      const audit = auditFile(filePath, { legacyBlock, newBlock });
-      if (!audit.hasLegacyMarkers) continue;
-      withMarkers++;
-      const status = audit.matchesExactly ? 'safe' : 'manual';
-      if (status === 'safe') byteIdentical++;
-      else divergent++;
+      counts.total++;
+      const cls = classifyFile(filePath, target, { legacyBlock, newBlock, ignoredPaths });
+      if (!cls) continue;
+      counts[cls.state]++;
+      // current & ignored don't need a row in the UI
+      if (cls.state === 'current' || cls.state === 'ignored') continue;
+
       let bytes = '0 B';
       try { bytes = formatBytes(fs.statSync(filePath).size); } catch {}
-      files.push({
+      const entry = {
         id: makeFileId(openclawHome, filePath),
         path: filePath,
         name: target.name,
         bytes,
-        status,
-        summary: target.summary,
-        diff: computeSimpleDiff(legacyBlock, newBlock, `@@ ${target.name} — snippet block @@`),
-        migrationGuide: status === 'manual' ? `docs/migration/lazy-rules.md#${target.name.toLowerCase().replace(/\./g, '-')}` : null,
-      });
+        state: cls.state,
+      };
+      if (cls.state === 'identical' || cls.state === 'drifted') {
+        entry.summary = target.summary;
+        entry.diff = computeSimpleDiff(legacyBlock, newBlock, `@@ ${target.name} — snippet block @@`);
+      } else if (cls.state === 'missing') {
+        entry.summary = target.addSummary;
+        // Preview: what gets added. Use an add-context diff (no legacy lines).
+        entry.diff = computeSimpleDiff('', insertBody, `@@ ${target.name} — snippet to insert @@`);
+      }
+      files.push(entry);
     }
   }
-  return { total, withMarkers, byteIdentical, divergent, files };
+
+  // Chip logic (binary + hidden)
+  let chip = null;
+  const hasLegacy = counts.identical > 0 || counts.drifted > 0;
+  const hasCurrent = counts.current > 0;
+  if (hasLegacy) {
+    chip = { text: 'Migration required', variant: 'warn' };
+  } else if (!hasCurrent && counts.missing > 0) {
+    chip = { text: 'Finish setup', variant: 'info' };
+  } // else: either nothing to do or at least one agent is configured → hide
+
+  return { counts, chip, files };
 }
 
-// Apply upgrade to each requested file, BUT only if byte-identical.
-// Writes a .bak-<timestamp> copy first (never destroys the original).
-// `ids` is the list of file IDs from collectStatus. Unknown IDs and divergent
-// files are reported in `skipped` — never touched.
-function applySelected(openclawHome, ids) {
+// Apply a list of {id, action} pairs atomically per file.
+// Supported actions:
+//   'upgrade' — byte-identical legacy → new block (state: identical only)
+//   'migrate' — drifted legacy → new block (state: drifted only, force-replace)
+//   'add'     — insert snippet at end of file (state: missing only)
+//   'dismiss' — add path to ignore list (any state)
+//
+// Every file action writes a `.bak-<timestamp>` before modifying. Unknown IDs,
+// state mismatches, and filesystem errors are reported in `skipped`.
+function applyActions(openclawHome, actions, { fbMeta, ignoredPaths = new Set() } = {}) {
   const applied = [];
   const skipped = [];
-  const idSet = new Set(Array.isArray(ids) ? ids : []);
-  const status = collectStatus(openclawHome);
+  const status = collectStatus(openclawHome, { ignoredPaths });
   const byId = new Map(status.files.map(f => [f.id, f]));
 
-  for (const id of idSet) {
+  for (const { id, action } of Array.isArray(actions) ? actions : []) {
+    if (!action) { skipped.push({ id, reason: 'no-action' }); continue; }
+
+    // dismiss is special: ignore list, no file edit
+    if (action === 'dismiss') {
+      const file = byId.get(id);
+      if (!file) { skipped.push({ id, reason: 'not-found' }); continue; }
+      if (fbMeta) {
+        try {
+          fbMeta.addSnippetIgnore(file.path);
+          applied.push({ id, path: file.path, action: 'dismiss' });
+        } catch (err) {
+          skipped.push({ id, reason: `dismiss-failed: ${err.message}` });
+        }
+      } else {
+        skipped.push({ id, reason: 'no-metadata-store' });
+      }
+      continue;
+    }
+
     const file = byId.get(id);
     if (!file) { skipped.push({ id, reason: 'not-found' }); continue; }
-    if (file.status !== 'safe') { skipped.push({ id, reason: 'divergent' }); continue; }
-
     const target = TARGETS.find(t => t.name === file.name);
     if (!target) { skipped.push({ id, reason: 'no-target' }); continue; }
 
-    let legacyBlock, newBlock;
+    // State guard: never migrate a file that isn't in the expected state.
+    const validMatrix = { upgrade: 'identical', migrate: 'drifted', add: 'missing' };
+    if (file.state !== validMatrix[action]) {
+      skipped.push({ id, reason: `state-mismatch: expected ${validMatrix[action]}, got ${file.state}` });
+      continue;
+    }
+
+    let legacyBlock, newBlock, insertBody;
     try {
       legacyBlock = readVendored(target.vendored);
       newBlock = readCurrent(target.current);
+      insertBody = extractInsertBody(target, newBlock);
     } catch (err) {
       skipped.push({ id, reason: `snippet-unavailable: ${err.message}` });
       continue;
@@ -220,19 +348,85 @@ function applySelected(openclawHome, ids) {
     try { content = fs.readFileSync(file.path, 'utf8'); }
     catch (err) { skipped.push({ id, reason: `read-failed: ${err.message}` }); continue; }
 
-    const next = replaceLegacyBlock(content, legacyBlock, newBlock);
-    if (next === null) { skipped.push({ id, reason: 'no-longer-exact' }); continue; }
+    let next;
+    if (action === 'upgrade') {
+      next = replaceLegacyBlock(content, legacyBlock, newBlock);
+      if (next === null) { skipped.push({ id, reason: 'no-longer-exact' }); continue; }
+    } else if (action === 'migrate') {
+      // Force-replace the drifted block. Strategy: find the structural legacy
+      // heading and replace from there to the end of the legacy block region.
+      // For robustness, we replace the FIRST occurrence of the heading + the
+      // next ~15 lines (scoping by legacy snippet length).
+      next = replaceDriftedBlock(content, legacyBlock, newBlock, target);
+      if (next === null) { skipped.push({ id, reason: 'drift-region-not-found' }); continue; }
+    } else if (action === 'add') {
+      // Idempotency: if somehow already present, skip
+      if (containsAny(content, target.currentMarkers)) {
+        skipped.push({ id, reason: 'already-has-current-block' });
+        continue;
+      }
+      // Append at end with a blank-line separator
+      const trimmedContent = content.replace(/\n+$/, '');
+      next = `${trimmedContent}\n\n${insertBody.trimEnd()}\n`;
+    }
 
     const bak = backupPath(file.path);
     try {
       fs.copyFileSync(file.path, bak);
       fs.writeFileSync(file.path, next);
-      applied.push({ id, path: file.path, backup: bak });
+      applied.push({ id, path: file.path, backup: bak, action });
     } catch (err) {
       skipped.push({ id, reason: `write-failed: ${err.message}` });
     }
   }
   return { applied, skipped };
+}
+
+// Force-replace a drifted legacy block. The user's file no longer matches the
+// vendored block byte-for-byte, but it DOES contain the legacy structural
+// marker (heading or key phrase). We replace the region starting from the
+// first structural marker and spanning the legacy block's line count.
+function replaceDriftedBlock(content, legacyBlock, newBlock, target) {
+  const marker = target.legacyStructuralMarkers.find(m => content.includes(m));
+  if (!marker) return null;
+
+  const lines = content.split('\n');
+  const markerIdx = lines.findIndex(l => l.includes(marker));
+  if (markerIdx < 0) return null;
+
+  // Walk back to the nearest `## ` heading (or BOF) — that's the block start.
+  let blockStart = markerIdx;
+  for (let i = markerIdx; i >= 0; i--) {
+    if (/^##?\s/.test(lines[i])) { blockStart = i; break; }
+    if (i === 0) blockStart = 0;
+  }
+
+  // Block end: use the legacy block's line count as the window size (trailing
+  // empty lines ignored), or walk forward until the next `##` heading or EOF.
+  const legacyLines = legacyBlock.replace(/\n+$/, '').split('\n').length;
+  let blockEnd = Math.min(blockStart + legacyLines, lines.length);
+  // Tighten: if a new heading appears inside the window, stop there.
+  for (let i = blockStart + 1; i < blockEnd; i++) {
+    if (/^##?\s/.test(lines[i])) { blockEnd = i; break; }
+  }
+
+  const before = lines.slice(0, blockStart).join('\n').replace(/\n+$/, '');
+  const after = lines.slice(blockEnd).join('\n').replace(/^\n+/, '');
+  const middle = newBlock.trimEnd();
+
+  const parts = [];
+  if (before) parts.push(before);
+  parts.push(middle);
+  if (after) parts.push(after);
+  return parts.join('\n\n') + '\n';
+}
+
+// Legacy wrapper — old single-action apply. Maps to the new applyActions
+// with `{ id, action: 'upgrade' }`. Preserves external API (CLI + tests).
+function applySelected(openclawHome, ids) {
+  const actions = Array.isArray(ids) ? ids.map(id => ({ id, action: 'upgrade' })) : [];
+  const result = applyActions(openclawHome, actions);
+  return result;
 }
 
 function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {}) {
@@ -315,17 +509,21 @@ module.exports = {
   detectLegacyMarkers,
   matchesLegacyBlockExactly,
   replaceLegacyBlock,
+  replaceDriftedBlock,
   auditFile,
+  classifyFile,
   findCandidateFiles,
   backupPath,
   parseArgs,
   runCli,
   readVendored,
   readCurrent,
+  extractInsertBody,
   formatBytes,
   computeSimpleDiff,
   makeFileId,
   collectStatus,
+  applyActions,
   applySelected,
 };
 

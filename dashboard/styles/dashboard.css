@@ -1418,6 +1418,17 @@
   background: rgba(245, 158, 11, 0.18);
   border-color: rgba(245, 158, 11, 0.55);
 }
+/* Info variant: used for "Finish setup" — neutral teal instead of warn amber.
+   Signals "additive setup action", not "attention needed". */
+.migration-chip.migration-chip-info {
+  background: rgba(20, 184, 166, 0.12);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  color: var(--accent-2);
+}
+.migration-chip.migration-chip-info:hover {
+  background: rgba(20, 184, 166, 0.2);
+  border-color: rgba(20, 184, 166, 0.55);
+}
 .migration-chip-icon { display: flex; }
 .migration-chip-icon svg { width: 13px; height: 13px; }
 
@@ -1623,6 +1634,10 @@
   background: var(--warn-subtle);
   color: var(--warn);
 }
+.upgrade-modal .group-header-icon.info {
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--accent-2);
+}
 .upgrade-modal .group-body {
   display: flex;
   flex-direction: column;
@@ -1734,6 +1749,33 @@
   color: var(--muted);
   margin-top: 3px;
   line-height: 1.5;
+}
+/* Wrapper for row-level actions (Dismiss + View diff). Lets them sit together
+   in the file-row-main grid's last column without breaking the grid. */
+.upgrade-modal .file-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Dismiss button — ghost style, only shown on rows that support it. */
+.upgrade-modal .file-row-dismiss {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  white-space: nowrap;
+  font-family: inherit;
+}
+.upgrade-modal .file-row-dismiss:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--bg-accent);
 }
 .upgrade-modal .file-row-toggle {
   display: inline-flex;

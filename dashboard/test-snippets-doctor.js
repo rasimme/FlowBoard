@@ -219,20 +219,18 @@ section('collectStatus()');
       `# beta\n\n${modified}\n`);
 
     const status = doctor.collectStatus(dir);
-    assert(status.total >= 2, `total counts both candidates (got ${status.total})`);
-    assertEqual(status.withMarkers, 2, 'both files flagged as having markers');
-    assertEqual(status.byteIdentical, 1, 'one byte-identical');
-    assertEqual(status.divergent, 1, 'one divergent');
-    assertEqual(status.files.length, 2, 'files array has 2 entries');
-    const safe = status.files.find(f => f.status === 'safe');
-    const manual = status.files.find(f => f.status === 'manual');
-    assert(safe, 'safe entry present');
-    assert(manual, 'manual entry present');
-    assert(typeof safe.id === 'string' && safe.id.length > 0, 'safe has id');
-    assert(safe.bytes && /[kB]/.test(safe.bytes), `safe has human bytes string (${safe.bytes})`);
-    assert(Array.isArray(safe.diff) && safe.diff.length > 0, 'safe has diff');
-    assertEqual(safe.migrationGuide, null, 'safe has no migration guide');
-    assert(manual.migrationGuide && manual.migrationGuide.includes('migration'), 'manual has guide pointer');
+    assert(status.counts.total >= 2, `total counts both candidates (got ${status.counts.total})`);
+    assertEqual(status.counts.identical, 1, 'one identical (byte-match legacy)');
+    assertEqual(status.counts.drifted, 1, 'one drifted (structural legacy block, modified)');
+    assertEqual(status.files.length, 2, 'files array has 2 entries (identical + drifted)');
+    const identical = status.files.find(f => f.state === 'identical');
+    const drifted = status.files.find(f => f.state === 'drifted');
+    assert(identical, 'identical entry present');
+    assert(drifted, 'drifted entry present');
+    assert(typeof identical.id === 'string' && identical.id.length > 0, 'identical has id');
+    assert(identical.bytes && /[kB]/.test(identical.bytes), `identical has human bytes string (${identical.bytes})`);
+    assert(Array.isArray(identical.diff) && identical.diff.length > 0, 'identical has diff');
+    assert(status.chip && /Migration required/.test(status.chip.text), 'chip says Migration required');
   } finally {
     cleanupTmp();
   }
@@ -255,30 +253,31 @@ section('applySelected() — byte-identical only, with .bak');
     fs.writeFileSync(divergentPath, divergentContent);
 
     const status = doctor.collectStatus(dir);
-    const safeId = status.files.find(f => f.status === 'safe').id;
-    const divergentId = status.files.find(f => f.status === 'manual').id;
+    const identicalId = status.files.find(f => f.state === 'identical').id;
+    const driftedId = status.files.find(f => f.state === 'drifted').id;
 
-    // Attempt to apply BOTH — only safe should be touched
-    const result = doctor.applySelected(dir, [safeId, divergentId, 'unknown-id']);
+    // applySelected is the legacy single-action wrapper (action=upgrade).
+    // It should touch only the identical file, never the drifted one.
+    const result = doctor.applySelected(dir, [identicalId, driftedId, 'unknown-id']);
     assertEqual(result.applied.length, 1, 'one apply');
-    assertEqual(result.applied[0].id, safeId, 'applied the safe one');
+    assertEqual(result.applied[0].id, identicalId, 'applied the identical one');
     assert(result.applied[0].backup && fs.existsSync(result.applied[0].backup), 'backup file exists');
 
-    // Skipped array contains divergent + unknown
+    // Skipped array contains drifted (state-mismatch) + unknown
     assertEqual(result.skipped.length, 2, 'two skipped');
     const skippedIds = result.skipped.map(s => s.id);
-    assert(skippedIds.includes(divergentId), 'divergent skipped');
+    assert(skippedIds.includes(driftedId), 'drifted skipped (state-mismatch for upgrade)');
     assert(skippedIds.includes('unknown-id'), 'unknown id skipped');
 
-    // Verify the safe file was actually replaced
-    const afterSafe = fs.readFileSync(targetPath, 'utf8');
+    // Verify the identical file was actually replaced
+    const afterIdentical = fs.readFileSync(targetPath, 'utf8');
     const currentBlock = doctor.readCurrent('AGENTS-trigger.md');
-    assert(afterSafe.includes(currentBlock.trim().slice(0, 60)), 'new block present in safe file');
-    assert(!afterSafe.includes('MANDATORY on EVERY first message'), 'legacy phrasing gone');
+    assert(afterIdentical.includes(currentBlock.trim().slice(0, 60)), 'new block present in identical file');
+    assert(!afterIdentical.includes('MANDATORY on EVERY first message'), 'legacy phrasing gone');
 
-    // Verify divergent was NOT touched
-    const afterDivergent = fs.readFileSync(divergentPath, 'utf8');
-    assertEqual(afterDivergent, divergentContent, 'divergent file untouched');
+    // Verify drifted was NOT touched
+    const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
+    assertEqual(afterDrifted, divergentContent, 'drifted file untouched');
 
     // Backup should equal the ORIGINAL pre-upgrade content
     const backupContent = fs.readFileSync(result.applied[0].backup, 'utf8');
@@ -296,6 +295,173 @@ section('makeFileId()');
   assert(id1.length > 0 && id2.length > 0, 'non-empty ids');
   assert(id1 !== id2, 'different paths → different ids');
   assert(!/[\s'"]/.test(id1), 'id has no spaces or quotes');
+}
+
+section('classifyFile() — state machine');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
+    const target = doctor.TARGETS.find(t => t.name === 'AGENTS.md');
+
+    // identical
+    const pIdentical = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(pIdentical, `# header\n\n${legacyAgents}\n`);
+    const cIdent = doctor.classifyFile(pIdentical, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+    });
+    assertEqual(cIdent.state, 'identical', 'byte-match legacy → identical');
+
+    // drifted (structural marker present, block edited)
+    const pDrifted = path.join(dir, 'workspace', 'AGENTS-drifted.md');
+    const drifted = legacyAgents.replace('MANDATORY on EVERY first message of a conversation', 'MANDATORY on EVERY first message of my_custom_agent');
+    fs.writeFileSync(pDrifted, drifted);
+    const cDrift = doctor.classifyFile(pDrifted, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+    });
+    assertEqual(cDrift.state, 'drifted', 'structural legacy + modified → drifted');
+
+    // current (new canonical block present)
+    const pCurrent = path.join(dir, 'workspace', 'AGENTS-current.md');
+    fs.writeFileSync(pCurrent, `# header\n\n${currentAgents}\n`);
+    const cCur = doctor.classifyFile(pCurrent, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+    });
+    assertEqual(cCur.state, 'current', 'current marker present → current');
+
+    // current wins over legacy (stray legacy marker after add)
+    const pMixed = path.join(dir, 'workspace', 'AGENTS-mixed.md');
+    fs.writeFileSync(pMixed, `# header\n\nSee ACTIVE-PROJECT.md for legacy notes.\n\n${currentAgents}\n`);
+    const cMix = doctor.classifyFile(pMixed, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+    });
+    assertEqual(cMix.state, 'current', 'current-marker wins over stray legacy text');
+
+    // missing (no markers at all)
+    const pMissing = path.join(dir, 'workspace', 'AGENTS-missing.md');
+    fs.writeFileSync(pMissing, '# my custom AGENTS file\n\njust some notes\n');
+    const cMiss = doctor.classifyFile(pMissing, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents, ignoredPaths: new Set(),
+    });
+    assertEqual(cMiss.state, 'missing', 'no markers → missing');
+
+    // ignored (in dismiss set)
+    const cIgn = doctor.classifyFile(pIdentical, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents,
+      ignoredPaths: new Set([pIdentical]),
+    });
+    assertEqual(cIgn.state, 'ignored', 'path in ignoredPaths → ignored');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('applyActions() — migrate + add + state guards');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'workspace-beta'), { recursive: true });
+
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
+
+    // Drifted file: legacy structural marker + custom edit
+    const driftedPath = path.join(dir, 'workspace', 'AGENTS.md');
+    const driftedContent = `# my agents\n\n${legacyAgents.replace('MANDATORY on EVERY first message of a conversation', 'MANDATORY on EVERY first message of my_custom_agent')}\n# trailer\n`;
+    fs.writeFileSync(driftedPath, driftedContent);
+
+    // Missing file: no markers at all
+    const missingPath = path.join(dir, 'workspace-beta', 'AGENTS.md');
+    const missingContent = '# my beta config\n\nJust some prose, no FlowBoard snippet.\n';
+    fs.writeFileSync(missingPath, missingContent);
+
+    const status = doctor.collectStatus(dir);
+    const driftedId = status.files.find(f => f.state === 'drifted').id;
+    const missingId = status.files.find(f => f.state === 'missing').id;
+
+    // Chip should say Migration required because we have drifted
+    assert(status.chip && status.chip.text === 'Migration required', `chip = Migration required (got ${status.chip?.text})`);
+
+    // migrate: should replace drifted block with current
+    const r1 = doctor.applyActions(dir, [{ id: driftedId, action: 'migrate' }]);
+    assertEqual(r1.applied.length, 1, 'migrate applied');
+    assertEqual(r1.applied[0].action, 'migrate', 'action recorded as migrate');
+    const afterDrift = fs.readFileSync(driftedPath, 'utf8');
+    assert(afterDrift.includes('delivers project context automatically'), 'current block inserted');
+    assert(!afterDrift.includes('MANDATORY on EVERY first message of my_custom_agent'), 'custom drift line removed');
+
+    // add: should append insertBody at end of missing file
+    const r2 = doctor.applyActions(dir, [{ id: missingId, action: 'add' }]);
+    assertEqual(r2.applied.length, 1, 'add applied');
+    assertEqual(r2.applied[0].action, 'add', 'action recorded as add');
+    const afterMissing = fs.readFileSync(missingPath, 'utf8');
+    assert(afterMissing.startsWith('# my beta config'), 'existing content preserved at top');
+    assert(afterMissing.includes('delivers project context automatically'), 'new block appended');
+
+    // State guard: migrate on missing → rejected
+    fs.writeFileSync(missingPath, missingContent); // reset
+    const st2 = doctor.collectStatus(dir);
+    const missingId2 = st2.files.find(f => f.state === 'missing').id;
+    const r3 = doctor.applyActions(dir, [{ id: missingId2, action: 'migrate' }]);
+    assertEqual(r3.applied.length, 0, 'migrate on missing rejected');
+    assertEqual(r3.skipped.length, 1, 'one skipped');
+    assert(/state-mismatch/.test(r3.skipped[0].reason), 'reason is state-mismatch');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('applyActions() — dismiss via fbMeta stub');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const p = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(p, `# header\n\n${legacyAgents}\n`);
+    const status = doctor.collectStatus(dir);
+    const id = status.files[0].id;
+
+    // Stub for fbMeta — record calls without a real DB
+    const calls = [];
+    const stubMeta = {
+      addSnippetIgnore: (path) => { calls.push(['add', path]); },
+      isSnippetIgnored: () => false,
+    };
+    const r = doctor.applyActions(dir, [{ id, action: 'dismiss' }], { fbMeta: stubMeta });
+    assertEqual(r.applied.length, 1, 'dismiss applied');
+    assertEqual(r.applied[0].action, 'dismiss', 'action is dismiss');
+    assertEqual(calls.length, 1, 'fbMeta.addSnippetIgnore called once');
+    assertEqual(calls[0][0], 'add', 'called with add verb');
+    assertEqual(calls[0][1], p, 'called with file path');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('collectStatus() — chip variants');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+
+    // (1) All missing → "Finish setup"
+    fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), '# plain\n');
+    const s1 = doctor.collectStatus(dir);
+    assertEqual(s1.chip?.text, 'Finish setup', 'all missing → Finish setup');
+    assertEqual(s1.chip?.variant, 'info', 'Finish setup variant = info');
+
+    // (2) Current only → no chip
+    const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
+    fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), `# plain\n\n${currentAgents}\n`);
+    const s2 = doctor.collectStatus(dir);
+    assertEqual(s2.chip, null, 'current-only → chip hidden');
+  } finally {
+    cleanupTmp();
+  }
 }
 
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);

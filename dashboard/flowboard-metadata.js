@@ -36,6 +36,17 @@ const CREATE_MIGRATIONS_TABLE_SQL = `
   )
 `;
 
+// Per-path dismiss list for the snippet-upgrade flow. Users can dismiss
+// files that carry legacy markers but aren't actually FlowBoard snippet hosts
+// (e.g. a Voice-Agent config that quotes ACTIVE-PROJECT.md as a command example).
+// Dismissed paths are skipped by /api/snippets/status going forward.
+const CREATE_SNIPPET_IGNORE_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_snippet_ignore (
+    path          TEXT PRIMARY KEY,
+    dismissed_at  TEXT NOT NULL
+  )
+`;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -45,7 +56,35 @@ function init(db) {
   _db.prepare(CREATE_TABLE_SQL).run();
   _db.prepare(CREATE_AGENTS_TABLE_SQL).run();
   _db.prepare(CREATE_MIGRATIONS_TABLE_SQL).run();
-  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations');
+  _db.prepare(CREATE_SNIPPET_IGNORE_TABLE_SQL).run();
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations, flowboard_snippet_ignore');
+}
+
+// --- Snippet-ignore list helpers ---------------------------------------
+
+function listSnippetIgnore() {
+  if (!_db) return [];
+  return _db.prepare('SELECT path FROM flowboard_snippet_ignore').all().map(r => r.path);
+}
+
+function isSnippetIgnored(path) {
+  if (!_db) return false;
+  const row = _db.prepare('SELECT 1 FROM flowboard_snippet_ignore WHERE path = ?').get(path);
+  return !!row;
+}
+
+function addSnippetIgnore(path) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  _db.prepare(`
+    INSERT INTO flowboard_snippet_ignore (path, dismissed_at)
+    VALUES (?, ?)
+    ON CONFLICT(path) DO UPDATE SET dismissed_at = excluded.dismissed_at
+  `).run(path, new Date().toISOString());
+}
+
+function removeSnippetIgnore(path) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  _db.prepare('DELETE FROM flowboard_snippet_ignore WHERE path = ?').run(path);
 }
 
 function countProjects() {
@@ -239,4 +278,8 @@ module.exports = {
   setAgentActiveProject,
   backfillAgentFromFile,
   listAgents,
+  listSnippetIgnore,
+  isSnippetIgnored,
+  addSnippetIgnore,
+  removeSnippetIgnore,
 };
