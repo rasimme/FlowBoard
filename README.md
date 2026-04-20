@@ -85,24 +85,7 @@ cd FlowBoard/dashboard
 npm install
 ```
 
-### 2. Add agent trigger
-
-Paste the block from `snippets/AGENTS-trigger.md` into your
-`~/.openclaw/workspace/AGENTS.md` (create the file if it doesn't exist).
-Append the block from `snippets/BOOT-extension.md` into your existing
-`BOOT.md`. Both are copy-paste — or let your agent do it.
-
-```bash
-cat FlowBoard/snippets/AGENTS-trigger.md    # → paste into AGENTS.md
-cat FlowBoard/snippets/BOOT-extension.md    # → append to BOOT.md
-```
-
-> Upgrading from an earlier FlowBoard? After `git pull`, run
-> `node dashboard/snippets-doctor.js` to check your AGENTS.md / BOOT.md for
-> legacy blocks. Add `--apply` to replace byte-identical legacy blocks with
-> the current canonical versions (a `.bak-<timestamp>` is written first).
-
-### 3. Install hooks
+### 2. Install hooks
 
 ```bash
 cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
@@ -110,7 +93,7 @@ cp -r FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
 openclaw gateway restart
 ```
 
-### 4. Start the dashboard
+### 3. Start the dashboard
 
 Migrations run automatically on server start (tasks migration, per-agent
 active-project DB setup, PROJECT-RULES canonical-path symlink, legacy-snippet
@@ -123,9 +106,25 @@ cp templates/dashboard.service ~/.local/share/systemd/user/
 systemctl --user enable --now dashboard
 ```
 
+### 4. Finish setup in the dashboard
+
+Open **http://localhost:18790**. If any workspace needs setup, a
+**Finish setup** (fresh install) or **Migration required** (upgrade from
+an older FlowBoard) chip appears in the header. Click it to open the
+setup modal and choose per workspace:
+
+- **Upgrade** — byte-identical legacy snippets → new canonical block
+- **Migration required** — user-edited legacy blocks → force-replace (per-file opt-in)
+- **Add FlowBoard to workspace** — workspace doesn't have the snippet yet → append it
+- **Dismiss** — this workspace shouldn't use FlowBoard (e.g. a voice agent)
+
+Every change writes a `.bak-<timestamp>` copy first. If you prefer the
+CLI path: `node dashboard/snippets-doctor.js` does the same detection
+and `--apply` upgrades byte-identical blocks only.
+
 ### 5. Create your first project
 
-Open **http://localhost:18790** and tell your agent:
+Once the chip disappears, tell your agent:
 
 > "New project: my-app"
 
