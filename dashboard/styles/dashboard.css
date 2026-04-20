@@ -1477,6 +1477,10 @@
   backdrop-filter: blur(4px);
   animation: snippetFadeIn 0.18s ease-out;
   padding: 24px;
+  /* Overlay clips everything to the viewport. Prevents the page from panning on
+     mobile if the modal or its content ever tries to extend past viewport bounds. */
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 @keyframes snippetFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes snippetModalIn {
@@ -1560,9 +1564,17 @@
   height: 16px;
 }
 
-/* Body */
+/* Body — single scroll surface for the entire modal. */
 .upgrade-modal .modal-body-v2 {
   overflow-y: auto;
+  /* CRITICAL: without min-height: 0, this flex/grid child refuses to shrink
+     below its content size. The .upgrade-modal grid's `1fr` track then can't
+     cap it, the modal pushes past its max-height, and overflow-y: auto never
+     activates. The overlay becomes pannable on mobile because the page ends
+     up as the effective scroll target. min-height: 0 unlocks the 1fr
+     constraint so the body is bounded and its own overflow scrolls. */
+  min-height: 0;
+  overscroll-behavior: contain;
   padding: 14px 18px 18px;
   background: var(--bg);
   display: flex;
