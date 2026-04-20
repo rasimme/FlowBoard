@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Check, AlertTriangle, ChevronRight, FileText, ArrowRight } from 'lucide-react';
+import { Sparkles, X, Check, AlertTriangle, ChevronRight } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import ScrollArea from './ScrollArea.jsx';
 
@@ -37,7 +37,7 @@ export default function SnippetUpgrade() {
 
   return (
     <>
-      <SnippetPill count={status.withMarkers} onClick={() => setModalOpen(true)} />
+      <MigrationChip onClick={() => setModalOpen(true)} />
       <span className="header-divider" />
       <UpgradeModal
         open={modalOpen}
@@ -49,12 +49,11 @@ export default function SnippetUpgrade() {
   );
 }
 
-function SnippetPill({ count, onClick }) {
+function MigrationChip({ onClick }) {
   return (
-    <button className="snippet-pill" onClick={onClick} title="FlowBoard update available">
-      <span className="snippet-pill-icon"><Sparkles size={11} /></span>
-      <span>FlowBoard update available</span>
-      <span className="snippet-pill-count">{count}</span>
+    <button className="migration-chip" onClick={onClick} title="Migration required">
+      <span className="migration-chip-icon"><AlertTriangle size={13} /></span>
+      <span>Migration required</span>
     </button>
   );
 }
@@ -325,18 +324,6 @@ function FileRow({ file, checked, onToggle, readOnly, expanded, onExpand, upgrad
       {expanded && (
         <div className="file-row-detail">
           <Diff diff={file.diff} />
-          {readOnly && file.migrationGuide && (
-            <a
-              className="migration-link"
-              href={file.migrationGuide}
-              onClick={(e) => e.preventDefault()}
-            >
-              <FileText size={12} />
-              <span>Open migration guide</span>
-              <span className="mono migration-link-path">{file.migrationGuide}</span>
-              <ArrowRight size={12} />
-            </a>
-          )}
         </div>
       )}
     </div>

@@ -1394,69 +1394,32 @@
    existing generic .modal-overlay / .modal-body rules above.
    ========================================================================= */
 
-/* Header pill */
-.snippet-pill {
+/* Migration chip — header trigger for the snippet upgrade modal.
+   Warn-amber palette (not the attention-grabbing accent red) and a
+   simple AlertTriangle: this is advisory, not urgent. No count badge,
+   no pulse animation — per latest design (Claude Design handoff v2). */
+.migration-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px 5px 8px;
-  border-radius: var(--radius-full);
-  background: var(--accent-subtle);
-  border: 1px solid rgba(255, 92, 92, 0.35);
-  color: var(--accent);
+  gap: 7px;
+  padding: 5px 11px 5px 9px;
+  background: var(--warn-subtle);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
   cursor: pointer;
   font-family: inherit;
-  transition: all var(--duration-fast);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  transition: all var(--duration-fast);
 }
-.snippet-pill:hover {
-  background: rgba(255, 92, 92, 0.22);
-  border-color: rgba(255, 92, 92, 0.5);
+.migration-chip:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.55);
 }
-.snippet-pill-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-.snippet-pill-icon svg {
-  width: 11px;
-  height: 11px;
-}
-.snippet-pill-icon::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.55);
-  animation: pulse-ring 2.2s var(--ease-out) infinite;
-}
-@keyframes pulse-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0.55); }
-  70%  { box-shadow: 0 0 0 8px rgba(255, 92, 92, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 92, 92, 0); }
-}
-.snippet-pill-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  padding: 0 5px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  margin-left: 2px;
-}
+.migration-chip-icon { display: flex; }
+.migration-chip-icon svg { width: 13px; height: 13px; }
 
 /* Divider used between header-right elements */
 .header-divider {
@@ -1499,9 +1462,30 @@
   max-height: 720px;
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* CRITICAL: without an explicit column track, the grid's single implicit
+     column sizes to its children's max-content. On a narrow viewport a long
+     modal-title / subtitle / file-path pushes that column wider than the
+     modal's max-width, and `overflow: hidden` silently clips the right edge.
+     `minmax(0, 1fr)` lets the column shrink to the modal width regardless of
+     children's min-content. Children that need to stay readable must then
+     handle their own wrapping (see rules below on modal-header-left,
+     modal-title, modal-subtitle, footer-hint). */
+  grid-template-columns: minmax(0, 1fr);
   animation: snippetModalIn 0.22s var(--ease-out);
   overflow: hidden;
 }
+
+/* Mobile-right fix — unlock flex children in the header + footer so long
+   strings wrap instead of widening their grid column past the modal edge. */
+.upgrade-modal .modal-header-left { min-width: 0; flex: 1 1 auto; }
+.upgrade-modal .modal-header-left > * { min-width: 0; }
+.upgrade-modal .modal-title,
+.upgrade-modal .modal-subtitle,
+.upgrade-modal .footer-hint {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.upgrade-modal .footer-left { min-width: 0; flex-wrap: wrap; }
 
 /* Modal chrome — all scoped under .upgrade-modal to sit alongside legacy rules */
 .upgrade-modal .modal-header {
@@ -1783,27 +1767,6 @@
   gap: 10px;
 }
 
-/* Migration-guide pill (inside a divergent file's detail) */
-.upgrade-modal .migration-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  background: var(--warn-subtle);
-  color: var(--warn);
-  border-radius: var(--radius-sm);
-  font-size: 11.5px;
-  text-decoration: none;
-  transition: all var(--duration-fast);
-  align-self: flex-start;
-}
-.upgrade-modal .migration-link:hover { background: rgba(245, 158, 11, 0.18); }
-.upgrade-modal .migration-link-path {
-  color: var(--warn);
-  opacity: 0.8;
-  font-size: 10.5px;
-}
 
 /* Status chip inside a row ("Upgraded", "Manual") */
 .upgrade-modal .chip {
