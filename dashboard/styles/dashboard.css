@@ -1601,6 +1601,14 @@
   background: var(--card);
   border-radius: var(--radius-md);
   overflow: hidden;
+  /* CRITICAL: groups are flex children of .modal-body-v2. Their `overflow: hidden`
+     (needed to clip rounded corners) silently sets their auto min-height to 0,
+     which lets Flexbox shrink them below content size. Under pressure (expanded
+     file-row makes a group taller than the body's 1fr allotment), they shrink,
+     their content is clipped away, and the body never needs to scroll because
+     content appears to fit. flex-shrink: 0 keeps groups at natural size, so the
+     body overflows properly and .modal-body-v2's overflow-y: auto kicks in. */
+  flex-shrink: 0;
 }
 .upgrade-modal .group-header {
   display: grid;
@@ -1932,6 +1940,15 @@
 @media (max-width: 640px) {
   .snippet-modal-overlay {
     padding: 8px;
+    /* Pin the overlay to the DYNAMIC viewport (visible area only).
+       `position: fixed; inset: 0` by itself would fill the LAYOUT viewport
+       — which on iOS Safari / Android Chrome includes the area behind the
+       URL bar and home indicator. The modal inside with max-height: 100dvh
+       would then be smaller than the overlay, get centered, and part of it
+       would sit behind browser chrome. Setting height: 100dvh here clips
+       the overlay to exactly the visible area; the modal centers within
+       it and never hides behind chrome. */
+    height: 100dvh;
   }
   .upgrade-modal {
     max-width: 100%;
