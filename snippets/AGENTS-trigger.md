@@ -25,13 +25,8 @@ Use your assigned `agentId` — the `OPENCLAW_AGENT_ID` environment variable
 `flowboard_agents` table; activating a project for one agent does not
 affect others.
 
-### Fallback
-If the API is unreachable, fall back to `ACTIVE-PROJECT.md` in the workspace
-(legacy path). The database is canonical — if API and file disagree, trust
-the API.
-
 ### Rules
-- Never modify `ACTIVE-PROJECT.md` or call activation endpoints automatically.
-  Only explicit user commands may change project state.
-- Prefer lazy-loading individual rule sections from the API over reading the
-  full `PROJECT-RULES.md` file — smaller token footprint per interaction.
+- Never call project-activation endpoints automatically. Only explicit user
+  commands may change project state.
+- Prefer fetching individual rule sections on demand over bulk reads —
+  smaller token footprint per interaction.
