@@ -74,10 +74,15 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const driftedFiles = status.files.filter(f => f.state === 'drifted');
   const missingFiles = status.files.filter(f => f.state === 'missing');
 
-  // Selection maps per group. Defaults:
-  //   identical: all-on (safe)
-  //   drifted:   all-off (force-replace is risky, user must opt-in)
-  //   missing:   all-off (add is additive, user chooses which workspaces)
+  // Selection maps per group. Defaults follow the "mandatory vs optional"
+  // distinction: anything needed for FlowBoard to function correctly is
+  // pre-selected; optional additions are not.
+  //   identical: all-on (byte-match legacy, safe auto-upgrade)
+  //   drifted:   all-on (mandatory — legacy references deprecated ACTIVE-PROJECT.md,
+  //              agent would keep calling the old path; user can uncheck per file
+  //              if they want to preserve a specific customization)
+  //   missing:   all-off (optional — the workspace may not need FlowBoard at all;
+  //              user opts in per workspace, or dismisses)
   const [selectedUpgrade, setSelectedUpgrade] = useState({});
   const [selectedMigrate, setSelectedMigrate] = useState({});
   const [selectedAdd, setSelectedAdd] = useState({});
@@ -87,11 +92,13 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
   useEffect(() => {
     if (!open) return;
-    const init = {};
-    identicalFiles.forEach(f => { init[f.id] = true; });
-    setSelectedUpgrade(init);
-    setSelectedMigrate({});
-    setSelectedAdd({});
+    const initUpgrade = {};
+    identicalFiles.forEach(f => { initUpgrade[f.id] = true; });
+    setSelectedUpgrade(initUpgrade);
+    const initMigrate = {};
+    driftedFiles.forEach(f => { initMigrate[f.id] = true; });
+    setSelectedMigrate(initMigrate);
+    setSelectedAdd({}); // optional; user opts in per workspace
     setExpandedId(null);
     setResult(null);
     setApplying(false);
@@ -232,7 +239,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
           {driftedFiles.length > 0 && (
             <GroupSection
               title="Migration required"
-              sub="These files have a modified legacy block. Check to force-replace with the current canonical snippet (a .bak backup is written)."
+              sub={`${migrateCount} of ${driftedFiles.length} selected · mandatory for FlowBoard to work — force-replace with the canonical snippet. A .bak-<timestamp> is written first; uncheck to preserve a specific customization.`}
               icon={<AlertTriangle size={13} />}
               iconVariant="warn"
               allSelected={allMigrateSelected}
