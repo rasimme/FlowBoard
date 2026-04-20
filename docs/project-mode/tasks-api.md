@@ -44,9 +44,49 @@ Base: `http://localhost:18790/api`
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/projects/:name/tasks` | List tasks. Query: `?status=`, `?sinceDays=`, `?tag=` |
-| `POST` | `/projects/:name/tasks` | Create task. Body: `{ title, description?, priority?, tags?, ... }` |
+| `POST` | `/projects/:name/tasks` | Create task. Body: see below |
 | `PUT` | `/projects/:name/tasks/:id` | Update task fields or status |
 | `DELETE` | `/projects/:name/tasks/:id` | Archive/delete task |
+
+### Create Task — Full Body Reference
+
+```
+POST /projects/:name/tasks
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `title` | string | **yes** | Max 128 chars |
+| `priority` | string | no | `low`, `medium`, `high`, `critical`. Default: `medium`. Subtasks inherit parent priority. |
+| `parentId` | string | no | FlowBoard ID of parent task (e.g. `T-042`). Creates a subtask with auto-incremented ID (`T-042-1`). Max 1 nesting level. |
+| `status` | string | no | Initial status: `backlog` (default), `open`, `in-progress`, `review`, `done`, `archived`. |
+| `description` | string | no | Max 16KB |
+| `tags` | string[] | no | Filterable tags, max 100 |
+| `forceId` | string | no | Migration mode: use exact ID instead of auto-generated. Throws on duplicate. |
+
+**Subtask behavior:**
+- Setting `parentId` creates a subtask. The ID is auto-generated as `{parentId}-{N}` (e.g. `T-042-1`, `T-042-2`).
+- Subtasks inherit the parent's priority unless explicitly overridden.
+- Parent tasks (with existing subtasks) cannot be claimed — claim subtasks instead.
+- Max 1 nesting level: a subtask cannot have its own subtasks.
+- Completing a subtask triggers parent status recalculation.
+
+### Update Task — Full Body Reference
+
+```
+PUT /projects/:name/tasks/:id
+```
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `title` | string | Max 128 chars |
+| `status` | string | `backlog`, `open`, `in-progress`, `review`, `done`, `archived` |
+| `priority` | string | `low`, `medium`, `high`, `critical` |
+| `completed` | string | ISO date, auto-set on `done` |
+| `specFile` | string | Link a spec file to the task |
+| `blocked` | boolean | Set/clear blocked flag |
+
+Note: `parentId` cannot be changed via PUT after creation.
 
 ### Coordination Primitives
 
