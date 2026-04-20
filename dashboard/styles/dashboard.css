@@ -1607,6 +1607,11 @@
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
+}
+/* v2 header: [master-checkbox] [icon] [text] — consistent across all groups.
+   Retains the minmax(0, …) shrinkable text column. */
+.upgrade-modal .group-header.group-header-v2 {
+  grid-template-columns: auto auto minmax(0, 1fr);
   background: var(--bg-accent);
   border-bottom: 1px solid var(--border);
 }
@@ -1637,6 +1642,37 @@
 .upgrade-modal .group-header-icon.info {
   background: rgba(20, 184, 166, 0.12);
   color: var(--accent-2);
+}
+.upgrade-modal .group-header-icon.ok {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+/* Checkbox button — used for both the master (group-header) checkbox and
+   per-file checkbox. Uses aria-pressed for state (no <input> to bypass
+   browser label-click forwarding quirks). */
+.upgrade-modal .cb-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+.upgrade-modal .cb-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.upgrade-modal .cb-button[aria-pressed='true'] .checkbox-box,
+.upgrade-modal .cb-button[aria-pressed='mixed'] .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 .upgrade-modal .group-body {
   display: flex;

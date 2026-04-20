@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus } from 'lucide-react';
+import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus, ArrowUpCircle } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import ScrollArea from './ScrollArea.jsx';
 
@@ -84,7 +84,6 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const [expandedId, setExpandedId] = useState(null);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
-  const masterUpgradeRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -112,10 +111,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
   const allUpgradeSelected = identicalFiles.length > 0 && upgradeCount === identicalFiles.length;
   const someUpgradeSelected = upgradeCount > 0 && !allUpgradeSelected;
-
-  useEffect(() => {
-    if (masterUpgradeRef.current) masterUpgradeRef.current.indeterminate = someUpgradeSelected;
-  }, [someUpgradeSelected]);
+  const allMigrateSelected = driftedFiles.length > 0 && migrateCount === driftedFiles.length;
+  const someMigrateSelected = migrateCount > 0 && !allMigrateSelected;
+  const allAddSelected = missingFiles.length > 0 && addCount === missingFiles.length;
+  const someAddSelected = addCount > 0 && !allAddSelected;
 
   if (!open) return null;
 
@@ -127,6 +126,16 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     const next = {};
     if (!allUpgradeSelected) identicalFiles.forEach(f => { next[f.id] = true; });
     setSelectedUpgrade(next);
+  };
+  const toggleAllMigrate = () => {
+    const next = {};
+    if (!allMigrateSelected) driftedFiles.forEach(f => { next[f.id] = true; });
+    setSelectedMigrate(next);
+  };
+  const toggleAllAdd = () => {
+    const next = {};
+    if (!allAddSelected) missingFiles.forEach(f => { next[f.id] = true; });
+    setSelectedAdd(next);
   };
 
   const handleDismiss = async (file) => {
@@ -202,112 +211,61 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
         <ScrollArea className="modal-body-wrap" innerClassName="modal-body-v2">
           {identicalFiles.length > 0 && (
-            <div className="group">
-              <div className="group-header">
-                <label
-                  className={`group-checkbox${someUpgradeSelected ? ' indeterminate' : ''}`}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    ref={masterUpgradeRef}
-                    type="checkbox"
-                    checked={allUpgradeSelected}
-                    onChange={toggleAllUpgrade}
-                  />
-                  <span className="checkbox-box" aria-hidden="true">
-                    {allUpgradeSelected
-                      ? <Check size={11} />
-                      : someUpgradeSelected ? <span className="checkbox-dash" /> : null}
-                  </span>
-                </label>
-                <div className="group-header-text">
-                  <div className="group-title">Upgrade</div>
-                  <div className="group-sub">
-                    {upgradeCount} of {identicalFiles.length} selected · byte-identical, safe auto-upgrade
-                  </div>
-                </div>
-              </div>
-              <div className="group-body">
-                {identicalFiles.map(f => (
-                  <FileRow
-                    key={f.id}
-                    file={f}
-                    variant="checkbox"
-                    checked={!!selectedUpgrade[f.id]}
-                    onToggle={() => toggleUpgrade(f.id)}
-                    expanded={expandedId === f.id}
-                    onExpand={() => toggleExpand(f.id)}
-                    applied={applied && !!selectedUpgrade[f.id]}
-                    actionLabel="Upgraded"
-                  />
-                ))}
-              </div>
-            </div>
+            <GroupSection
+              title="Upgrade"
+              sub={`${upgradeCount} of ${identicalFiles.length} selected · byte-identical, safe auto-upgrade`}
+              icon={<ArrowUpCircle size={13} />}
+              iconVariant="ok"
+              allSelected={allUpgradeSelected}
+              someSelected={someUpgradeSelected}
+              onToggleAll={toggleAllUpgrade}
+              files={identicalFiles}
+              selected={selectedUpgrade}
+              onToggleFile={toggleUpgrade}
+              expandedId={expandedId}
+              onExpand={toggleExpand}
+              applied={applied}
+              actionLabel="Upgraded"
+            />
           )}
 
           {driftedFiles.length > 0 && (
-            <div className="group">
-              <div className="group-header">
-                <div className="group-header-icon warn">
-                  <AlertTriangle size={13} />
-                </div>
-                <div className="group-header-text">
-                  <div className="group-title">Migration required</div>
-                  <div className="group-sub">
-                    These files have a modified legacy block. Check to force-replace
-                    with the current canonical snippet (a .bak backup is written).
-                  </div>
-                </div>
-              </div>
-              <div className="group-body">
-                {driftedFiles.map(f => (
-                  <FileRow
-                    key={f.id}
-                    file={f}
-                    variant="checkbox-warn"
-                    checked={!!selectedMigrate[f.id]}
-                    onToggle={() => toggleMigrate(f.id)}
-                    expanded={expandedId === f.id}
-                    onExpand={() => toggleExpand(f.id)}
-                    applied={applied && !!selectedMigrate[f.id]}
-                    actionLabel="Migrated"
-                  />
-                ))}
-              </div>
-            </div>
+            <GroupSection
+              title="Migration required"
+              sub="These files have a modified legacy block. Check to force-replace with the current canonical snippet (a .bak backup is written)."
+              icon={<AlertTriangle size={13} />}
+              iconVariant="warn"
+              allSelected={allMigrateSelected}
+              someSelected={someMigrateSelected}
+              onToggleAll={toggleAllMigrate}
+              files={driftedFiles}
+              selected={selectedMigrate}
+              onToggleFile={toggleMigrate}
+              expandedId={expandedId}
+              onExpand={toggleExpand}
+              applied={applied}
+              actionLabel="Migrated"
+            />
           )}
 
           {missingFiles.length > 0 && (
-            <div className="group">
-              <div className="group-header">
-                <div className="group-header-icon info">
-                  <Plus size={13} />
-                </div>
-                <div className="group-header-text">
-                  <div className="group-title">Add FlowBoard to workspace</div>
-                  <div className="group-sub">
-                    These files have no FlowBoard snippet. Check to append the current
-                    snippet at the end, or dismiss if this workspace shouldn't use FlowBoard.
-                  </div>
-                </div>
-              </div>
-              <div className="group-body">
-                {missingFiles.map(f => (
-                  <FileRow
-                    key={f.id}
-                    file={f}
-                    variant="checkbox-add"
-                    checked={!!selectedAdd[f.id]}
-                    onToggle={() => toggleAdd(f.id)}
-                    expanded={expandedId === f.id}
-                    onExpand={() => toggleExpand(f.id)}
-                    applied={applied && !!selectedAdd[f.id]}
-                    actionLabel="Added"
-                    onDismiss={() => handleDismiss(f)}
-                  />
-                ))}
-              </div>
-            </div>
+            <GroupSection
+              title="Add FlowBoard to workspace"
+              sub="These files have no FlowBoard snippet. Check to append the current snippet at the end, or dismiss if this workspace shouldn't use FlowBoard."
+              icon={<Plus size={13} />}
+              iconVariant="info"
+              allSelected={allAddSelected}
+              someSelected={someAddSelected}
+              onToggleAll={toggleAllAdd}
+              files={missingFiles}
+              selected={selectedAdd}
+              onToggleFile={toggleAdd}
+              expandedId={expandedId}
+              onExpand={toggleExpand}
+              applied={applied}
+              actionLabel="Added"
+              onDismiss={handleDismiss}
+            />
           )}
 
           {!hasAnything && (
@@ -363,31 +321,95 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   );
 }
 
-function FileRow({ file, variant, checked, onToggle, expanded, onExpand, applied, actionLabel, onDismiss }) {
+// Reusable checkbox styled as a button. Uses aria-pressed for state instead
+// of a native <input>, which avoids two subtle bugs we hit with label+input:
+//  (a) browsers forward label clicks to the wrapped input in addition to
+//      firing the label's React onClick — `e.stopPropagation()` only stops
+//      React's synthetic bubbling, not the native forward.
+//  (b) `<input readOnly>` is not valid on checkboxes and causes inconsistent
+//      click behavior across browsers.
+// aria-pressed="true/false/mixed" covers a11y for toggle + indeterminate.
+function CheckboxButton({ checked, indeterminate, onClick, className = '', title }) {
+  const classes = ['cb-button', className].filter(Boolean).join(' ');
+  const ariaPressed = indeterminate ? 'mixed' : !!checked;
+  return (
+    <button
+      type="button"
+      className={classes}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
+      aria-pressed={ariaPressed}
+      title={title}
+    >
+      <span className="checkbox-box" aria-hidden="true">
+        {indeterminate
+          ? <span className="checkbox-dash" />
+          : checked ? <Check size={11} /> : null}
+      </span>
+    </button>
+  );
+}
+
+// Group-header + body wrapper. Every group has:
+//   - a master checkbox on the left (toggles all in the group)
+//   - a decorative icon in its own lane
+//   - title + sub text
+// Consistent across Upgrade / Migration / Add — no more "this group has a
+// checkbox but that one doesn't" inconsistency.
+function GroupSection({
+  title, sub, icon, iconVariant = 'info',
+  allSelected, someSelected, onToggleAll,
+  files, selected, onToggleFile,
+  expandedId, onExpand, applied, actionLabel, onDismiss,
+}) {
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <CheckboxButton
+          checked={allSelected}
+          indeterminate={someSelected}
+          onClick={onToggleAll}
+          className="group-checkbox"
+          title={allSelected ? 'Deselect all' : 'Select all'}
+        />
+        <div className={`group-header-icon ${iconVariant}`}>{icon}</div>
+        <div className="group-header-text">
+          <div className="group-title">{title}</div>
+          <div className="group-sub">{sub}</div>
+        </div>
+      </div>
+      <div className="group-body">
+        {files.map(f => (
+          <FileRow
+            key={f.id}
+            file={f}
+            checked={!!selected[f.id]}
+            onToggle={() => onToggleFile(f.id)}
+            expanded={expandedId === f.id}
+            onExpand={() => onExpand(f.id)}
+            applied={applied && !!selected[f.id]}
+            actionLabel={actionLabel}
+            onDismiss={onDismiss ? () => onDismiss(f) : null}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FileRow({ file, checked, onToggle, expanded, onExpand, applied, actionLabel, onDismiss }) {
   const classes = ['file-row'];
   if (expanded) classes.push('expanded');
   if (applied) classes.push('upgraded');
 
-  const isCheckbox = variant === 'checkbox' || variant === 'checkbox-warn' || variant === 'checkbox-add';
-
   return (
     <div className={classes.join(' ')}>
       <div className="file-row-main" onClick={onExpand}>
-        {isCheckbox ? (
-          <label
-            className="file-row-checkbox"
-            onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
-          >
-            <input type="checkbox" checked={!!checked} readOnly />
-            <span className="checkbox-box" aria-hidden="true">
-              {checked ? <Check size={11} /> : null}
-            </span>
-          </label>
-        ) : (
-          <span className="file-row-marker warn" title="Attention">
-            <AlertTriangle size={12} />
-          </span>
-        )}
+        <CheckboxButton
+          checked={checked}
+          onClick={onToggle}
+          className="file-row-checkbox"
+          title={checked ? 'Deselect' : 'Select'}
+        />
         <div className="file-row-text">
           <div className="file-row-path">
             <span className="mono" title={file.path}>{shortPath(file.path)}</span>
@@ -399,14 +421,16 @@ function FileRow({ file, variant, checked, onToggle, expanded, onExpand, applied
         <div className="file-row-actions">
           {onDismiss && (
             <button
+              type="button"
               className="file-row-dismiss"
               onClick={(e) => { e.stopPropagation(); onDismiss?.(); }}
-              title="Dismiss this file — it's not a FlowBoard snippet host"
+              title="Dismiss this file — never ask about it again"
             >
               Dismiss
             </button>
           )}
           <button
+            type="button"
             className="file-row-toggle"
             onClick={(e) => { e.stopPropagation(); onExpand?.(); }}
           >
