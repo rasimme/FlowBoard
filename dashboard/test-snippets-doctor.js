@@ -407,6 +407,47 @@ section('applyActions() — migrate + add + state guards');
   }
 }
 
+section('TARGETS ↔ snippet files — marker coherence');
+{
+  // Every legacyStructuralMarker MUST appear in the vendored v1 snippet,
+  // and every currentMarker MUST appear in the shipped current snippet.
+  // Otherwise the classifier silently misclassifies files: a snippet edit
+  // that drops a marker phrase would turn `current` files into `missing`
+  // or drifted files into `missing`, breaking migration detection with
+  // no warning.
+  for (const target of doctor.TARGETS) {
+    const legacyText = doctor.readVendored(target.vendored);
+    const currentText = doctor.readCurrent(target.current);
+
+    for (const marker of target.legacyStructuralMarkers || []) {
+      assert(
+        legacyText.includes(marker),
+        `legacy marker "${marker}" is present in snippets/legacy/${target.vendored}`
+      );
+      // Bonus: legacy marker should NOT appear in current — else it can't
+      // distinguish legacy from current. (It's OK for legacy text that's
+      // still referenced in prose, but the exact marker phrase should be
+      // legacy-exclusive.)
+      assert(
+        !currentText.includes(marker),
+        `legacy marker "${marker}" is NOT present in snippets/${target.current} (would confuse detection)`
+      );
+    }
+
+    for (const marker of target.currentMarkers || []) {
+      assert(
+        currentText.includes(marker),
+        `current marker "${marker}" is present in snippets/${target.current}`
+      );
+      // Current marker should NOT appear in the legacy snapshot either
+      assert(
+        !legacyText.includes(marker),
+        `current marker "${marker}" is NOT present in snippets/legacy/${target.vendored} (would confuse detection)`
+      );
+    }
+  }
+}
+
 section('collectStatus() — chip variants');
 {
   const dir = mkTmp();

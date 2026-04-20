@@ -35,11 +35,17 @@ const LEGACY_MARKERS = [
 // distinguish "this file has a FlowBoard snippet block (possibly drifted)" from
 // "this file merely mentions a legacy path in some other context".
 //
-// structuralMarkers = strings that uniquely identify the LEGACY snippet block
-//   (heading + a distinctive phrase). If both are present in the file → the
-//   file actually has a FlowBoard block; divergence means the user edited it.
-// currentMarkers = strings that uniquely identify the CURRENT (post-migration)
-//   snippet block. Presence means migration is already done for this file.
+// legacyStructuralMarkers — strings that uniquely identify the LEGACY snippet
+//   block. MUST be present in snippets/legacy/<vendored>.md. MUST NOT be
+//   present in snippets/<current>.md. Change both files together.
+// currentMarkers — strings that uniquely identify the CURRENT (post-migration)
+//   snippet block. MUST be present in snippets/<current>.md. MUST NOT be
+//   present in snippets/legacy/<vendored>.md.
+//
+// ⚠️  If you edit either snippet and the marker phrase moves or disappears,
+//     the classifier silently misclassifies files. The test suite guards
+//     this — see "TARGETS ↔ snippet files — marker coherence" in
+//     test-snippets-doctor.js. Run tests after every snippet edit.
 const TARGETS = [
   {
     name: 'AGENTS.md',
