@@ -1686,7 +1686,16 @@
   transition: background var(--duration-fast);
 }
 .upgrade-modal .file-row-main:hover { background: var(--bg-hover); }
-.upgrade-modal .file-row.expanded .file-row-main { background: var(--bg-hover); }
+/* D3: When a file row is expanded, its header sticks to the top of the scrolling
+   modal body so the user never loses context for "which file's diff am I reading".
+   z-index:2 keeps it above the diff body + the other group-body rows. */
+.upgrade-modal .file-row.expanded .file-row-main {
+  background: var(--bg-hover);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 var(--border);
+}
 .upgrade-modal .file-row.upgraded .file-row-main { opacity: 0.55; }
 
 .upgrade-modal .file-row-marker {
@@ -1822,27 +1831,11 @@
   display: flex;
   flex-direction: column;
 }
+/* D1: single scroll surface — the modal body scrolls everything. Each diff
+   grows to its natural height, so we never scroll "into" a diff that is itself
+   already partially clipped by an outer scroll viewport. */
 .upgrade-modal .diff-body {
   padding: 6px 0;
-  overflow-y: auto;                 /* internal vertical scroll when tall  */
-  overflow-x: hidden;
-  max-height: 320px;                /* cap single-diff height; modal body handles beyond  */
-  overscroll-behavior: contain;     /* don't chain wheel events to modal body on over-scroll */
-}
-.upgrade-modal .diff-body::-webkit-scrollbar {
-  display: block !important;
-  width: 6px !important;
-}
-.upgrade-modal .diff-body::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 999px;
-}
-.upgrade-modal .diff-body::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-.upgrade-modal .diff-body {
-  scrollbar-width: thin !important;
-  scrollbar-color: var(--border-strong) transparent;
 }
 
 .upgrade-modal .diff-line {
@@ -1919,3 +1912,76 @@
 }
 .upgrade-modal .footer-status.ok { color: var(--ok); }
 .upgrade-modal .footer-actions { display: flex; gap: 8px; }
+
+/* =====================================================================
+   D4: Responsive — snippet upgrade modal on narrow viewports (≤640px).
+   Single block; desktop layout untouched above this breakpoint.
+   ===================================================================== */
+@media (max-width: 640px) {
+  .snippet-modal-overlay {
+    padding: 8px;
+  }
+  .upgrade-modal {
+    max-width: 100%;
+    max-height: 100dvh;
+    border-radius: var(--radius-md);
+  }
+  .upgrade-modal .modal-header {
+    padding: 12px 14px;
+  }
+  .upgrade-modal .modal-title {
+    font-size: 14px;
+  }
+  .upgrade-modal .modal-subtitle {
+    font-size: 10.5px;
+  }
+  .upgrade-modal .modal-body-v2 {
+    padding: 10px 10px 14px;
+    gap: 12px;
+  }
+  .upgrade-modal .group-header {
+    padding: 10px 12px;
+  }
+  .upgrade-modal .file-row-main {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  /* Diff claims near-full row width on small screens — drop the 42px left inset */
+  .upgrade-modal .file-row-detail {
+    padding-left: 14px;
+    padding-right: 12px;
+  }
+  /* Shrink toggle to chevron-only; hide the "View diff" / "Hide diff" label */
+  .upgrade-modal .file-row-toggle {
+    padding: 4px 6px;
+    gap: 0;
+  }
+  .upgrade-modal .file-row-toggle > span {
+    display: none;
+  }
+  /* Footer: stack hint above buttons; buttons go full-width side-by-side */
+  .upgrade-modal .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 14px 12px;
+  }
+  .upgrade-modal .footer-left {
+    order: -1;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .upgrade-modal .footer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .upgrade-modal .footer-actions > .btn {
+    width: 100%;
+  }
+  /* Diff font stays readable on small screens */
+  .upgrade-modal .diff-line {
+    font-size: 11px;
+    padding: 1px 10px;
+  }
+}

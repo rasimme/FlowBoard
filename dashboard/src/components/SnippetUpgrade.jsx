@@ -63,7 +63,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const manualFiles = status.files.filter(f => f.status === 'manual');
 
   const [selected, setSelected] = useState({});
-  const [expanded, setExpanded] = useState({});
+  // Accordion: only one expanded diff at a time. Clicking an expanded row collapses it;
+  // clicking another row switches the expansion. Keeps the modal body from stacking
+  // multiple diffs and squeezing each one.
+  const [expandedId, setExpandedId] = useState(null);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
   const masterCheckboxRef = useRef(null);
@@ -73,7 +76,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     const initial = {};
     safeFiles.forEach(f => { initial[f.id] = true; });
     setSelected(initial);
-    setExpanded({});
+    setExpandedId(null);
     setResult(null);
     setApplying(false);
   }, [open, status]);
@@ -96,7 +99,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   if (!open) return null;
 
   const toggleFile = (id) => setSelected(prev => ({ ...prev, [id]: !prev[id] }));
-  const toggleExpand = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleExpand = (id) => setExpandedId(prev => (prev === id ? null : id));
   const toggleAll = () => {
     const next = {};
     if (!allSelected) safeFiles.forEach(f => { next[f.id] = true; });
@@ -188,7 +191,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
                     file={f}
                     checked={!!selected[f.id]}
                     onToggle={() => toggleFile(f.id)}
-                    expanded={!!expanded[f.id]}
+                    expanded={expandedId === f.id}
                     onExpand={() => toggleExpand(f.id)}
                     upgraded={upgraded && !!selected[f.id]}
                   />
@@ -216,7 +219,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
                     key={f.id}
                     file={f}
                     readOnly
-                    expanded={!!expanded[f.id]}
+                    expanded={expandedId === f.id}
                     onExpand={() => toggleExpand(f.id)}
                   />
                 ))}
