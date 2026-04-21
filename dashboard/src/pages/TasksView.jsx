@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar } from '../components/index.js';
+import AgentChip from '../components/AgentChip.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -118,6 +119,12 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
         <span className={`status-dot status-dot-${task.status}`} />
       </span>
       <span className="subtask-title">{task.title}</span>
+      {task.agent && (
+        <AgentChip name={task.agent} size="xs" variant="solid" title={`Claimed by ${task.agent}`} />
+      )}
+      {!task.agent && task.routedAgent && (
+        <AgentChip name={task.routedAgent} size="xs" variant="ring" title={`Routed to ${task.routedAgent}`} />
+      )}
       {task.blocked && (
         <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">
           Blocked
@@ -257,7 +264,25 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           data-react-tasks
         >
           <div className="flex items-start justify-between gap-2 mb-1">
-            <span className="task-id mono">{task.id}</span>
+            <span className="task-id mono flex items-center gap-1.5">
+              {task.id}
+              {task.agent && (
+                <AgentChip
+                  name={task.agent}
+                  size="xs"
+                  variant="solid"
+                  title={`Claimed by ${task.agent}`}
+                />
+              )}
+              {!task.agent && task.routedAgent && (
+                <AgentChip
+                  name={task.routedAgent}
+                  size="xs"
+                  variant="ring"
+                  title={`Routed to ${task.routedAgent}`}
+                />
+              )}
+            </span>
             <button
               type="button"
               className="delete-btn"
@@ -860,8 +885,11 @@ export default function TasksView() {
 
   if (allTasks.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-muted text-sm" data-react-tasks>
-        No tasks
+      <div className="flex flex-col h-full" data-react-tasks>
+        <ActiveAgentsBar />
+        <div className="flex items-center justify-center flex-1 text-muted text-sm">
+          No tasks
+        </div>
       </div>
     );
   }
