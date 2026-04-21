@@ -87,11 +87,27 @@ npm install
 
 ### 2. Install hooks
 
+Recommended: use the install script, which symlinks the hooks to your repo
+checkout so `git pull` propagates changes automatically.
+
 ```bash
+scripts/install-hooks.sh
+openclaw gateway restart
+```
+
+If you don't have the repo checked out on this machine (or want the hooks
+to be self-contained), copy instead:
+
+```bash
+scripts/install-hooks.sh --copy
+# or manually:
 cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
 cp -r FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
 openclaw gateway restart
 ```
+
+Re-running the script is safe: symlinks are refreshed in place; existing
+non-symlink directories get a `.bak-<timestamp>` backup before replacement.
 
 ### 3. Start the dashboard
 
