@@ -8,14 +8,21 @@ const AppStateContext = createContext(null);
  */
 function fingerprint(s) {
   if (!s) return '';
-  // Build a compact tasks hash: id+status+priority for every task
-  const tasksHash = s.tasks ? s.tasks.map(t => t.id + t.status + t.priority).join(',') : '';
+  // Build a compact tasks hash. Includes agent/claimedAt so the C2 Labeled bar
+  // re-renders when a claim changes on a task even if status/priority don't.
+  const tasksHash = s.tasks
+    ? s.tasks.map(t => t.id + t.status + t.priority + (t.agent || '') + (t.claimedAt || '')).join(',')
+    : '';
+  const agentsHash = s.agents
+    ? s.agents.map(a => (a.agent_id || '') + ':' + (a.active_project || '')).join(',')
+    : '';
   return [
     s.viewedProject,
     s.activeProject,
     s.currentTab,
     s.projects?.length,
     tasksHash,
+    agentsHash,
   ].join('|');
 }
 

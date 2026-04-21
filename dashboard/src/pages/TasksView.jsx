@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { Modal, PriorityPill, Popover } from '../components/index.js';
+import { Modal, PriorityPill, Popover, ActiveAgentsBar } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -868,6 +868,7 @@ export default function TasksView() {
 
   return (
     <div className="flex flex-col h-full" data-react-tasks>
+      <ActiveAgentsBar />
       <div className="flex items-center justify-end pb-2 gap-2 shrink-0">
         <button
           type="button"

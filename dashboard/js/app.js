@@ -9,7 +9,10 @@ const state = {
   tasks: [],
   canvasNotes: [],
   canvasConnections: [],
-  currentTab: 'tasks'
+  currentTab: 'tasks',
+  // T-161: per-agent active project state from flowboard_agents.
+  // Each row: { agent_id, active_project, activated_at }
+  agents: [],
 };
 
 // Make state accessible to modules
@@ -19,6 +22,7 @@ let prevProjectsJson = '';
 let prevTasksJson = '';
 let prevCanvasJson = '';
 let prevActiveProject = null;
+let prevAgentsJson = '';
 
 // --- Sidebar toggle ---
 function toggleSidebar() {
@@ -179,6 +183,16 @@ function isUserInteracting() {
   return active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 }
 
+// Separate fetch so a 503 (HZL disabled) doesn't take down the main refresh.
+async function fetchAgents() {
+  try {
+    const data = await api('/agents');
+    return Array.isArray(data?.agents) ? data.agents : [];
+  } catch {
+    return [];
+  }
+}
+
 // --- Smart refresh ---
 async function refresh() {
   try {
@@ -193,6 +207,17 @@ async function refresh() {
     state.activeProject = newActive;
     prevProjectsJson = projectsJson;
     prevActiveProject = newActive;
+
+    // T-161: refresh multi-agent active-project state. Poll cadence matches
+    // project refresh so sidebar pulse + active-context bar stay in sync
+    // without an extra timer.
+    const newAgents = await fetchAgents();
+    const agentsJson = JSON.stringify(newAgents);
+    const agentsChanged = agentsJson !== prevAgentsJson;
+    if (agentsChanged) {
+      state.agents = newAgents;
+      prevAgentsJson = agentsJson;
+    }
 
     if (!state.viewedProject) {
       if (state.activeProject) state.viewedProject = state.activeProject;
@@ -235,7 +260,7 @@ async function refresh() {
       return;
     }
 
-    if (projectsChanged || tasksChanged) {
+    if (projectsChanged || tasksChanged || agentsChanged) {
       renderSidebar();
       renderHeader();
       window._notifyReact?.();
@@ -262,6 +287,9 @@ async function init() {
     state.tasks = taskData.tasks || [];
     prevTasksJson = JSON.stringify(state.tasks);
   }
+
+  state.agents = await fetchAgents();
+  prevAgentsJson = JSON.stringify(state.agents);
 
   // Tab bar delegation — React owns tab buttons when _reactOwnsShell is set;
   // legacy handler only needed for non-React fallback

@@ -87,6 +87,7 @@ function ProjectItem({
   section,
   isViewed,
   isActive,
+  hasAgentActivity,
   allProjects,
   folders,
   renaming,
@@ -118,6 +119,7 @@ function ProjectItem({
     'project-item',
     isViewed && 'viewed',
     isActive && 'agent-active',
+    hasAgentActivity && 'has-agent-activity',
     project.archived && 'archived',
   ].filter(Boolean).join(' ');
 
@@ -150,6 +152,16 @@ function ProjectItem({
         />
       ) : (
         <span className="proj-name">{formatDisplayName(project.name, allProjects)}</span>
+      )}
+      {!renaming && hasAgentActivity && (
+        <span
+          className="agent-pulse"
+          aria-label="Agent active on this project"
+          title="Agent active on this project"
+        >
+          <span className="agent-pulse-halo" />
+          <span className="agent-pulse-dot" />
+        </span>
       )}
       {!renaming && (
         <ProjectActionsMenu
@@ -205,6 +217,17 @@ export default function Sidebar() {
   const projects = state?.projects || [];
   const activeProject = state?.activeProject;
   const viewedProject = state?.viewedProject;
+  // T-161 B4 Pulse: set of project names that have at least one agent actively
+  // working on them. Source of truth is flowboard_agents via /api/agents.
+  // Kept deliberately independent of state.activeProject (legacy single-active
+  // concept) so Layer 1 (project activity) ≠ Layer 2 (task claim).
+  const agentActiveProjects = useMemo(() => {
+    const set = new Set();
+    for (const a of state?.agents || []) {
+      if (a?.active_project) set.add(a.active_project);
+    }
+    return set;
+  }, [state?.agents]);
 
   const { rootItems, folders, folderItems, archiveItems } = useMemo(() => {
     const active = [];
@@ -518,6 +541,7 @@ export default function Sidebar() {
       section={sectionKey}
       isViewed={p.name === viewedProject}
       isActive={p.name === activeProject}
+      hasAgentActivity={agentActiveProjects.has(p.name)}
       allProjects={projects}
       folders={folders}
       renaming={renamingName === p.name}

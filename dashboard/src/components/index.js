@@ -23,3 +23,7 @@ export { default as Card } from './Card.jsx';
 export { default as Alert } from './Alert.jsx';
 export { default as Panel } from './Panel.jsx';
 export { default as DataList } from './DataList.jsx';
+
+// Agent identity
+export { default as AgentChip, AgentChipStack, agentColor, agentHash, agentInitials, AGENT_PALETTE } from './AgentChip.jsx';
+export { default as ActiveAgentsBar } from './ActiveAgentsBar.jsx';

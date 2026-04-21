@@ -245,6 +245,115 @@
       padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--muted);
     }
 
+    /* T-161 B4 Pulse: subtle marker when any agent is active on this project.
+       Answers "is there agent activity here?" only — never names agents.
+       Deliberately neutral (desaturated cool gray), so it does not overlap with
+       status/warn/danger semantics or with the red legacy .agent-active border. */
+    .agent-pulse {
+      position: relative;
+      width: 8px; height: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-right: 2px;
+    }
+    .agent-pulse-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(180, 200, 220, 0.85);
+      position: relative; z-index: 1;
+    }
+    .agent-pulse-halo {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(180, 200, 220, 0.6);
+      animation: fb-agent-pulse 2.2s ease-out infinite;
+      pointer-events: none;
+    }
+    @keyframes fb-agent-pulse {
+      0%   { transform: scale(1);   opacity: 0.6; }
+      70%  { transform: scale(2.2); opacity: 0;   }
+      100% { transform: scale(2.2); opacity: 0;   }
+    }
+    /* Respect reduced-motion: show the dot, drop the halo animation. */
+    @media (prefers-reduced-motion: reduce) {
+      .agent-pulse-halo { animation: none; opacity: 0.3; transform: scale(1.4); }
+    }
+
+    /* T-161 C2 Labeled bar — "Active on this project" strip above the kanban.
+       Primary driver: flowboard_agents.active_project == viewedProject.
+       Secondary (per-pill sub-line): the agent's currently-claimed task in this
+       project, if any. Routed agents are intentionally not shown here. */
+    .active-agents-bar {
+      padding: 12px 20px 14px;
+      margin: 0 -16px 10px;
+      background: var(--bg-accent);
+      border-bottom: 1px solid var(--border);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .active-agents-bar__label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .active-agents-bar__list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .active-agents-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px 4px 4px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      max-width: 320px;
+      transition: background var(--duration-fast), border-color var(--duration-fast);
+    }
+    .active-agents-pill.has-task {
+      cursor: pointer;
+    }
+    .active-agents-pill.has-task:hover {
+      background: var(--card-highlight);
+      border-color: var(--border-strong);
+    }
+    .active-agents-pill.has-task:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-subtle);
+    }
+    .active-agents-pill__meta {
+      display: inline-flex;
+      flex-direction: column;
+      line-height: 1.2;
+      min-width: 0;
+    }
+    .active-agents-pill__name {
+      font-size: 11px;
+      color: var(--text-strong);
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 500;
+    }
+    .active-agents-pill__task {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
+    }
+    .active-agents-pill__task--idle {
+      font-style: italic;
+      opacity: 0.75;
+    }
+    .active-agents-pill__task-id {
+      font-family: "JetBrains Mono", monospace;
+    }
+
     /* Grip + kebab — hover-revealed affordances */
     .project-item .row-grip,
     .project-item .row-kebab {
