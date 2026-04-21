@@ -39,8 +39,11 @@ if [[ "$MODE" != "symlink" && "$MODE" != "copy" ]]; then
   exit 2
 fi
 
-# FlowBoard ships two hooks; keep this list in sync if more are added.
-HOOKS=(project-context session-handoff)
+# FlowBoard ships one hook (project-context). Keep this list in sync if more
+# are added later. (A separate session-handoff hook used to live here too but
+# was an import from another project — OpenClaw ships that natively as an
+# internal hook and as the `openclaw memory` / `openclaw tasks` commands.)
+HOOKS=(project-context)
 
 mkdir -p "$HOOKS_DIR"
 echo "Installing FlowBoard hooks into $HOOKS_DIR (mode: $MODE)"

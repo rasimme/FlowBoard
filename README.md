@@ -102,7 +102,6 @@ to be self-contained), copy instead:
 scripts/install-hooks.sh --copy
 # or manually:
 cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
-cp -r FlowBoard/hooks/session-handoff ~/.openclaw/hooks/
 openclaw gateway restart
 ```
 
