@@ -854,8 +854,22 @@ app.post('/api/snippets/apply', (req, res) => {
   }
 });
 
+// --- Rules-endpoint telemetry (diagnostic, env-gated) ---------------------
+// Off by default. Enable via `FLOWBOARD_RULES_TELEMETRY=1` in the service env
+// to log every /rules/* hit to stdout (picked up by systemd -> /tmp/dashboard.log).
+// Format is grep/awk-friendly. Purpose: answer "do agents actually use the
+// lazy-load?"; remove the three log lines below once the question is settled.
+const RULES_TELEMETRY = process.env.FLOWBOARD_RULES_TELEMETRY === '1';
+function logRuleHit(req, section) {
+  if (!RULES_TELEMETRY) return;
+  const agent = req.query.agentId || req.headers['x-openclaw-agent-id'] || 'unknown';
+  const project = req.params.name || 'unknown';
+  console.log(`[rules-telemetry] section=${section} agent=${agent} project=${project}`);
+}
+
 // GET /api/projects/:name/rules — list available rule sections
 app.get('/api/projects/:name/rules', (req, res) => {
+  logRuleHit(req, '_manifest');
   res.json({
     project: req.params.name,
     sections: rulesApi.listRuleSections(),
@@ -867,8 +881,10 @@ app.get('/api/projects/:name/rules', (req, res) => {
 app.get('/api/projects/:name/rules/:section', (req, res) => {
   const content = rulesApi.readRuleSection(req.params.section);
   if (content === null) {
+    logRuleHit(req, `${req.params.section}[404]`);
     return res.status(404).json({ error: 'Rule section not found', section: req.params.section });
   }
+  logRuleHit(req, req.params.section);
   res.type('text/markdown; charset=utf-8').send(content);
 });
 
