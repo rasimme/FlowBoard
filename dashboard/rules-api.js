@@ -64,7 +64,7 @@ function buildRulesManifest() {
     lines.push(`- \`${name}\` — ${label}`);
   }
   lines.push('');
-  lines.push('Legacy reference: the full monolithic ruleset still lives at `docs/project-mode/PROJECT-RULES.md` in the FlowBoard repo. Prefer the lazy-load sections above for targeted context.');
+  lines.push('Legacy reference: the full monolithic ruleset is archived at `docs/project-mode/legacy/PROJECT-RULES.md` in the FlowBoard repo. Prefer the lazy-load sections above for targeted context.');
   return lines.join('\n');
 }
 

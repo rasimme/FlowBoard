@@ -15,9 +15,17 @@
 const fs   = require('fs');
 const path = require('path');
 
+// System docs m005 validates on startup. Post-lazy-load the canonical rule
+// sections live at the top level and the monolithic PROJECT-RULES.md is
+// archived under legacy/ (nothing at runtime reads it — the reference lives
+// only in the rules manifest as an info pointer).
 const SYSTEM_DOCS = [
-  'PROJECT-RULES.md', 'tasks-api.md', 'canvas-and-notes.md',
+  'tasks-api.md', 'canvas-and-notes.md',
   'specify-workflow.md', 'project-files.md', 'agent-bridge.md',
+  'commands.md', 'hzl.md', 'error-handling.md', 'key-principles.md',
+];
+const LEGACY_SYSTEM_DOCS = [
+  'legacy/PROJECT-RULES.md',
 ];
 
 const migrations = [
@@ -130,16 +138,19 @@ const migrations = [
       // they're present (they were placed there by the commit that added this migration).
       const repoRoot = path.resolve(__dirname, '..');
       const systemDocsDir = path.join(repoRoot, 'docs', 'project-mode');
-      for (const doc of SYSTEM_DOCS) {
+      for (const doc of [...SYSTEM_DOCS, ...LEGACY_SYSTEM_DOCS]) {
         const p = path.join(systemDocsDir, doc);
         if (!fs.existsSync(p)) {
           console.warn(`[m005] System doc missing (expected in repo): ${p}`);
         }
       }
 
-      // --- Part B: Update symlink so PROJECT-RULES.md in shared projects dir points to new location ---
+      // --- Part B: Symlink legacy PROJECT-RULES.md path in shared projects dir
+      // to the archived copy. Pre-lazy-load installs that still reference
+      // `projects/PROJECT-RULES.md` directly get a working redirect; new
+      // installs don't depend on this at runtime.
       const sharedRulesPath = path.join(projectsDir, 'PROJECT-RULES.md');
-      const canonicalRulesPath = path.join(systemDocsDir, 'PROJECT-RULES.md');
+      const canonicalRulesPath = path.join(systemDocsDir, 'legacy', 'PROJECT-RULES.md');
       try {
         const stat = fs.lstatSync(sharedRulesPath);
         if (stat.isSymbolicLink()) {

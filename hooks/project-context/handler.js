@@ -36,7 +36,7 @@ function buildInlineManifestFallback() {
     "",
     "Available sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.",
     "",
-    "Legacy reference: `docs/project-mode/PROJECT-RULES.md` in the FlowBoard repo.",
+    "Legacy reference: `docs/project-mode/legacy/PROJECT-RULES.md` in the FlowBoard repo.",
   ].join("\n");
 }
 

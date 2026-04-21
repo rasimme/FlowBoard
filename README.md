@@ -232,30 +232,49 @@ systemctl --user restart dashboard
 ## Architecture
 
 ```
-~/.openclaw/workspace/
-├── AGENTS.md                     # Agent trigger
-├── ACTIVE-PROJECT.md             # Current project state
-└── projects/
-    ├── PROJECT-RULES.md          # System rules
-    ├── _index.md                 # Project registry
-    └── my-project/
-        ├── PROJECT.md            # Goal, scope, status, session log
-        ├── DECISIONS.md          # Architecture decisions
-        ├── tasks.json            # Tasks (API-managed)
-        ├── canvas.json           # Idea canvas data
-        ├── context/              # External references
-        └── specs/                # Task specs
+~/.openclaw/workspace-<agent>/
+├── AGENTS.md                     # Agent trigger — contains the FlowBoard snippet
+├── BOOTSTRAP.md                  # Auto-generated per session (active project + rules manifest)
+├── BOOT.md                       # Optional — gateway-restart recovery block
+└── (ACTIVE-PROJECT.md)           # Legacy fallback, DB is canonical (flowboard_agents)
 
-~/FlowBoard/dashboard/            # Dashboard server
-├── server.js                     # Express 5 API + auth
-├── index.html                    # SPA shell
-├── js/                           # ES modules (vanilla JS, no build step)
-└── styles/                       # CSS (dark theme)
+~/.openclaw/projects/             # Shared project data (m004-moved from workspace/projects)
+└── my-project/
+    ├── PROJECT.md                # Current state, focus, next steps
+    ├── SESSIONS.md               # Chronological session log
+    ├── DECISIONS.md              # Architecture + design rationale
+    ├── canvas.json               # Idea canvas state
+    ├── context/                  # External reference docs
+    └── specs/                    # Task specs
+
+~/.openclaw/workspace/.hzl/       # Coordination backend (SQLite)
+├── flowboard.db                  # HZL event store — tasks, claims, checkpoints, comments
+└── flowboard-cache.db            # Projections + flowboard_projects, flowboard_agents
+
+~/repos/FlowBoard/                # SSoT — pulled from dev branch on GitHub
+├── dashboard/
+│   ├── server.js                 # Express 5 API + auth
+│   ├── rules-api.js              # Lazy-load rules registry + manifest
+│   ├── snippets-doctor.js        # Installer / migrator (state machine)
+│   ├── src/                      # React + Vite + Tailwind UI
+│   └── styles/dashboard.css      # Legacy vanilla fallback + component styles
+├── docs/project-mode/            # Rule sections served via /api/projects/:name/rules/:section
+│   ├── commands.md / tasks-api.md / hzl.md / canvas-and-notes.md
+│   ├── project-files.md / specify-workflow.md / agent-bridge.md
+│   ├── error-handling.md / key-principles.md
+│   └── legacy/PROJECT-RULES.md   # Archived pre-lazy-load monolith
+├── snippets/
+│   ├── AGENTS-trigger.md         # Current trigger block for AGENTS.md
+│   ├── BOOT-extension.md         # Current recovery block for BOOT.md
+│   └── legacy/*.v1.md            # Vendored legacy copies for byte-match detection
+└── hooks/project-context/        # Regenerates BOOTSTRAP.md on session events
 ```
 
 **Key principles:**
-- 🎯 **Vanilla JS** — No framework, no build step, no bundler
-- 💾 **File-based** — JSON + Markdown, no database
+- 📡 **DB-canonical** — project + per-agent state live in `flowboard_agents` / `flowboard_projects`
+- 🧩 **Lazy-load rules** — agent sees a manifest in BOOTSTRAP.md, fetches sections on demand
+- 🔒 **Local-first** — everything runs on your machine; API is localhost
+- 🧪 **API-driven** — dashboard and agents share the same REST surface
 - ⚡ **Lazy loading** — Zero overhead when no project active
 - 🔒 **Local-first** — Everything runs on your machine
 - 📡 **API-driven** — Dashboard and agent use the same REST API
