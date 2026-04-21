@@ -913,7 +913,7 @@ function logRuleHit(req, section) {
   if (!RULES_TELEMETRY) return;
   const agent = req.query.agentId || req.headers['x-openclaw-agent-id'] || 'unknown';
   const project = req.params.name || 'unknown';
-  console.log(`[rules-telemetry] section=${section} agent=${agent} project=${project}`);
+  console.log(`[rules-telemetry] section=${section} agent=${agent} project=${project} ts=${new Date().toISOString()}`);
 }
 
 // GET /api/projects/:name/rules — list available rule sections

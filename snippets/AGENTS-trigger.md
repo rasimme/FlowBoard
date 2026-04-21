@@ -8,7 +8,7 @@ workspace. The `project-context` hook regenerates it on session start
 1. Read `BOOTSTRAP.md` — that is your project context.
 2. When an active project is set, `BOOTSTRAP.md` contains a rules manifest.
    Fetch individual sections on demand from the FlowBoard API:
-   `GET http://127.0.0.1:18790/api/projects/{project}/rules/{section}`
+   `GET http://127.0.0.1:18790/api/projects/{project}/rules/{section}?agentId={agentId}`
    Sections listed in the manifest include `commands`, `api-access`, `hzl`,
    `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.
 3. When no active project is set, work normally without project context.
