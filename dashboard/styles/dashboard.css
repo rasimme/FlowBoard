@@ -2379,3 +2379,12 @@
     padding: 1px 10px;
   }
 }
+
+/* Lease-expired pulse animation */
+@keyframes lease-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .45; }
+}
+.lease-indicator-pulse {
+  animation: lease-pulse 2s ease-in-out infinite;
+}

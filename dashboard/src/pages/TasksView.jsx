@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar } from '../components/index.js';
 import AgentChip from '../components/AgentChip.jsx';
+import LeaseIndicator from '../components/LeaseIndicator.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -125,6 +126,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
       {!task.agent && task.routedAgent && (
         <AgentChip name={task.routedAgent} size="xs" variant="ring" title={`Routed to ${task.routedAgent}`} />
       )}
+      <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
       {task.blocked && (
         <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">
           Blocked
@@ -282,6 +284,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   title={`Routed to ${task.routedAgent}`}
                 />
               )}
+              <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
             </span>
             <button
               type="button"
