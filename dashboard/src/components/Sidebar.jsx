@@ -10,6 +10,7 @@ import Popover from './Popover.jsx';
 
 const COLLAPSE_KEY = 'flowboard_sidebar_collapsed';
 const FOLDERS_LS_KEY = 'flowboard_user_folders';
+const FOLDER_ORDER_KEY = 'flowboard_folder_order';
 const ARCHIVE_KEY = '__archive__';
 const ROOT_ZONE = '__root__';
 const FOLDER_PREFIX = 'folder:';
@@ -37,6 +38,17 @@ function loadUserFolders() {
 }
 function saveUserFolders(list) {
   try { localStorage.setItem(FOLDERS_LS_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+function loadFolderOrder() {
+  try {
+    const raw = localStorage.getItem(FOLDER_ORDER_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch { return []; }
+}
+function saveFolderOrder(list) {
+  try { localStorage.setItem(FOLDER_ORDER_KEY, JSON.stringify(list)); } catch { /* ignore */ }
 }
 
 function compareProjects(a, b) {
@@ -156,6 +168,9 @@ export default function Sidebar() {
   const [container, setContainer] = useState(null);
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [userFolders, setUserFolders] = useState(loadUserFolders);
+  const [folderOrder, setFolderOrder] = useState(loadFolderOrder);
+  const [folderDropTarget, setFolderDropTarget] = useState(null); // { folder, kind: 'before'|'after' }
+  const folderDragState = useRef({ sourceFolder: null });
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -214,7 +229,18 @@ export default function Sidebar() {
 
     // Merge server-derived folders with localStorage user-defined empty folders
     const folderSet = new Set([...byFolder.keys(), ...userFolders]);
-    const folderNames = [...folderSet].sort((a, b) => a.localeCompare(b));
+    // Apply custom folder order (localStorage): take ordered names that still
+    // exist, then append any remaining folders alphabetically for stable layout.
+    const ordered = [];
+    const seen = new Set();
+    for (const name of folderOrder) {
+      if (folderSet.has(name) && !seen.has(name)) {
+        ordered.push(name);
+        seen.add(name);
+      }
+    }
+    const leftovers = [...folderSet].filter((f) => !seen.has(f)).sort((a, b) => a.localeCompare(b));
+    const folderNames = [...ordered, ...leftovers];
     // Ensure every folder has at least an empty list entry
     for (const f of folderNames) {
       if (!byFolder.has(f)) byFolder.set(f, []);
@@ -226,7 +252,7 @@ export default function Sidebar() {
       folderItems: byFolder,
       archiveItems: archived,
     };
-  }, [projects, userFolders]);
+  }, [projects, userFolders, folderOrder]);
 
   function addUserFolder(name) {
     const trimmed = (name || '').trim();
@@ -400,6 +426,66 @@ export default function Sidebar() {
     };
   }
 
+  // --- Folder reordering DnD (localStorage only; folders are string keys on
+  // projects and don't have a server-side entity). Separate drag-state from
+  // project DnD so the two flows can never cross-wire. ---
+  function onFolderDragStart(e, folderName) {
+    folderDragState.current.sourceFolder = folderName;
+    try {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', `folder:${folderName}`);
+    } catch { /* noop */ }
+    e.stopPropagation();
+  }
+  function onFolderDragEnd() {
+    folderDragState.current.sourceFolder = null;
+    setFolderDropTarget(null);
+  }
+  function onFolderDragOver(e, folderName) {
+    if (!folderDragState.current.sourceFolder) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    const kind = e.clientY < mid ? 'before' : 'after';
+    if (folderDropTarget?.folder !== folderName || folderDropTarget?.kind !== kind) {
+      setFolderDropTarget({ folder: folderName, kind });
+    }
+  }
+  function onFolderDragLeave(e, folderName) {
+    if (folderDropTarget?.folder === folderName && !e.currentTarget.contains(e.relatedTarget)) {
+      setFolderDropTarget(null);
+    }
+  }
+  function onFolderDrop(e, folderName) {
+    e.preventDefault();
+    e.stopPropagation();
+    const source = folderDragState.current.sourceFolder;
+    const target = folderDropTarget;
+    folderDragState.current.sourceFolder = null;
+    setFolderDropTarget(null);
+    if (!source || source === folderName) return;
+
+    // Rebuild ordered list: drop source out, re-insert at chosen position
+    const current = folders.slice();
+    const filtered = current.filter((f) => f !== source);
+    const targetIdx = filtered.indexOf(folderName);
+    if (targetIdx < 0) return;
+    const insertAt = target?.kind === 'after' ? targetIdx + 1 : targetIdx;
+    filtered.splice(insertAt, 0, source);
+    saveFolderOrder(filtered);
+    setFolderOrder(filtered);
+  }
+
+  function folderInsertIndex() {
+    if (!folderDragState.current.sourceFolder) return -1;
+    if (!folderDropTarget) return -1;
+    const idx = folders.findIndex((f) => f === folderDropTarget.folder);
+    if (idx < 0) return -1;
+    return folderDropTarget.kind === 'after' ? idx + 1 : idx;
+  }
+
   async function commitRename(name, nextDisplay) {
     const trimmed = (nextDisplay || '').trim();
     const current = projects.find((p) => p.name === name);
@@ -533,35 +619,52 @@ export default function Sidebar() {
           {renderItemsWithDivider(rootItems, ROOT_ZONE)}
         </div>
 
-        {folders.map((f) => {
-          const sectionKey = `${FOLDER_PREFIX}${f}`;
-          const isCollapsed = !!collapsed[`folder:${f}`];
-          const items = folderItems.get(f) || [];
-          return (
-            <div
-              key={f}
-              className="folder-group"
-              onDragOver={onDragOverSection(sectionKey)}
-              onDragLeave={onDragLeaveSection(sectionKey)}
-              onDrop={onDropSection(sectionKey)}
-            >
-              <button
-                type="button"
-                className={`folder-head ${isCollapsed ? 'collapsed' : ''}`}
-                onClick={() => toggleSection(`folder:${f}`)}
+        {(() => {
+          const folderInsertAt = folderInsertIndex();
+          const out = [];
+          folders.forEach((f, i) => {
+            if (folderInsertAt === i) {
+              out.push(<div key={`__folder-line-${i}`} className="drop-line" />);
+            }
+            const sectionKey = `${FOLDER_PREFIX}${f}`;
+            const isCollapsed = !!collapsed[`folder:${f}`];
+            const items = folderItems.get(f) || [];
+            out.push(
+              <div
+                key={f}
+                className="folder-group"
+                onDragOver={onDragOverSection(sectionKey)}
+                onDragLeave={onDragLeaveSection(sectionKey)}
+                onDrop={onDropSection(sectionKey)}
               >
-                <span className="chev"><ChevronDown size={10} /></span>
-                <span className="folder-ico"><Folder size={11} /></span>
-                <span>{f}</span>
-              </button>
-              {!isCollapsed && (
-                <div className={`folder-body ${emptySectionIntoClass(sectionKey, items)}`}>
-                  {renderItemsWithDivider(items, sectionKey)}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                <button
+                  type="button"
+                  className={`folder-head ${isCollapsed ? 'collapsed' : ''}`}
+                  onClick={() => toggleSection(`folder:${f}`)}
+                  draggable
+                  onDragStart={(e) => onFolderDragStart(e, f)}
+                  onDragEnd={onFolderDragEnd}
+                  onDragOver={(e) => onFolderDragOver(e, f)}
+                  onDragLeave={(e) => onFolderDragLeave(e, f)}
+                  onDrop={(e) => onFolderDrop(e, f)}
+                >
+                  <span className="chev"><ChevronDown size={10} /></span>
+                  <span className="folder-ico"><Folder size={11} /></span>
+                  <span>{f}</span>
+                </button>
+                {!isCollapsed && (
+                  <div className={`folder-body ${emptySectionIntoClass(sectionKey, items)}`}>
+                    {renderItemsWithDivider(items, sectionKey)}
+                  </div>
+                )}
+              </div>
+            );
+          });
+          if (folderInsertAt === folders.length) {
+            out.push(<div key="__folder-line-end" className="drop-line" />);
+          }
+          return out;
+        })()}
 
         {archiveItems.length > 0 && (
           <div
