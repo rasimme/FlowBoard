@@ -147,34 +147,68 @@
       text-transform: uppercase; letter-spacing: 0.04em;
     }
 
-    /* Sidebar */
+    /* Sidebar — T-136: flex column so sidebar-scroll can pin archive to bottom */
     .sidebar {
       background: var(--bg);
-      padding: 10px 14px 12px 14px;
-      overflow-y: auto;
-      overflow-x: hidden;
+      padding: 0;
+      overflow: hidden;
       transition: opacity var(--duration-normal);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
     }
     .app.sidebar-collapsed .sidebar { opacity: 0; pointer-events: none; }
 
+    /* --- Sidebar head (label + "+ New" pill) --- */
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px 8px;
+    }
     .sidebar-label {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--muted); font-weight: 600; margin-bottom: 8px; padding: 0;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); font-weight: 600; margin: 0; padding: 0;
+    }
+    .sidebar-new {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px 3px 7px;
+      font-size: 11px; font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--duration-fast);
+    }
+    .sidebar-new:hover {
+      background: var(--accent-subtle);
+      border-color: rgba(255, 92, 92, 0.25);
+    }
+    .sidebar-new svg { width: 11px; height: 11px; }
+
+    /* --- Scrollable project list (flex container to let archive pin) --- */
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 10px 12px;
+      display: flex;
+      flex-direction: column;
     }
 
+    /* --- Project item (base) --- */
     .project-item {
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; gap: 6px;
       padding: 8px 14px; border-radius: var(--radius-md);
       font-size: 13px; font-weight: 500; color: var(--muted);
       cursor: pointer; transition: all var(--duration-normal);
       border: 1px solid transparent; margin-bottom: 2px;
+      position: relative;
     }
-
-    .project-item:hover { 
-      background: var(--bg-hover); 
+    .project-item:hover {
+      background: var(--bg-hover);
       color: var(--text-strong);
     }
-    .project-item.viewed { 
+    .project-item.viewed {
       background: var(--accent-subtle);
       color: var(--text-strong);
     }
@@ -189,15 +223,231 @@
       color: var(--text-strong);
       box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
     }
+    .project-item .proj-name {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Archived state — section + lower opacity is enough. No strikethrough:
+       the archive-section is the primary signal, text decoration would be noise. */
+    .project-item.archived { opacity: 0.55; }
+    .project-item.dragging { opacity: 0.4; }
+
+    /* Inside sidebar-scroll, project items are denser (per design spec) */
+    .sidebar-scroll .project-item {
+      padding: 6px 10px;
+      font-size: 12.5px;
+      margin-bottom: 1px;
+      border-radius: var(--radius-sm);
+    }
 
     .project-badge {
       background: var(--secondary); border-radius: var(--radius-full);
       padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--muted);
     }
 
+    /* Grip + kebab — hover-revealed affordances */
+    .project-item .row-grip,
+    .project-item .row-kebab {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent; border: 0; cursor: pointer;
+      color: var(--muted); padding: 0;
+      opacity: 0;
+      transition: opacity var(--duration-fast), color var(--duration-fast);
+      font-family: inherit;
+    }
+    .project-item .row-grip { cursor: grab; width: 12px; height: 16px; flex-shrink: 0; }
+    .project-item .row-kebab { width: 20px; height: 20px; border-radius: var(--radius-sm); }
+    .project-item:hover .row-grip { opacity: 0.5; }
+    .project-item:hover .row-kebab,
+    .project-item .row-kebab[aria-expanded="true"] { opacity: 1; }
+    .project-item .row-kebab:hover { background: var(--bg-hover); color: var(--text-strong); }
+
+    /* Inline rename input — replaces proj-name span */
+    .project-item .proj-rename {
+      flex: 1; min-width: 0;
+      background: var(--bg); color: var(--text-strong);
+      border: 1px solid var(--accent); border-radius: var(--radius-sm);
+      padding: 2px 6px; font: inherit; outline: none;
+    }
+
+    /* DnD insertion divider — rendered as a real element BETWEEN rows.
+       Clean 2px line, no clipping on rounded corners, no "jump" between the
+       top-of-next and bottom-of-previous because both states map to the same
+       insert index and therefore the same DOM position. */
+    .drop-line {
+      height: 2px;
+      margin: 1px 2px;
+      background: var(--accent);
+      border-radius: 1px;
+      pointer-events: none;
+    }
+    /* Empty-section drop zone (e.g. empty folder body, empty archive placeholder) —
+       kept as a ring since there's no gap to place a divider in. */
+    .drop-into {
+      box-shadow: inset 0 0 0 1px var(--accent);
+      border-radius: var(--radius-sm);
+    }
+
+    /* Folder groups — boxed */
+    .folder-group {
+      margin: 8px 0 4px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.015);
+      border-radius: var(--radius-sm);
+      padding: 3px 4px 5px;
+    }
+    .folder-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px 4px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); font-weight: 600;
+      cursor: pointer; user-select: none;
+      border-radius: var(--radius-sm);
+      background: transparent; border: 0;
+      width: 100%; text-align: left; font-family: inherit;
+    }
+    .folder-head:hover { color: var(--text); }
+    .folder-head .chev {
+      width: 10px; height: 10px; opacity: 0.7;
+      display: inline-flex; align-items: center;
+      transition: transform var(--duration-fast);
+    }
+    .folder-head.collapsed .chev { transform: rotate(-90deg); }
+    .folder-head .folder-ico {
+      width: 11px; height: 11px; opacity: 0.55;
+      display: inline-flex; align-items: center;
+    }
+    .folder-body {
+      display: flex; flex-direction: column;
+      padding: 2px 2px 0;
+    }
+
+    /* Archive section — pinned bottom */
+    .archive-section {
+      margin-top: auto;
+      padding-top: 6px;
+    }
+    .archive-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 10px 6px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); font-weight: 600;
+      cursor: pointer; user-select: none;
+      opacity: 0.75;
+      border-top: 1px solid var(--border);
+      background: transparent; border-left: 0; border-right: 0; border-bottom: 0;
+      width: 100%; text-align: left; font-family: inherit;
+    }
+    .archive-head:hover { opacity: 1; color: var(--text); }
+    .archive-head .chev {
+      width: 10px; height: 10px; display: inline-flex; align-items: center;
+      transition: transform var(--duration-fast);
+    }
+    .archive-head.collapsed .chev { transform: rotate(-90deg); }
+    .archive-head .folder-ico {
+      width: 11px; height: 11px; opacity: 0.8;
+      display: inline-flex; align-items: center;
+    }
+    .archive-head .folder-count {
+      margin-left: auto;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10.5px; opacity: 0.8;
+    }
+
     .sidebar-empty { color: var(--muted); font-size: 12px; padding: 12px; text-align: center; }
 
-    .sidebar-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .sidebar-actions {
+      margin: 0 10px 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* --- New-project modal (per design handoff .np-*) --- */
+    .np-modal {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      width: 440px; max-width: calc(100vw - 48px);
+      overflow: visible;
+    }
+    .np-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .np-title { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+    .np-close {
+      width: 24px; height: 24px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent; border: 0; cursor: pointer;
+      color: var(--muted); border-radius: var(--radius-sm);
+    }
+    .np-close:hover { background: var(--bg-hover); color: var(--text); }
+    .np-body { padding: 16px 18px; }
+    .np-field { margin-bottom: 14px; position: relative; }
+    .np-field:last-child { margin-bottom: 0; }
+    .np-label {
+      display: block; font-size: 10px; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .np-input,
+    .np-select {
+      width: 100%; box-sizing: border-box;
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      color: var(--text-strong);
+      padding: 9px 11px;
+      font-size: 13px; outline: none;
+      font-family: inherit;
+      transition: border-color var(--duration-fast);
+    }
+    .np-input:focus,
+    .np-select:focus { border-color: var(--accent); }
+    .np-select {
+      cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+      text-align: left;
+    }
+    .np-select .chev { width: 11px; height: 11px; opacity: 0.7; display: inline-flex; }
+    .np-hint {
+      font-size: 10.5px; color: var(--muted);
+      margin-top: 6px; line-height: 1.4;
+    }
+    .np-hint .mono {
+      color: var(--text);
+      font-family: "JetBrains Mono", monospace;
+    }
+    .np-dropdown {
+      position: absolute; top: 100%; left: 0; right: 0;
+      margin-top: 4px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-md);
+      padding: 4px; z-index: 5;
+    }
+    .np-dropdown-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      font-size: 12.5px; color: var(--text);
+      cursor: pointer;
+      background: transparent; border: 0;
+      width: 100%; text-align: left; font-family: inherit;
+    }
+    .np-dropdown-item:hover { background: var(--bg-hover); }
+    .np-dropdown-item.active { background: var(--accent-subtle); color: var(--accent); }
+    .np-dropdown-item.new-folder { color: var(--accent); }
+    .np-dropdown-item svg { width: 13px; height: 13px; opacity: 0.7; flex-shrink: 0; }
+    .np-dropdown-divider { height: 1px; background: var(--border); margin: 4px 0; }
+    .np-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 12px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-accent);
+    }
 
     .btn {
       display: inline-flex; align-items: center; justify-content: center;

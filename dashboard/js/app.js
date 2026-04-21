@@ -129,12 +129,38 @@ function switchTab(tab) {
   }
 }
 
+// T-136: React-triggered reload of the projects list after create/update/delete.
+// Runs the same merge logic as refresh() but skips task/canvas fetching so the
+// sidebar updates immediately without waiting on the 5s poll.
+async function refreshProjectsOnly() {
+  try {
+    const data = await api('/projects');
+    const newProjects = data.projects || [];
+    state.projects = newProjects;
+    registerDisplayNames(newProjects);
+    state.activeProject = data.activeProject;
+    prevProjectsJson = JSON.stringify(state.projects);
+    prevActiveProject = state.activeProject;
+    if (state.viewedProject && !newProjects.some(p => p.name === state.viewedProject)) {
+      state.viewedProject = newProjects[0]?.name || null;
+      state.tasks = [];
+      prevTasksJson = '';
+    }
+    renderSidebar();
+    renderHeader();
+    window._notifyReact?.();
+  } catch (err) {
+    console.error('refreshProjectsOnly error:', err);
+  }
+}
+
 // --- Shell bridge callbacks (React Header + Sidebar + TabBar) ---
 window._viewProject = viewProject;
 window._activateProject = activateProject;
 window._deactivateProject = deactivateProject;
 window._toggleSidebar = toggleSidebar;
 window._switchTab = switchTab;
+window._refreshProjects = refreshProjectsOnly;
 
 // Spec file bridge — sets pending path and switches to files tab
 window._openSpec = function(specPath, taskId) {

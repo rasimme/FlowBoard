@@ -788,6 +788,55 @@ app.post('/api/projects', (req, res) => {
   }
 });
 
+// PUT /api/projects/:name — T-136: update metadata (displayName, archived, group, order)
+app.put('/api/projects/:name', (req, res) => {
+  if (!HZL_ENABLED) return res.status(501).json({ error: 'Project updates require HZL_ENABLED=true' });
+  const lifecycle = require('./project-lifecycle.js');
+  try {
+    const project = lifecycle.updateProject(req.params.name, req.body || {}, { hzlService, fbMeta });
+    return res.json({ project });
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: e.message });
+    if (e.code === 'NOT_FOUND')        return res.status(404).json({ error: e.message });
+    if (e.code === 'METADATA_ERROR')   return res.status(500).json({ error: e.message });
+    console.error('[projects] updateProject failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/projects/:name?confirm=<name> — T-136: hard-delete (tombstone + .trash/)
+app.delete('/api/projects/:name', (req, res) => {
+  if (!HZL_ENABLED) return res.status(501).json({ error: 'Project delete requires HZL_ENABLED=true' });
+  if (req.query.confirm !== req.params.name) {
+    return res.status(400).json({ error: 'Missing or mismatched ?confirm=<projectName>' });
+  }
+  const lifecycle = require('./project-lifecycle.js');
+  try {
+    const result = lifecycle.deleteProject(req.params.name, {
+      hzlService,
+      fbMeta,
+      projectsDir: PROJECTS_DIR,
+    });
+    // Clear agent active-project rows pointing at the deleted project so no
+    // agent stays "activated" on a tombstoned name.
+    try {
+      for (const row of fbMeta.listAgents()) {
+        if (row.active_project === req.params.name) {
+          fbMeta.setAgentActiveProject(row.agent_id, null);
+        }
+      }
+    } catch (e) { console.warn('[projects] clear-agent-refs:', e.message); }
+    const response = { ok: true, archivedTaskCount: result.archivedTaskCount };
+    if (result.warnings && result.warnings.length > 0) response.warnings = result.warnings;
+    return res.json(response);
+  } catch (e) {
+    if (e.code === 'NOT_FOUND')      return res.status(404).json({ error: e.message });
+    if (e.code === 'METADATA_ERROR') return res.status(500).json({ error: e.message });
+    console.error('[projects] deleteProject failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/projects
 app.get('/api/projects', (req, res) => {
   const active = getCanonicalActiveProject();

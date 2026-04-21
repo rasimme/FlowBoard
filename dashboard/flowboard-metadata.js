@@ -36,6 +36,16 @@ const CREATE_MIGRATIONS_TABLE_SQL = `
   )
 `;
 
+// T-136: tombstones for hard-deleted projects. HZL's projections table retains
+// project rows (no native delete), so we filter by name here to make delete
+// effectively permanent from a UI perspective while keeping event history.
+const CREATE_DELETED_PROJECTS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_deleted_projects (
+    name        TEXT PRIMARY KEY,
+    deleted_at  TEXT NOT NULL
+  )
+`;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -45,7 +55,8 @@ function init(db) {
   _db.prepare(CREATE_TABLE_SQL).run();
   _db.prepare(CREATE_AGENTS_TABLE_SQL).run();
   _db.prepare(CREATE_MIGRATIONS_TABLE_SQL).run();
-  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations');
+  _db.prepare(CREATE_DELETED_PROJECTS_TABLE_SQL).run();
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations, flowboard_deleted_projects');
 }
 
 function countProjects() {
@@ -142,20 +153,101 @@ function migrateFromIndexMd(indexFilePath, getDisplayNameFn) {
 /**
  * Merge HZL native project list with flowboard_projects metadata.
  * hzlProjects: [{ name, description, created_at, is_protected }]
- * Returns: [{ name, displayName, status, assignedAgents, description }]
- * Missing metadata rows fall back to safe defaults — never hides a project.
+ * Returns: [{ name, displayName, status, archived, group, order, assignedAgents, description, createdAt }]
+ * Hard-deleted projects (flowboard_deleted_projects) are filtered out.
  */
 function listProjects(hzlProjects) {
-  return hzlProjects.map(p => {
-    const meta = _db ? getProject(p.name) : null;
-    return {
-      name: p.name,
-      displayName: meta ? (meta.display_name || p.name) : p.name,
-      status: meta ? (meta.status || 'active') : 'active',
-      assignedAgents: meta ? _parseJson(meta.assigned_agents, []) : [],
-      description: p.description || '',
-    };
+  const deleted = _db
+    ? new Set(_db.prepare('SELECT name FROM flowboard_deleted_projects').all().map(r => r.name))
+    : new Set();
+  return hzlProjects
+    .filter(p => !deleted.has(p.name))
+    .map(p => {
+      const meta = _db ? getProject(p.name) : null;
+      const config = meta ? _parseJson(meta.config, {}) : {};
+      const status = meta ? (meta.status || 'active') : 'active';
+      return {
+        name: p.name,
+        displayName: meta ? (meta.display_name || p.name) : p.name,
+        status,
+        archived: status === 'archived',
+        group: typeof config.group === 'string' ? config.group : null,
+        order: typeof config.order === 'number' ? config.order : null,
+        assignedAgents: meta ? _parseJson(meta.assigned_agents, []) : [],
+        description: p.description || '',
+        createdAt: meta ? meta.created_at : (p.created_at || null),
+      };
+    });
+}
+
+/**
+ * T-136: Patch metadata fields on a project row.
+ * Accepts any subset of { displayName, status, group, order, archived }.
+ * `archived` is a convenience boolean that maps to status ∈ {'active','archived'}.
+ * group/order are merged into the config JSON; explicit null clears them.
+ * Returns the patched row (raw DB shape), or null if project is not in metadata.
+ */
+function updateProjectMeta(name, patch) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const existing = getProject(name);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const nextDisplayName = patch.displayName !== undefined
+    ? String(patch.displayName || name)
+    : existing.display_name;
+
+  let nextStatus = existing.status || 'active';
+  if (patch.status !== undefined) nextStatus = patch.status;
+  else if (patch.archived !== undefined) nextStatus = patch.archived ? 'archived' : 'active';
+
+  const config = _parseJson(existing.config, {});
+  if (patch.group !== undefined) {
+    if (patch.group === null || patch.group === '') delete config.group;
+    else config.group = String(patch.group);
+  }
+  if (patch.order !== undefined) {
+    if (patch.order === null) delete config.order;
+    else {
+      const n = Number(patch.order);
+      if (Number.isFinite(n)) config.order = n;
+    }
+  }
+
+  _db.prepare(`
+    UPDATE flowboard_projects
+       SET display_name = ?, status = ?, config = ?, updated_at = ?
+     WHERE name = ?
+  `).run(nextDisplayName, nextStatus, JSON.stringify(config), now, name);
+
+  return getProject(name);
+}
+
+/**
+ * T-136: Tombstone-delete a project from flowboard metadata.
+ * Removes the flowboard_projects row and inserts a tombstone row so listProjects()
+ * filters this name out even though HZL retains the projection.
+ */
+function deleteProjectMeta(name) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const now = new Date().toISOString();
+  const tx = _db.transaction((n) => {
+    _db.prepare('DELETE FROM flowboard_projects WHERE name = ?').run(n);
+    _db.prepare(
+      'INSERT OR REPLACE INTO flowboard_deleted_projects (name, deleted_at) VALUES (?, ?)'
+    ).run(n, now);
   });
+  tx(name);
+}
+
+/**
+ * T-136: True/false whether a project is in the tombstone table.
+ * Used by createProject to reject resurrection of a just-deleted name.
+ */
+function isProjectDeleted(name) {
+  if (!_db) return false;
+  const row = _db.prepare('SELECT 1 FROM flowboard_deleted_projects WHERE name = ?').get(name);
+  return !!row;
 }
 
 function _parseJson(str, defaultVal) {
@@ -232,6 +324,9 @@ module.exports = {
   shouldRunIndexMigration,
   getProject,
   upsertProject,
+  updateProjectMeta,
+  deleteProjectMeta,
+  isProjectDeleted,
   migrateFromIndexMd,
   listProjects,
   getAgentRow,

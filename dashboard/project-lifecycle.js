@@ -13,7 +13,7 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
  * Validate and normalize project creation input.
  * Throws { code: 'VALIDATION_ERROR', message } on failure.
  */
-function _validateInput({ name, displayName, description }) {
+function _validateInput({ name, displayName, description, group }) {
   if (!name || typeof name !== 'string') {
     throw Object.assign(new Error('name is required'), { code: 'VALIDATION_ERROR' });
   }
@@ -24,10 +24,22 @@ function _validateInput({ name, displayName, description }) {
       { code: 'VALIDATION_ERROR' }
     );
   }
+  let cleanGroup = null;
+  if (group !== undefined && group !== null) {
+    if (typeof group !== 'string') {
+      throw Object.assign(new Error('group must be a string'), { code: 'VALIDATION_ERROR' });
+    }
+    const g = group.trim();
+    if (g.length > 60) {
+      throw Object.assign(new Error('group name too long (max 60 chars)'), { code: 'VALIDATION_ERROR' });
+    }
+    cleanGroup = g || null;
+  }
   return {
     name: slug,
     displayName: (typeof displayName === 'string' && displayName.trim()) || slug,
     description: (typeof description === 'string' && description.trim()) || '',
+    group: cleanGroup,
   };
 }
 
@@ -131,7 +143,7 @@ function _scaffoldFilesystem(projectsDir, name, displayName, description) {
  */
 function createProject(input, { hzlService, fbMeta, projectsDir }) {
   // 1. Validate
-  const { name, displayName, description } = _validateInput(input);
+  const { name, displayName, description, group } = _validateInput(input);
 
   // 2. Duplicate detection across all canonical layers
   const hzlProjects = hzlService.listHzlProjects();
@@ -145,6 +157,13 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
   if (fbMeta.getProject(name)) {
     throw Object.assign(
       new Error(`Project "${name}" already exists in FlowBoard metadata`),
+      { code: 'DUPLICATE' }
+    );
+  }
+
+  if (typeof fbMeta.isProjectDeleted === 'function' && fbMeta.isProjectDeleted(name)) {
+    throw Object.assign(
+      new Error(`Project "${name}" was deleted. Pick a different name (or restore from projects/.trash/)`),
       { code: 'DUPLICATE' }
     );
   }
@@ -173,6 +192,7 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
       displayName,
       status: 'active',
       createdAt: new Date().toISOString(),
+      config: group ? { group } : {},
     }, true);
   } catch (e) {
     throw Object.assign(
@@ -199,8 +219,189 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
     );
   }
 
-  const project = { name, displayName, description: description || null, status: 'active' };
+  const project = {
+    name,
+    displayName,
+    description: description || null,
+    status: 'active',
+    group: group || null,
+  };
   return { project, warnings };
 }
 
-module.exports = { createProject };
+// --- T-136: update + hard-delete ---
+
+const VALID_UPDATE_STATUSES = new Set(['active', 'archived']);
+
+function _validateUpdateInput(patch) {
+  const out = {};
+  if (patch.displayName !== undefined) {
+    if (typeof patch.displayName !== 'string') {
+      throw Object.assign(new Error('displayName must be a string'), { code: 'VALIDATION_ERROR' });
+    }
+    const dn = patch.displayName.trim();
+    if (!dn) throw Object.assign(new Error('displayName cannot be empty'), { code: 'VALIDATION_ERROR' });
+    if (dn.length > 120) throw Object.assign(new Error('displayName too long (max 120 chars)'), { code: 'VALIDATION_ERROR' });
+    out.displayName = dn;
+  }
+  if (patch.archived !== undefined) {
+    if (typeof patch.archived !== 'boolean') {
+      throw Object.assign(new Error('archived must be boolean'), { code: 'VALIDATION_ERROR' });
+    }
+    out.archived = patch.archived;
+  }
+  if (patch.status !== undefined) {
+    if (typeof patch.status !== 'string' || !VALID_UPDATE_STATUSES.has(patch.status)) {
+      throw Object.assign(
+        new Error(`status must be one of: ${[...VALID_UPDATE_STATUSES].join(', ')}`),
+        { code: 'VALIDATION_ERROR' }
+      );
+    }
+    out.status = patch.status;
+  }
+  if (patch.group !== undefined) {
+    if (patch.group !== null && typeof patch.group !== 'string') {
+      throw Object.assign(new Error('group must be a string or null'), { code: 'VALIDATION_ERROR' });
+    }
+    if (typeof patch.group === 'string') {
+      const g = patch.group.trim();
+      if (g.length > 60) {
+        throw Object.assign(new Error('group too long (max 60 chars)'), { code: 'VALIDATION_ERROR' });
+      }
+      out.group = g || null;
+    } else {
+      out.group = null;
+    }
+  }
+  if (patch.order !== undefined) {
+    if (patch.order === null) {
+      out.order = null;
+    } else {
+      const n = Number(patch.order);
+      if (!Number.isFinite(n)) {
+        throw Object.assign(new Error('order must be a finite number or null'), { code: 'VALIDATION_ERROR' });
+      }
+      out.order = n;
+    }
+  }
+  if (Object.keys(out).length === 0) {
+    throw Object.assign(new Error('No updatable fields provided'), { code: 'VALIDATION_ERROR' });
+  }
+  return out;
+}
+
+function _toPublic(row) {
+  let config = {};
+  try { config = JSON.parse(row.config || '{}'); } catch { /* keep {} */ }
+  return {
+    name: row.name,
+    displayName: row.display_name || row.name,
+    status: row.status || 'active',
+    archived: (row.status || 'active') === 'archived',
+    group: typeof config.group === 'string' ? config.group : null,
+    order: typeof config.order === 'number' ? config.order : null,
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null,
+  };
+}
+
+/**
+ * Update a project's metadata (display name, archived flag, group, order).
+ * Lazily creates a flowboard_projects row for HZL-only legacy projects.
+ *
+ * @throws Error with .code in 'VALIDATION_ERROR' | 'NOT_FOUND' | 'METADATA_ERROR'
+ */
+function updateProject(name, input, { hzlService, fbMeta }) {
+  if (typeof fbMeta.isProjectDeleted === 'function' && fbMeta.isProjectDeleted(name)) {
+    throw Object.assign(new Error(`Project "${name}" is deleted`), { code: 'NOT_FOUND' });
+  }
+  const hzlProjects = hzlService.listHzlProjects();
+  if (!hzlProjects.some(p => p.name === name)) {
+    throw Object.assign(new Error(`Project "${name}" not found`), { code: 'NOT_FOUND' });
+  }
+
+  const patch = _validateUpdateInput(input || {});
+
+  // Ensure a metadata row exists (HZL-only legacy projects)
+  if (!fbMeta.getProject(name)) {
+    fbMeta.upsertProject(name, { displayName: name, status: 'active' }, true);
+  }
+
+  const updated = fbMeta.updateProjectMeta(name, patch);
+  if (!updated) {
+    throw Object.assign(new Error('Metadata row missing after update'), { code: 'METADATA_ERROR' });
+  }
+  return _toPublic(updated);
+}
+
+/**
+ * Hard-delete a project.
+ *
+ * Three-step sequence, best-effort with warnings (caller still sees ok=true):
+ *   1. Archive every active top-level task in the project (cascade 'all')
+ *   2. Move projects/<name>/ into projects/.trash/<name>-<ts>/
+ *   3. Tombstone the metadata row so listProjects hides the name forever
+ *
+ * Step 3 is the only one that must succeed; otherwise we throw METADATA_ERROR.
+ *
+ * @throws Error with .code in 'NOT_FOUND' | 'METADATA_ERROR'
+ */
+function deleteProject(name, { hzlService, fbMeta, projectsDir }) {
+  if (typeof fbMeta.isProjectDeleted === 'function' && fbMeta.isProjectDeleted(name)) {
+    throw Object.assign(new Error(`Project "${name}" is already deleted`), { code: 'NOT_FOUND' });
+  }
+  const hzlProjects = hzlService.listHzlProjects();
+  if (!hzlProjects.some(p => p.name === name)) {
+    throw Object.assign(new Error(`Project "${name}" not found`), { code: 'NOT_FOUND' });
+  }
+
+  const warnings = [];
+  let archivedTaskCount = 0;
+
+  // 1. Archive top-level tasks (children cascade via mode='all')
+  let tasks = [];
+  try { tasks = hzlService.listTasks(name, { includeArchived: false }) || []; }
+  catch (e) { warnings.push(`listTasks: ${e.message}`); }
+
+  for (const t of tasks) {
+    if (t.parentId) continue;
+    const mode = t.subtaskIds && t.subtaskIds.length > 0 ? 'all' : undefined;
+    try {
+      hzlService.deleteTask(name, t.id, mode);
+      archivedTaskCount++;
+    } catch (e) {
+      warnings.push(`archive ${t.id}: ${e.message}`);
+    }
+  }
+
+  // 2. Move project dir into .trash (reversible by hand)
+  const projectDir = path.join(projectsDir, name);
+  if (fs.existsSync(projectDir)) {
+    const trashRoot = path.join(projectsDir, '.trash');
+    if (!fs.existsSync(trashRoot)) {
+      try { fs.mkdirSync(trashRoot, { recursive: true }); }
+      catch (e) { warnings.push(`mkdir .trash: ${e.message}`); }
+    }
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest = path.join(trashRoot, `${name}-${ts}`);
+    try {
+      fs.renameSync(projectDir, dest);
+    } catch (e) {
+      warnings.push(`trash move: ${e.message}`);
+    }
+  }
+
+  // 3. Tombstone in flowboard metadata — must succeed
+  try {
+    fbMeta.deleteProjectMeta(name);
+  } catch (e) {
+    throw Object.assign(
+      new Error(`Metadata tombstone failed: ${e.message}`),
+      { code: 'METADATA_ERROR' }
+    );
+  }
+
+  return { ok: true, archivedTaskCount, warnings };
+}
+
+module.exports = { createProject, updateProject, deleteProject };
