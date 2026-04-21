@@ -208,19 +208,13 @@
       background: var(--bg-hover);
       color: var(--text-strong);
     }
+    /* Viewed = the project currently open in the kanban. Gets the full
+       emphasis (background + accent border + glow). Agent activity is signaled
+       separately by the pulse marker, not by this contour. */
     .project-item.viewed {
       background: var(--accent-subtle);
       color: var(--text-strong);
-    }
-    .project-item.agent-active {
       border: 1px solid var(--accent);
-      color: var(--text-strong);
-      box-shadow: 0 0 12px rgba(255, 92, 92, .15);
-    }
-    .project-item.agent-active.viewed {
-      background: var(--accent-subtle);
-      border: 1px solid var(--accent);
-      color: var(--text-strong);
       box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
     }
     .project-item .proj-name {

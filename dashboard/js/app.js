@@ -40,11 +40,9 @@ function renderSidebar() {
     list.innerHTML = '<div class="sidebar-empty">No projects</div>';
   } else {
     list.innerHTML = state.projects.map(p => {
-      const isActive = p.name === state.activeProject;
       const isViewed = p.name === state.viewedProject;
       const openCount = (p.taskCounts.open || 0) + (p.taskCounts['in-progress'] || 0);
       let cls = 'project-item';
-      if (isActive) cls += ' agent-active';
       if (isViewed) cls += ' viewed';
       return `<div class="${cls}" data-action="view-project" data-project="${p.name}">
         <span>${formatDisplayName(p.name)}</span>

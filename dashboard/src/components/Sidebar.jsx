@@ -86,7 +86,6 @@ function ProjectItem({
   project,
   section,
   isViewed,
-  isActive,
   hasAgentActivity,
   allProjects,
   folders,
@@ -118,8 +117,6 @@ function ProjectItem({
   const cls = [
     'project-item',
     isViewed && 'viewed',
-    isActive && 'agent-active',
-    hasAgentActivity && 'has-agent-activity',
     project.archived && 'archived',
   ].filter(Boolean).join(' ');
 
@@ -540,7 +537,6 @@ export default function Sidebar() {
       project={p}
       section={sectionKey}
       isViewed={p.name === viewedProject}
-      isActive={p.name === activeProject}
       hasAgentActivity={agentActiveProjects.has(p.name)}
       allProjects={projects}
       folders={folders}
