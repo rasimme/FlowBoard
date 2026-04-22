@@ -868,7 +868,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                     breathing room; also serves as the scroll-anchor. */}
                 <div
                   ref={archiveAnchorRef}
-                  className="my-3 h-px bg-[rgba(255,255,255,0.06)] scroll-mt-2"
+                  className="h-px bg-border-strong scroll-mt-2"
                   aria-hidden="true"
                 />
                 {sortedArchived.map(t => <ArchivedTaskCard key={t.id} task={t} project={project} onTaskUpdated={onTaskUpdated} onTaskTrashed={onTaskTrashed} />)}
