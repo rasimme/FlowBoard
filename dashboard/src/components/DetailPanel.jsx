@@ -172,12 +172,33 @@ export default function DetailPanel() {
   const pollRef = useRef(null);
   const taskRef = useRef(null); // always-current task for action handlers
   const titleTextareaRef = useRef(null);
+  // T-161-4 Activity Feed: sticky-to-bottom flag. Starts true so the
+  // feed anchors to the latest entry on first open, but flips to false
+  // as soon as the user scrolls up, which stops the 12 s poll from
+  // yanking the view back to the bottom every tick.
+  const stickToBottomRef = useRef(true);
 
   const project = state?.viewedProject;
   const isOpen = taskId !== null;
 
   // Keep taskRef in sync
   taskRef.current = task;
+
+  // Reset all transient panel state: editing modes, inline confirms,
+  // popovers, draft text. Called both on panel close and on task switch
+  // so a half-typed description from task A doesn't bleed into task B.
+  const resetPanelOverlays = useCallback(() => {
+    setIsEditingTitle(false);
+    setIsEditingDescription(false);
+    setBlockReasonOpen(false);
+    setArchiveConfirmOpen(false);
+    setHeaderPopover({ type: null, rect: null });
+    setRoutePopover({ open: false, rect: null });
+    setEditTitle('');
+    setEditDescription('');
+    setBlockReasonText('');
+    stickToBottomRef.current = true;
+  }, []);
 
   // --- Expose window.openTaskDetail for vanilla JS bridge ---
   useEffect(() => {
@@ -188,6 +209,7 @@ export default function DetailPanel() {
       setSyntheticItems([]);
       setHzlAvailable(true);
       setLoading(true);
+      resetPanelOverlays();
     };
     window.openTaskDetail = handler;
     // Drain any calls that arrived before React mounted
@@ -280,12 +302,20 @@ export default function DetailPanel() {
     return () => { clearInterval(pollRef.current); };
   }, [task, loadActivity]);
 
-  // Scroll feed to bottom when items change
+  // Scroll feed to bottom when new items arrive, but only if the user
+  // was already near the bottom. Prevents the poll from hijacking a
+  // deliberate scroll-up back to the latest entry.
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && stickToBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [feed, syntheticItems]);
+
+  function handleScrollActivity(e) {
+    const el = e.currentTarget;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    stickToBottomRef.current = atBottom;
+  }
 
   // Close on Escape (but not while editing title)
   useEffect(() => {
@@ -303,6 +333,7 @@ export default function DetailPanel() {
     setFeed([]);
     setSyntheticItems([]);
     clearInterval(pollRef.current);
+    resetPanelOverlays();
   }
 
   function addSyntheticItem(type, message) {
@@ -1130,7 +1161,7 @@ export default function DetailPanel() {
         {/* T-161-4 Zone 3 — Content: parent-link (if subtask),
             description, subtasks list, dependencies. Linear sections,
             each only rendered when its data exists. */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} onScroll={handleScrollActivity} className="flex-1 overflow-y-auto">
           {task?.parentId && (
             <div className="px-4 pt-3">
               <button

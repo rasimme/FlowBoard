@@ -17,10 +17,10 @@ const Textarea = forwardRef(function Textarea({
       ref={ref}
       rows={rows}
       className={[
-        'w-full px-3 py-2 text-sm rounded-lg resize-y',
+        'w-full px-3 py-2 text-sm rounded-lg resize-none',
         'bg-bg text-text border border-border appearance-none',
         'placeholder:text-muted',
-        'outline-none focus:border-accent focus:shadow-focus-accent',
+        'outline-none focus:border-accent',
         'transition-colors duration-fast',
         className,
       ].join(' ')}
