@@ -75,7 +75,14 @@ function allSubtasksDone(task) {
 }
 
 function currentAgent() {
-  return window.appState?.authUser || 'unknown';
+  // T-161-4: the dashboard operator is always the reserved `@human` agent in
+  // HZL terms, regardless of which Telegram user is logged in. Claims,
+  // releases, comments triggered from the UI all carry this identity so the
+  // Human ↔ Agent boundary stays visible in the shared Activity Feed.
+  // `window.appState.authUser` is still set (for "logged in as" display) but
+  // is intentionally not used as the HZL agent id. See
+  // context/hzl-semantics-for-ui.md §1.
+  return 'human';
 }
 
 function refreshKanban() {
