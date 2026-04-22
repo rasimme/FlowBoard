@@ -7,6 +7,8 @@ import Badge from './Badge.jsx';
 import Popover from './Popover.jsx';
 import PriorityPill from './PriorityPill.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
+import AgentChip from './AgentChip.jsx';
+import LeaseIndicator from './LeaseIndicator.jsx';
 
 // T-161-4: operational statuses shown in the Zone-1 Status-Picker.
 // Archive is intentionally not in this list — it is a separate user
@@ -116,6 +118,9 @@ export default function DetailPanel() {
   const [blockReasonOpen, setBlockReasonOpen] = useState(false);
   const [blockReasonText, setBlockReasonText] = useState('');
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  // T-161-4 Zone 3: description inline-edit
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editDescription, setEditDescription] = useState('');
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
@@ -694,6 +699,45 @@ export default function DetailPanel() {
     }
   }
 
+  // T-161-4 Zone 3: description inline-edit.
+  function startEditingDescription() {
+    setEditDescription(task?.description || '');
+    setIsEditingDescription(true);
+  }
+  async function saveDescription() {
+    const t = taskRef.current;
+    if (!t) { setIsEditingDescription(false); return; }
+    const next = editDescription;
+    if (next === (t.description || '')) { setIsEditingDescription(false); return; }
+    const oldDescription = t.description || '';
+    setTask({ ...t, description: next });
+    taskRef.current = { ...t, description: next };
+    setIsEditingDescription(false);
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { description: next },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+    } catch (err) {
+      setTask({ ...t, description: oldDescription });
+      taskRef.current = { ...t, description: oldDescription };
+      showToast('Description save failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+  function cancelEditingDescription() {
+    setIsEditingDescription(false);
+    setEditDescription('');
+  }
+
+  // Navigate the panel to another task (used by Back-to-Parent and
+  // the Subtasks list). Reuses the existing window.openTaskDetail bridge
+  // so the panel transitions cleanly.
+  function navigateToTask(id) {
+    if (id && window.openTaskDetail) window.openTaskDetail(id);
+  }
+
   // --- Render ---
   if (!isOpen) return null;
 
@@ -976,31 +1020,152 @@ export default function DetailPanel() {
           </div>
         )}
 
-        {/* Scrollable content */}
+        {/* T-161-4 Zone 3 — Content: parent-link (if subtask),
+            description, subtasks list, dependencies. Linear sections,
+            each only rendered when its data exists. */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {/* Task Meta */}
+          {task?.parentId && (
+            <div className="px-4 pt-3">
+              <button
+                type="button"
+                onClick={() => navigateToTask(task.parentId)}
+                className="inline-flex items-center gap-1 text-xs text-muted hover:text-text transition-colors bg-transparent border-0 cursor-pointer p-0"
+                title={`Open parent ${task.parentId}`}
+              >
+                <span style={{ transform: 'scaleX(-1)', display: 'inline-block' }}>
+                  <ArrowRight size={12} />
+                </span>
+                <span>Parent: {task.parentId}</span>
+                <span className="text-muted">
+                  {(() => {
+                    const parent = (window.appState?.tasks || []).find(t => t.id === task.parentId);
+                    return parent?.title ? ` - ${parent.title}` : '';
+                  })()}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Description */}
           {task && (
             <div className="px-4 py-4 border-b border-border">
-              <div className="mt-2.5 text-xs text-muted">
-                {task.id} &middot; {task.status || ''}
-                {!task.parentId && <> &middot; {task.priority || ''}</>}
-                {task.parentId && (
-                  <> &middot; <span className="text-sm text-muted">Priority: {(() => {
-                    const parent = (window.appState?.tasks || []).find(t => t.id === task.parentId);
-                    return parent?.priority || task.priority || '–';
-                  })()} (inherited from {task.parentId})</span></>
-                )}
+              <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Description</div>
+              {isEditingDescription ? (
+                <div>
+                  <textarea
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') { e.preventDefault(); cancelEditingDescription(); }
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveDescription(); }
+                    }}
+                    autoFocus
+                    rows={4}
+                    className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-text placeholder:text-muted focus:border-accent outline-none resize-y"
+                    placeholder="Describe what this task is about"
+                  />
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditingDescription}
+                      className="h-7 px-3 rounded-md border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveDescription}
+                      className="h-7 px-3 rounded-md border-0 bg-accent text-white hover:brightness-110 cursor-pointer text-xs font-medium"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  onClick={startEditingDescription}
+                  className="text-sm text-text whitespace-pre-wrap cursor-text hover:bg-bg-hover rounded px-1 py-0.5 -mx-1"
+                  title="Click to edit"
+                >
+                  {task.description
+                    ? task.description
+                    : <span className="text-muted italic">Add description</span>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Subtasks list — only for parent tasks with subtasks */}
+          {task && !task.parentId && task.subtaskIds && task.subtaskIds.length > 0 && (
+            <div className="px-4 py-4 border-b border-border">
+              <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">
+                Subtasks
+                {(() => {
+                  const subs = (window.appState?.tasks || []).filter(t => t.parentId === task.id && t.status !== 'archived' && !t.trashedAt);
+                  const done = subs.filter(t => t.status === 'done').length;
+                  return <span className="ml-2 normal-case tracking-normal text-muted font-normal">{done}/{subs.length} done</span>;
+                })()}
+              </div>
+              <div className="space-y-1">
+                {(window.appState?.tasks || [])
+                  .filter(t => t.parentId === task.id && !t.trashedAt)
+                  .sort((a, b) => {
+                    const na = parseInt((a.id.split('-').pop() || '0'), 10);
+                    const nb = parseInt((b.id.split('-').pop() || '0'), 10);
+                    return na - nb;
+                  })
+                  .map((sub) => (
+                    <div
+                      key={sub.id}
+                      onClick={() => navigateToTask(sub.id)}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-bg-hover cursor-pointer"
+                    >
+                      <span className={`inline-block w-2 h-2 rounded-full status-dot-${sub.status}`} />
+                      <span className="font-mono text-[11px] text-muted">{sub.id}</span>
+                      <span className="text-sm text-text truncate flex-1">{sub.title}</span>
+                      {sub.agent && <AgentChip name={sub.agent} size="xs" variant="solid" title={`Claimed by ${sub.agent}`} />}
+                      {!sub.agent && sub.routedAgent && <AgentChip name={sub.routedAgent} size="xs" variant="ring" title={`Routed to ${sub.routedAgent}`} />}
+                      <LeaseIndicator task={sub} />
+                    </div>
+                  ))}
               </div>
             </div>
           )}
 
-          {/* Activity Feed */}
+          {/* Dependencies placeholder (wiring lands with T-154) */}
+          {task && ((Array.isArray(task.blockedBy) && task.blockedBy.length > 0) ||
+                    (Array.isArray(task.blocking) && task.blocking.length > 0)) && (
+            <div className="px-4 py-4 border-b border-border">
+              <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Dependencies</div>
+              {Array.isArray(task.blockedBy) && task.blockedBy.length > 0 && (
+                <div className="text-xs text-text mb-1">
+                  <span className="text-muted">Blocked by:</span>{' '}
+                  {task.blockedBy.map((id) => (
+                    <button key={id} type="button" onClick={() => navigateToTask(id)} className="font-mono text-accent hover:underline bg-transparent border-0 p-0 mr-2 cursor-pointer">{id}</button>
+                  ))}
+                </div>
+              )}
+              {Array.isArray(task.blocking) && task.blocking.length > 0 && (
+                <div className="text-xs text-text">
+                  <span className="text-muted">Blocking:</span>{' '}
+                  {task.blocking.map((id) => (
+                    <button key={id} type="button" onClick={() => navigateToTask(id)} className="font-mono text-accent hover:underline bg-transparent border-0 p-0 mr-2 cursor-pointer">{id}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Zone 4 - Activity Feed */}
           <div className="px-4 py-3">
+            <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Activity</div>
             {loading && (
-              <div className="text-sm text-muted py-4 text-center">Daten werden geladen\u2026</div>
+              <div className="text-sm text-muted py-4 text-center">Loading...</div>
             )}
             {!loading && allFeedItems.length === 0 && (
-              <div className="text-sm text-muted py-4 text-center flex items-center justify-center gap-1.5"><Inbox size={16} /> Noch keine Aktivit&auml;t</div>
+              <div className="text-sm text-muted py-4 text-center flex items-center justify-center gap-1.5">
+                <Inbox size={16} /> No activity yet. Be the first to comment.
+              </div>
             )}
             {allFeedItems.map((item, i) => (
               <ActivityItem key={`${item.timestamp}-${i}`} item={item} />
@@ -1008,14 +1173,16 @@ export default function DetailPanel() {
           </div>
         </div>
 
-        {/* Comment Footer */}
+        {/* Comment Footer — @human chip prefix makes the author
+            explicit in a multi-agent stream (hzl-semantics-for-ui §4). */}
         <div className="px-4 py-3 border-t border-border bg-card">
-          <div className="flex gap-2 items-end">
+          <div className="flex gap-2 items-center">
+            <AgentChip name={currentAgent()} size="sm" title="Commenting as @human" />
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={handleCommentKeyDown}
-              placeholder="Schreibe einen Kommentar..."
+              placeholder="Write a comment..."
               rows={1}
               className="flex-1 resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent"
             />
@@ -1036,21 +1203,62 @@ export default function DetailPanel() {
 
 // --- Sub-components ---
 
+// T-161-4 Zone 4: Activity entry — three visually differentiated types.
+// - Comment / Checkpoint: AgentChip + handle + timestamp + optional type
+//   label + body. Checkpoints can also show a progress line.
+// - Status event: dim one-liner, no chip, no bubble (system-info tone).
 function ActivityItem({ item }) {
-  const icon = ACTIVITY_ICON[item.type] || <span>&middot;</span>;
-  const author = item.author || item.agent || 'System';
-  const time = fmtTime(item.timestamp);
+  const author = item.author || item.agent || 'system';
+  const time = relativeTime(item.timestamp);
+  const handle = author.startsWith('@') ? author : `@${author}`;
+
+  if (item.type === 'status') {
+    // Synthetic status events — rendered as a dim single line.
+    return (
+      <div className="flex items-baseline gap-2 py-1.5 text-xs text-muted">
+        <span className="font-mono">{handle}</span>
+        <span className="truncate">{item.message || ''}</span>
+        <span className="ml-auto shrink-0 text-[10px]">{time}</span>
+      </div>
+    );
+  }
+
+  const typeLabel = item.type === 'checkpoint' ? ' - checkpoint' : '';
+  const progress = item.type === 'checkpoint' && typeof item.progress === 'number' ? item.progress : null;
 
   return (
-    <div className="flex gap-3 py-2 text-sm">
-      <div className="shrink-0 w-5 text-center">{icon}</div>
+    <div className="flex gap-3 py-2.5">
+      <div className="shrink-0 pt-0.5">
+        <AgentChip name={author} size="sm" />
+      </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="font-medium text-text-strong text-xs uppercase">{author}</span>
-          <span className="text-xs text-muted">{time}</span>
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className="font-mono text-xs text-text-strong font-medium">{handle}</span>
+          <span className="text-xs text-muted">{time}{typeLabel}</span>
         </div>
-        <div className="text-text break-words">{item.message || ''}</div>
+        <div className="text-sm text-text break-words whitespace-pre-wrap">{item.message || ''}</div>
+        {progress !== null && (
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="flex-1 h-1 bg-bg-hover rounded-full overflow-hidden">
+              <div className="h-full bg-ok" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+            </div>
+            <span className="text-[10px] text-muted font-mono">{progress}%</span>
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+// Relative timestamps for recent entries, absolute for older ones.
+function relativeTime(ts) {
+  if (!ts) return '';
+  const diffMs = Date.now() - new Date(ts).getTime();
+  if (diffMs < 60_000) return 'just now';
+  const m = Math.round(diffMs / 60_000);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  // Same day / older → fall back to the short absolute format.
+  return fmtTime(ts);
 }
