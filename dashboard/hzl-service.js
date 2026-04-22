@@ -80,6 +80,9 @@ function _toFbTask(hzlTask, project) {
     checkpointCount: fb.checkpointCount || 0,
     // Agent routing (explicit pre-assignment, separate from claim ownership)
     routedAgent: fb.routedAgent || null,
+    // T-161-4: soft-delete pointer into Trash. Null = live task; ISO string =
+    // task is in Trash and eligible for Empty-Trash bulk hard-delete.
+    trashedAt: fb.trashedAt || null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -386,6 +389,7 @@ function _publicTask(t) {
   pub.lastCheckpointAt = pub.lastCheckpointAt || null;
   pub.checkpointCount = pub.checkpointCount || 0;
   pub.routedAgent = pub.routedAgent || null;
+  pub.trashedAt = pub.trashedAt || null;
   return pub;
 }
 
@@ -574,6 +578,14 @@ function updateTask(project, flowboardId, updates) {
     metaUpdates.flowboard.completed = updates.completed;
   }
 
+  // T-161-4: trashedAt soft-delete pointer. ISO string to send to Trash,
+  // null to restore. Does not touch HZL status — Trash state is orthogonal
+  // to the operational status flow; a task's previous status is preserved
+  // so Restore returns it to where it was.
+  if (Object.prototype.hasOwnProperty.call(updates, 'trashedAt')) {
+    metaUpdates.flowboard.trashedAt = updates.trashedAt || null;
+  }
+
   // Write scalar updates (title, priority, etc.) via updateTask — metadata handled separately
   if (Object.keys(hzlUpdates).length > 0) {
     _taskService.updateTask(ulid, hzlUpdates);
@@ -595,18 +607,67 @@ function updateTask(project, flowboardId, updates) {
     }
   }
 
+  // T-161-4: setting status to review or done implicitly releases an active
+  // claim. The old UI had an explicit "Complete → Review" button that bundled
+  // both operations; the redesigned panel drives this via the Status-Picker,
+  // so the release must happen server-side.
+  if (
+    updates.status !== undefined &&
+    (updates.status === 'review' || updates.status === 'done') &&
+    cached.agent
+  ) {
+    try {
+      _taskService.releaseTask(ulid, { agent_id: cached.agent, author: cached.agent });
+      cached.agent = null;
+      cached.claimedAt = null;
+      cached.leaseUntil = null;
+      metaUpdates.flowboard.lastCheckpointAt = null;
+    } catch (e) {
+      // releaseTask can reject if lease already expired / no active claim; that's fine
+      console.warn('[hzl-service] auto-release on status change:', e.message);
+    }
+  }
+
   // Write metadata via direct event emission (hzl-core updateTask ignores metadata)
   _updateMetadata(ulid, metaUpdates);
 
   // Update cache
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
-      cached[key] = key === 'blocked' ? updates[key] === true : updates[key];
+      if (key === 'blocked') cached[key] = updates[key] === true;
+      else if (key === 'trashedAt') cached[key] = updates[key] || null;
+      else cached[key] = updates[key];
     }
   }
 
   return _publicTask(cached);
+}
+
+/**
+ * T-161-4: Empty the Trash for a project — hard-delete every task whose
+ * metadata.flowboard.trashedAt is set. Returns the count of removed tasks.
+ * Uses the existing deleteTask() pipeline so spec cleanup + event emission
+ * behave the same as a single DELETE call.
+ */
+function emptyTrash(project) {
+  const removed = [];
+  const failed = [];
+  // Collect first (snapshot) so we don't mutate the cache mid-iteration.
+  const victims = [];
+  for (const [key, cached] of _cache) {
+    if (!key.startsWith(`${project}:`)) continue;
+    if (cached.trashedAt) victims.push(cached.id);
+  }
+  for (const id of victims) {
+    try {
+      deleteTask(project, id, 'all');
+      removed.push(id);
+    } catch (e) {
+      failed.push({ id, error: e.message });
+    }
+  }
+  return { removed, failed };
 }
 
 /**
@@ -1326,6 +1387,7 @@ module.exports = {
   getTask,
   createTask,
   updateTask,
+  emptyTrash,
   deleteTask,
   getTaskSummary,
   getTaskCounts,

@@ -1107,7 +1107,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
         hzlUpdates[key] = updates[key];
       }
     }
-    // blocked is handled separately below (not in ALLOWED to keep whitelist clean)
+    // blocked + trashedAt are handled separately below (not in ALLOWED to keep whitelist clean)
 
     if (hzlUpdates.status !== undefined) {
       const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
@@ -1119,6 +1119,18 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     // Pass blocked flag through
     if (Object.prototype.hasOwnProperty.call(updates, 'blocked')) {
       hzlUpdates.blocked = updates.blocked === true;
+    }
+
+    // T-161-4: pass trashedAt through (ISO string to send to Trash, null to restore).
+    // Minimal validation: must be null or a parseable date string.
+    if (Object.prototype.hasOwnProperty.call(updates, 'trashedAt')) {
+      const raw = updates.trashedAt;
+      if (raw !== null && raw !== undefined) {
+        if (typeof raw !== 'string' || Number.isNaN(new Date(raw).getTime())) {
+          return res.status(400).json({ error: 'trashedAt must be null or an ISO date string' });
+        }
+      }
+      hzlUpdates.trashedAt = raw || null;
     }
 
     try {
@@ -1222,6 +1234,23 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     res.json(response);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// T-161-4: DELETE /api/projects/:name/tasks/trash — Empty Trash.
+// Hard-deletes every task in the project whose metadata.flowboard.trashedAt
+// is set. Confirmation happens in the UI (dialog before the call); the
+// server trusts the caller. Must be registered before the :id variant so
+// Express does not match the literal "trash" as a task id.
+app.delete('/api/projects/:name/tasks/trash', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const result = hzlService.emptyTrash(req.params.name);
+    syncDashboardData(req.params.name);
+    return res.json({ ok: true, removed: result.removed, failed: result.failed });
+  } catch (err) {
+    console.error('[api]', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 
