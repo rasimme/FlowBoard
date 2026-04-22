@@ -18,7 +18,7 @@ const Textarea = forwardRef(function Textarea({
       rows={rows}
       className={[
         'w-full px-3 py-2 text-sm rounded-lg resize-none',
-        'bg-bg text-text border border-border appearance-none',
+        'bg-bg text-text border border-solid border-border appearance-none',
         'placeholder:text-muted',
         'outline-none focus:border-accent',
         'transition-colors duration-fast',

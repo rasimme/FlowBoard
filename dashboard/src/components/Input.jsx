@@ -22,7 +22,7 @@ const Input = forwardRef(function Input({
       className={[
         'w-full',
         sizes[size] || sizes.md,
-        'bg-bg text-text border border-border appearance-none',
+        'bg-bg text-text border border-solid border-border appearance-none',
         'placeholder:text-muted',
         'outline-none focus:border-accent',
         'transition-colors duration-fast',

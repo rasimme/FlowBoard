@@ -28,14 +28,20 @@ import Tooltip from './Tooltip.jsx';
 // its native button chrome (inset border, button-face gradient, focus
 // outline) UNDER our tailwind styles, which showed up as the "komische
 // Kontur mit Schatten-Effekt" the user flagged repeatedly.
+// `border-solid` is CRITICAL: Tailwind's `border` utility only sets
+// border-width. Without preflight (which the project disables for
+// legacy-CSS reasons), native <button> elements keep their UA-default
+// `border-style: outset`, which renders as a 3D two-tone bevel —
+// exactly the "komische Kontur mit Schatteneffekt" that kept coming
+// back. Same trap bites <input> (UA default: `inset`).
 const CHIP_BTN_BASE =
   'inline-flex items-center gap-1 h-[22px] px-2.5 rounded-full ' +
   'text-[11px] font-medium cursor-pointer appearance-none ' +
   'outline-none focus-visible:shadow-focus-accent ' +
-  'transition-colors duration-fast border';
+  'transition-colors duration-fast border border-solid';
 const ICON_BTN_BASE =
   'w-8 h-8 inline-flex items-center justify-center rounded-md cursor-pointer ' +
-  'border appearance-none outline-none focus-visible:shadow-focus-accent ' +
+  'border border-solid appearance-none outline-none focus-visible:shadow-focus-accent ' +
   'transition-colors duration-fast';
 
 // T-161-4: operational statuses shown in the Zone-1 Status-Picker.
