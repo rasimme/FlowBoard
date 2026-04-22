@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus } from 'lucide-react';
+import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
@@ -698,6 +698,26 @@ export default function DetailPanel() {
     }
   }
 
+  // Restore from archive — set status back to `done`. HZL auto-
+  // restores child tasks. From `done` the user can move the task
+  // anywhere via the Status-Picker.
+  async function handleRestoreArchive() {
+    const t = taskRef.current;
+    if (!t) return;
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { status: 'done' },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+      showToast(`${t.id} restored`, 'success');
+      close();
+    } catch (err) {
+      showToast('Restore failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
   // Delete — soft delete → Trash.
   async function handleTrashTask() {
     const t = taskRef.current;
@@ -1087,17 +1107,31 @@ export default function DetailPanel() {
               </Tooltip>
             </div>
             <div className="flex items-center gap-1">
-              {/* Archive (any status, unlike the card's done-only limit) */}
-              <Tooltip content="Archive task">
-                <button
-                  type="button"
-                  onClick={() => setArchiveConfirmOpen(true)}
-                  className={`${ICON_BTN_BASE} border-transparent bg-transparent text-muted hover:text-warn hover:bg-warn-subtle`}
-                  aria-label="Archive task"
-                >
-                  <ArchiveIcon size={14} />
-                </button>
-              </Tooltip>
+              {/* Archive / Restore — the button flips to Restore when the
+                  task is already archived, so the user has a clear way out. */}
+              {task.status === 'archived' ? (
+                <Tooltip content="Restore from archive">
+                  <button
+                    type="button"
+                    onClick={handleRestoreArchive}
+                    className={`${ICON_BTN_BASE} border-transparent bg-transparent text-muted hover:text-ok hover:bg-ok-subtle`}
+                    aria-label="Restore from archive"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                </Tooltip>
+              ) : (
+                <Tooltip content="Archive task">
+                  <button
+                    type="button"
+                    onClick={() => setArchiveConfirmOpen(true)}
+                    className={`${ICON_BTN_BASE} border-transparent bg-transparent text-muted hover:text-warn hover:bg-warn-subtle`}
+                    aria-label="Archive task"
+                  >
+                    <ArchiveIcon size={14} />
+                  </button>
+                </Tooltip>
+              )}
               {/* Delete — soft to Trash */}
               <Tooltip content="Move to Trash">
                 <button

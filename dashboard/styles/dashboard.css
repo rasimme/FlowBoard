@@ -681,8 +681,15 @@
     .task-card.is-archived .spec-badge,
     .task-card.is-archived .subtask-add-btn,
     .task-card.is-archived .delete-btn,
-    .task-card.is-archived .card-hover-btn,
     .task-card.is-archived .blocked-toggle { pointer-events: none; }
+    /* Restore + Delete on archived cards MUST stay interactive — they
+       are the user's way back out of the archive. Explicitly re-enable
+       pointer-events in case the meta-row grayscale filter cascades. */
+    .task-card.is-archived .card-hover-actions,
+    .task-card.is-archived .card-hover-btn { pointer-events: auto; filter: none; }
+    .task-card.is-archived:hover .card-hover-btn-restore:hover {
+      color: var(--ok); background: var(--ok-subtle); border-color: rgba(34,197,94,0.3);
+    }
 
 
     .blocked-badge {

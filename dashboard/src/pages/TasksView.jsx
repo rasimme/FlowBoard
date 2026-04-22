@@ -7,7 +7,7 @@ import BlockedChip from '../components/BlockedChip.jsx';
 import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
-import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
+import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
@@ -528,22 +528,66 @@ function AddSubtaskForm({ parentId, project, onCreated, onCancel }) {
 }
 
 // --- Archived task card (read-only, dimmed) ---
-function ArchivedTaskCard({ task }) {
-  // Archived tasks are click-to-open so the user can restore them via
-  // the Panel's Status-Picker (archived → done/in-progress/open etc.).
-  // They get the `.is-archived` class so they share the dim/border rules
-  // with other archived-state surfaces in dashboard.css, instead of
-  // drowning in their own bg-card/50 + border-border/40 blend which
-  // made them visually bleed together.
+function ArchivedTaskCard({ task, project, onTaskUpdated, onTaskTrashed }) {
+  // Archived cards open the Panel on click (for full detail view) and
+  // offer two hover icons on the card itself: Restore (un-archive) and
+  // Delete (→ Trash), symmetrical to the live-card hover row. Archive
+  // itself obviously doesn't reappear — the card already is archived.
   const handleClick = () => { if (window.openTaskDetail) window.openTaskDetail(task.id); };
+
+  const handleRestoreClick = async (e) => {
+    e.stopPropagation();
+    try {
+      // Restore from archive = status back to `done`. HZL's updateTask
+      // takes care of lifting child tasks out of archived too. From
+      // `done` the user can move it anywhere via the Status-Picker.
+      await onTaskUpdated?.(task.id, { status: 'done' });
+      if (window.showToast) window.showToast(`Restored ${task.id}`, 'success');
+    } catch {
+      if (window.showToast) window.showToast('Restore failed', 'error');
+    }
+  };
+
+  const handleDeleteClick = async (e) => {
+    e.stopPropagation();
+    try {
+      await onTaskTrashed?.(task.id, task.status);
+    } catch {
+      if (window.showToast) window.showToast('Delete failed', 'error');
+    }
+  };
+
   return (
     <div
       className="task-card is-archived"
       onClick={handleClick}
-      style={{ cursor: 'pointer' }}
     >
       <div className="flex items-start justify-between gap-2 mb-1">
         <span className="task-id mono">{task.id}</span>
+        {/* Hover-revealed actions: Restore + Delete. Same 26x26 footprint
+            and hover choreography as the live card's hover buttons. */}
+        <span className="card-hover-actions">
+          <Tooltip content="Restore from archive">
+            <button
+              type="button"
+              className="card-hover-btn card-hover-btn-restore"
+              onClick={handleRestoreClick}
+              aria-label="Restore from archive"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </Tooltip>
+          <Tooltip content="Move to Trash">
+            <button
+              type="button"
+              className="card-hover-btn card-hover-btn-delete"
+              onClick={handleDeleteClick}
+              aria-label="Move to Trash"
+            >
+              <Trash2 size={14} />
+            </button>
+          </Tooltip>
+        </span>
       </div>
       <div className="task-title">{task.title}</div>
       {task.priority && (
@@ -802,8 +846,14 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
             ))}
             {sortedArchived.length > 0 && (
               <>
-                <hr className="border-border/40 my-1" />
-                {sortedArchived.map(t => <ArchivedTaskCard key={t.id} task={t} />)}
+                {/* Spacer replaces the former <hr>. The hr rendered with
+                    its user-agent default (inset, bright) because
+                    Tailwind preflight is disabled, and adding just
+                    border-color couldn't override it. A small gap is
+                    enough — the dim archived cards read as a separate
+                    zone on their own. */}
+                <div className="h-3" aria-hidden="true" />
+                {sortedArchived.map(t => <ArchivedTaskCard key={t.id} task={t} project={project} onTaskUpdated={onTaskUpdated} onTaskTrashed={onTaskTrashed} />)}
               </>
             )}
           </>
