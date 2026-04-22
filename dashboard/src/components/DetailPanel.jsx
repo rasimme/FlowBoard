@@ -1,9 +1,33 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox } from 'lucide-react';
+import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
+import Popover from './Popover.jsx';
+import PriorityPill from './PriorityPill.jsx';
+import ClaimStateLine from './ClaimStateLine.jsx';
+
+// T-161-4: operational statuses shown in the Zone-1 Status-Picker.
+// Archive is intentionally not in this list — it is a separate user
+// intent (Zone 2 Kebab), not an operational status. See
+// context/hzl-semantics-for-ui.md §3.
+const STATUS_OPTIONS = ['backlog', 'open', 'in-progress', 'review', 'done'];
+const STATUS_LABELS = {
+  backlog: 'Backlog',
+  open: 'Open',
+  'in-progress': 'In Progress',
+  review: 'Review',
+  done: 'Done',
+};
+
+// Whether Zone-1 (status-rail + claim-state-line) should render at all.
+// Terminal / trashed tasks don't get a Claim affordance.
+function showClaimState(task) {
+  if (!task) return false;
+  if (task.trashedAt) return false;
+  return task.status !== 'done' && task.status !== 'archived';
+}
 
 const API = '/api';
 
@@ -42,37 +66,6 @@ const ACTIVITY_ICON = {
   checkpoint: <CheckCircle2 size={14} />,
   status: <ArrowRight size={14} />,
 };
-
-function getActionBarState(task) {
-  if (!task) return null;
-  const s = task.status;
-  const isClaimed = !!task.agent;
-  const isBlocked = !!task.blocked;
-  const hasSubtasks = task.subtaskIds && task.subtaskIds.length > 0;
-  const isActive = s === 'open' || s === 'in-progress' || s === 'ready';
-  const isCompletable = s === 'open' || s === 'in-progress';
-  const isBlockable = s === 'open' || s === 'in-progress' || s === 'review';
-
-  return {
-    claim: { show: isActive && !isClaimed && !hasSubtasks, label: 'Claim' },
-    release: { show: isClaimed && s !== 'done' && s !== 'archived', label: 'Release' },
-    complete: {
-      show: isCompletable && !isBlocked,
-      enabled: !hasSubtasks || allSubtasksDone(task),
-      label: 'Complete \u2192 Review',
-    },
-    blocked: { show: isBlockable, label: isBlocked ? 'Unblock' : 'Block', isBlocked },
-  };
-}
-
-function allSubtasksDone(task) {
-  if (!task.subtaskIds || task.subtaskIds.length === 0) return true;
-  const allTasks = window.appState?.tasks || [];
-  return task.subtaskIds.every((id) => {
-    const sub = allTasks.find((t) => t.id === id);
-    return sub && (sub.status === 'done' || sub.status === 'archived');
-  });
-}
 
 function currentAgent() {
   // T-161-4: the dashboard operator is always the reserved `@human` agent in
@@ -115,6 +108,9 @@ export default function DetailPanel() {
   const [syntheticItems, setSyntheticItems] = useState([]);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  // T-161-4: header popover (Status or Priority picker) — one shared state
+  // so only one popover can be open at a time.
+  const [headerPopover, setHeaderPopover] = useState({ type: null, rect: null });
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
@@ -328,46 +324,98 @@ export default function DetailPanel() {
     }
   }
 
-  async function handleComplete() {
+  // T-161-4: Steal. Same endpoint as claim; server allows re-claim only
+  // when the previous lease has expired (see hzl-service.js#claimTask).
+  async function handleSteal() {
     const t = taskRef.current;
     if (!t) return;
-    const oldStatus = t.status;
+    const agent = currentAgent();
     const oldAgent = t.agent;
-    const oldCompleted = t.completed;
-
-    const updated = { ...t, status: 'review', agent: null, completed: new Date().toISOString().slice(0, 10) };
-    setTask(updated);
-    taskRef.current = updated;
-
     try {
-      const agent = oldAgent || currentAgent();
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/complete`, {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/claim`, {
         method: 'POST',
-        body: { agent },
+        body: { agent, lease: 60 },
       });
       if (res?.error) throw new Error(res.error);
-      const merged = { ...updated };
+      const merged = { ...t };
       if (res.task) {
         merged.status = res.task.status ?? merged.status;
         merged.agent = res.task.agent ?? merged.agent;
-        merged.blocked = res.task.blocked ?? merged.blocked;
-        merged.completed = res.task.completed ?? merged.completed;
-        merged.previousStatus = res.task.previousStatus ?? merged.previousStatus;
+        merged.claimedAt = res.task.claimedAt ?? merged.claimedAt;
+        merged.leaseUntil = res.task.leaseUntil ?? merged.leaseUntil;
       }
       setTask(merged);
       taskRef.current = merged;
       refreshKanban();
-      addSyntheticItem('status', 'Task completed \u2192 Review');
-      showToast('Task moved to Review', 'success');
+      addSyntheticItem('status', `Stolen by ${agent} (previous claim by ${oldAgent || 'unknown'})`);
+      showToast('Task stolen', 'success');
     } catch (err) {
-      const reverted = { ...t, status: oldStatus, agent: oldAgent, completed: oldCompleted };
-      setTask(reverted);
-      taskRef.current = reverted;
-      if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
-        setHzlAvailable(false);
-      }
-      showToast('Complete failed: ' + (err.message || 'Unknown error'), 'error');
+      showToast('Steal failed: ' + (err.message || 'Unknown error'), 'error');
     }
+  }
+
+  // T-161-4: status change via the Zone-1 picker. PUT /tasks/:id {status}.
+  // Server auto-releases the claim when moving to review/done (Chunk 1),
+  // so the old "Complete" button is retired — the picker does it now.
+  async function handleStatusChange(newStatus) {
+    const t = taskRef.current;
+    if (!t || t.status === newStatus) return;
+    const oldStatus = t.status;
+    const optimistic = { ...t, status: newStatus };
+    if (newStatus === 'review' || newStatus === 'done') {
+      optimistic.agent = null;
+      optimistic.claimedAt = null;
+      optimistic.leaseUntil = null;
+    }
+    setTask(optimistic);
+    taskRef.current = optimistic;
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { status: newStatus },
+      });
+      if (res?.error) throw new Error(res.error);
+      if (res.task) {
+        const merged = { ...optimistic, ...res.task };
+        setTask(merged);
+        taskRef.current = merged;
+      }
+      refreshKanban();
+      addSyntheticItem('status', `Status: ${oldStatus} -> ${newStatus}`);
+    } catch (err) {
+      setTask({ ...t, status: oldStatus });
+      taskRef.current = { ...t, status: oldStatus };
+      showToast('Status change failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  async function handlePriorityChange(newPriority) {
+    const t = taskRef.current;
+    if (!t || t.priority === newPriority) return;
+    const oldPriority = t.priority;
+    setTask({ ...t, priority: newPriority });
+    taskRef.current = { ...t, priority: newPriority };
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { priority: newPriority },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+    } catch (err) {
+      setTask({ ...t, priority: oldPriority });
+      taskRef.current = { ...t, priority: oldPriority };
+      showToast('Priority change failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  function openHeaderPopover(e, type) {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHeaderPopover({ type, rect });
+  }
+  function closeHeaderPopover() {
+    setHeaderPopover({ type: null, rect: null });
   }
 
   async function handleToggleBlocked() {
@@ -495,7 +543,6 @@ export default function DetailPanel() {
   // --- Render ---
   if (!isOpen) return null;
 
-  const bar = task && hzlAvailable ? getActionBarState(task) : null;
   const allFeedItems = [
     ...feed,
     ...syntheticItems,
@@ -561,18 +608,71 @@ export default function DetailPanel() {
               {task?.title || 'Task Title'}
             </h2>
           )}
+
+          {/* T-161-4 Zone 1 — Status Rail: Status chip + Priority chip +
+              Claim state line with contextual CTA. Terminal tasks (done /
+              archived / trashed) don't render the claim section. */}
+          {task && hzlAvailable && showClaimState(task) && (
+            <div className="flex items-center gap-2 mt-4 flex-wrap">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full text-[11px] font-medium border border-border bg-secondary text-text hover:bg-bg-hover cursor-pointer"
+                onClick={(e) => openHeaderPopover(e, 'status')}
+                title="Change status"
+              >
+                <span className={`inline-block w-2 h-2 rounded-full status-dot-${task.status}`} />
+                <span>{STATUS_LABELS[task.status] || task.status}</span>
+                <ChevronDown size={11} />
+              </button>
+              {task.priority && (
+                <PriorityPill
+                  priority={task.priority}
+                  onClick={(e) => openHeaderPopover(e, 'priority')}
+                />
+              )}
+              <ClaimStateLine
+                task={task}
+                currentAgent={currentAgent()}
+                onClaim={handleClaim}
+                onRelease={handleRelease}
+                onSteal={handleSteal}
+              />
+            </div>
+          )}
+          {/* Shared popover for Status and Priority pickers */}
+          <Popover
+            open={headerPopover.type === 'status'}
+            onClose={closeHeaderPopover}
+            anchorRect={headerPopover.rect}
+          >
+            {STATUS_OPTIONS.map((s) => (
+              <Popover.Option
+                key={s}
+                onClick={() => { handleStatusChange(s); closeHeaderPopover(); }}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`inline-block w-2 h-2 rounded-full status-dot-${s}`} />
+                  <span>{STATUS_LABELS[s]}</span>
+                </span>
+              </Popover.Option>
+            ))}
+          </Popover>
+          <Popover
+            open={headerPopover.type === 'priority'}
+            onClose={closeHeaderPopover}
+            anchorRect={headerPopover.rect}
+          >
+            {['low', 'medium', 'high'].map((p) => (
+              <Popover.Option
+                key={p}
+                onClick={() => { handlePriorityChange(p); closeHeaderPopover(); }}
+              >
+                <PriorityPill priority={p} />
+              </Popover.Option>
+            ))}
+          </Popover>
         </div>
 
-        {/* Action Bar */}
-        {bar && (
-          <ActionBar
-            bar={bar}
-            onClaim={handleClaim}
-            onRelease={handleRelease}
-            onComplete={handleComplete}
-            onToggleBlocked={handleToggleBlocked}
-          />
-        )}
 
         {/* Scrollable content */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -633,47 +733,6 @@ export default function DetailPanel() {
 }
 
 // --- Sub-components ---
-
-function ActionBar({ bar, onClaim, onRelease, onComplete, onToggleBlocked }) {
-  const hasButtons = bar.claim.show || bar.release.show || bar.complete.show || bar.blocked.show;
-  if (!hasButtons) return null;
-
-  return (
-    <div className="flex gap-2 px-4 py-2.5 border-b border-border">
-      {bar.claim.show && (
-        <Button size="sm" variant="accent" onClick={onClaim} title="Claim this task">
-          {bar.claim.label}
-        </Button>
-      )}
-      {bar.release.show && (
-        <Button size="sm" variant="secondary" onClick={onRelease} title="Release claim on this task">
-          {bar.release.label}
-        </Button>
-      )}
-      {bar.complete.show && (
-        <Button
-          size="sm"
-          variant="accent"
-          onClick={onComplete}
-          disabled={bar.complete.enabled === false}
-          title={bar.complete.enabled === false ? 'All subtasks must be done first' : 'Mark complete and move to review'}
-        >
-          {bar.complete.label}
-        </Button>
-      )}
-      {bar.blocked.show && (
-        <Button
-          size="sm"
-          variant={bar.blocked.isBlocked ? 'danger' : 'ghost'}
-          onClick={onToggleBlocked}
-          title={bar.blocked.isBlocked ? 'Remove blocked flag' : 'Flag as blocked'}
-        >
-          {bar.blocked.label}
-        </Button>
-      )}
-    </div>
-  );
-}
 
 function ActivityItem({ item }) {
   const icon = ACTIVITY_ICON[item.type] || <span>&middot;</span>;
