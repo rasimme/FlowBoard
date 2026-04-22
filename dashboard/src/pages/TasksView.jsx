@@ -776,6 +776,20 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
   const archivedCount = isDone ? archivedTasks.length : 0;
   const sortedArchived = isDone && showArchived ? sortTasks(archivedTasks, sortNewestFirst) : [];
 
+  // When the user toggles "show archived" on, scroll the column so the
+  // archived section is immediately visible — otherwise they'd have to
+  // scroll the done column themselves just to see what they asked for.
+  // We only trigger the scroll when the toggle flips from off→on.
+  const archiveAnchorRef = useRef(null);
+  const prevShowArchivedRef = useRef(showArchived);
+  useEffect(() => {
+    if (!isDone) return;
+    if (!prevShowArchivedRef.current && showArchived && archiveAnchorRef.current) {
+      archiveAnchorRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    prevShowArchivedRef.current = showArchived;
+  }, [showArchived, isDone]);
+
   const handleDragOver = (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -851,8 +865,9 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                     Tailwind preflight is disabled, and adding just
                     border-color couldn't override it. A small gap is
                     enough — the dim archived cards read as a separate
-                    zone on their own. */}
-                <div className="h-3" aria-hidden="true" />
+                    zone on their own. Also anchors the auto-scroll-to-
+                    archived behaviour when the toggle is enabled. */}
+                <div ref={archiveAnchorRef} className="h-3 scroll-mt-2" aria-hidden="true" />
                 {sortedArchived.map(t => <ArchivedTaskCard key={t.id} task={t} project={project} onTaskUpdated={onTaskUpdated} onTaskTrashed={onTaskTrashed} />)}
               </>
             )}
