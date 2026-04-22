@@ -853,6 +853,31 @@
     .file-preview-actions .delete-btn:hover { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
 
+    /* T-161-4: Trash toolbar button (right of Sort button on the TasksView
+       header). Only rendered when the viewed project has at least one
+       trashed task. Shows a count badge. */
+    .trash-toolbar-btn {
+      position: relative;
+      color: var(--muted);
+    }
+    .trash-toolbar-btn:hover {
+      color: var(--danger);
+    }
+    .trash-toolbar-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--danger-subtle);
+      color: var(--danger);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+    }
+
     /* T-161-4: hover-revealed admin icons inline with the task ID on
        TaskCard. Sits between the ID text and the title, to the left of the
        identity cluster on the right side of the top row. */

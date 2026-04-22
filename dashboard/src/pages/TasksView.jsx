@@ -4,6 +4,8 @@ import { Modal, PriorityPill, Popover, ActiveAgentsBar } from '../components/ind
 import AgentChip from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
 import BlockedChip from '../components/BlockedChip.jsx';
+import UndoToast from '../components/UndoToast.jsx';
+import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -164,7 +166,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskUpdated, dragRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -198,9 +200,17 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
     setShowDeleteModal(true);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     setShowDeleteModal(false);
-    setRemoving(true);
+    // T-161-4: soft-delete → move to Trash (sets metadata.flowboard.trashedAt).
+    // The task's current status is preserved so Restore from Trash returns
+    // it exactly where it was. The card disappears from the Kanban via the
+    // grouped-filter re-derivation, no shrink animation needed.
+    try {
+      await onTaskTrashed?.(task.id, task.status);
+    } catch (err) {
+      if (window.showToast) window.showToast('Delete failed: ' + err.message, 'error');
+    }
   };
 
   // --- Archive (T-161-4): only available on done tasks via the card hover icon.
@@ -679,7 +689,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskUpdated, dragRef, onDrop, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -743,6 +753,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                 onToggleExpand={onToggleExpand}
                 project={project}
                 onTaskDeleted={onTaskDeleted}
+                onTaskTrashed={onTaskTrashed}
                 onTaskUpdated={onTaskUpdated}
                 dragRef={dragRef}
                 isNew={t.id === lastCreatedId}
@@ -777,6 +788,11 @@ export default function TasksView() {
   });
   const [lastCreatedId, setLastCreatedId] = useState(null);
   const [addingSubtaskParentId, setAddingSubtaskParentId] = useState(null);
+  // T-161-4: Trash panel + Undo-toast state. UndoState lives alongside
+  // handleTaskTrashed so the user can reverse a just-deleted task without
+  // needing to open the Trash panel.
+  const [trashPanelOpen, setTrashPanelOpen] = useState(false);
+  const [undoState, setUndoState] = useState(null); // { taskId, title, prevStatus }
 
   const draggedId = useRef(null);
 
@@ -836,6 +852,96 @@ export default function TasksView() {
   const handleCancelAddSubtask = useCallback(() => {
     setAddingSubtaskParentId(null);
   }, []);
+
+  // T-161-4: soft-delete a task by setting metadata.flowboard.trashedAt.
+  // Previous status is stashed in undoState so the Undo toast can restore
+  // the task exactly where it was, not just into its nominal "previous"
+  // bucket. Card disappears from the Kanban via the grouped-filter re-run.
+  const handleTaskTrashed = useCallback(async (taskId, prevStatus) => {
+    const now = new Date().toISOString();
+    const snapshot = window.appState?.tasks?.find(t => t.id === taskId);
+    const title = snapshot?.title || taskId;
+    try {
+      const res = await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashedAt: now }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to move to trash');
+      const localTask = window.appState.tasks.find(t => t.id === taskId);
+      if (localTask && data.task) Object.assign(localTask, data.task);
+      window.appState.tasks = [...window.appState.tasks];
+      window.dispatchEvent(new CustomEvent('appstate:change'));
+      setUndoState({ taskId, title, prevStatus });
+    } catch (err) {
+      if (window.showToast) window.showToast('Delete failed: ' + err.message, 'error');
+      throw err;
+    }
+  }, [viewedProject]);
+
+  // T-161-4: Undo a just-deleted task (clear trashedAt, keep current status).
+  const handleUndoTrash = useCallback(async () => {
+    if (!undoState) return;
+    const { taskId } = undoState;
+    try {
+      const res = await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashedAt: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to restore');
+      const localTask = window.appState.tasks.find(t => t.id === taskId);
+      if (localTask && data.task) Object.assign(localTask, data.task);
+      window.appState.tasks = [...window.appState.tasks];
+      window.dispatchEvent(new CustomEvent('appstate:change'));
+      if (window.showToast) window.showToast('Restored', 'success');
+    } catch (err) {
+      if (window.showToast) window.showToast('Undo failed: ' + err.message, 'error');
+    } finally {
+      setUndoState(null);
+    }
+  }, [undoState, viewedProject]);
+
+  // T-161-4: Restore a single task from the Trash panel (not the undo toast).
+  const handleRestoreFromTrash = useCallback(async (task) => {
+    try {
+      const res = await apiFetch(`/api/projects/${viewedProject}/tasks/${task.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashedAt: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to restore');
+      const localTask = window.appState.tasks.find(t => t.id === task.id);
+      if (localTask && data.task) Object.assign(localTask, data.task);
+      window.appState.tasks = [...window.appState.tasks];
+      window.dispatchEvent(new CustomEvent('appstate:change'));
+      if (window.showToast) window.showToast(`Restored ${task.id}`, 'success');
+    } catch (err) {
+      if (window.showToast) window.showToast('Restore failed: ' + err.message, 'error');
+    }
+  }, [viewedProject]);
+
+  // T-161-4: after Empty Trash, the affected tasks are gone server-side.
+  // Trigger a refresh so state.tasks drops them and the panel + toolbar
+  // reflect the new empty state.
+  const handleTrashEmptied = useCallback(() => {
+    window._refreshProjects?.();
+    // Also refresh the task list for the viewed project
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/projects/${viewedProject}/tasks?includeArchived=true`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.tasks)) {
+          window.appState.tasks = data.tasks;
+          window.dispatchEvent(new CustomEvent('appstate:change'));
+        }
+      } catch { /* ignore */ }
+    })();
+    setTrashPanelOpen(false);
+  }, [viewedProject]);
 
   const handleTaskUpdated = useCallback(async (taskId, updates) => {
     try {
@@ -901,12 +1007,22 @@ export default function TasksView() {
     });
   }, [viewedProject]);
 
-  const { grouped, archivedTopLevel } = useMemo(() => {
+  const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);
     const groups = {};
     STATUS_KEYS.forEach(s => { groups[s] = []; });
     const archived = [];
+    const trashed = [];
     for (const t of topLevel) {
+      // T-161-4: trashedAt is a FlowBoard-only flag orthogonal to status.
+      // Trashed tasks are hidden from both Kanban and Archive section and
+      // only visible in the Trash panel. Their status (typically archived
+      // because the previous "hard delete" path used to archive the row)
+      // is preserved for correct Restore behaviour.
+      if (t.trashedAt) {
+        trashed.push(t);
+        continue;
+      }
       if (t.status === 'archived') {
         archived.push(t);
       } else if (groups[t.status]) {
@@ -916,7 +1032,9 @@ export default function TasksView() {
     for (const s of STATUS_KEYS) {
       groups[s] = sortTasks(groups[s], sortNewestFirst);
     }
-    return { grouped: groups, archivedTopLevel: archived };
+    // Sort trashed newest-first by trashedAt so recently deleted items surface first
+    trashed.sort((a, b) => new Date(b.trashedAt).getTime() - new Date(a.trashedAt).getTime());
+    return { grouped: groups, archivedTopLevel: archived, trashedTopLevel: trashed };
   }, [allTasks, sortNewestFirst]);
 
   if (!viewedProject) {
@@ -953,6 +1071,22 @@ export default function TasksView() {
           <span>{sortNewestFirst ? '↓' : '↑'}</span>
           <span>{sortNewestFirst ? 'Newest first' : 'Oldest first'}</span>
         </button>
+        {/* T-161-4: Trash toolbar icon. Rendered only when the project has
+            at least one trashed task so an empty Trash does not clutter the
+            header. Badge shows the count; click opens the TrashPanel. */}
+        {trashedTopLevel.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm trash-toolbar-btn"
+            style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            onClick={() => setTrashPanelOpen(true)}
+            title={`Trash (${trashedTopLevel.length})`}
+            aria-label={`Open trash (${trashedTopLevel.length} item${trashedTopLevel.length === 1 ? '' : 's'})`}
+          >
+            <Trash2 size={12} />
+            <span className="trash-toolbar-count">{trashedTopLevel.length}</span>
+          </button>
+        )}
       </div>
       <div className="kanban">
         {STATUS_KEYS.map(status => (
@@ -970,6 +1104,7 @@ export default function TasksView() {
             project={viewedProject}
             onTaskCreated={handleTaskCreated}
             onTaskDeleted={handleTaskDeleted}
+            onTaskTrashed={handleTaskTrashed}
             onTaskUpdated={handleTaskUpdated}
             dragRef={draggedId}
             onDrop={handleDrop}
@@ -981,6 +1116,23 @@ export default function TasksView() {
           />
         ))}
       </div>
+      {/* T-161-4: Trash panel + Undo toast render as portals on document.body;
+          they live here so they share project scope + handlers. */}
+      <TrashPanel
+        open={trashPanelOpen}
+        project={viewedProject}
+        trashedTasks={trashedTopLevel}
+        onClose={() => setTrashPanelOpen(false)}
+        onRestore={handleRestoreFromTrash}
+        onEmptied={handleTrashEmptied}
+      />
+      {undoState && (
+        <UndoToast
+          message={`${undoState.taskId} moved to Trash`}
+          onUndo={handleUndoTrash}
+          onDismiss={() => setUndoState(null)}
+        />
+      )}
     </div>
   );
 }
