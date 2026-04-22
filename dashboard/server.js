@@ -2057,6 +2057,21 @@ app.get('/api/projects/:name/tasks/:id/comments', (req, res) => {
   }
 });
 
+// T-161-4: status events stream. Third activity surface alongside
+// comments and checkpoints — sourced from the HZL event store so
+// things like block/unblock/route/status-change survive panel close
+// and are visible to anyone viewing the task, not just the actor.
+app.get('/api/projects/:name/tasks/:id/events', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const events = hzlService.getStatusEvents(req.params.name, req.params.id);
+    res.json({ ok: true, events });
+  } catch (err) {
+    const status = err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
 // GET /api/tasks/stuck — cross-project stuck tasks (stale + expired)
 app.get('/api/tasks/stuck', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });

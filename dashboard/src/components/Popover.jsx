@@ -88,12 +88,17 @@ Popover.Option = function PopoverOption({ children, onClick, className = '' }) {
   // project-wide to avoid conflicts with legacy dashboard.css, so we apply the reset per-button.
   // Without this, browsers render buttons with `appearance: button` — light-gray bg, native
   // border, ~2px radius — which visually dominates the portaled popover interior.
+  //
+  // Padding and typography kept compact so short-label menus (status dots,
+  // priority levels, route agents) stay visually tight. Popover's w-max on
+  // the wrapper means the menu is as wide as its longest option — smaller
+  // padding here = narrower popover overall.
   return (
     <button
       type="button"
       onClick={onClick}
       className={[
-        'w-full text-left text-sm px-3 py-1.5',
+        'w-full text-left text-xs px-2 py-1',
         'bg-transparent border-0 appearance-none text-inherit font-[inherit]',
         'hover:bg-bg-hover cursor-pointer transition-colors duration-fast',
         className,

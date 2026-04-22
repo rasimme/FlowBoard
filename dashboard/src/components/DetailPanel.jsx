@@ -4,6 +4,7 @@ import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, L
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
+import Input from './Input.jsx';
 import Popover from './Popover.jsx';
 import PriorityPill from './PriorityPill.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
@@ -15,15 +16,21 @@ import Tooltip from './Tooltip.jsx';
 // critical parts are the resets (`border-0 outline-none`) — without
 // them the browser adds its own focus outline on top of our border,
 // which renders as a two-tone contour with a harsh shadow.
+// Shared baseline: layout, focus ring, transitions. No border-color or
+// background-color is set here — those belong to the state-specific
+// classes per usage. Tailwind 3 sorts utilities alphabetically when
+// generating CSS, so shipping a `border-transparent` default in the
+// base meant it overrode `border-accent-subtle` appended per call (same
+// for `bg-transparent` vs `bg-accent-subtle`). Keeping colour intent
+// off the base removes that pitfall.
 const CHIP_BTN_BASE =
   'inline-flex items-center gap-1 h-[22px] px-2.5 rounded-full ' +
   'text-[11px] font-medium cursor-pointer ' +
   'outline-none focus-visible:shadow-focus-accent ' +
-  'transition-colors duration-fast border border-transparent';
+  'transition-colors duration-fast border';
 const ICON_BTN_BASE =
-  'w-8 h-8 inline-flex items-center justify-center rounded-md ' +
-  'bg-transparent cursor-pointer ' +
-  'border border-transparent outline-none focus-visible:shadow-focus-accent ' +
+  'w-8 h-8 inline-flex items-center justify-center rounded-md cursor-pointer ' +
+  'border outline-none focus-visible:shadow-focus-accent ' +
   'transition-colors duration-fast';
 
 // T-161-4: operational statuses shown in the Zone-1 Status-Picker.
@@ -39,12 +46,30 @@ const STATUS_LABELS = {
   done: 'Done',
 };
 
-// Whether Zone-1 (status-rail + claim-state-line) should render at all.
-// Terminal / trashed tasks don't get a Claim affordance.
-function showClaimState(task) {
+// Whether the ClaimStateLine (agent identity + action CTA) should render.
+// Terminal or trashed tasks carry no active claim so the claim UI is hidden.
+function showClaimLine(task) {
   if (!task) return false;
   if (task.trashedAt) return false;
   return task.status !== 'done' && task.status !== 'archived';
+}
+
+// Whether the Zone-1 Status Rail renders at all. Archived and done tasks
+// still get the Status + Priority pickers so the user can restore them
+// (archived → done, done → review, etc.) — only trashed tasks drop the
+// rail entirely (they're only surfaced via the Trash panel).
+function showStatusRail(task) {
+  if (!task) return false;
+  return !task.trashedAt;
+}
+
+// The operational statuses plus `archived` as a deliberate restore target
+// inside the panel. Archived surfaces only when the currently viewed task
+// is itself archived, so the picker becomes the restore affordance.
+function statusOptionsFor(task) {
+  const base = ['backlog', 'open', 'in-progress', 'review', 'done'];
+  if (task?.status === 'archived') return [...base, 'archived'];
+  return base;
 }
 
 const API = '/api';
@@ -196,13 +221,22 @@ export default function DetailPanel() {
   const loadActivity = useCallback(async () => {
     if (!taskId || !project) return;
     try {
-      const [commentsResult, checkpointsResult] = await Promise.allSettled([
+      // T-161-4: three parallel sources — comments (human utterances),
+      // checkpoints (agent progress), and status events (claims / routes
+      // / blocks / status transitions from the HZL event store). Each
+      // stream is independent; if one 503s we still render the others.
+      const [commentsResult, checkpointsResult, eventsResult] = await Promise.allSettled([
         apiFetch(`/projects/${project}/tasks/${taskId}/comments`),
         apiFetch(`/projects/${project}/tasks/${taskId}/checkpoints`),
+        apiFetch(`/projects/${project}/tasks/${taskId}/events`),
       ]);
 
-      if (commentsResult.status === 'rejected' || checkpointsResult.status === 'rejected') {
-        const err = commentsResult.reason || checkpointsResult.reason;
+      if (
+        commentsResult.status === 'rejected' ||
+        checkpointsResult.status === 'rejected' ||
+        eventsResult.status === 'rejected'
+      ) {
+        const err = commentsResult.reason || checkpointsResult.reason || eventsResult.reason;
         if (err?.message?.includes('503')) {
           setHzlAvailable(false);
         }
@@ -214,10 +248,14 @@ export default function DetailPanel() {
       const checkpoints = checkpointsResult.status === 'fulfilled'
         ? (Array.isArray(checkpointsResult.value?.checkpoints) ? checkpointsResult.value.checkpoints : [])
         : [];
+      const statusEvents = eventsResult.status === 'fulfilled'
+        ? (Array.isArray(eventsResult.value?.events) ? eventsResult.value.events : [])
+        : [];
 
       const merged = [
         ...comments.map((c) => ({ ...c, type: 'comment' })),
         ...checkpoints.map((c) => ({ ...c, type: 'checkpoint' })),
+        ...statusEvents, // already carry { type: 'status', event, message, agent, timestamp }
       ].sort((a, b) => {
         const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
         const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
@@ -468,17 +506,11 @@ export default function DetailPanel() {
       });
       if (res?.error) throw new Error(res.error);
       refreshKanban();
-      // Persist the event as a comment so it survives panel close/reopen.
-      try {
-        await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
-          method: 'POST',
-          body: {
-            message: targetAgent ? `Routed to ${targetAgent}` : 'Route cleared',
-            author: currentAgent(),
-          },
-        });
-        loadActivity();
-      } catch { /* activity comment is best-effort */ }
+      // The HZL event store emits a task_updated event with the new
+      // routedAgent value; loadActivity picks it up on the next poll
+      // so no local synthetic is needed. Trigger a refresh now for
+      // immediate feedback instead of waiting 12s.
+      loadActivity();
     } catch (err) {
       setTask({ ...t, routedAgent: oldRouted });
       taskRef.current = { ...t, routedAgent: oldRouted };
@@ -584,14 +616,9 @@ export default function DetailPanel() {
         if (window.appState) window.appState.tasks = [...(window.appState.tasks || [])];
         window.dispatchEvent(new CustomEvent('appstate:change'));
       }
-      // Persist as a comment so the unblock event survives panel close/reopen.
-      try {
-        await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
-          method: 'POST',
-          body: { message: 'Unblocked', author: currentAgent() },
-        });
-        loadActivity();
-      } catch { /* best-effort */ }
+      // hzl-core emits a task_updated event for the blocked flag
+      // change; /events picks it up. Refresh now for immediate feedback.
+      loadActivity();
     } catch (err) {
       setTask({ ...t, blocked: oldBlocked });
       taskRef.current = { ...t, blocked: oldBlocked };
@@ -867,10 +894,11 @@ export default function DetailPanel() {
             </h2>
           )}
 
-          {/* T-161-4 Zone 1 — Status Rail: Status chip + Priority chip +
-              Claim state line with contextual CTA. Terminal tasks (done /
-              archived / trashed) don't render the claim section. */}
-          {task && hzlAvailable && showClaimState(task) && (
+          {/* T-161-4 Zone 1 — Status Rail. Status + Priority pickers are
+              always visible for non-trashed tasks so the user can restore
+              archived/done tasks by changing the status. The ClaimStateLine
+              (agent identity + action CTA) only renders for active tasks. */}
+          {task && hzlAvailable && showStatusRail(task) && (
             <div className="flex items-center gap-2 mt-4 flex-wrap">
               <Tooltip content="Change status">
                 <button
@@ -890,13 +918,20 @@ export default function DetailPanel() {
                   onClick={(e) => openHeaderPopover(e, 'priority')}
                 />
               )}
-              <ClaimStateLine
-                task={task}
-                currentAgent={currentAgent()}
-                onClaim={handleClaim}
-                onRelease={handleRelease}
-                onSteal={handleSteal}
-              />
+              {showClaimLine(task) && (
+                <ClaimStateLine
+                  task={task}
+                  currentAgent={currentAgent()}
+                  onClaim={handleClaim}
+                  onRelease={handleRelease}
+                  onSteal={handleSteal}
+                />
+              )}
+              {task.status === 'archived' && (
+                <span className="text-[10px] uppercase tracking-wider text-muted ml-auto">
+                  Archived — change status to restore
+                </span>
+              )}
             </div>
           )}
           {/* Shared popover for Status and Priority pickers */}
@@ -905,14 +940,14 @@ export default function DetailPanel() {
             onClose={closeHeaderPopover}
             anchorRect={headerPopover.rect}
           >
-            {STATUS_OPTIONS.map((s) => (
+            {statusOptionsFor(task).map((s) => (
               <Popover.Option
                 key={s}
                 onClick={() => { handleStatusChange(s); closeHeaderPopover(); }}
               >
                 <span className="flex items-center gap-2">
                   <span className={`inline-block w-2 h-2 rounded-full status-dot-${s}`} />
-                  <span>{STATUS_LABELS[s]}</span>
+                  <span>{s === 'archived' ? 'Archived' : STATUS_LABELS[s]}</span>
                 </span>
               </Popover.Option>
             ))}
@@ -966,7 +1001,7 @@ export default function DetailPanel() {
                     ICON_BTN_BASE,
                     task.specFile && task.specExists !== false
                       ? 'text-accent bg-accent-subtle border-accent-subtle hover:brightness-125'
-                      : 'text-muted hover:text-text hover:bg-bg-hover',
+                      : 'border-transparent bg-transparent text-muted hover:text-text hover:bg-bg-hover',
                   ].join(' ')}
                   aria-label={task.specFile && task.specExists !== false ? 'Open spec' : 'Create spec'}
                 >
@@ -986,7 +1021,7 @@ export default function DetailPanel() {
                     // in the panel share the red family.
                     task.blocked
                       ? 'text-accent bg-accent-subtle border-accent-subtle hover:brightness-125'
-                      : 'text-muted hover:text-text hover:bg-bg-hover',
+                      : 'border-transparent bg-transparent text-muted hover:text-text hover:bg-bg-hover',
                   ].join(' ')}
                   aria-label={task.blocked ? 'Unblock' : 'Block'}
                 >
@@ -1000,7 +1035,7 @@ export default function DetailPanel() {
                 <button
                   type="button"
                   onClick={() => setArchiveConfirmOpen(true)}
-                  className={`${ICON_BTN_BASE} text-muted hover:text-warn hover:bg-warn-subtle`}
+                  className={`${ICON_BTN_BASE} border-transparent bg-transparent text-muted hover:text-warn hover:bg-warn-subtle`}
                   aria-label="Archive task"
                 >
                   <ArchiveIcon size={14} />
@@ -1011,7 +1046,7 @@ export default function DetailPanel() {
                 <button
                   type="button"
                   onClick={handleTrashTask}
-                  className={`${ICON_BTN_BASE} text-muted hover:text-danger hover:bg-danger-subtle`}
+                  className={`${ICON_BTN_BASE} border-transparent bg-transparent text-muted hover:text-danger hover:bg-danger-subtle`}
                   aria-label="Delete task"
                 >
                   <Trash2 size={14} />
@@ -1045,13 +1080,14 @@ export default function DetailPanel() {
         </Popover>
 
         {/* Block-with-reason inline input. Uses the shared Input + Button
-            primitives so typography, border-radius and focus-ring match
-            the rest of the app. */}
+            primitives in their compact size so the row stays consistent
+            with the rest of the app and doesn't dominate the panel. */}
         {blockReasonOpen && (
           <div className="px-4 py-3 border-b border-border bg-bg-accent">
             <div className="text-xs text-muted mb-2">Why is this blocked? (optional)</div>
-            <div className="flex gap-2">
-              <input
+            <div className="flex gap-2 items-center">
+              <Input
+                size="sm"
                 type="text"
                 autoFocus
                 value={blockReasonText}
@@ -1061,10 +1097,9 @@ export default function DetailPanel() {
                   if (e.key === 'Escape') setBlockReasonOpen(false);
                 }}
                 placeholder="e.g. waiting for API keys"
-                className="flex-1 rounded-md border border-border bg-bg px-3 py-[7px] text-sm text-text placeholder:text-muted focus:border-accent focus:shadow-focus-accent outline-none transition-all duration-fast"
               />
-              <Button size="sm" variant="ghost" onClick={() => setBlockReasonOpen(false)}>Cancel</Button>
-              <Button size="sm" variant="accent" onClick={confirmBlock}>Block</Button>
+              <Button size="xs" variant="ghost" onClick={() => setBlockReasonOpen(false)}>Cancel</Button>
+              <Button size="xs" variant="accent" onClick={confirmBlock}>Block</Button>
             </div>
           </div>
         )}
@@ -1076,8 +1111,8 @@ export default function DetailPanel() {
               Archive {taskId}? It will be hidden from the board but kept in history.
             </div>
             <div className="flex gap-2 justify-end">
-              <Button size="sm" variant="ghost" onClick={() => setArchiveConfirmOpen(false)}>Cancel</Button>
-              <Button size="sm" variant="accent" onClick={confirmArchive}>Archive</Button>
+              <Button size="xs" variant="ghost" onClick={() => setArchiveConfirmOpen(false)}>Cancel</Button>
+              <Button size="xs" variant="accent" onClick={confirmArchive}>Archive</Button>
             </div>
           </div>
         )}

@@ -290,6 +290,8 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
 
   // Build card class
   let cardClass = 'task-card';
+  if (task.status === 'archived') cardClass += ' is-archived';
+  if (task.blocked) cardClass += ' is-blocked';
   if (removing) cardClass += ' animate-shrink overflow-hidden';
   else if (isNew && !animated) cardClass += ' animate-rise';
 

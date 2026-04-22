@@ -1216,6 +1216,99 @@ function getComments(project, flowboardId) {
 }
 
 /**
+ * T-161-4: Get the status-event timeline for a task. Pulls from the
+ * hzl-core event store and filters to the types that make sense as
+ * "status events" in the UI — explicitly excluding `comment_added`
+ * and `checkpoint_recorded` because those have their own endpoints
+ * and panel renderers.
+ *
+ * Returns a normalized shape the DetailPanel merges into the Activity
+ * Feed alongside comments and checkpoints:
+ *   { type: 'status', event: '<hzl type>', message, agent, timestamp }
+ *
+ * `message` is a pre-rendered human-readable summary so the frontend
+ * doesn't need to know every HZL event payload shape. For unknown
+ * event types it falls back to the raw type name, which keeps the
+ * feed usable even if hzl-core adds new events we haven't mapped yet.
+ */
+function getStatusEvents(project, flowboardId) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+
+  const raw = _eventStore.getByTaskId(ulid);
+  const out = [];
+  for (const ev of raw) {
+    // Skip the two event types that already surface via their own
+    // endpoints — we don't want them duplicated in the Activity Feed.
+    if (ev.type === 'comment_added' || ev.type === 'checkpoint_recorded') continue;
+
+    const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
+    const message = renderStatusEventMessage(ev.type, data);
+    if (!message) continue; // skip events with no user-visible meaning
+
+    out.push({
+      type: 'status',
+      event: ev.type,
+      message,
+      agent: ev.author || ev.agent_id || null,
+      timestamp: ev.timestamp,
+    });
+  }
+  return out;
+}
+
+function safeJson(s) { try { return JSON.parse(s); } catch { return {}; } }
+
+// HZL-native status names → FlowBoard-UI names. Internally HZL uses
+// `ready` and `in_progress`; FlowBoard surfaces those as `open` and
+// `in-progress`. Keep the feed consistent with what the user clicks.
+function hzlStatusLabel(s) {
+  if (s === 'ready') return 'open';
+  if (s === 'in_progress') return 'in-progress';
+  return s;
+}
+
+function renderStatusEventMessage(type, data) {
+  switch (type) {
+    case 'task_created':
+      return 'Created';
+    case 'status_changed': {
+      const from = hzlStatusLabel(data.from) || '?';
+      const to = hzlStatusLabel(data.to) || '?';
+      return `Status: ${from} -> ${to}`;
+    }
+    case 'task_archived':
+      return 'Archived';
+    case 'dependency_added':
+      return data.blocker_task_id ? `Blocked by ${data.blocker_task_id}` : 'Dependency added';
+    case 'dependency_removed':
+      return data.blocker_task_id ? `No longer blocked by ${data.blocker_task_id}` : 'Dependency removed';
+    case 'task_moved':
+      return data.to_project ? `Moved to project ${data.to_project}` : 'Moved';
+    case 'task_updated': {
+      // Surface the FlowBoard-relevant metadata mutations. The event
+      // payload typically contains the full flowboard metadata snapshot;
+      // we don't have a reliable diff so we summarise by what's present.
+      const fb = data.metadata?.flowboard || data.flowboard || {};
+      const parts = [];
+      if (Object.prototype.hasOwnProperty.call(fb, 'blocked')) {
+        parts.push(fb.blocked ? 'Blocked' : 'Unblocked');
+      }
+      if (Object.prototype.hasOwnProperty.call(fb, 'routedAgent')) {
+        parts.push(fb.routedAgent ? `Routed to ${fb.routedAgent}` : 'Route cleared');
+      }
+      if (Object.prototype.hasOwnProperty.call(fb, 'trashedAt')) {
+        parts.push(fb.trashedAt ? 'Moved to Trash' : 'Restored from Trash');
+      }
+      if (parts.length === 0) return null; // metadata change we don't narrate
+      return parts.join(', ');
+    }
+    default:
+      return null; // swallow event types we don't want to show
+  }
+}
+
+/**
  * Get stuck tasks (stale + expired leases) across all projects.
  * Stale = in_progress + lastCheckpointAt older than threshold.
  * Expired = leaseUntil in the past.
@@ -1403,6 +1496,7 @@ module.exports = {
   completeTask,
   addCheckpoint,
   getCheckpoints,
+  getStatusEvents,
   addComment,
   getComments,
   getStuckTasks,

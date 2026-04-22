@@ -1,7 +1,7 @@
 /**
  * Button — Themed button with variant, size, and disabled support.
  * @param {'accent'|'secondary'|'danger'|'ghost'} [variant='accent'] - Visual style
- * @param {'sm'|'md'|'lg'|'icon'} [size='md'] - Size preset
+ * @param {'xs'|'sm'|'md'|'lg'|'icon'} [size='md'] - Size preset
  * @param {string} [type='button'] - HTML button type
  * @param {string} [className] - Extra classes
  * @param {ReactNode} children - Button content
@@ -18,6 +18,7 @@ const variants = {
 };
 
 const sizes = {
+  xs: 'h-[24px] px-2.5 text-[11px]',
   sm: 'px-[10px] py-[6px] text-[11px]',
   md: 'px-3.5 py-1.5 text-sm',
   lg: 'px-5 py-2 text-base',

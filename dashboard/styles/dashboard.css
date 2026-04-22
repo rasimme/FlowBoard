@@ -658,6 +658,7 @@
     .task-card.is-archived .spec-badge,
     .task-card.is-archived .subtask-add-btn,
     .task-card.is-archived .delete-btn,
+    .task-card.is-archived .card-hover-btn,
     .task-card.is-archived .blocked-toggle { pointer-events: none; }
 
 
