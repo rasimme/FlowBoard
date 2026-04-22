@@ -528,8 +528,6 @@ export default function Sidebar() {
 
   if (!container || !state) return null;
 
-  const showActivate = viewedProject && viewedProject !== activeProject;
-  const showDeactivate = viewedProject && viewedProject === activeProject;
 
   const renderItem = (p, sectionKey) => (
     <ProjectItem
@@ -728,26 +726,7 @@ export default function Sidebar() {
         )}
       </div>
 
-      <div className="sidebar-actions">
-        {showActivate && (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm btn-full"
-            onClick={() => window._activateProject?.()}
-          >
-            Activate
-          </button>
-        )}
-        {showDeactivate && (
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm btn-full"
-            onClick={() => window._deactivateProject?.()}
-          >
-            Deactivate
-          </button>
-        )}
-      </div>
+
 
       <CreateProjectModal
         open={createOpen}
