@@ -853,6 +853,25 @@
     .file-preview-actions .delete-btn:hover { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
 
+    /* T-161-4: hover-revealed admin icons inline with the task ID on
+       TaskCard. Sits between the ID text and the title, to the left of the
+       identity cluster on the right side of the top row. */
+    .card-hover-actions {
+      display: inline-flex; align-items: center; gap: 2px;
+      opacity: 0; transition: opacity var(--duration-fast);
+    }
+    .task-card:hover .card-hover-actions { opacity: 1; }
+    .card-hover-btn {
+      width: 18px; height: 18px; display: inline-flex; align-items: center;
+      justify-content: center; border: 0; background: transparent;
+      color: var(--muted); border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: color var(--duration-fast), background var(--duration-fast);
+    }
+    .card-hover-btn:hover { background: var(--bg-hover); }
+    .card-hover-btn-delete:hover { color: var(--danger); background: var(--danger-subtle); }
+    .card-hover-btn-archive:hover { color: var(--warn); background: var(--warn-subtle); }
+
     /* Subtask Progress Bar (on parent cards) */
     .subtask-progress {
       display: flex;

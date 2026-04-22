@@ -1,32 +1,40 @@
 /**
- * PriorityPill — Color-coded priority indicator with optional click action.
- * Unlike Badge (solid bg + text), PriorityPill uses colored border + subtle bg
- * matching the legacy kanban priority-pill pattern.
- * @param {'high'|'medium'|'low'} priority - Priority level
- * @param {function} [onClick] - Makes the pill clickable (button vs span)
- * @param {string} [className] - Extra classes
- * @example <PriorityPill priority="high" />
- * @example <PriorityPill priority="medium" onClick={handleClick} />
+ * PriorityPill — color-coded priority indicator with optional click action.
+ *
+ * Styling follows the Claude-Design handoff bundle (ax-section5 §
+ * AxPriorityPill): subtle tinted pill with lowercase label.
+ *
+ *   low    → slate-tinted (neutral, not ok-green; avoids overlap with
+ *            the ok/status palette)
+ *   medium → amber-tinted
+ *   high   → red-tinted
+ *
+ * @param {'high'|'medium'|'low'} priority
+ * @param {function} [onClick] — makes the pill clickable (button vs span)
+ * @param {string} [className] — extra classes
  */
 const styles = {
-  high: 'text-danger border-danger-border bg-danger-subtle',
-  medium: 'text-warn border-warn-border bg-warn-subtle',
-  low: 'text-ok border-ok-border bg-ok-subtle',
+  low:    { color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
+  medium: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  high:   { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
 };
 
 export default function PriorityPill({ priority, onClick, className = '' }) {
   const Tag = onClick ? 'button' : 'span';
+  const s = styles[priority] || styles.medium;
   return (
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={[
-        'inline-flex items-center px-[10px] py-[4px] text-[11px] font-medium',
-        'rounded-full border transition-colors duration-fast',
+        'inline-flex items-center px-[8px] py-[2px]',
+        'text-[10px] font-medium tracking-normal lowercase',
+        'rounded-full border-0',
+        'transition-colors duration-fast',
         onClick && 'cursor-pointer',
-        styles[priority] || styles.medium,
         className,
       ].filter(Boolean).join(' ')}
+      style={{ color: s.color, background: s.bg }}
     >
       {priority}
     </Tag>

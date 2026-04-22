@@ -3,6 +3,7 @@ import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar } from '../components/index.js';
 import AgentChip from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
+import BlockedChip from '../components/BlockedChip.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -197,6 +198,22 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
     setRemoving(true);
   };
 
+  // --- Archive (T-161-4): only available on done tasks via the card hover icon.
+  // Any-status archive lives in the DetailPanel Kebab (Chunk 6). No modal
+  // here yet — archive is reversible (restore from Archive section), so we
+  // keep the card gesture snappy and rely on the existing toast-on-update
+  // surface for feedback.
+  const handleArchiveClick = async (e) => {
+    e.stopPropagation();
+    haptic.medium();
+    try {
+      await onTaskUpdated?.(task.id, { status: 'archived' });
+      if (window.showToast) window.showToast(`Archived ${task.id}`, 'success');
+    } catch (err) {
+      if (window.showToast) window.showToast('Archive failed', 'error');
+    }
+  };
+
   const handleAnimationEnd = () => {
     if (removing) {
       onTaskDeleted?.(task.id);
@@ -266,12 +283,40 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           data-react-tasks
         >
           <div className="flex items-start justify-between gap-2 mb-1">
-            <span className="task-id mono flex items-center gap-1.5">
+            <span className="task-id mono flex items-center gap-1">
               {task.id}
+              {/* T-161-4: hover-revealed admin icons to the left of the ID.
+                  Archive only appears for done tasks; Delete (soft → Trash)
+                  is available for every status. Identity cluster to the
+                  right is kept permanently visible. */}
+              <span className="card-hover-actions">
+                {task.status === 'done' && (
+                  <button
+                    type="button"
+                    className="card-hover-btn card-hover-btn-archive"
+                    onClick={handleArchiveClick}
+                    title="Archive task"
+                    aria-label="Archive task"
+                  >
+                    <Archive size={12} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="card-hover-btn card-hover-btn-delete"
+                  onClick={handleDeleteClick}
+                  title="Move to trash"
+                  aria-label="Move to trash"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </span>
+            </span>
+            <span className="flex items-center gap-1 shrink-0">
               {task.agent && (
                 <AgentChip
                   name={task.agent}
-                  size="xs"
+                  size="sm"
                   variant="solid"
                   title={`Claimed by ${task.agent}`}
                 />
@@ -279,31 +324,24 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
               {!task.agent && task.routedAgent && (
                 <AgentChip
                   name={task.routedAgent}
-                  size="xs"
+                  size="sm"
                   variant="ring"
                   title={`Routed to ${task.routedAgent}`}
                 />
               )}
               <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
             </span>
-            <button
-              type="button"
-              className="delete-btn"
-              onClick={handleDeleteClick}
-              title="Delete task"
-            >
-              <Trash2 size={14} />
-            </button>
           </div>
           <div className="task-title">{task.title}</div>
           <div className="task-meta">
-            <span className="priority-pill-wrap">
+            <span className="priority-pill-wrap flex items-center gap-[6px]">
               {task.priority && (
                 <PriorityPill
                   priority={task.priority}
                   onClick={(e) => handlePopoverOpen(e, 'priority')}
                 />
               )}
+              {task.blocked && <BlockedChip />}
             </span>
             <span className="task-meta-actions">
               <span className="subtask-add-btn" onClick={(e) => { e.stopPropagation(); onAddSubtask?.(task.id); }} title="Add subtask">
