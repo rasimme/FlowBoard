@@ -233,16 +233,16 @@ export default function DetailPanel() {
 
     async function load() {
       try {
-        const data = await apiFetch(`/projects/${project}/tasks`);
+        const data = await apiFetch(`/projects/${project}/tasks?includeArchived=true`);
         const tasks = Array.isArray(data) ? data : Array.isArray(data?.tasks) ? data.tasks : [];
         const found = tasks.find((t) => t.id === taskId);
         if (cancelled) return;
-        if (!found) throw new Error('Task nicht gefunden');
+        if (!found) throw new Error('Task not found');
         setTask(found);
         setLoading(false);
       } catch (err) {
         if (cancelled) return;
-        showToast('Fehler beim Laden: ' + err.message, 'danger');
+        showToast('Failed to load: ' + err.message, 'danger');
         close();
       }
     }
@@ -409,7 +409,7 @@ export default function DetailPanel() {
       });
       if (res?.error) throw new Error(res.error);
       // Re-fetch to get accurate status
-      const data = await apiFetch(`/projects/${project}/tasks`);
+      const data = await apiFetch(`/projects/${project}/tasks?includeArchived=true`);
       const tasks = Array.isArray(data) ? data : Array.isArray(data?.tasks) ? data.tasks : [];
       const fresh = tasks.find((x) => x.id === t.id);
       if (fresh) {
@@ -819,13 +819,13 @@ export default function DetailPanel() {
       });
       if (!result?.error) {
         setComment('');
-        showToast('Kommentar gesendet', 'success');
+        showToast('Comment sent', 'success');
         loadActivity();
       } else {
-        showToast('Senden fehlgeschlagen', 'danger');
+        showToast('Failed to send comment', 'danger');
       }
     } catch {
-      showToast('Netzwerkfehler', 'danger');
+      showToast('Network error', 'danger');
     } finally {
       setSubmitting(false);
     }
@@ -911,7 +911,7 @@ export default function DetailPanel() {
             </button>
           </div>
           {loading ? (
-            <h2 className="m-0 text-lg leading-tight text-text-strong font-semibold">Lade...</h2>
+            <h2 className="m-0 text-lg leading-tight text-text-strong font-semibold">Loading...</h2>
           ) : isEditingTitle ? (
             <div>
               <textarea
