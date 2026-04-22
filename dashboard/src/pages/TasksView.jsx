@@ -298,12 +298,14 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           data-react-tasks
         >
           <div className="flex items-start justify-between gap-2 mb-1">
-            <span className="task-id mono flex items-center gap-1">
+            <span className="task-id mono">
               {task.id}
-              {/* T-161-4: hover-revealed admin icons to the left of the ID.
-                  Archive only appears for done tasks; Delete (soft → Trash)
-                  is available for every status. Identity cluster to the
-                  right is kept permanently visible. */}
+            </span>
+            {/* Right cluster — hover-revealed admin icons sit directly to
+                the left of the permanent AgentChip cluster. If no agent
+                is claimed/routed, the Delete icon becomes the right-most
+                element. Archive only appears for done tasks. */}
+            <span className="flex items-center gap-1 shrink-0">
               <span className="card-hover-actions">
                 {task.status === 'done' && (
                   <button
@@ -326,8 +328,6 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   <Trash2 size={12} />
                 </button>
               </span>
-            </span>
-            <span className="flex items-center gap-1 shrink-0">
               {task.agent && (
                 <AgentChip
                   name={task.agent}

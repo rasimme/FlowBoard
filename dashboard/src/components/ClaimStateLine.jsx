@@ -100,10 +100,16 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
           type="button"
           onClick={action.onClick}
           className={[
-            'shrink-0 h-7 px-3 rounded-md text-[11px] font-medium cursor-pointer border-0',
-            action.variant === 'accent' && 'bg-accent text-white hover:brightness-110',
-            action.variant === 'secondary' && 'bg-secondary text-text hover:bg-bg-hover border border-border',
-            action.variant === 'danger' && 'bg-danger text-white hover:brightness-110',
+            // Shared resets so the button doesn't render the browser default
+            // outline/focus-ring on top of our own styling. Matches what
+            // components/Button.jsx does for its themed buttons.
+            'shrink-0 inline-flex items-center h-[22px] px-2.5 rounded-full',
+            'text-[10px] font-semibold uppercase tracking-wide',
+            'border border-transparent cursor-pointer transition-all duration-fast',
+            'outline-none focus-visible:shadow-focus-accent',
+            action.variant === 'accent'    && 'bg-accent-subtle text-accent border-accent-subtle hover:brightness-125',
+            action.variant === 'secondary' && 'bg-secondary text-text border-border hover:bg-bg-hover',
+            action.variant === 'danger'    && 'bg-danger-subtle text-danger border-danger-subtle hover:brightness-125',
           ].filter(Boolean).join(' ')}
         >
           {action.label}

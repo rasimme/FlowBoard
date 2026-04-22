@@ -9,6 +9,22 @@ import PriorityPill from './PriorityPill.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
+import Tooltip from './Tooltip.jsx';
+
+// Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
+// critical parts are the resets (`border-0 outline-none`) — without
+// them the browser adds its own focus outline on top of our border,
+// which renders as a two-tone contour with a harsh shadow.
+const CHIP_BTN_BASE =
+  'inline-flex items-center gap-1 h-[22px] px-2.5 rounded-full ' +
+  'text-[11px] font-medium cursor-pointer ' +
+  'outline-none focus-visible:shadow-focus-accent ' +
+  'transition-colors duration-fast border border-transparent';
+const ICON_BTN_BASE =
+  'w-8 h-8 inline-flex items-center justify-center rounded-md ' +
+  'bg-transparent cursor-pointer ' +
+  'border border-transparent outline-none focus-visible:shadow-focus-accent ' +
+  'transition-colors duration-fast';
 
 // T-161-4: operational statuses shown in the Zone-1 Status-Picker.
 // Archive is intentionally not in this list — it is a separate user
@@ -461,10 +477,15 @@ export default function DetailPanel() {
   }
 
   // Spec actions — mirror the TaskCard behaviour: if spec exists, open it;
-  // if not, POST to create one and then open.
+  // if not, POST to create one and then open. In both cases the panel
+  // closes once the spec opens, because the user's focus is moving to
+  // the Files view anyway.
   function handleOpenSpec() {
     const t = taskRef.current;
-    if (t && t.specFile && window._openSpec) window._openSpec(t.specFile, t.id);
+    if (t && t.specFile && window._openSpec) {
+      window._openSpec(t.specFile, t.id);
+      close();
+    }
   }
   async function handleCreateSpec() {
     const t = taskRef.current;
@@ -476,6 +497,7 @@ export default function DetailPanel() {
         taskRef.current = { ...t, specFile: res.specFile };
         if (window._openSpec) window._openSpec(res.specFile, t.id);
         showToast(`Spec created for ${t.id}`, 'success');
+        close();
       }
     } catch (err) {
       showToast('Failed to create spec: ' + (err.message || 'Unknown'), 'error');
@@ -493,6 +515,9 @@ export default function DetailPanel() {
     const reason = blockReasonText.trim();
     setBlockReasonOpen(false);
     const oldBlocked = t.blocked;
+    // Optimistic update plus authoritative merge from server response so
+    // state.tasks and the local view agree — without this the app-state
+    // poll can race and re-paint the old blocked=true.
     setTask({ ...t, blocked: true });
     taskRef.current = { ...t, blocked: true };
     try {
@@ -501,7 +526,17 @@ export default function DetailPanel() {
         body: { blocked: true },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      if (res.task) {
+        const merged = { ...t, ...res.task };
+        setTask(merged);
+        taskRef.current = merged;
+        // Sync the shared task list so background polls / Kanban renders
+        // see the same truth the panel does.
+        const shared = window.appState?.tasks?.find((x) => x.id === t.id);
+        if (shared) Object.assign(shared, res.task);
+        if (window.appState) window.appState.tasks = [...(window.appState.tasks || [])];
+        window.dispatchEvent(new CustomEvent('appstate:change'));
+      }
       if (reason) {
         try {
           await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
@@ -511,7 +546,7 @@ export default function DetailPanel() {
           loadActivity();
         } catch { /* comment is optional */ }
       }
-      addSyntheticItem('status', reason ? `Blocked — ${reason}` : 'Blocked');
+      addSyntheticItem('status', reason ? `Blocked - ${reason}` : 'Blocked');
     } catch (err) {
       setTask({ ...t, blocked: oldBlocked });
       taskRef.current = { ...t, blocked: oldBlocked };
@@ -530,7 +565,15 @@ export default function DetailPanel() {
         body: { blocked: false },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      if (res.task) {
+        const merged = { ...t, ...res.task };
+        setTask(merged);
+        taskRef.current = merged;
+        const shared = window.appState?.tasks?.find((x) => x.id === t.id);
+        if (shared) Object.assign(shared, res.task);
+        if (window.appState) window.appState.tasks = [...(window.appState.tasks || [])];
+        window.dispatchEvent(new CustomEvent('appstate:change'));
+      }
       addSyntheticItem('status', 'Unblocked');
     } catch (err) {
       setTask({ ...t, blocked: oldBlocked });
@@ -812,16 +855,18 @@ export default function DetailPanel() {
               archived / trashed) don't render the claim section. */}
           {task && hzlAvailable && showClaimState(task) && (
             <div className="flex items-center gap-2 mt-4 flex-wrap">
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full text-[11px] font-medium border border-border bg-secondary text-text hover:bg-bg-hover cursor-pointer"
-                onClick={(e) => openHeaderPopover(e, 'status')}
-                title="Change status"
-              >
-                <span className={`inline-block w-2 h-2 rounded-full status-dot-${task.status}`} />
-                <span>{STATUS_LABELS[task.status] || task.status}</span>
-                <ChevronDown size={11} />
-              </button>
+              <Tooltip content="Change status">
+                <button
+                  type="button"
+                  className={`${CHIP_BTN_BASE} bg-secondary text-text border-border hover:bg-bg-hover`}
+                  onClick={(e) => openHeaderPopover(e, 'status')}
+                  aria-label="Change status"
+                >
+                  <span className={`inline-block w-2 h-2 rounded-full status-dot-${task.status}`} />
+                  <span>{STATUS_LABELS[task.status] || task.status}</span>
+                  <ChevronDown size={11} />
+                </button>
+              </Tooltip>
               {task.priority && (
                 <PriorityPill
                   priority={task.priority}
@@ -879,60 +924,75 @@ export default function DetailPanel() {
           <div className="flex items-center justify-between px-4 py-2 border-b border-border">
             <div className="flex items-center gap-1">
               {/* Route */}
-              <button
-                type="button"
-                onClick={openRoutePopover}
-                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover border-0 bg-transparent cursor-pointer"
-                title={task.routedAgent ? `Routed to ${task.routedAgent}` : 'Route to agent'}
-                aria-label="Route to agent"
-              >
-                <UserPlus size={14} />
-              </button>
-              {/* Spec */}
-              <button
-                type="button"
-                onClick={task.specFile && task.specExists !== false ? handleOpenSpec : handleCreateSpec}
-                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover border-0 bg-transparent cursor-pointer"
-                title={task.specFile && task.specExists !== false ? 'Open spec' : 'Create spec'}
-                aria-label="Spec"
-              >
-                {task.specFile && task.specExists !== false ? <FileText size={14} /> : <FilePlus size={14} />}
-              </button>
-              {/* Block / Unblock */}
-              <button
-                type="button"
-                onClick={task.blocked ? handleUnblock : startBlock}
-                className={[
-                  'w-8 h-8 inline-flex items-center justify-center rounded-md border-0 bg-transparent cursor-pointer',
-                  task.blocked ? 'text-danger hover:bg-danger-subtle' : 'text-muted hover:text-text hover:bg-bg-hover',
-                ].join(' ')}
-                title={task.blocked ? 'Unblock' : 'Block (with optional reason)'}
-                aria-label={task.blocked ? 'Unblock' : 'Block'}
-              >
-                {task.blocked ? <Unlock size={14} /> : <Lock size={14} />}
-              </button>
+              <Tooltip content={task.routedAgent ? `Routed to ${task.routedAgent}` : 'Route to agent'}>
+                <button
+                  type="button"
+                  onClick={openRoutePopover}
+                  className={`${ICON_BTN_BASE} text-muted hover:text-text hover:bg-bg-hover`}
+                  aria-label="Route to agent"
+                >
+                  <UserPlus size={14} />
+                </button>
+              </Tooltip>
+              {/* Spec — when a spec is linked, the button gets the same
+                  accent-tinted treatment as the card's spec-badge so the
+                  two surfaces stay visually consistent. */}
+              <Tooltip content={task.specFile && task.specExists !== false ? 'Open spec' : 'Create spec'}>
+                <button
+                  type="button"
+                  onClick={task.specFile && task.specExists !== false ? handleOpenSpec : handleCreateSpec}
+                  className={[
+                    ICON_BTN_BASE,
+                    task.specFile && task.specExists !== false
+                      ? 'text-accent bg-accent-subtle border-accent-subtle hover:brightness-125'
+                      : 'text-muted hover:text-text hover:bg-bg-hover',
+                  ].join(' ')}
+                  aria-label={task.specFile && task.specExists !== false ? 'Open spec' : 'Create spec'}
+                >
+                  {task.specFile && task.specExists !== false ? <FileText size={14} /> : <FilePlus size={14} />}
+                </button>
+              </Tooltip>
+              {/* Block / Unblock — active state mirrors the accent/danger
+                  bg+border treatment used by the Spec button. */}
+              <Tooltip content={task.blocked ? 'Unblock' : 'Block (with optional reason)'}>
+                <button
+                  type="button"
+                  onClick={task.blocked ? handleUnblock : startBlock}
+                  className={[
+                    ICON_BTN_BASE,
+                    task.blocked
+                      ? 'text-danger bg-danger-subtle border-danger-subtle hover:brightness-125'
+                      : 'text-muted hover:text-text hover:bg-bg-hover',
+                  ].join(' ')}
+                  aria-label={task.blocked ? 'Unblock' : 'Block'}
+                >
+                  {task.blocked ? <Unlock size={14} /> : <Lock size={14} />}
+                </button>
+              </Tooltip>
             </div>
             <div className="flex items-center gap-1">
               {/* Archive (any status, unlike the card's done-only limit) */}
-              <button
-                type="button"
-                onClick={() => setArchiveConfirmOpen(true)}
-                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-warn hover:bg-warn-subtle border-0 bg-transparent cursor-pointer"
-                title="Archive task"
-                aria-label="Archive task"
-              >
-                <ArchiveIcon size={14} />
-              </button>
+              <Tooltip content="Archive task">
+                <button
+                  type="button"
+                  onClick={() => setArchiveConfirmOpen(true)}
+                  className={`${ICON_BTN_BASE} text-muted hover:text-warn hover:bg-warn-subtle`}
+                  aria-label="Archive task"
+                >
+                  <ArchiveIcon size={14} />
+                </button>
+              </Tooltip>
               {/* Delete — soft to Trash */}
-              <button
-                type="button"
-                onClick={handleTrashTask}
-                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-danger hover:bg-danger-subtle border-0 bg-transparent cursor-pointer"
-                title="Move to Trash"
-                aria-label="Delete task"
-              >
-                <Trash2 size={14} />
-              </button>
+              <Tooltip content="Move to Trash">
+                <button
+                  type="button"
+                  onClick={handleTrashTask}
+                  className={`${ICON_BTN_BASE} text-muted hover:text-danger hover:bg-danger-subtle`}
+                  aria-label="Delete task"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </Tooltip>
             </div>
           </div>
         )}

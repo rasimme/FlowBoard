@@ -67,7 +67,7 @@ export default function Tooltip({ content, placement = 'top', children }) {
         <div
           ref={tooltipRef}
           role="tooltip"
-          className="fixed z-[1100] px-2 py-1 text-[11px] font-medium text-text-strong bg-bg-elevated border border-border-strong rounded-sm shadow-md pointer-events-none animate-scale-in"
+          className="fixed z-[1900] px-2 py-1 text-[11px] font-medium text-text-strong bg-bg-elevated border border-border-strong rounded-sm shadow-md pointer-events-none animate-scale-in"
           style={{ top: coords.top, left: coords.left }}
         >
           {content}
