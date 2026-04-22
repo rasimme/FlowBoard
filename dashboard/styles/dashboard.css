@@ -425,10 +425,12 @@
       padding: 2px 2px 0;
     }
 
-    /* Archive section — pinned bottom */
+    /* Archive section — pinned bottom, separated from live tasks by
+       extra breathing room rather than a hard divider line (the solid
+       border-top read as a bright seam on dark cards). */
     .archive-section {
       margin-top: auto;
-      padding-top: 6px;
+      padding-top: 18px;
     }
     .archive-head {
       display: flex; align-items: center; gap: 6px;
@@ -437,8 +439,7 @@
       color: var(--muted); font-weight: 600;
       cursor: pointer; user-select: none;
       opacity: 0.75;
-      border-top: 1px solid var(--border);
-      background: transparent; border-left: 0; border-right: 0; border-bottom: 0;
+      background: transparent; border: 0;
       width: 100%; text-align: left; font-family: inherit;
     }
     .archive-head:hover { opacity: 1; color: var(--text); }
@@ -648,18 +649,29 @@
       background: rgba(239, 68, 68, 0.04);
     }
     .task-card.is-blocked:hover { border-color: var(--status-blocked); box-shadow: none; }
+    /* Archived cards: keep full opacity on the container so the border
+       stays crisp (otherwise stacked archived cards visually bleed into
+       each other at 0.35 opacity). Dim the text and give the card a
+       slightly different background so it still reads as "archived". */
     .task-card.is-archived {
-      opacity: 0.35;
       padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border-color: var(--border);
+      cursor: pointer;
     }
-    .task-card.is-archived:hover { border-color: var(--border); box-shadow: none; }
-    .task-card.is-archived .task-title,
+    .task-card.is-archived:hover {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: var(--border-strong);
+      box-shadow: none;
+    }
+    .task-card.is-archived .task-title { color: var(--muted); }
+    .task-card.is-archived .task-id { opacity: 0.7; }
     .task-card.is-archived .priority-pill,
     .task-card.is-archived .spec-badge,
     .task-card.is-archived .subtask-add-btn,
     .task-card.is-archived .delete-btn,
     .task-card.is-archived .card-hover-btn,
-    .task-card.is-archived .blocked-toggle { pointer-events: none; }
+    .task-card.is-archived .blocked-toggle { pointer-events: none; opacity: 0.6; }
 
 
     .blocked-badge {

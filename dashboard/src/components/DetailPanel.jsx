@@ -668,13 +668,23 @@ export default function DetailPanel() {
     }
   }
 
-  // Archive — available for any status in the Panel (differs from the card
-  // where Archive is only shown for done tasks).
+  // Archive — available for any status in the Panel (the card only
+  // shows Archive on done tasks). HZL's server-side rule is strict:
+  // only tasks already in `done` can transition to `archived`. To keep
+  // the UX promise "archive from any status", we chain — set done
+  // first (auto-releases any active claim), then archive.
   async function confirmArchive() {
     const t = taskRef.current;
     if (!t) return;
     setArchiveConfirmOpen(false);
     try {
+      if (t.status !== 'done') {
+        const doneRes = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+          method: 'PUT',
+          body: { status: 'done' },
+        });
+        if (doneRes?.error) throw new Error(doneRes.error);
+      }
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
         method: 'PUT',
         body: { status: 'archived' },
@@ -682,7 +692,7 @@ export default function DetailPanel() {
       if (res?.error) throw new Error(res.error);
       refreshKanban();
       showToast(`${t.id} archived`, 'success');
-      close(); // task leaves the kanban; close the panel
+      close();
     } catch (err) {
       showToast('Archive failed: ' + (err.message || 'Unknown'), 'error');
     }

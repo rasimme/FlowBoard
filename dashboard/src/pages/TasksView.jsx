@@ -529,14 +529,29 @@ function AddSubtaskForm({ parentId, project, onCreated, onCancel }) {
 
 // --- Archived task card (read-only, dimmed) ---
 function ArchivedTaskCard({ task }) {
+  // Archived tasks are click-to-open so the user can restore them via
+  // the Panel's Status-Picker (archived → done/in-progress/open etc.).
+  // They get the `.is-archived` class so they share the dim/border rules
+  // with other archived-state surfaces in dashboard.css, instead of
+  // drowning in their own bg-card/50 + border-border/40 blend which
+  // made them visually bleed together.
+  const handleClick = () => { if (window.openTaskDetail) window.openTaskDetail(task.id); };
   return (
-    <div className="w-full text-left bg-card/50 rounded-lg p-3 border border-border/40 opacity-50">
+    <div
+      className="task-card is-archived"
+      onClick={handleClick}
+      style={{ cursor: 'pointer' }}
+    >
       <div className="flex items-start justify-between gap-2 mb-1">
         <span className="task-id mono">{task.id}</span>
       </div>
-      <div className="text-sm text-muted font-medium leading-snug mb-1">{task.title}</div>
+      <div className="task-title">{task.title}</div>
       {task.priority && (
-        <PriorityPill priority={task.priority} />
+        <div className="task-meta">
+          <span className="priority-pill-wrap">
+            <PriorityPill priority={task.priority} />
+          </span>
+        </div>
       )}
     </div>
   );
