@@ -20,8 +20,6 @@ export default function Header() {
 
   if (!container || !state) return null;
 
-  const isActive = state.viewedProject && state.viewedProject === state.activeProject;
-
   return createPortal(
     <>
       <div className="flex items-center gap-3">
@@ -50,7 +48,6 @@ export default function Header() {
             <span className="text-[13px] font-semibold text-text-strong tracking-[0.02em]">
               {formatDisplayName(state.viewedProject, state.projects)}
             </span>
-            {isActive && <span className="inline-flex px-2.5 py-[3px] rounded-full text-[10px] font-semibold text-accent border border-accent-subtle bg-accent-subtle uppercase tracking-[0.04em]">Active</span>}
           </>
         )}
       </div>
