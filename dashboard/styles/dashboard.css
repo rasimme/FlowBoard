@@ -684,11 +684,26 @@
     .task-card.is-archived .blocked-toggle { pointer-events: none; }
     /* Restore + Delete on archived cards MUST stay interactive — they
        are the user's way back out of the archive. Explicitly re-enable
-       pointer-events in case the meta-row grayscale filter cascades. */
+       pointer-events in case the meta-row grayscale filter cascades.
+       Also: show them permanently (not only on :hover). Archived cards
+       have only these two actions, so there's no "reveal on hover" need
+       like on live cards, and on mobile there is no hover state at all —
+       hover-gating would leave the icons invisible. */
     .task-card.is-archived .card-hover-actions,
     .task-card.is-archived .card-hover-btn { pointer-events: auto; filter: none; }
-    .task-card.is-archived:hover .card-hover-btn-restore:hover {
+    .task-card.is-archived .card-hover-btn {
+      opacity: 0.6;
+      border-color: var(--border);
+    }
+    .task-card.is-archived .card-hover-btn:hover {
+      opacity: 1;
+      color: var(--text); background: #ffffff0f; border-color: var(--border-strong);
+    }
+    .task-card.is-archived .card-hover-btn-restore:hover {
       color: var(--ok); background: var(--ok-subtle); border-color: rgba(34,197,94,0.3);
+    }
+    .task-card.is-archived .card-hover-btn-delete:hover {
+      color: var(--danger); background: var(--danger-subtle); border-color: rgba(239,68,68,0.3);
     }
 
 
