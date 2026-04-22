@@ -468,7 +468,17 @@ export default function DetailPanel() {
       });
       if (res?.error) throw new Error(res.error);
       refreshKanban();
-      addSyntheticItem('status', targetAgent ? `Routed to ${targetAgent}` : 'Route cleared');
+      // Persist the event as a comment so it survives panel close/reopen.
+      try {
+        await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
+          method: 'POST',
+          body: {
+            message: targetAgent ? `Routed to ${targetAgent}` : 'Route cleared',
+            author: currentAgent(),
+          },
+        });
+        loadActivity();
+      } catch { /* activity comment is best-effort */ }
     } catch (err) {
       setTask({ ...t, routedAgent: oldRouted });
       taskRef.current = { ...t, routedAgent: oldRouted };
@@ -574,7 +584,14 @@ export default function DetailPanel() {
         if (window.appState) window.appState.tasks = [...(window.appState.tasks || [])];
         window.dispatchEvent(new CustomEvent('appstate:change'));
       }
-      addSyntheticItem('status', 'Unblocked');
+      // Persist as a comment so the unblock event survives panel close/reopen.
+      try {
+        await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
+          method: 'POST',
+          body: { message: 'Unblocked', author: currentAgent() },
+        });
+        loadActivity();
+      } catch { /* best-effort */ }
     } catch (err) {
       setTask({ ...t, blocked: oldBlocked });
       taskRef.current = { ...t, blocked: oldBlocked };
@@ -905,14 +922,18 @@ export default function DetailPanel() {
             onClose={closeHeaderPopover}
             anchorRect={headerPopover.rect}
           >
-            {['low', 'medium', 'high'].map((p) => (
-              <Popover.Option
-                key={p}
-                onClick={() => { handlePriorityChange(p); closeHeaderPopover(); }}
-              >
-                <PriorityPill priority={p} />
-              </Popover.Option>
-            ))}
+            {/* Horizontal 3-pill layout — identical to the card's
+                priority popover (see TaskCard render). */}
+            <div className="flex gap-1 p-1.5">
+              {['low', 'medium', 'high'].map((p) => (
+                <PriorityPill
+                  key={p}
+                  priority={p}
+                  onClick={() => { handlePriorityChange(p); closeHeaderPopover(); }}
+                  className={p !== task?.priority ? 'opacity-50 hover:opacity-100' : ''}
+                />
+              ))}
+            </div>
           </Popover>
         </div>
 
@@ -960,8 +981,11 @@ export default function DetailPanel() {
                   onClick={task.blocked ? handleUnblock : startBlock}
                   className={[
                     ICON_BTN_BASE,
+                    // Active state uses the same accent tinting as the
+                    // Spec button so all "active / engaged" icon buttons
+                    // in the panel share the red family.
                     task.blocked
-                      ? 'text-danger bg-danger-subtle border-danger-subtle hover:brightness-125'
+                      ? 'text-accent bg-accent-subtle border-accent-subtle hover:brightness-125'
                       : 'text-muted hover:text-text hover:bg-bg-hover',
                   ].join(' ')}
                   aria-label={task.blocked ? 'Unblock' : 'Block'}
@@ -1020,8 +1044,9 @@ export default function DetailPanel() {
           )}
         </Popover>
 
-        {/* Block-with-reason inline input — appears under Zone 2 when
-            the user clicks Block. Optional reason is posted as a comment. */}
+        {/* Block-with-reason inline input. Uses the shared Input + Button
+            primitives so typography, border-radius and focus-ring match
+            the rest of the app. */}
         {blockReasonOpen && (
           <div className="px-4 py-3 border-b border-border bg-bg-accent">
             <div className="text-xs text-muted mb-2">Why is this blocked? (optional)</div>
@@ -1036,46 +1061,23 @@ export default function DetailPanel() {
                   if (e.key === 'Escape') setBlockReasonOpen(false);
                 }}
                 placeholder="e.g. waiting for API keys"
-                className="flex-1 h-8 px-2 rounded-md bg-bg border border-border text-sm text-text focus:border-accent outline-none"
+                className="flex-1 rounded-md border border-border bg-bg px-3 py-[7px] text-sm text-text placeholder:text-muted focus:border-accent focus:shadow-focus-accent outline-none transition-all duration-fast"
               />
-              <button
-                type="button"
-                onClick={() => setBlockReasonOpen(false)}
-                className="h-8 px-3 rounded-md border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmBlock}
-                className="h-8 px-3 rounded-md border-0 bg-danger text-white hover:brightness-110 cursor-pointer text-xs font-medium"
-              >
-                Block
-              </button>
+              <Button size="sm" variant="ghost" onClick={() => setBlockReasonOpen(false)}>Cancel</Button>
+              <Button size="sm" variant="accent" onClick={confirmBlock}>Block</Button>
             </div>
           </div>
         )}
 
-        {/* Archive confirmation — lightweight inline confirm. Archive is
-            reversible, so no heavy modal. */}
+        {/* Archive confirmation — lightweight inline confirm (reversible). */}
         {archiveConfirmOpen && (
           <div className="px-4 py-3 border-b border-border bg-bg-accent">
-            <div className="text-xs text-muted mb-2">Archive {taskId}? It will be hidden from the board but kept in history.</div>
+            <div className="text-xs text-muted mb-2">
+              Archive {taskId}? It will be hidden from the board but kept in history.
+            </div>
             <div className="flex gap-2 justify-end">
-              <button
-                type="button"
-                onClick={() => setArchiveConfirmOpen(false)}
-                className="h-8 px-3 rounded-md border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmArchive}
-                className="h-8 px-3 rounded-md border-0 bg-warn text-white hover:brightness-110 cursor-pointer text-xs font-medium"
-              >
-                Archive
-              </button>
+              <Button size="sm" variant="ghost" onClick={() => setArchiveConfirmOpen(false)}>Cancel</Button>
+              <Button size="sm" variant="accent" onClick={confirmArchive}>Archive</Button>
             </div>
           </div>
         )}

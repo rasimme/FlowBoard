@@ -67,7 +67,7 @@ export default function Popover({ open, onClose, anchorRect, children }) {
   return createPortal(
     <div
       ref={ref}
-      className="fixed bg-bg-elevated border border-border-strong rounded-lg shadow-lg py-1 w-max min-w-[120px] z-[1800] animate-pop-in"
+      className="fixed bg-bg-elevated border border-border-strong rounded-lg shadow-lg py-1 w-max z-[1800] animate-pop-in"
       style={{ top, left }}
     >
       {children}

@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { Modal, PriorityPill, Popover, ActiveAgentsBar } from '../components/index.js';
+import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../components/index.js';
 import AgentChip from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
 import BlockedChip from '../components/BlockedChip.jsx';
@@ -133,12 +133,20 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
         <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
         <span className="subtask-actions">
           {hasUsableSpec
-            ? <span className="spec-badge spec-badge-sm" onClick={handleOpenSpec} title="Open spec file">
-                <FileText size={12} />
-              </span>
-            : <span className="spec-badge spec-badge-add spec-badge-sm" onClick={handleCreateSpec} title="Create spec file">
-                <FilePlus size={12} />
-              </span>
+            ? (
+              <Tooltip content="Open spec file">
+                <span className="spec-badge spec-badge-sm" onClick={handleOpenSpec}>
+                  <FileText size={12} />
+                </span>
+              </Tooltip>
+            )
+            : (
+              <Tooltip content="Create spec file">
+                <span className="spec-badge spec-badge-add spec-badge-sm" onClick={handleCreateSpec}>
+                  <FilePlus size={12} />
+                </span>
+              </Tooltip>
+            )
           }
         </span>
       </div>
@@ -308,25 +316,27 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
             <span className="flex items-center gap-1 shrink-0">
               <span className="card-hover-actions">
                 {task.status === 'done' && (
+                  <Tooltip content="Archive task">
+                    <button
+                      type="button"
+                      className="card-hover-btn card-hover-btn-archive"
+                      onClick={handleArchiveClick}
+                      aria-label="Archive task"
+                    >
+                      <Archive size={14} />
+                    </button>
+                  </Tooltip>
+                )}
+                <Tooltip content="Move to Trash">
                   <button
                     type="button"
-                    className="card-hover-btn card-hover-btn-archive"
-                    onClick={handleArchiveClick}
-                    title="Archive task"
-                    aria-label="Archive task"
+                    className="card-hover-btn card-hover-btn-delete"
+                    onClick={handleDeleteClick}
+                    aria-label="Move to Trash"
                   >
-                    <Archive size={12} />
+                    <Trash2 size={14} />
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="card-hover-btn card-hover-btn-delete"
-                  onClick={handleDeleteClick}
-                  title="Move to trash"
-                  aria-label="Move to trash"
-                >
-                  <Trash2 size={12} />
-                </button>
+                </Tooltip>
               </span>
               {task.agent && (
                 <AgentChip
@@ -359,16 +369,26 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
               {task.blocked && <BlockedChip />}
             </span>
             <span className="task-meta-actions">
-              <span className="subtask-add-btn" onClick={(e) => { e.stopPropagation(); onAddSubtask?.(task.id); }} title="Add subtask">
-                <ListTree size={14} />
-              </span>
+              <Tooltip content="Add subtask">
+                <span className="subtask-add-btn" onClick={(e) => { e.stopPropagation(); onAddSubtask?.(task.id); }}>
+                  <ListTree size={14} />
+                </span>
+              </Tooltip>
               {hasUsableSpec
-                ? <span className="spec-badge" onClick={handleOpenSpec} title="Open spec file">
-                    <FileText size={14} />
-                  </span>
-                : <span className="spec-badge spec-badge-add" onClick={handleCreateSpec} title="Create spec file">
-                    <FilePlus size={14} />
-                  </span>
+                ? (
+                  <Tooltip content="Open spec file">
+                    <span className="spec-badge" onClick={handleOpenSpec}>
+                      <FileText size={14} />
+                    </span>
+                  </Tooltip>
+                )
+                : (
+                  <Tooltip content="Create spec file">
+                    <span className="spec-badge spec-badge-add" onClick={handleCreateSpec}>
+                      <FilePlus size={14} />
+                    </span>
+                  </Tooltip>
+                )
               }
             </span>
           </div>
