@@ -860,14 +860,17 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
             ))}
             {sortedArchived.length > 0 && (
               <>
-                {/* Spacer replaces the former <hr>. The hr rendered with
-                    its user-agent default (inset, bright) because
-                    Tailwind preflight is disabled, and adding just
-                    border-color couldn't override it. A small gap is
-                    enough — the dim archived cards read as a separate
-                    zone on their own. Also anchors the auto-scroll-to-
-                    archived behaviour when the toggle is enabled. */}
-                <div ref={archiveAnchorRef} className="h-3 scroll-mt-2" aria-hidden="true" />
+                {/* Subtle divider — 1px-tall background stripe instead
+                    of an <hr>. <hr> inherits its user-agent default
+                    border (inset, bright) and Tailwind preflight is
+                    disabled here, so a bg-color div is the only reliable
+                    way to get a thin, dim line. Margins give the
+                    breathing room; also serves as the scroll-anchor. */}
+                <div
+                  ref={archiveAnchorRef}
+                  className="my-3 h-px bg-[rgba(255,255,255,0.06)] scroll-mt-2"
+                  aria-hidden="true"
+                />
                 {sortedArchived.map(t => <ArchivedTaskCard key={t.id} task={t} project={project} onTaskUpdated={onTaskUpdated} onTaskTrashed={onTaskTrashed} />)}
               </>
             )}
