@@ -954,8 +954,9 @@
     .subtask-card {
       position: relative;
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
       padding: 7px 10px;
       min-height: 34px;
       background: var(--bg-accent);
@@ -965,8 +966,31 @@
     }
     .subtask-card:hover { background: var(--bg-hover); }
 
-    /* Tree-line: horizontal branch from trunk to card */
-    .subtask-card::after {
+    /* T-161-4: the main subtask row (title + status + chips + actions).
+       Holds the positional anchor for tree-dot and the horizontal
+       tree-line so they center on this row rather than on the full card
+       when a Blocked line pushes the card taller. */
+    .subtask-card-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 20px;
+    }
+
+    /* Blocked line — appears only when task.blocked is true. Indented so
+       the chip visually aligns under the title, not the tree-dot cluster. */
+    .subtask-card-blocked {
+      display: flex;
+      align-items: center;
+      padding-left: 28px;
+    }
+
+    /* Tree-line: horizontal branch from trunk to card.
+       Anchored on .subtask-card-row (not .subtask-card) so the branch
+       centers on the title row rather than the full card when the card
+       grows taller because of a Blocked line below. */
+    .subtask-card-row::after {
       content: '';
       position: absolute;
       left: -14px;

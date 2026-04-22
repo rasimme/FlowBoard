@@ -116,33 +116,38 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 
   return (
     <div className="subtask-card" onClick={handleClick} style={{ cursor: 'pointer' }}>
-      <span className="tree-dot" />
-      <span className="status-dot-wrap" onClick={handleDotClick}>
-        <span className={`status-dot status-dot-${task.status}`} />
-      </span>
-      <span className="subtask-title">{task.title}</span>
-      {task.agent && (
-        <AgentChip name={task.agent} size="xs" variant="solid" title={`Claimed by ${task.agent}`} />
-      )}
-      {!task.agent && task.routedAgent && (
-        <AgentChip name={task.routedAgent} size="xs" variant="ring" title={`Routed to ${task.routedAgent}`} />
-      )}
-      <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
-      {task.blocked && (
-        <span className="text-[9px] text-danger font-medium uppercase tracking-wide ml-auto shrink-0">
-          Blocked
+      <div className="subtask-card-row">
+        <span className="tree-dot" />
+        <span className="status-dot-wrap" onClick={handleDotClick}>
+          <span className={`status-dot status-dot-${task.status}`} />
         </span>
+        <span className="subtask-title">{task.title}</span>
+        {task.agent && (
+          <AgentChip name={task.agent} size="xs" variant="solid" title={`Claimed by ${task.agent}`} />
+        )}
+        {!task.agent && task.routedAgent && (
+          <AgentChip name={task.routedAgent} size="xs" variant="ring" title={`Routed to ${task.routedAgent}`} />
+        )}
+        <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
+        <span className="subtask-actions">
+          {hasUsableSpec
+            ? <span className="spec-badge spec-badge-sm" onClick={handleOpenSpec} title="Open spec file">
+                <FileText size={12} />
+              </span>
+            : <span className="spec-badge spec-badge-add spec-badge-sm" onClick={handleCreateSpec} title="Create spec file">
+                <FilePlus size={12} />
+              </span>
+          }
+        </span>
+      </div>
+      {/* T-161-4: Blocked signal drops to its own line under the title so
+          the main row's content (title + identity chips + spec) never gets
+          truncated. Card grows vertically only when blocked is true. */}
+      {task.blocked && (
+        <div className="subtask-card-blocked">
+          <BlockedChip />
+        </div>
       )}
-      <span className="subtask-actions">
-        {hasUsableSpec
-          ? <span className="spec-badge spec-badge-sm" onClick={handleOpenSpec} title="Open spec file">
-              <FileText size={12} />
-            </span>
-          : <span className="spec-badge spec-badge-add spec-badge-sm" onClick={handleCreateSpec} title="Create spec file">
-              <FilePlus size={12} />
-            </span>
-        }
-      </span>
       {/* Status popover */}
       <Popover open={popover.open && popover.type === 'status'} onClose={handlePopoverClose} anchorRect={popover.rect}>
         {['backlog', 'open', 'in-progress', 'review', 'done'].map(s => (
