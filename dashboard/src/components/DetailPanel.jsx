@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown } from 'lucide-react';
+import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
@@ -111,6 +111,11 @@ export default function DetailPanel() {
   // T-161-4: header popover (Status or Priority picker) — one shared state
   // so only one popover can be open at a time.
   const [headerPopover, setHeaderPopover] = useState({ type: null, rect: null });
+  // T-161-4 Zone 2: Quick-Action state
+  const [routePopover, setRoutePopover] = useState({ open: false, rect: null });
+  const [blockReasonOpen, setBlockReasonOpen] = useState(false);
+  const [blockReasonText, setBlockReasonText] = useState('');
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
@@ -418,6 +423,155 @@ export default function DetailPanel() {
     setHeaderPopover({ type: null, rect: null });
   }
 
+  // T-161-4 Zone 2 handlers
+
+  function openRoutePopover(e) {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setRoutePopover({ open: true, rect });
+  }
+  function closeRoutePopover() {
+    setRoutePopover({ open: false, rect: null });
+  }
+  async function handleRoute(targetAgent) {
+    const t = taskRef.current;
+    if (!t) return;
+    closeRoutePopover();
+    const oldRouted = t.routedAgent || null;
+    setTask({ ...t, routedAgent: targetAgent });
+    taskRef.current = { ...t, routedAgent: targetAgent };
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/route`, {
+        method: 'POST',
+        body: { agent: targetAgent },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+      addSyntheticItem('status', targetAgent ? `Routed to ${targetAgent}` : 'Route cleared');
+    } catch (err) {
+      setTask({ ...t, routedAgent: oldRouted });
+      taskRef.current = { ...t, routedAgent: oldRouted };
+      showToast('Route failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  // Spec actions — mirror the TaskCard behaviour: if spec exists, open it;
+  // if not, POST to create one and then open.
+  function handleOpenSpec() {
+    const t = taskRef.current;
+    if (t && t.specFile && window._openSpec) window._openSpec(t.specFile, t.id);
+  }
+  async function handleCreateSpec() {
+    const t = taskRef.current;
+    if (!t) return;
+    try {
+      const res = await apiFetch(`/projects/${project}/specs/${t.id}`, { method: 'POST' });
+      if (res?.ok && res.specFile) {
+        setTask({ ...t, specFile: res.specFile });
+        taskRef.current = { ...t, specFile: res.specFile };
+        if (window._openSpec) window._openSpec(res.specFile, t.id);
+        showToast(`Spec created for ${t.id}`, 'success');
+      }
+    } catch (err) {
+      showToast('Failed to create spec: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  // Block-with-reason (design doc §4.2 / Z2b).
+  function startBlock() {
+    setBlockReasonText('');
+    setBlockReasonOpen(true);
+  }
+  async function confirmBlock() {
+    const t = taskRef.current;
+    if (!t) return;
+    const reason = blockReasonText.trim();
+    setBlockReasonOpen(false);
+    const oldBlocked = t.blocked;
+    setTask({ ...t, blocked: true });
+    taskRef.current = { ...t, blocked: true };
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { blocked: true },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+      if (reason) {
+        try {
+          await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
+            method: 'POST',
+            body: { message: `Blocked: ${reason}`, author: currentAgent() },
+          });
+          loadActivity();
+        } catch { /* comment is optional */ }
+      }
+      addSyntheticItem('status', reason ? `Blocked — ${reason}` : 'Blocked');
+    } catch (err) {
+      setTask({ ...t, blocked: oldBlocked });
+      taskRef.current = { ...t, blocked: oldBlocked };
+      showToast('Block failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+  async function handleUnblock() {
+    const t = taskRef.current;
+    if (!t) return;
+    const oldBlocked = t.blocked;
+    setTask({ ...t, blocked: false });
+    taskRef.current = { ...t, blocked: false };
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { blocked: false },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+      addSyntheticItem('status', 'Unblocked');
+    } catch (err) {
+      setTask({ ...t, blocked: oldBlocked });
+      taskRef.current = { ...t, blocked: oldBlocked };
+      showToast('Unblock failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  // Archive — available for any status in the Panel (differs from the card
+  // where Archive is only shown for done tasks).
+  async function confirmArchive() {
+    const t = taskRef.current;
+    if (!t) return;
+    setArchiveConfirmOpen(false);
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { status: 'archived' },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+      showToast(`${t.id} archived`, 'success');
+      close(); // task leaves the kanban; close the panel
+    } catch (err) {
+      showToast('Archive failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  // Delete — soft delete → Trash.
+  async function handleTrashTask() {
+    const t = taskRef.current;
+    if (!t) return;
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { trashedAt: new Date().toISOString() },
+      });
+      if (res?.error) throw new Error(res.error);
+      refreshKanban();
+      showToast(`${t.id} moved to Trash`, 'success');
+      close();
+    } catch (err) {
+      showToast('Delete failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
   async function handleToggleBlocked() {
     const t = taskRef.current;
     if (!t) return;
@@ -673,6 +827,154 @@ export default function DetailPanel() {
           </Popover>
         </div>
 
+        {/* T-161-4 Zone 2 — Quick Actions: Route / Spec / Block on the
+            left, Archive / Delete on the right. Only rendered for
+            non-trashed tasks; trashed tasks (opened from the Trash panel
+            or via direct link) shouldn't expose these admin actions. */}
+        {task && hzlAvailable && !task.trashedAt && (
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border">
+            <div className="flex items-center gap-1">
+              {/* Route */}
+              <button
+                type="button"
+                onClick={openRoutePopover}
+                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover border-0 bg-transparent cursor-pointer"
+                title={task.routedAgent ? `Routed to ${task.routedAgent}` : 'Route to agent'}
+                aria-label="Route to agent"
+              >
+                <UserPlus size={14} />
+              </button>
+              {/* Spec */}
+              <button
+                type="button"
+                onClick={task.specFile && task.specExists !== false ? handleOpenSpec : handleCreateSpec}
+                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover border-0 bg-transparent cursor-pointer"
+                title={task.specFile && task.specExists !== false ? 'Open spec' : 'Create spec'}
+                aria-label="Spec"
+              >
+                {task.specFile && task.specExists !== false ? <FileText size={14} /> : <FilePlus size={14} />}
+              </button>
+              {/* Block / Unblock */}
+              <button
+                type="button"
+                onClick={task.blocked ? handleUnblock : startBlock}
+                className={[
+                  'w-8 h-8 inline-flex items-center justify-center rounded-md border-0 bg-transparent cursor-pointer',
+                  task.blocked ? 'text-danger hover:bg-danger-subtle' : 'text-muted hover:text-text hover:bg-bg-hover',
+                ].join(' ')}
+                title={task.blocked ? 'Unblock' : 'Block (with optional reason)'}
+                aria-label={task.blocked ? 'Unblock' : 'Block'}
+              >
+                {task.blocked ? <Unlock size={14} /> : <Lock size={14} />}
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              {/* Archive (any status, unlike the card's done-only limit) */}
+              <button
+                type="button"
+                onClick={() => setArchiveConfirmOpen(true)}
+                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-warn hover:bg-warn-subtle border-0 bg-transparent cursor-pointer"
+                title="Archive task"
+                aria-label="Archive task"
+              >
+                <ArchiveIcon size={14} />
+              </button>
+              {/* Delete — soft to Trash */}
+              <button
+                type="button"
+                onClick={handleTrashTask}
+                className="w-8 h-8 inline-flex items-center justify-center rounded-md text-muted hover:text-danger hover:bg-danger-subtle border-0 bg-transparent cursor-pointer"
+                title="Move to Trash"
+                aria-label="Delete task"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Route popover — lives here (outside the header) so it anchors
+            to the Route button in Zone 2. */}
+        <Popover open={routePopover.open} onClose={closeRoutePopover} anchorRect={routePopover.rect}>
+          {(state?.agents || []).map((a) => (
+            <Popover.Option key={a.agent_id} onClick={() => handleRoute(a.agent_id)}>
+              <span className="flex items-center gap-2">
+                <span className="font-mono text-xs">@{a.agent_id}</span>
+                {a.active_project && <span className="text-[10px] text-muted">on {a.active_project}</span>}
+              </span>
+            </Popover.Option>
+          ))}
+          {(state?.agents || []).length === 0 && (
+            <Popover.Option onClick={closeRoutePopover}>
+              <span className="text-xs text-muted italic">No agents registered</span>
+            </Popover.Option>
+          )}
+          {task?.routedAgent && (
+            <Popover.Option onClick={() => handleRoute(null)}>
+              <span className="text-xs text-danger">Clear route</span>
+            </Popover.Option>
+          )}
+        </Popover>
+
+        {/* Block-with-reason inline input — appears under Zone 2 when
+            the user clicks Block. Optional reason is posted as a comment. */}
+        {blockReasonOpen && (
+          <div className="px-4 py-3 border-b border-border bg-bg-accent">
+            <div className="text-xs text-muted mb-2">Why is this blocked? (optional)</div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={blockReasonText}
+                onChange={(e) => setBlockReasonText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') confirmBlock();
+                  if (e.key === 'Escape') setBlockReasonOpen(false);
+                }}
+                placeholder="e.g. waiting for API keys"
+                className="flex-1 h-8 px-2 rounded-md bg-bg border border-border text-sm text-text focus:border-accent outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setBlockReasonOpen(false)}
+                className="h-8 px-3 rounded-md border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmBlock}
+                className="h-8 px-3 rounded-md border-0 bg-danger text-white hover:brightness-110 cursor-pointer text-xs font-medium"
+              >
+                Block
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Archive confirmation — lightweight inline confirm. Archive is
+            reversible, so no heavy modal. */}
+        {archiveConfirmOpen && (
+          <div className="px-4 py-3 border-b border-border bg-bg-accent">
+            <div className="text-xs text-muted mb-2">Archive {taskId}? It will be hidden from the board but kept in history.</div>
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setArchiveConfirmOpen(false)}
+                className="h-8 px-3 rounded-md border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmArchive}
+                className="h-8 px-3 rounded-md border-0 bg-warn text-white hover:brightness-110 cursor-pointer text-xs font-medium"
+              >
+                Archive
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scrollable content */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
