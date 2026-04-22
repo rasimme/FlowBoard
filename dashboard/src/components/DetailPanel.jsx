@@ -5,6 +5,7 @@ import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
 import Input from './Input.jsx';
+import Textarea from './Textarea.jsx';
 import Popover from './Popover.jsx';
 import PriorityPill from './PriorityPill.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
@@ -23,14 +24,18 @@ import Tooltip from './Tooltip.jsx';
 // base meant it overrode `border-accent-subtle` appended per call (same
 // for `bg-transparent` vs `bg-accent-subtle`). Keeping colour intent
 // off the base removes that pitfall.
+// `appearance-none` is critical: without it the browser still renders
+// its native button chrome (inset border, button-face gradient, focus
+// outline) UNDER our tailwind styles, which showed up as the "komische
+// Kontur mit Schatten-Effekt" the user flagged repeatedly.
 const CHIP_BTN_BASE =
   'inline-flex items-center gap-1 h-[22px] px-2.5 rounded-full ' +
-  'text-[11px] font-medium cursor-pointer ' +
+  'text-[11px] font-medium cursor-pointer appearance-none ' +
   'outline-none focus-visible:shadow-focus-accent ' +
   'transition-colors duration-fast border';
 const ICON_BTN_BASE =
   'w-8 h-8 inline-flex items-center justify-center rounded-md cursor-pointer ' +
-  'border outline-none focus-visible:shadow-focus-accent ' +
+  'border appearance-none outline-none focus-visible:shadow-focus-accent ' +
   'transition-colors duration-fast';
 
 // T-161-4: operational statuses shown in the Zone-1 Status-Picker.
@@ -984,7 +989,12 @@ export default function DetailPanel() {
                 <button
                   type="button"
                   onClick={openRoutePopover}
-                  className={`${ICON_BTN_BASE} text-muted hover:text-text hover:bg-bg-hover`}
+                  className={[
+                    ICON_BTN_BASE,
+                    task.routedAgent
+                      ? 'text-accent bg-accent-subtle border-accent-subtle hover:brightness-125'
+                      : 'border-transparent bg-transparent text-muted hover:text-text hover:bg-bg-hover',
+                  ].join(' ')}
                   aria-label="Route to agent"
                 >
                   <UserPlus size={14} />
@@ -1149,7 +1159,7 @@ export default function DetailPanel() {
               <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Description</div>
               {isEditingDescription ? (
                 <div>
-                  <textarea
+                  <Textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     onKeyDown={(e) => {
@@ -1158,24 +1168,11 @@ export default function DetailPanel() {
                     }}
                     autoFocus
                     rows={4}
-                    className="w-full rounded-md border border-border bg-bg px-2 py-1.5 text-sm text-text placeholder:text-muted focus:border-accent outline-none resize-y"
                     placeholder="Describe what this task is about"
                   />
                   <div className="flex justify-end gap-2 mt-2">
-                    <button
-                      type="button"
-                      onClick={cancelEditingDescription}
-                      className="h-7 px-3 rounded-md border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveDescription}
-                      className="h-7 px-3 rounded-md border-0 bg-accent text-white hover:brightness-110 cursor-pointer text-xs font-medium"
-                    >
-                      Save
-                    </button>
+                    <Button size="xs" variant="ghost" onClick={cancelEditingDescription}>Cancel</Button>
+                    <Button size="xs" variant="accent" onClick={saveDescription}>Save</Button>
                   </div>
                 </div>
               ) : (
@@ -1275,13 +1272,13 @@ export default function DetailPanel() {
         <div className="px-4 py-3 border-t border-border bg-card">
           <div className="flex gap-2 items-center">
             <AgentChip name={currentAgent()} size="sm" title="Commenting as @human" />
-            <textarea
+            <Textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={handleCommentKeyDown}
               placeholder="Write a comment..."
               rows={1}
-              className="flex-1 resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-muted focus:outline-none focus:border-accent"
+              className="flex-1 resize-none"
             />
             <button
               onClick={handleSubmitComment}

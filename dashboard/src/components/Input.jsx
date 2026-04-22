@@ -7,7 +7,7 @@ import { forwardRef } from 'react';
  * @example <Input placeholder="Enter name…" value={v} onChange={handleChange} />
  */
 const sizes = {
-  sm: 'h-[24px] px-2 text-[11px] rounded-md',
+  sm: 'h-[28px] px-2 text-[11px] rounded-md',
   md: 'px-3 py-2 text-sm rounded-lg',
 };
 
@@ -22,9 +22,9 @@ const Input = forwardRef(function Input({
       className={[
         'w-full',
         sizes[size] || sizes.md,
-        'bg-bg-elevated text-text border border-border',
+        'bg-bg text-text border border-border appearance-none',
         'placeholder:text-muted',
-        'outline-none focus:border-accent-subtle focus:shadow-focus-accent',
+        'outline-none focus:border-accent focus:shadow-focus-accent',
         'transition-colors duration-fast',
         className,
       ].join(' ')}

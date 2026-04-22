@@ -98,7 +98,12 @@ Popover.Option = function PopoverOption({ children, onClick, className = '' }) {
       type="button"
       onClick={onClick}
       className={[
-        'w-full text-left text-xs px-2 py-1',
+        // `w-full` deliberately NOT set: it produced a circular width
+        // resolution with the popover wrapper's `w-max` (parent wants
+        // max-content, child wants 100% of parent), which made the menu
+        // render much wider than its actual content. Without w-full the
+        // wrapper sizes to the widest row naturally.
+        'block text-left text-xs px-2 py-1',
         'bg-transparent border-0 appearance-none text-inherit font-[inherit]',
         'hover:bg-bg-hover cursor-pointer transition-colors duration-fast',
         className,

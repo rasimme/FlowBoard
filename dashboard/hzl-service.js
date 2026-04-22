@@ -1286,21 +1286,25 @@ function renderStatusEventMessage(type, data) {
     case 'task_moved':
       return data.to_project ? `Moved to project ${data.to_project}` : 'Moved';
     case 'task_updated': {
-      // Surface the FlowBoard-relevant metadata mutations. The event
-      // payload typically contains the full flowboard metadata snapshot;
-      // we don't have a reliable diff so we summarise by what's present.
-      const fb = data.metadata?.flowboard || data.flowboard || {};
+      // Real payload shape (hzl-core): { field, old_value, new_value }.
+      // For metadata changes we diff old vs new to identify which
+      // FlowBoard fields mutated and narrate only those. Anything else
+      // (completed, lastCheckpointAt, etc.) is swallowed — we don't want
+      // every bookkeeping update spamming the Activity Feed.
+      if (data.field !== 'metadata') return null;
+      const oldFb = data.old_value?.flowboard || {};
+      const newFb = data.new_value?.flowboard || {};
       const parts = [];
-      if (Object.prototype.hasOwnProperty.call(fb, 'blocked')) {
-        parts.push(fb.blocked ? 'Blocked' : 'Unblocked');
+      if (newFb.blocked !== oldFb.blocked) {
+        parts.push(newFb.blocked ? 'Blocked' : 'Unblocked');
       }
-      if (Object.prototype.hasOwnProperty.call(fb, 'routedAgent')) {
-        parts.push(fb.routedAgent ? `Routed to ${fb.routedAgent}` : 'Route cleared');
+      if (newFb.routedAgent !== oldFb.routedAgent) {
+        parts.push(newFb.routedAgent ? `Routed to ${newFb.routedAgent}` : 'Route cleared');
       }
-      if (Object.prototype.hasOwnProperty.call(fb, 'trashedAt')) {
-        parts.push(fb.trashedAt ? 'Moved to Trash' : 'Restored from Trash');
+      if (newFb.trashedAt !== oldFb.trashedAt) {
+        parts.push(newFb.trashedAt ? 'Moved to Trash' : 'Restored from Trash');
       }
-      if (parts.length === 0) return null; // metadata change we don't narrate
+      if (parts.length === 0) return null;
       return parts.join(', ');
     }
     default:
