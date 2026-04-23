@@ -43,12 +43,15 @@ export default function Button({
       className={[
         'inline-flex items-center justify-center gap-1.5 rounded-lg',
         'font-medium transition-all duration-fast cursor-pointer',
-        // No default border — variants decide. `appearance-none` strips
-        // the native button chrome; `outline-none` the default focus
-        // outline. `border-0` would fight variants that want a border
-        // (ghost, danger-outline) due to Tailwind's alphabetical class
-        // ordering, so it's removed here.
-        'outline-none appearance-none focus-visible:shadow-focus-accent',
+        // `border border-solid border-transparent` is the baseline:
+        // it forces `border-style: solid` (killing the UA-default
+        // outset that Tailwind preflight would normally neutralise,
+        // but is disabled in this project) and a transparent colour.
+        // Variants that want a visible border just set border-color
+        // (ghost, danger-outline). Variants without border specs
+        // (accent, secondary, danger) keep the transparent baseline
+        // — same box size, no bevel, no two-tone contour.
+        'border border-solid border-transparent outline-none appearance-none focus-visible:shadow-focus-accent',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],
         sizes[size],
