@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, RotateCcw, Trash2 } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
+import Button from './Button.jsx';
 
 /**
  * TrashPanel — slide-in panel from the right (same pattern as
@@ -108,7 +109,7 @@ export default function TrashPanel({ open, project, trashedTasks, onClose, onRes
                 onClick={() => onRestore?.(t)}
                 title={`Restore ${t.id}`}
                 aria-label={`Restore ${t.id}`}
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ok hover:bg-ok-subtle border-0 bg-transparent cursor-pointer"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-muted hover:text-ok hover:bg-ok-subtle bg-transparent cursor-pointer appearance-none outline-none focus-visible:shadow-focus-accent border border-solid border-transparent"
               >
                 <RotateCcw size={14} />
               </button>
@@ -119,35 +120,26 @@ export default function TrashPanel({ open, project, trashedTasks, onClose, onRes
         {/* Footer */}
         <div className="px-4 py-3 border-t border-border bg-card">
           {!confirming ? (
-            <button
-              type="button"
+            <Button
+              variant="danger-outline"
+              size="md"
+              className="w-full"
               onClick={() => setConfirming(true)}
               disabled={trashedTasks.length === 0 || busy}
-              className="w-full h-9 rounded-lg border border-danger bg-transparent text-danger hover:bg-danger-subtle disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors text-sm font-medium"
             >
               Empty Trash
-            </button>
+            </Button>
           ) : (
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted flex-1">
                 {trashedTasks.length} task{trashedTasks.length === 1 ? '' : 's'} will be permanently deleted. No undo.
               </span>
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                disabled={busy}
-                className="h-8 px-3 rounded-lg border border-border bg-transparent text-text hover:bg-bg-hover cursor-pointer text-xs font-medium"
-              >
+              <Button variant="ghost" size="xs" onClick={() => setConfirming(false)} disabled={busy}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleEmpty}
-                disabled={busy}
-                className="h-8 px-3 rounded-lg border-0 bg-danger text-white hover:brightness-110 cursor-pointer text-xs font-medium disabled:opacity-50"
-              >
+              </Button>
+              <Button variant="danger" size="xs" onClick={handleEmpty} disabled={busy}>
                 {busy ? '…' : 'Delete forever'}
-              </button>
+              </Button>
             </div>
           )}
         </div>

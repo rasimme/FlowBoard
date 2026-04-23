@@ -11,8 +11,12 @@ const variants = {
   accent: 'bg-accent text-white hover:bg-accent-hover active:bg-accent-hover',
   secondary: 'bg-bg-elevated text-text hover:bg-bg-hover',
   danger: 'bg-danger text-white hover:brightness-110',
+  // Red outline — used for "about-to-confirm" destructive actions like
+  // Empty Trash. Border-solid is essential; without it browsers keep
+  // their UA-default outset border-style (Tailwind preflight is off).
+  'danger-outline': 'bg-transparent text-danger border border-solid border-danger hover:bg-danger-subtle',
   ghost: [
-    'bg-transparent text-text border border-transparent',
+    'bg-transparent text-text border border-solid border-transparent',
     'hover:bg-bg-hover hover:border-border-strong',
   ].join(' '),
 };
@@ -39,7 +43,12 @@ export default function Button({
       className={[
         'inline-flex items-center justify-center gap-1.5 rounded-lg',
         'font-medium transition-all duration-fast cursor-pointer',
-        'border-0 outline-none appearance-none focus-visible:shadow-focus-accent',
+        // No default border — variants decide. `appearance-none` strips
+        // the native button chrome; `outline-none` the default focus
+        // outline. `border-0` would fight variants that want a border
+        // (ghost, danger-outline) due to Tailwind's alphabetical class
+        // ordering, so it's removed here.
+        'outline-none appearance-none focus-visible:shadow-focus-accent',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],
         sizes[size],
