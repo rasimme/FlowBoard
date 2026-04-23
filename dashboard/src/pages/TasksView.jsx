@@ -557,46 +557,56 @@ function ArchivedTaskCard({ task, project, onTaskUpdated, onTaskTrashed }) {
     }
   };
 
+  // Structure mirrors TaskCard 1:1 so layout behaviour is identical:
+  // outer <div><div.relative.group><div.task-card>…</div></div></div>
+  // plus the `shrink-0` flex wrapper around the right-cluster. Archived
+  // cards inherit every layout property from .task-card + mobile
+  // media-query overrides; they differ only in colour (via
+  // .is-archived) and in which action icons the hover row exposes.
   return (
-    <div
-      className="task-card is-archived"
-      onClick={handleClick}
-    >
-      <div className="flex items-start justify-between gap-2 mb-1">
-        <span className="task-id mono">{task.id}</span>
-        {/* Hover-revealed actions: Restore + Delete. Same 26x26 footprint
-            and hover choreography as the live card's hover buttons. */}
-        <span className="card-hover-actions">
-          <Tooltip content="Restore from archive">
-            <button
-              type="button"
-              className="card-hover-btn card-hover-btn-restore"
-              onClick={handleRestoreClick}
-              aria-label="Restore from archive"
-            >
-              <RotateCcw size={14} />
-            </button>
-          </Tooltip>
-          <Tooltip content="Move to Trash">
-            <button
-              type="button"
-              className="card-hover-btn card-hover-btn-delete"
-              onClick={handleDeleteClick}
-              aria-label="Move to Trash"
-            >
-              <Trash2 size={14} />
-            </button>
-          </Tooltip>
-        </span>
-      </div>
-      <div className="task-title">{task.title}</div>
-      {task.priority && (
-        <div className="task-meta">
-          <span className="priority-pill-wrap">
-            <PriorityPill priority={task.priority} />
-          </span>
+    <div>
+      <div className="relative group">
+        <div
+          className="task-card is-archived"
+          onClick={handleClick}
+        >
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <span className="task-id mono">{task.id}</span>
+            <span className="flex items-center gap-1 shrink-0">
+              <span className="card-hover-actions">
+                <Tooltip content="Restore from archive">
+                  <button
+                    type="button"
+                    className="card-hover-btn card-hover-btn-restore"
+                    onClick={handleRestoreClick}
+                    aria-label="Restore from archive"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                </Tooltip>
+                <Tooltip content="Move to Trash">
+                  <button
+                    type="button"
+                    className="card-hover-btn card-hover-btn-delete"
+                    onClick={handleDeleteClick}
+                    aria-label="Move to Trash"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </Tooltip>
+              </span>
+            </span>
+          </div>
+          <div className="task-title">{task.title}</div>
+          {task.priority && (
+            <div className="task-meta">
+              <span className="priority-pill-wrap flex items-center gap-[6px]">
+                <PriorityPill priority={task.priority} />
+              </span>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
