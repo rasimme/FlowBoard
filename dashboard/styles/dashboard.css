@@ -657,20 +657,17 @@
        `box-shadow: none` removes the subtle raised shadow that live
        task-cards get; archived shouldn't look "lifted". */
     .task-card.is-archived {
-      /* Lock an explicit layout so the card keeps its full structure on
-         every viewport. Earlier the mobile media query's `min-height:
-         44px` applied via `.task-card` (specificity 0,1,0), but at
-         viewports 601-900 no min-height was set anywhere, so archived
-         cards collapsed to the tallest row (the 26px button row) on
-         those widths. Setting min-height + padding here (0,2,0) wins
-         across all breakpoints. */
-      min-height: 60px;
-      padding: 10px 12px;
+      /* Inherits every layout property from .task-card (padding,
+         min-height on mobile, display, flex behaviour of children).
+         We only override the colour side — background, border color,
+         box-shadow — and the cursor. Do NOT re-declare padding or
+         min-height here: doing that broke layout parity with live
+         cards on mobile. Archived and live cards should be the same
+         shape, just dimmer. */
       background: transparent;
       border-color: rgba(255, 255, 255, 0.04);
       box-shadow: none;
       cursor: pointer;
-      display: block;
     }
     .task-card.is-archived:hover {
       background: rgba(255, 255, 255, 0.02);
