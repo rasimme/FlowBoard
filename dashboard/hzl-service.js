@@ -646,27 +646,69 @@ function updateTask(project, flowboardId, updates) {
 
 /**
  * T-161-4: Empty the Trash for a project — hard-delete every task whose
- * metadata.flowboard.trashedAt is set. Returns the count of removed tasks.
- * Uses the existing deleteTask() pipeline so spec cleanup + event emission
- * behave the same as a single DELETE call.
+ * metadata.flowboard.trashedAt is set.
+ *
+ * Earlier versions of this function looped over `deleteTask(project, id,
+ * 'all')`, which ends in `_taskService.archiveTask(ulid)`. Trashed tasks
+ * are already `status='archived'` (that's how the delete→Trash flow
+ * marks them), so archiveTask rejected every call with "Task is
+ * already archived" and nothing actually got removed from the DB.
+ *
+ * Correct path: call hzl-core's internal `deleteTasksFromEvents` and
+ * `deleteTasksFromProjections` directly. These are the same primitives
+ * `pruneEligible` uses, but we feed them our own task-id list (the
+ * trashed ones) instead of going through the age-gated prune query.
+ * We wrap the calls in write transactions on the underlying better-
+ * sqlite3 handles so we get the same locking behaviour prune uses.
  */
 function emptyTrash(project) {
   const removed = [];
   const failed = [];
-  // Collect first (snapshot) so we don't mutate the cache mid-iteration.
-  const victims = [];
+
+  const victims = []; // { id, ulid }
   for (const [key, cached] of _cache) {
     if (!key.startsWith(`${project}:`)) continue;
-    if (cached.trashedAt) victims.push(cached.id);
+    if (!cached.trashedAt) continue;
+    const ulid = _fbToUlid.get(`${project}:${cached.id}`);
+    if (ulid) victims.push({ id: cached.id, ulid });
   }
-  for (const id of victims) {
-    try {
-      deleteTask(project, id, 'all');
-      removed.push(id);
-    } catch (e) {
-      failed.push({ id, error: e.message });
+  if (victims.length === 0) return { removed, failed };
+
+  const taskIds = victims.map(v => v.ulid);
+  const cacheDb = _taskService.db;
+  const eventsDb = _taskService.eventsDb;
+
+  try {
+    if (!eventsDb || eventsDb === cacheDb) {
+      // Single-DB mode: one transaction covers both tables.
+      cacheDb.transaction(() => {
+        _taskService.deleteTasksFromEvents(cacheDb, taskIds, 'main');
+        _taskService.deleteTasksFromProjections(cacheDb, taskIds);
+      }).immediate();
+    } else {
+      // Split-DB mode (FlowBoard default — cache.db + events.db): two
+      // separate transactions, events first (source of truth) then the
+      // projection cache. Mirrors pruneEligibleWithJournalFallback.
+      eventsDb.transaction(() => {
+        _taskService.deleteTasksFromEvents(eventsDb, taskIds, 'main');
+      }).immediate();
+      cacheDb.transaction(() => {
+        _taskService.deleteTasksFromProjections(cacheDb, taskIds);
+      }).immediate();
     }
+
+    for (const { id, ulid } of victims) {
+      _cache.delete(`${project}:${id}`);
+      _ulidToFb.delete(ulid);
+      // Note: _fbToUlid entry intentionally kept — _nextTaskId scans it
+      // to prevent ID reuse of deleted tasks.
+      removed.push(id);
+    }
+  } catch (err) {
+    console.error('[emptyTrash]', err);
+    failed.push({ error: err.message });
   }
+
   return { removed, failed };
 }
 
