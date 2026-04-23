@@ -866,10 +866,21 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                     disabled here, so a bg-color div is the only reliable
                     way to get a thin, dim line. Margins give the
                     breathing room; also serves as the scroll-anchor. */}
+                {/* Divider — inline style because the Tailwind
+                    `bg-border-strong` path produced an invisible line
+                    on the user's display despite CSS generating
+                    correctly. Inline style side-steps any cascade or
+                    purge ambiguity: a raw 2px flex-item with a visible
+                    grey background is the simplest possible guarantee. */}
                 <div
                   ref={archiveAnchorRef}
-                  className="h-[2px] bg-border-strong scroll-mt-2"
                   aria-hidden="true"
+                  style={{
+                    height: '2px',
+                    background: 'var(--border-strong)',
+                    scrollMarginTop: '8px',
+                    flexShrink: 0,
+                  }}
                 />
                 {sortedArchived.map(t => <ArchivedTaskCard key={t.id} task={t} project={project} onTaskUpdated={onTaskUpdated} onTaskTrashed={onTaskTrashed} />)}
               </>
