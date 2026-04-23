@@ -208,14 +208,21 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
     setShowDeleteModal(true);
   };
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (options = {}) => {
     setShowDeleteModal(false);
     // T-161-4: soft-delete → move to Trash (sets metadata.flowboard.trashedAt).
     // The task's current status is preserved so Restore from Trash returns
-    // it exactly where it was. The card disappears from the Kanban via the
-    // grouped-filter re-derivation, no shrink animation needed.
+    // it exactly where it was. If the user chose "also move subtasks",
+    // trash them too (cascade is handled one PUT per child so each one
+    // can be independently restored from the Trash panel if needed).
     try {
       await onTaskTrashed?.(task.id, task.status);
+      if (options.deleteSubtasks && task.subtaskIds && task.subtaskIds.length > 0) {
+        const subs = (window.appState?.tasks || []).filter(t => task.subtaskIds.includes(t.id) && !t.trashedAt);
+        for (const sub of subs) {
+          try { await onTaskTrashed?.(sub.id, sub.status); } catch { /* best-effort per child */ }
+        }
+      }
     } catch (err) {
       if (window.showToast) window.showToast('Delete failed: ' + err.message, 'error');
     }
@@ -619,43 +626,33 @@ function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
   const [deleteSpec, setDeleteSpec] = useState(true);
   const haptic = useHaptic();
 
+  // T-161-4: This used to hit the server's hard-delete endpoint
+  // directly, which completely bypassed the Trash flow. Now the modal
+  // just collects the user's choices and delegates to onConfirm — the
+  // parent TaskCard handler runs the soft-delete (PUT trashedAt) via
+  // onTaskTrashed, and Undo-Toast / Empty-Trash handle recovery +
+  // permanent removal. Subtask and spec choices are forwarded so a
+  // future cascade can respect them; right now the parent just moves
+  // the one task to Trash.
   const handleConfirm = async () => {
     haptic.medium();
-    let url = `/api/projects/${project}/tasks/${task.id}`;
-    const params = [];
-    if (hasSubtasks) params.push(`mode=${deleteSubtasks ? 'all' : 'keep-children'}`);
-    if (deleteSpec && task.specFile) params.push('deleteSpec=true');
-    if (params.length) url += '?' + params.join('&');
-    try {
-      const res = await apiFetch(url, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.error === 'Task has subtasks') {
-          if (window.showToast) window.showToast('Choose how to handle subtasks', 'warn');
-          return;
-        }
-        throw new Error(data.error || 'Failed to delete task');
-      }
-      if (window.showToast) window.showToast(`Deleted ${task.id}`, 'success');
-      onConfirm(task.id);
-    } catch (err) {
-      console.warn('[delete-task]', err);
-      haptic.error();
-      if (window.showToast) window.showToast(err.message, 'error');
-    }
+    onConfirm({ deleteSubtasks, deleteSpec });
   };
 
   return (
     <Modal
       open
       onClose={onCancel}
-      title={`Delete ${task.id}?`}
+      title={`Move ${task.id} to Trash?`}
       actions={<>
         <Modal.Button variant="secondary" onClick={onCancel}>Cancel</Modal.Button>
-        <Modal.Button variant="danger" onClick={handleConfirm}>Delete</Modal.Button>
+        <Modal.Button variant="danger" onClick={handleConfirm}>Move to Trash</Modal.Button>
       </>}
     >
       <p className="text-sm text-muted truncate mb-3">{task.title}</p>
+      <p className="text-xs text-muted mb-3">
+        You can restore it from the Trash, or empty the Trash to delete it permanently.
+      </p>
       <div className="flex flex-col gap-2">
         {hasSubtasks && (
           <label className="flex items-center gap-2 text-sm text-text cursor-pointer">
@@ -665,18 +662,7 @@ function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
               onChange={(e) => setDeleteSubtasks(e.target.checked)}
               className="w-4 h-4 rounded border-border accent-accent"
             />
-            Delete {subtaskCount} subtask(s)
-          </label>
-        )}
-        {task.specFile && (
-          <label className="flex items-center gap-2 text-sm text-text cursor-pointer">
-            <input
-              type="checkbox"
-              checked={deleteSpec}
-              onChange={(e) => setDeleteSpec(e.target.checked)}
-              className="w-4 h-4 rounded border-border accent-accent"
-            />
-            Delete spec file
+            Also move {subtaskCount} subtask(s) to Trash
           </label>
         )}
       </div>
