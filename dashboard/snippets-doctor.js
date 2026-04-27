@@ -25,25 +25,32 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 // --- Pure logic -----------------------------------------------------------
 
-// Legacy markers for the old CLI path. Kept separate from per-target
-// `legacyStructuralMarkers` because LEGACY_MARKERS is a coarse "this file
-// looks like it has SOME drifted snippet content" filter, while the per-target
-// markers are tight matches used for state classification.
+// Coarse "this file has SOME legacy FlowBoard snippet content" filter.
+// Used by detectLegacyMarkers / auditFile to gate the per-file output —
+// the precise classifier (classifyFile) uses TARGETS.legacyStructuralMarkers.
+//
+// Keep this in sync with the active legacy layer's distinguishing phrase.
+// When you ship a new release: snapshot the current snippet to
+// snippets/legacy/AGENTS-trigger.vN.md, point TARGETS.vendored at the new
+// snapshot, and update this list to whichever phrase identifies the
+// previously-canonical (now-legacy) shape.
 const LEGACY_MARKERS = [
-  // v0-era references (still present in some long-lived workspaces)
-  'ACTIVE-PROJECT.md',
-  'projects/PROJECT-RULES.md',
-  // v2-era (pre-task-workflow) phrases — negative imperative was reframed
-  // positive in v1.1, so these only appear in workspaces that haven't seen
-  // the new snippet yet.
   'Never call project-activation endpoints automatically',
-  'Never activate projects automatically',
 ];
 
 // Snippet targets: which workspace files are migrated, which vendored/current
 // pair covers them, a human-readable summary, and structural markers used to
 // distinguish "this file has a FlowBoard snippet block (possibly drifted)" from
 // "this file merely mentions a legacy path in some other context".
+//
+// Convention (single-step migration model):
+//   vendored — last main-released snapshot of the snippet
+//   current  — what this dev release ships (snippets/<current>.md)
+// On each main release, snapshot the new current as a new vN+1 vendored,
+// update TARGETS.vendored to point at it, bump markers, and the doctor
+// migrates from "what shipped on main" to "what dev is shipping now".
+// Older release-pair migrations are not chained — drop the previous vendored
+// when retiring a layer, see commit 4914c59 for the v1.md retirement.
 //
 // legacyStructuralMarkers — strings that uniquely identify the LEGACY snippet
 //   block. MUST be present in snippets/legacy/<vendored>.md. MUST NOT be

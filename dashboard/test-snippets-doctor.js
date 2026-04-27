@@ -35,38 +35,39 @@ function cleanupTmp() {
   tmpDir = null;
 }
 
+// Synthetic v2-era (pre-task-workflow) snippet shape used by isolated unit
+// tests for detectLegacyMarkers / matchesLegacyBlockExactly / replaceLegacyBlock /
+// auditFile. Does not need to be byte-equal to snippets/legacy/AGENTS-trigger.v2.md
+// — these tests pass synthetic content directly into the helpers.
 const LEGACY_BLOCK = `## Projects (MANDATORY)
-MANDATORY on EVERY first message of a conversation: read \`ACTIVE-PROJECT.md\`.
-- If an active project exists: read \`projects/PROJECT-RULES.md\`, then read the project's \`PROJECT.md\`. Follow all rules in PROJECT-RULES.md.
-- If no active project or file is empty/missing: work normally without project context.
 
-Commands — always read \`projects/PROJECT-RULES.md\` first before executing:
-- "Projekt: [Name]" → activate project
-- "Projekt beenden" → deactivate project
-- "Projekte" → show project overview
-- "Neues Projekt: [Name]" → create new project
+FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
 
-Only explicit user commands may change ACTIVE-PROJECT.md. Never modify it automatically via cron, sub-agents, or other automation.
+### Rules
+- Never call project-activation endpoints automatically. Only explicit user commands may change project state.
 `;
 
 const NEW_BLOCK = `## Projects (MANDATORY)
 
 FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
-See snippets/AGENTS-trigger.md for the full current block.
+
+### Tasks, specs, canvas (API-first)
+1. Create: POST /api/projects/{project}/tasks
+2. Claim: POST /api/projects/{project}/tasks/{id}/claim
 `;
 
 section('detectLegacyMarkers()');
 {
   assert(doctor.detectLegacyMarkers(LEGACY_BLOCK) === true,
-    'detects ACTIVE-PROJECT.md marker');
+    'detects v2 negative-imperative marker');
   assert(doctor.detectLegacyMarkers('# My AGENTS.md\n\njust some notes') === false,
     'returns false for clean content');
   assert(doctor.detectLegacyMarkers('') === false,
     'returns false for empty content');
   assert(doctor.detectLegacyMarkers(NEW_BLOCK) === false,
     'returns false for new-style content (no legacy markers)');
-  assert(doctor.detectLegacyMarkers('read projects/PROJECT-RULES.md') === true,
-    'detects projects/PROJECT-RULES.md marker standalone');
+  assert(doctor.detectLegacyMarkers('Never call project-activation endpoints automatically.') === true,
+    'detects v2 marker standalone');
 }
 
 section('matchesLegacyBlockExactly()');
@@ -100,7 +101,7 @@ section('replaceLegacyBlock()');
   assert(result.includes('Preamble.'), 'preserves preamble');
   assert(result.includes('Epilogue.'), 'preserves epilogue');
   assert(result.includes(NEW_BLOCK), 'inserts new block');
-  assert(!result.includes('ACTIVE-PROJECT.md'), 'removes legacy markers');
+  assert(!result.includes('Never call project-activation endpoints automatically'), 'removes legacy markers');
 
   // Divergent content → null
   const divergent = container.replace('MANDATORY', 'mandatory');
