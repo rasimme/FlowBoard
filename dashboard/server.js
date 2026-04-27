@@ -476,9 +476,17 @@ app.put('/api/status', async (req, res) => {
 
     // Send wake event to notify agent of project switch
     if (effectiveProject) {
+      const apiHints =
+        `Kontext laden: GET /api/projects/${effectiveProject}/bootstrap. ` +
+        `Tasks führst du über die API: ` +
+        `POST /api/projects/${effectiveProject}/tasks zum Anlegen, ` +
+        `POST /api/projects/${effectiveProject}/tasks/{id}/claim mit {"agent":"${agentId}"} bevor du an einem Task arbeitest, ` +
+        `PUT /api/projects/${effectiveProject}/tasks/{id} für Status/Progress, ` +
+        `POST /api/projects/${effectiveProject}/tasks/{id}/complete bei Fertigstellung. ` +
+        `Endpoint-Schema: GET /api/projects/${effectiveProject}/rules/api-access.`;
       const wakeText = previousProject && previousProject !== effectiveProject
-        ? `Projekt gewechselt von ${previousProject} auf ${effectiveProject}. Lies BOOTSTRAP.md bzw. PROJECT.md des aktiven Projekts für den neuen Projektkontext.`
-        : `Projekt ${effectiveProject} aktiviert. Lies BOOTSTRAP.md bzw. PROJECT.md des aktiven Projekts für den Projektkontext.`;
+        ? `Projekt gewechselt von ${previousProject} auf ${effectiveProject}. ${apiHints}`
+        : `Projekt ${effectiveProject} aktiviert. ${apiHints}`;
       sendWakeEvent(wakeText);
     } else if (previousProject) {
       sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
