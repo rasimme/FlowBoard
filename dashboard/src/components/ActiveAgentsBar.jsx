@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import AgentChip from './AgentChip.jsx';
+import { isActivelyClaimed } from '../utils.js';
 
 /**
  * T-161 C2 Labeled bar — the active-context zone above the kanban.
@@ -31,9 +32,7 @@ export default function ActiveAgentsBar() {
     if (!viewedProject) return [];
     const claimedByAgent = new Map();
     for (const t of tasks) {
-      if (!t?.agent) continue;
-      if (!t.claimedAt) continue;
-      if (t.status === 'done' || t.completedAt) continue;
+      if (!isActivelyClaimed(t)) continue;
       // First claim wins if an agent somehow has multiple open claims in the
       // same project — dashboard stays deterministic and doesn't guess.
       if (!claimedByAgent.has(t.agent)) claimedByAgent.set(t.agent, t);

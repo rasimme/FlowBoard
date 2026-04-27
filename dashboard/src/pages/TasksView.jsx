@@ -7,6 +7,7 @@ import BlockedChip from '../components/BlockedChip.jsx';
 import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
+import { ownerLabel } from '../utils.js';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 
@@ -125,7 +126,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
         </span>
         <span className="subtask-title">{task.title}</span>
         {task.agent && (
-          <AgentChip name={task.agent} size="xs" variant="solid" title={`Claimed by ${task.agent}`} />
+          <AgentChip name={task.agent} size="xs" variant="solid" title={ownerLabel(task)} />
         )}
         {!task.agent && task.routedAgent && (
           <AgentChip name={task.routedAgent} size="xs" variant="ring" title={`Routed to ${task.routedAgent}`} />
@@ -352,7 +353,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   name={task.agent}
                   size="sm"
                   variant="solid"
-                  title={`Claimed by ${task.agent}`}
+                  title={ownerLabel(task)}
                 />
               )}
               {!task.agent && task.routedAgent && (

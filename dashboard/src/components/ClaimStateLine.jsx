@@ -1,5 +1,6 @@
 import AgentChip from './AgentChip.jsx';
 import { computeHealth } from './LeaseIndicator.jsx';
+import { isActivelyClaimed } from '../utils.js';
 
 /**
  * ClaimStateLine — Zone 1 of the DetailPanel.
@@ -31,7 +32,9 @@ import { computeHealth } from './LeaseIndicator.jsx';
 export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease, onSteal }) {
   if (!task) return null;
 
-  const isClaimed = !!task.agent;
+  // "Currently claimed" requires both agent + claimedAt (HZL-core preserves
+  // agent past release as historical attribution, so agent alone is misleading).
+  const isClaimed = isActivelyClaimed(task);
   const isSelf = isClaimed && task.agent === currentAgent;
   const health = computeHealth(task); // 'stale' | 'expired' | null
   const routed = !isClaimed && task.routedAgent;
