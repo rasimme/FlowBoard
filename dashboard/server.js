@@ -17,8 +17,9 @@ const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..'
 const OPENCLAW_HOME = path.resolve(WORKSPACE, '..');
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(OPENCLAW_HOME, 'projects');
 const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : path.join(WORKSPACE, 'projects');
+// LEGACY (T-161): file read by m003-active-project-to-db migration only;
+// flowboard_agents table is now the source of truth. No code writes this.
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
-const BOOTSTRAP_FILE = path.join(WORKSPACE, 'BOOTSTRAP.md');
 const DASHBOARD_DATA_FILE = path.join(process.env.HOME, '.flowboard', 'dashboard-data.json');
 const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 
@@ -429,12 +430,12 @@ app.get('/api/status', (req, res) => {
     if (row) {
       activeProject = row.active_project || null;
     } else if (agentId === AGENT_ID) {
-      activeProject = readActiveProject();
+      activeProject = readActiveProject(); // LEGACY: pre-backfill bootstrap only.
     } else {
       activeProject = null;
     }
   } else {
-    activeProject = readActiveProject();
+    activeProject = readActiveProject(); // LEGACY: non-HZL fallback.
   }
   res.json({ activeProject, agentId });
 });
@@ -461,22 +462,16 @@ app.put('/api/status', async (req, res) => {
   if (HZL_ENABLED) {
     previousProject = getCanonicalActiveProject(agentId);
   } else {
-    previousProject = readActiveProject();
+    previousProject = readActiveProject(); // LEGACY: non-HZL fallback.
   }
 
   try {
-    // T-131-3: write DB state (canonical)
+    // T-131-3: write DB state (canonical). The dashboard no longer writes
+    // ACTIVE-PROJECT.md or any other agent-workspace file — flowboard_agents
+    // is the source of truth, and agents fetch state via /api/agents and
+    // /api/projects/:name/bootstrap.
     if (HZL_ENABLED) {
       fbMeta.setAgentActiveProject(agentId, effectiveProject);
-    }
-    // Under HZL, the DB is canonical and per-agent. The file lives at
-    // WORKSPACE/ACTIVE-PROJECT.md, but the dashboard's WORKSPACE may not match
-    // AGENT_ID (each agent owns its own workspace; the dashboard's WORKSPACE
-    // is just one of them). Writing here would clobber the file of whichever
-    // agent owns the dashboard's WORKSPACE — even when modifying a different
-    // agent's row. So skip the file write entirely under HZL.
-    if (!HZL_ENABLED) {
-      writeActiveProject(effectiveProject);
     }
 
     // Send wake event to notify agent of project switch
@@ -521,6 +516,10 @@ app.post('/api/auth', (req, res) => {
 
 // --- Helpers ---
 
+// LEGACY (T-161): retained for non-HZL deployments and as a one-shot bootstrap
+// fallback in getCanonicalActiveProject() before the m003 migration backfills
+// the agent row. Under HZL with a populated flowboard_agents table this never
+// fires. Remove once non-HZL deployments are gone.
 function readActiveProject() {
   try {
     const text = fs.readFileSync(ACTIVE_PROJECT_FILE, 'utf8');
@@ -535,12 +534,7 @@ function getCanonicalActiveProject(agentId = AGENT_ID) {
     const row = fbMeta.getAgentRow(agentId);
     if (row) return row.active_project || null;
   }
-  return readActiveProject();
-}
-
-function writeActiveProject(name) {
-  const content = name ? `project: ${name}\nsince: ${new Date().toISOString().slice(0, 10)}\n` : 'project: none\n';
-  fs.writeFileSync(ACTIVE_PROJECT_FILE, content);
+  return readActiveProject(); // LEGACY: see readActiveProject() comment.
 }
 
 function readTasksFile(projectName) {
