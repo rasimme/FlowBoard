@@ -210,11 +210,14 @@ section('collectStatus()');
     fs.mkdirSync(path.join(dir, 'workspace-beta'), { recursive: true });
 
     // workspace/AGENTS.md = byte-identical legacy block
-    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v2.md');
     fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'),
       `# My agents file\n\n${legacyAgents}\n# trailer\n`);
     // workspace-beta/AGENTS.md = DIVERGENT (markers present, block modified)
-    const modified = legacyAgents.replace('MANDATORY', 'mandatory');
+    // Drift mutation: change a non-marker phrase so the block is no longer
+    // byte-identical to v2.md but the legacyStructuralMarker
+    // ("Never call project-activation endpoints automatically") still matches.
+    const modified = legacyAgents.replace('Read `BOOTSTRAP.md` — that is your project context.', 'Read `BOOTSTRAP.md` carefully — that is your project context.');
     fs.writeFileSync(path.join(dir, 'workspace-beta', 'AGENTS.md'),
       `# beta\n\n${modified}\n`);
 
@@ -243,7 +246,7 @@ section('applySelected() — byte-identical only, with .bak');
     fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'workspace-beta'), { recursive: true });
 
-    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v2.md');
     const targetPath = path.join(dir, 'workspace', 'AGENTS.md');
     const originalContent = `# My agents file\n\n${legacyAgents}\n# trailer\n`;
     fs.writeFileSync(targetPath, originalContent);
@@ -273,7 +276,8 @@ section('applySelected() — byte-identical only, with .bak');
     const afterIdentical = fs.readFileSync(targetPath, 'utf8');
     const currentBlock = doctor.readCurrent('AGENTS-trigger.md');
     assert(afterIdentical.includes(currentBlock.trim().slice(0, 60)), 'new block present in identical file');
-    assert(!afterIdentical.includes('MANDATORY on EVERY first message'), 'legacy phrasing gone');
+    assert(!afterIdentical.includes('Never call project-activation endpoints automatically'), 'v2 negative-imperative phrasing gone');
+    assert(afterIdentical.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow section present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -302,7 +306,7 @@ section('classifyFile() — state machine');
   const dir = mkTmp();
   try {
     fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
-    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v2.md');
     const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
     const target = doctor.TARGETS.find(t => t.name === 'AGENTS.md');
 
@@ -316,7 +320,7 @@ section('classifyFile() — state machine');
 
     // drifted (structural marker present, block edited)
     const pDrifted = path.join(dir, 'workspace', 'AGENTS-drifted.md');
-    const drifted = legacyAgents.replace('MANDATORY on EVERY first message of a conversation', 'MANDATORY on EVERY first message of my_custom_agent');
+    const drifted = legacyAgents.replace('Read `BOOTSTRAP.md` — that is your project context.', 'Read `BOOTSTRAP.md` carefully — that is your project context.');
     fs.writeFileSync(pDrifted, drifted);
     const cDrift = doctor.classifyFile(pDrifted, target, {
       legacyBlock: legacyAgents, newBlock: currentAgents,
@@ -358,12 +362,12 @@ section('applyActions() — migrate + add + state guards');
     fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'workspace-beta'), { recursive: true });
 
-    const legacyAgents = doctor.readVendored('AGENTS-trigger.v1.md');
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v2.md');
     const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
 
     // Drifted file: legacy structural marker + custom edit
     const driftedPath = path.join(dir, 'workspace', 'AGENTS.md');
-    const driftedContent = `# my agents\n\n${legacyAgents.replace('MANDATORY on EVERY first message of a conversation', 'MANDATORY on EVERY first message of my_custom_agent')}\n# trailer\n`;
+    const driftedContent = `# my agents\n\n${legacyAgents.replace('Read `BOOTSTRAP.md` — that is your project context.', 'Read `BOOTSTRAP.md` carefully — that is your project context.')}\n# trailer\n`;
     fs.writeFileSync(driftedPath, driftedContent);
 
     // Missing file: no markers at all
@@ -383,8 +387,8 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r1.applied.length, 1, 'migrate applied');
     assertEqual(r1.applied[0].action, 'migrate', 'action recorded as migrate');
     const afterDrift = fs.readFileSync(driftedPath, 'utf8');
-    assert(afterDrift.includes('delivers project context automatically'), 'current block inserted');
-    assert(!afterDrift.includes('MANDATORY on EVERY first message of my_custom_agent'), 'custom drift line removed');
+    assert(afterDrift.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow section inserted');
+    assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
     const r2 = doctor.applyActions(dir, [{ id: missingId, action: 'add' }]);
@@ -392,7 +396,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r2.applied[0].action, 'add', 'action recorded as add');
     const afterMissing = fs.readFileSync(missingPath, 'utf8');
     assert(afterMissing.startsWith('# my beta config'), 'existing content preserved at top');
-    assert(afterMissing.includes('delivers project context automatically'), 'new block appended');
+    assert(afterMissing.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow section appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset
@@ -465,6 +469,57 @@ section('collectStatus() — chip variants');
     fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), `# plain\n\n${currentAgents}\n`);
     const s2 = doctor.collectStatus(dir);
     assertEqual(s2.chip, null, 'current-only → chip hidden');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('runCli() — --migrate force-replaces drifted blocks');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+
+    const legacyAgents = doctor.readVendored('AGENTS-trigger.v2.md');
+    const driftedContent = `# wrap\n\n${legacyAgents.replace('Read \`BOOTSTRAP.md\` — that is your project context.', 'Read \`BOOTSTRAP.md\` carefully — that is your project context.')}\n# end\n`;
+    const filePath = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(filePath, driftedContent);
+
+    function captureRun(argv) {
+      const out = [], err = [];
+      const stdout = { write: s => out.push(s) };
+      const stderr = { write: s => err.push(s) };
+      const code = doctor.runCli(argv, { stdout, stderr });
+      return { code, out: out.join(''), err: err.join('') };
+    }
+
+    // (1) dry-run: classifies as DIVERGENT, no write
+    const r1 = captureRun(['--base', dir]);
+    assert(/DIVERGENT/.test(r1.out), 'dry-run shows DIVERGENT');
+    assertEqual(fs.readFileSync(filePath, 'utf8'), driftedContent, 'dry-run does not modify file');
+
+    // (2) --apply alone: still DIVERGENT, no write, hint about --migrate
+    const r2 = captureRun(['--base', dir, '--apply']);
+    assert(/DIVERGENT/.test(r2.out), '--apply alone keeps DIVERGENT');
+    assert(/Re-run with --migrate/.test(r2.out), 'output suggests --migrate');
+    assertEqual(fs.readFileSync(filePath, 'utf8'), driftedContent, '--apply alone does not modify divergent');
+
+    // (3) --apply --migrate: force-replaces, creates backup, file now current
+    const r3 = captureRun(['--base', dir, '--apply', '--migrate']);
+    assert(/MIGRATED/.test(r3.out), '--migrate emits MIGRATED');
+    assertEqual(r3.code, 0, '--migrate exit code 0 (no remaining divergent)');
+    const after = fs.readFileSync(filePath, 'utf8');
+    assert(after.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow present after migrate');
+    assert(!after.includes('Read `BOOTSTRAP.md` carefully'), 'drift line gone after migrate');
+    const baks = fs.readdirSync(path.join(dir, 'workspace')).filter(n => n.includes('.bak-'));
+    assert(baks.length === 1, 'exactly one backup file created');
+    const bakContent = fs.readFileSync(path.join(dir, 'workspace', baks[0]), 'utf8');
+    assertEqual(bakContent, driftedContent, 'backup contains pre-migrate content');
+
+    // (4) Re-run dry: nothing pending
+    const r4 = captureRun(['--base', dir]);
+    assert(!/DIVERGENT/.test(r4.out), 'no DIVERGENT after migration');
+    assert(!/With legacy markers: [1-9]/.test(r4.out), 'no legacy markers detected');
   } finally {
     cleanupTmp();
   }

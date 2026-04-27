@@ -68,12 +68,17 @@ const TARGETS = [
     current: 'AGENTS-trigger.md',
     summary: 'Add positive-imperative task workflow (create / claim / update / complete / release)',
     addSummary: 'Add the FlowBoard project trigger block with the API-first task workflow',
-    // Phrases unique to v2 / pre-edit variants. Doctor uses these to detect
-    // a drifted legacy snippet whose body no longer matches v2 byte-for-byte
-    // (e.g. design-botti's hand-condensed copy).
+    // Phrase unique to the canonical v2 snapshot. Doctor uses this for both
+    // drift detection (file has the marker but body no longer byte-matches)
+    // and for replaceDriftedBlock's heading anchor.
+    //
+    // Design-botti's condensed hand-edited variant ("Never activate projects
+    // automatically") is intentionally NOT listed here — that file was a
+    // one-shot manual migration. Future drift detection stays marker-canonical
+    // so the test "TARGETS ↔ snippet files — marker coherence" can enforce
+    // that every marker actually exists in the vendored snapshot.
     legacyStructuralMarkers: [
-      'Never call project-activation endpoints automatically', // main, dev-botti (clean v2)
-      'Never activate projects automatically',                 // design-botti (condensed variant)
+      'Never call project-activation endpoints automatically',
     ],
     // Phrase unique to the current (v1.1) block — if present, migration is
     // already done for this file; no action needed.
@@ -164,12 +169,13 @@ function backupPath(filePath) {
 // --- CLI ------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { apply: false, yes: false, base: null };
+  const args = { apply: false, yes: false, base: null, migrate: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--apply') args.apply = true;
     else if (a === '--yes' || a === '-y') args.yes = true;
     else if (a === '--base') args.base = argv[++i];
+    else if (a === '--migrate') args.migrate = true;
     else if (a === '--help' || a === '-h') args.help = true;
   }
   return args;
@@ -437,10 +443,11 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
       'snippets-doctor — check and (optionally) update AGENTS.md / BOOT.md snippets',
       '',
       'Usage:',
-      '  node snippets-doctor.js                # dry-run',
-      '  node snippets-doctor.js --apply        # replace byte-identical legacy blocks',
-      '  node snippets-doctor.js --apply --yes  # no confirmation prompt',
-      '  node snippets-doctor.js --base <dir>   # override OPENCLAW_HOME (~/.openclaw)',
+      '  node snippets-doctor.js                    # dry-run',
+      '  node snippets-doctor.js --apply            # replace byte-identical legacy blocks',
+      '  node snippets-doctor.js --apply --migrate  # also force-replace divergent blocks (heuristic; backs up first)',
+      '  node snippets-doctor.js --apply --yes      # no confirmation prompt',
+      '  node snippets-doctor.js --base <dir>       # override OPENCLAW_HOME (~/.openclaw)',
       '',
     ].join('\n'));
     return 0;
@@ -456,11 +463,15 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
     currentSnippet: t.current,
   }));
 
-  let total = 0, withMarkers = 0, exactMatches = 0, divergent = 0, replaced = 0;
+  let total = 0, withMarkers = 0, exactMatches = 0, divergent = 0, replaced = 0, migrated = 0, divergentRemaining = 0;
 
   for (const t of targets) {
     const candidates = findCandidateFiles(baseDir, t.name);
     if (candidates.length === 0) continue;
+
+    // Full TARGETS entry — needed for legacyStructuralMarkers used by
+    // replaceDriftedBlock when --migrate is on.
+    const fullTarget = TARGETS.find(x => x.name === t.name);
 
     let legacyBlock, newBlock;
     try {
@@ -493,9 +504,33 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
       } else {
         divergent++;
         stdout.write(`[DIVERGENT] Legacy markers detected but block differs from vendored copy.\n`);
-        stdout.write(`            Manual merge required. Compare against:\n`);
-        stdout.write(`              snippets/legacy/${t.legacyVendored} (old canonical)\n`);
-        stdout.write(`              snippets/${t.currentSnippet}         (new canonical)\n`);
+        if (args.apply && args.migrate && fullTarget) {
+          const next = replaceDriftedBlock(audit.content, legacyBlock, newBlock, fullTarget);
+          if (next === null) {
+            divergentRemaining++;
+            stdout.write(`            Could not locate the legacy block via heading marker.\n`);
+            stdout.write(`            Manual merge required. Compare against:\n`);
+            stdout.write(`              snippets/legacy/${t.legacyVendored} (old canonical)\n`);
+            stdout.write(`              snippets/${t.currentSnippet}         (new canonical)\n`);
+          } else {
+            const bak = backupPath(file);
+            fs.copyFileSync(file, bak);
+            fs.writeFileSync(file, next);
+            migrated++;
+            stdout.write(`[MIGRATED] Force-replaced drifted block via heading heuristic. Backup: ${bak}\n`);
+          }
+        } else if (args.apply && !args.migrate) {
+          divergentRemaining++;
+          stdout.write(`            Re-run with --migrate to force-replace via heading heuristic, or merge manually.\n`);
+          stdout.write(`            Compare against:\n`);
+          stdout.write(`              snippets/legacy/${t.legacyVendored} (old canonical)\n`);
+          stdout.write(`              snippets/${t.currentSnippet}         (new canonical)\n`);
+        } else {
+          divergentRemaining++;
+          stdout.write(`            Manual merge required. Compare against:\n`);
+          stdout.write(`              snippets/legacy/${t.legacyVendored} (old canonical)\n`);
+          stdout.write(`              snippets/${t.currentSnippet}         (new canonical)\n`);
+        }
       }
     }
   }
@@ -504,9 +539,12 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
   stdout.write(`Checked: ${total} file(s)\n`);
   stdout.write(`With legacy markers: ${withMarkers}\n`);
   stdout.write(`Byte-identical legacy block: ${exactMatches}\n`);
-  stdout.write(`Divergent (manual merge needed): ${divergent}\n`);
-  if (args.apply) stdout.write(`Replaced: ${replaced}\n`);
-  return divergent > 0 ? 2 : 0;
+  stdout.write(`Divergent: ${divergent}\n`);
+  if (args.apply) {
+    stdout.write(`Replaced (byte-identical): ${replaced}\n`);
+    if (args.migrate) stdout.write(`Migrated (heuristic force-replace): ${migrated}\n`);
+  }
+  return divergentRemaining > 0 ? 2 : 0;
 }
 
 module.exports = {
