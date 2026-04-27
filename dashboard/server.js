@@ -392,40 +392,6 @@ function nextNoteId(notes) {
 
 // NOTE: trimSessionLog removed by T-131-4/m005 — session logs now live in SESSIONS.md
 
-function resolveAgentWorkspace(agentId) {
-  const base = path.join(path.dirname(WORKSPACE), '.');
-  if (!agentId || agentId === 'main') return WORKSPACE;
-  const byAgent = path.join(base, `workspace-${agentId}`);
-  return fs.existsSync(byAgent) ? byAgent : WORKSPACE;
-}
-
-function updateBootstrapMd(projectName, workspaceDir = WORKSPACE) {
-  const bootstrapFile = path.join(workspaceDir, 'BOOTSTRAP.md');
-  if (!projectName) {
-    // No active project — clear BOOTSTRAP.md
-    try { fs.writeFileSync(bootstrapFile, ''); } catch (e) { console.warn(e); throw e; }
-    return;
-  }
-
-  // Lazy-load: BOOTSTRAP.md carries the rules manifest only. Detailed sections are
-  // fetched on demand via GET /api/projects/:name/rules/:section.
-  const rulesManifest = rulesApi.buildRulesManifest();
-  const projectMdPath = path.join(PROJECTS_DIR, projectName, 'PROJECT.md');
-  let projectContent = '';
-  try { projectContent = fs.readFileSync(projectMdPath, 'utf8'); } catch (e) { console.warn(e); }
-
-  const sections = [`# Active Project: ${projectName}\n`, `${rulesManifest}\n`];
-  if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
-
-  try {
-    fs.writeFileSync(bootstrapFile, sections.join('\n'));
-    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName} (workspace: ${workspaceDir})`);
-  } catch (err) {
-    console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
-    throw err;
-  }
-}
-
 async function sendWakeEvent(text) {
   if (!HOOKS_TOKEN) {
     console.log('[wake] No OPENCLAW_HOOKS_TOKEN set, skipping wake event');
@@ -498,17 +464,6 @@ app.put('/api/status', async (req, res) => {
       writeActiveProject(effectiveProject);
     }
 
-    // Regenerate BOOTSTRAP.md for the addressed agent/workspace.
-    // If this fails, DB state is still canonical; bootstrap can be retried.
-    let bootstrapWarning = null;
-    try {
-      const targetWorkspace = resolveAgentWorkspace(agentId);
-      updateBootstrapMd(effectiveProject, targetWorkspace);
-    } catch (err) {
-      bootstrapWarning = `DB state updated, but bootstrap regeneration failed: ${err.message}`;
-      console.error('[project-context] Bootstrap regeneration failed after DB update:', err.message);
-    }
-
     // Send wake event to notify agent of project switch
     if (effectiveProject) {
       const wakeText = previousProject && previousProject !== project
@@ -520,7 +475,6 @@ app.put('/api/status', async (req, res) => {
     }
 
     const body = { ok: true, activeProject: effectiveProject, agentId };
-    if (bootstrapWarning) body.bootstrapWarning = bootstrapWarning;
     res.json(body);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -937,6 +891,12 @@ app.get('/api/projects/:name/rules/:section', (req, res) => {
   res.type('text/markdown; charset=utf-8').send(content);
 });
 
+// GET /api/projects/:name/bootstrap — fetch full bootstrap document for a project
+app.get('/api/projects/:name/bootstrap', (req, res) => {
+  const content = rulesApi.buildBootstrapDocument(req.params.name);
+  res.type('text/markdown; charset=utf-8').send(content);
+});
+
 // GET /api/projects/:name/tasks
 app.get('/api/projects/:name/tasks', (req, res) => {
   let tasks, responseBase;
@@ -1100,7 +1060,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       updates.completed = null;
     }
 
-    const ALLOWED = ['title', 'status', 'priority', 'completed'];
+    const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent'];
     const hzlUpdates = {};
     for (const key of ALLOWED) {
       if (Object.prototype.hasOwnProperty.call(updates, key)) {
@@ -1108,6 +1068,11 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       }
     }
     // blocked + trashedAt are handled separately below (not in ALLOWED to keep whitelist clean)
+
+    // agent can only be cleared, not set to a value
+    if (Object.prototype.hasOwnProperty.call(updates, 'agent') && updates.agent !== null) {
+      return res.status(400).json({ error: 'agent can only be cleared (set to null), not set to a value' });
+    }
 
     if (hzlUpdates.status !== undefined) {
       const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
@@ -1196,7 +1161,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   if (updates.status && updates.status !== 'done' && task.status === 'done') {
     updates.completed = null;
   }
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'agent'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       task[key] = updates[key];

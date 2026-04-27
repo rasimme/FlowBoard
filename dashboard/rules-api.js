@@ -68,6 +68,23 @@ function buildRulesManifest() {
   return lines.join('\n');
 }
 
+function buildBootstrapDocument(projectName) {
+  const lines = [];
+  lines.push(`# Active Project: ${projectName || 'none'}\n`);
+
+  // Embed all rule sections directly into the bootstrap document
+  for (const { name, label } of SECTIONS) {
+    const content = readRuleSection(name);
+    if (content) {
+      lines.push(`\n---\n`);
+      if (label) lines.push(`## ${label}\n`);
+      lines.push(content);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 module.exports = {
   RULES_DIR,
   SECTIONS,
@@ -75,4 +92,5 @@ module.exports = {
   resolveRuleSectionPath,
   readRuleSection,
   buildRulesManifest,
+  buildBootstrapDocument,
 };
