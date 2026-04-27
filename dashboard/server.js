@@ -469,9 +469,13 @@ app.put('/api/status', async (req, res) => {
     if (HZL_ENABLED) {
       fbMeta.setAgentActiveProject(agentId, effectiveProject);
     }
-    // Transitional compat only for the local runtime agent/workspace.
-    // ACTIVE-PROJECT.md is no longer canonical when HZL is enabled.
-    if (!HZL_ENABLED || agentId === AGENT_ID) {
+    // Under HZL, the DB is canonical and per-agent. The file lives at
+    // WORKSPACE/ACTIVE-PROJECT.md, but the dashboard's WORKSPACE may not match
+    // AGENT_ID (each agent owns its own workspace; the dashboard's WORKSPACE
+    // is just one of them). Writing here would clobber the file of whichever
+    // agent owns the dashboard's WORKSPACE — even when modifying a different
+    // agent's row. So skip the file write entirely under HZL.
+    if (!HZL_ENABLED) {
       writeActiveProject(effectiveProject);
     }
 
