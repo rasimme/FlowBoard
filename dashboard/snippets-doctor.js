@@ -25,9 +25,19 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 
 // --- Pure logic -----------------------------------------------------------
 
+// Legacy markers for the old CLI path. Kept separate from per-target
+// `legacyStructuralMarkers` because LEGACY_MARKERS is a coarse "this file
+// looks like it has SOME drifted snippet content" filter, while the per-target
+// markers are tight matches used for state classification.
 const LEGACY_MARKERS = [
+  // v0-era references (still present in some long-lived workspaces)
   'ACTIVE-PROJECT.md',
   'projects/PROJECT-RULES.md',
+  // v2-era (pre-task-workflow) phrases — negative imperative was reframed
+  // positive in v1.1, so these only appear in workspaces that haven't seen
+  // the new snippet yet.
+  'Never call project-activation endpoints automatically',
+  'Never activate projects automatically',
 ];
 
 // Snippet targets: which workspace files are migrated, which vendored/current
@@ -49,19 +59,26 @@ const LEGACY_MARKERS = [
 const TARGETS = [
   {
     name: 'AGENTS.md',
-    vendored: 'AGENTS-trigger.v1.md',
+    // v2 snapshot is the snippet AS IT STOOD before commit e236314 added the
+    // "Tasks, specs, canvas (API-first)" workflow block. Anything older (the
+    // pre-T-131-3 v0 with `MANDATORY on EVERY first message`) is no longer
+    // present in the wild on this installation; if it resurfaces, snapshot
+    // a v3 layer rather than chaining markers here.
+    vendored: 'AGENTS-trigger.v2.md',
     current: 'AGENTS-trigger.md',
-    summary: 'Replace legacy ACTIVE-PROJECT.md reference with the lazy-load rules manifest',
-    addSummary: 'Add the FlowBoard project trigger block (tells the agent to read BOOTSTRAP.md)',
-    // Phrases that appear ONLY in the legacy block — if present, the file has
-    // a drifted FlowBoard snippet (not a false-positive stray marker).
+    summary: 'Add positive-imperative task workflow (create / claim / update / complete / release)',
+    addSummary: 'Add the FlowBoard project trigger block with the API-first task workflow',
+    // Phrases unique to v2 / pre-edit variants. Doctor uses these to detect
+    // a drifted legacy snippet whose body no longer matches v2 byte-for-byte
+    // (e.g. design-botti's hand-condensed copy).
     legacyStructuralMarkers: [
-      'MANDATORY on EVERY first message',
+      'Never call project-activation endpoints automatically', // main, dev-botti (clean v2)
+      'Never activate projects automatically',                 // design-botti (condensed variant)
     ],
-    // Phrases that appear ONLY in the current block — if present, migration
-    // is already done for this file; no action needed.
+    // Phrase unique to the current (v1.1) block — if present, migration is
+    // already done for this file; no action needed.
     currentMarkers: [
-      'delivers project context automatically as `BOOTSTRAP.md`',
+      'Tasks, specs, canvas (API-first)',
     ],
   },
   {
@@ -430,10 +447,14 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
   }
 
   const baseDir = args.base || process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
-  const targets = [
-    { name: 'AGENTS.md', legacyVendored: 'AGENTS-trigger.v1.md', currentSnippet: 'AGENTS-trigger.md' },
-    { name: 'BOOT.md',   legacyVendored: 'BOOT-extension.v1.md', currentSnippet: 'BOOT-extension.md' },
-  ];
+  // Single source of truth: the module-level TARGETS array. The CLI used to
+  // hardcode its own list which silently drifted from TARGETS (and missed
+  // snippet version bumps). Adapt the schema for the CLI's local naming.
+  const targets = TARGETS.map(t => ({
+    name: t.name,
+    legacyVendored: t.vendored,
+    currentSnippet: t.current,
+  }));
 
   let total = 0, withMarkers = 0, exactMatches = 0, divergent = 0, replaced = 0;
 
