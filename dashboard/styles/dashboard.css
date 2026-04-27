@@ -302,11 +302,19 @@
     @media (prefers-reduced-motion: reduce) {
       .agent-chip-pulse-halo { animation: none; opacity: 0.35; transform: scale(1.2); }
     }
-    .task-card-active-claim {
+    /* Higher specificity (.task-card.task-card-active-claim) so this beats the
+       base .task-card box-shadow defined later in this stylesheet. The :hover
+       variant keeps the glow visible during pointer hover instead of falling
+       back to the default :hover shadow. inset highlight from .task-card is
+       preserved as a third layer. */
+    .task-card.task-card-active-claim,
+    .task-card.task-card-active-claim:hover {
       box-shadow: 0 0 0 1px var(--agent-glow-color, rgba(127,142,166,0.25)),
-                  0 0 12px 2px var(--agent-glow-color, rgba(127,142,166,0.25));
+                  0 0 12px 2px var(--agent-glow-color, rgba(127,142,166,0.25)),
+                  inset 0 1px 0 var(--card-highlight);
     }
-    .subtask-card-active-claim {
+    .subtask-card.subtask-card-active-claim,
+    .subtask-card.subtask-card-active-claim:hover {
       box-shadow: 0 0 0 1px var(--agent-glow-color, rgba(127,142,166,0.25)),
                   0 0 8px 1px var(--agent-glow-color, rgba(127,142,166,0.25));
     }
