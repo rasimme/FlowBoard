@@ -29,6 +29,36 @@ function fingerprint(s) {
 export function AppStateProvider({ children }) {
   const [version, bump] = useReducer(x => x + 1, 0);
   const lastFp = useRef('');
+  const initDone = useRef(false);
+
+  // T-161: fetch agents immediately on mount so React doesn't render with an
+  // empty agents array while the legacy init block is still awaiting its own
+  // fetch.  This removes the race between React mount and app.js init.
+  useEffect(() => {
+    if (initDone.current) return;
+    initDone.current = true;
+
+    async function fetchAgents() {
+      try {
+        const headers = {};
+        const _tg = window.Telegram?.WebApp;
+        if (_tg?.initData) headers['X-Telegram-Init-Data'] = _tg.initData;
+
+        const res = await fetch('/api/agents', { credentials: 'include', headers });
+        if (!res.ok) return;
+        const data = await res.json();
+        const agents = Array.isArray(data?.agents) ? data.agents : [];
+        if (window.appState) {
+          window.appState.agents = agents;
+          // Force a re-render so Sidebar sees the populated agents immediately
+          window.dispatchEvent(new CustomEvent('appstate:change'));
+        }
+      } catch (err) {
+        console.warn('[AppStateProvider] initial agents fetch failed:', err);
+      }
+    }
+    fetchAgents();
+  }, []);
 
   useEffect(() => {
     // Poll for changes to window.appState (lightweight fingerprint check)
