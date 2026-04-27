@@ -38,21 +38,26 @@ export function AppStateProvider({ children }) {
     if (initDone.current) return;
     initDone.current = true;
 
+    // Wait for window.appState to be initialised by legacy app.js before
+    // writing to it. app.js runs first (module script) so the window.appState
+    // object should exist before this effect fires.  50ms gives the browser
+    // enough time to execute app.js top-to-bottom even on slow connections.
     async function fetchAgents() {
+      if (!window.appState) {
+        // Poll briefly; app.js initialises window.appState synchronously.
+        for (let i = 0; i < 10 && !window.appState; i++) await sleep(50);
+      }
+      if (!window.appState) {
+        console.warn('[AppStateProvider] window.appState not ready after 500ms');
+        return;
+      }
       try {
-        const headers = {};
-        const _tg = window.Telegram?.WebApp;
-        if (_tg?.initData) headers['X-Telegram-Init-Data'] = _tg.initData;
-
-        const res = await fetch('/api/agents', { credentials: 'include', headers });
+        const res = await fetch('/api/agents', { credentials: 'include' });
         if (!res.ok) return;
         const data = await res.json();
         const agents = Array.isArray(data?.agents) ? data.agents : [];
-        if (window.appState) {
-          window.appState.agents = agents;
-          // Force a re-render so Sidebar sees the populated agents immediately
-          window.dispatchEvent(new CustomEvent('appstate:change'));
-        }
+        window.appState.agents = agents;
+        window.dispatchEvent(new CustomEvent('appstate:change'));
       } catch (err) {
         console.warn('[AppStateProvider] initial agents fetch failed:', err);
       }
