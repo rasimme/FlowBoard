@@ -44,11 +44,12 @@ export function AppStateProvider({ children }) {
     // enough time to execute app.js top-to-bottom even on slow connections.
     async function fetchAgents() {
       if (!window.appState) {
-        // Poll briefly; app.js initialises window.appState synchronously.
-        for (let i = 0; i < 10 && !window.appState; i++) await sleep(50);
+        // Poll briefly; app.js initialises window.appState asynchronously.
+        // Wait up to 2 seconds before giving up.
+        for (let i = 0; i < 40 && !window.appState; i++) await new Promise(r => setTimeout(r, 50));
       }
       if (!window.appState) {
-        console.warn('[AppStateProvider] window.appState not ready after 500ms');
+        console.warn('[AppStateProvider] window.appState not ready after 2000ms');
         return;
       }
       try {
