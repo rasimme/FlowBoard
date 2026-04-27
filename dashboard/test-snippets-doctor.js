@@ -35,8 +35,8 @@ function cleanupTmp() {
   tmpDir = null;
 }
 
-// Synthetic v2-era (pre-task-workflow) snippet shape used by isolated unit
-// tests for detectLegacyMarkers / matchesLegacyBlockExactly / replaceLegacyBlock /
+// Synthetic legacy-era snippet shape used by isolated unit tests for
+// detectLegacyMarkers / matchesLegacyBlockExactly / replaceLegacyBlock /
 // auditFile. Does not need to be byte-equal to snippets/legacy/AGENTS-trigger.v2.md
 // — these tests pass synthetic content directly into the helpers.
 const LEGACY_BLOCK = `## Projects (MANDATORY)
@@ -44,30 +44,29 @@ const LEGACY_BLOCK = `## Projects (MANDATORY)
 FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
 
 ### Rules
-- Never call project-activation endpoints automatically. Only explicit user commands may change project state.
+- Project-activation commands run only on explicit user request — wait for the trigger from the user.
 `;
 
 const NEW_BLOCK = `## Projects (MANDATORY)
 
 FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
 
-### Tasks, specs, canvas (API-first)
-1. Create: POST /api/projects/{project}/tasks
-2. Claim: POST /api/projects/{project}/tasks/{id}/claim
+### Project commands
+On recognition, execute the matching API call — never just echo the trigger back as if confirmed.
 `;
 
 section('detectLegacyMarkers()');
 {
   assert(doctor.detectLegacyMarkers(LEGACY_BLOCK) === true,
-    'detects v2 negative-imperative marker');
+    'detects legacy "explicit user request" marker');
   assert(doctor.detectLegacyMarkers('# My AGENTS.md\n\njust some notes') === false,
     'returns false for clean content');
   assert(doctor.detectLegacyMarkers('') === false,
     'returns false for empty content');
   assert(doctor.detectLegacyMarkers(NEW_BLOCK) === false,
     'returns false for new-style content (no legacy markers)');
-  assert(doctor.detectLegacyMarkers('Never call project-activation endpoints automatically.') === true,
-    'detects v2 marker standalone');
+  assert(doctor.detectLegacyMarkers('Project-activation commands run only on explicit user request — wait.') === true,
+    'detects legacy marker standalone');
 }
 
 section('matchesLegacyBlockExactly()');
@@ -101,7 +100,7 @@ section('replaceLegacyBlock()');
   assert(result.includes('Preamble.'), 'preserves preamble');
   assert(result.includes('Epilogue.'), 'preserves epilogue');
   assert(result.includes(NEW_BLOCK), 'inserts new block');
-  assert(!result.includes('Never call project-activation endpoints automatically'), 'removes legacy markers');
+  assert(!result.includes('Project-activation commands run only on explicit user request'), 'removes legacy markers');
 
   // Divergent content → null
   const divergent = container.replace('MANDATORY', 'mandatory');
@@ -217,7 +216,7 @@ section('collectStatus()');
     // workspace-beta/AGENTS.md = DIVERGENT (markers present, block modified)
     // Drift mutation: change a non-marker phrase so the block is no longer
     // byte-identical to v2.md but the legacyStructuralMarker
-    // ("Never call project-activation endpoints automatically") still matches.
+    // ("Project-activation commands run only on explicit user request") still matches.
     const modified = legacyAgents.replace('Read `BOOTSTRAP.md` — that is your project context.', 'Read `BOOTSTRAP.md` carefully — that is your project context.');
     fs.writeFileSync(path.join(dir, 'workspace-beta', 'AGENTS.md'),
       `# beta\n\n${modified}\n`);
@@ -277,8 +276,8 @@ section('applySelected() — byte-identical only, with .bak');
     const afterIdentical = fs.readFileSync(targetPath, 'utf8');
     const currentBlock = doctor.readCurrent('AGENTS-trigger.md');
     assert(afterIdentical.includes(currentBlock.trim().slice(0, 60)), 'new block present in identical file');
-    assert(!afterIdentical.includes('Never call project-activation endpoints automatically'), 'v2 negative-imperative phrasing gone');
-    assert(afterIdentical.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow section present');
+    assert(!afterIdentical.includes('Project-activation commands run only on explicit user request'), 'legacy "explicit user request" phrasing gone');
+    assert(afterIdentical.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -388,7 +387,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r1.applied.length, 1, 'migrate applied');
     assertEqual(r1.applied[0].action, 'migrate', 'action recorded as migrate');
     const afterDrift = fs.readFileSync(driftedPath, 'utf8');
-    assert(afterDrift.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow section inserted');
+    assert(afterDrift.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule inserted');
     assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
@@ -397,7 +396,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r2.applied[0].action, 'add', 'action recorded as add');
     const afterMissing = fs.readFileSync(missingPath, 'utf8');
     assert(afterMissing.startsWith('# my beta config'), 'existing content preserved at top');
-    assert(afterMissing.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow section appended');
+    assert(afterMissing.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset
@@ -510,7 +509,7 @@ section('runCli() — --migrate force-replaces drifted blocks');
     assert(/MIGRATED/.test(r3.out), '--migrate emits MIGRATED');
     assertEqual(r3.code, 0, '--migrate exit code 0 (no remaining divergent)');
     const after = fs.readFileSync(filePath, 'utf8');
-    assert(after.includes('Tasks, specs, canvas (API-first)'), 'v1.1 task workflow present after migrate');
+    assert(after.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule present after migrate');
     assert(!after.includes('Read `BOOTSTRAP.md` carefully'), 'drift line gone after migrate');
     const baks = fs.readdirSync(path.join(dir, 'workspace')).filter(n => n.includes('.bak-'));
     assert(baks.length === 1, 'exactly one backup file created');

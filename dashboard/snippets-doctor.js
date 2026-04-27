@@ -35,7 +35,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // snapshot, and update this list to whichever phrase identifies the
 // previously-canonical (now-legacy) shape.
 const LEGACY_MARKERS = [
-  'Never call project-activation endpoints automatically',
+  'Project-activation commands run only on explicit user request',
 ];
 
 // Snippet targets: which workspace files are migrated, which vendored/current
@@ -73,24 +73,18 @@ const TARGETS = [
     // a v3 layer rather than chaining markers here.
     vendored: 'AGENTS-trigger.v2.md',
     current: 'AGENTS-trigger.md',
-    summary: 'Add positive-imperative task workflow (create / claim / update / complete / release)',
+    summary: 'Sharpen project commands into positive imperative with bilingual phrasing + anti-echo rule',
     addSummary: 'Add the FlowBoard project trigger block with the API-first task workflow',
     // Phrase unique to the canonical v2 snapshot. Doctor uses this for both
     // drift detection (file has the marker but body no longer byte-matches)
     // and for replaceDriftedBlock's heading anchor.
-    //
-    // Design-botti's condensed hand-edited variant ("Never activate projects
-    // automatically") is intentionally NOT listed here — that file was a
-    // one-shot manual migration. Future drift detection stays marker-canonical
-    // so the test "TARGETS ↔ snippet files — marker coherence" can enforce
-    // that every marker actually exists in the vendored snapshot.
     legacyStructuralMarkers: [
-      'Never call project-activation endpoints automatically',
+      'Project-activation commands run only on explicit user request',
     ],
-    // Phrase unique to the current (v1.1) block — if present, migration is
-    // already done for this file; no action needed.
+    // Phrase unique to the current block — if present, migration is already
+    // done for this file; no action needed.
     currentMarkers: [
-      'Tasks, specs, canvas (API-first)',
+      'never just echo the trigger back as if confirmed',
     ],
   },
   {
