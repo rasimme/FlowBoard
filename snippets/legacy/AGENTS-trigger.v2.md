@@ -39,23 +39,32 @@ status, and the underlying HZL store stay in sync. Standard task flow:
 1. **Create:** `POST /api/projects/{project}/tasks` with
    `{title, priority?, status?, description?}` → returns `{id: "T-NNN", ...}`.
 2. **Claim** before you start working on a task:
-   `POST /api/projects/{project}/tasks/{id}/claim` with `{agent: <agentId>}`.
+   `POST /api/projects/{project}/tasks/{id}/claim` with `{agent: "$OPENCLAW_AGENT_ID"}`.
    Surfaces "{agent} is working on this" in the UI and acquires a lease.
 3. **Update** while you work: `PUT /api/projects/{project}/tasks/{id}` with
    the changed fields (status, progress, priority, description, …).
 4. **Complete** when done: `POST /api/projects/{project}/tasks/{id}/complete`
-   with `{agent: <agentId>}`. Auto-releases the claim and sets status=done.
+   with `{agent: "$OPENCLAW_AGENT_ID"}`. Auto-releases the claim and sets status=done.
 5. **Release** without completing (handing off / pausing):
-   `POST /api/projects/{project}/tasks/{id}/release` with `{agent: <agentId>}`.
+   `POST /api/projects/{project}/tasks/{id}/release` with `{agent: "$OPENCLAW_AGENT_ID"}`.
 
 Full endpoint reference (request bodies, status enum, lease semantics, subtasks,
 error codes): `GET /api/projects/{project}/rules/api-access`.
 
 ### Agent identity
-Use your assigned `agentId` — the `OPENCLAW_AGENT_ID` environment variable
-(defaults to `main`). Each agent has its own active-project row in the
-`flowboard_agents` table; activating a project for one agent does not
-affect others.
+
+Your `agentId` is the live value of `OPENCLAW_AGENT_ID` in your runtime.
+Get it once via `echo "$OPENCLAW_AGENT_ID"` and use that exact string in
+every API call's `agent` / `agentId` field. Never substitute a literal
+placeholder like `<agentId>` or fall back to a guessed default like
+`"main"` — that silently routes your work into another agent's row in
+`flowboard_agents` and breaks attribution.
+
+If `$OPENCLAW_AGENT_ID` is empty in your shell, ask the user to confirm
+your identity before issuing any project / task mutation.
+
+Each agent has its own active-project row; activating a project for one
+agent does not affect others.
 
 ### Rules
 - Fetch individual rule sections on demand rather than bulk-loading the

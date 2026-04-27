@@ -8,7 +8,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 
@@ -25,6 +25,42 @@ try {
   rulesApi = require(join(FLOWBOARD_REPO, "dashboard", "rules-api.js"));
 } catch (err) {
   console.warn(`[project-context] rules-api module unavailable (${err.message}); using inline manifest fallback`);
+}
+
+// T-161 Identity-in-Bootstrap: derive the agent's canonical id from the
+// workspace directory name. The mapping is fixed by the workspace-naming
+// convention used across the OpenClaw installation:
+//   ~/.openclaw/workspace             → agent "main"
+//   ~/.openclaw/workspace-<id>        → agent "<id>"
+// Returning null means "couldn't derive" — caller falls back to the
+// event/env-supplied id (which may itself be wrong; see resolveAgentId).
+function deriveAgentIdFromWorkspace(workspaceDir) {
+  if (!workspaceDir) return null;
+  const base = basename(workspaceDir);
+  if (base === "workspace") return "main";
+  if (base.startsWith("workspace-")) return base.slice("workspace-".length);
+  return null;
+}
+
+// T-161 Identity-in-Bootstrap: a stable, self-describing block that tells
+// the agent its own id at session start. Single source of truth, derived
+// once by the hook here so the agent never has to introspect env vars or
+// parse cwd in a curl one-liner. This block is the workspace-level
+// identity (project-independent) and is always emitted, even when no
+// project is active, so /api/status PUTs work too.
+function buildIdentitySection(agentId) {
+  if (!agentId) return "";
+  return [
+    "## Identity",
+    "",
+    `Your \`agentId\` is: \`${agentId}\``,
+    "",
+    "Use this exact value in the `agent` / `agentId` field of every project /",
+    "task API call. Never substitute a placeholder or guess a default — that",
+    "silently routes your work into another agent's row in `flowboard_agents`",
+    "and breaks attribution.",
+    "",
+  ].join("\n");
 }
 
 function buildInlineManifestFallback() {
@@ -173,11 +209,17 @@ async function getTaskStatusSummary(projectName) {
   return lines.join("\n");
 }
 
-async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
+async function updateBootstrapWithProjectContext(workspaceDir, agentIdHint) {
   if (!workspaceDir) return;
 
+  // T-161 Identity-in-Bootstrap: derive the canonical agent id from the
+  // workspace directory. This wins over the event/env-supplied hint
+  // because the workspace mapping is the actual source of truth on disk;
+  // the hint can be stale or empty in some hook contexts.
+  const agentId = deriveAgentIdFromWorkspace(workspaceDir) || agentIdHint || 'main';
+
   // T-131-3: resolve active project from DB (via API) first; file is migration fallback
-  let projectName = await resolveActiveProjectFromApi(agentId || 'main');
+  let projectName = await resolveActiveProjectFromApi(agentId);
 
   if (projectName !== null) {
     console.log(`[project-context] Active project from DB (agent: ${agentId}): ${projectName || 'none'}`);
@@ -196,11 +238,15 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
   }
 
   const bootstrapPath = join(workspaceDir, "BOOTSTRAP.md");
+  const identitySection = buildIdentitySection(agentId);
 
   if (!projectName) {
-    // No active project — clear BOOTSTRAP.md
-    try { writeFileSync(bootstrapPath, ""); } catch {}
-    return { ok: true, projectName: null, bootstrapUpdated: true };
+    // No active project — write only the Identity section so the agent
+    // can still act on /api/status PUTs (project activation) with the
+    // correct agentId. Previous behaviour cleared the file entirely,
+    // which left no identity hint until a project was activated.
+    try { writeFileSync(bootstrapPath, identitySection); } catch {}
+    return { ok: true, projectName: null, bootstrapUpdated: true, agentId };
   }
 
   // Lazy-load: BOOTSTRAP.md carries only the rules manifest. Detailed sections are
@@ -215,7 +261,13 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentId) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
   }
 
-  const sections = [`# Active Project: ${projectName}\n`, `${rulesManifest}\n`];
+  // Identity goes between the active-project header and the rules manifest
+  // so the agent reads it before any other project context.
+  const sections = [
+    `# Active Project: ${projectName}\n`,
+    `${identitySection}`,
+    `${rulesManifest}\n`,
+  ];
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
   // Add task status summary (fetched from FlowBoard API / HZL backend)

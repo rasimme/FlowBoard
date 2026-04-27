@@ -39,29 +39,29 @@ status, and the underlying HZL store stay in sync. Standard task flow:
 1. **Create:** `POST /api/projects/{project}/tasks` with
    `{title, priority?, status?, description?}` → returns `{id: "T-NNN", ...}`.
 2. **Claim** before you start working on a task:
-   `POST /api/projects/{project}/tasks/{id}/claim` with `{agent: "$OPENCLAW_AGENT_ID"}`.
+   `POST /api/projects/{project}/tasks/{id}/claim` with `{agent: "<your-agentId-from-BOOTSTRAP>"}`.
    Surfaces "{agent} is working on this" in the UI and acquires a lease.
 3. **Update** while you work: `PUT /api/projects/{project}/tasks/{id}` with
    the changed fields (status, progress, priority, description, …).
 4. **Complete** when done: `POST /api/projects/{project}/tasks/{id}/complete`
-   with `{agent: "$OPENCLAW_AGENT_ID"}`. Auto-releases the claim and sets status=done.
+   with `{agent: "<your-agentId-from-BOOTSTRAP>"}`. Auto-releases the claim and sets status=done.
 5. **Release** without completing (handing off / pausing):
-   `POST /api/projects/{project}/tasks/{id}/release` with `{agent: "$OPENCLAW_AGENT_ID"}`.
+   `POST /api/projects/{project}/tasks/{id}/release` with `{agent: "<your-agentId-from-BOOTSTRAP>"}`.
 
 Full endpoint reference (request bodies, status enum, lease semantics, subtasks,
 error codes): `GET /api/projects/{project}/rules/api-access`.
 
 ### Agent identity
 
-Your `agentId` is the live value of `OPENCLAW_AGENT_ID` in your runtime.
-Get it once via `echo "$OPENCLAW_AGENT_ID"` and use that exact string in
-every API call's `agent` / `agentId` field. Never substitute a literal
-placeholder like `<agentId>` or fall back to a guessed default like
-`"main"` — that silently routes your work into another agent's row in
-`flowboard_agents` and breaks attribution.
+Read `BOOTSTRAP.md` at session start — it contains an `## Identity` section
+with your canonical `agentId`. Use that exact value in every project / task
+API call's `agent` / `agentId` field. Never substitute a placeholder or
+guess a default like `"main"` — that silently routes your work into
+another agent's row in `flowboard_agents` and breaks attribution.
 
-If `$OPENCLAW_AGENT_ID` is empty in your shell, ask the user to confirm
-your identity before issuing any project / task mutation.
+If the Identity section is missing (BOOTSTRAP.md hasn't been regenerated
+yet), ask the user to confirm your identity before any project / task
+mutation, or wait for the next `/new` / `/reset` to refresh the file.
 
 Each agent has its own active-project row; activating a project for one
 agent does not affect others.
