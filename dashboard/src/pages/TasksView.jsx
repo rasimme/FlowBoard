@@ -1,13 +1,22 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../components/index.js';
-import AgentChip from '../components/AgentChip.jsx';
+import AgentChip, { agentColor } from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
 import BlockedChip from '../components/BlockedChip.jsx';
 import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils.js';
+
+// Box-shadow color for the active-claim card glow. Reuses the agent's `ring`
+// hex with an explicit alpha so the shadow is visible (the palette's `soft`
+// rgba is too transparent for a glow).
+function activeClaimGlow(task) {
+  if (!isActivelyClaimed(task)) return null;
+  const c = agentColor(task.agent);
+  return `${c.ring}40`; // hex8: ~25% alpha — matches Option-2 design intent.
+}
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 
@@ -116,9 +125,12 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
   };
 
   const hasUsableSpec = task.specFile && task.specExists !== false;
+  const claimGlow = activeClaimGlow(task);
+  const subtaskClass = claimGlow ? 'subtask-card subtask-card-active-claim' : 'subtask-card';
+  const subtaskStyle = { cursor: 'pointer', ...(claimGlow ? { ['--agent-glow-color']: claimGlow } : null) };
 
   return (
-    <div className="subtask-card" onClick={handleClick} style={{ cursor: 'pointer' }}>
+    <div className={subtaskClass} onClick={handleClick} style={subtaskStyle}>
       <div className="subtask-card-row">
         <span className="tree-dot" />
         <span className="status-dot-wrap" onClick={handleDotClick}>
@@ -131,6 +143,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
             size="xs"
             variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
             title={ownerLabel(task)}
+            pulse={isActivelyClaimed(task)}
           />
         )}
         {!task.agent && task.routedAgent && (
@@ -308,11 +321,19 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   if (removing) cardClass += ' animate-shrink overflow-hidden';
   else if (isNew && !animated) cardClass += ' animate-rise';
 
+  // Active-claim glow — static box-shadow in agent color when this card is
+  // currently being worked on. Pairs with the chip pulse below for the
+  // "owner color" + "active right now" two-channel signal.
+  const claimGlow = activeClaimGlow(task);
+  if (claimGlow) cardClass += ' task-card-active-claim';
+  const cardStyle = claimGlow ? { ['--agent-glow-color']: claimGlow } : undefined;
+
   return (
     <div>
       <div className="relative group">
         <div
           className={cardClass}
+          style={cardStyle}
           draggable={!removing}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
@@ -359,6 +380,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   size="sm"
                   variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
                   title={ownerLabel(task)}
+                  pulse={isActivelyClaimed(task)}
                 />
               )}
               {!task.agent && task.routedAgent && (

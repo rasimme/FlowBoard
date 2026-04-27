@@ -1299,7 +1299,7 @@ export default function DetailPanel() {
                       <span className={`inline-block w-2 h-2 rounded-full status-dot-${sub.status}`} />
                       <span className="font-mono text-[11px] text-muted">{sub.id}</span>
                       <span className="text-sm text-text truncate flex-1">{sub.title}</span>
-                      {sub.agent && <AgentChip name={sub.agent} size="xs" variant={isActivelyClaimed(sub) ? 'solid' : 'soft'} title={ownerLabel(sub)} />}
+                      {sub.agent && <AgentChip name={sub.agent} size="xs" variant={isActivelyClaimed(sub) ? 'solid' : 'soft'} title={ownerLabel(sub)} pulse={isActivelyClaimed(sub)} />}
                       {!sub.agent && sub.routedAgent && <AgentChip name={sub.routedAgent} size="xs" variant="ring" title={`Routed to ${sub.routedAgent}`} />}
                       <LeaseIndicator task={sub} />
                     </div>

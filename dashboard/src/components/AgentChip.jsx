@@ -53,6 +53,7 @@ export default function AgentChip({
   showName = false,
   title,
   style,
+  pulse = false,
 }) {
   const c = agentColor(name);
   const dims = SIZE_DIM[size] ?? SIZE_DIM.sm;
@@ -93,6 +94,8 @@ export default function AgentChip({
         flexShrink: 0,
         userSelect: 'none',
         lineHeight: 1,
+        position: 'relative',
+        zIndex: 1,
         ...(style || {}),
       }}
     >
@@ -100,10 +103,25 @@ export default function AgentChip({
     </span>
   );
 
-  if (!showName) return chip;
+  // Wrap with a pulsing halo when the task is actively claimed. Caller passes
+  // pulse={isActivelyClaimed(task)} so the chip itself doesn't need to know
+  // about the task model.
+  const visible = pulse
+    ? (
+      <span
+        className="agent-chip-pulse-wrap"
+        style={{ ['--agent-pulse-color']: c.ring }}
+      >
+        <span className="agent-chip-pulse-halo" aria-hidden="true" />
+        {chip}
+      </span>
+    )
+    : chip;
+
+  if (!showName) return visible;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-      {chip}
+      {visible}
       <span style={{ fontSize: 12, color: 'var(--text)', fontFamily: '"JetBrains Mono", monospace' }}>
         {String(name).startsWith('@') ? name : `@${name}`}
       </span>

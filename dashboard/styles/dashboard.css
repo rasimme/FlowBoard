@@ -272,6 +272,45 @@
       .agent-pulse-halo { animation: none; opacity: 0.3; transform: scale(1.4); }
     }
 
+    /* T-161 active-claim emphasis on TaskCard / SubtaskCard.
+       Two layers, both gated on isActivelyClaimed(task) at the call site:
+         - chip pulse (.agent-chip-pulse-halo) — a slow ripple in the agent's
+           ring color, signals "active right now"
+         - card glow (.task-card-active-claim, .subtask-card-active-claim) — a
+           static box-shadow in the agent's color, signals "this whole card
+           belongs to that agent"
+       Agent color is passed via CSS custom properties from AgentChip / the
+       card render path (--agent-pulse-color, --agent-glow-color). */
+    .agent-chip-pulse-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .agent-chip-pulse-halo {
+      position: absolute;
+      inset: -2px;
+      border-radius: 50%;
+      background: var(--agent-pulse-color, rgba(180, 200, 220, 0.6));
+      animation: fb-chip-pulse 2.4s ease-out infinite;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes fb-chip-pulse {
+      0%   { transform: scale(1);   opacity: 0.55; }
+      70%  { transform: scale(1.6); opacity: 0;    }
+      100% { transform: scale(1.6); opacity: 0;    }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .agent-chip-pulse-halo { animation: none; opacity: 0.35; transform: scale(1.2); }
+    }
+    .task-card-active-claim {
+      box-shadow: 0 0 0 1px var(--agent-glow-color, rgba(127,142,166,0.25)),
+                  0 0 12px 2px var(--agent-glow-color, rgba(127,142,166,0.25));
+    }
+    .subtask-card-active-claim {
+      box-shadow: 0 0 0 1px var(--agent-glow-color, rgba(127,142,166,0.25)),
+                  0 0 8px 1px var(--agent-glow-color, rgba(127,142,166,0.25));
+    }
+
     /* T-161 C2 Labeled bar — "Active on this project" strip above the kanban.
        Primary driver: flowboard_agents.active_project == viewedProject.
        Secondary (per-pill sub-line): the agent's currently-claimed task in this
