@@ -64,9 +64,11 @@ const migrations = [
   {
     id:   'm003-active-project-to-db',
     name: 'ACTIVE-PROJECT.md → flowboard_agents table (current runtime agent)',
-    run: (_db, { fbMeta, agentId, activeProjectFile }) => {
+    run: (_db, { fbMeta, hzlService, agentId, activeProjectFile }) => {
       // Inner idempotency guard: backfillAgentFromFile skips if row already exists.
-      fbMeta.backfillAgentFromFile(agentId, activeProjectFile);
+      // Pass hzlProjects so legacy display_names in ACTIVE-PROJECT.md get canonicalized.
+      const hzlProjects = hzlService ? hzlService.listHzlProjects() : [];
+      fbMeta.backfillAgentFromFile(agentId, activeProjectFile, hzlProjects);
     },
   },
 

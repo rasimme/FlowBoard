@@ -449,25 +449,11 @@ app.put('/api/status', async (req, res) => {
   // ("FlowBoard") instead of the canonical name ("flowboard"); accept both,
   // but always store the canonical name so downstream lookups by p.name work.
   if (effectiveProject && HZL_ENABLED) {
-    const hzlProjects = hzlService.listHzlProjects();
-    const exact = hzlProjects.find(p => p.name === effectiveProject);
-    if (!exact) {
-      const lower = effectiveProject.toLowerCase();
-      const ci = hzlProjects.find(p => p.name.toLowerCase() === lower);
-      if (ci) {
-        effectiveProject = ci.name;
-      } else {
-        const byDisplay = hzlProjects.find(p => {
-          const dn = fbMeta.getProject(p.name)?.display_name;
-          return dn === effectiveProject || (dn && dn.toLowerCase() === lower);
-        });
-        if (byDisplay) {
-          effectiveProject = byDisplay.name;
-        } else {
-          return res.status(400).json({ error: `Unknown project: ${project}` });
-        }
-      }
+    const canonical = fbMeta.resolveProjectName(effectiveProject, hzlService.listHzlProjects());
+    if (!canonical) {
+      return res.status(400).json({ error: `Unknown project: ${project}` });
     }
+    effectiveProject = canonical;
   }
 
   // Read previous state from canonical source

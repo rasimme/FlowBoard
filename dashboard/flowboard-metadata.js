@@ -288,26 +288,72 @@ function setAgentActiveProject(agentId, projectName) {
 /**
  * One-time migration: read active project from ACTIVE-PROJECT.md and insert into
  * flowboard_agents if no row exists yet for this agent.
- * Returns the imported project name, or null if skipped/not found.
+ *
+ * Canonicalizes the file's value via resolveProjectName() — historical files may
+ * contain display_names ("FlowBoard") instead of canonical names ("flowboard").
+ * If the value can't be resolved, store null and warn rather than blocking the
+ * migration; one-shot pre-existing data shouldn't fail startup.
+ *
+ * Returns the imported (canonical) project name, or null if skipped/not found.
  */
-function backfillAgentFromFile(agentId, activeProjectFilePath) {
+function backfillAgentFromFile(agentId, activeProjectFilePath, hzlProjects) {
   if (!_db) return null;
   const existing = _db.prepare('SELECT active_project FROM flowboard_agents WHERE agent_id = ?').get(agentId);
   if (existing) return null; // already in DB — skip
 
-  let projectName = null;
+  let rawName = null;
   try {
     const text = fs.readFileSync(activeProjectFilePath, 'utf8');
     const match = text.match(/^project:\s*(.+)$/m);
     const name = match ? match[1].trim() : null;
-    projectName = (name && name !== 'none') ? name : null;
+    rawName = (name && name !== 'none') ? name : null;
   } catch {
     return null; // file not found — nothing to migrate
   }
 
-  setAgentActiveProject(agentId, projectName);
-  console.log(`[flowboard-meta] Backfilled agent "${agentId}": active_project=${projectName || 'null'}`);
-  return projectName;
+  let canonical = null;
+  if (rawName) {
+    canonical = resolveProjectName(rawName, hzlProjects);
+    if (!canonical) {
+      console.warn(`[flowboard-meta] Backfill: cannot resolve "${rawName}" for agent "${agentId}" — storing null`);
+    }
+  }
+
+  setAgentActiveProject(agentId, canonical);
+  console.log(`[flowboard-meta] Backfilled agent "${agentId}": active_project=${canonical || 'null'}`);
+  return canonical;
+}
+
+/**
+ * Resolve an arbitrary project identifier to its canonical `name`.
+ * Order: exact name → case-insensitive name → display_name (exact then ci).
+ *
+ * Returns the canonical `name` if found, `null` otherwise.
+ *   - input == null/'' → null
+ *   - hzlProjects empty/missing → null
+ * Caller decides whether `null` means "clear" (legitimate) or "unknown" (reject).
+ *
+ * hzlProjects is passed in (rather than imported) to keep this module decoupled
+ * from hzl-service. Pass the result of hzlService.listHzlProjects().
+ */
+function resolveProjectName(input, hzlProjects) {
+  if (!input) return null;
+  if (!Array.isArray(hzlProjects) || hzlProjects.length === 0) return null;
+
+  const exact = hzlProjects.find(p => p.name === input);
+  if (exact) return exact.name;
+
+  const lower = String(input).toLowerCase();
+  const ci = hzlProjects.find(p => p.name.toLowerCase() === lower);
+  if (ci) return ci.name;
+
+  const byDisplay = hzlProjects.find(p => {
+    const dn = getProject(p.name)?.display_name;
+    return dn === input || (dn && dn.toLowerCase() === lower);
+  });
+  if (byDisplay) return byDisplay.name;
+
+  return null;
 }
 
 /**
@@ -334,4 +380,5 @@ module.exports = {
   setAgentActiveProject,
   backfillAgentFromFile,
   listAgents,
+  resolveProjectName,
 };
