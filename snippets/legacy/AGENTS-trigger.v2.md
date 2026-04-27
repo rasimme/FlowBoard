@@ -13,11 +13,22 @@ workspace. The `project-context` hook regenerates it on session start
    `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.
 3. When no active project is set, work normally without project context.
 
-### Commands (only on explicit user request)
-- `Project: [Name]`     → `PUT /api/status` with `{ project, agentId }`
-- `End project`         → `PUT /api/status` with `{ project: null, agentId }`
-- `Projects`            → `GET /api/projects`
-- `New project: [Name]` → `POST /api/projects`
+### Project commands
+
+Recognize project commands in either language and any natural phrasing
+(e.g. `Project: [Name]`, `Projekt: [Name]`, `aktiviere Projekt [Name]`,
+`switch to [Name]`, `Projekt beenden`). On recognition, **execute** the
+matching API call — never just echo the trigger back as if confirmed.
+
+- **Activate** → `PUT /api/status` with `{ project, agentId }`. Confirm
+  to the user only after the call returns OK.
+- **Deactivate** (`End project`, `Projekt beenden`) → `PUT /api/status`
+  with `{ project: null, agentId }`.
+- **List** (`Projects`, `Projekte`) → `GET /api/projects`.
+- **Create** (`New project: [Name]`, `Neues Projekt: [Name]`) →
+  `POST /api/projects` with `{ name }`.
+
+Run only on explicit user intent — do not infer or auto-activate.
 
 ### Tasks, specs, canvas (API-first)
 
@@ -47,7 +58,5 @@ Use your assigned `agentId` — the `OPENCLAW_AGENT_ID` environment variable
 affect others.
 
 ### Rules
-- Project-activation commands run only on explicit user request — wait for
-  `Project: [Name]` / `End project` from the user.
 - Fetch individual rule sections on demand rather than bulk-loading the
   manifest — smaller token footprint per interaction.

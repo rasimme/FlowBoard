@@ -35,7 +35,7 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // snapshot, and update this list to whichever phrase identifies the
 // previously-canonical (now-legacy) shape.
 const LEGACY_MARKERS = [
-  'Project-activation commands run only on explicit user request',
+  '(defaults to `main`)',
 ];
 
 // Snippet targets: which workspace files are migrated, which vendored/current
@@ -73,18 +73,18 @@ const TARGETS = [
     // a v3 layer rather than chaining markers here.
     vendored: 'AGENTS-trigger.v2.md',
     current: 'AGENTS-trigger.md',
-    summary: 'Sharpen project commands into positive imperative with bilingual phrasing + anti-echo rule',
+    summary: 'Sharpen agent-identity guidance — replace "(defaults to main)" trap and <agentId> placeholders with $OPENCLAW_AGENT_ID introspection',
     addSummary: 'Add the FlowBoard project trigger block with the API-first task workflow',
     // Phrase unique to the canonical v2 snapshot. Doctor uses this for both
     // drift detection (file has the marker but body no longer byte-matches)
     // and for replaceDriftedBlock's heading anchor.
     legacyStructuralMarkers: [
-      'Project-activation commands run only on explicit user request',
+      '(defaults to `main`)',
     ],
     // Phrase unique to the current block — if present, migration is already
     // done for this file; no action needed.
     currentMarkers: [
-      'never just echo the trigger back as if confirmed',
+      'silently routes your work into another agent\'s row',
     ],
   },
   {

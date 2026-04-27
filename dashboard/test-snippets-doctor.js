@@ -43,29 +43,31 @@ const LEGACY_BLOCK = `## Projects (MANDATORY)
 
 FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
 
-### Rules
-- Project-activation commands run only on explicit user request — wait for the trigger from the user.
+### Agent identity
+Use your assigned \`agentId\` — the \`OPENCLAW_AGENT_ID\` environment variable
+(defaults to \`main\`).
 `;
 
 const NEW_BLOCK = `## Projects (MANDATORY)
 
 FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
 
-### Project commands
-On recognition, execute the matching API call — never just echo the trigger back as if confirmed.
+### Agent identity
+Get your agentId via \`echo "$OPENCLAW_AGENT_ID"\`. Never substitute a literal
+placeholder — that silently routes your work into another agent's row.
 `;
 
 section('detectLegacyMarkers()');
 {
   assert(doctor.detectLegacyMarkers(LEGACY_BLOCK) === true,
-    'detects legacy "explicit user request" marker');
+    'detects legacy "(defaults to `main`)" marker');
   assert(doctor.detectLegacyMarkers('# My AGENTS.md\n\njust some notes') === false,
     'returns false for clean content');
   assert(doctor.detectLegacyMarkers('') === false,
     'returns false for empty content');
   assert(doctor.detectLegacyMarkers(NEW_BLOCK) === false,
     'returns false for new-style content (no legacy markers)');
-  assert(doctor.detectLegacyMarkers('Project-activation commands run only on explicit user request — wait.') === true,
+  assert(doctor.detectLegacyMarkers('See `(defaults to \`main\`)` in older snippets.') === true,
     'detects legacy marker standalone');
 }
 
@@ -100,7 +102,7 @@ section('replaceLegacyBlock()');
   assert(result.includes('Preamble.'), 'preserves preamble');
   assert(result.includes('Epilogue.'), 'preserves epilogue');
   assert(result.includes(NEW_BLOCK), 'inserts new block');
-  assert(!result.includes('Project-activation commands run only on explicit user request'), 'removes legacy markers');
+  assert(!result.includes('(defaults to `main`)'), 'removes legacy markers');
 
   // Divergent content → null
   const divergent = container.replace('MANDATORY', 'mandatory');
@@ -216,7 +218,7 @@ section('collectStatus()');
     // workspace-beta/AGENTS.md = DIVERGENT (markers present, block modified)
     // Drift mutation: change a non-marker phrase so the block is no longer
     // byte-identical to v2.md but the legacyStructuralMarker
-    // ("Project-activation commands run only on explicit user request") still matches.
+    // ("(defaults to `main`)") still matches.
     const modified = legacyAgents.replace('Read `BOOTSTRAP.md` — that is your project context.', 'Read `BOOTSTRAP.md` carefully — that is your project context.');
     fs.writeFileSync(path.join(dir, 'workspace-beta', 'AGENTS.md'),
       `# beta\n\n${modified}\n`);
@@ -276,8 +278,8 @@ section('applySelected() — byte-identical only, with .bak');
     const afterIdentical = fs.readFileSync(targetPath, 'utf8');
     const currentBlock = doctor.readCurrent('AGENTS-trigger.md');
     assert(afterIdentical.includes(currentBlock.trim().slice(0, 60)), 'new block present in identical file');
-    assert(!afterIdentical.includes('Project-activation commands run only on explicit user request'), 'legacy "explicit user request" phrasing gone');
-    assert(afterIdentical.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule present');
+    assert(!afterIdentical.includes('(defaults to `main`)'), 'legacy "(defaults to main)" phrasing gone');
+    assert(afterIdentical.includes('silently routes your work into another agent\'s row'), 'v1.3 identity-trap warning present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -387,7 +389,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r1.applied.length, 1, 'migrate applied');
     assertEqual(r1.applied[0].action, 'migrate', 'action recorded as migrate');
     const afterDrift = fs.readFileSync(driftedPath, 'utf8');
-    assert(afterDrift.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule inserted');
+    assert(afterDrift.includes('silently routes your work into another agent\'s row'), 'v1.3 identity-trap warning inserted');
     assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
@@ -396,7 +398,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r2.applied[0].action, 'add', 'action recorded as add');
     const afterMissing = fs.readFileSync(missingPath, 'utf8');
     assert(afterMissing.startsWith('# my beta config'), 'existing content preserved at top');
-    assert(afterMissing.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule appended');
+    assert(afterMissing.includes('silently routes your work into another agent\'s row'), 'v1.3 identity-trap warning appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset
@@ -509,7 +511,7 @@ section('runCli() — --migrate force-replaces drifted blocks');
     assert(/MIGRATED/.test(r3.out), '--migrate emits MIGRATED');
     assertEqual(r3.code, 0, '--migrate exit code 0 (no remaining divergent)');
     const after = fs.readFileSync(filePath, 'utf8');
-    assert(after.includes('never just echo the trigger back as if confirmed'), 'v1.2 anti-echo rule present after migrate');
+    assert(after.includes('silently routes your work into another agent\'s row'), 'v1.3 identity-trap warning present after migrate');
     assert(!after.includes('Read `BOOTSTRAP.md` carefully'), 'drift line gone after migrate');
     const baks = fs.readdirSync(path.join(dir, 'workspace')).filter(n => n.includes('.bak-'));
     assert(baks.length === 1, 'exactly one backup file created');
