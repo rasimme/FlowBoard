@@ -12,6 +12,7 @@ import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
+import { isActivelyClaimed, ownerLabel } from '../utils.js';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
 // critical parts are the resets (`border-0 outline-none`) — without
@@ -1298,7 +1299,7 @@ export default function DetailPanel() {
                       <span className={`inline-block w-2 h-2 rounded-full status-dot-${sub.status}`} />
                       <span className="font-mono text-[11px] text-muted">{sub.id}</span>
                       <span className="text-sm text-text truncate flex-1">{sub.title}</span>
-                      {sub.agent && <AgentChip name={sub.agent} size="xs" variant="solid" title={`Claimed by ${sub.agent}`} />}
+                      {sub.agent && <AgentChip name={sub.agent} size="xs" variant={isActivelyClaimed(sub) ? 'solid' : 'soft'} title={ownerLabel(sub)} />}
                       {!sub.agent && sub.routedAgent && <AgentChip name={sub.routedAgent} size="xs" variant="ring" title={`Routed to ${sub.routedAgent}`} />}
                       <LeaseIndicator task={sub} />
                     </div>
