@@ -9,13 +9,16 @@ import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils.js';
 
-// Box-shadow color for the active-claim card glow. Reuses the agent's `ring`
-// hex with an explicit alpha so the shadow is visible (the palette's `soft`
-// rgba is too transparent for a glow).
-function activeClaimGlow(task) {
+// CSS-var pair for the active-claim contour pulse. The card's border-color
+// animates between -soft (alpha ~25%) and the full ring hex. Returning null
+// signals "not actively claimed" so the caller can skip the class+style.
+function activeClaimColors(task) {
   if (!isActivelyClaimed(task)) return null;
   const c = agentColor(task.agent);
-  return `${c.ring}40`; // hex8: ~25% alpha — matches Option-2 design intent.
+  return {
+    ['--agent-claim-color']: c.ring,
+    ['--agent-claim-color-soft']: `${c.ring}40`, // hex8: ~25% alpha.
+  };
 }
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -125,9 +128,9 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
   };
 
   const hasUsableSpec = task.specFile && task.specExists !== false;
-  const claimGlow = activeClaimGlow(task);
-  const subtaskClass = claimGlow ? 'subtask-card subtask-card-active-claim' : 'subtask-card';
-  const subtaskStyle = { cursor: 'pointer', ...(claimGlow ? { ['--agent-glow-color']: claimGlow } : null) };
+  const claimColors = activeClaimColors(task);
+  const subtaskClass = claimColors ? 'subtask-card subtask-card-active-claim' : 'subtask-card';
+  const subtaskStyle = { cursor: 'pointer', ...(claimColors || null) };
 
   return (
     <div className={subtaskClass} onClick={handleClick} style={subtaskStyle}>
@@ -321,12 +324,12 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   if (removing) cardClass += ' animate-shrink overflow-hidden';
   else if (isNew && !animated) cardClass += ' animate-rise';
 
-  // Active-claim glow — static box-shadow in agent color when this card is
+  // Active-claim contour — pulsing border in agent color when this card is
   // currently being worked on. Pairs with the chip pulse below for the
   // "owner color" + "active right now" two-channel signal.
-  const claimGlow = activeClaimGlow(task);
-  if (claimGlow) cardClass += ' task-card-active-claim';
-  const cardStyle = claimGlow ? { ['--agent-glow-color']: claimGlow } : undefined;
+  const claimColors = activeClaimColors(task);
+  if (claimColors) cardClass += ' task-card-active-claim';
+  const cardStyle = claimColors || undefined;
 
   return (
     <div>

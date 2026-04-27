@@ -302,21 +302,35 @@
     @media (prefers-reduced-motion: reduce) {
       .agent-chip-pulse-halo { animation: none; opacity: 0.35; transform: scale(1.2); }
     }
-    /* Higher specificity (.task-card.task-card-active-claim) so this beats the
-       base .task-card box-shadow defined later in this stylesheet. The :hover
-       variant keeps the glow visible during pointer hover instead of falling
-       back to the default :hover shadow. inset highlight from .task-card is
-       preserved as a third layer. */
+    /* Active-claim contour — replaces the existing 1px border with the agent
+       color, gently pulsing between soft and full alpha. No outer glow, no
+       box-shadow expansion → never clips at container edges, never overlaps
+       neighbouring cards. The two CSS vars are set inline by the call site:
+         --agent-claim-color       full agent.ring hex (peak of pulse)
+         --agent-claim-color-soft  same hex with ~25% alpha (trough of pulse)
+       Specificity uses two-class compound (0,2,0) to beat the base .task-card
+       border-color rule, and :hover is listed so hovering doesn't snap back
+       to the default border. */
     .task-card.task-card-active-claim,
     .task-card.task-card-active-claim:hover {
-      box-shadow: 0 0 0 1px var(--agent-glow-color, rgba(127,142,166,0.25)),
-                  0 0 12px 2px var(--agent-glow-color, rgba(127,142,166,0.25)),
-                  inset 0 1px 0 var(--card-highlight);
+      border-color: var(--agent-claim-color, rgba(127,142,166,1));
+      animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
     }
     .subtask-card.subtask-card-active-claim,
     .subtask-card.subtask-card-active-claim:hover {
-      box-shadow: 0 0 0 1px var(--agent-glow-color, rgba(127,142,166,0.25)),
-                  0 0 8px 1px var(--agent-glow-color, rgba(127,142,166,0.25));
+      border-color: var(--agent-claim-color, rgba(127,142,166,1));
+      animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+    }
+    @keyframes fb-card-claim-pulse {
+      0%, 100% { border-color: var(--agent-claim-color-soft, rgba(127,142,166,0.4)); }
+      50%      { border-color: var(--agent-claim-color,      rgba(127,142,166,1));   }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .task-card.task-card-active-claim,
+      .subtask-card.subtask-card-active-claim {
+        animation: none;
+        border-color: var(--agent-claim-color, rgba(127,142,166,1));
+      }
     }
 
     /* T-161 C2 Labeled bar — "Active on this project" strip above the kanban.
