@@ -1,19 +1,25 @@
 /**
  * LeaseIndicator — compact claim-health dot for TaskCard / SubtaskCard.
  *
- * Renders nothing when the task is healthy or unclaimed.
+ * Renders nothing when the task is healthy or not actively claimed.
  * Shows a small warning/critical dot next to the ownership AgentChip when:
  *   - stale:   claimed but no checkpoint in 15 min  (amber dot)
  *   - expired: leaseUntil is in the past            (red pulse dot)
+ *
+ * Health applies only to *active* claims. HZL-core preserves task.agent
+ * past release/done as historical attribution, so a done task with an old
+ * lastCheckpointAt would otherwise look "stale" forever.
  *
  * Deliberately tiny (8 px) so it layers alongside AgentChip without
  * adding badge soup.  Tooltip carries the detail.
  */
 
+import { isActivelyClaimed } from '../utils.js';
+
 const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
 
 function computeHealth(task) {
-  if (!task.agent) return null; // unclaimed — nothing to show
+  if (!isActivelyClaimed(task)) return null; // not actively claimed — no health to report
 
   const now = Date.now();
 
