@@ -125,6 +125,94 @@ function _populateSubtaskIds(tasks) {
   }
 }
 
+// T-161 cache-projection sync helpers.
+//
+// Background: HZL's projection (tasks_current) runs auto-side-effects on
+// status changes — most notably, transitioning to in_progress without an
+// explicit agent COALESCE-preserves the previous agent, and leaving
+// in_progress preserves the agent for historical attribution. The dashboard
+// has its own in-memory cache (_cache) that previously tried to mirror HZL
+// via incremental field-by-field patches after each mutation. This was
+// fragile: any HZL side-effect the dashboard didn't anticipate would cause
+// cache ↔ projection drift, and the API/UI would show stale data while
+// claim attempts hit a different state and got rejected (T-006 bug).
+//
+// Two helpers, used at the end of every mutation function:
+//
+//   _resyncCachedTask(ulid)           Authoritative direction: HZL → cache.
+//                                     Reads the current tasks_current row,
+//                                     runs _toFbTask, replaces the cache
+//                                     entry. Always called last so the
+//                                     return value matches projection truth.
+//
+//   _alignProjectionToCache(ulid, c)  Orchestrator direction: cache → HZL.
+//                                     Used by updateTask after dashboard-
+//                                     level processing (status change,
+//                                     auto-release block) to neutralize
+//                                     HZL's auto-COALESCE side-effects on
+//                                     agent/claimed_at/lease_until — the
+//                                     dashboard's cache reflects the user's
+//                                     intent; the projection should match.
+//                                     Direct SQL because HZL's event
+//                                     vocabulary lacks a primitive for
+//                                     "clear claimed_at without changing
+//                                     status".
+//
+// Invariant enforced after every mutation:
+//   _cache[key] === toFbTask(tasks_current[ulid])
+//
+// Invariant enforced by _alignProjectionToCache:
+//   if cached.agent is null, claimed_at and lease_until are also null.
+//   (No active claim → no claim metadata.)
+function _resyncCachedTask(ulid) {
+  if (!ulid) return null;
+  const mapKey = _ulidToFb.get(ulid);
+  if (!mapKey) return null;
+  const sep = mapKey.indexOf(':');
+  if (sep < 0) return null;
+  const project = mapKey.slice(0, sep);
+  const fbId = mapKey.slice(sep + 1);
+
+  let hzlTask;
+  try { hzlTask = _taskService.getTaskById(ulid); } catch { return null; }
+  if (!hzlTask) {
+    _cache.delete(mapKey);
+    return null;
+  }
+
+  const fbTask = _toFbTask(hzlTask, project);
+  if (!fbTask) {
+    _cache.delete(mapKey);
+    return null;
+  }
+
+  if (!_specsIndex.has(project)) _loadSpecsIndex(project);
+  const specsIdx = _specsIndex.get(project) || {};
+  fbTask.specFile = specsIdx[fbId] || null;
+
+  _cache.set(mapKey, fbTask);
+  return fbTask;
+}
+
+function _alignProjectionToCache(ulid, cached) {
+  if (!ulid || !cached) return;
+  // Invariant: claim metadata (claimed_at, lease_until) only makes sense
+  // when an agent is set. If the dashboard's cache says "unclaimed", the
+  // projection should reflect that fully — not just the agent field.
+  const agent = cached.agent ?? null;
+  const claimedAt = agent ? (cached.claimedAt ?? null) : null;
+  const leaseUntil = agent ? (cached.leaseUntil ?? null) : null;
+  try {
+    _taskService.db.prepare(`
+      UPDATE tasks_current
+      SET agent = ?, claimed_at = ?, lease_until = ?
+      WHERE task_id = ?
+    `).run(agent, claimedAt, leaseUntil, ulid);
+  } catch (e) {
+    console.warn('[hzl-service] _alignProjectionToCache:', e.message);
+  }
+}
+
 // Load specs/_index.json for a project
 function _loadSpecsIndex(project) {
   const indexPath = path.join(PROJECTS_DIR, project, 'specs', '_index.json');
@@ -616,12 +704,17 @@ function updateTask(project, flowboardId, updates) {
     (updates.status === 'review' || updates.status === 'done') &&
     cached.agent
   ) {
+    // Mirror HZL's leave-in_progress semantics in the cache: claimed_at and
+    // lease_until are cleared. This must happen UNCONDITIONALLY because the
+    // setStatus call above already triggered HZL's projection to clear them
+    // — even if the releaseTask call below throws (which it often does for
+    // already-terminal tasks; that's the "that's fine" expected case).
+    // Preserve cached.agent for historical attribution (T-161 soft chip).
+    cached.claimedAt = null;
+    cached.leaseUntil = null;
+    metaUpdates.flowboard.lastCheckpointAt = null;
     try {
       _taskService.releaseTask(ulid, { agent_id: cached.agent, author: cached.agent });
-      cached.agent = null;
-      cached.claimedAt = null;
-      cached.leaseUntil = null;
-      metaUpdates.flowboard.lastCheckpointAt = null;
     } catch (e) {
       // releaseTask can reject if lease already expired / no active claim; that's fine
       console.warn('[hzl-service] auto-release on status change:', e.message);
@@ -631,8 +724,11 @@ function updateTask(project, flowboardId, updates) {
   // Write metadata via direct event emission (hzl-core updateTask ignores metadata)
   _updateMetadata(ulid, metaUpdates);
 
-  // Update cache
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt'];
+  // Update cache to reflect the orchestrator's intent (the explicit fields
+  // in `updates`). After this loop, `cached` holds the dashboard's view of
+  // truth — including any null-clears applied by the auto-release block
+  // above (when transitioning to review/done).
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       if (key === 'blocked') cached[key] = updates[key] === true;
@@ -641,7 +737,14 @@ function updateTask(project, flowboardId, updates) {
     }
   }
 
-  return _publicTask(cached);
+  // T-161 cache-projection sync (see helper docs near the top of the file):
+  // 1. Push the dashboard's intent down to HZL's projection so HZL's auto-
+  //    COALESCE side-effects on agent/claimed_at/lease_until are neutralized.
+  // 2. Re-read the projection back into the cache so the return value
+  //    matches the authoritative on-disk state.
+  _alignProjectionToCache(ulid, cached);
+  const refreshed = _resyncCachedTask(ulid);
+  return _publicTask(refreshed || cached);
 }
 
 /**
@@ -1002,14 +1105,21 @@ function claimTask(project, flowboardId, opts) {
   }
   const clampedLease = Math.min(Math.max(lease, 1), 1440); // 1min..24h
 
-  // Validation: Already claimed by another agent — allow re-claim only if lease expired
+  // Validation: Already actively claimed by another agent — allow re-claim
+  // only if lease expired or there's no active claim. With T-161's soft-chip
+  // semantic, `agent` may be set as historical attribution while
+  // `claimed_at` is null (released task, owner preserved for "Last worked
+  // by X"). A null claimed_at means the claim is no longer active and a
+  // fresh agent can pick the task up.
   const hzlTask = _taskService.getTaskById(ulid);
   if (hzlTask && hzlTask.agent && hzlTask.agent !== agent && hzlTask.status === 'in_progress') {
+    const hasActiveClaim = !!hzlTask.claimed_at;
     const leaseExpired = hzlTask.lease_until && new Date(hzlTask.lease_until).getTime() < Date.now();
-    if (!leaseExpired) {
+    if (hasActiveClaim && !leaseExpired) {
       throw Object.assign(new Error(`Task already claimed by "${hzlTask.agent}"`), { code: 'ALREADY_CLAIMED' });
     }
-    // Lease expired — allow re-claim (steal)
+    // Either no active claim (claimed_at=null, just historical attribution)
+    // or lease expired — allow re-claim (steal).
   }
 
   // Calculate lease_until ISO timestamp
@@ -1040,7 +1150,11 @@ function claimTask(project, flowboardId, opts) {
   cached.leaseUntil = leaseUntil;
   cached.lastCheckpointAt = meta.flowboard.lastCheckpointAt;
 
-  return _publicTask(cached);
+  // Cache-projection sync: HZL's claimTask is authoritative. Re-read so the
+  // return value matches projection truth (and any HZL field we didn't patch
+  // incrementally above gets surfaced).
+  const refreshed = _resyncCachedTask(ulid);
+  return _publicTask(refreshed || cached);
 }
 
 /**
@@ -1061,6 +1175,21 @@ function releaseTask(project, flowboardId, opts = {}) {
     throw Object.assign(new Error(`Only the owning agent "${cached.agent}" can release (or use force=true)`), { code: 'NOT_OWNER' });
   }
 
+  // Gracefully handle obsolete 'ready' status (data inconsistency from old HZL versions)
+  if (cached.status === 'ready') {
+    cached.agent = null;
+    cached.claimedAt = null;
+    cached.leaseUntil = null;
+    cached.lastCheckpointAt = null;
+    cached.status = 'open';
+    const hzlTask = _taskService.getTaskById(ulid);
+    if (hzlTask) {
+      const fb = hzlTask.metadata?.flowboard || {};
+      _updateMetadata(ulid, { flowboard: { ...fb, status: 'open' } });
+    }
+    return { ok: true };
+  }
+
   // Use hzl-core native releaseTask
   _taskService.releaseTask(ulid, { agent_id: agent, author: agent });
 
@@ -1077,13 +1206,16 @@ function releaseTask(project, flowboardId, opts = {}) {
   };
   _updateMetadata(ulid, meta);
 
-  // Update RAM cache
+  // Update RAM cache. Preserve cached.agent for historical attribution
+  // (mirrors HZL's projection behaviour — see comment in updateTask's
+  // auto-release block).
   cached.status = restoreStatus;
-  cached.agent = null;
   cached.claimedAt = null;
   cached.leaseUntil = null;
   cached.lastCheckpointAt = null;
 
+  // Cache-projection sync after release.
+  _resyncCachedTask(ulid);
   return { ok: true };
 }
 
@@ -1122,11 +1254,11 @@ function completeTask(project, flowboardId, opts = {}) {
   };
   _updateMetadata(ulid, meta);
 
-  // Update RAM cache
-  const completingAgent = cached.agent; // save before clearing
+  // Update RAM cache. Preserve cached.agent for historical attribution
+  // (the soft-chip "Done by X" relies on agent staying set after complete).
+  const completingAgent = cached.agent;
   cached.status = 'review';
   cached.completed = completedDate;
-  cached.agent = null;
   cached.claimedAt = null;
   cached.leaseUntil = null;
 
@@ -1142,7 +1274,14 @@ function completeTask(project, flowboardId, opts = {}) {
     } catch (e) { console.warn('[hzl-service] onComplete callback error:', e.message); }
   }
 
-  return _publicTask(cached);
+  // Cache-projection sync after complete. Pushes cache.agent=null down to
+  // HZL's projection (HZL preserves agent on leave-in_progress); then
+  // re-reads to confirm consistency. Without this, the projection still
+  // shows agent='main' while the cache says null — the same drift class
+  // as the T-006 bug.
+  _alignProjectionToCache(ulid, cached);
+  const refreshed = _resyncCachedTask(ulid);
+  return _publicTask(refreshed || cached);
 }
 
 /**
