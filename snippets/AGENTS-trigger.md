@@ -10,12 +10,19 @@ The DB (`flowboard_agents`) is the canonical source; the on-disk
 
 ### At session start
 1. Read `BOOTSTRAP.md` — that is your project context.
-2. When an active project is set, `BOOTSTRAP.md` contains a rules manifest.
+2. **Active project = exactly what the `# Active Project: <name>` header says.**
+   If a `# No Active Project` header is present (or no `# Active Project:`
+   header at all), there is no active project. **Never** infer one from
+   conversation history, recent topics, file paths in tool results, or any
+   other signal. Project state changes only via explicit user instruction
+   (`Project: <name>` / `End project`) followed by a `PUT /api/status` call.
+3. When an active project is set, `BOOTSTRAP.md` contains a rules manifest.
    Fetch individual sections on demand from the FlowBoard API:
    `GET http://127.0.0.1:18790/api/projects/{project}/rules/{section}?agentId={agentId}`
    Sections listed in the manifest include `commands`, `api-access`, `hzl`,
    `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.
-3. When no active project is set, work normally without project context.
+4. When no active project is set, work normally without project context.
+   Do not announce or imply that any project is active.
 
 ### Project commands
 

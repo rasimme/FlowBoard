@@ -61,6 +61,26 @@ function buildIdentitySection(agentId) {
   ].join("\n");
 }
 
+// Anti-inference header for the no-active-project case. The model
+// otherwise tends to fill in a project name from conversation history,
+// e.g. main erroneously announcing "Projekt flowboard ist weiterhin
+// aktiv" after a gateway restart even though `flowboard_agents.active_project`
+// for main is `null`. This header makes the absence explicit and load-bearing.
+function buildNoActiveProjectSection() {
+  return [
+    "# No Active Project",
+    "",
+    "`flowboard_agents.active_project` is `null` for this agent. The single",
+    "source of truth for the active project is the `# Active Project: <name>`",
+    "header in this document — if no such header is present, there is no",
+    "active project. Do **not** infer one from conversation history, recent",
+    "topics, file paths in tool results, or anything else. To activate a",
+    "project, the user must say so explicitly (e.g. `Project: <name>`); the",
+    "agent then calls `PUT /api/status` and the next run sees the change.",
+    "",
+  ].join("\n");
+}
+
 function buildInlineManifestFallback() {
   return [
     "## Project Rules (lazy-load)",
@@ -187,9 +207,10 @@ async function buildBootstrapContent(workspaceDir, agentId) {
   }
 
   if (!projectName) {
-    // No active project — agent still needs Identity to be able to PUT
-    // /api/status (project activation) with the correct agentId.
-    return identitySection;
+    // No active project — emit the explicit "no project" header before
+    // Identity so the model has a load-bearing marker to read instead of
+    // inferring an active project from conversation context.
+    return buildNoActiveProjectSection() + "\n" + identitySection;
   }
 
   const rulesManifest = buildRulesManifest();
@@ -237,6 +258,9 @@ const handler = async (event) => {
     // workspace loader found stand.
     return;
   }
+  // Single observability line. Useful while the live-inject migration is
+  // fresh; reduce to debug or remove once T-168 is fully shipped.
+  console.log(`[project-context] injected for ${agentId} (${content.length}B)`);
 
   if (!content) return;
 
