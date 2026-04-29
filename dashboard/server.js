@@ -2058,7 +2058,7 @@ app.get('/api/projects/:name/tasks/:id/events', (req, res) => {
 app.get('/api/tasks/stuck', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
-    const staleThreshold = parseInt(req.query.staleThreshold) || 10;
+    const staleThreshold = req.query.staleThreshold !== undefined ? Math.max(0, parseInt(req.query.staleThreshold) || 0) : 10;
     const stuck = hzlService.getStuckTasks({ staleThreshold });
     res.json({ ok: true, stuck });
   } catch (err) {
