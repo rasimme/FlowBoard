@@ -1,13 +1,19 @@
 /**
- * Project Context Hook
- * 
- * On /new and /reset: writes active project context to BOOTSTRAP.md
- * so it's automatically loaded as a bootstrap file in the next session.
- * 
- * On gateway:startup: same — ensures BOOTSTRAP.md has current project context.
+ * Project Context Hook — agent:bootstrap live-inject
+ *
+ * On every agent run, OpenClaw fires `agent:bootstrap` to assemble the
+ * bootstrap-files array that gets injected into the model context. This
+ * hook reads the canonical active-project state from the FlowBoard DB
+ * (via the local API) and replaces the BOOTSTRAP.md entry in
+ * `event.context.bootstrapFiles` with a live-built document containing
+ * the active-project header, the agent's identity, the rules manifest,
+ * the PROJECT.md content, and a task-status summary.
+ *
+ * No on-disk writes. Single source of truth: flowboard_agents DB row.
+ * Documented in specs/T-168-hook-lifecycle-coverage.md (T-168-3).
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
@@ -15,10 +21,12 @@ import { createRequire } from "node:module";
 const OPENCLAW_HOME = join(homedir(), ".openclaw");
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
 const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || join(homedir(), "repos", "FlowBoard");
+const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
+const BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 
-// Single-source-of-truth: load rules-api.js from the FlowBoard repo so the bootstrap
-// manifest matches the server's. Fall back to an inline minimal manifest if the repo
-// module can't be resolved (e.g. hook runs before the repo is present).
+// Single source of truth for the rules manifest: load from the FlowBoard repo
+// so the bootstrap manifest matches the server's. Fall back to an inline
+// minimal manifest if the repo module can't be resolved.
 const require = createRequire(import.meta.url);
 let rulesApi = null;
 try {
@@ -27,13 +35,9 @@ try {
   console.warn(`[project-context] rules-api module unavailable (${err.message}); using inline manifest fallback`);
 }
 
-// T-161 Identity-in-Bootstrap: derive the agent's canonical id from the
-// workspace directory name. The mapping is fixed by the workspace-naming
-// convention used across the OpenClaw installation:
-//   ~/.openclaw/workspace             → agent "main"
-//   ~/.openclaw/workspace-<id>        → agent "<id>"
-// Returning null means "couldn't derive" — caller falls back to the
-// event/env-supplied id (which may itself be wrong; see resolveAgentId).
+// Workspace → agentId convention:
+//   ~/.openclaw/workspace            → "main"
+//   ~/.openclaw/workspace-<id>       → "<id>"
 function deriveAgentIdFromWorkspace(workspaceDir) {
   if (!workspaceDir) return null;
   const base = basename(workspaceDir);
@@ -42,12 +46,6 @@ function deriveAgentIdFromWorkspace(workspaceDir) {
   return null;
 }
 
-// T-161 Identity-in-Bootstrap: a stable, self-describing block that tells
-// the agent its own id at session start. Single source of truth, derived
-// once by the hook here so the agent never has to introspect env vars or
-// parse cwd in a curl one-liner. This block is the workspace-level
-// identity (project-independent) and is always emitted, even when no
-// project is active, so /api/status PUTs work too.
 function buildIdentitySection(agentId) {
   if (!agentId) return "";
   return [
@@ -80,67 +78,8 @@ function buildRulesManifest() {
   return rulesApi ? rulesApi.buildRulesManifest() : buildInlineManifestFallback();
 }
 
-function resolveWorkspace(event) {
-  // Prefer workspace directory from event context (supports multi-agent workspaces)
-  if (event?.context?.workspaceDir) {
-    return event.context.workspaceDir;
-  }
-
-  const agentId = event?.context?.agentId || process.env.OPENCLAW_AGENT_ID;
-  const base = OPENCLAW_HOME;
-
-  // Agent-specific workspace convention: workspace-<agentId>
-  if (agentId) {
-    const byAgent = join(base, `workspace-${agentId}`);
-    if (existsSync(byAgent)) return byAgent;
-  }
-
-  // Fallback: main workspace, then any workspace-* directory
-  const candidates = [join(base, "workspace")];
-  try {
-    const entries = readdirSync(base, { withFileTypes: true });
-    for (const e of entries) {
-      if (e.isDirectory() && e.name.startsWith("workspace-")) {
-        candidates.push(join(base, e.name));
-      }
-    }
-  } catch {}
-  for (const dir of candidates) {
-    if (existsSync(dir)) return dir;
-  }
-  return null;
-}
-
-/**
- * NOTE: trimSessionLog removed by T-131-4/m005 — session logs now live in SESSIONS.md
- */
-
-/**
- * Fetch tasks from FlowBoard API (HZL-backed) and return a status summary string.
- * Falls back gracefully if the server is unreachable (e.g. during gateway startup).
- * Returns null if no actionable info.
- */
-const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
-
-function resolveAgentId(event) {
-  return event?.context?.agentId || process.env.OPENCLAW_AGENT_ID || 'main';
-}
-
-/**
- * T-131-3: Query FlowBoard API for the active project of the given agent.
- *
- * Returns a discriminated result so the caller can distinguish:
- *   { ok: true, project: string|null }  — API answered authoritatively;
- *                                         null means "no project active"
- *   { ok: false, reason: string }       — API unreachable / non-2xx; only
- *                                         in this case may the caller fall
- *                                         back to a file-based source
- *
- * Without this distinction, an authoritative `activeProject: null` from
- * the DB used to be indistinguishable from a network failure, which made
- * the legacy ACTIVE-PROJECT.md fallback win even when the DB had been
- * updated to "no project active" — producing stale BOOTSTRAP.md content.
- */
+// Discriminated result so callers can distinguish authoritative null
+// (no project active) from a network failure.
 async function resolveActiveProjectFromApi(agentId) {
   try {
     const url = `http://localhost:${FLOWBOARD_PORT}/api/status?agentId=${encodeURIComponent(agentId)}`;
@@ -149,20 +88,36 @@ async function resolveActiveProjectFromApi(agentId) {
     const data = await res.json();
     return { ok: true, project: data.activeProject || null };
   } catch (err) {
-    return { ok: false, reason: err?.message || 'fetch failed' };
+    return { ok: false, reason: err?.message || "fetch failed" };
+  }
+}
+
+// Pre-bootstrap fallback: if the API is unreachable (gateway boot before
+// FlowBoard server is up, migration setups), read the legacy
+// ACTIVE-PROJECT.md file. An authoritative `null` from the API does NOT
+// trigger this path.
+function resolveActiveProjectFromFile(workspaceDir) {
+  if (!workspaceDir) return null;
+  const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
+  if (!existsSync(activeProjectPath)) return null;
+  try {
+    const content = readFileSync(activeProjectPath, "utf8");
+    const match = content.match(/^project:\s*(.+)$/m);
+    const name = match?.[1]?.trim();
+    return (name && name !== "none") ? name : null;
+  } catch {
+    return null;
   }
 }
 
 async function getTaskStatusSummary(projectName) {
   let data;
   try {
-    const res = await fetch(`http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`, {
-      signal: AbortSignal.timeout(3000),
-    });
+    const url = `http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
     if (!res.ok) return null;
     data = await res.json();
   } catch {
-    console.log("[project-context] FlowBoard API unreachable — skipping task summary");
     return null;
   }
   if (!data?.tasks?.length) return null;
@@ -175,7 +130,6 @@ async function getTaskStatusSummary(projectName) {
   const done = topLevel.filter(t => t.status === "done");
   const blocked = topLevel.filter(t => t.blocked === true);
 
-  // Status counts summary line
   const countParts = [];
   if (backlog.length) countParts.push(`Backlog: ${backlog.length}`);
   if (open.length) countParts.push(`Open: ${open.length}`);
@@ -220,68 +174,33 @@ async function getTaskStatusSummary(projectName) {
   return lines.join("\n");
 }
 
-async function updateBootstrapWithProjectContext(workspaceDir, agentIdHint) {
-  if (!workspaceDir) return;
-
-  // T-161 Identity-in-Bootstrap: derive the canonical agent id from the
-  // workspace directory. This wins over the event/env-supplied hint
-  // because the workspace mapping is the actual source of truth on disk;
-  // the hint can be stale or empty in some hook contexts.
-  const agentId = deriveAgentIdFromWorkspace(workspaceDir) || agentIdHint || 'main';
-
-  // T-131-3: resolve active project from DB (via API) — the DB is canonical.
-  // Fall back to ACTIVE-PROJECT.md ONLY when the API itself is unreachable
-  // (migration setups, gateway boot before FlowBoard server is up). An
-  // authoritative `project: null` from the API means "no project active"
-  // and must NOT trigger the file fallback — otherwise the (stale) legacy
-  // file wins and BOOTSTRAP.md ends up with a project that was deactivated
-  // hours or days ago.
-  const apiResult = await resolveActiveProjectFromApi(agentId);
-  let projectName = null;
-
-  if (apiResult.ok) {
-    projectName = apiResult.project;
-    console.log(`[project-context] Active project from DB (agent: ${agentId}): ${projectName || 'none'}`);
-  } else {
-    console.warn(`[project-context] FlowBoard API unreachable (${apiResult.reason}) — reading ACTIVE-PROJECT.md as fallback`);
-    const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
-    if (existsSync(activeProjectPath)) {
-      try {
-        const content = readFileSync(activeProjectPath, "utf8");
-        const match = content.match(/^project:\s*(.+)$/m);
-        const name = match?.[1]?.trim();
-        projectName = (name && name !== "none") ? name : null;
-        if (projectName) console.log(`[project-context] Active project from file (fallback): ${projectName}`);
-      } catch { /* no file — treat as no active project */ }
-    }
-  }
-
-  const bootstrapPath = join(workspaceDir, "BOOTSTRAP.md");
+async function buildBootstrapContent(workspaceDir, agentId) {
   const identitySection = buildIdentitySection(agentId);
 
-  if (!projectName) {
-    // No active project — write only the Identity section so the agent
-    // can still act on /api/status PUTs (project activation) with the
-    // correct agentId. Previous behaviour cleared the file entirely,
-    // which left no identity hint until a project was activated.
-    try { writeFileSync(bootstrapPath, identitySection); } catch {}
-    return { ok: true, projectName: null, bootstrapUpdated: true, agentId };
+  // Resolve active project: DB canonical via API, file fallback only on network failure
+  const apiResult = await resolveActiveProjectFromApi(agentId);
+  let projectName = null;
+  if (apiResult.ok) {
+    projectName = apiResult.project;
+  } else {
+    projectName = resolveActiveProjectFromFile(workspaceDir);
   }
 
-  // Lazy-load: BOOTSTRAP.md carries only the rules manifest. Detailed sections are
-  // fetched on demand via GET /api/projects/:name/rules/:section.
+  if (!projectName) {
+    // No active project — agent still needs Identity to be able to PUT
+    // /api/status (project activation) with the correct agentId.
+    return identitySection;
+  }
+
   const rulesManifest = buildRulesManifest();
   const projectRoot = existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : join(workspaceDir, "projects");
 
-  // Read PROJECT.md (post-m005: session log lives in SESSIONS.md, not bootstrapped)
   const projectMdPath = join(projectRoot, projectName, "PROJECT.md");
   let projectContent = "";
   if (existsSync(projectMdPath)) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
   }
 
-  // Identity goes between the active-project header and the rules manifest
-  // so the agent reads it before any other project context.
   const sections = [
     `# Active Project: ${projectName}\n`,
     `${identitySection}`,
@@ -289,42 +208,50 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentIdHint) {
   ];
   if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
-  // Add task status summary (fetched from FlowBoard API / HZL backend)
   const taskSummary = await getTaskStatusSummary(projectName);
-  if (taskSummary) {
-    sections.push(`## Current Task Status\n\n${taskSummary}\n`);
-  }
+  if (taskSummary) sections.push(`## Current Task Status\n\n${taskSummary}\n`);
 
-  try {
-    writeFileSync(bootstrapPath, sections.join("\n"));
-    console.log(`[project-context] Updated BOOTSTRAP.md for project: ${projectName}`);
-    return { ok: true, projectName, bootstrapUpdated: true };
-  } catch (err) {
-    console.error(`[project-context] Failed to write BOOTSTRAP.md:`, err.message);
-    return { ok: false, projectName, bootstrapUpdated: false, error: err.message };
-  }
+  return sections.join("\n");
 }
 
 const handler = async (event) => {
-  const agentId = resolveAgentId(event);
+  // Only react to agent:bootstrap. Replaces the four legacy subscriptions
+  // (command:new, command:reset, gateway:startup, session:compact:after) —
+  // agent:bootstrap fires before every agent run, so it covers all session
+  // boundaries including daily reset, idle expiry, and project-activate via
+  // PUT /api/status (which is implicitly observed on the next run).
+  if (event.type !== "agent" || event.action !== "bootstrap") return;
 
-  // Trigger on /new, /reset, gateway startup, and after compaction
-  if (event.type === "command" && (event.action === "new" || event.action === "reset")) {
-    const workspaceDir = resolveWorkspace(event);
-    await updateBootstrapWithProjectContext(workspaceDir, agentId);
+  const context = event.context;
+  if (!context || !Array.isArray(context.bootstrapFiles)) return;
+
+  const workspaceDir = context.workspaceDir;
+  const agentId = context.agentId || deriveAgentIdFromWorkspace(workspaceDir) || "main";
+
+  let content;
+  try {
+    content = await buildBootstrapContent(workspaceDir, agentId);
+  } catch (err) {
+    console.warn(`[project-context] build failed for ${agentId}: ${err?.message ?? err}`);
+    // Fail safe: do not strip the existing BOOTSTRAP.md; let whatever the
+    // workspace loader found stand.
+    return;
   }
 
-  if (event.type === "gateway" && event.action === "startup") {
-    await updateBootstrapWithProjectContext(resolveWorkspace(event), agentId);
-  }
+  if (!content) return;
 
-  // T-121: Regenerate project context after compaction so rules survive LCM
-  if (event.type === "session" && event.action === "compact:after") {
-    const workspaceDir = resolveWorkspace(event);
-    if (workspaceDir) {
-      console.log("[project-context] Regenerating BOOTSTRAP.md after compaction");
-      await updateBootstrapWithProjectContext(workspaceDir, agentId);
-    }
+  const newEntry = {
+    name: BOOTSTRAP_FILENAME,
+    path: workspaceDir ? join(workspaceDir, BOOTSTRAP_FILENAME) : BOOTSTRAP_FILENAME,
+    content,
+    missing: false,
+  };
+
+  const idx = context.bootstrapFiles.findIndex(f => f && f.name === BOOTSTRAP_FILENAME);
+  if (idx >= 0) {
+    context.bootstrapFiles[idx] = newEntry;
+  } else {
+    context.bootstrapFiles.push(newEntry);
   }
 };
 

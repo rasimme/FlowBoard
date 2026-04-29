@@ -1,28 +1,73 @@
 ---
 name: project-context
-description: "Regenerates BOOTSTRAP.md with the active project context + rules manifest"
-metadata: { "openclaw": { "emoji": "📋", "events": ["command:new", "command:reset", "gateway:startup", "session:compact:after"], "requires": { "config": ["workspace.dir"] } } }
+description: "Live-injects the active-project bootstrap (Identity + rules manifest + PROJECT.md) into bootstrapFiles on every agent run"
+metadata: { "openclaw": { "emoji": "📋", "events": ["agent:bootstrap"], "requires": { "config": ["workspace.dir"] } } }
 ---
 
 # Project Context Hook
 
-Regenerates `BOOTSTRAP.md` when a session starts, compacts, or recovers —
-the single entry point the agent reads at session start.
+Replaces the `BOOTSTRAP.md` entry in OpenClaw's bootstrap-files array
+with a freshly built document on every agent run. The single source of
+truth is the FlowBoard DB (`flowboard_agents.active_project`), read via
+the local API.
 
 ## What It Does
 
-1. Listens to `command:new`, `command:reset`, `gateway:startup`, `session:compact:after`
-2. Resolves active project from FlowBoard API (`flowboard_agents` DB); file fallback during migration
-3. Writes `BOOTSTRAP.md` with the active project name, the rules manifest
-   (lazy-load index — see `dashboard/rules-api.js`), and the per-project
-   `PROJECT.md`
-4. Agent fetches individual rule sections on demand via
+1. Listens to `agent:bootstrap` (fires before every agent run; covers
+   all session boundaries including `/new`, `/reset`, gateway startup,
+   compaction-after, daily reset, idle expiry, and project activation
+   via `PUT /api/status`).
+2. Derives the canonical `agentId` from the workspace directory name
+   (`workspace-<id>` → `<id>`, plain `workspace` → `main`).
+3. Resolves the active project from the FlowBoard API (`GET /api/status`).
+   Falls back to the legacy `ACTIVE-PROJECT.md` file only when the API
+   is unreachable (gateway boot before FlowBoard server is up,
+   migration setups). An authoritative `null` from the API means "no
+   project active" and does not trigger the file fallback.
+4. Builds the bootstrap document in memory:
+   - `# Active Project: <name>` header
+   - `## Identity` section with the agent's canonical id
+   - Rules manifest (lazy-load index — see `dashboard/rules-api.js`)
+   - Embedded `PROJECT.md` from `~/.openclaw/projects/<name>/`
+   - Current task status summary (in-progress, review, blocked, counts)
+5. Replaces the `BOOTSTRAP.md` entry in `event.context.bootstrapFiles`
+   with the freshly built content. If no entry exists, appends one.
+6. Agent fetches individual rule sections on demand via
    `GET /api/projects/:name/rules/:section` — rule bodies live in
-   `docs/project-mode/*.md`; the pre-migration monolith is archived at
-   `docs/project-mode/legacy/PROJECT-RULES.md`
+   `docs/project-mode/*.md`.
 
-## Why
+## Why agent:bootstrap (and not command:new / command:reset)
 
-Without this hook, project context loading depends on an AGENTS.md MANDATORY instruction
-which can be overridden by system prompt conflicts (e.g., `/new` greeting instructions).
-This hook guarantees the bootstrap is current at every session entry.
+Earlier versions of this hook subscribed to `command:new`,
+`command:reset`, `gateway:startup`, and `session:compact:after`, and
+wrote `BOOTSTRAP.md` to disk. That covered explicit session boundaries
+but missed:
+
+- **Daily reset** (default 4:00 local) — creates a new `sessionId`
+  without firing `command:new`.
+- **Idle expiry** — same, on the next message after the idle window.
+- **Project activation via `PUT /api/status`** — pure DB write, no
+  command event.
+
+`agent:bootstrap` fires once before every agent run and exposes
+`event.context.bootstrapFiles` as a mutable array — exactly the pattern
+the bundled `bootstrap-extra-files` hook uses to inject extra files.
+Live-injecting from the canonical DB on every run guarantees the
+bootstrap matches the current state, removes the file-write hot path,
+and eliminates the cache↔projection drift class of bugs.
+
+## Failure Modes
+
+- **API unreachable**: falls back to `ACTIVE-PROJECT.md` (legacy
+  per-workspace file) for the project name; rules manifest still served
+  (inline fallback if `rules-api.js` cannot be required).
+- **No active project**: writes only the Identity section so the agent
+  can still call `PUT /api/status` with the correct `agentId`.
+- **Build error**: leaves `bootstrapFiles` untouched (whatever the
+  workspace loader found stands), logs a warning. Never throws.
+
+## References
+
+- Spec: `specs/T-168-hook-lifecycle-coverage.md` (T-168-3)
+- Bundled reference pattern: `src/hooks/bundled/bootstrap-extra-files/handler.ts`
+- Type: `WorkspaceBootstrapFile` in `src/agents/workspace.ts`
