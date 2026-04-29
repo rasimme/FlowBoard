@@ -452,6 +452,10 @@ function listTasks(project, opts = {}) {
     if (!opts.includeArchived && task.status === 'archived') continue;
     tasks.push(_publicTask(task));
   }
+  // Derive subtaskIds on read so push-update races (parent missing the
+  // forward pointer after a subtask insert) cannot hide children. Full
+  // cache abolition tracked in T-176.
+  _populateSubtaskIds(tasks);
   return tasks;
 }
 
@@ -1500,7 +1504,7 @@ function renderStatusEventMessage(type, data) {
  * Returns combined list with reason field.
  */
 function getStuckTasks(opts = {}) {
-  const { staleThreshold = 10 } = opts; // minutes
+  const staleThreshold = opts.staleThreshold !== undefined ? opts.staleThreshold : 10; // minutes
   const now = Date.now();
   const stuck = [];
 
