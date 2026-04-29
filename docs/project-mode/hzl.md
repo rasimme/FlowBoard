@@ -38,7 +38,7 @@ FlowBoard layers two metadata tables on top of HZL:
 | `flowboard_projects` | Canonical project registry (name, display_name, status, assigned_agents, config) |
 | `flowboard_agents`   | Per-agent active-project state (`agent_id`, `active_project`, `activated_at`) |
 
-The `flowboard_agents` table is what makes per-agent project activation work. Two agents activating different projects simultaneously each get their own row, their own `BOOTSTRAP.md` regeneration target, and their own project context — without collision on a shared file.
+The `flowboard_agents` table is what makes per-agent project activation work. Two agents activating different projects simultaneously each get their own row and their own per-run live-injected `BOOTSTRAP.md` content (the `project-context` hook keys off `agentId` derived from the workspace directory) — without collision on a shared file.
 
 ## What does NOT live in HZL
 

@@ -1,8 +1,12 @@
 ## Projects (MANDATORY)
 
-FlowBoard delivers project context automatically as `BOOTSTRAP.md` in the
-workspace. The `project-context` hook regenerates it on session start
-(`/new`, `/reset`), gateway startup, and after session compaction.
+FlowBoard delivers project context automatically as `BOOTSTRAP.md` in
+your run context. The `project-context` hook injects it via the
+OpenClaw `agent:bootstrap` event before every agent run, so it covers
+all session boundaries — `/new`, `/reset`, gateway startup, compaction,
+daily reset, idle expiry, and project activation via `PUT /api/status`.
+The DB (`flowboard_agents`) is the canonical source; the on-disk
+`BOOTSTRAP.md` file is not authoritative and may lag.
 
 ### At session start
 1. Read `BOOTSTRAP.md` — that is your project context.
@@ -59,9 +63,10 @@ API call's `agent` / `agentId` field. Never substitute a placeholder or
 guess a default like `"main"` — that silently routes your work into
 another agent's row in `flowboard_agents` and breaks attribution.
 
-If the Identity section is missing (BOOTSTRAP.md hasn't been regenerated
-yet), ask the user to confirm your identity before any project / task
-mutation, or wait for the next `/new` / `/reset` to refresh the file.
+If the Identity section is missing (the `agent:bootstrap` hook didn't
+run, e.g. FlowBoard server unreachable at run start), ask the user to
+confirm your identity before any project / task mutation. The next
+agent run will normally refresh it from the DB.
 
 Each agent has its own active-project row; activating a project for one
 agent does not affect others.
