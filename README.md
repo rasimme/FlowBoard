@@ -85,28 +85,46 @@ cd FlowBoard/dashboard
 npm install
 ```
 
-### 2. Install hooks
+### 2. Register the hook with OpenClaw
 
-Recommended: use the install script, which symlinks the hooks to your repo
-checkout so `git pull` propagates changes automatically.
+FlowBoard ships as an OpenClaw hook pack (declared via `package.json` →
+`openclaw.hooks`). Register it through OpenClaw's plugin lifecycle so the
+gateway loads `project-context` on startup, `/new`, `/reset`, and after
+compaction:
 
 ```bash
-scripts/install-hooks.sh
+openclaw plugins install ~/repos/FlowBoard --link
+openclaw config set hooks.internal.load.extraDirs '["~/repos/FlowBoard/hooks"]' --merge
 openclaw gateway restart
 ```
 
-If you don't have the repo checked out on this machine (or want the hooks
-to be self-contained), copy instead:
+`--link` keeps the hook pointing at this checkout, so `git pull` propagates
+hook changes without a re-install. The second command (`extraDirs`) is
+currently required because OpenClaw's runtime hook discovery doesn't yet
+read the `--link` install record directly — once the upstream gap is
+closed, this step becomes optional.
+
+Verify the hook is registered:
 
 ```bash
-scripts/install-hooks.sh --copy
-# or manually:
-cp -r FlowBoard/hooks/project-context ~/.openclaw/hooks/
-openclaw gateway restart
+openclaw hooks info project-context
+# Expect: ✓ Ready, source openclaw-managed, all four events listed
 ```
 
-Re-running the script is safe: symlinks are refreshed in place; existing
-non-symlink directories get a `.bak-<timestamp>` backup before replacement.
+#### Upgrading from earlier FlowBoard versions
+
+Versions before this change shipped a `scripts/install-hooks.sh` script
+that symlinked or copied the hook into `~/.openclaw/hooks/project-context/`.
+The new install path replaces that — remove the legacy hook directory once
+before running the commands above:
+
+```bash
+rm -rf ~/.openclaw/hooks/project-context
+```
+
+If you previously edited `~/.openclaw/openclaw.json` to register the hook
+manually, no extra cleanup is needed — `openclaw config set --merge` keeps
+existing entries intact.
 
 ### 3. Start the dashboard
 
