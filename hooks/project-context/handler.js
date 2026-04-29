@@ -128,17 +128,28 @@ function resolveAgentId(event) {
 
 /**
  * T-131-3: Query FlowBoard API for the active project of the given agent.
- * Returns project name string or null. Fails soft if server is unreachable.
+ *
+ * Returns a discriminated result so the caller can distinguish:
+ *   { ok: true, project: string|null }  — API answered authoritatively;
+ *                                         null means "no project active"
+ *   { ok: false, reason: string }       — API unreachable / non-2xx; only
+ *                                         in this case may the caller fall
+ *                                         back to a file-based source
+ *
+ * Without this distinction, an authoritative `activeProject: null` from
+ * the DB used to be indistinguishable from a network failure, which made
+ * the legacy ACTIVE-PROJECT.md fallback win even when the DB had been
+ * updated to "no project active" — producing stale BOOTSTRAP.md content.
  */
 async function resolveActiveProjectFromApi(agentId) {
   try {
     const url = `http://localhost:${FLOWBOARD_PORT}/api/status?agentId=${encodeURIComponent(agentId)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return null;
+    if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
     const data = await res.json();
-    return data.activeProject || null;
-  } catch {
-    return null;
+    return { ok: true, project: data.activeProject || null };
+  } catch (err) {
+    return { ok: false, reason: err?.message || 'fetch failed' };
   }
 }
 
@@ -218,13 +229,21 @@ async function updateBootstrapWithProjectContext(workspaceDir, agentIdHint) {
   // the hint can be stale or empty in some hook contexts.
   const agentId = deriveAgentIdFromWorkspace(workspaceDir) || agentIdHint || 'main';
 
-  // T-131-3: resolve active project from DB (via API) first; file is migration fallback
-  let projectName = await resolveActiveProjectFromApi(agentId);
+  // T-131-3: resolve active project from DB (via API) — the DB is canonical.
+  // Fall back to ACTIVE-PROJECT.md ONLY when the API itself is unreachable
+  // (migration setups, gateway boot before FlowBoard server is up). An
+  // authoritative `project: null` from the API means "no project active"
+  // and must NOT trigger the file fallback — otherwise the (stale) legacy
+  // file wins and BOOTSTRAP.md ends up with a project that was deactivated
+  // hours or days ago.
+  const apiResult = await resolveActiveProjectFromApi(agentId);
+  let projectName = null;
 
-  if (projectName !== null) {
+  if (apiResult.ok) {
+    projectName = apiResult.project;
     console.log(`[project-context] Active project from DB (agent: ${agentId}): ${projectName || 'none'}`);
   } else {
-    // File-based fallback: used during migration or when server is not yet running
+    console.warn(`[project-context] FlowBoard API unreachable (${apiResult.reason}) — reading ACTIVE-PROJECT.md as fallback`);
     const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
     if (existsSync(activeProjectPath)) {
       try {
