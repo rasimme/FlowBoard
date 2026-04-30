@@ -1,5 +1,27 @@
 # Changelog
 
+### Unreleased — Per-Agent API Hardening (T-177)
+
+**Breaking change for installs that set `OPENCLAW_AGENT_ID` on the dashboard service.**
+
+- **`/api/status` now requires explicit `agentId`** (T-177-2). GET via `?agentId=<id>` query parameter or `x-openclaw-agent-id` header. PUT in request body. Returns `400` without it. Previously, missing-agentId calls silently routed into the service-default agent (whatever `OPENCLAW_AGENT_ID` env var pointed at, or `"main"`), which produced wrong attribution — observed bug: `main` agent reported "Projekt flowboard war aktiv" because it queried `/api/status` without a query parameter and got `dev-botti`'s state.
+- **`AGENT_ID` server-default removed** (T-177-3). The dashboard service has no own agent identity. Outbound paths (task-complete notifications, promote webhooks, stale-check broadcasts) route based on the agent that triggered the action, not a static service default.
+- **`GET /api/projects` no longer returns `activeProject`** (T-177-3). Multi-agent active state lives on per-agent rows; read `/api/agents` (list with `active_project` per agent) or `/api/status?agentId=<id>` for one. The React UI already used `/api/agents` as the source of truth (Sidebar).
+- **External agents are first-class** (T-177-3). Non-OpenClaw runtimes (Codex, Cursor, Claude Code, scripts) can now claim tasks and activate projects under their own agent-id. The `flowboard_agents` row is lazily registered on first `PUT /api/status`. Discovery snippet for project repos lands separately (T-179).
+
+**Migration for existing installs:**
+
+If your dashboard's systemd unit has `Environment=OPENCLAW_AGENT_ID=<something>`, **remove that line** — it was an anti-pattern (bot-specific runtime identity bound to a service). The dashboard now requires no env-defined identity. After the edit:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart flowboard-dashboard
+```
+
+If your custom bots/scripts call `/api/status` or `PUT /api/status` without `agentId`, they will now get `400`. Update them to pass `agentId` (recommended) or use `?agentId=<id>` / `x-openclaw-agent-id` header. The bundled snippet (`snippets/AGENTS-trigger.md`) reflects the new contract — re-install with `flowboard plugins install --link` or via the doctor.
+
+The bundled `templates/dashboard.service` was already correct (no `OPENCLAW_AGENT_ID`); only fresh installs that copied it manually after editing need attention.
+
 ### v4.0.0 (2026-03-05) — Agent-Native Workflows + Idea Canvas
 - **Idea Canvas (sticky notes + connections + clusters)** — Visual ideation space with auto-framing for connected notes
 - **Canvas → Task Promote (Agent-Assisted)** — Select a note or cluster → send structured payload → agent creates tasks/specs/subtasks and cleans up notes
