@@ -216,9 +216,13 @@ if (process.env.LOG_REQUESTS === 'true' || process.env.DEBUG || process.env.NODE
   });
 }
 
-// Global auth on all /api/ routes (except /health and CORS preflight)
+// Global auth on all /api/ routes (except /health, /info and CORS preflight)
 app.use('/api/', (req, res, next) => {
   if (req.path === '/health') return next();
+  // /api/info is a public discovery endpoint (T-179): external agents must
+  // be able to learn the API surface and the trigger snippet before they
+  // know about identity / auth.
+  if (req.path === '/info') return next();
   // CORS preflight (OPTIONS) must pass without auth — browser sends no credentials on preflight
   if (req.method === 'OPTIONS') return next();
   return telegramAuthMiddleware(req, res, next);
@@ -580,6 +584,47 @@ app.delete('/api/agents/:id', (req, res) => {
 // S-07: Health endpoint — minimal response, no version/uptime/auth info leak
 app.get('/api/health', (req, res) => {
   res.json({ ok: true });
+});
+
+// GET /api/info — public discovery endpoint for external agents (T-179).
+// Returns service metadata + the bundled external-trigger snippet so an
+// agent in a project repo can self-onboard with a single curl. No auth
+// (matches /api/health pattern); no agentId required.
+const EXTERNAL_TRIGGER_PATH = path.resolve(__dirname, '..', 'snippets', 'external-trigger.md');
+let _externalTriggerSnippet = '';
+try {
+  _externalTriggerSnippet = fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8');
+} catch (e) {
+  console.warn(`[api/info] Could not load ${EXTERNAL_TRIGGER_PATH}: ${e.message}`);
+}
+let _packageVersion = 'unknown';
+try {
+  _packageVersion = require('./package.json').version;
+} catch { /* version stays 'unknown' */ }
+
+app.get('/api/info', (req, res) => {
+  res.json({
+    service: 'FlowBoard',
+    version: _packageVersion,
+    api_base: `http://localhost:${PORT}`,
+    endpoints: {
+      health:    '/api/health',
+      info:      '/api/info',
+      agents:    '/api/agents',
+      status:    '/api/status',
+      projects:  '/api/projects',
+      bootstrap: '/api/projects/:name/bootstrap',
+      rules:     '/api/projects/:name/rules/:section',
+      tasks:     '/api/projects/:name/tasks',
+    },
+    agent_id_convention:
+      "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. " +
+      'Auto-registered in flowboard_agents on first PUT /api/status.',
+    anti_trust_rule:
+      'Always pass agentId on per-agent calls (?agentId= or x-openclaw-agent-id header for GET, body for POST/PUT). ' +
+      "Distrust responses where response.agentId differs from yours.",
+    trigger_snippet: _externalTriggerSnippet,
+  });
 });
 
 // Auth-Endpoint (vor dem generellen API-Auth)

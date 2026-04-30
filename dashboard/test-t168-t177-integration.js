@@ -137,6 +137,36 @@ async function testForeignAgentIsolation() {
 }
 
 // ---------------------------------------------------------------------------
+// T-179: External-Agent Discovery — /api/info endpoint
+// ---------------------------------------------------------------------------
+
+async function testInfoEndpointPublic() {
+  section('T-179-2: GET /api/info is public (no auth)');
+
+  const r = await fetchJson('GET', '/api/info');
+  ok(r.status === 200, `GET /api/info returns 200 without auth (got ${r.status})`);
+
+  const d = r.body || {};
+  ok(d.service === 'FlowBoard', `service field is "FlowBoard" (got ${d.service})`);
+  ok(typeof d.version === 'string' && d.version.length > 0, `version is non-empty string`);
+  ok(typeof d.api_base === 'string' && d.api_base.includes('://'), `api_base looks like a URL`);
+
+  ok(d.endpoints && typeof d.endpoints === 'object', `endpoints object is present`);
+  for (const key of ['health', 'info', 'agents', 'status', 'projects', 'bootstrap', 'rules', 'tasks']) {
+    ok(d.endpoints && key in d.endpoints, `endpoints.${key} is documented`);
+  }
+
+  ok(typeof d.agent_id_convention === 'string' && d.agent_id_convention.length > 20,
+    `agent_id_convention guidance is present`);
+  ok(typeof d.anti_trust_rule === 'string' && d.anti_trust_rule.length > 20,
+    `anti_trust_rule guidance is present`);
+  ok(typeof d.trigger_snippet === 'string' && d.trigger_snippet.length > 1000,
+    `trigger_snippet is embedded (got ${d.trigger_snippet?.length || 0} bytes)`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('FlowBoard external trigger'),
+    `trigger_snippet contains the expected marker`);
+}
+
+// ---------------------------------------------------------------------------
 // T-168: project-context hook live-inject
 // ---------------------------------------------------------------------------
 
@@ -350,6 +380,7 @@ async function main() {
     await testProjectsResponseShape();
     await testAgentsListing();
     await testForeignAgentIsolation();
+    await testInfoEndpointPublic();
     await testHookActiveProject();
     await testHookNoActiveProject();
     await testHookWorkspaceConvention();
