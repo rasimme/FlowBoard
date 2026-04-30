@@ -364,6 +364,18 @@ function listAgents() {
   return _db.prepare('SELECT agent_id, active_project, activated_at FROM flowboard_agents ORDER BY agent_id').all();
 }
 
+/**
+ * Delete an agent row from flowboard_agents. Idempotent — returns the
+ * number of rows actually deleted (0 or 1). Historical task attribution
+ * (`agent="<id>"` on tasks/comments/checkpoints) is unaffected: agentId
+ * is a string field, not a foreign key. T-180.
+ */
+function deleteAgentRow(agentId) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const result = _db.prepare('DELETE FROM flowboard_agents WHERE agent_id = ?').run(agentId);
+  return result.changes;
+}
+
 module.exports = {
   init,
   countProjects,
@@ -379,6 +391,7 @@ module.exports = {
   getAgentActiveProject,
   setAgentActiveProject,
   backfillAgentFromFile,
+  deleteAgentRow,
   listAgents,
   resolveProjectName,
 };

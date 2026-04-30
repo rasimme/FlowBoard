@@ -527,6 +527,56 @@ app.get('/api/agents', (req, res) => {
   }
 });
 
+// DELETE /api/agents/:id — remove an agent row from flowboard_agents.
+//
+// Conflict-checked against active task claims by default; pass ?force=true
+// to release any active claims (status of the tasks is preserved, only the
+// lease/claim is dropped) and then delete the row. Historical attribution
+// on tasks/comments/checkpoints (`agent="<id>"` fields) is unaffected:
+// agentId is a string, not a foreign key. T-180.
+app.delete('/api/agents/:id', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  const agentId = req.params.id;
+  const force = req.query.force === 'true';
+  try {
+    const row = fbMeta.getAgentRow(agentId);
+    if (!row) return res.status(404).json({ error: 'Agent not found' });
+
+    const activeClaims = hzlService.listTasksClaimedBy(agentId);
+    if (activeClaims.length > 0 && !force) {
+      return res.status(409).json({
+        error: `Agent has ${activeClaims.length} active claim(s)`,
+        claimCount: activeClaims.length,
+        claims: activeClaims.map(t => ({ project: t.project, id: t.id, title: t.title })),
+        hint: 'Pass ?force=true to release claims and delete, or release them manually first',
+      });
+    }
+
+    let releasedCount = 0;
+    if (force && activeClaims.length > 0) {
+      for (const t of activeClaims) {
+        try {
+          hzlService.releaseTask(t.project, t.id, { agent: agentId, force: true });
+          releasedCount++;
+        } catch (e) {
+          console.warn(`[delete-agent] force-release failed for ${t.project}/${t.id}:`, e.message);
+        }
+      }
+    }
+
+    const removed = fbMeta.deleteAgentRow(agentId);
+    res.json({
+      ok: true,
+      agent_id: agentId,
+      deleted: removed > 0,
+      releasedClaims: releasedCount,
+    });
+  } catch (err) {
+    console.error('[api delete-agent]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // S-07: Health endpoint — minimal response, no version/uptime/auth info leak
 app.get('/api/health', (req, res) => {
   res.json({ ok: true });

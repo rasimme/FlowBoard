@@ -1662,6 +1662,32 @@ function listHzlProjects() {
   return _projectService.listProjects();
 }
 
+/**
+ * List all tasks actively claimed by a given agent across all projects.
+ * "Actively claimed" = task.agent === agentId AND task.claimedAt is set
+ * AND task is not archived. Status is irrelevant (in-progress/review/etc.
+ * all valid as long as claim is active). Used by DELETE /api/agents/:id
+ * to gate agent removal on outstanding work. T-180.
+ */
+function listTasksClaimedBy(agentId) {
+  const out = [];
+  if (!agentId) return out;
+  for (const [, task] of _cache) {
+    if (task.agent !== agentId) continue;
+    if (!task.claimedAt) continue;
+    if (task.status === 'archived') continue;
+    out.push({
+      project: task._project,
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      claimedAt: task.claimedAt,
+      leaseUntil: task.leaseUntil,
+    });
+  }
+  return out;
+}
+
 module.exports = {
   init,
   rebuildCache,
@@ -1695,4 +1721,5 @@ module.exports = {
   drainHooks,
   getCacheDb,
   listHzlProjects,
+  listTasksClaimedBy,
 };
