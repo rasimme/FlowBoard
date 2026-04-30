@@ -315,14 +315,17 @@ async function testHookHandlesMissingBootstrapFiles() {
 // ---------------------------------------------------------------------------
 
 async function cleanup() {
-  section('Cleanup');
-  // Reset TEST_AGENT.active_project to null (row stays in flowboard_agents
-  // for visibility, but it's "no active project")
-  const r = await fetchJson('PUT', '/api/status', {
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ project: null, agentId: TEST_AGENT }),
-  });
-  ok(r.status === 200, `Reset ${TEST_AGENT}.active_project to null`);
+  section('Cleanup (zero-footprint via T-180 DELETE)');
+  // Drop TEST_AGENT entirely from flowboard_agents — keeps the test suite
+  // zero-footprint instead of leaving an inert row behind.
+  const r = await fetchJson('DELETE', `/api/agents/${TEST_AGENT}`);
+  ok(r.status === 200 && r.body?.deleted === true,
+    `DELETE /api/agents/${TEST_AGENT} → deleted: true`);
+
+  // Verify the row really is gone
+  const list = await fetchJson('GET', '/api/agents');
+  const stillThere = (list.body?.agents || []).some(a => a.agent_id === TEST_AGENT);
+  ok(!stillThere, `${TEST_AGENT} no longer present in /api/agents`);
 }
 
 // ---------------------------------------------------------------------------
