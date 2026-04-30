@@ -420,8 +420,19 @@ async function sendWakeEvent(text) {
 // --- Routes ---
 
 // GET /api/status
+//
+// Requires an explicit agentId — either as ?agentId=<id> query parameter or
+// as `x-openclaw-agent-id` header (consistent with /api/projects/:name/rules
+// telemetry). No silent fallback to a service-default agent (which routes
+// the caller's status request into a foreign agent's state — see T-177
+// trace from 2026-04-29).
 app.get('/api/status', (req, res) => {
-  const agentId = req.query.agentId || AGENT_ID;
+  const agentId = req.query.agentId || req.headers['x-openclaw-agent-id'];
+  if (!agentId) {
+    return res.status(400).json({
+      error: 'agentId is required (?agentId=<id> query parameter or x-openclaw-agent-id header)',
+    });
+  }
   let activeProject;
   if (HZL_ENABLED) {
     // T-131-3: DB is canonical. File fallback exists only for the local runtime agent
@@ -441,9 +452,16 @@ app.get('/api/status', (req, res) => {
 });
 
 // PUT /api/status
+//
+// Requires an explicit agentId in the request body. No silent fallback to a
+// service-default agent — that would route the activation into the wrong
+// flowboard_agents row (see T-177 trace from 2026-04-29).
 app.put('/api/status', async (req, res) => {
   const { project, agentId: bodyAgentId } = req.body;
-  const agentId = bodyAgentId || AGENT_ID;
+  if (!bodyAgentId) {
+    return res.status(400).json({ error: 'agentId is required in request body' });
+  }
+  const agentId = bodyAgentId;
   let effectiveProject = (project && project !== 'none') ? project : null;
 
   // Resolve to canonical project name. Clients sometimes send displayName

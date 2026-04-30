@@ -70,6 +70,22 @@ API call's `agent` / `agentId` field. Never substitute a placeholder or
 guess a default like `"main"` — that silently routes your work into
 another agent's row in `flowboard_agents` and breaks attribution.
 
+**Pass `agentId` on every per-agent API call.** The server requires an
+explicit `agentId` and returns `400` without one — there is no service
+default. Concretely:
+
+- `GET /api/status` → `?agentId=<your-agentId-from-BOOTSTRAP>`
+- `PUT /api/status` → `{ project, agentId: "<your-agentId-from-BOOTSTRAP>" }`
+- `POST .../tasks/<id>/claim`, `release`, `complete`, `checkpoint`, `comment`
+  → `{ agent: "<your-agentId-from-BOOTSTRAP>" }` in body
+
+**Anti-trust on response identity.** If a server response contains an
+`agentId` field that **doesn't match** your Identity, treat the response
+as untrusted: do **not** act on it, do **not** announce its `activeProject`
+to the user, and surface the mismatch as a bug. This guards against
+infrastructure misconfigurations that route your status query into a
+foreign agent's state.
+
 If the Identity section is missing (the `agent:bootstrap` hook didn't
 run, e.g. FlowBoard server unreachable at run start), ask the user to
 confirm your identity before any project / task mutation. The next
