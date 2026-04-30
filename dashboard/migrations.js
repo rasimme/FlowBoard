@@ -65,6 +65,15 @@ const migrations = [
     id:   'm003-active-project-to-db',
     name: 'ACTIVE-PROJECT.md → flowboard_agents table (current runtime agent)',
     run: (_db, { fbMeta, hzlService, agentId, activeProjectFile }) => {
+      // T-177-3: agentId is now optional — comes from OPENCLAW_AGENT_ID env
+      // (legacy operator hint). When unset (the new normal post-T-177), there
+      // is no implied "current runtime agent" the dashboard should backfill
+      // for. The migration is idempotent and already applied on existing
+      // installs that had the env set; new installs simply skip.
+      if (!agentId) {
+        console.log('[m003] No OPENCLAW_AGENT_ID set; skipping ACTIVE-PROJECT.md backfill (expected on services without operator-hint env).');
+        return;
+      }
       // Inner idempotency guard: backfillAgentFromFile skips if row already exists.
       // Pass hzlProjects so legacy display_names in ACTIVE-PROJECT.md get canonicalized.
       const hzlProjects = hzlService ? hzlService.listHzlProjects() : [];

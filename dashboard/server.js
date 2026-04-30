@@ -27,7 +27,11 @@ const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
 const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
 const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
 const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
-const AGENT_ID = process.env.OPENCLAW_AGENT_ID || 'main';
+// AGENT_ID was a service-default-identity that defaulted to OPENCLAW_AGENT_ID
+// or "main". It silently routed agent-less callers into a foreign agent's row
+// (T-177 trace 2026-04-29). Removed in favour of explicit agentId on every
+// per-agent call (T-177-2) and routing-by-action-context for outbound paths
+// (T-177-3 Option C). The dashboard service has no own identity.
 const specifySession = require('./specify-sessions');
 const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
@@ -435,16 +439,12 @@ app.get('/api/status', (req, res) => {
   }
   let activeProject;
   if (HZL_ENABLED) {
-    // T-131-3: DB is canonical. File fallback exists only for the local runtime agent
-    // during migration; foreign/unknown agents must not inherit local file state.
+    // T-131-3: DB is canonical. Unknown agents → null, no file fallback.
+    // (The pre-backfill `agentId === AGENT_ID` branch is removed in T-177-3 —
+    // there is no service-default agent anymore. The m003 migration handles
+    // file→DB backfill for the legacy ACTIVE-PROJECT.md case.)
     const row = fbMeta.getAgentRow(agentId);
-    if (row) {
-      activeProject = row.active_project || null;
-    } else if (agentId === AGENT_ID) {
-      activeProject = readActiveProject(); // LEGACY: pre-backfill bootstrap only.
-    } else {
-      activeProject = null;
-    }
+    activeProject = row?.active_project || null;
   } else {
     activeProject = readActiveProject(); // LEGACY: non-HZL fallback.
   }
@@ -457,11 +457,10 @@ app.get('/api/status', (req, res) => {
 // service-default agent — that would route the activation into the wrong
 // flowboard_agents row (see T-177 trace from 2026-04-29).
 app.put('/api/status', async (req, res) => {
-  const { project, agentId: bodyAgentId } = req.body;
-  if (!bodyAgentId) {
+  const { project, agentId } = req.body;
+  if (!agentId) {
     return res.status(400).json({ error: 'agentId is required in request body' });
   }
-  const agentId = bodyAgentId;
   let effectiveProject = (project && project !== 'none') ? project : null;
 
   // Resolve to canonical project name. Clients sometimes send displayName
@@ -555,7 +554,12 @@ function readActiveProject() {
   } catch { return null; }
 }
 
-function getCanonicalActiveProject(agentId = AGENT_ID) {
+// T-177-3: agentId is required; no default. Pass the explicit caller agent.
+// For per-project queries that don't have an agent context (e.g. legacy
+// dashboard-data sync), pass null and accept that "active project" is
+// undefined in that context.
+function getCanonicalActiveProject(agentId) {
+  if (!agentId) return null;
   if (HZL_ENABLED) {
     const row = fbMeta.getAgentRow(agentId);
     if (row) return row.active_project || null;
@@ -593,8 +597,11 @@ function writeTasksFile(projectName, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+// Legacy file-write for the pre-React vanilla dashboard. Today's React UI
+// reads from the API directly; the file is gitignored and unused by code
+// in this repo. Kept for now so old debugging scripts still work; the
+// `active` flag was multi-agent-meaningless and is removed (T-177-3).
 function syncDashboardData(projectName) {
-  const active = getCanonicalActiveProject();
   let tasks;
   if (HZL_ENABLED) {
     tasks = hzlService.listTasks(projectName);
@@ -602,11 +609,7 @@ function syncDashboardData(projectName) {
     const data = readTasksFile(projectName);
     tasks = data ? data.tasks : [];
   }
-  const out = {
-    project: projectName,
-    active: active === projectName,
-    tasks
-  };
+  const out = { project: projectName, tasks };
   fs.writeFileSync(DASHBOARD_DATA_FILE, JSON.stringify(out, null, 2));
 }
 
@@ -827,8 +830,13 @@ app.delete('/api/projects/:name', (req, res) => {
 });
 
 // GET /api/projects
+//
+// T-177-3: the legacy `activeProject` field (single-agent semantics) is
+// removed from the response. Multi-agent active-project state lives on
+// per-agent rows — read /api/agents (list with active_project per agent)
+// or /api/status?agentId=<id> for one. Frontend already uses /api/agents
+// (Sidebar.jsx:215-228) as the source of truth.
 app.get('/api/projects', (req, res) => {
-  const active = getCanonicalActiveProject();
   if (HZL_ENABLED) {
     try {
       const hzlProjects = hzlService.listHzlProjects();
@@ -836,14 +844,14 @@ app.get('/api/projects', (req, res) => {
         ...p,
         taskCounts: getTaskCounts(p.name),
       }));
-      return res.json({ activeProject: active, projects });
+      return res.json({ projects });
     } catch (e) {
       console.error('[projects] Failed to list DB-backed projects:', e.message);
       return res.status(500).json({ error: 'Failed to load projects from HZL/FlowBoard metadata' });
     }
   }
   const projects = parseIndexMd().map(p => ({ ...p, taskCounts: getTaskCounts(p.name) }));
-  res.json({ activeProject: active, projects });
+  res.json({ projects });
 });
 
 // GET /api/snippets/status — per-workspace snippet state
@@ -1881,6 +1889,10 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
   res.json({ ok: true, message: 'Idea sent to agent', sessionId: session.id });
 
   try {
+    // T-177-3: route promote-trigger to the agent that issued the promote
+    // request, if known. Caller (UI / scripted client) may pass agentId in
+    // the request body; if absent, gateway routes/broadcasts.
+    const triggerAgentId = req.body?.agentId;
     const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
       method: 'POST',
       headers: {
@@ -1890,10 +1902,8 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
       body: JSON.stringify({
         message,
         name: 'Canvas Specify',
-        agentId: process.env.OPENCLAW_AGENT_ID || undefined,
-        sessionKey: process.env.OPENCLAW_AGENT_ID
-          ? `agent:${process.env.OPENCLAW_AGENT_ID}:main`
-          : undefined,
+        agentId: triggerAgentId,
+        sessionKey: triggerAgentId ? `agent:${triggerAgentId}:main` : undefined,
         wakeMode: 'now',
       }),
     });
@@ -2137,7 +2147,11 @@ async function startServer() {
     // Init FlowBoard metadata tables (creates flowboard_projects, flowboard_agents, flowboard_migrations)
     fbMeta.init(hzlService.getCacheDb());
 
-    // Run all pending migrations via the registry
+    // Run all pending migrations via the registry. agentId is read directly
+    // from OPENCLAW_AGENT_ID env (legacy operator hint, only used by the
+    // one-time m003 backfill of ACTIVE-PROJECT.md → flowboard_agents). When
+    // unset (the new normal post-T-177-3), m003 logs and skips. The
+    // migration is idempotent and already applied on existing installs.
     const migrations = require('./migrations.js');
     migrations.runPending(hzlService.getCacheDb(), {
       hzlService,
@@ -2145,13 +2159,15 @@ async function startServer() {
       projectsDir:       PROJECTS_DIR,
       indexFile:         INDEX_FILE,
       getDisplayName,
-      agentId:           AGENT_ID,
+      agentId:           process.env.OPENCLAW_AGENT_ID || null,
       activeProjectFile: ACTIVE_PROJECT_FILE,
       openclawHome:      OPENCLAW_HOME,
       sharedProjectsDir: SHARED_PROJECTS_DIR,
     });
 
-    // Completion notification callback — sends to gateway when a task is completed
+    // Completion notification callback — sends to gateway when a task is completed.
+    // T-177-3: route to the agent that completed the task (from event payload),
+    // not to a static service-default agent.
     hzlService.setOnComplete(({ project, taskId, title, agent }) => {
       const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
       const token = process.env.HOOKS_TOKEN || '';
@@ -2161,8 +2177,8 @@ async function startServer() {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
           text: msg,
-          agentId: process.env.OPENCLAW_AGENT_ID || undefined,
-          sessionKey: process.env.OPENCLAW_AGENT_ID ? `agent:${process.env.OPENCLAW_AGENT_ID}:main` : undefined,
+          agentId: agent || undefined,
+          sessionKey: agent ? `agent:${agent}:main` : undefined,
         }),
       }).catch(e => console.warn('[notify] Gateway unreachable:', e.message));
     });
@@ -2186,6 +2202,10 @@ async function startServer() {
           for (const t of stuck.expired) parts.push(`🔴 Lease expired: ${t.id} "${t.title}" (${t.agent})`);
           const msg = `🔍 Stuck-Check:\n${parts.join('\n')}`;
 
+          // T-177-3: stale-check is a periodic broadcast — no caller agent
+          // context, so no agentId/sessionKey routing. Gateway handles default
+          // delivery. Per-agent grouping is a possible UX improvement (open
+          // follow-up), but routing to a single static agent is wrong.
           const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
           const token = process.env.HOOKS_TOKEN || '';
           fetch(`${gatewayUrl}/hooks/agent`, {
@@ -2193,8 +2213,6 @@ async function startServer() {
             headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
             body: JSON.stringify({
               text: msg,
-              agentId: process.env.OPENCLAW_AGENT_ID || undefined,
-              sessionKey: process.env.OPENCLAW_AGENT_ID ? `agent:${process.env.OPENCLAW_AGENT_ID}:main` : undefined,
             }),
           }).catch(e => console.warn('[stale-check] Gateway unreachable:', e.message));
         }
