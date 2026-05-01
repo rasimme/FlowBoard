@@ -11,13 +11,12 @@ import ScrollArea from './ScrollArea.jsx';
  * returns `chip: null` (setup complete, no legacy remaining). Otherwise shows
  * the chip whose text/variant is driven by server state:
  *   - "Migration required" (warn) when any legacy snippet (identical / drifted) exists
- *   - "Finish setup" (info) when no legacy and no current snippet on any agent
- *   - "Optional setup" (info) when some workspaces are current and others are missing
+ *   - "FlowBoard setup" (info) when existing AGENTS.md files can be onboarded
  *
  * The modal groups rows by state:
  *   - Upgrade  (identical) — batch safe, default-on checkboxes
  *   - Migration required (drifted) — per-file opt-in, force-replace
- *   - Add FlowBoard to workspace (missing) — per-file opt-in OR Dismiss
+ *   - Add FlowBoard to existing AGENTS.md (missing) — per-file opt-in
  *
  * On Apply: POST /api/snippets/apply with `{ actions: [{id, action}] }`.
  * Every mutation writes a server-side `.bak-<timestamp>` first.
@@ -180,15 +179,12 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   // Modal title & subtitle follow the chip variant
   const title = status.chip?.variant === 'warn'
     ? 'FlowBoard · Migration'
-    : status.chip?.text === 'Optional setup'
-      ? 'FlowBoard · Optional setup'
-      : 'FlowBoard · Setup';
+    : 'FlowBoard · Setup';
   const subtitle = [
     identicalFiles.length > 0 && `${identicalFiles.length} safe upgrade${identicalFiles.length !== 1 ? 's' : ''}`,
     driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,
     missingFiles.length > 0 && `${missingFiles.length} AGENTS.md file${missingFiles.length !== 1 ? 's' : ''} missing FlowBoard`,
   ].filter(Boolean).join(' · ');
-  const isOptionalSetup = status.chip?.text === 'Optional setup';
 
   return createPortal(
     <div
@@ -210,12 +206,12 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
         </div>
 
         <ScrollArea className="modal-body-wrap" innerClassName="modal-body-v2">
-          {isOptionalSetup && missingFiles.length > 0 && (
+          {missingFiles.length > 0 && (
             <div className="group setup-explainer">
               <div className="group-header">
                 <div className="group-header-text">
-                  <div className="group-title">AGENTS.md files without FlowBoard</div>
-                  <div className="group-sub">These files are not broken. They simply do not contain the FlowBoard project trigger yet. Select only the agents that should use FlowBoard project context.</div>
+                  <div className="group-title">Add FlowBoard to existing AGENTS.md</div>
+                  <div className="group-sub">These existing agent instruction files are not broken. They simply do not contain the FlowBoard project trigger yet. Select only the agents that should use FlowBoard project context.</div>
                 </div>
               </div>
             </div>
@@ -261,7 +257,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
           {missingFiles.length > 0 && (
             <GroupSection
-              title="AGENTS.md without FlowBoard"
+              title="Existing AGENTS.md without FlowBoard"
               sub={`${addCount} of ${missingFiles.length} selected · optional — check only agents that should use FlowBoard.`}
               icon={<Plus size={13} />}
               iconVariant="info"

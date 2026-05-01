@@ -459,20 +459,20 @@ section('collectStatus() — chip variants');
   try {
     fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
 
-    // (1) All missing → "Finish setup"
+    // (1) All missing → "FlowBoard setup"
     fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), '# plain\n');
     const s1 = doctor.collectStatus(dir);
-    assertEqual(s1.chip?.text, 'Finish setup', 'all missing → Finish setup');
-    assertEqual(s1.chip?.variant, 'info', 'Finish setup variant = info');
+    assertEqual(s1.chip?.text, 'FlowBoard setup', 'all missing → FlowBoard setup');
+    assertEqual(s1.chip?.variant, 'info', 'FlowBoard setup variant = info');
 
-    // (2) Current plus another missing workspace → optional setup
+    // (2) Current plus another missing workspace → FlowBoard setup
     const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
     fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), `# plain\n\n${currentAgents}\n`);
     fs.mkdirSync(path.join(dir, 'workspace-fresh'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'workspace-fresh', 'AGENTS.md'), '# fresh\n');
     const s2 = doctor.collectStatus(dir);
-    assertEqual(s2.chip?.text, 'Optional setup', 'current + missing → Optional setup');
-    assertEqual(s2.chip?.variant, 'info', 'Optional setup variant = info');
+    assertEqual(s2.chip?.text, 'FlowBoard setup', 'current + missing → FlowBoard setup');
+    assertEqual(s2.chip?.variant, 'info', 'FlowBoard setup variant = info');
 
     // (3) Current only → no chip
     fs.rmSync(path.join(dir, 'workspace-fresh'), { recursive: true, force: true });

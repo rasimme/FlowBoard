@@ -8,7 +8,7 @@
  * and exercises collectStatus + applyActions through every code path:
  *
  *   - state classification per workspace
- *   - chip variant derivation (Migration required / Finish setup / Optional setup / hidden)
+ *   - chip variant derivation (Migration required / FlowBoard setup / hidden)
  *   - upgrade  action on identical → new block, backup written, content right
  *   - migrate  action on drifted   → structural replace, backup, content right
  *   - add      action on missing   → append at end, idempotent, backup
@@ -141,7 +141,7 @@ section('Chip — "Migration required" when any legacy remains');
 }
 
 // ============================================================
-section('Chip — "Finish setup" when only missing (no legacy, no current)');
+section('Chip — "FlowBoard setup" when only missing');
 // ============================================================
 {
   const home = mkSandbox();
@@ -152,26 +152,26 @@ section('Chip — "Finish setup" when only missing (no legacy, no current)');
       '# Fresh agent\n\nNothing here yet.\n');
     const status = doctor.collectStatus(home);
     assert(status.chip, 'chip present');
-    assertEqual(status.chip.text, 'Finish setup', 'fresh install → Finish setup');
+    assertEqual(status.chip.text, 'FlowBoard setup', 'fresh install → FlowBoard setup');
     assertEqual(status.chip.variant, 'info', 'variant = info');
   } finally { cleanup(); }
 }
 
 // ============================================================
-section('UI copy — Optional setup makes missing AGENTS.md files explicit');
+section('UI copy — FlowBoard setup makes existing AGENTS.md files explicit');
 // ============================================================
 {
   const src = fs.readFileSync(path.join(process.cwd(), 'dashboard/src/components/SnippetUpgrade.jsx'), 'utf8');
-  assert(src.includes('AGENTS.md files without FlowBoard'),
-    'optional setup explainer names missing AGENTS.md files');
-  assert(src.includes('AGENTS.md without FlowBoard'),
+  assert(src.includes('Add FlowBoard to existing AGENTS.md'),
+    'setup explainer names existing AGENTS.md files');
+  assert(src.includes('Existing AGENTS.md without FlowBoard'),
     'missing group title names AGENTS.md files');
   assert(src.includes('They simply do not contain the FlowBoard project trigger yet'),
-    'optional setup copy clarifies files are not broken');
+    'setup copy clarifies files are not broken');
 }
 
 // ============================================================
-section('Chip — "Optional setup" when current exists and missing remains');
+section('Chip — "FlowBoard setup" when current exists and missing remains');
 // ============================================================
 {
   const home = mkSandbox();
@@ -185,7 +185,7 @@ section('Chip — "Optional setup" when current exists and missing remains');
       '# Fresh\n\n');
     const status = doctor.collectStatus(home);
     assert(status.chip, 'chip present');
-    assertEqual(status.chip.text, 'Optional setup', 'current exists + missing → Optional setup');
+    assertEqual(status.chip.text, 'FlowBoard setup', 'current exists + missing → FlowBoard setup');
     assertEqual(status.chip.variant, 'info', 'variant = info');
   } finally { cleanup(); }
 }

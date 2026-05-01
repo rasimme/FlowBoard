@@ -257,10 +257,9 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
 // States: identical (State A), drifted (State B), missing (State D), current
 // (State E — skipped from files list), ignored (dismissed — skipped).
 //
-// Chip variants: "Migration required" when any legacy remains; "Finish
-// setup" when no snippets are configured yet; "Optional setup" when at
-// least one workspace is current but other workspace files are still missing.
-// Hidden only when there is nothing actionable left.
+// Chip variants: "Migration required" when any legacy remains; "FlowBoard setup"
+// when existing AGENTS.md files can be onboarded. Hidden only when there is
+// nothing actionable left.
 function collectStatus(openclawHome) {
   const files = [];
   const counts = { identical: 0, drifted: 0, missing: 0, current: 0, total: 0 };
@@ -308,10 +307,8 @@ function collectStatus(openclawHome) {
   const hasCurrent = counts.current > 0;
   if (hasLegacy) {
     chip = { text: 'Migration required', variant: 'warn' };
-  } else if (!hasCurrent && counts.missing > 0) {
-    chip = { text: 'Finish setup', variant: 'info' };
-  } else if (hasCurrent && counts.missing > 0) {
-    chip = { text: 'Optional setup', variant: 'info' };
+  } else if (counts.missing > 0) {
+    chip = { text: 'FlowBoard setup', variant: 'info' };
   }
 
   return { counts, chip, files };
