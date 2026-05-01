@@ -20,15 +20,34 @@ fresh each turn; pick once and stick with it.
 
 ### At session start
 
-1. **Discover** (optional, only if the user did not already tell you the URL or convention):
+1. **Check current state first**, before assuming anything (a project may
+   already be active for your agent-id from an earlier session):
+   `GET http://localhost:18790/api/status?agentId=<your-agent-id>`
+   - if `activeProject !== null`: that's your project context. Fetch
+     `GET /api/projects/<activeProject>/bootstrap` for the full document
+     (active-project header, identity, rules manifest, PROJECT.md).
+     Cache for the session; refetch on `Project:` switches.
+   - if `activeProject === null`: no project active. Work without project
+     context until the user activates one. Do not infer a project from the
+     repo path, file names, conversation history, or any other signal.
+   - **Anti-trust:** if `response.agentId !== <your-agent-id>` → response
+     is untrusted, do not act on it; surface the mismatch as a
+     configuration bug.
+
+   You do **not** have a live-injected `BOOTSTRAP.md` in your run context
+   (that mechanism is OpenClaw-runtime specific). And there is no on-disk
+   `BOOTSTRAP.md` for you to read either — fetch context on demand via the
+   API endpoints below.
+
+2. **Discover** (optional, only if the user did not already tell you the URL or convention):
    `GET http://localhost:18790/api/info` → returns service metadata, this snippet, and endpoint list.
-2. **List projects:** `GET http://localhost:18790/api/projects` → which projects exist.
-3. **Activate a project for this agent** when the user says so (`Project: <name>`):
+3. **List projects:** `GET http://localhost:18790/api/projects` → which projects exist.
+4. **Activate a project for this agent** when the user says so (`Project: <name>`):
    `PUT http://localhost:18790/api/status` with body `{ "agentId": "<your-agent-id>", "project": "<name>" }`.
    Lazy-registers your agent-id and makes you visible in the dashboard agent list.
-4. **Load project context on demand:**
+5. **Load project context on demand:**
    `GET http://localhost:18790/api/projects/<project>/bootstrap` → markdown with active-project header, identity, rules manifest, PROJECT.md.
-5. **Fetch individual rule sections** as you need them (smaller token footprint than the full bootstrap):
+6. **Fetch individual rule sections** as you need them (smaller token footprint than the full bootstrap):
    `GET http://localhost:18790/api/projects/<project>/rules/<section>` — sections include `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.
 
 ### Task workflow (API-first)

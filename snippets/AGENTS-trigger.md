@@ -9,7 +9,13 @@ The DB (`flowboard_agents`) is the canonical source; the on-disk
 `BOOTSTRAP.md` file is not authoritative and may lag.
 
 ### At session start
-1. Read `BOOTSTRAP.md` — that is your project context.
+1. **Your project context is already in your run context** as `BOOTSTRAP.md`.
+   The `project-context` hook (event `agent:bootstrap`) injects fresh content
+   from the FlowBoard DB on every turn. **Do not use the Read tool** on the
+   workspace `BOOTSTRAP.md` path — the on-disk file is **not authoritative**
+   and may be stale by hours or days, missing recent project switches and
+   the current Anti-Inference / Anti-Trust hardening. Treat the version in
+   your run context as the only truth.
 2. **Active project = exactly what the `# Active Project: <name>` header says.**
    If a `# No Active Project` header is present (or no `# Active Project:`
    header at all), there is no active project. **Never** infer one from

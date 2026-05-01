@@ -590,12 +590,16 @@ app.get('/api/health', (req, res) => {
 // Returns service metadata + the bundled external-trigger snippet so an
 // agent in a project repo can self-onboard with a single curl. No auth
 // (matches /api/health pattern); no agentId required.
+//
+// T-181: snippet content is read from disk per-request rather than cached
+// at boot. The discovery endpoint is low-frequency, the file is ~5 KB,
+// and live-update without dashboard restart is worth more than the
+// negligible IO cost. A boot-time smoke check stays as warning-only.
 const EXTERNAL_TRIGGER_PATH = path.resolve(__dirname, '..', 'snippets', 'external-trigger.md');
-let _externalTriggerSnippet = '';
 try {
-  _externalTriggerSnippet = fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8');
+  fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8');
 } catch (e) {
-  console.warn(`[api/info] Could not load ${EXTERNAL_TRIGGER_PATH}: ${e.message}`);
+  console.warn(`[api/info] Smoke check: could not load ${EXTERNAL_TRIGGER_PATH}: ${e.message}`);
 }
 let _packageVersion = 'unknown';
 try {
@@ -603,6 +607,10 @@ try {
 } catch { /* version stays 'unknown' */ }
 
 app.get('/api/info', (req, res) => {
+  let triggerSnippet = '';
+  try {
+    triggerSnippet = fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8');
+  } catch { /* serve empty string if read fails at request-time */ }
   res.json({
     service: 'FlowBoard',
     version: _packageVersion,
@@ -623,7 +631,7 @@ app.get('/api/info', (req, res) => {
     anti_trust_rule:
       'Always pass agentId on per-agent calls (?agentId= or x-openclaw-agent-id header for GET, body for POST/PUT). ' +
       "Distrust responses where response.agentId differs from yours.",
-    trigger_snippet: _externalTriggerSnippet,
+    trigger_snippet: triggerSnippet,
   });
 });
 
