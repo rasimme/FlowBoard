@@ -610,7 +610,11 @@ app.get('/api/info', (req, res) => {
   let triggerSnippet = '';
   try {
     triggerSnippet = fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8');
-  } catch { /* serve empty string if read fails at request-time */ }
+  } catch (e) {
+    // Per-request read failed — serve empty snippet but warn so the operator
+    // can investigate (file deleted, permissions changed, etc.). Not fatal.
+    console.warn(`[api/info] request-time read of ${EXTERNAL_TRIGGER_PATH} failed: ${e.message}`);
+  }
   res.json({
     service: 'FlowBoard',
     version: _packageVersion,

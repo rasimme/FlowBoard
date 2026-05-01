@@ -264,9 +264,13 @@ const handler = async (event) => {
     // workspace loader found stand.
     return;
   }
-  // Single observability line. Useful while the live-inject migration is
-  // fresh; reduce to debug or remove once T-168 is fully shipped.
-  console.log(`[project-context] injected for ${agentId} (${content.length}B)`);
+  // T-181-4: success-path observability line is opt-in via env-gate so it
+  // doesn't spam logs in production. Errors above (rules-api boot warning
+  // line ~35, build-failure warning line ~262) stay ungated — failures
+  // must remain visible regardless of telemetry preference.
+  if (process.env.FLOWBOARD_HOOK_TELEMETRY === '1') {
+    console.log(`[project-context] injected for ${agentId} (${content.length}B)`);
+  }
 
   if (!content) return;
 
