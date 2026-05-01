@@ -186,8 +186,9 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const subtitle = [
     identicalFiles.length > 0 && `${identicalFiles.length} safe upgrade${identicalFiles.length !== 1 ? 's' : ''}`,
     driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,
-    missingFiles.length > 0 && `${missingFiles.length} workspace${missingFiles.length !== 1 ? 's' : ''} to set up`,
+    missingFiles.length > 0 && `${missingFiles.length} AGENTS.md file${missingFiles.length !== 1 ? 's' : ''} missing FlowBoard`,
   ].filter(Boolean).join(' · ');
+  const isOptionalSetup = status.chip?.text === 'Optional setup';
 
   return createPortal(
     <div
@@ -209,6 +210,17 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
         </div>
 
         <ScrollArea className="modal-body-wrap" innerClassName="modal-body-v2">
+          {isOptionalSetup && missingFiles.length > 0 && (
+            <div className="group setup-explainer">
+              <div className="group-header">
+                <div className="group-header-text">
+                  <div className="group-title">AGENTS.md files without FlowBoard</div>
+                  <div className="group-sub">These files are not broken. They simply do not contain the FlowBoard project trigger yet. Select only the agents that should use FlowBoard project context.</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {identicalFiles.length > 0 && (
             <GroupSection
               title="Upgrade"
@@ -249,8 +261,8 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
           {missingFiles.length > 0 && (
             <GroupSection
-              title="Add FlowBoard to workspace"
-              sub={`${addCount} of ${missingFiles.length} selected · optional — check only workspaces that should use FlowBoard.`}
+              title="AGENTS.md without FlowBoard"
+              sub={`${addCount} of ${missingFiles.length} selected · optional — check only agents that should use FlowBoard.`}
               icon={<Plus size={13} />}
               iconVariant="info"
               allSelected={allAddSelected}

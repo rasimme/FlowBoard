@@ -158,6 +158,19 @@ section('Chip — "Finish setup" when only missing (no legacy, no current)');
 }
 
 // ============================================================
+section('UI copy — Optional setup makes missing AGENTS.md files explicit');
+// ============================================================
+{
+  const src = fs.readFileSync(path.join(process.cwd(), 'dashboard/src/components/SnippetUpgrade.jsx'), 'utf8');
+  assert(src.includes('AGENTS.md files without FlowBoard'),
+    'optional setup explainer names missing AGENTS.md files');
+  assert(src.includes('AGENTS.md without FlowBoard'),
+    'missing group title names AGENTS.md files');
+  assert(src.includes('They simply do not contain the FlowBoard project trigger yet'),
+    'optional setup copy clarifies files are not broken');
+}
+
+// ============================================================
 section('Chip — "Optional setup" when current exists and missing remains');
 // ============================================================
 {
