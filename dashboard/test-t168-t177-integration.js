@@ -340,6 +340,65 @@ async function testHookIgnoresOtherEvents() {
     `agent:something-else event leaves bootstrapFiles untouched`);
 }
 
+async function testHookDoesNotWriteToDisk() {
+  section('T-181-3: hook never creates BOOTSTRAP.md (or any other file) on disk');
+
+  const handler = await loadHandler();
+  const tmpRoot = fs.mkdtempSync(path.join(require('os').tmpdir(), 'fb-hook-test-'));
+  // Make the basename match the workspace-<id> convention so derive works
+  const tmpWorkspace = path.join(tmpRoot, 'workspace-anti-stale-probe');
+  fs.mkdirSync(tmpWorkspace, { recursive: true });
+
+  // Pre-condition: empty workspace dir
+  const beforeFiles = fs.readdirSync(tmpWorkspace);
+  ok(beforeFiles.length === 0, `tmp workspace starts empty (got ${beforeFiles.length} entries)`);
+
+  const event = makeBootstrapEvent({
+    agentId: undefined,
+    workspaceDir: tmpWorkspace,
+    existingFiles: [
+      { name: 'BOOTSTRAP.md', path: path.join(tmpWorkspace, 'BOOTSTRAP.md'), content: 'STALE', missing: false },
+    ],
+  });
+
+  await handler(event);
+
+  // Post-condition: still no files written to the workspace
+  const afterFiles = fs.readdirSync(tmpWorkspace);
+  ok(afterFiles.length === 0, `tmp workspace still empty after handler (got ${afterFiles.length} entries: ${afterFiles.join(',')})`);
+
+  // The bootstrap content should however be in the in-memory array
+  const bs = getBootstrapEntry(event);
+  ok(bs && bs.content && bs.content.length > 100,
+    `in-memory bootstrap entry was populated (${bs?.content?.length || 0} bytes)`);
+
+  // Cleanup
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+}
+
+async function testHookSourceHasNoWritePatterns() {
+  section('T-181-3: regression guard — handler.js source must not contain fs.write* patterns');
+
+  const src = fs.readFileSync(HOOK_HANDLER_PATH, 'utf8');
+
+  // Block any future re-introduction of disk writes via the obvious APIs
+  const writePatterns = [
+    /writeFileSync\s*\(/,
+    /writeFile\s*\(/,
+    /appendFileSync\s*\(/,
+    /appendFile\s*\(/,
+    /createWriteStream\s*\(/,
+  ];
+  for (const pat of writePatterns) {
+    ok(!pat.test(src), `handler source has no ${pat.source} pattern`);
+  }
+
+  // The fs import line itself should be read-only (readFileSync, existsSync, readdirSync — no write).
+  const importLine = src.match(/import\s+\{([^}]+)\}\s+from\s+["']node:fs["']/)?.[1] || '';
+  ok(!/write|append|createWriteStream/i.test(importLine),
+    `fs imports are read-only only (import line: "${importLine.trim()}")`);
+}
+
 async function testHookHandlesMissingBootstrapFiles() {
   section('T-168: handler is robust when context.bootstrapFiles is missing/invalid');
 
@@ -406,6 +465,8 @@ async function main() {
     await testHookWorkspaceWinsOverContextAgentId();
     await testHookWorkspaceConvention();
     await testHookIgnoresOtherEvents();
+    await testHookDoesNotWriteToDisk();
+    await testHookSourceHasNoWritePatterns();
     await testHookHandlesMissingBootstrapFiles();
   } finally {
     await cleanup();
