@@ -51,7 +51,7 @@ process.on('uncaughtException', (e) => { console.error('UNCAUGHT:', e); cleanup(
 
 /** Seed the sandbox with one workspace per state plus a BOOT.md drift case. */
 function seedSandbox(home) {
-  const legacyAgents  = doctor.readVendored('AGENTS-trigger.v1.md');
+  const legacyAgents  = doctor.readVendored('AGENTS-trigger.v2.md');
   const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
   const legacyBoot    = doctor.readVendored('BOOT-extension.v1.md');
 
@@ -69,8 +69,8 @@ function seedSandbox(home) {
     driftedPath: mk('workspace-drift', 'AGENTS.md',
       `# Drift agent\n\n## Custom section\nSome custom notes for my agent.\n\n` +
       legacyAgents.replace(
-        'MANDATORY on EVERY first message of a conversation',
-        'MANDATORY on EVERY first message of my_custom_agent'
+        'Read `BOOTSTRAP.md` — that is your project context.',
+        'Read `BOOTSTRAP.md` — that is my customized project context.'
       ) + '\n# trailer\n'),
     // D: plain agent, no FlowBoard snippet at all
     missingPath: mk('workspace-plain', 'AGENTS.md',
@@ -322,9 +322,9 @@ section('State-mismatch guards — wrong action per state is skipped');
       'all skipped reasons are state-mismatch or not-found');
 
     // Files untouched: read-back equals seed content
-    assert(fs.readFileSync(paths.identicalPath, 'utf8').includes('MANDATORY on EVERY first message'),
+    assert(fs.readFileSync(paths.identicalPath, 'utf8').includes('Read `BOOTSTRAP.md` — that is your project context.'),
       'identical file still carries legacy block');
-    assert(fs.readFileSync(paths.driftedPath, 'utf8').includes('my_custom_agent'),
+    assert(fs.readFileSync(paths.driftedPath, 'utf8').includes('my customized project context'),
       'drifted file still carries user edit');
     assert(!fs.readFileSync(paths.missingPath, 'utf8').includes('delivers project context'),
       'missing file still has no snippet');
