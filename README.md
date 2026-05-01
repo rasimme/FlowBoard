@@ -367,7 +367,7 @@ systemctl --user restart dashboard
 │   ├── AGENTS-trigger.md         # Current trigger block for AGENTS.md
 │   ├── BOOT-extension.md         # Current recovery block for BOOT.md
 │   └── legacy/*.v1.md            # Vendored legacy copies for byte-match detection
-└── hooks/project-context/        # Regenerates BOOTSTRAP.md on session events
+└── hooks/project-context/        # Live-injects BOOTSTRAP.md content into agent:bootstrap events
 ```
 
 **Key principles:**

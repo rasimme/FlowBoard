@@ -2,7 +2,7 @@
 
 These rules apply whenever a project is active.
 
-**Context Loading:** Automatic via project-context Hook → writes BOOTSTRAP.md on startup/reset/compaction.
+**Context Loading:** Automatic via project-context Hook → live-injects `BOOTSTRAP.md` content into the agent's run context on every `agent:bootstrap` event (covers `/new`, `/reset`, gateway startup, compaction, daily reset, idle expiry, and project activation via `PUT /api/status`). The on-disk `BOOTSTRAP.md` file is not authoritative; `flowboard_agents.active_project` in the FlowBoard DB is the single source of truth.
 
 ---
 

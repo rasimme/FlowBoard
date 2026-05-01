@@ -73,7 +73,7 @@ const TARGETS = [
     // a v3 layer rather than chaining markers here.
     vendored: 'AGENTS-trigger.v2.md',
     current: 'AGENTS-trigger.md',
-    summary: 'Replace shell-introspection identity guidance with BOOTSTRAP.md Identity-section read (the project-context hook now writes it)',
+    summary: 'Replace shell-introspection identity guidance with BOOTSTRAP.md Identity-section read (the project-context hook live-injects it via agent:bootstrap)',
     addSummary: 'Add the FlowBoard project trigger block with the API-first task workflow',
     // Phrase unique to the canonical v2 snapshot. Doctor uses this for both
     // drift detection (file has the marker but body no longer byte-matches)
@@ -96,6 +96,14 @@ const TARGETS = [
     legacyStructuralMarkers: [
       '1. Read `ACTIVE-PROJECT.md`',
     ],
+    // Note: the marker phrase 'regenerated `BOOTSTRAP.md`' refers to the
+    // pre-T-168 file-write mechanism which has been replaced by live-inject
+    // via the agent:bootstrap event (T-168-3). The phrase is retained
+    // **deliberately** as the snippets-doctor currentMarker — changing it
+    // would break detection of already-installed snippets in the wild and
+    // require a snippet-layer version bump (vN → vN+1) coordinated with the
+    // BOOT-extension.md content, the legacy snapshot, and the integration
+    // tests. Do not change without doing the layer rotation properly.
     currentMarkers: [
       'regenerated `BOOTSTRAP.md`',
     ],
