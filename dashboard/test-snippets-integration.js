@@ -53,7 +53,7 @@ process.on('uncaughtException', (e) => { console.error('UNCAUGHT:', e); cleanup(
 function seedSandbox(home) {
   const legacyAgents  = doctor.readVendored('AGENTS-trigger.v2.md');
   const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
-  const legacyBoot    = doctor.readVendored('BOOT-extension.v1.md');
+  const legacyBoot    = doctor.readVendored('BOOT-extension.v2.md');
 
   const mk = (workspace, file, contents) => {
     fs.mkdirSync(path.join(home, workspace), { recursive: true });
@@ -87,7 +87,7 @@ function seedSandbox(home) {
       `# Claude workspace\n\nIf BOOTSTRAP.md exists, that's your birth certificate.\nFollow it, figure out who you are, then delete it.\n`),
     // BOOT.md drift case in workspace/
     bootDriftedPath: (() => {
-      const drifted = legacyBoot.replace('existing BOOT.md', 'customized BOOT.md');
+      const drifted = legacyBoot.replace('regenerated `BOOTSTRAP.md`', 'regenerated `BOOTSTRAP.md` with custom local notes');
       fs.writeFileSync(path.join(home, 'workspace', 'BOOT.md'),
         `# My BOOT\n\n## Custom ${''}startup\nSome steps.\n\n${drifted}\n`);
       return path.join(home, 'workspace', 'BOOT.md');
@@ -363,9 +363,8 @@ section('Batch apply — upgrade + migrate + add in one call');
         `backup for ${path.basename(path.dirname(entry.path))} exists`);
     }
 
-    // Status after batch: only workspace-voice + workspace-claude + BOOT.md still
-    // need attention (voice + claude are missing; BOOT.md is drifted). Chip
-    // still "Migration required" because of BOOT drift.
+    // Status after batch: workspace-voice + workspace-claude remain missing;
+    // BOOT.md still needs a separate migration in this scenario.
     const status2 = doctor.collectStatus(home);
     // 4 current total: the 3 we just applied + workspace-done which was
     // already current from the seed.
@@ -417,7 +416,7 @@ section('BOOT.md — migrate action handles BOOT-specific extract');
     assertEqual(r.applied.length, 1, 'BOOT migrate applied');
 
     const after = fs.readFileSync(paths.bootDriftedPath, 'utf8');
-    assert(after.includes("regenerated `BOOTSTRAP.md`"),
+    assert(after.includes('Use the live-injected `BOOTSTRAP.md` content already present in the'),
       'current BOOT snippet marker present');
     assert(after.includes('# My BOOT'), 'BOOT header preserved');
     const bak = fs.readFileSync(r.applied[0].backup, 'utf8');

@@ -89,23 +89,16 @@ const TARGETS = [
   },
   {
     name: 'BOOT.md',
-    vendored: 'BOOT-extension.v1.md',
+    vendored: 'BOOT-extension.v2.md',
     current: 'BOOT-extension.md',
     summary: 'Point bootstrap at BOOTSTRAP.md manifest instead of eager PROJECT-RULES load',
     addSummary: 'Add the FlowBoard gateway-restart recovery block',
     legacyStructuralMarkers: [
-      '1. Read `ACTIVE-PROJECT.md`',
-    ],
-    // Note: the marker phrase 'regenerated `BOOTSTRAP.md`' refers to the
-    // pre-T-168 file-write mechanism which has been replaced by live-inject
-    // via the agent:bootstrap event (T-168-3). The phrase is retained
-    // **deliberately** as the snippets-doctor currentMarker — changing it
-    // would break detection of already-installed snippets in the wild and
-    // require a snippet-layer version bump (vN → vN+1) coordinated with the
-    // BOOT-extension.md content, the legacy snapshot, and the integration
-    // tests. Do not change without doing the layer rotation properly.
-    currentMarkers: [
       'regenerated `BOOTSTRAP.md`',
+    ],
+    // Phrase unique to the current live-inject-safe BOOT snippet.
+    currentMarkers: [
+      'Use the live-injected `BOOTSTRAP.md` content already present in the',
     ],
   },
 ];
