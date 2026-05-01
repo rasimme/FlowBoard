@@ -8,7 +8,7 @@
  * and exercises collectStatus + applyActions through every code path:
  *
  *   - state classification per workspace
- *   - chip variant derivation (Migration required / Finish setup / hidden)
+ *   - chip variant derivation (Migration required / Finish setup / Optional setup / hidden)
  *   - upgrade  action on identical → new block, backup written, content right
  *   - migrate  action on drifted   → structural replace, backup, content right
  *   - add      action on missing   → append at end, idempotent, backup
@@ -158,7 +158,7 @@ section('Chip — "Finish setup" when only missing (no legacy, no current)');
 }
 
 // ============================================================
-section('Chip — hidden when at least one current and no legacy');
+section('Chip — "Optional setup" when current exists and missing remains');
 // ============================================================
 {
   const home = mkSandbox();
@@ -171,8 +171,25 @@ section('Chip — hidden when at least one current and no legacy');
     fs.writeFileSync(path.join(home, 'workspace-fresh', 'AGENTS.md'),
       '# Fresh\n\n');
     const status = doctor.collectStatus(home);
+    assert(status.chip, 'chip present');
+    assertEqual(status.chip.text, 'Optional setup', 'current exists + missing → Optional setup');
+    assertEqual(status.chip.variant, 'info', 'variant = info');
+  } finally { cleanup(); }
+}
+
+// ============================================================
+section('Chip — hidden when current exists and nothing is missing');
+// ============================================================
+{
+  const home = mkSandbox();
+  try {
+    const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
+    fs.mkdirSync(path.join(home, 'workspace-done'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'workspace-done', 'AGENTS.md'),
+      `# Done\n\n${currentAgents}\n`);
+    const status = doctor.collectStatus(home);
     assertEqual(status.chip, null,
-      'current exists + no legacy (even with missing) → chip hidden');
+      'current only and no missing → chip hidden');
   } finally { cleanup(); }
 }
 
@@ -371,7 +388,7 @@ section('Batch apply — upgrade + migrate + add in one call');
     assertEqual(status2.counts.current, 4,
       'four files now current (3 batch-applied + 1 pre-existing)');
     assertEqual(status2.counts.drifted, 1, 'only BOOT.md drift remains');
-    assertEqual(status2.chip.text, 'Migration required', 'chip still reflects remaining drift');
+    assertEqual(status2.chip.text, 'Migration required', 'chip still reflects remaining BOOT drift');
   } finally { cleanup(); }
 }
 

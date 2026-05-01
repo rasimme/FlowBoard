@@ -12,6 +12,7 @@ import ScrollArea from './ScrollArea.jsx';
  * the chip whose text/variant is driven by server state:
  *   - "Migration required" (warn) when any legacy snippet (identical / drifted) exists
  *   - "Finish setup" (info) when no legacy and no current snippet on any agent
+ *   - "Optional setup" (info) when some workspaces are current and others are missing
  *
  * The modal groups rows by state:
  *   - Upgrade  (identical) — batch safe, default-on checkboxes
@@ -177,7 +178,11 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length > 0;
 
   // Modal title & subtitle follow the chip variant
-  const title = status.chip?.variant === 'warn' ? 'FlowBoard · Migration' : 'FlowBoard · Setup';
+  const title = status.chip?.variant === 'warn'
+    ? 'FlowBoard · Migration'
+    : status.chip?.text === 'Optional setup'
+      ? 'FlowBoard · Optional setup'
+      : 'FlowBoard · Setup';
   const subtitle = [
     identicalFiles.length > 0 && `${identicalFiles.length} safe upgrade${identicalFiles.length !== 1 ? 's' : ''}`,
     driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,

@@ -257,9 +257,10 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
 // States: identical (State A), drifted (State B), missing (State D), current
 // (State E — skipped from files list), ignored (dismissed — skipped).
 //
-// Chip variants follow the binary model: "Migration required" when any legacy
-// remains; "Finish setup" when no legacy exists and no agent is configured;
-// hidden once at least one agent is on the current snippet and no legacy.
+// Chip variants: "Migration required" when any legacy remains; "Finish
+// setup" when no snippets are configured yet; "Optional setup" when at
+// least one workspace is current but other workspace files are still missing.
+// Hidden only when there is nothing actionable left.
 function collectStatus(openclawHome) {
   const files = [];
   const counts = { identical: 0, drifted: 0, missing: 0, current: 0, total: 0 };
@@ -302,7 +303,6 @@ function collectStatus(openclawHome) {
     }
   }
 
-  // Chip logic (binary + hidden)
   let chip = null;
   const hasLegacy = counts.identical > 0 || counts.drifted > 0;
   const hasCurrent = counts.current > 0;
@@ -310,7 +310,9 @@ function collectStatus(openclawHome) {
     chip = { text: 'Migration required', variant: 'warn' };
   } else if (!hasCurrent && counts.missing > 0) {
     chip = { text: 'Finish setup', variant: 'info' };
-  } // else: either nothing to do or at least one agent is configured → hide
+  } else if (hasCurrent && counts.missing > 0) {
+    chip = { text: 'Optional setup', variant: 'info' };
+  }
 
   return { counts, chip, files };
 }
