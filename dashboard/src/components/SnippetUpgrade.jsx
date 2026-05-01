@@ -11,7 +11,7 @@ import ScrollArea from './ScrollArea.jsx';
  * returns `chip: null` (setup complete, no legacy remaining). Otherwise shows
  * the chip whose text/variant is driven by server state:
  *   - "Migration required" (warn) when any legacy snippet (identical / drifted) exists
- *   - "FlowBoard setup" (info) when existing AGENTS.md files can be onboarded
+ *   - "FlowBoard setup" (warn) when existing AGENTS.md files can be onboarded
  *
  * The modal groups rows by state:
  *   - Upgrade  (identical) — batch safe, default-on checkboxes

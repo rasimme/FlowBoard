@@ -308,7 +308,7 @@ function collectStatus(openclawHome) {
   if (hasLegacy) {
     chip = { text: 'Migration required', variant: 'warn' };
   } else if (counts.missing > 0) {
-    chip = { text: 'FlowBoard setup', variant: 'info' };
+    chip = { text: 'FlowBoard setup', variant: 'warn' };
   }
 
   return { counts, chip, files };

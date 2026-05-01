@@ -153,7 +153,7 @@ section('Chip — "FlowBoard setup" when only missing');
     const status = doctor.collectStatus(home);
     assert(status.chip, 'chip present');
     assertEqual(status.chip.text, 'FlowBoard setup', 'fresh install → FlowBoard setup');
-    assertEqual(status.chip.variant, 'info', 'variant = info');
+    assertEqual(status.chip.variant, 'warn', 'variant = warn');
   } finally { cleanup(); }
 }
 
@@ -186,7 +186,7 @@ section('Chip — "FlowBoard setup" when current exists and missing remains');
     const status = doctor.collectStatus(home);
     assert(status.chip, 'chip present');
     assertEqual(status.chip.text, 'FlowBoard setup', 'current exists + missing → FlowBoard setup');
-    assertEqual(status.chip.variant, 'info', 'variant = info');
+    assertEqual(status.chip.variant, 'warn', 'variant = warn');
   } finally { cleanup(); }
 }
 

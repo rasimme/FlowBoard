@@ -463,7 +463,7 @@ section('collectStatus() — chip variants');
     fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), '# plain\n');
     const s1 = doctor.collectStatus(dir);
     assertEqual(s1.chip?.text, 'FlowBoard setup', 'all missing → FlowBoard setup');
-    assertEqual(s1.chip?.variant, 'info', 'FlowBoard setup variant = info');
+    assertEqual(s1.chip?.variant, 'warn', 'FlowBoard setup variant = warn');
 
     // (2) Current plus another missing workspace → FlowBoard setup
     const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
@@ -472,7 +472,7 @@ section('collectStatus() — chip variants');
     fs.writeFileSync(path.join(dir, 'workspace-fresh', 'AGENTS.md'), '# fresh\n');
     const s2 = doctor.collectStatus(dir);
     assertEqual(s2.chip?.text, 'FlowBoard setup', 'current + missing → FlowBoard setup');
-    assertEqual(s2.chip?.variant, 'info', 'FlowBoard setup variant = info');
+    assertEqual(s2.chip?.variant, 'warn', 'FlowBoard setup variant = warn');
 
     // (3) Current only → no chip
     fs.rmSync(path.join(dir, 'workspace-fresh'), { recursive: true, force: true });
