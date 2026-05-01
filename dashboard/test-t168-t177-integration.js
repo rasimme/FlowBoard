@@ -263,6 +263,26 @@ async function testHookNoActiveProject() {
     `Content is small (~795B for no-project case, got ${bs?.content?.length})`);
 }
 
+async function testHookWorkspaceWinsOverContextAgentId() {
+  section('T-168 review-finding: workspace-derived agentId beats context.agentId');
+
+  const handler = await loadHandler();
+  // Wrong agentId in event context, correct workspace dir for an active
+  // OpenClaw agent. The hook must derive from the workspace, not trust the
+  // (potentially stale/mis-routed) context field.
+  const ev = makeBootstrapEvent({
+    agentId: 'wrong-agent-suite',                                    // wrong/stale
+    workspaceDir: '/home/jetson/.openclaw/workspace-' + TEST_AGENT,  // canonical
+    existingFiles: [],
+  });
+  await handler(ev);
+  const bs = getBootstrapEntry(ev);
+  ok(bs && bs.content.includes(`agentId\` is: \`${TEST_AGENT}\``),
+    `Identity uses workspace-derived "${TEST_AGENT}", not context.agentId "wrong-agent-suite"`);
+  ok(bs && !bs.content.includes('wrong-agent-suite'),
+    `Wrong agentId from context never leaks into the bootstrap content`);
+}
+
 async function testHookWorkspaceConvention() {
   section('T-168: agentId is derived from workspace dir name');
 
@@ -383,6 +403,7 @@ async function main() {
     await testInfoEndpointPublic();
     await testHookActiveProject();
     await testHookNoActiveProject();
+    await testHookWorkspaceWinsOverContextAgentId();
     await testHookWorkspaceConvention();
     await testHookIgnoresOtherEvents();
     await testHookHandlesMissingBootstrapFiles();

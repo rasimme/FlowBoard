@@ -247,7 +247,13 @@ const handler = async (event) => {
   if (!context || !Array.isArray(context.bootstrapFiles)) return;
 
   const workspaceDir = context.workspaceDir;
-  const agentId = context.agentId || deriveAgentIdFromWorkspace(workspaceDir) || "main";
+  // T-168 review fix: workspace-derived agentId wins over event.context.agentId.
+  // The workspace directory is the canonical filesystem-routed identity that
+  // OpenClaw bound this run to; context.agentId is best-effort metadata that
+  // can be stale, mis-routed, or absent. Trusting context.agentId first
+  // produced wrong-content injection for valid OpenClaw runs whose context
+  // agentId disagreed with the workspace path.
+  const agentId = deriveAgentIdFromWorkspace(workspaceDir) || context.agentId || "main";
 
   let content;
   try {
