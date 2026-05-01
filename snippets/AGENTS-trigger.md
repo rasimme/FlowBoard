@@ -70,11 +70,14 @@ error codes): `GET /api/projects/{project}/rules/api-access`.
 
 ### Agent identity
 
-Read `BOOTSTRAP.md` at session start — it contains an `## Identity` section
-with your canonical `agentId`. Use that exact value in every project / task
-API call's `agent` / `agentId` field. Never substitute a placeholder or
-guess a default like `"main"` — that silently routes your work into
-another agent's row in `flowboard_agents` and breaks attribution.
+Use the `## Identity` section in the injected `BOOTSTRAP.md` context —
+it contains your canonical `agentId`. The section is delivered into your
+run context by the project-context hook (do not use the Read tool on the
+disk path; see step 1 of "At session start"). Use that exact `agentId`
+value in every project / task API call's `agent` / `agentId` field.
+Never substitute a placeholder or guess a default like `"main"` — that
+silently routes your work into another agent's row in `flowboard_agents`
+and breaks attribution.
 
 **Pass `agentId` on every per-agent API call.** The server requires an
 explicit `agentId` and returns `400` without one — there is no service
