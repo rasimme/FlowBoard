@@ -73,3 +73,7 @@ git push origin feat/my-change
 - `const` over `let`, no `var`
 - Descriptive function/variable names
 - Avoid adding dependencies unless there's a clear, significant win
+
+## Documentation discipline
+
+If your patch introduces or changes an architectural decision (new endpoint, new convention, default-behaviour change, new agent type, new hook event, removed concept), write an ADR under `docs/adr/` and update the relevant concept doc under `docs/concepts/`. Bug fixes, refactors, test additions, and dependency bumps do not require documentation updates. When in doubt, ask.
