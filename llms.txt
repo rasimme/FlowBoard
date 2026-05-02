@@ -32,7 +32,12 @@
 
 <!-- Reference docs land here once written. -->
 
-(none yet — see [docs/reference/README.md](docs/reference/README.md) for the index when populated)
+- [Environment Variables](docs/reference/env-vars.md) — server + hook env vars, defaults, purpose
+- [API manifest](docs/reference/api-manifest.json) — machine-readable endpoint list (authoritative)
+- [API endpoint docs (Discovery)](docs/reference/api/discovery.md) — `/api/health`, `/api/info`
+- [API endpoint docs (Agents)](docs/reference/api/agents.md) — `/api/agents`, `/api/status`
+- [API endpoint docs (Projects)](docs/reference/api/projects.md) — projects CRUD, bootstrap, rules
+- [API endpoint docs (Tasks)](docs/reference/api/tasks.md) — task CRUD + lifecycle
 
 ## How to
 
