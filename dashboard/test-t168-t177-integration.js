@@ -19,6 +19,8 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const { spawnSync } = require('child_process');
 
 const API_BASE = process.env.FLOWBOARD_API || 'http://localhost:18790';
 const TEST_AGENT = 'test-agent-suite';
@@ -162,8 +164,10 @@ async function testInfoEndpointPublic() {
     `anti_trust_rule guidance is present`);
   ok(typeof d.trigger_snippet === 'string' && d.trigger_snippet.length > 1000,
     `trigger_snippet is embedded (got ${d.trigger_snippet?.length || 0} bytes)`);
-  ok(d.trigger_snippet && d.trigger_snippet.includes('FlowBoard external trigger'),
-    `trigger_snippet contains the expected marker`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('## FlowBoard Project Workspace (external agent)'),
+    `trigger_snippet contains the expected external-agent heading`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('GET /api/status'),
+    `trigger_snippet documents status-first lazy loading`);
 }
 
 // ---------------------------------------------------------------------------
@@ -438,6 +442,32 @@ async function cleanup() {
 }
 
 // ---------------------------------------------------------------------------
+// T-179-3: installer idempotency
+// ---------------------------------------------------------------------------
+
+function testInstallTriggerIdempotency() {
+  section('T-179-3: install-trigger.mjs is idempotent');
+
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-install-trigger-'));
+  fs.writeFileSync(path.join(tmpRepo, 'AGENTS.md'), '# Test Agent\n\nKeep this.\n');
+
+  const args = ['install-trigger.mjs', '--repo', tmpRepo, '--no-symlink'];
+  const r1 = spawnSync('node', args, { cwd: __dirname, encoding: 'utf8' });
+  const once = fs.readFileSync(path.join(tmpRepo, 'AGENTS.md'), 'utf8');
+  const r2 = spawnSync('node', args, { cwd: __dirname, encoding: 'utf8' });
+  const twice = fs.readFileSync(path.join(tmpRepo, 'AGENTS.md'), 'utf8');
+  const markerCount = (twice.match(/BEGIN FlowBoard external trigger/g) || []).length;
+
+  ok(r1.status === 0, `first install exits 0 (got ${r1.status})`);
+  ok(r2.status === 0, `second install exits 0 (got ${r2.status})`);
+  ok(once === twice, `second install leaves AGENTS.md byte-identical`);
+  ok(markerCount === 1, `installed AGENTS.md has exactly one FlowBoard marker block`);
+  ok(twice.includes('GET /api/status'), `installed block contains status-first trigger`);
+
+  fs.rmSync(tmpRepo, { recursive: true, force: true });
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -460,6 +490,7 @@ async function main() {
     await testAgentsListing();
     await testForeignAgentIsolation();
     await testInfoEndpointPublic();
+    testInstallTriggerIdempotency();
     await testHookActiveProject();
     await testHookNoActiveProject();
     await testHookWorkspaceWinsOverContextAgentId();

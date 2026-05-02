@@ -66,10 +66,21 @@ function readOrEmpty(file) {
 }
 
 /**
+ * Wrap the source snippet with idempotency markers at install time.
+ * The source file intentionally stays marker-free so /api/info exposes only
+ * the minimal agent instructions, while installed AGENTS.md files remain
+ * safely replaceable/uninstallable across repeated installer runs.
+ */
+function buildMarkedBlock(snippet) {
+  return `${MARKER_START}\n${snippet.trimEnd()}\n${MARKER_END}`;
+}
+
+/**
  * Replace or append the snippet block in `existing`. If a marker block
  * already exists, replace it; otherwise append at the end.
  */
 function upsertBlock(existing, snippet) {
+  const block = buildMarkedBlock(snippet);
   const startIdx = existing.indexOf(MARKER_START);
   const endIdx = existing.indexOf(MARKER_END);
   if (startIdx >= 0 && endIdx > startIdx) {
@@ -77,11 +88,11 @@ function upsertBlock(existing, snippet) {
     const after = existing.slice(endIdx + MARKER_END.length).replace(/^\s+/, '');
     const sep1 = before ? '\n\n' : '';
     const sep2 = after ? '\n\n' : '\n';
-    return before + sep1 + snippet + sep2 + after;
+    return before + sep1 + block + sep2 + after;
   }
   // Append
-  if (existing.trim().length === 0) return snippet + '\n';
-  return existing.replace(/\s+$/, '') + '\n\n' + snippet + '\n';
+  if (existing.trim().length === 0) return block + '\n';
+  return existing.replace(/\s+$/, '') + '\n\n' + block + '\n';
 }
 
 function removeBlock(existing) {
