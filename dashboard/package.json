@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
-    "test": "node test-snippets-doctor.js && node test-snippets-integration.js && node test-rules-api.js && node test-snippets-realdata.js && node test-t168-t177-integration.js"
+    "test": "node test-snippets-doctor.js && node test-snippets-integration.js && node test-rules-api.js && node test-snippets-realdata.js && node test-t168-t177-integration.js && node test-docs-drift.js"
   },
   "keywords": [],
   "author": "",

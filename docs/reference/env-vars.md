@@ -1,12 +1,13 @@
 # Environment Variables
 
-All environment variables read by the FlowBoard server (`dashboard/server.js`) and the project-context hook (`hooks/project-context/handler.js`). No secrets in this file.
+All environment variables read by the FlowBoard server (`dashboard/server.js`), the project-context hook (`hooks/project-context/handler.js`), and the tooling (`snippets-doctor.js`, `install-trigger.mjs`, `migrate-tasks.js`, `hzl-service.js`). No secrets in this file. Mechanically asserted complete by `dashboard/test-docs-drift.js`.
 
 ## Networking
 
 | Variable | Default | Component | Purpose |
 |---|---|---|---|
 | `FLOWBOARD_PORT` | `18790` | server, hook | TCP port the dashboard binds to. Hook reads it to call the local API. |
+| `PORT` | `18790` | hzl-service | Read by `hzl-service.js` to construct the on-complete hook callback URL. Effectively an alias for `FLOWBOARD_PORT`; if both are set they should agree. |
 | `FLOWBOARD_HOST` | `127.0.0.1` | server | Bind address. Loopback-only by default. |
 | `FLOWBOARD_API` | `http://localhost:18790` | install-trigger, tests | Base URL consumers use to reach the dashboard. |
 | `OPENCLAW_GATEWAY_PORT` (alias `GATEWAY_PORT`) | `18789` | server | Port of the OpenClaw gateway used for outbound wake events. |
