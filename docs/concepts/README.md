@@ -33,10 +33,10 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Lazy Loading | Rule sections served on demand; manifest/section split | ✅ [lazy-loading.md](lazy-loading.md) | ✅ ADR-0005, ADR-0006 | — |
 | Agent Identity | agent-id string contract; OpenClaw vs FlowBoard layers | ✅ [agent-identity.md](agent-identity.md) | ✅ ADR-0002, ADR-0003 | — |
 | Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
-| Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
-| Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
+| Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | ✅ ADR-0007 | — |
+| Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | ✅ ADR-0007 | — |
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | 🔲 needed | — |
-| HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
+| HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | ✅ ADR-0007 | — |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | 🔲 likely needed | — |
 | Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | 🔲 likely needed | — |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ⬜ partial in [agent-identity.md](agent-identity.md) | 🔲 needed | [T-199-2](../../) |
