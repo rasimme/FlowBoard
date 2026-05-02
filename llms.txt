@@ -1,0 +1,37 @@
+# FlowBoard
+
+> Project workspaces for AI agents. Self-hosted FlowBoard server provides an API-driven Kanban + project-context system where agents (OpenClaw-managed or external like Codex/Cursor/Claude Code) coordinate work through a single REST surface.
+
+## Overview
+
+- [README](README.md) — quick start, install, features, external-agent onboarding
+- [CHANGELOG](CHANGELOG.md) — release notes
+- [CONTRIBUTING](CONTRIBUTING.md) — contributor guidelines
+
+## Concepts
+
+<!-- Concept docs are listed here once they contain substantive content (>50 lines or marked v1-complete). Stubs are intentionally not linked. -->
+
+(none yet — see [docs/concepts/README.md](docs/concepts/README.md) for the index when populated)
+
+## Decisions (ADRs)
+
+<!-- Accepted ADRs are listed here. Drafts are not linked. -->
+
+(none yet — see [docs/adr/README.md](docs/adr/README.md) for the index when populated)
+
+## Reference
+
+<!-- Reference docs land here once written. -->
+
+(none yet — see [docs/reference/README.md](docs/reference/README.md) for the index when populated)
+
+## How to
+
+<!-- How-tos are added on-demand. -->
+
+(none yet — see [docs/how-to/README.md](docs/how-to/README.md))
+
+## Operational rules (NOT for human reading)
+
+The contents of `docs/project-mode/` are operational rules served at runtime via `GET /api/projects/:name/rules/:section`. They are consumed by active-project agents, not by humans or tooling. Do not link or include this directory in documentation builds.
