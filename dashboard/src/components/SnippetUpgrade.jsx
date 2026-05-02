@@ -414,7 +414,8 @@ function BootLegacySection({ files }) {
         <div className="group-header-icon warn"><AlertTriangle size={13} /></div>
         <div className="group-header-text">
           <div className="group-title">Legacy BOOT.md cleanup required</div>
-          <div className="group-sub">Display-only advisory: BOOT.md is OpenClaw-owned, so FlowBoard will not edit it automatically. Remove only the deprecated FlowBoard block manually.</div>
+          <div className="group-sub">Display-only advisory: BOOT.md is OpenClaw-owned, so FlowBoard will not edit it automatically.</div>
+          <div className="group-sub">Open the file, remove only the deprecated FlowBoard section (for example “Project State Recovery (FlowBoard)”), keep all other OpenClaw/user content unchanged, save, then refresh this dashboard.</div>
         </div>
       </div>
       <div className="group-body">

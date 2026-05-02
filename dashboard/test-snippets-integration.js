@@ -170,7 +170,13 @@ section('UI copy — FlowBoard setup makes existing AGENTS.md files explicit');
   assert(src.includes('Legacy BOOT.md cleanup required'),
     'BOOT.md legacy advisory is rendered in the modal');
   assert(src.includes('Display-only advisory: BOOT.md is OpenClaw-owned'),
-    'BOOT.md copy makes manual cleanup explicit');
+    'BOOT.md copy explains why it is display-only');
+  assert(src.includes('remove only the deprecated FlowBoard section'),
+    'BOOT.md copy gives concrete cleanup step');
+  assert(src.includes('keep all other OpenClaw/user content unchanged'),
+    'BOOT.md copy warns not to delete unrelated content');
+  assert(src.includes('save, then refresh this dashboard'),
+    'BOOT.md copy tells the user how to re-check after cleanup');
 }
 
 // ============================================================
