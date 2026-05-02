@@ -37,6 +37,7 @@
 - [ADR-0009](docs/adr/0009-blocked-as-flag-not-status.md) — `blocked` is a flag, not a status
 - [ADR-0010](docs/adr/0010-subtask-depth-max-one.md) — Subtask depth hard-capped at one level
 - [ADR-0011](docs/adr/0011-external-agent-discovery.md) — External-agent discovery via `/api/info` and self-onboarding snippet
+- [ADR-0012](docs/adr/0012-canvas-migration-deferred.md) — Canvas migration deferred — vanilla retained pending scope review
 
 ## Reference
 

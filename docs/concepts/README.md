@@ -68,7 +68,7 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | (cross-cutting) | Bug-fix: `hzl-service.js` reads `process.env.PORT` instead of `FLOWBOARD_PORT` | T-197-8 drift test | `tasked` → T-199-4 (bug, not ADR) |
 | Kanban | `blocked` is a boolean flag, not a status | [kanban.md](kanban.md) | `tasked` → T-199-5 |
 | Kanban | Subtask depth hard-capped at 1 level | [kanban.md](kanban.md) | `tasked` → T-199-6 |
-| Idea Canvas | Canvas stays vanilla JS — no React migration | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-7 |
+| Idea Canvas | Canvas migration deferred — vanilla retained pending scope review | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-7 → ADR-0012 |
 | Idea Canvas | Canvas state in `canvas.json` per project — not HZL event-sourced | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-8 |
 | Idea Canvas | Connections undirected in storage, directed in rendering | [idea-canvas.md](idea-canvas.md) | `dropped` — too small for own ADR; documented in concept doc |
 | Idea Canvas | Specify-session concurrency: max 1 active per `agentId` | [idea-canvas.md](idea-canvas.md) | `merged` → T-199-10 (covered by RAM-only-sessions ADR) |
