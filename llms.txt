@@ -20,6 +20,7 @@
 - [Idea Canvas](docs/concepts/idea-canvas.md) — visual brainstorm; notes/connections/clusters; promote pipeline via Specify session
 - [HZL Event Sourcing](docs/concepts/hzl-event-sourcing.md) — event log + projections; brain/muscle split; single-writer constraint
 - [Specify Workflow](docs/concepts/specify-workflow.md) — 6-step agent process; session lifecycle; RAM-only sessions
+- [Auth Model](docs/concepts/auth-model.md) — middleware decision tree; Telegram init-data + JWT; loopback/tunnel/LAN bypasses
 
 ## Decisions (ADRs)
 

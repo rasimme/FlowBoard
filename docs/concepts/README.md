@@ -20,6 +20,7 @@ Each concept doc answers five questions:
 - [Idea Canvas](idea-canvas.md) — visual brainstorm, notes/connections/clusters, promote pipeline via Specify session
 - [HZL Event Sourcing](hzl-event-sourcing.md) — event log + projections, brain/muscle split, `tasks_current` materialization, single-writer constraint
 - [Specify Workflow](specify-workflow.md) — 6-step agent process for unstructured-to-structured work, session lifecycle, RAM-only sessions
+- [Auth Model](auth-model.md) — middleware decision tree, Telegram init-data + JWT cookie, loopback / tunnel / LAN bypasses, fail-closed in production
 
 ## Coverage Matrix
 
@@ -37,7 +38,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | 🔲 needed | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | 🔲 likely needed | — |
-| Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | 🔲 [auth-model.md](auth-model.md) | ⬜ TBD after concept | T-200-6 |
+| Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | 🔲 likely needed | — |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ⬜ partial in [agent-identity.md](agent-identity.md) | 🔲 needed | [T-199-2](../../) |
 | Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ⬜ partial in ADR-0006 | ✅ ADR-0006 (covers fingerprinting) | — |
 | Project File Structure | `PROJECT.md`, `tasks.json`, `specs/`, `context/` roles | ⬜ not yet | ⬜ TBD | — |
@@ -77,6 +78,10 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | Specify Workflow | Strict step ordering on PERSIST: spec → tasks → canvas-delete (rollback contract) | [specify-workflow.md](specify-workflow.md) | `proposed` |
 | Specify Workflow | 6-step protocol is content (`context/specify-prompt.md`), not server-enforced code | [specify-workflow.md](specify-workflow.md) | `proposed` |
 | Specify Workflow | Agent — not user — decides task structure in step 3 (single / parent+subtasks / each-with-spec) | [specify-workflow.md](specify-workflow.md) | `proposed` |
+| Auth Model | Trust-on-write of `agentId` is acceptable because auth admits the request; agent is attribution, not authentication | [auth-model.md](auth-model.md) | `proposed` (overlaps with ADR-0003 — could be a follow-up note rather than its own ADR) |
+| Auth Model | Localhost is trusted by default; production fails closed without full auth config | [auth-model.md](auth-model.md) | `proposed` |
+| Auth Model | Cloudflare Tunnel detection via `cf-ray` is hard-coded; other reverse proxies need `AUTH_ALWAYS=true` | [auth-model.md](auth-model.md) | `proposed` (likely too small for own ADR) |
+| Auth Model | JWT cookies cannot be revoked except by rotating `JWT_SECRET` (no allowlist check on validation) | [auth-model.md](auth-model.md) | `proposed` (operational gotcha, may be Reference rather than ADR) |
 
 ## See also
 
