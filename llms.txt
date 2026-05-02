@@ -19,6 +19,7 @@
 - [Kanban](docs/concepts/kanban.md) — five-column workflow; lease semantics; subtask depth; blocked-as-flag; archived-vs-trashed
 - [Idea Canvas](docs/concepts/idea-canvas.md) — visual brainstorm; notes/connections/clusters; promote pipeline via Specify session
 - [HZL Event Sourcing](docs/concepts/hzl-event-sourcing.md) — event log + projections; brain/muscle split; single-writer constraint
+- [Specify Workflow](docs/concepts/specify-workflow.md) — 6-step agent process; session lifecycle; RAM-only sessions
 
 ## Decisions (ADRs)
 

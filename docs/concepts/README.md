@@ -19,6 +19,7 @@ Each concept doc answers five questions:
 - [Kanban](kanban.md) — five-column workflow, lease semantics, subtask depth, blocked-as-flag, archived-vs-trashed
 - [Idea Canvas](idea-canvas.md) — visual brainstorm, notes/connections/clusters, promote pipeline via Specify session
 - [HZL Event Sourcing](hzl-event-sourcing.md) — event log + projections, brain/muscle split, `tasks_current` materialization, single-writer constraint
+- [Specify Workflow](specify-workflow.md) — 6-step agent process for unstructured-to-structured work, session lifecycle, RAM-only sessions
 
 ## Coverage Matrix
 
@@ -35,7 +36,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | 🔲 needed | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
-| Specify Workflow | Spec generation lifecycle; sessions; abort/complete | 🔲 [specify-workflow.md](specify-workflow.md) | ⬜ TBD after concept | T-200-5 |
+| Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | 🔲 likely needed | — |
 | Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | 🔲 [auth-model.md](auth-model.md) | ⬜ TBD after concept | T-200-6 |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ⬜ partial in [agent-identity.md](agent-identity.md) | 🔲 needed | [T-199-2](../../) |
 | Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ⬜ partial in ADR-0006 | ✅ ADR-0006 (covers fingerprinting) | — |
@@ -72,6 +73,10 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | HZL Event Sourcing | FlowBoard is the *only* writer to the HZL DB — hard constraint | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` |
 | HZL Event Sourcing | FlowBoard `T-NNN` ids retire on delete, never reused | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` (likely too small for own ADR) |
 | HZL Event Sourcing | FlowBoard status (`review`, `open`) lives in `metadata.flowboard.status`, separate from HZL native status | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` |
+| Specify Workflow | Specify sessions are RAM-only — no DB persistence, no resume across restarts | [specify-workflow.md](specify-workflow.md) | `proposed` |
+| Specify Workflow | Strict step ordering on PERSIST: spec → tasks → canvas-delete (rollback contract) | [specify-workflow.md](specify-workflow.md) | `proposed` |
+| Specify Workflow | 6-step protocol is content (`context/specify-prompt.md`), not server-enforced code | [specify-workflow.md](specify-workflow.md) | `proposed` |
+| Specify Workflow | Agent — not user — decides task structure in step 3 (single / parent+subtasks / each-with-spec) | [specify-workflow.md](specify-workflow.md) | `proposed` |
 
 ## See also
 
