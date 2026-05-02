@@ -311,8 +311,10 @@ async function init(dbPath) {
   _projectionEngine.register(new CommentsCheckpointsProjector());
   _EventType = EventType;
 
-  // Configure on_done hook — posts to FlowBoard's own receiver endpoint
-  const hookPort = process.env.PORT || 18790;
+  // Configure on_done hook — posts to FlowBoard's own receiver endpoint.
+  // Read FLOWBOARD_PORT first (project convention); fall back to PORT for
+  // legacy compat with environments that pre-date the rename.
+  const hookPort = process.env.FLOWBOARD_PORT || process.env.PORT || 18790;
   const onDoneHook = {
     url: `http://127.0.0.1:${hookPort}/api/hooks/task-complete`,
     headers: {},

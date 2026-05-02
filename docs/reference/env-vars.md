@@ -7,7 +7,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | Variable | Default | Component | Purpose |
 |---|---|---|---|
 | `FLOWBOARD_PORT` | `18790` | server, hook | TCP port the dashboard binds to. Hook reads it to call the local API. |
-| `PORT` | `18790` | hzl-service | Read by `hzl-service.js` to construct the on-complete hook callback URL. Effectively an alias for `FLOWBOARD_PORT`; if both are set they should agree. |
+| `PORT` | `18790` | hzl-service | **Legacy fallback** in `hzl-service.js` for the on-complete hook callback URL. `FLOWBOARD_PORT` takes precedence. Kept for backwards compatibility with environments that pre-date the rename; new deployments should set `FLOWBOARD_PORT` only. |
 | `FLOWBOARD_HOST` | `127.0.0.1` | server | Bind address. Loopback-only by default. |
 | `FLOWBOARD_API` | `http://localhost:18790` | install-trigger, tests | Base URL consumers use to reach the dashboard. |
 | `OPENCLAW_GATEWAY_PORT` (alias `GATEWAY_PORT`) | `18789` | server | Port of the OpenClaw gateway used for outbound wake events. |
