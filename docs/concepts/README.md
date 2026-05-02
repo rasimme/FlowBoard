@@ -12,14 +12,42 @@ Each concept doc answers five questions:
 
 ## Available concepts
 
-<!-- Concept docs are added here as they are written. Stub-only directories should not list links yet. -->
-
 - [Lazy Loading](lazy-loading.md) — how rule sections are loaded on demand, the manifest/section split, and the eager-load escape hatch for external agents
 - [Agent Identity](agent-identity.md) — agent-id as a string contract, the OpenClaw vs. FlowBoard layers, lazy registration, attribution
 - [Hook Architecture](hook-architecture.md) — the single `agent:bootstrap` subscription, what it mutates, why no other events
 - [Multi-Agent Model](multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`, lazy registration, claim/release/handoff
 
+## Coverage Matrix
+
+Single source of truth for documentation completeness. Each row is a major surface of FlowBoard. The matrix is updated whenever a doc is written, an ADR is accepted, or a new surface is identified.
+
+Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `—` not applicable
+
+| Surface | Scope | Concept doc | Foundation ADR | Tracked tasks |
+|---|---|:---:|:---:|---|
+| Lazy Loading | Rule sections served on demand; manifest/section split | ✅ [lazy-loading.md](lazy-loading.md) | ✅ ADR-0005, ADR-0006 | — |
+| Agent Identity | agent-id string contract; OpenClaw vs FlowBoard layers | ✅ [agent-identity.md](agent-identity.md) | ✅ ADR-0002, ADR-0003 | — |
+| Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
+| Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
+| Kanban | Status workflow; subtask model; lease semantics from user POV | 🔲 [kanban.md](kanban.md) | 🔲 likely needed | T-200-2 |
+| Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | 🔲 [idea-canvas.md](idea-canvas.md) | 🔲 likely needed | T-200-3 |
+| HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | 🔲 [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | T-200-4 |
+| Specify Workflow | Spec generation lifecycle; sessions; abort/complete | 🔲 [specify-workflow.md](specify-workflow.md) | ⬜ TBD after concept | T-200-5 |
+| Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | 🔲 [auth-model.md](auth-model.md) | ⬜ TBD after concept | T-200-6 |
+| External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ⬜ partial in [agent-identity.md](agent-identity.md) | 🔲 needed | [T-199-2](../../) |
+| Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ⬜ partial in ADR-0006 | ✅ ADR-0006 (covers fingerprinting) | — |
+| Project File Structure | `PROJECT.md`, `tasks.json`, `specs/`, `context/` roles | ⬜ not yet | ⬜ TBD | — |
+| Telegram Mini App | Mobile UI shell; HMAC-SHA256 verification; tunnel options | ⬜ not yet | ⬜ TBD | — |
+
+**Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
+
+**Adding a concept doc:** flip the cell to ✅ with a link, and add the entry to the *Available concepts* section above.
+
+**Adding a foundation ADR:** flip the cell to ✅ with the ADR number(s). Foundation ADRs are decisions that established the surface, distinct from later hardening ADRs. A surface can have one foundation ADR and many hardening ADRs.
+
+**Removing a row:** only when the surface itself has been removed from FlowBoard. Documentation gaps are not closed by deleting rows.
+
 ## See also
 
-- [Architecture Decision Records](../adr/) — the *what was decided* layer
+- [Architecture Decision Records](../adr/) — the *what was decided* layer (chronologically numbered, immutable)
 - [Reference](../reference/) — the *facts and tables* layer
