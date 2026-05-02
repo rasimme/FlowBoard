@@ -284,6 +284,48 @@ section('Migrate action — drifted file → canonical block + backup');
 }
 
 // ============================================================
+section('Migrate action — fingerprint-only drifted file → canonical block + backup');
+// ============================================================
+{
+  const home = mkSandbox();
+  try {
+    fs.mkdirSync(path.join(home, 'workspace-real-drift'), { recursive: true });
+    const filePath = path.join(home, 'workspace-real-drift', 'AGENTS.md');
+    fs.writeFileSync(filePath,
+      `# AGENTS.md - Operating Manual\n\n` +
+      `## Projects (MANDATORY)\n\n` +
+      `FlowBoard delivers project context automatically as \`BOOTSTRAP.md\` in\n` +
+      `your run context. The \`project-context\` hook injects it via the\n` +
+      `OpenClaw \`agent:bootstrap\` event before every agent run.\n\n` +
+      `### At session start\n` +
+      `1. Your project context is already in your run context.\n` +
+      `2. Fetch individual sections on demand from the FlowBoard API.\n\n` +
+      `## Response Style\n` +
+      `Keep it short.\n`);
+    const before = fs.readFileSync(filePath, 'utf8');
+    const status = doctor.collectStatus(home);
+    const target = status.files.find(f => f.path === filePath);
+    assert(target, 'fingerprint-only drifted file has an entry');
+    assertEqual(target.state, 'drifted', 'fingerprint-only file classified as drifted');
+
+    const r = doctor.applyActions(home, [{ id: target.id, action: 'migrate' }]);
+    assertEqual(r.applied.length, 1, 'fingerprint-only migration applied');
+    assertEqual(r.skipped.length, 0, 'fingerprint-only migration not skipped');
+
+    const after = fs.readFileSync(filePath, 'utf8');
+    assert(after.includes('Check your status'),
+      'fingerprint-only migration inserts current snippet');
+    assert(!after.includes('FlowBoard delivers project context automatically'),
+      'fingerprint-only migration removes legacy prose');
+    assert(after.includes('## Response Style'),
+      'fingerprint-only migration preserves following sections');
+
+    const bak = fs.readFileSync(r.applied[0].backup, 'utf8');
+    assertEqual(bak, before, 'fingerprint-only backup matches pre-migrate bytes exactly');
+  } finally { cleanup(); }
+}
+
+// ============================================================
 section('Add action — missing file → append at end, idempotent');
 // ============================================================
 {

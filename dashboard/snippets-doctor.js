@@ -88,6 +88,9 @@ const TARGETS = [
     ],
     legacyStructuralMarkers: [
       'echo "$OPENCLAW_AGENT_ID"',
+      'FlowBoard delivers project context automatically',
+      'At session start',
+      'project-context',
     ],
     // Fingerprint for current block — 3 of 4 phrases = current
     currentFingerprint: [
@@ -429,7 +432,11 @@ function applyActions(openclawHome, actions) {
 // marker (heading or key phrase). We replace the region starting from the
 // first structural marker and spanning the legacy block's line count.
 function replaceDriftedBlock(content, legacyBlock, newBlock, target) {
-  const marker = target.legacyStructuralMarkers.find(m => content.includes(m));
+  const markerCandidates = [
+    ...(target.legacyStructuralMarkers || []),
+    ...(target.legacyFingerprint || []),
+  ];
+  const marker = markerCandidates.find(m => content.includes(m));
   if (!marker) return null;
 
   const lines = content.split('\n');

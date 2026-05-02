@@ -161,7 +161,9 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
       const data = await res.json();
       setResult(data);
       setApplying(false);
-      if (data?.ok) {
+      const appliedCount = data?.applied?.length || 0;
+      const skippedCount = data?.skipped?.length || 0;
+      if (data?.ok && appliedCount > 0 && skippedCount === 0) {
         setTimeout(() => {
           onApplied?.();
           onClose?.();
@@ -173,8 +175,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     }
   };
 
-  const applied = !!result?.ok;
   const appliedCount = result?.applied?.length || 0;
+  const skippedCount = result?.skipped?.length || 0;
+  const applied = !!result?.ok && appliedCount > 0 && skippedCount === 0;
+  const applyFailed = !!result && (!result.ok || appliedCount === 0 || skippedCount > 0);
   const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length > 0;
 
   // Modal title & subtitle follow the chip variant
@@ -298,9 +302,9 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
               <span className="footer-status ok">
                 <Check size={12} /> Applied {appliedCount} change{appliedCount !== 1 ? 's' : ''}
               </span>
-            ) : result && !result.ok ? (
+            ) : applyFailed ? (
               <span className="footer-hint" style={{ color: 'var(--danger)' }}>
-                {result.error || 'Apply failed — no files were changed'}
+                {result.error || `Apply incomplete — ${appliedCount} applied, ${skippedCount} skipped`}
               </span>
             ) : (
               <span className="footer-hint">
