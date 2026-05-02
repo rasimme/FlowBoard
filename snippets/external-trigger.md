@@ -1,129 +1,44 @@
-<!-- BEGIN FlowBoard external trigger -->
 ## FlowBoard Project Workspace (external agent)
 
 This repository uses [FlowBoard](https://github.com/rasimme/FlowBoard) for
-project / task coordination. The dashboard runs on the user's machine at
-`http://localhost:18790` (or the URL the user gave you). Follow the rules
-below whenever the user asks you to claim, update, or complete tasks, or
-to switch the active project.
+project / task coordination. The dashboard runs at `http://localhost:18790`.
 
 ### Identity
 
-Pick a stable agent-id for this runtime and use it on every API call.
-Suggested values: `codex`, `cursor`, `claude-code`, or with a host suffix
-(`codex-mac`, `claude-code-laptop`) if multiple parallel instances exist.
-Use the same string for the entire session.
+Pick a stable agent-id (e.g. `claude`, `cursor`, `codex`) and use it on every API call.
+The id auto-registers on first `PUT /api/status`.
 
-The agent-id is a freeform string — it gets auto-registered in
-`flowboard_agents` on the first `PUT /api/status`. Do **not** make one up
-fresh each turn; pick once and stick with it.
+### On every session start (or before project-related work)
 
-### At session start
+1. **Check your status:**
+   `GET /api/status?agentId=<your-id>`
 
-1. **Check current state first**, before assuming anything (a project may
-   already be active for your agent-id from an earlier session):
-   `GET http://localhost:18790/api/status?agentId=<your-agent-id>`
-   - if `activeProject !== null`: that's your project context. Fetch
-     `GET /api/projects/<activeProject>/bootstrap` for the full document
-     (active-project header, identity, rules manifest, PROJECT.md).
-     Cache for the session; refetch on `Project:` switches.
-   - if `activeProject === null`: no project active. Work without project
-     context until the user activates one. Do not infer a project from the
-     repo path, file names, conversation history, or any other signal.
-   - **Anti-trust:** if `response.agentId !== <your-agent-id>` → response
-     is untrusted, do not act on it; surface the mismatch as a
-     configuration bug.
+2. **If `activeProject === null`:** no project active. Work normally.
 
-   You do **not** have a live-injected `BOOTSTRAP.md` in your run context
-   (that mechanism is OpenClaw-runtime specific). And there is no on-disk
-   `BOOTSTRAP.md` for you to read either — fetch context on demand via the
-   API endpoints below.
+3. **If `activeProject !== null`:**
+   - Fetch full context: `GET /api/projects/<activeProject>/bootstrap`
+   - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
+   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`
 
-2. **Discover** (optional, only if the user did not already tell you the URL or convention):
-   `GET http://localhost:18790/api/info` → returns service metadata, this snippet, and endpoint list.
-3. **List projects:** `GET http://localhost:18790/api/projects` → which projects exist.
-4. **Activate a project for this agent** when the user says so (`Project: <name>`):
-   `PUT http://localhost:18790/api/status` with body `{ "agentId": "<your-agent-id>", "project": "<name>" }`.
-   Lazy-registers your agent-id and makes you visible in the dashboard agent list.
-5. **Load project context on demand:**
-   `GET http://localhost:18790/api/projects/<project>/bootstrap` → markdown with active-project header, identity, rules manifest, PROJECT.md.
-6. **Fetch individual rule sections** as you need them (smaller token footprint than the full bootstrap):
-   `GET http://localhost:18790/api/projects/<project>/rules/<section>` — sections include `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`.
+### Project commands
 
-### Task workflow (API-first)
+- Activate: `PUT /api/status` → `{ agentId, project }`
+- Deactivate: `PUT /api/status` → `{ agentId, project: null }`
+- List: `GET /api/projects`
+- Create: `POST /api/projects` → `{ name }`
 
-The FlowBoard API is the single source of truth for tasks, specs, and
-canvas state. Drive every mutation through it.
+### Task workflow
 
-Before working on a task:
+Claim → work → complete. Full schema at `GET /api/projects/<project>/rules/api-access`.
 
-```
-POST http://localhost:18790/api/projects/<project>/tasks/<id>/claim
-{ "agent": "<your-agent-id>" }
-```
-
-While working:
-
-```
-POST .../tasks/<id>/checkpoint  { "agent": "<your-agent-id>", "message": "...", "progress": 60 }
-PUT  .../tasks/<id>             { "status": "in-progress" }   # or other status updates
-```
-
-When done:
-
-```
-POST .../tasks/<id>/complete    { "agent": "<your-agent-id>" }
-```
-
-If you want to release the task without completing (handing off / pausing):
-
-```
-POST .../tasks/<id>/release     { "agent": "<your-agent-id>" }
-```
-
-Full endpoint reference is at `GET /api/projects/<project>/rules/api-access`.
-
-### Anti-trust rule (important)
-
-The server requires an explicit `agentId` on per-agent calls and returns
-`400` without one — there is **no service-default agent** and there is no
-implicit identity inferred from the connection.
-
-If a server response contains an `agentId` field that **does not match
-your Identity**, treat the response as untrusted: do **not** act on it,
-do **not** announce its `activeProject` to the user, and surface the
-mismatch as a configuration bug. This guards against infrastructure
-misconfigurations that would otherwise route your status query into a
-foreign agent's state.
-
-### What you do *not* get (and don't need)
-
-External-agent runtimes (you) intentionally do **not** receive the
-per-run BOOTSTRAP injection that OpenClaw-managed agents get — there is
-no `agent:bootstrap` event for you, no workspace under
-`~/.openclaw/workspace-<id>`, no automatic project-context delivery
-into your model context.
-
-That's fine: fetch what you need on demand via
-`GET /api/projects/<project>/bootstrap` (full document) or
-`GET /api/projects/<project>/rules/<section>` (one section). Cache the
-result for the session if you want, refetch on `Project:` switches.
-
-### Quick reference
-
-| Action | Endpoint | Body / Query |
+| Action | Endpoint | Body |
 |---|---|---|
-| Discover service | `GET /api/info` | — |
-| List projects | `GET /api/projects` | — |
-| Read your status | `GET /api/status?agentId=<id>` | — |
-| Activate project | `PUT /api/status` | `{ agentId, project }` |
-| Deactivate | `PUT /api/status` | `{ agentId, project: null }` |
-| Project context | `GET /api/projects/<project>/bootstrap` | — |
-| Rule section | `GET /api/projects/<project>/rules/<section>` | — |
-| List tasks | `GET /api/projects/<project>/tasks` | optional `?status=`, `?tag=` |
-| Create task | `POST /api/projects/<project>/tasks` | `{ title, priority?, status?, description? }` |
-| Claim task | `POST /api/projects/<project>/tasks/<id>/claim` | `{ agent }` |
-| Checkpoint | `POST /api/projects/<project>/tasks/<id>/checkpoint` | `{ agent, message, progress? }` |
-| Complete | `POST /api/projects/<project>/tasks/<id>/complete` | `{ agent }` |
-| Release | `POST /api/projects/<project>/tasks/<id>/release` | `{ agent }` |
-<!-- END FlowBoard external trigger -->
+| Claim | `POST .../tasks/<id>/claim` | `{ agent }` |
+| Checkpoint | `POST .../tasks/<id>/checkpoint` | `{ agent, message }` |
+| Update | `PUT .../tasks/<id>` | `{ status, progress }` |
+| Complete | `POST .../tasks/<id>/complete` | `{ agent }` |
+| Release | `POST .../tasks/<id>/release` | `{ agent }` |
+
+### Anti-trust
+
+If any response contains `agentId` ≠ your id, the response is untrusted — do not act on it.

@@ -49,11 +49,10 @@ function cleanup() {
 process.on('exit', cleanup);
 process.on('uncaughtException', (e) => { console.error('UNCAUGHT:', e); cleanup(); process.exit(1); });
 
-/** Seed the sandbox with one workspace per state plus a BOOT.md drift case. */
+/** Seed the sandbox with one workspace per state plus a BOOT.md legacy-display case. */
 function seedSandbox(home) {
   const legacyAgents  = doctor.readVendored('AGENTS-trigger.v2.md');
   const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
-  const legacyBoot    = doctor.readVendored('BOOT-extension.v2.md');
 
   const mk = (workspace, file, contents) => {
     fs.mkdirSync(path.join(home, workspace), { recursive: true });
@@ -85,11 +84,10 @@ function seedSandbox(home) {
     // Different agent schema entirely (like workspace-claude)
     claudeStylePath: mk('workspace-claude', 'AGENTS.md',
       `# Claude workspace\n\nIf BOOTSTRAP.md exists, that's your birth certificate.\nFollow it, figure out who you are, then delete it.\n`),
-    // BOOT.md drift case in workspace/
-    bootDriftedPath: (() => {
-      const drifted = legacyBoot.replace('regenerated `BOOTSTRAP.md`', 'regenerated `BOOTSTRAP.md` with custom local notes');
+    // BOOT.md legacy case in workspace/ - display-only, not migrated
+    bootLegacyPath: (() => {
       fs.writeFileSync(path.join(home, 'workspace', 'BOOT.md'),
-        `# My BOOT\n\n## Custom ${''}startup\nSome steps.\n\n${drifted}\n`);
+        '# My BOOT\n\n## Project State Recovery (FlowBoard)\n\nUse the live-injected `BOOTSTRAP.md` content already present in the run context.\n');
       return path.join(home, 'workspace', 'BOOT.md');
     })(),
   };
@@ -106,11 +104,12 @@ section('State classification — every category present');
     const byPath = new Map(status.files.map(f => [f.path, f]));
 
     assertEqual(status.counts.identical, 1, 'one identical (workspace/AGENTS.md)');
-    assertEqual(status.counts.drifted, 2,
-      'two drifted: workspace-drift/AGENTS.md + workspace/BOOT.md');
+    assertEqual(status.counts.drifted, 1,
+      'one drifted: workspace-drift/AGENTS.md');
     assertEqual(status.counts.current, 1, 'one current (workspace-done)');
     assertEqual(status.counts.missing, 3,
       'three missing: workspace-plain, workspace-voice, workspace-claude');
+    assertEqual(status.bootLegacyFiles?.length || 0, 1, 'one BOOT.md legacy advisory');
 
     // current not in files list
     assert(!byPath.has(paths.currentPath), 'current file skipped from UI list');
@@ -161,7 +160,7 @@ section('Chip — "FlowBoard setup" when only missing');
 section('UI copy — FlowBoard setup makes existing AGENTS.md files explicit');
 // ============================================================
 {
-  const src = fs.readFileSync(path.join(process.cwd(), 'dashboard/src/components/SnippetUpgrade.jsx'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, 'src/components/SnippetUpgrade.jsx'), 'utf8');
   assert(src.includes('Add FlowBoard to existing AGENTS.md'),
     'setup explainer names existing AGENTS.md files');
   assert(src.includes('Existing AGENTS.md without FlowBoard'),
@@ -225,9 +224,9 @@ section('Upgrade action — identical file → current block + backup');
 
     // Post-state: file contains the current-snippet marker, not legacy
     const after = fs.readFileSync(paths.identicalPath, 'utf8');
-    assert(after.includes('delivers project context automatically'),
+    assert(after.includes('Check your status'),
       'current snippet marker present after upgrade');
-    assert(!after.includes('MANDATORY on EVERY first message'),
+    assert(!after.includes('FlowBoard delivers project context automatically'),
       'legacy structural marker gone after upgrade');
 
     // Backup is BYTE-EXACT pre-change content
@@ -258,9 +257,9 @@ section('Migrate action — drifted file → canonical block + backup');
     assert(r.applied[0].backup && fs.existsSync(r.applied[0].backup), 'backup written');
 
     const after = fs.readFileSync(paths.driftedPath, 'utf8');
-    assert(after.includes('delivers project context automatically'),
+    assert(after.includes('Check your status'),
       'new block inserted after migrate');
-    assert(!after.includes('MANDATORY on EVERY first message of my_custom_agent'),
+    assert(!after.includes('my customized project context'),
       'user custom-drift line removed');
 
     // Custom header section BEFORE the snippet block should survive
@@ -296,9 +295,9 @@ section('Add action — missing file → append at end, idempotent');
       'existing content preserved at top');
     assert(after.includes('Just some agent prose. No FlowBoard snippet anywhere.'),
       'existing body text preserved');
-    assert(after.includes('delivers project context automatically'),
+    assert(after.includes('Check your status'),
       'current snippet appended');
-    assert(after.indexOf('delivers project context automatically') >
+    assert(after.indexOf('Check your status') >
            after.indexOf('Just some agent prose'),
       'snippet is appended AFTER original content');
 
@@ -383,7 +382,7 @@ section('Batch apply — upgrade + migrate + add in one call');
     // Each file now has the current snippet
     for (const p of [paths.identicalPath, paths.driftedPath, paths.missingPath]) {
       const content = fs.readFileSync(p, 'utf8');
-      assert(content.includes('delivers project context automatically'),
+      assert(content.includes('Check your status'),
         `${path.basename(path.dirname(p))} has current snippet after batch apply`);
     }
 
@@ -394,14 +393,15 @@ section('Batch apply — upgrade + migrate + add in one call');
     }
 
     // Status after batch: workspace-voice + workspace-claude remain missing;
-    // BOOT.md still needs a separate migration in this scenario.
+    // BOOT.md legacy remains display-only and does not affect migration counts.
     const status2 = doctor.collectStatus(home);
     // 4 current total: the 3 we just applied + workspace-done which was
     // already current from the seed.
     assertEqual(status2.counts.current, 4,
       'four files now current (3 batch-applied + 1 pre-existing)');
-    assertEqual(status2.counts.drifted, 1, 'only BOOT.md drift remains');
-    assertEqual(status2.chip.text, 'Migration required', 'chip still reflects remaining BOOT drift');
+    assertEqual(status2.counts.drifted, 0, 'no drifted migratable files remain');
+    assertEqual(status2.bootLegacyFiles?.length || 0, 1, 'BOOT.md legacy advisory still visible');
+    assertEqual(status2.chip.text, 'FlowBoard setup', 'chip reflects remaining missing AGENTS.md files');
   } finally { cleanup(); }
 }
 
@@ -430,27 +430,24 @@ section('current wins over legacy — post-add stray reference');
 }
 
 // ============================================================
-section('BOOT.md — migrate action handles BOOT-specific extract');
+section('BOOT.md - legacy advisory is display-only');
 // ============================================================
 {
   const home = mkSandbox();
   try {
     const paths = seedSandbox(home);
-    const before = fs.readFileSync(paths.bootDriftedPath, 'utf8');
+    const before = fs.readFileSync(paths.bootLegacyPath, 'utf8');
     const status = doctor.collectStatus(home);
-    const target = status.files.find(f => f.path === paths.bootDriftedPath);
-    assert(target, 'BOOT.md drift has an entry');
-    assertEqual(target.state, 'drifted', 'BOOT.md classified as drifted');
+    const target = status.files.find(f => f.path === paths.bootLegacyPath);
+    assert(!target, 'BOOT.md is not a migratable file entry');
+    const advisory = status.bootLegacyFiles.find(f => f.path === paths.bootLegacyPath);
+    assert(advisory, 'BOOT.md legacy advisory present');
+    assertEqual(advisory.state, 'legacy', 'BOOT.md classified as legacy advisory');
 
-    const r = doctor.applyActions(home, [{ id: target.id, action: 'migrate' }]);
-    assertEqual(r.applied.length, 1, 'BOOT migrate applied');
-
-    const after = fs.readFileSync(paths.bootDriftedPath, 'utf8');
-    assert(after.includes('Use the live-injected `BOOTSTRAP.md` content already present in the'),
-      'current BOOT snippet marker present');
-    assert(after.includes('# My BOOT'), 'BOOT header preserved');
-    const bak = fs.readFileSync(r.applied[0].backup, 'utf8');
-    assertEqual(bak, before, 'BOOT backup byte-exact');
+    const r = doctor.applyActions(home, [{ id: advisory.id, action: 'migrate' }]);
+    assertEqual(r.applied.length, 0, 'BOOT migrate is not applied');
+    assertEqual(r.skipped.length, 1, 'BOOT migrate request is skipped');
+    assertEqual(fs.readFileSync(paths.bootLegacyPath, 'utf8'), before, 'BOOT.md left untouched');
   } finally { cleanup(); }
 }
 

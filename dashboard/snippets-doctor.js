@@ -36,6 +36,8 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 // previously-canonical (now-legacy) shape.
 const LEGACY_MARKERS = [
   'echo "$OPENCLAW_AGENT_ID"',
+  'Use the live-injected `BOOTSTRAP.md`',
+  'regenerated `BOOTSTRAP.md`',
 ];
 
 // Snippet targets: which workspace files are migrated, which vendored/current
@@ -73,32 +75,29 @@ const TARGETS = [
     // a v3 layer rather than chaining markers here.
     vendored: 'AGENTS-trigger.v2.md',
     current: 'AGENTS-trigger.md',
-    summary: 'Replace shell-introspection identity guidance with BOOTSTRAP.md Identity-section read (the project-context hook live-injects it via agent:bootstrap)',
-    addSummary: 'Add the FlowBoard project trigger block with the API-first task workflow',
+    summary: 'Replace shell-introspection identity guidance with API-first status check and lazy context loading',
+    addSummary: 'Add the minimal FlowBoard API-first trigger (status check → lazy load)',
     // Phrase unique to the canonical v2 snapshot. Doctor uses this for both
     // drift detection (file has the marker but body no longer byte-matches)
     // and for replaceDriftedBlock's heading anchor.
+    legacyFingerprint: [
+      'FlowBoard delivers project context automatically',
+      'At session start',
+      'project context',
+      'Fetch individual sections on demand',
+    ],
     legacyStructuralMarkers: [
       'echo "$OPENCLAW_AGENT_ID"',
     ],
-    // Phrase unique to the current block — if present, migration is already
-    // done for this file; no action needed.
+    // Fingerprint for current block — 3 of 4 phrases = current
+    currentFingerprint: [
+      'Check your status',
+      'GET /api/status',
+      'activeProject === null',
+      'lazy',
+    ],
     currentMarkers: [
       '<your-agentId-from-BOOTSTRAP>',
-    ],
-  },
-  {
-    name: 'BOOT.md',
-    vendored: 'BOOT-extension.v2.md',
-    current: 'BOOT-extension.md',
-    summary: 'Point bootstrap at BOOTSTRAP.md manifest instead of eager PROJECT-RULES load',
-    addSummary: 'Add the FlowBoard gateway-restart recovery block',
-    legacyStructuralMarkers: [
-      'regenerated `BOOTSTRAP.md`',
-    ],
-    // Phrase unique to the current live-inject-safe BOOT snippet.
-    currentMarkers: [
-      'Use the live-injected `BOOTSTRAP.md` content already present in the',
     ],
   },
 ];
@@ -112,11 +111,7 @@ function containsAny(content, markers) {
 // the whole current file IS the snippet. For BOOT.md the current file wraps
 // the snippet in a markdown code fence (```markdown ... ```) — extract the
 // content inside the fence.
-function extractInsertBody(target, currentText) {
-  if (target.name === 'BOOT.md') {
-    const m = currentText.match(/```markdown\n([\s\S]*?)```/);
-    if (m) return m[1].trimEnd();
-  }
+function extractInsertBody(_target, currentText) {
   return currentText.trimEnd();
 }
 
@@ -231,6 +226,15 @@ function makeFileId(openclawHome, filePath) {
 //   'current'    — already has the new canonical block → done, skip in UI
 //   'missing'    — file exists but has no snippet block at all (may still
 //                  contain stray legacy-path references in other contexts)
+// Multi-phrase fingerprint matching for robust legacy detection.
+// Returns { matched, total, score } where score is matched/total.
+function matchesFingerprint(content, phrases, threshold = 0.75) {
+  if (!Array.isArray(phrases) || phrases.length === 0) return { matched: 0, total: 0, score: 0 };
+  const matched = phrases.filter(p => content.includes(p)).length;
+  const score = matched / phrases.length;
+  return { matched, total: phrases.length, score, meetsThreshold: score >= threshold };
+}
+
 function classifyFile(filePath, target, { legacyBlock, newBlock }) {
   let content;
   try { content = fs.readFileSync(filePath, 'utf8'); }
@@ -238,16 +242,23 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
 
   // Priority order matters: "current" wins over legacy to prevent endless
   // re-flagging after a post-add file still carries a stray legacy reference.
-  if (containsAny(content, target.currentMarkers)) {
-    return { state: 'current', content };
+  const currentMatch = matchesFingerprint(content, target.currentFingerprint || target.currentMarkers, 0.75);
+  if (currentMatch.meetsThreshold) {
+    return { state: 'current', content, confidence: currentMatch.score };
   }
-  if (matchesLegacyBlockExactly(content, legacyBlock)) {
-    return { state: 'identical', content };
+
+  // New: multi-phrase fingerprint for legacy detection
+  const legacyFingerprint = target.legacyFingerprint || target.legacyStructuralMarkers;
+  const legacyMatch = matchesFingerprint(content, legacyFingerprint, 0.75);
+  if (legacyMatch.meetsThreshold) {
+    // Check if byte-identical to vendored snapshot
+    if (matchesLegacyBlockExactly(content, legacyBlock)) {
+      return { state: 'identical', content, confidence: legacyMatch.score };
+    }
+    return { state: 'drifted', content, confidence: legacyMatch.score };
   }
-  if (containsAny(content, target.legacyStructuralMarkers)) {
-    return { state: 'drifted', content };
-  }
-  return { state: 'missing', content };
+
+  return { state: 'missing', content, confidence: 0 };
 }
 
 // Aggregate snippet status across all workspace dirs under OPENCLAW_HOME.
@@ -311,7 +322,30 @@ function collectStatus(openclawHome) {
     chip = { text: 'FlowBoard setup', variant: 'warn' };
   }
 
-  return { counts, chip, files };
+  // BOOT.md Legacy-Erkennung (nur anzeigen, nicht migrieren)
+  const bootLegacyFiles = [];
+  const bootCandidates = findCandidateFiles(openclawHome, 'BOOT.md');
+  for (const filePath of bootCandidates) {
+    let content;
+    try { content = fs.readFileSync(filePath, 'utf8'); }
+    catch { continue; }
+    const bootLegacyMatch = matchesFingerprint(content, [
+      'Use the live-injected `BOOTSTRAP.md`',
+      'Project State Recovery (FlowBoard)',
+    ], 0.5);
+    if (bootLegacyMatch.meetsThreshold) {
+      bootLegacyFiles.push({
+        id: makeFileId(openclawHome, filePath),
+        path: filePath,
+        name: 'BOOT.md',
+        state: 'legacy',
+        summary: 'BOOT.md contains deprecated FlowBoard content. Clean up manually — this file should be OpenClaw-owned.',
+        variant: 'info',
+      });
+    }
+  }
+
+  return { counts, chip, files, bootLegacyFiles };
 }
 
 // Apply a list of {id, action} pairs atomically per file.

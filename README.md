@@ -132,8 +132,13 @@ Migrations run automatically on server start (tasks migration, per-agent
 active-project DB setup, PROJECT-RULES canonical-path symlink, legacy-snippet
 advisory).
 
+The server defaults to `~/.openclaw/workspace`. Override with `OPENCLAW_WORKSPACE` if needed:
+
 ```bash
 HZL_ENABLED=true node server.js
+# Or with custom workspace:
+# OPENCLAW_WORKSPACE=/path/to/workspace HZL_ENABLED=true node server.js
+
 # Or with systemd (auto-start on boot):
 cp templates/dashboard.service ~/.local/share/systemd/user/
 systemctl --user enable --now dashboard
@@ -333,9 +338,8 @@ systemctl --user restart dashboard
 
 ```
 ~/.openclaw/workspace-<agent>/
-├── AGENTS.md                     # Agent trigger — contains the FlowBoard snippet
-├── BOOTSTRAP.md                  # Auto-generated per session (active project + rules manifest)
-├── BOOT.md                       # Optional — gateway-restart recovery block
+├── AGENTS.md                     # Minimal FlowBoard trigger — status check + lazy load
+├── BOOTSTRAP.md                  # OpenClaw-owned runtime bootstrap; FlowBoard does not write this
 └── (ACTIVE-PROJECT.md)           # Legacy fallback, DB is canonical (flowboard_agents)
 
 ~/.openclaw/projects/             # Shared project data (m004-moved from workspace/projects)
@@ -364,15 +368,15 @@ systemctl --user restart dashboard
 │   ├── error-handling.md / key-principles.md
 │   └── legacy/PROJECT-RULES.md   # Archived pre-lazy-load monolith
 ├── snippets/
-│   ├── AGENTS-trigger.md         # Current trigger block for AGENTS.md
-│   ├── BOOT-extension.md         # Current recovery block for BOOT.md
-│   └── legacy/*.v1.md            # Vendored legacy copies for byte-match detection
-└── hooks/project-context/        # Live-injects BOOTSTRAP.md content into agent:bootstrap events
+│   ├── AGENTS-trigger.md         # Minimal trigger block for AGENTS.md
+│   ├── external-trigger.md       # Minimal trigger for external agents
+│   └── legacy/*.v*.md            # Vendored legacy copies for byte-match/fingerprint detection
+└── hooks/project-context/        # Keeps project status available; agents fetch context lazily
 ```
 
 **Key principles:**
 - 📡 **DB-canonical** — project + per-agent state live in `flowboard_agents` / `flowboard_projects`
-- 🧩 **Lazy-load rules** — agent sees a manifest in BOOTSTRAP.md, fetches sections on demand
+- 🧩 **Lazy-load rules** — agent checks `/api/status`, then fetches bootstrap/rules on demand
 - 🔒 **Local-first** — everything runs on your machine; API is localhost
 - 🧪 **API-driven** — dashboard and agents share the same REST surface
 - ⚡ **Lazy loading** — Zero overhead when no project active

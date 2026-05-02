@@ -13,7 +13,7 @@ const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
 // S-17: Default to localhost — Cloudflare Tunnel connects via 127.0.0.1 anyway
 const HOST = process.env.FLOWBOARD_HOST || '127.0.0.1';
 
-const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.resolve(__dirname, '..');
+const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.join(process.env.HOME, '.openclaw', 'workspace');
 const OPENCLAW_HOME = path.resolve(WORKSPACE, '..');
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(OPENCLAW_HOME, 'projects');
 const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : path.join(WORKSPACE, 'projects');
@@ -498,13 +498,10 @@ app.put('/api/status', async (req, res) => {
     // Send wake event to notify agent of project switch
     if (effectiveProject) {
       const apiHints =
-        `Kontext laden: GET /api/projects/${effectiveProject}/bootstrap. ` +
-        `Tasks führst du über die API: ` +
-        `POST /api/projects/${effectiveProject}/tasks zum Anlegen, ` +
-        `POST /api/projects/${effectiveProject}/tasks/{id}/claim mit {"agent":"${agentId}"} bevor du an einem Task arbeitest, ` +
-        `PUT /api/projects/${effectiveProject}/tasks/{id} für Status/Progress, ` +
-        `POST /api/projects/${effectiveProject}/tasks/{id}/complete bei Fertigstellung. ` +
-        `Endpoint-Schema: GET /api/projects/${effectiveProject}/rules/api-access.`;
+        `Prüfe deinen Status: GET /api/status?agentId=${agentId}. ` +
+        `Wenn activeProject=${effectiveProject}: lade Kontext via GET /api/projects/${effectiveProject}/bootstrap ` +
+        `und Rules on-demand via GET /api/projects/${effectiveProject}/rules/<section>. ` +
+        `Tasks führst du über die API — siehe GET /api/projects/${effectiveProject}/rules/api-access.`;
       const wakeText = previousProject && previousProject !== effectiveProject
         ? `Projekt gewechselt von ${previousProject} auf ${effectiveProject}. ${apiHints}`
         : `Projekt ${effectiveProject} aktiviert. ${apiHints}`;
