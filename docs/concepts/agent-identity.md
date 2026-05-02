@@ -1,0 +1,64 @@
+# Agent Identity
+
+## What
+
+Every action against the FlowBoard API is attributed to an **agent-id**: a plain string like `dev-botti`, `main`, or `claude-code`. The agent-id is the routing key for per-agent state (active project, task claims) and the attribution key on every task mutation (claim, release, checkpoint, comment, complete).
+
+There is no central registration step and no foreign key — the agent-id is *just a string*, agreed by convention between the agent and the server.
+
+## Why
+
+A naive design would tie agent-id to a session token, an OAuth identity, or a row primary key. FlowBoard rejects all three for two reasons. First, the system runs across heterogeneous agent surfaces: OpenClaw-managed Telegram bots, external CLI agents (Codex, Cursor, Claude Code), cron scripts, manual `curl` from the terminal. A single auth model would either lock out legitimate callers or balloon into a per-surface adapter layer. Second, agent identity is a *workflow* concept, not a security concept — FlowBoard is a personal coordination tool, not a multi-tenant service. Trust-on-write is sufficient for the operator's own machine.
+
+The string-based model has one explicit invariant: the agent must always pass its own id, and the server never substitutes a default. The latent default-fallback bug fixed in ADR-0002 (where `OPENCLAW_AGENT_ID || 'main'` silently routed missing-agentId calls to a phantom agent) is the cautionary tale this rule exists to prevent.
+
+## How
+
+There are two independent layers that happen to use the same agent-id string.
+
+**OpenClaw layer.** For agents managed by OpenClaw (Telegram bots, channel-routed runs), the agent-id is a property of the workspace. OpenClaw's config (`~/.openclaw/openclaw.json`) defines which workspace a channel routes to: `agent dev-botti` → `~/.openclaw/workspace-dev-botti`. The `project-context` hook derives the canonical agent-id from `event.context.workspaceDir` using the filesystem convention:
+
+- `~/.openclaw/workspace` → `main`
+- `~/.openclaw/workspace-<id>` → `<id>`
+
+The workspace-derived id wins over `event.context.agentId` if they disagree — the workspace is the durable signal, the event field is sometimes empty or stale (see ADR-0001 for the trigger code path that exposed this). The hook then writes the resulting id into the live-injected `## Identity` section of the bootstrap document, which is how the agent learns its own name for the duration of the run.
+
+**FlowBoard layer.** The `flowboard_agents` table is FlowBoard's bookkeeping for *which agent is active on which project*:
+
+| Column | Meaning |
+|---|---|
+| `agent_id` | Primary key, the string |
+| `active_project` | Project name or `NULL` |
+| `activated_at` | ISO timestamp of last project switch |
+
+**Lazy registration.** A row in `flowboard_agents` is created on the first `PUT /api/status {agentId, project}` for an unknown agent. Task mutations alone (claim, release, complete) do not create an agent row — they store the agent-id in `tasks_current.agent` and that's it. The table answers "which agents have an active project", not "which agents exist". An agent that only claims tasks but never activates a project shows up as `tasks_current.agent` but is invisible to `GET /api/agents`.
+
+**External agents** are first-class citizens under the same rules. They:
+- pick a stable agent-id (recommended convention: `codex`, `cursor`, `claude-code`, `cron-nightly`, or hostname-suffixed variants like `claude-code-jetson`)
+- pass `agent` / `agentId` in every API call (no server defaults — see ADR-0002, ADR-0003)
+- are lazy-registered into `flowboard_agents` on their first `PUT /api/status`
+- fetch project context via `GET /api/projects/<name>/bootstrap` since they have no live-inject
+
+The `GET /api/info` endpoint documents the convention and serves the external-trigger snippet for self-onboarding.
+
+## Consequences
+
+- **The string is the contract.** A typo in the agent-id silently creates a new lazy-registered agent. There is no fuzzy match. Agents must use the exact id from their bootstrap (for OpenClaw agents, the `## Identity` section) or their stable convention (for external agents).
+- **Attribution survives agent deletion.** `DELETE /api/agents/:id` removes the `flowboard_agents` row, but `tasks_current.agent = "<id>"` and the HZL event log are unaffected — agent-id is a string, not an FK. Old comments, checkpoints, and completed tasks keep their authorship even if the agent is later removed.
+- **Active-claim conflict on delete.** `DELETE /api/agents/:id` returns 409 if the agent has open task claims, listing them. `?force=true` releases the claims (status preserved, lease dropped) and proceeds. This is the only place where agent-id behaves like a relationship.
+- **No auth boundary.** Anyone with access to the dashboard port can pose as any agent-id. This is intentional for the personal-tool deployment model. Don't expose the dashboard to a network you don't trust.
+- **The two layers don't enforce each other.** An OpenClaw agent (workspace-derived id) that never activates a project never appears in `flowboard_agents`. A `claude-code` external agent that never has a workspace can still activate projects and claim tasks. This is by design — the layers are loosely coupled by convention on the string alone.
+
+## Code
+
+- `hooks/project-context/handler.js` — `deriveAgentIdFromWorkspace()`, `buildIdentitySection()`.
+- `dashboard/server.js` — `/api/status` (per-agent), `/api/agents` (list), `DELETE /api/agents/:id` (with `?force=`), `/api/info` (external onboarding).
+- `dashboard/fb-meta.js` — `flowboard_agents` table CRUD (`getAgentRow`, `setAgentActiveProject`, `listAgents`, `deleteAgentRow`).
+- `dashboard/hzl-service.js` — `listTasksClaimedBy(agentId)`, the conflict check for `DELETE /api/agents/:id`.
+
+## See also
+
+- [ADR-0002](../adr/0002-api-status-requires-agent-id.md) — `/api/status` requires explicit agentId
+- [ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md) — Dashboard has no agent identity
+- [Hook Architecture](hook-architecture.md) — how OpenClaw agents learn their own id
+- [Multi-Agent Model](multi-agent-model.md) — what `flowboard_agents` tracks vs. what task rows track
