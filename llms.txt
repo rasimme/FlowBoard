@@ -17,6 +17,7 @@
 - [Hook Architecture](docs/concepts/hook-architecture.md) — the single `agent:bootstrap` subscription; mutates `bootstrapFiles`; no on-disk writes
 - [Multi-Agent Model](docs/concepts/multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`; lazy registration; claim/release/handoff
 - [Kanban](docs/concepts/kanban.md) — five-column workflow; lease semantics; subtask depth; blocked-as-flag; archived-vs-trashed
+- [Idea Canvas](docs/concepts/idea-canvas.md) — visual brainstorm; notes/connections/clusters; promote pipeline via Specify session
 
 ## Decisions (ADRs)
 

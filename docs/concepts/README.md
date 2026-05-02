@@ -17,6 +17,7 @@ Each concept doc answers five questions:
 - [Hook Architecture](hook-architecture.md) — the single `agent:bootstrap` subscription, what it mutates, why no other events
 - [Multi-Agent Model](multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`, lazy registration, claim/release/handoff
 - [Kanban](kanban.md) — five-column workflow, lease semantics, subtask depth, blocked-as-flag, archived-vs-trashed
+- [Idea Canvas](idea-canvas.md) — visual brainstorm, notes/connections/clusters, promote pipeline via Specify session
 
 ## Coverage Matrix
 
@@ -31,7 +32,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
-| Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | 🔲 [idea-canvas.md](idea-canvas.md) | 🔲 likely needed | T-200-3 |
+| Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | 🔲 needed | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | 🔲 [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | T-200-4 |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | 🔲 [specify-workflow.md](specify-workflow.md) | ⬜ TBD after concept | T-200-5 |
 | Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | 🔲 [auth-model.md](auth-model.md) | ⬜ TBD after concept | T-200-6 |
