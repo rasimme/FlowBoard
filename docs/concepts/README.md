@@ -16,6 +16,7 @@ Each concept doc answers five questions:
 - [Agent Identity](agent-identity.md) — agent-id as a string contract, the OpenClaw vs. FlowBoard layers, lazy registration, attribution
 - [Hook Architecture](hook-architecture.md) — the single `agent:bootstrap` subscription, what it mutates, why no other events
 - [Multi-Agent Model](multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`, lazy registration, claim/release/handoff
+- [Kanban](kanban.md) — five-column workflow, lease semantics, subtask depth, blocked-as-flag, archived-vs-trashed
 
 ## Coverage Matrix
 
@@ -29,7 +30,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Agent Identity | agent-id string contract; OpenClaw vs FlowBoard layers | ✅ [agent-identity.md](agent-identity.md) | ✅ ADR-0002, ADR-0003 | — |
 | Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
-| Kanban | Status workflow; subtask model; lease semantics from user POV | 🔲 [kanban.md](kanban.md) | 🔲 likely needed | T-200-2 |
+| Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | 🔲 [idea-canvas.md](idea-canvas.md) | 🔲 likely needed | T-200-3 |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | 🔲 [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | T-200-4 |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | 🔲 [specify-workflow.md](specify-workflow.md) | ⬜ TBD after concept | T-200-5 |
