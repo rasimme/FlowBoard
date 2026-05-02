@@ -49,6 +49,25 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 
 **Removing a row:** only when the surface itself has been removed from FlowBoard. Documentation gaps are not closed by deleting rows.
 
+## Pending ADR Candidates
+
+Decisions surfaced while writing concept docs that may warrant their own ADR. Each entry stays here until triage decides `keep` (a tracked task is created) or `drop` (with a brief reason). This list is the durable record between concept-doc writing and the T-199 backlog triage.
+
+Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted, tracked task exists · `dropped` — explicitly rejected (reason in line)
+
+| Surface | Candidate decision | Source | Status |
+|---|---|---|---|
+| Multi-Agent Model | HZL Task-Bridge: claim/release/complete API contract, lease, `tasks_current` | [multi-agent-model.md](multi-agent-model.md) | `tasked` → T-199-1 |
+| Agent Identity | External-Agent Discovery: `/api/info` + self-onboarding + lazy registration | [agent-identity.md](agent-identity.md) | `tasked` → T-199-2 |
+| Agent Identity | `x-openclaw-agent-id` header dual-acceptance on `/api/status` | [api/agents.md](../reference/api/agents.md) | `tasked` → T-199-3 |
+| (cross-cutting) | Bug-fix: `hzl-service.js` reads `process.env.PORT` instead of `FLOWBOARD_PORT` | T-197-8 drift test | `tasked` → T-199-4 (bug, not ADR) |
+| Kanban | `blocked` is a boolean flag, not a status | [kanban.md](kanban.md) | `proposed` |
+| Kanban | Subtask depth hard-capped at 1 level | [kanban.md](kanban.md) | `proposed` |
+| Idea Canvas | Canvas stays vanilla JS — no React migration | [idea-canvas.md](idea-canvas.md) | `proposed` |
+| Idea Canvas | Canvas state in `canvas.json` per project — not HZL event-sourced | [idea-canvas.md](idea-canvas.md) | `proposed` |
+| Idea Canvas | Connections undirected in storage, directed in rendering | [idea-canvas.md](idea-canvas.md) | `proposed` (likely too small for own ADR; absorb into concept doc) |
+| Idea Canvas | Specify-session concurrency: max 1 active per `agentId` | [idea-canvas.md](idea-canvas.md) | `proposed` (may belong to a Specify ADR instead) |
+
 ## See also
 
 - [Architecture Decision Records](../adr/) — the *what was decided* layer (chronologically numbered, immutable)
