@@ -89,8 +89,9 @@ npm install
 
 FlowBoard ships as an OpenClaw hook pack (declared via `package.json` →
 `openclaw.hooks`). Register it through OpenClaw's plugin lifecycle so the
-gateway loads `project-context` on startup, `/new`, `/reset`, and after
-compaction:
+gateway runs `project-context` before every agent run (covering `/new`,
+`/reset`, gateway startup, daily reset, idle expiry, and project switch
+via `PUT /api/status`):
 
 ```bash
 openclaw plugins install ~/repos/FlowBoard --link
@@ -108,7 +109,7 @@ Verify the hook is registered:
 
 ```bash
 openclaw hooks info project-context
-# Expect: ✓ Ready, source openclaw-managed, all four events listed
+# Expect: ✓ Ready, source openclaw-managed, subscribed to agent:bootstrap
 ```
 
 #### Upgrading from earlier FlowBoard versions
