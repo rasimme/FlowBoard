@@ -34,6 +34,8 @@
 - [ADR-0006](docs/adr/0006-structural-fingerprinting-for-snippet-drift.md) — Multi-phrase structural fingerprinting for snippet drift detection
 - [ADR-0007](docs/adr/0007-hzl-task-bridge-and-brain-muscle-split.md) — HZL Task-Bridge + Brain/Muscle split (umbrella, retroactive)
 - [ADR-0008](docs/adr/0008-hzl-single-writer-constraint.md) — HZL DB single-writer constraint
+- [ADR-0009](docs/adr/0009-blocked-as-flag-not-status.md) — `blocked` is a flag, not a status
+- [ADR-0010](docs/adr/0010-subtask-depth-max-one.md) — Subtask depth hard-capped at one level
 
 ## Reference
 
