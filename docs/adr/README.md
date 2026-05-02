@@ -51,6 +51,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0008](0008-hzl-single-writer-constraint.md) — HZL DB single-writer constraint (retroactive 2026-04-01)
 - [ADR-0009](0009-blocked-as-flag-not-status.md) — `blocked` is a flag, not a status (retroactive 2026-04-01)
 - [ADR-0010](0010-subtask-depth-max-one.md) — Subtask depth hard-capped at one level (retroactive 2026-04-01)
+- [ADR-0011](0011-external-agent-discovery.md) — External-agent discovery via `/api/info` and self-onboarding snippet (2026-04-30)
 
 ## See also
 

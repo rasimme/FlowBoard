@@ -36,6 +36,7 @@
 - [ADR-0008](docs/adr/0008-hzl-single-writer-constraint.md) — HZL DB single-writer constraint
 - [ADR-0009](docs/adr/0009-blocked-as-flag-not-status.md) — `blocked` is a flag, not a status
 - [ADR-0010](docs/adr/0010-subtask-depth-max-one.md) — Subtask depth hard-capped at one level
+- [ADR-0011](docs/adr/0011-external-agent-discovery.md) — External-agent discovery via `/api/info` and self-onboarding snippet
 
 ## Reference
 
