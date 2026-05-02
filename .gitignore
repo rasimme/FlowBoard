@@ -34,3 +34,4 @@ dashboard/*.db-shm
 dashboard/*.db-wal
 dashboard/hzl-data/
 hzl-spike/
+specs/
