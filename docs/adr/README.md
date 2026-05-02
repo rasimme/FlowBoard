@@ -41,7 +41,12 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 
 <!-- Accepted ADRs only. Drafts are not linked from llms.txt or the index. -->
 
-(none yet — first wave arrives with T-197-4)
+- [ADR-0001](0001-live-inject-bootstrap.md) — Project context delivered via live-inject, not file-write (2026-05-01)
+- [ADR-0002](0002-api-status-requires-agent-id.md) — `/api/status` requires an explicit agentId (2026-04-30)
+- [ADR-0003](0003-dashboard-has-no-agent-identity.md) — The dashboard service has no agent identity (2026-04-30)
+- [ADR-0004](0004-disk-bootstrap-is-non-authoritative.md) — On-disk `BOOTSTRAP.md` is non-authoritative (2026-05-01)
+- [ADR-0005](0005-minimal-trigger-and-lazy-rules.md) — Minimal-trigger snippet + lazy rule loading (2026-05-02)
+- [ADR-0006](0006-structural-fingerprinting-for-snippet-drift.md) — Multi-phrase structural fingerprinting for snippet drift detection (2026-05-02)
 
 ## See also
 

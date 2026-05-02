@@ -18,7 +18,12 @@
 
 <!-- Accepted ADRs are listed here. Drafts are not linked. -->
 
-(none yet — see [docs/adr/README.md](docs/adr/README.md) for the index when populated)
+- [ADR-0001](docs/adr/0001-live-inject-bootstrap.md) — Project context delivered via live-inject, not file-write
+- [ADR-0002](docs/adr/0002-api-status-requires-agent-id.md) — `/api/status` requires an explicit agentId
+- [ADR-0003](docs/adr/0003-dashboard-has-no-agent-identity.md) — The dashboard service has no agent identity
+- [ADR-0004](docs/adr/0004-disk-bootstrap-is-non-authoritative.md) — On-disk `BOOTSTRAP.md` is non-authoritative
+- [ADR-0005](docs/adr/0005-minimal-trigger-and-lazy-rules.md) — Minimal-trigger snippet + lazy rule loading
+- [ADR-0006](docs/adr/0006-structural-fingerprinting-for-snippet-drift.md) — Multi-phrase structural fingerprinting for snippet drift detection
 
 ## Reference
 
