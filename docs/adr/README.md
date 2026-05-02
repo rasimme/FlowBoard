@@ -48,6 +48,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0005](0005-minimal-trigger-and-lazy-rules.md) — Minimal-trigger snippet + lazy rule loading (2026-05-02)
 - [ADR-0006](0006-structural-fingerprinting-for-snippet-drift.md) — Multi-phrase structural fingerprinting for snippet drift detection (2026-05-02)
 - [ADR-0007](0007-hzl-task-bridge-and-brain-muscle-split.md) — HZL Task-Bridge + Brain/Muscle split (umbrella, retroactive 2026-04-01)
+- [ADR-0008](0008-hzl-single-writer-constraint.md) — HZL DB single-writer constraint (retroactive 2026-04-01)
 
 ## See also
 

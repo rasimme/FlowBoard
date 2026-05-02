@@ -33,6 +33,7 @@
 - [ADR-0005](docs/adr/0005-minimal-trigger-and-lazy-rules.md) — Minimal-trigger snippet + lazy rule loading
 - [ADR-0006](docs/adr/0006-structural-fingerprinting-for-snippet-drift.md) — Multi-phrase structural fingerprinting for snippet drift detection
 - [ADR-0007](docs/adr/0007-hzl-task-bridge-and-brain-muscle-split.md) — HZL Task-Bridge + Brain/Muscle split (umbrella, retroactive)
+- [ADR-0008](docs/adr/0008-hzl-single-writer-constraint.md) — HZL DB single-writer constraint
 
 ## Reference
 
