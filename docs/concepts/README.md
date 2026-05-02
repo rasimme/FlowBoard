@@ -14,7 +14,7 @@ Each concept doc answers five questions:
 
 <!-- Concept docs are added here as they are written. Stub-only directories should not list links yet. -->
 
-(none yet — content arrives with T-197-5 and T-197-6)
+- [Lazy Loading](lazy-loading.md) — how rule sections are loaded on demand, the manifest/section split, and the eager-load escape hatch for external agents
 
 ## See also
 

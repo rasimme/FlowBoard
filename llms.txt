@@ -12,7 +12,7 @@
 
 <!-- Concept docs are listed here once they contain substantive content (>50 lines or marked v1-complete). Stubs are intentionally not linked. -->
 
-(none yet — see [docs/concepts/README.md](docs/concepts/README.md) for the index when populated)
+- [Lazy Loading](docs/concepts/lazy-loading.md) — rule sections served on demand; manifest/section split; eager-load escape hatch for external agents
 
 ## Decisions (ADRs)
 
