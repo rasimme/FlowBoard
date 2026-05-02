@@ -18,6 +18,7 @@ Each concept doc answers five questions:
 - [Multi-Agent Model](multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`, lazy registration, claim/release/handoff
 - [Kanban](kanban.md) — five-column workflow, lease semantics, subtask depth, blocked-as-flag, archived-vs-trashed
 - [Idea Canvas](idea-canvas.md) — visual brainstorm, notes/connections/clusters, promote pipeline via Specify session
+- [HZL Event Sourcing](hzl-event-sourcing.md) — event log + projections, brain/muscle split, `tasks_current` materialization, single-writer constraint
 
 ## Coverage Matrix
 
@@ -33,7 +34,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | 🔲 needed | — |
-| HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | 🔲 [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | T-200-4 |
+| HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | 🔲 needed | [T-199-1](../../) (HZL Task-Bridge ADR) |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | 🔲 [specify-workflow.md](specify-workflow.md) | ⬜ TBD after concept | T-200-5 |
 | Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | 🔲 [auth-model.md](auth-model.md) | ⬜ TBD after concept | T-200-6 |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ⬜ partial in [agent-identity.md](agent-identity.md) | 🔲 needed | [T-199-2](../../) |
@@ -67,6 +68,10 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | Idea Canvas | Canvas state in `canvas.json` per project — not HZL event-sourced | [idea-canvas.md](idea-canvas.md) | `proposed` |
 | Idea Canvas | Connections undirected in storage, directed in rendering | [idea-canvas.md](idea-canvas.md) | `proposed` (likely too small for own ADR; absorb into concept doc) |
 | Idea Canvas | Specify-session concurrency: max 1 active per `agentId` | [idea-canvas.md](idea-canvas.md) | `proposed` (may belong to a Specify ADR instead) |
+| HZL Event Sourcing | Brain/muscle split: FlowBoard owns specs/canvas/UI, HZL owns tasks/events | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` (could be the umbrella for T-199-1) |
+| HZL Event Sourcing | FlowBoard is the *only* writer to the HZL DB — hard constraint | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` |
+| HZL Event Sourcing | FlowBoard `T-NNN` ids retire on delete, never reused | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` (likely too small for own ADR) |
+| HZL Event Sourcing | FlowBoard status (`review`, `open`) lives in `metadata.flowboard.status`, separate from HZL native status | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `proposed` |
 
 ## See also
 
