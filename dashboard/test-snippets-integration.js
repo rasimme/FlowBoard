@@ -167,6 +167,10 @@ section('UI copy — FlowBoard setup makes existing AGENTS.md files explicit');
     'missing group title names AGENTS.md files');
   assert(src.includes('They simply do not contain the FlowBoard project trigger yet'),
     'setup copy clarifies files are not broken');
+  assert(src.includes('Legacy BOOT.md cleanup required'),
+    'BOOT.md legacy advisory is rendered in the modal');
+  assert(src.includes('Display-only advisory: BOOT.md is OpenClaw-owned'),
+    'BOOT.md copy makes manual cleanup explicit');
 }
 
 // ============================================================

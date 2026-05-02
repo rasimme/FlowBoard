@@ -73,6 +73,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const identicalFiles = status.files.filter(f => f.state === 'identical');
   const driftedFiles = status.files.filter(f => f.state === 'drifted');
   const missingFiles = status.files.filter(f => f.state === 'missing');
+  const bootLegacyFiles = status.bootLegacyFiles || [];
 
   // Selection maps per group. Defaults follow the "mandatory vs optional"
   // distinction: anything needed for FlowBoard to function correctly is
@@ -174,7 +175,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
   const applied = !!result?.ok;
   const appliedCount = result?.applied?.length || 0;
-  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length > 0;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length > 0;
 
   // Modal title & subtitle follow the chip variant
   const title = status.chip?.variant === 'warn'
@@ -184,6 +185,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     identicalFiles.length > 0 && `${identicalFiles.length} safe upgrade${identicalFiles.length !== 1 ? 's' : ''}`,
     driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,
     missingFiles.length > 0 && `${missingFiles.length} AGENTS.md file${missingFiles.length !== 1 ? 's' : ''} missing FlowBoard`,
+    bootLegacyFiles.length > 0 && `${bootLegacyFiles.length} legacy BOOT.md advisory${bootLegacyFiles.length !== 1 ? 'ies' : ''}`,
   ].filter(Boolean).join(' · ');
 
   return createPortal(
@@ -272,6 +274,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
               applied={applied}
               actionLabel="Added"
             />
+          )}
+
+          {bootLegacyFiles.length > 0 && (
+            <BootLegacySection files={bootLegacyFiles} />
           )}
 
           {!hasAnything && (
@@ -395,6 +401,35 @@ function GroupSection({
             applied={applied && !!selected[f.id]}
             actionLabel={actionLabel}
           />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BootLegacySection({ files }) {
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <div className="group-header-icon warn"><AlertTriangle size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">Legacy BOOT.md cleanup required</div>
+          <div className="group-sub">Display-only advisory: BOOT.md is OpenClaw-owned, so FlowBoard will not edit it automatically. Remove only the deprecated FlowBoard block manually.</div>
+        </div>
+      </div>
+      <div className="group-body">
+        {files.map(file => (
+          <div key={file.id} className="file-row">
+            <div className="file-row-main">
+              <div className="file-row-text">
+                <div className="file-row-path">
+                  <span className="mono" title={file.path}>{shortPath(file.path)}</span>
+                  <span className="chip warn">Manual cleanup</span>
+                </div>
+                <div className="file-row-summary">{file.summary}</div>
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </div>
