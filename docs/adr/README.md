@@ -53,6 +53,10 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0010](0010-subtask-depth-max-one.md) — Subtask depth hard-capped at one level (retroactive 2026-04-01)
 - [ADR-0011](0011-external-agent-discovery.md) — External-agent discovery via `/api/info` and self-onboarding snippet (2026-04-30)
 - [ADR-0012](0012-canvas-migration-deferred.md) — Canvas migration deferred — vanilla retained pending scope review (2026-05-03)
+- [ADR-0013](0013-x-openclaw-agent-id-header-dual-acceptance.md) — `x-openclaw-agent-id` header accepted as alternative to `?agentId=` on `/api/status` (2026-04-30)
+- [ADR-0014](0014-canvas-state-as-json-not-event-sourced.md) — Canvas state in `canvas.json` per project, not HZL event-sourced (retroactive 2026-04-01)
+- [ADR-0015](0015-specify-sessions-ram-only.md) — Specify sessions are RAM-only — no DB persistence (2026-05-02)
+- [ADR-0016](0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract (2026-05-02)
 
 ## See also
 
