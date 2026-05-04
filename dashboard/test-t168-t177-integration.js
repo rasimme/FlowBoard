@@ -68,6 +68,7 @@ async function testStatusGetRequiresAgentId() {
   const r2 = await fetchJson('GET', `/api/status?agentId=${TEST_AGENT}`);
   ok(r2.status === 200, `GET with ?agentId returns 200`);
   ok(r2.body && r2.body.agentId === TEST_AGENT, `response.agentId echoes the requested agent`);
+  ok(r2.body && typeof r2.body.contextReady === 'boolean', `response.contextReady is boolean`);
 
   const r3 = await fetchJson('GET', '/api/status', {
     headers: { 'x-openclaw-agent-id': TEST_AGENT },
@@ -91,10 +92,12 @@ async function testStatusPutRequiresAgentId() {
   });
   ok(r2.status === 200, `PUT with body.agentId returns 200`);
   ok(r2.body && r2.body.activeProject === PROJECT_FOR_TESTS, `PUT response reflects activated project`);
+  ok(r2.body && r2.body.contextReady === true, `PUT response reports contextReady=true for ${PROJECT_FOR_TESTS}`);
 
-  // Verify via GET that the state was actually written
+  // Verify via GET that the state was actually written and context is ready
   const r3 = await fetchJson('GET', `/api/status?agentId=${TEST_AGENT}`);
   ok(r3.body && r3.body.activeProject === PROJECT_FOR_TESTS, `GET shows the activated project after PUT`);
+  ok(r3.body && r3.body.contextReady === true, `GET reports contextReady=true after activation`);
 }
 
 async function testProjectsResponseShape() {
@@ -168,6 +171,16 @@ async function testInfoEndpointPublic() {
     `trigger_snippet contains the expected external-agent heading`);
   ok(d.trigger_snippet && d.trigger_snippet.includes('GET /api/status'),
     `trigger_snippet documents status-first lazy loading`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('local-capable tool'),
+    `trigger_snippet documents local-capable API tooling`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('do not infer state'),
+    `trigger_snippet documents no-inference failure handling`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('contextReady === true'),
+    `trigger_snippet requires contextReady verification`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('project context'),
+    `trigger_snippet uses project context wording`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('do not rely on memory or generic knowledge'),
+    `trigger_snippet forbids memory-only project answers`);
 }
 
 // ---------------------------------------------------------------------------

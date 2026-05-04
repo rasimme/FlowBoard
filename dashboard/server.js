@@ -452,7 +452,10 @@ app.get('/api/status', (req, res) => {
   } else {
     activeProject = readActiveProject(); // LEGACY: non-HZL fallback.
   }
-  res.json({ activeProject, agentId });
+  const readiness = activeProject
+    ? rulesApi.getBootstrapReadiness(activeProject)
+    : { contextReady: false, missingSections: [] };
+  res.json({ activeProject, agentId, contextReady: readiness.contextReady });
 });
 
 // PUT /api/status
@@ -510,7 +513,10 @@ app.put('/api/status', async (req, res) => {
       sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
     }
 
-    const body = { ok: true, activeProject: effectiveProject, agentId };
+    const readiness = effectiveProject
+      ? rulesApi.getBootstrapReadiness(effectiveProject)
+      : { contextReady: false };
+    const body = { ok: true, activeProject: effectiveProject, agentId, contextReady: readiness.contextReady };
     res.json(body);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -1038,10 +1044,32 @@ app.get('/api/projects/:name/rules/:section', (req, res) => {
   res.type('text/markdown; charset=utf-8').send(content);
 });
 
-// GET /api/projects/:name/bootstrap — fetch full bootstrap document for a project
+// GET /api/projects/:name/bootstrap — fetch full project context document.
+// Contract: never return a successful empty document. A caller either receives
+// substantial markdown context or an explicit not-ready/error response.
 app.get('/api/projects/:name/bootstrap', (req, res) => {
-  const content = rulesApi.buildBootstrapDocument(req.params.name);
-  res.type('text/markdown; charset=utf-8').send(content);
+  try {
+    const content = rulesApi.buildBootstrapDocument(req.params.name);
+    res.type('text/markdown; charset=utf-8').send(content);
+  } catch (err) {
+    if (err.code === 'CONTEXT_NOT_READY') {
+      return res.status(503).json({
+        error: 'Project context is not ready',
+        project: req.params.name,
+        contextReady: false,
+        missingSections: err.missingSections || [],
+      });
+    }
+    if (err.code === 'CONTEXT_EMPTY') {
+      return res.status(500).json({
+        error: 'Project context rendered empty',
+        project: req.params.name,
+        contextReady: false,
+      });
+    }
+    console.error('[api] bootstrap context error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // GET /api/projects/:name/tasks

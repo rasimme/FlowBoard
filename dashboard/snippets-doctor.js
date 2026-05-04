@@ -83,7 +83,7 @@ const TARGETS = [
     legacyFingerprint: [
       'FlowBoard delivers project context automatically',
       'At session start',
-      'project context',
+      'fetch project context',
       'Fetch individual sections on demand',
     ],
     legacyStructuralMarkers: [
@@ -92,15 +92,39 @@ const TARGETS = [
       'At session start',
       'project-context',
     ],
-    // Fingerprint for current block — 3 of 4 phrases = current
+    // staleCurrentFingerprint matches the previous API-first lazy-loading trigger
+    // (with local-capable/no-inference contract, but without contextReady
+    // verification and without memory ban).
+    staleCurrentFingerprint: [
+      'Check your status',
+      'GET /api/status',
+      'activeProject === null',
+      'local-capable tool',
+      'do not infer state',
+    ],
     currentFingerprint: [
       'Check your status',
       'GET /api/status',
       'activeProject === null',
-      'lazy',
+      'local-capable tool',
+      'do not infer state',
+      'before answering project questions',
+      'contextReady === true',
+      'fetch project context',
+      'do not rely on memory or generic knowledge',
     ],
     currentMarkers: [
+      'flowboard-snippet-contract: v3-command-startup-response',
       '<your-agentId-from-BOOTSTRAP>',
+      'local-capable tool',
+      'do not infer state',
+      'explicit command wins over passive startup',
+      'contextReady === true',
+      'fetch project context',
+      'do not rely on memory or generic knowledge',
+      'maximum 3 attempts total, 500 ms between attempts, then report blocker and stop',
+      'never JSON.parse this body',
+      '<runtime>-<workspace-slug>',
     ],
   },
 ];
@@ -212,6 +236,43 @@ function computeSimpleDiff(oldText, newText, hunkLabel) {
   return out;
 }
 
+function findSnippetRegion(content, legacyBlock, target) {
+  if (typeof content !== 'string') return null;
+
+  if (matchesLegacyBlockExactly(content, legacyBlock)) {
+    const start = content.indexOf(legacyBlock);
+    return { start, end: start + legacyBlock.length, text: legacyBlock };
+  }
+
+  const markerCandidates = [
+    ...(target.currentMarkers || []),
+    ...(target.staleCurrentFingerprint || []),
+    ...(target.legacyStructuralMarkers || []),
+    ...(target.legacyFingerprint || []),
+  ];
+  const marker = markerCandidates.find(m => content.includes(m));
+  if (!marker) return null;
+
+  const lines = content.split('\n');
+  const markerIdx = lines.findIndex(l => l.includes(marker));
+  if (markerIdx < 0) return null;
+
+  let blockStart = markerIdx;
+  for (let i = markerIdx; i >= 0; i--) {
+    if (/^##?\s/.test(lines[i])) { blockStart = i; break; }
+    if (i === 0) blockStart = 0;
+  }
+
+  const legacyLines = legacyBlock.replace(/\n+$/, '').split('\n').length;
+  let blockEnd = Math.min(blockStart + legacyLines, lines.length);
+  for (let i = blockStart + 1; i < blockEnd; i++) {
+    if (/^##?\s/.test(lines[i])) { blockEnd = i; break; }
+  }
+
+  const text = lines.slice(blockStart, blockEnd).join('\n').replace(/\n+$/, '');
+  return { text };
+}
+
 // Stable, URL-safe ID for a workspace file — used by the apply endpoint to
 // identify which files to upgrade without exposing filesystem paths in the
 // request body.
@@ -243,11 +304,26 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
   try { content = fs.readFileSync(filePath, 'utf8'); }
   catch { return null; }
 
-  // Priority order matters: "current" wins over legacy to prevent endless
-  // re-flagging after a post-add file still carries a stray legacy reference.
-  const currentMatch = matchesFingerprint(content, target.currentFingerprint || target.currentMarkers, 0.75);
+  // Priority order matters: an exact current block wins over legacy to prevent
+  // endless re-flagging after a post-add file still carries a stray legacy
+  // reference. But marker-only matches are not enough for "current": a
+  // partially edited/stale contract can still contain all critical marker
+  // phrases while missing the canonical runtime wording. Treat that as drifted
+  // so the migration path can force-replace it safely.
+  if (typeof newBlock === 'string' && newBlock.length > 0 && content.includes(newBlock.trimEnd())) {
+    return { state: 'current', content, confidence: 1 };
+  }
+  const currentMatch = matchesFingerprint(content, target.currentMarkers || target.currentFingerprint, 1.0);
   if (currentMatch.meetsThreshold) {
-    return { state: 'current', content, confidence: currentMatch.score };
+    return { state: 'drifted', content, confidence: currentMatch.score };
+  }
+
+  // Previous-current snippets are intentionally treated as drifted so the
+  // migration UI can update them to the newest contract without presenting
+  // them as missing/new installs.
+  const staleCurrentMatch = matchesFingerprint(content, target.staleCurrentFingerprint, 0.75);
+  if (staleCurrentMatch.meetsThreshold) {
+    return { state: 'drifted', content, confidence: staleCurrentMatch.score };
   }
 
   // New: multi-phrase fingerprint for legacy detection
@@ -306,7 +382,8 @@ function collectStatus(openclawHome) {
       };
       if (cls.state === 'identical' || cls.state === 'drifted') {
         entry.summary = target.summary;
-        entry.diff = computeSimpleDiff(legacyBlock, newBlock, `@@ ${target.name} — snippet block @@`);
+        const region = findSnippetRegion(cls.content, legacyBlock, target);
+        entry.diff = computeSimpleDiff(region?.text || legacyBlock, newBlock, `@@ ${target.name} — snippet block @@`);
       } else if (cls.state === 'missing') {
         entry.summary = target.addSummary;
         // Preview: what gets added. Use an add-context diff (no legacy lines).
@@ -432,42 +509,10 @@ function applyActions(openclawHome, actions) {
 // marker (heading or key phrase). We replace the region starting from the
 // first structural marker and spanning the legacy block's line count.
 function replaceDriftedBlock(content, legacyBlock, newBlock, target) {
-  const markerCandidates = [
-    ...(target.legacyStructuralMarkers || []),
-    ...(target.legacyFingerprint || []),
-  ];
-  const marker = markerCandidates.find(m => content.includes(m));
-  if (!marker) return null;
-
-  const lines = content.split('\n');
-  const markerIdx = lines.findIndex(l => l.includes(marker));
-  if (markerIdx < 0) return null;
-
-  // Walk back to the nearest `## ` heading (or BOF) — that's the block start.
-  let blockStart = markerIdx;
-  for (let i = markerIdx; i >= 0; i--) {
-    if (/^##?\s/.test(lines[i])) { blockStart = i; break; }
-    if (i === 0) blockStart = 0;
-  }
-
-  // Block end: use the legacy block's line count as the window size (trailing
-  // empty lines ignored), or walk forward until the next `##` heading or EOF.
-  const legacyLines = legacyBlock.replace(/\n+$/, '').split('\n').length;
-  let blockEnd = Math.min(blockStart + legacyLines, lines.length);
-  // Tighten: if a new heading appears inside the window, stop there.
-  for (let i = blockStart + 1; i < blockEnd; i++) {
-    if (/^##?\s/.test(lines[i])) { blockEnd = i; break; }
-  }
-
-  const before = lines.slice(0, blockStart).join('\n').replace(/\n+$/, '');
-  const after = lines.slice(blockEnd).join('\n').replace(/^\n+/, '');
-  const middle = newBlock.trimEnd();
-
-  const parts = [];
-  if (before) parts.push(before);
-  parts.push(middle);
-  if (after) parts.push(after);
-  return parts.join('\n\n') + '\n';
+  const region = findSnippetRegion(content, legacyBlock, target);
+  if (!region || !region.text) return null;
+  return content.replace(region.text, newBlock.trimEnd())
+    .replace(/\n*$/, '\n');
 }
 
 // Legacy wrapper — old single-action apply. Maps to the new applyActions
@@ -606,6 +651,7 @@ module.exports = {
   extractInsertBody,
   formatBytes,
   computeSimpleDiff,
+  findSnippetRegion,
   makeFileId,
   collectStatus,
   applyActions,

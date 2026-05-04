@@ -5,6 +5,9 @@
  * Run: node test-rules-api.js
  */
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const rulesApi = require('./rules-api.js');
 
 let passed = 0;
@@ -114,6 +117,47 @@ section('buildRulesManifest()');
 
   assert(manifest.includes('GET /api/projects'), 'manifest documents endpoint usage');
   assert(manifest.includes('PROJECT-RULES.md'), 'manifest includes legacy pointer');
+}
+
+
+section('getBootstrapReadiness()');
+{
+  assert(rulesApi.PROJECTS_DIR.endsWith(path.join('.openclaw', 'projects')) || fs.existsSync(rulesApi.PROJECTS_DIR), 'readiness is rooted in project directory');
+  const ready = rulesApi.getBootstrapReadiness('flowboard');
+  assert(ready && typeof ready === 'object', 'returns readiness object');
+  assert(typeof ready.contextReady === 'boolean', 'contextReady is boolean');
+  assert(Array.isArray(ready.missingSections), 'missingSections is array');
+  assertEqual(ready.contextReady, true, 'flowboard context is ready with current rule files');
+  assertEqual(ready.missingSections.length, 0, 'flowboard has no missing project/rule sections');
+
+  const missingProject = rulesApi.getBootstrapReadiness('__definitely_missing_project__');
+  assertEqual(missingProject.contextReady, false, 'missing project is not context-ready');
+  assert(missingProject.missingSections.includes('PROJECT.md'), 'missing project reports PROJECT.md missing');
+
+  const traversal = rulesApi.getBootstrapReadiness('../flowboard');
+  assertEqual(traversal.contextReady, false, 'path traversal project is not context-ready');
+  assert(traversal.missingSections.includes('PROJECT.md'), 'path traversal reports PROJECT.md missing');
+
+  const none = rulesApi.getBootstrapReadiness(null);
+  assertEqual(none.contextReady, false, 'null project is not context-ready');
+  assert(none.missingSections.length > 0, 'null project reports missing sections');
+}
+
+section('buildBootstrapDocument() — non-empty context contract');
+{
+  const doc = rulesApi.buildBootstrapDocument('flowboard');
+  assert(typeof doc === 'string', 'returns markdown string');
+  assert(doc.trim().length > 1000, 'context document is substantial, not empty');
+  assert(doc.startsWith('# Active Project: flowboard'), 'starts with active project header');
+  assert(doc.includes('## Project: flowboard'), 'includes project-resolved PROJECT.md section');
+  assert(doc.includes('FlowBoard'), 'includes project document content');
+
+  let threw = false;
+  try { rulesApi.buildBootstrapDocument(null); } catch (err) {
+    threw = true;
+    assertEqual(err.code, 'CONTEXT_NOT_READY', 'null project throws CONTEXT_NOT_READY');
+  }
+  assert(threw, 'null project does not render an empty successful document');
 }
 
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);

@@ -234,6 +234,8 @@ section('collectStatus()');
     assert(typeof identical.id === 'string' && identical.id.length > 0, 'identical has id');
     assert(identical.bytes && /[kB]/.test(identical.bytes), `identical has human bytes string (${identical.bytes})`);
     assert(Array.isArray(identical.diff) && identical.diff.length > 0, 'identical has diff');
+    assert(identical.diff.some(d => d.t === 'del' && d.text.includes('FlowBoard delivers project context automatically')), 'identical diff shows vendored legacy content');
+    assert(drifted.diff.some(d => d.t === 'del' && d.text.includes('Read `BOOTSTRAP.md` carefully')), 'drifted diff shows actual file content, not stale vendored content');
     assert(status.chip && /Migration required/.test(status.chip.text), 'chip says Migration required');
   } finally {
     cleanupTmp();
@@ -279,6 +281,16 @@ section('applySelected() — byte-identical only, with .bak');
     assert(afterIdentical.includes(currentBlock.trim().slice(0, 60)), 'new block present in identical file');
     assert(!afterIdentical.includes('echo "$OPENCLAW_AGENT_ID"'), 'legacy shell-introspection guidance gone');
     assert(afterIdentical.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder present');
+    assert(afterIdentical.includes('local-capable tool'), 'local API tool contract present');
+    assert(afterIdentical.includes('do not infer state'), 'no-inference contract present');
+    assert(afterIdentical.includes('contextReady === true'), 'contextReady verification contract present');
+    assert(afterIdentical.includes('project context'), 'project context wording present');
+    assert(afterIdentical.includes('do not rely on memory or generic knowledge'), 'no-memory project-answer contract present');
+    assert(afterIdentical.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker present');
+    assert(afterIdentical.includes('explicit command wins over passive startup'), 'explicit-command precedence contract present');
+    assert(afterIdentical.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract present');
+    assert(afterIdentical.includes('never JSON.parse this body'), 'markdown parsing contract present');
+    assert(afterIdentical.includes('<runtime>-<workspace-slug>'), 'deterministic fallback agentId contract present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -344,6 +356,27 @@ section('classifyFile() — state machine');
     });
     assertEqual(cMix.state, 'current', 'current-marker wins over stray legacy text');
 
+    // stale-current (previous API-first trigger, missing runtime contract)
+    const pStale = path.join(dir, 'workspace', 'AGENTS-stale.md');
+    const staleCurrent = currentAgents
+      .replace('<!-- flowboard-snippet-contract: v3-command-startup-response -->\n\n', '')
+      .replace('### HTTP parsing contract\n\nBranch by HTTP status and `Content-Type` before parsing:\n- 2xx + `application/json` → parse JSON.\n- 2xx + `text/markdown` or `text/plain` → read text; never JSON.parse this body.\n- non-2xx + JSON/text → read the error body and report the blocker.\n\nStatus endpoints return JSON. Project context and rules endpoints return Markdown/plain text on success.\n\n', '')
+      .replace('Use this only when the user did not issue an explicit FlowBoard command.\n\n', '')
+      .replace('   - Wait until `contextReady === true` with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.\n   - Then immediately fetch project context as Markdown/plain text: `GET /api/projects/<activeProject>/bootstrap`\n', '   - Wait until `contextReady === true` (briefly re-check status; if it stays false, report the blocker).\n   - Then immediately fetch project context: `GET /api/projects/<activeProject>/bootstrap`\n')
+      .replace('### Project commands (explicit command wins over passive startup)', '### Project commands')
+      .replace('If the user says `Projekt: X`, `activate project X`, `set project to X`, `Projekt beenden`, `Projekte`, or `Neues Projekt: X`, execute the command immediately. Do not let a passive `activeProject === null` startup check swallow the explicit command.\n\n', '')
+      .replace('- Activate: `PUT /api/status` → `{ project, agentId }`, then verify with `GET /api/status?agentId=...` using the same agentId. If `activeProject` matches and `contextReady === true`, fetch project context as Markdown/plain text before announcing success. If readiness is false, poll with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.', '- Activate: `PUT /api/status` → `{ project, agentId }`, then verify with `GET /api/status?agentId=...` until `activeProject` matches and `contextReady === true`, then fetch project context before announcing success')
+      .replace('\n### Blocker behavior\n\nWhen reporting a blocker, stop the activation/context-loading flow and do not retry activation again unless the user explicitly asks. Include endpoint, expected vs actual state, agentId used, and next safe action.\n', '');
+    fs.writeFileSync(pStale, `# header\n\n${staleCurrent}\n`);
+    const cStale = doctor.classifyFile(pStale, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents,
+    });
+    assertEqual(cStale.state, 'drifted', 'previous current trigger → drifted for migration');
+    const staleRegion = doctor.findSnippetRegion(staleCurrent, legacyAgents, target);
+    const staleDiff = doctor.computeSimpleDiff(staleRegion.text, currentAgents);
+    assert(staleDiff.some(d => d.t === 'del' && d.text.includes('## FlowBoard (API-First)')), 'stale-current diff shows actual short trigger');
+    assert(!staleDiff.some(d => d.t === 'del' && d.text.includes('FlowBoard delivers project context automatically')), 'stale-current diff does not show old vendored legacy');
+
     // missing (no markers at all)
     const pMissing = path.join(dir, 'workspace', 'AGENTS-missing.md');
     fs.writeFileSync(pMissing, '# my custom AGENTS file\n\njust some notes\n');
@@ -389,6 +422,16 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r1.applied[0].action, 'migrate', 'action recorded as migrate');
     const afterDrift = fs.readFileSync(driftedPath, 'utf8');
     assert(afterDrift.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder inserted');
+    assert(afterDrift.includes('local-capable tool'), 'local API tool contract inserted');
+    assert(afterDrift.includes('do not infer state'), 'no-inference contract inserted');
+    assert(afterDrift.includes('contextReady === true'), 'contextReady verification contract inserted');
+    assert(afterDrift.includes('project context'), 'project context wording inserted');
+    assert(afterDrift.includes('do not rely on memory or generic knowledge'), 'no-memory project-answer contract inserted');
+    assert(afterDrift.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker inserted');
+    assert(afterDrift.includes('explicit command wins over passive startup'), 'explicit-command precedence contract inserted');
+    assert(afterDrift.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract inserted');
+    assert(afterDrift.includes('never JSON.parse this body'), 'markdown parsing contract inserted');
+    assert(afterDrift.includes('<runtime>-<workspace-slug>'), 'deterministic fallback agentId contract inserted');
     assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
@@ -398,6 +441,16 @@ section('applyActions() — migrate + add + state guards');
     const afterMissing = fs.readFileSync(missingPath, 'utf8');
     assert(afterMissing.startsWith('# my beta config'), 'existing content preserved at top');
     assert(afterMissing.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder appended');
+    assert(afterMissing.includes('local-capable tool'), 'local API tool contract appended');
+    assert(afterMissing.includes('do not infer state'), 'no-inference contract appended');
+    assert(afterMissing.includes('contextReady === true'), 'contextReady verification contract appended');
+    assert(afterMissing.includes('project context'), 'project context wording appended');
+    assert(afterMissing.includes('do not rely on memory or generic knowledge'), 'no-memory project-answer contract appended');
+    assert(afterMissing.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker appended');
+    assert(afterMissing.includes('explicit command wins over passive startup'), 'explicit-command precedence contract appended');
+    assert(afterMissing.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract appended');
+    assert(afterMissing.includes('never JSON.parse this body'), 'markdown parsing contract appended');
+    assert(afterMissing.includes('<runtime>-<workspace-slug>'), 'deterministic fallback agentId contract appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset

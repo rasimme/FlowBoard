@@ -11,7 +11,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
+const OPENCLAW_HOME = process.env.OPENCLAW_HOME || path.join(os.homedir(), '.openclaw');
+const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(OPENCLAW_HOME, 'projects');
+const WORKSPACE_PROJECTS_DIR = path.join(OPENCLAW_HOME, 'workspace', 'projects');
+const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : WORKSPACE_PROJECTS_DIR;
 const RULES_DIR = path.resolve(__dirname, '..', 'docs', 'project-mode');
 
 const SECTIONS = [
@@ -52,6 +57,26 @@ function readRuleSection(name) {
   }
 }
 
+function resolveProjectRoot(projectName) {
+  if (typeof projectName !== 'string' || projectName.trim().length === 0) return null;
+  const root = path.resolve(PROJECTS_DIR);
+  const projectRoot = path.resolve(root, projectName);
+  if (!projectRoot.startsWith(root + path.sep) && projectRoot !== root) return null;
+  return projectRoot;
+}
+
+function readProjectDocument(projectName) {
+  const projectRoot = resolveProjectRoot(projectName);
+  if (!projectRoot) return null;
+  const projectMd = path.join(projectRoot, 'PROJECT.md');
+  try {
+    const content = fs.readFileSync(projectMd, 'utf8');
+    return content.trim().length > 0 ? content : null;
+  } catch {
+    return null;
+  }
+}
+
 function buildRulesManifest() {
   const lines = [];
   lines.push('## Project Rules (lazy-load)');
@@ -68,9 +93,44 @@ function buildRulesManifest() {
   return lines.join('\n');
 }
 
+function getBootstrapReadiness(projectName) {
+  if (typeof projectName !== 'string' || projectName.length === 0) {
+    return { contextReady: false, missingSections: ['PROJECT.md', ...SECTIONS.map(s => s.name)] };
+  }
+
+  const missingSections = [];
+  if (!readProjectDocument(projectName)) {
+    missingSections.push('PROJECT.md');
+  }
+  for (const { name } of SECTIONS) {
+    const content = readRuleSection(name);
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      missingSections.push(name);
+    }
+  }
+
+  return {
+    contextReady: missingSections.length === 0,
+    missingSections,
+  };
+}
+
 function buildBootstrapDocument(projectName) {
+  const readiness = getBootstrapReadiness(projectName);
+  if (!readiness.contextReady) {
+    const err = new Error('Project context is not ready');
+    err.code = 'CONTEXT_NOT_READY';
+    err.project = projectName || null;
+    err.missingSections = readiness.missingSections;
+    throw err;
+  }
+
+  const projectDocument = readProjectDocument(projectName);
+
   const lines = [];
-  lines.push(`# Active Project: ${projectName || 'none'}\n`);
+  lines.push(`# Active Project: ${projectName}\n`);
+  lines.push(`## Project: ${projectName}\n`);
+  lines.push(projectDocument);
 
   // Embed all rule sections directly into the bootstrap document
   for (const { name, label } of SECTIONS) {
@@ -82,15 +142,26 @@ function buildBootstrapDocument(projectName) {
     }
   }
 
-  return lines.join('\n');
+  const document = lines.join('\n');
+  if (document.trim().length === 0) {
+    const err = new Error('Project context rendered empty');
+    err.code = 'CONTEXT_EMPTY';
+    err.project = projectName || null;
+    throw err;
+  }
+  return document;
 }
 
 module.exports = {
   RULES_DIR,
+  PROJECTS_DIR,
   SECTIONS,
   listRuleSections,
   resolveRuleSectionPath,
   readRuleSection,
+  resolveProjectRoot,
+  readProjectDocument,
   buildRulesManifest,
+  getBootstrapReadiness,
   buildBootstrapDocument,
 };
