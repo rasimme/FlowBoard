@@ -890,6 +890,45 @@ app.post('/api/projects', (req, res) => {
   }
 });
 
+// POST /api/projects/:name/heal — backfill missing HZL event or metadata row
+// for a project that exists at the filesystem or metadata layer. Idempotent:
+// returns 200 with actions=[] when the project is already fully registered.
+// Use the GET /api/projects/drift endpoint to discover candidates.
+app.post('/api/projects/:name/heal', (req, res) => {
+  if (!HZL_ENABLED) return res.status(501).json({ error: 'Heal requires HZL_ENABLED=true' });
+  const lifecycle = require('./project-lifecycle.js');
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const result = lifecycle.healProject(
+      { name: req.params.name, displayName: body.displayName, description: body.description },
+      { hzlService, fbMeta, projectsDir: PROJECTS_DIR }
+    );
+    return res.json(result);
+  } catch (e) {
+    if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: e.message });
+    if (e.code === 'NOT_FOUND') return res.status(404).json({ error: e.message });
+    console.error('[heal] failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/drift — read-only listing of names that exist in metadata
+// or on disk but lack a canonical HZL project_created event. Empty array
+// means the system is consistent.
+app.get('/api/projects/drift', (req, res) => {
+  if (!HZL_ENABLED) return res.json({ drift: [] });
+  const lifecycle = require('./project-lifecycle.js');
+  try {
+    const drift = lifecycle.detectProjectDrift({
+      hzlService, fbMeta, projectsDir: PROJECTS_DIR,
+    });
+    return res.json({ drift });
+  } catch (e) {
+    console.error('[drift] failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // PUT /api/projects/:name — T-136: update metadata (displayName, archived, group, order)
 app.put('/api/projects/:name', (req, res) => {
   if (!HZL_ENABLED) return res.status(501).json({ error: 'Project updates require HZL_ENABLED=true' });
@@ -2328,10 +2367,12 @@ async function startServer() {
       try {
         const staleMinutes = parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30;
         const stuck = hzlService.getStuckTasks({ staleThreshold: staleMinutes });
-        if (stuck.stale.length > 0 || stuck.expired.length > 0) {
+        const staleList   = (stuck && Array.isArray(stuck.stale))   ? stuck.stale   : [];
+        const expiredList = (stuck && Array.isArray(stuck.expired)) ? stuck.expired : [];
+        if (staleList.length > 0 || expiredList.length > 0) {
           const parts = [];
-          for (const t of stuck.stale) parts.push(`⚠️ Stale: ${t.id} "${t.title}" (${t.agent}, ${t.staleSinceMinutes}min ohne Checkpoint)`);
-          for (const t of stuck.expired) parts.push(`🔴 Lease expired: ${t.id} "${t.title}" (${t.agent})`);
+          for (const t of staleList)   parts.push(`⚠️ Stale: ${t.id} "${t.title}" (${t.agent}, ${t.staleSinceMinutes}min ohne Checkpoint)`);
+          for (const t of expiredList) parts.push(`🔴 Lease expired: ${t.id} "${t.title}" (${t.agent})`);
           const msg = `🔍 Stuck-Check:\n${parts.join('\n')}`;
 
           // T-177-3: stale-check is a periodic broadcast — no caller agent
@@ -2371,6 +2412,25 @@ async function startServer() {
         console.error('[auto-migrate] Migration failed:', e.message);
         console.error('[auto-migrate] Server continues with current HZL state. Run migrate-tasks.js manually.');
       }
+    }
+
+    // Drift check: surface metadata rows or filesystem dirs that lack a HZL
+    // project_created event. The dashboard hides such projects from
+    // /api/projects, so silent drift means invisible work. Operators can heal
+    // each entry with POST /api/projects/<name>/heal.
+    try {
+      const { detectProjectDrift } = require('./project-lifecycle.js');
+      const drift = detectProjectDrift({ hzlService, fbMeta, projectsDir: PROJECTS_DIR });
+      if (drift.length > 0) {
+        const lines = drift.map(d => `  - ${d.name} (sources: ${d.sources.join(', ')})`);
+        console.warn(
+          `[invariant] ${drift.length} project(s) present at metadata/filesystem layer ` +
+          `but missing HZL event:\n${lines.join('\n')}\n` +
+          `  → POST /api/projects/<name>/heal to backfill, or GET /api/projects/drift for a JSON view.`
+        );
+      }
+    } catch (e) {
+      console.warn('[invariant] drift check failed:', e.message);
     }
   }
   // Cleanup expired Specify sessions every 30 minutes
