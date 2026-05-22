@@ -161,6 +161,56 @@ function testRegressionMaxIdShrunkPriority() {
 }
 
 // ---------------------------------------------------------------------------
+// formatRegressionMessage + buildWebhookBody
+// ---------------------------------------------------------------------------
+
+function testFormatRegressionMessageMaxId() {
+  section('formatRegressionMessage — max_id regression with host');
+  const msg = integrity.formatRegressionMessage(
+    { type: 'max_id_regressed', before: 4871, after: 4708 },
+    'example-host'
+  );
+  ok(msg.includes('max_id'), 'mentions max_id');
+  ok(msg.includes('4871'), 'includes before value');
+  ok(msg.includes('4708'), 'includes after value');
+  ok(msg.includes('example-host'), 'includes host');
+  ok(msg.includes('git history'), 'points operator at recovery surface');
+}
+
+function testFormatRegressionMessageCount() {
+  section('formatRegressionMessage — count regression, no host');
+  const msg = integrity.formatRegressionMessage(
+    { type: 'count_regressed', before: 100, after: 80 },
+    null
+  );
+  ok(msg.includes('count'), 'mentions count');
+  ok(!msg.includes(' on '), 'no host suffix when host is null');
+}
+
+function testBuildWebhookBodyShape() {
+  section('buildWebhookBody — shape includes text + structured fields');
+  const regression = { type: 'max_id_regressed', before: 100, after: 80, detected_at: '2026-05-22T20:00:00.000Z' };
+  const current = { max_id: 80, count: 80, last_event_at: '2026-05-22T19:00:00.000Z' };
+  const stored = { max_id: 100, count: 100, last_check_at: '2026-05-21T01:00:00.000Z' };
+  const body = integrity.buildWebhookBody(regression, current, stored, 'example-host');
+
+  ok(typeof body.text === 'string', 'text is string (gateway-friendly)');
+  ok(body.regression === regression, 'regression passed through (no copy)');
+  ok(body.current === current, 'current passed through');
+  ok(body.stored === stored, 'stored passed through');
+  ok(body.host === 'example-host', 'host preserved');
+}
+
+function testBuildWebhookBodyNullHost() {
+  section('buildWebhookBody — host null is preserved as null');
+  const body = integrity.buildWebhookBody(
+    { type: 'max_id_regressed', before: 100, after: 80 },
+    { max_id: 80 }, { max_id: 100 }, undefined
+  );
+  ok(body.host === null, 'undefined host becomes null in body');
+}
+
+// ---------------------------------------------------------------------------
 // Runner
 // ---------------------------------------------------------------------------
 
@@ -176,6 +226,10 @@ function testRegressionMaxIdShrunkPriority() {
   testRegressionMaxIdShrunk();
   testRegressionCountOnly();
   testRegressionMaxIdShrunkPriority();
+  testFormatRegressionMessageMaxId();
+  testFormatRegressionMessageCount();
+  testBuildWebhookBodyShape();
+  testBuildWebhookBodyNullHost();
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) {

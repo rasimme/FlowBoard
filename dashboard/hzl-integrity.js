@@ -120,9 +120,48 @@ function checkRegression(stored, current) {
   return null;
 }
 
+/**
+ * Build a one-line human-readable regression message. Used as the `text`
+ * field in the webhook body so that gateway-style consumers (which only
+ * read `text`) get a useful payload without having to parse the structured
+ * fields.
+ *
+ * @param {{type, before, after}} regression
+ * @param {string|null} host - LOCAL_HOSTNAME for multi-instance disambiguation
+ * @returns {string}
+ */
+function formatRegressionMessage(regression, host) {
+  const what = regression.type === 'max_id_regressed' ? 'max_id' : 'count';
+  const where = host ? ` on ${host}` : '';
+  return `⚠️ FlowBoard integrity regression — events ${what} shrank from ${regression.before} to ${regression.after}${where}. Inspect the workspace git history or backup chain for the last good state.`;
+}
+
+/**
+ * Build the JSON body for the regression webhook. Includes both a
+ * human-readable `text` field (consumed by gateway-style endpoints that
+ * route to chat surfaces) and the structured fields (`regression`,
+ * `current`, `stored`, `host`) for monitoring tools and dashboards.
+ *
+ * Adopters point INTEGRITY_WEBHOOK_URL at whatever endpoint matches their
+ * setup; the body schema is stable across delivery channels.
+ *
+ * @returns {object}
+ */
+function buildWebhookBody(regression, current, stored, host) {
+  return {
+    text: formatRegressionMessage(regression, host),
+    regression,
+    current,
+    stored,
+    host: host || null,
+  };
+}
+
 module.exports = {
   getCurrentWatermark,
   getStoredWatermark,
   storeWatermark,
   checkRegression,
+  formatRegressionMessage,
+  buildWebhookBody,
 };

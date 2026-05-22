@@ -26,6 +26,8 @@ const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
 const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
 const HZL_INTEGRITY_STRICT = process.env.HZL_INTEGRITY_STRICT === 'true';
+const INTEGRITY_WEBHOOK_URL = process.env.INTEGRITY_WEBHOOK_URL || '';
+const INTEGRITY_WEBHOOK_TOKEN = process.env.INTEGRITY_WEBHOOK_TOKEN || '';
 const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
 const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
 const hzlIntegrity = HZL_ENABLED ? require('./hzl-integrity.js') : null;
@@ -2368,7 +2370,33 @@ async function startServer() {
           `  Operator action: once data is recovered, clear the watermark via\n` +
           `  DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%'; — next boot will reset the baseline.`
         );
+
+        // Optional push notification via configurable webhook. Body has both
+        // a human-readable `text` field (consumed by gateway-style routers)
+        // and structured fields (`regression`, `current`, `stored`, `host`)
+        // for monitoring tools. No alerting framework hard-coded.
+        let notifyPromise = null;
+        if (INTEGRITY_WEBHOOK_URL) {
+          const body = hzlIntegrity.buildWebhookBody(
+            regression, current, stored, process.env.LOCAL_HOSTNAME || null
+          );
+          notifyPromise = fetch(INTEGRITY_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(INTEGRITY_WEBHOOK_TOKEN ? { Authorization: `Bearer ${INTEGRITY_WEBHOOK_TOKEN}` } : {}),
+            },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(5000),
+          }).then(r => {
+            if (!r.ok) console.warn(`[integrity] webhook returned HTTP ${r.status}`);
+          }).catch(e => console.warn('[integrity] webhook failed:', e.message));
+        }
+
         if (HZL_INTEGRITY_STRICT) {
+          // Await webhook (capped by AbortSignal.timeout) so the push lands
+          // before SIGTERM-equivalent process.exit cuts it off.
+          if (notifyPromise) await notifyPromise;
           console.error('[integrity] HZL_INTEGRITY_STRICT=true → refusing to start.');
           process.exit(1);
         }
