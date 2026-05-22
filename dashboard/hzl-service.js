@@ -11,6 +11,7 @@ let _projectionEngine = null;
 let _hookDrainService = null;
 let _EventType = null; // EventType enum from hzl-core (loaded dynamically)
 let _cacheDb = null; // better-sqlite3 handle to the HZL cache DB (shared with task/project services)
+let _eventsDb = null; // better-sqlite3 handle to the HZL events DB (used by integrity checks)
 
 // Completion callback — set via setOnComplete() by server.js for notifications
 let _onCompleteCallback = null;
@@ -321,6 +322,7 @@ async function init(dbPath) {
   };
 
   _cacheDb        = datastore.cacheDb;
+  _eventsDb       = datastore.eventsDb;
   _projectService = new ProjectService(datastore.cacheDb, _eventStore, _projectionEngine);
   _taskService    = new TaskService(datastore.cacheDb, _eventStore, _projectionEngine, _projectService, datastore.eventsDb, { onDone: onDoneHook });
 
@@ -1658,6 +1660,9 @@ function getCacheSize() { return _cache.size; }
 /** Returns the better-sqlite3 handle to the HZL cache DB. Used by flowboard-metadata. */
 function getCacheDb() { return _cacheDb; }
 
+/** Returns the better-sqlite3 handle to the HZL events DB. Used by integrity checks. */
+function getEventsDb() { return _eventsDb; }
+
 /** Returns HZL native project list: [{ name, description, is_protected, created_at }] */
 function listHzlProjects() {
   if (!_projectService) throw new Error('[hzl-service] Not initialized — call init() first');
@@ -1722,6 +1727,7 @@ module.exports = {
   setOnComplete,
   drainHooks,
   getCacheDb,
+  getEventsDb,
   listHzlProjects,
   listTasksClaimedBy,
 };
