@@ -57,8 +57,8 @@ Add a single-purpose integrity watermark that lives at the application layer and
 
 6. **Optional push notification** via `INTEGRITY_WEBHOOK_URL` (+ optional `INTEGRITY_WEBHOOK_TOKEN` as Bearer auth):
    - on regression, the server `POST`s a JSON body to the configured URL with a 5-second `AbortSignal` timeout
-   - body shape carries both a human-readable `text` field (so the same payload routes through a gateway-style endpoint that only reads `text`) and the structured `regression` / `current` / `stored` / `host` fields (so monitoring tools that prefer structured data don't need a parser for the `text` field)
-   - the env var is intentionally namespace-free — no FlowBoard or OpenClaw knowledge baked into the upstream code path. Adopters point the URL at their Slack webhook, PagerDuty event API, a small relay to whatever gateway they run, or simply leave it unset
+   - body shape: `{ message, regression, current, stored, host }`. The `message` field carries the human-readable one-line summary and matches the OpenClaw gateway's `/hooks/agent` contract (verified against a live install — the gateway returns `400 message required` when the field is missing). The structured `regression` / `current` / `stored` / `host` fields ride alongside for monitoring tools that prefer parsed data over string scraping.
+   - adopters running a different notification surface (Slack incoming webhook expects `text`; Discord expects `content`; PagerDuty Events API expects `payload.summary`) wire a small relay between FlowBoard and their channel; the body schema documented here is stable and the upstream code stays free of any specific notification-framework knowledge
    - in `HZL_INTEGRITY_STRICT` mode the server `await`s the `fetch` (capped by the timeout) before `process.exit(1)`, so the alert lands before SIGTERM-equivalent shutdown cuts it off
 
 The check is intentionally minimal — it does not attempt to repair the data, the upstream code does not know about any specific notification channel, and the boot path adds one read + two writes plus an optional outbound `POST` per boot when a regression fires.

@@ -137,19 +137,24 @@ function formatRegressionMessage(regression, host) {
 }
 
 /**
- * Build the JSON body for the regression webhook. Includes both a
- * human-readable `text` field (consumed by gateway-style endpoints that
- * route to chat surfaces) and the structured fields (`regression`,
- * `current`, `stored`, `host`) for monitoring tools and dashboards.
+ * Build the JSON body for the regression webhook. The `message` field
+ * carries the one-line human-readable summary and matches the OpenClaw
+ * gateway's `/hooks/agent` contract (verified against a live install:
+ * the gateway rejects `text` with `400 message required`). The
+ * structured fields (`regression`, `current`, `stored`, `host`) ride
+ * alongside `message` for monitoring tools and dashboards that prefer
+ * parsed data over string scraping.
  *
- * Adopters point INTEGRITY_WEBHOOK_URL at whatever endpoint matches their
- * setup; the body schema is stable across delivery channels.
+ * Adopters running a different notification surface (Slack incoming
+ * webhook expects `text`, Discord expects `content`, PagerDuty expects
+ * `payload.summary`) can wire a small relay between FlowBoard and their
+ * channel; the body schema documented here is stable.
  *
  * @returns {object}
  */
 function buildWebhookBody(regression, current, stored, host) {
   return {
-    text: formatRegressionMessage(regression, host),
+    message: formatRegressionMessage(regression, host),
     regression,
     current,
     stored,

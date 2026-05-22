@@ -188,13 +188,14 @@ function testFormatRegressionMessageCount() {
 }
 
 function testBuildWebhookBodyShape() {
-  section('buildWebhookBody — shape includes text + structured fields');
+  section('buildWebhookBody — shape includes message + structured fields');
   const regression = { type: 'max_id_regressed', before: 100, after: 80, detected_at: '2026-05-22T20:00:00.000Z' };
   const current = { max_id: 80, count: 80, last_event_at: '2026-05-22T19:00:00.000Z' };
   const stored = { max_id: 100, count: 100, last_check_at: '2026-05-21T01:00:00.000Z' };
   const body = integrity.buildWebhookBody(regression, current, stored, 'example-host');
 
-  ok(typeof body.text === 'string', 'text is string (gateway-friendly)');
+  ok(typeof body.message === 'string', 'message is string (matches OpenClaw gateway contract)');
+  ok(body.text === undefined, 'no legacy text field (gateway rejects bodies without `message`)');
   ok(body.regression === regression, 'regression passed through (no copy)');
   ok(body.current === current, 'current passed through');
   ok(body.stored === stored, 'stored passed through');
