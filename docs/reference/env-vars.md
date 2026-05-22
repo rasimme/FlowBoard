@@ -28,6 +28,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | Variable | Default | Purpose |
 |---|---|---|
 | `HZL_ENABLED` | unset (off) | Enables HZL-backed task lifecycle, `flowboard_agents`, and `tasks_current`. Must be `true` for any task or agent endpoint to function. |
+| `HZL_INTEGRITY_STRICT` | unset (off) | Boot-time integrity check (see ADR-0018). When unset, a watermark regression is logged as a loud WARN and the service continues. When `true`, the service `process.exit(1)`s on regression — for setups that prefer hard fail-fast over silent operation on a rolled-back DB. To reset the baseline after a legitimate restore, clear the watermark manually: `DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%';` |
 | `AUTH_ALWAYS` | unset (off) | Forces auth middleware on every request (otherwise loopback bypass applies in non-production). |
 
 ## Authentication

@@ -43,6 +43,7 @@
 - [ADR-0015](docs/adr/0015-specify-sessions-ram-only.md) — Specify sessions are RAM-only — no DB persistence
 - [ADR-0016](docs/adr/0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract
 - [ADR-0017](docs/adr/0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path
+- [ADR-0018](docs/adr/0018-hzl-filesystem-rollback-detection.md) — HZL filesystem-level rollback detection via boot watermark
 
 ## Reference
 

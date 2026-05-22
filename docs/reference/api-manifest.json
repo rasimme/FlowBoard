@@ -5,6 +5,7 @@
   "note": "Authoritative list of HTTP endpoints exposed by dashboard/server.js. T-197-8 will add a mechanical drift test asserting every app.<verb>(...) call in server.js has a matching entry here.",
   "endpoints": [
     { "method": "GET",    "path": "/api/health",                                          "auth": "none",   "group": "discovery", "doc": "api/discovery.md" },
+    { "method": "GET",    "path": "/api/health/integrity",                                "auth": "none",   "group": "discovery", "doc": "api/discovery.md" },
     { "method": "GET",    "path": "/api/info",                                            "auth": "none",   "group": "discovery", "doc": "api/discovery.md" },
     { "method": "POST",   "path": "/api/auth",                                            "auth": "none",   "group": "auth",      "doc": null },
     { "method": "GET",    "path": "/api/agents",                                          "auth": "user",   "group": "agents",    "doc": "api/agents.md" },

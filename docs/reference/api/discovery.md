@@ -8,6 +8,45 @@ Liveness probe. Returns `{"ok": true}` and nothing else — no version, no uptim
 
 **Response 200:** `{"ok": true}`
 
+## `GET /api/health/integrity`
+
+Boot-time integrity watermark plus the current state of the `events` table. Built for external monitoring tools that want to detect filesystem-level rollbacks of `flowboard.db` (see [ADR-0018](../../adr/0018-hzl-filesystem-rollback-detection.md) for the architecture rationale). No auth.
+
+**Response 200:**
+
+```json
+{
+  "stored": {
+    "max_id": 4932,
+    "count": 4889,
+    "last_check_at": "2026-05-22T17:31:09.246Z"
+  },
+  "current": {
+    "max_id": 4932,
+    "count": 4889,
+    "last_event_at": "2026-05-22T17:30:23.070Z"
+  },
+  "regression": null,
+  "boot_check": {
+    "stored": null,
+    "current": { "max_id": 4932, "count": 4889, "last_event_at": "..." },
+    "regression": null,
+    "checked_at": "2026-05-22T17:31:09.245Z"
+  },
+  "strict_mode": false
+}
+```
+
+- `stored` — watermark persisted on the most recent successful boot, or `null` on the first boot after upgrade.
+- `current` — `MAX(id)`, `COUNT(*)`, and `MAX(timestamp)` from the `events` table right now.
+- `regression` — `null` when the current values meet or exceed the stored watermark. When the table has shrunk, an object: `{ type: "max_id_regressed" | "count_regressed", before, after, detected_at }`.
+- `boot_check` — the snapshot recorded at server startup. Useful for diagnosing whether a regression existed at boot vs developed later (the latter is impossible under normal SQL triggers, but the field is reported for transparency).
+- `strict_mode` — `true` when `HZL_INTEGRITY_STRICT=true` is set. In strict mode the service `process.exit(1)`s on regression at boot, so a running service with `strict_mode: true` is by definition regression-free.
+
+**501** if `HZL_ENABLED=false`.
+
+Operators wiring this into a monitoring tool: poll on whatever cadence makes sense (every minute is fine — the response is cheap), and alert on `regression !== null`. To reset the baseline after a deliberate restore: `DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%';` in `flowboard-cache.db`.
+
 ## `GET /api/info`
 
 Service metadata + the bundled `external-trigger.md` snippet so an external agent can self-onboard with a single curl. No auth.
