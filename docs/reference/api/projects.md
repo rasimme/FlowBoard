@@ -33,6 +33,37 @@ Create a new project.
 **Response 201:** `{"project": {<created project>}, "warnings"?: [...]}`
 **400** validation error. **409** duplicate name. **501** if HZL is not enabled.
 
+## `GET /api/projects/drift`
+
+Read-only listing of names that exist in the `flowboard_projects` metadata table or as a `projects/<name>/` filesystem dir but have no canonical HZL `project_created` event. An empty array means the system is consistent. See [ADR-0017](../../adr/0017-project-drift-and-heal.md) for the architectural context.
+
+**Response 200:** `{"drift": [{"name": "<slug>", "sources": ["metadata"|"filesystem", ...]}, ...]}`
+
+Hidden dirs (`.trash`, `.hzl`), tombstoned names, and dirs without a `PROJECT.md` marker are filtered out so the response only contains actionable items.
+
+## `POST /api/projects/:name/heal`
+
+Idempotent recovery: backfill the missing HZL `project_created` event (and, when needed, the missing metadata row) for a project that exists at the filesystem or metadata layer but is invisible to `GET /api/projects` because the canonical event is missing.
+
+Unlike `POST /api/projects`, heal never throws `DUPLICATE` for already-present filesystem/metadata state — that is precisely the case it exists to repair. It explicitly does **not** scaffold `PROJECT.md`/`SESSIONS.md`/`DECISIONS.md` and does **not** overwrite an existing `display_name`.
+
+**Body (all optional):**
+
+```json
+{
+  "displayName": "My Project",
+  "description": "..."
+}
+```
+
+`displayName` is only honoured when no metadata row exists yet; an existing row's display name is preserved.
+
+**Response 200:** `{"healed": <bool>, "project": {"name", "displayName", "status"}, "actions": ["hzl_event"|"metadata_row", ...]}`
+
+`healed: false, actions: []` means the project was already fully registered (idempotent no-op).
+
+**400** validation error on slug. **404** project absent at every layer (use `POST /api/projects` to create instead). **501** if HZL is not enabled.
+
 ## `PUT /api/projects/:name`
 
 Update metadata: `displayName`, `archived`, `group`, `order`.

@@ -57,6 +57,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0014](0014-canvas-state-as-json-not-event-sourced.md) — Canvas state in `canvas.json` per project, not HZL event-sourced (retroactive 2026-04-01)
 - [ADR-0015](0015-specify-sessions-ram-only.md) — Specify sessions are RAM-only — no DB persistence (2026-05-02)
 - [ADR-0016](0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract (2026-05-02)
+- [ADR-0017](0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path (2026-05-22)
 
 ## See also
 
