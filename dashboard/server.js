@@ -25,8 +25,13 @@ const INDEX_FILE = path.join(PROJECTS_DIR, '_index.md');
 
 const HZL_ENABLED = process.env.HZL_ENABLED === 'true';
 const HZL_DB_PATH = process.env.HZL_DB_PATH || path.join(WORKSPACE, '.hzl', 'flowboard.db');
+const HZL_INTEGRITY_STRICT = process.env.HZL_INTEGRITY_STRICT === 'true';
 const hzlService = HZL_ENABLED ? require('./hzl-service.js') : null;
 const fbMeta = HZL_ENABLED ? require('./flowboard-metadata.js') : null;
+const hzlIntegrity = HZL_ENABLED ? require('./hzl-integrity.js') : null;
+// Boot-time integrity snapshot — set by startServer(), exposed via
+// GET /api/health/integrity. Null until the check has run at least once.
+let _bootIntegrity = null;
 // AGENT_ID was a service-default-identity that defaulted to OPENCLAW_AGENT_ID
 // or "main". It silently routed agent-less callers into a foreign agent's row
 // (T-177 trace 2026-04-29). Removed in favour of explicit agentId on every
@@ -587,6 +592,32 @@ app.delete('/api/agents/:id', (req, res) => {
 // S-07: Health endpoint — minimal response, no version/uptime/auth info leak
 app.get('/api/health', (req, res) => {
   res.json({ ok: true });
+});
+
+// GET /api/health/integrity — exposes the boot-time integrity watermark
+// alongside the current event-table state. Returns { stored, current,
+// regression, strict_mode } so external monitoring tools can poll for
+// rollback events without depending on a particular notification channel.
+// No auth — mirrors /api/health. Returns 501 when HZL is not enabled.
+app.get('/api/health/integrity', (req, res) => {
+  if (!HZL_ENABLED || !hzlIntegrity) {
+    return res.status(501).json({ error: 'Integrity check requires HZL_ENABLED=true' });
+  }
+  try {
+    const current = hzlIntegrity.getCurrentWatermark(hzlService.getEventsDb());
+    const stored = hzlIntegrity.getStoredWatermark(hzlService.getCacheDb());
+    const regression = hzlIntegrity.checkRegression(stored, current);
+    return res.json({
+      stored,
+      current,
+      regression,
+      boot_check: _bootIntegrity,
+      strict_mode: HZL_INTEGRITY_STRICT,
+    });
+  } catch (e) {
+    console.error('[integrity] endpoint failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // GET /api/info — public discovery endpoint for external agents (T-179).
@@ -2314,6 +2345,41 @@ async function startServer() {
     console.log('[hzl-service] HZL_ENABLED=true, initializing...');
     await hzlService.init(HZL_DB_PATH);
     console.log('[hzl-service] Ready.');
+
+    // Boot-time integrity check — detects filesystem-level rollback of the
+    // events table that the events_no_update / events_no_delete triggers
+    // cannot catch (see ADR-0018). Watermark is the highest seen events.id
+    // plus total row count, persisted in hzl_local_meta between boots.
+    try {
+      const eventsDb = hzlService.getEventsDb();
+      const cacheDb = hzlService.getCacheDb();
+      const current = hzlIntegrity.getCurrentWatermark(eventsDb);
+      const stored = hzlIntegrity.getStoredWatermark(cacheDb);
+      const regression = hzlIntegrity.checkRegression(stored, current);
+      _bootIntegrity = { stored, current, regression, checked_at: new Date().toISOString() };
+
+      if (regression) {
+        console.error(
+          `[integrity] ⚠️ REGRESSION DETECTED — events ${regression.type === 'max_id_regressed' ? 'max_id' : 'count'} ` +
+          `shrank from ${regression.before} to ${regression.after}.\n` +
+          `  This signals filesystem-level rollback of flowboard.db ` +
+          `(restore script, snapshot revert, or manual overwrite).\n` +
+          `  Inspect ~/.openclaw/workspace git history or your backup chain for the last good state.\n` +
+          `  Operator action: once data is recovered, clear the watermark via\n` +
+          `  DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%'; — next boot will reset the baseline.`
+        );
+        if (HZL_INTEGRITY_STRICT) {
+          console.error('[integrity] HZL_INTEGRITY_STRICT=true → refusing to start.');
+          process.exit(1);
+        }
+        // Non-strict: keep the older (higher) watermark so subsequent boots
+        // still flag the regression until the operator clears it explicitly.
+      } else {
+        hzlIntegrity.storeWatermark(cacheDb, current);
+      }
+    } catch (e) {
+      console.warn('[integrity] boot check failed:', e.message);
+    }
 
     // Init FlowBoard metadata tables (creates flowboard_projects, flowboard_agents, flowboard_migrations)
     fbMeta.init(hzlService.getCacheDb());
