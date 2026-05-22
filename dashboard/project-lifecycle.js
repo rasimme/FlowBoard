@@ -404,4 +404,133 @@ function deleteProject(name, { hzlService, fbMeta, projectsDir }) {
   return { ok: true, archivedTaskCount, warnings };
 }
 
-module.exports = { createProject, updateProject, deleteProject };
+/**
+ * Heal a project whose state exists at the filesystem layer or in the
+ * flowboard_projects metadata table but is missing a canonical HZL
+ * project_created event. Idempotent: a no-op when the project is already
+ * fully registered.
+ *
+ * createProject() refuses such inputs as DUPLICATE because its preconditions
+ * are tuned for new projects. healProject() exists for the inverse case:
+ * legacy migrations that wrote metadata rows without an event, or ad-hoc
+ * filesystem dirs that bypassed the API. It explicitly does NOT scaffold
+ * PROJECT.md/SESSIONS.md/DECISIONS.md and does NOT overwrite an existing
+ * metadata row's displayName.
+ *
+ * @param {object} input        - { name, displayName?, description? }
+ * @param {object} deps
+ * @param {object} deps.hzlService  - initialized hzl-service
+ * @param {object} deps.fbMeta      - initialized flowboard-metadata
+ * @param {string} deps.projectsDir - shared projects root
+ *
+ * @returns {{ healed: boolean, project: object, actions: string[] }}
+ *   actions ∈ { 'hzl_event', 'metadata_row' }
+ *
+ * @throws Error with .code in 'VALIDATION_ERROR' | 'NOT_FOUND' | 'HZL_ERROR' | 'METADATA_ERROR'
+ */
+function healProject(input, { hzlService, fbMeta, projectsDir }) {
+  const { name, displayName: requestedDisplayName, description } = _validateInput(input);
+
+  if (typeof fbMeta.isProjectDeleted === 'function' && fbMeta.isProjectDeleted(name)) {
+    throw Object.assign(new Error(`Project "${name}" is deleted — heal not allowed`), { code: 'NOT_FOUND' });
+  }
+
+  const inHzl = hzlService.listHzlProjects().some(p => p.name === name);
+  const metaRow = fbMeta.getProject(name);
+  const inFs = fs.existsSync(path.join(projectsDir, name));
+
+  if (!inHzl && !metaRow && !inFs) {
+    throw Object.assign(
+      new Error(`Project "${name}" not found at any layer — use POST /api/projects to create`),
+      { code: 'NOT_FOUND' }
+    );
+  }
+
+  const actions = [];
+
+  if (!inHzl) {
+    try {
+      hzlService.createProject(name, description || null);
+      actions.push('hzl_event');
+    } catch (e) {
+      throw Object.assign(new Error(`HZL event creation failed: ${e.message}`), { code: 'HZL_ERROR' });
+    }
+  }
+
+  // Effective displayName precedence: explicit input → existing metadata row → slug
+  const explicit = typeof input.displayName === 'string' && input.displayName.trim();
+  const displayName = explicit
+    ? requestedDisplayName
+    : (metaRow ? (metaRow.display_name || name) : name);
+
+  if (!metaRow) {
+    try {
+      fbMeta.upsertProject(name, {
+        displayName,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        config: {},
+      }, true);
+      actions.push('metadata_row');
+    } catch (e) {
+      throw Object.assign(new Error(`FlowBoard metadata creation failed: ${e.message}`), { code: 'METADATA_ERROR' });
+    }
+  }
+
+  const finalMeta = fbMeta.getProject(name);
+  return {
+    healed: actions.length > 0,
+    project: {
+      name,
+      displayName: (finalMeta && finalMeta.display_name) || displayName,
+      status: (finalMeta && finalMeta.status) || 'active',
+    },
+    actions,
+  };
+}
+
+/**
+ * Read-only drift detector: names present in flowboard_projects metadata or
+ * in the projects/ filesystem dir but absent from HZL. Each item carries the
+ * sources it was found in so callers can decide how to surface the warning.
+ *
+ * Hidden dirs (starting with '.') are skipped — they are infrastructure
+ * (.trash, .hzl, .DS_Store-like), not projects. Tombstoned names are also
+ * skipped because their absence from HZL is intentional.
+ *
+ * @returns {Array<{ name: string, sources: string[] }>}
+ */
+function detectProjectDrift({ hzlService, fbMeta, projectsDir }) {
+  const inHzl = new Set(hzlService.listHzlProjects().map(p => p.name));
+
+  const metaNames = typeof fbMeta.listMetaProjects === 'function'
+    ? fbMeta.listMetaProjects().map(r => r.name)
+    : [];
+
+  let fsNames = [];
+  try {
+    fsNames = fs.readdirSync(projectsDir, { withFileTypes: true })
+      .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+      .map(d => d.name);
+  } catch { /* dir may not exist yet — treat as empty */ }
+
+  const isDeleted = typeof fbMeta.isProjectDeleted === 'function'
+    ? n => fbMeta.isProjectDeleted(n)
+    : () => false;
+
+  const drift = new Map();
+  for (const n of metaNames) {
+    if (inHzl.has(n) || isDeleted(n)) continue;
+    drift.set(n, { name: n, sources: ['metadata'] });
+  }
+  for (const n of fsNames) {
+    if (inHzl.has(n) || isDeleted(n)) continue;
+    const existing = drift.get(n);
+    if (existing) existing.sources.push('filesystem');
+    else drift.set(n, { name: n, sources: ['filesystem'] });
+  }
+
+  return [...drift.values()];
+}
+
+module.exports = { createProject, healProject, updateProject, deleteProject, detectProjectDrift };

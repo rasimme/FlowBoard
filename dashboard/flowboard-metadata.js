@@ -74,6 +74,11 @@ function getProject(name) {
   return _db.prepare('SELECT * FROM flowboard_projects WHERE name = ?').get(name) || null;
 }
 
+function listMetaProjects() {
+  if (!_db) return [];
+  return _db.prepare('SELECT * FROM flowboard_projects').all();
+}
+
 /**
  * Upsert a project metadata row.
  * Does NOT overwrite if already present — pass force=true to overwrite.
@@ -381,6 +386,7 @@ module.exports = {
   countProjects,
   shouldRunIndexMigration,
   getProject,
+  listMetaProjects,
   upsertProject,
   updateProjectMeta,
   deleteProjectMeta,
