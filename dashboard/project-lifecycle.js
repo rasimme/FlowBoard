@@ -511,6 +511,10 @@ function detectProjectDrift({ hzlService, fbMeta, projectsDir }) {
   try {
     fsNames = fs.readdirSync(projectsDir, { withFileTypes: true })
       .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+      // PROJECT.md is the canonical marker that a directory *claims* to be a
+      // project. Dirs without it are agent manuals, ad-hoc backups, or
+      // unrelated leftovers, and would otherwise produce noisy drift entries.
+      .filter(d => fs.existsSync(path.join(projectsDir, d.name, 'PROJECT.md')))
       .map(d => d.name);
   } catch { /* dir may not exist yet — treat as empty */ }
 

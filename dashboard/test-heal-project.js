@@ -251,6 +251,27 @@ function testDetectDriftIgnoresHidden() {
   ok(!names.includes('.hzl'), '.hzl not reported as drift');
 }
 
+function testDetectDriftIgnoresDirsWithoutProjectMd() {
+  section('detectProjectDrift — skips dirs without PROJECT.md marker');
+  const projectsDir = tmpProjectsDir();
+  // Real project dir (has PROJECT.md via makeDir helper)
+  makeDir(projectsDir, 'real-project');
+  // Agent-manual-style dir (no PROJECT.md, just some other file)
+  const manualDir = path.join(projectsDir, 'agent-manual');
+  fs.mkdirSync(manualDir);
+  fs.writeFileSync(path.join(manualDir, 'AGENTS.md'), '# Manual\n');
+  // Empty dir
+  fs.mkdirSync(path.join(projectsDir, 'empty-dir'));
+
+  const { hzlService, fbMeta } = makeStubs();
+  const drift = lifecycle.detectProjectDrift({ hzlService, fbMeta, projectsDir });
+  const names = drift.map(d => d.name);
+
+  ok(names.includes('real-project'), 'dir with PROJECT.md still reported');
+  ok(!names.includes('agent-manual'), 'AGENTS.md-only dir NOT reported');
+  ok(!names.includes('empty-dir'), 'empty dir NOT reported');
+}
+
 function testDetectDriftIgnoresDeleted() {
   section('detectProjectDrift — does not flag tombstoned projects');
   const projectsDir = tmpProjectsDir();
@@ -279,6 +300,7 @@ function testDetectDriftIgnoresDeleted() {
   testDetectDriftFindsMetaOnly();
   testDetectDriftFindsFsOnly();
   testDetectDriftIgnoresHidden();
+  testDetectDriftIgnoresDirsWithoutProjectMd();
   testDetectDriftIgnoresDeleted();
 
   console.log(`\n${pass} passed, ${fail} failed`);
