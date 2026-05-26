@@ -130,10 +130,12 @@ Rules:
 | `POST` | `/projects` | Canonical project creation path. Creates HZL project + FlowBoard metadata + post-m005 filesystem scaffold |
 | `GET` | `/projects` | List all projects with task counts |
 | `GET` | `/status` | Active project for agent. Query: `?agentId=` |
-| `PUT` | `/status` | Set active project. Body: `{ project, agentId? }` |
+| `PUT` | `/status` | Set active project. Body: `{ project, agentId }` |
 | `GET` | `/agents` | List all agents and their active projects |
 
 Canonical project registry and per-agent active-project state are DB-backed (`flowboard_projects`, `flowboard_agents`). Active project = context loading, not access control.
+
+Agent ids are validated at API ingress. Known OpenClaw ids and stable external ids are allowed; placeholders or generated workspace/replay ids are rejected. Use the bootstrap-provided id for OpenClaw agents and one stable configured id for external agents.
 
 ### Project creation semantics
 - Project creation is API-first: use `POST /api/projects`

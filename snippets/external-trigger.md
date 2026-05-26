@@ -6,7 +6,7 @@ Use a local-capable tool for this localhost API (exec/curl/node or an internal A
 
 ### Identity
 
-Use the stable agent id provided by your launcher/bootstrap context if present. Otherwise use the configured runtime identity (for example `claude`, `cursor`, `codex`). If neither exists, derive `<runtime>-<workspace-slug>` deterministically and use the same value for status, claims, checkpoints, and task updates. The id auto-registers on first `PUT /api/status`. If a status response echoes a different `agentId`, stop and report the blocker.
+Use the stable agent id provided by your launcher/bootstrap context if present. Otherwise choose one configured runtime identity (for example `claude-code`, `cursor`, `codex`, or a deliberately stable suffix like `codex-laptop`) and keep it across runs. Do not use generated session, replay, or cwd-derived names such as `codex-workspace`. The id auto-registers on first `PUT /api/status`. If a status response echoes a different `agentId`, stop and report the blocker.
 
 ### HTTP parsing contract
 

@@ -101,6 +101,38 @@ async function testStatusPutRequiresAgentId() {
   ok(r3.body && r3.body.contextReady === true, `GET reports contextReady=true after activation`);
 }
 
+async function testAgentIdentityGuardrails() {
+  section('T-206: agent identity guardrails reject generated ids but allow stable external ids');
+
+  const badGet = await fetchJson('GET', '/api/status?agentId=codex-workspace');
+  ok(badGet.status === 400, `GET rejects generated workspace id (got ${badGet.status})`);
+  ok(badGet.body && /stable|workspace|generated/i.test(badGet.body.error || ''),
+    `GET error explains stable identity requirement`);
+
+  const badPut = await fetchJson('PUT', '/api/status', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project: PROJECT_FOR_TESTS, agentId: 't198-replay-1777837445357' }),
+  });
+  ok(badPut.status === 400, `PUT rejects replay/timestamp id (got ${badPut.status})`);
+
+  const externalAgent = 'qwen-worker';
+  const okPut = await fetchJson('PUT', '/api/status', {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project: PROJECT_FOR_TESTS, agentId: externalAgent }),
+  });
+  ok(okPut.status === 200, `PUT accepts stable external id`);
+  ok(okPut.body && okPut.body.agentId === externalAgent, `external response echoes stable id`);
+  ok(okPut.body && okPut.body.agentIdentity?.kind === 'external', `external id is classified as external`);
+
+  const badClaim = await fetchJson('POST', `/api/projects/${PROJECT_FOR_TESTS}/tasks/T-206/claim`, {
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ agent: 'main-workspace', lease: 1 }),
+  });
+  ok(badClaim.status === 400, `claim rejects generated agent id before task logic (got ${badClaim.status})`);
+
+  await fetchJson('DELETE', `/api/agents/${externalAgent}?force=true`);
+}
+
 async function testProjectsResponseShape() {
   section('T-177: GET /api/projects has no activeProject field');
 
@@ -561,6 +593,7 @@ async function main() {
   try {
     await testStatusGetRequiresAgentId();
     await testStatusPutRequiresAgentId();
+    await testAgentIdentityGuardrails();
     await testProjectsResponseShape();
     await testAgentsListing();
     await testForeignAgentIsolation();

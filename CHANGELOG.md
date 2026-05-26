@@ -1,5 +1,11 @@
 # Changelog
 
+### Unreleased — Agent Identity Guardrails (T-206)
+
+- **Stable agent identity validation.** `/api/status`, task claim/release/complete/checkpoint/route, and canvas promote now share one agent-id validator. Known OpenClaw ids and stable external ids still work; placeholders and generated workspace/replay ids are rejected.
+- **External agents remain first-class.** Unknown stable lowercase kebab-case ids are accepted and marked as external, so Codex/Cursor/Claude-style tools can still self-onboard without pre-registration.
+- **Snippets and docs tightened.** OpenClaw-managed agents must use the bootstrap-provided id; external agents must choose one stable runtime id instead of deriving names from cwd/session state.
+
 ### Unreleased — Legacy Project-State Hardening (T-205)
 
 - **Legacy `ACTIVE-PROJECT.md` fallback is opt-in**. The project-context hook now emits projectless context when the FlowBoard API is unreachable unless `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` is set for an explicit migration recovery window.

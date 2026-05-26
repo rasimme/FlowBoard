@@ -6,7 +6,7 @@ Use a local-capable tool for this localhost API (exec/curl/node or an internal A
 
 ### Identity
 
-Use the stable `agentId` from BOOTSTRAP/OpenClaw context when present (example: `<your-agentId-from-BOOTSTRAP>`). Otherwise use the configured runtime identity. If neither exists, derive `<runtime>-<workspace-slug>` deterministically and use the same value for status, claims, checkpoints, and task updates. If a status response echoes a different `agentId`, stop and report the blocker.
+Use the stable `agentId` from BOOTSTRAP/OpenClaw context (example: `<your-agentId-from-BOOTSTRAP>`). For OpenClaw-managed agents this is the only authoritative identity; do not invent a runtime/workspace fallback such as `codex-workspace` or `main-workspace`. Use the same value for status, claims, checkpoints, and task updates. If the bootstrap identity is missing, or a status response echoes a different `agentId`, stop and report the blocker.
 
 ### HTTP parsing contract
 

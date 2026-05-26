@@ -290,7 +290,7 @@ section('applySelected() — byte-identical only, with .bak');
     assert(afterIdentical.includes('explicit command wins over passive startup'), 'explicit-command precedence contract present');
     assert(afterIdentical.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract present');
     assert(afterIdentical.includes('never JSON.parse this body'), 'markdown parsing contract present');
-    assert(afterIdentical.includes('<runtime>-<workspace-slug>'), 'deterministic fallback agentId contract present');
+    assert(afterIdentical.includes('do not invent a runtime/workspace fallback'), 'no invented fallback agentId contract present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -431,7 +431,7 @@ section('applyActions() — migrate + add + state guards');
     assert(afterDrift.includes('explicit command wins over passive startup'), 'explicit-command precedence contract inserted');
     assert(afterDrift.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract inserted');
     assert(afterDrift.includes('never JSON.parse this body'), 'markdown parsing contract inserted');
-    assert(afterDrift.includes('<runtime>-<workspace-slug>'), 'deterministic fallback agentId contract inserted');
+    assert(afterDrift.includes('do not invent a runtime/workspace fallback'), 'no invented fallback agentId contract inserted');
     assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
@@ -450,7 +450,7 @@ section('applyActions() — migrate + add + state guards');
     assert(afterMissing.includes('explicit command wins over passive startup'), 'explicit-command precedence contract appended');
     assert(afterMissing.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract appended');
     assert(afterMissing.includes('never JSON.parse this body'), 'markdown parsing contract appended');
-    assert(afterMissing.includes('<runtime>-<workspace-slug>'), 'deterministic fallback agentId contract appended');
+    assert(afterMissing.includes('do not invent a runtime/workspace fallback'), 'no invented fallback agentId contract appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset

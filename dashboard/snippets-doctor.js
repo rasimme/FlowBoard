@@ -124,7 +124,7 @@ const TARGETS = [
       'do not rely on memory or generic knowledge',
       'maximum 3 attempts total, 500 ms between attempts, then report blocker and stop',
       'never JSON.parse this body',
-      '<runtime>-<workspace-slug>',
+      'do not invent a runtime/workspace fallback',
     ],
   },
 ];

@@ -34,16 +34,18 @@ The workspace-derived id wins over `event.context.agentId` if they disagree — 
 **Lazy registration.** A row in `flowboard_agents` is created on the first `PUT /api/status {agentId, project}` for an unknown agent. Task mutations alone (claim, release, complete) do not create an agent row — they store the agent-id in `tasks_current.agent` and that's it. The table answers "which agents have an active project", not "which agents exist". An agent that only claims tasks but never activates a project shows up as `tasks_current.agent` but is invisible to `GET /api/agents`.
 
 **External agents** are first-class citizens under the same rules. They:
-- pick a stable agent-id (recommended convention: `codex`, `cursor`, `claude-code`, `cron-nightly`, or hostname-suffixed variants like `claude-code-jetson`)
+- pick a stable agent-id (recommended convention: `codex`, `cursor`, `claude-code`, `cron-nightly`, or deliberately stable variants like `claude-code-lab`)
 - pass `agent` / `agentId` in every API call (no server defaults — see ADR-0002, ADR-0003)
 - are lazy-registered into `flowboard_agents` on their first `PUT /api/status`
 - fetch project context via `GET /api/projects/<name>/bootstrap` since they have no live-inject
 
 The `GET /api/info` endpoint documents the convention and serves the external-trigger snippet for self-onboarding.
 
+**Identity guardrails.** FlowBoard validates agent ids at API ingress. Stable unknown external ids are still accepted because external tools must remain first-class. Obvious placeholders and generated names are rejected: examples include `default`, `unknown`, `<agentId>`, `workspace-*`, `*-workspace`, and replay/timestamp ids like `t198-replay-1777837445357`. This catches the common failure mode where a model invents an identity from the current directory instead of using the bootstrap/runtime id.
+
 ## Consequences
 
-- **The string is the contract.** A typo in the agent-id silently creates a new lazy-registered agent. There is no fuzzy match. Agents must use the exact id from their bootstrap (for OpenClaw agents, the `## Identity` section) or their stable convention (for external agents).
+- **The string is the contract.** A typo in the agent-id can create a new lazy-registered external agent if it still looks stable. There is no fuzzy match. Agents must use the exact id from their bootstrap (for OpenClaw agents, the `## Identity` section) or their stable convention (for external agents).
 - **Attribution survives agent deletion.** `DELETE /api/agents/:id` removes the `flowboard_agents` row, but `tasks_current.agent = "<id>"` and the HZL event log are unaffected — agent-id is a string, not an FK. Old comments, checkpoints, and completed tasks keep their authorship even if the agent is later removed.
 - **Active-claim conflict on delete.** `DELETE /api/agents/:id` returns 409 if the agent has open task claims, listing them. `?force=true` releases the claims (status preserved, lease dropped) and proceeds. This is the only place where agent-id behaves like a relationship.
 - **No auth boundary.** Anyone with access to the dashboard port can pose as any agent-id. This is intentional for the personal-tool deployment model. Don't expose the dashboard to a network you don't trust.
@@ -52,6 +54,7 @@ The `GET /api/info` endpoint documents the convention and serves the external-tr
 ## Code
 
 - `hooks/project-context/handler.js` — `deriveAgentIdFromWorkspace()`, `buildIdentitySection()`.
+- `dashboard/agent-identity.js` — API-ingress validation and classification for known, test, and external agent ids.
 - `dashboard/server.js` — `/api/status` (per-agent), `/api/agents` (list), `DELETE /api/agents/:id` (with `?force=`), `/api/info` (external onboarding).
 - `dashboard/fb-meta.js` — `flowboard_agents` table CRUD (`getAgentRow`, `setAgentActiveProject`, `listAgents`, `deleteAgentRow`).
 - `dashboard/hzl-service.js` — `listTasksClaimedBy(agentId)`, the conflict check for `DELETE /api/agents/:id`.

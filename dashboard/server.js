@@ -42,6 +42,7 @@ let _bootIntegrity = null;
 const specifySession = require('./specify-sessions');
 const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
+const agentIdentity = require('./agent-identity.js');
 
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
@@ -442,12 +443,13 @@ async function sendWakeEvent(text) {
 // the caller's status request into a foreign agent's state — see T-177
 // trace from 2026-04-29).
 app.get('/api/status', (req, res) => {
-  const agentId = req.query.agentId || req.headers['x-openclaw-agent-id'];
-  if (!agentId) {
+  const identity = agentIdentity.validateAgentId(req.query.agentId || req.headers['x-openclaw-agent-id']);
+  if (!identity.ok) {
     return res.status(400).json({
-      error: 'agentId is required (?agentId=<id> query parameter or x-openclaw-agent-id header)',
+      error: identity.error + ' (?agentId=<id> query parameter or x-openclaw-agent-id header)',
     });
   }
+  const agentId = identity.id;
   let activeProject;
   if (HZL_ENABLED) {
     // T-131-3: DB is canonical. Unknown agents → null, no file fallback.
@@ -462,7 +464,7 @@ app.get('/api/status', (req, res) => {
   const readiness = activeProject
     ? rulesApi.getBootstrapReadiness(activeProject)
     : { contextReady: false, missingSections: [] };
-  res.json({ activeProject, agentId, contextReady: readiness.contextReady });
+  res.json({ activeProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) });
 });
 
 // PUT /api/status
@@ -471,10 +473,12 @@ app.get('/api/status', (req, res) => {
 // service-default agent — that would route the activation into the wrong
 // flowboard_agents row (see T-177 trace from 2026-04-29).
 app.put('/api/status', async (req, res) => {
-  const { project, agentId } = req.body;
-  if (!agentId) {
-    return res.status(400).json({ error: 'agentId is required in request body' });
+  const { project } = req.body;
+  const identity = agentIdentity.validateAgentId(req.body.agentId);
+  if (!identity.ok) {
+    return res.status(400).json({ error: identity.error + ' in request body' });
   }
+  const agentId = identity.id;
   let effectiveProject = (project && project !== 'none') ? project : null;
 
   // Resolve to canonical project name. Clients sometimes send displayName
@@ -523,7 +527,7 @@ app.put('/api/status', async (req, res) => {
     const readiness = effectiveProject
       ? rulesApi.getBootstrapReadiness(effectiveProject)
       : { contextReady: false };
-    const body = { ok: true, activeProject: effectiveProject, agentId, contextReady: readiness.contextReady };
+    const body = { ok: true, activeProject: effectiveProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
     res.json(body);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -667,7 +671,8 @@ app.get('/api/info', (req, res) => {
     },
     agent_id_convention:
       "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. " +
-      'Auto-registered in flowboard_agents on first PUT /api/status.',
+      "Do not use generated cwd/session names like 'codex-workspace'. " +
+      'Stable external ids are auto-registered in flowboard_agents on first PUT /api/status.',
     anti_trust_rule:
       'Always pass agentId on per-agent calls (?agentId= or x-openclaw-agent-id header for GET, body for POST/PUT). ' +
       "Distrust responses where response.agentId differs from yours.",
@@ -2046,7 +2051,9 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
   }
 
   const sourceNoteIds = notes.map(n => n.id);
-  const agentId = req.body.agentId || 'default';
+  const identity = agentIdentity.validateAgentId(req.body.agentId || 'human');
+  if (!identity.ok) return res.status(400).json({ error: identity.error });
+  const agentId = identity.id;
 
   // Create Specify session (errors on duplicate notes or concurrent agent session)
   let session;
@@ -2096,7 +2103,7 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
     // T-177-3: route promote-trigger to the agent that issued the promote
     // request, if known. Caller (UI / scripted client) may pass agentId in
     // the request body; if absent, gateway routes/broadcasts.
-    const triggerAgentId = req.body?.agentId;
+    const triggerAgentId = agentId;
     const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
       method: 'POST',
       headers: {
@@ -2178,8 +2185,10 @@ app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     const { agent, lease } = req.body;
-    const task = hzlService.claimTask(req.params.name, req.params.id, { agent, lease });
-    res.json({ ok: true, task });
+    const identity = agentIdentity.validateAgentId(agent, 'agent');
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const task = hzlService.claimTask(req.params.name, req.params.id, { agent: identity.id, lease });
+    res.json({ ok: true, task, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
     const status = err.code === 'PARENT_NOT_CLAIMABLE' ? 409
                  : err.code === 'ROUTING_MISMATCH' ? 403
@@ -2194,7 +2203,9 @@ app.post('/api/projects/:name/tasks/:id/release', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     const { agent, force } = req.body;
-    const result = hzlService.releaseTask(req.params.name, req.params.id, { agent, force });
+    const identity = agentIdentity.validateAgentId(agent, 'agent');
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const result = hzlService.releaseTask(req.params.name, req.params.id, { agent: identity.id, force });
     res.json(result);
   } catch (err) {
     const status = err.code === 'NOT_OWNER' ? 403 : 400;
@@ -2207,7 +2218,9 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     const { agent } = req.body;
-    const task = hzlService.completeTask(req.params.name, req.params.id, { agent });
+    const identity = agentIdentity.validateAgentId(agent, 'agent');
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const task = hzlService.completeTask(req.params.name, req.params.id, { agent: identity.id });
     // Recalculate parent status if this is a subtask
     const full = hzlService.getTask(req.params.name, req.params.id);
     if (full && full.parentId) {
@@ -2227,8 +2240,10 @@ app.post('/api/projects/:name/tasks/:id/checkpoint', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     const { message, agent, progress } = req.body;
-    const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent, progress });
-    res.json({ ok: true, checkpoint });
+    const identity = agentIdentity.validateAgentId(agent, 'agent');
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent: identity.id, progress });
+    res.json({ ok: true, checkpoint, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
     const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
     res.status(status).json({ error: err.message });
@@ -2314,7 +2329,13 @@ app.post('/api/projects/:name/tasks/:id/route', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
   try {
     const { agent } = req.body;
-    const task = hzlService.routeTask(req.params.name, req.params.id, agent);
+    if (agent === null || agent === undefined || agent === '') {
+      const task = hzlService.routeTask(req.params.name, req.params.id, null);
+      return res.json({ ok: true, task });
+    }
+    const identity = agentIdentity.validateAgentId(agent, 'agent');
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const task = hzlService.routeTask(req.params.name, req.params.id, identity.id);
     res.json({ ok: true, task });
   } catch (err) {
     res.status(400).json({ error: err.message });
