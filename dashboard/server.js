@@ -2051,9 +2051,11 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
   }
 
   const sourceNoteIds = notes.map(n => n.id);
-  const identity = agentIdentity.validateAgentId(req.body.agentId || 'human');
-  if (!identity.ok) return res.status(400).json({ error: identity.error });
-  const agentId = identity.id;
+  const hasTriggerAgent = req.body.agentId !== undefined && req.body.agentId !== null && String(req.body.agentId).trim() !== '';
+  const identity = hasTriggerAgent ? agentIdentity.validateAgentId(req.body.agentId) : null;
+  if (identity && !identity.ok) return res.status(400).json({ error: identity.error });
+  const triggerAgentId = identity?.id || null;
+  const sessionAgentId = triggerAgentId || 'human';
 
   // Create Specify session (errors on duplicate notes or concurrent agent session)
   let session;
@@ -2062,7 +2064,7 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
       project: projectName,
       origin: 'canvas',
       sourceNoteIds,
-      agentId,
+      agentId: sessionAgentId,
     });
   } catch (err) {
     return res.status(409).json({ error: err.message });
@@ -2101,9 +2103,8 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
 
   try {
     // T-177-3: route promote-trigger to the agent that issued the promote
-    // request, if known. Caller (UI / scripted client) may pass agentId in
-    // the request body; if absent, gateway routes/broadcasts.
-    const triggerAgentId = agentId;
+    // request when a scripted caller passes agentId. Dashboard UI does not
+    // provide one, so omit routing metadata and let the gateway broadcast.
     const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
       method: 'POST',
       headers: {

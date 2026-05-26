@@ -27,6 +27,19 @@ section('known stable identities');
   assertEqual(human.kind, 'known', 'human classified as known');
 }
 
+section('normalization and shape validation');
+{
+  assertEqual(identity.classifyAgentId(' dev-botti ').id, 'dev-botti', 'agent ids are trimmed');
+  assertEqual(identity.classifyAgentId(undefined).ok, false, 'undefined rejected');
+  assertEqual(identity.classifyAgentId(null).ok, false, 'null rejected');
+  assertEqual(identity.classifyAgentId(123).ok, false, 'non-string numeric id rejected by kebab-case rule');
+  assertEqual(identity.classifyAgentId('Claude-Code').ok, false, 'uppercase rejected');
+  assertEqual(identity.classifyAgentId('1-agent').ok, false, 'leading digit rejected');
+  assertEqual(identity.classifyAgentId('agent-').ok, false, 'trailing hyphen rejected');
+  assertEqual(identity.classifyAgentId('a'.repeat(64)).ok, true, '64-char id accepted');
+  assertEqual(identity.classifyAgentId('a'.repeat(65)).ok, false, '65-char id rejected');
+}
+
 section('external stable identities');
 {
   const ext = identity.classifyAgentId('qwen-worker');
@@ -49,6 +62,23 @@ section('test fixtures remain allowed');
   const test = identity.classifyAgentId('test-agent-no-project-1779828294952');
   assertEqual(test.ok, true, 'test fixture id accepted');
   assertEqual(test.kind, 'test', 'test fixture classified as test');
+}
+
+section('server-facing helpers');
+{
+  const badAgent = identity.validateAgentId('main-workspace', 'agent');
+  assertEqual(badAgent.ok, false, 'validateAgentId rejects bad id');
+  assert(badAgent.error.startsWith('agent '), 'validateAgentId uses caller label in error');
+
+  const knownMeta = identity.responseMeta(identity.validateAgentId('dev-botti'));
+  assertEqual(knownMeta.kind, 'known', 'responseMeta exposes known kind');
+  assertEqual(Object.prototype.hasOwnProperty.call(knownMeta, 'warning'), false, 'known responseMeta omits warning');
+
+  const externalMeta = identity.responseMeta(identity.validateAgentId('qwen-worker'));
+  assertEqual(externalMeta.kind, 'external', 'responseMeta exposes external kind');
+  assert(!!externalMeta.warning, 'external responseMeta includes warning');
+
+  assertEqual(identity.responseMeta({ ok: false }), undefined, 'responseMeta ignores invalid identities');
 }
 
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);
