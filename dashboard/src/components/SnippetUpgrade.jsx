@@ -74,6 +74,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const driftedFiles = status.files.filter(f => f.state === 'drifted');
   const missingFiles = status.files.filter(f => f.state === 'missing');
   const bootLegacyFiles = status.bootLegacyFiles || [];
+  const legacyStateFiles = status.legacyStateFiles || [];
 
   // Selection maps per group. Defaults follow the "mandatory vs optional"
   // distinction: anything needed for FlowBoard to function correctly is
@@ -179,7 +180,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const skippedCount = result?.skipped?.length || 0;
   const applied = !!result?.ok && appliedCount > 0 && skippedCount === 0;
   const applyFailed = !!result && (!result.ok || appliedCount === 0 || skippedCount > 0);
-  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length > 0;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length > 0;
 
   // Modal title & subtitle follow the chip variant
   const title = status.chip?.variant === 'warn'
@@ -190,6 +191,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,
     missingFiles.length > 0 && `${missingFiles.length} AGENTS.md file${missingFiles.length !== 1 ? 's' : ''} missing FlowBoard`,
     bootLegacyFiles.length > 0 && `${bootLegacyFiles.length} legacy BOOT.md advisory${bootLegacyFiles.length !== 1 ? 'ies' : ''}`,
+    legacyStateFiles.length > 0 && `${legacyStateFiles.length} legacy state file${legacyStateFiles.length !== 1 ? 's' : ''}`,
   ].filter(Boolean).join(' · ');
 
   return createPortal(
@@ -282,6 +284,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
           {bootLegacyFiles.length > 0 && (
             <BootLegacySection files={bootLegacyFiles} />
+          )}
+
+          {legacyStateFiles.length > 0 && (
+            <LegacyStateSection files={legacyStateFiles} />
           )}
 
           {!hasAnything && (
@@ -420,6 +426,36 @@ function BootLegacySection({ files }) {
           <div className="group-title">Legacy BOOT.md cleanup required</div>
           <div className="group-sub">Display-only advisory: BOOT.md is OpenClaw-owned, so FlowBoard will not edit it automatically.</div>
           <div className="group-sub">Open the file, remove only the deprecated FlowBoard section (for example “Project State Recovery (FlowBoard)”), keep all other OpenClaw/user content unchanged, save, then refresh this dashboard.</div>
+        </div>
+      </div>
+      <div className="group-body">
+        {files.map(file => (
+          <div key={file.id} className="file-row">
+            <div className="file-row-main">
+              <div className="file-row-text">
+                <div className="file-row-path">
+                  <span className="mono" title={file.path}>{shortPath(file.path)}</span>
+                  <span className="chip warn">Manual cleanup</span>
+                </div>
+                <div className="file-row-summary">{file.summary}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LegacyStateSection({ files }) {
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <div className="group-header-icon warn"><AlertTriangle size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">Legacy project-state cleanup required</div>
+          <div className="group-sub">Display-only advisory: these files can contain stale active-project/session state and FlowBoard will not edit them automatically.</div>
+          <div className="group-sub">Archive or remove them manually after checking they do not contain durable notes. Current project state comes from `/api/status` and `flowboard_agents`.</div>
         </div>
       </div>
       <div className="group-body">

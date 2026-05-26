@@ -393,15 +393,6 @@ function collectStatus(openclawHome) {
     }
   }
 
-  let chip = null;
-  const hasLegacy = counts.identical > 0 || counts.drifted > 0;
-  const hasCurrent = counts.current > 0;
-  if (hasLegacy) {
-    chip = { text: 'Migration required', variant: 'warn' };
-  } else if (counts.missing > 0) {
-    chip = { text: 'FlowBoard setup', variant: 'warn' };
-  }
-
   // BOOT.md Legacy-Erkennung (nur anzeigen, nicht migrieren)
   const bootLegacyFiles = [];
   const bootCandidates = findCandidateFiles(openclawHome, 'BOOT.md');
@@ -425,7 +416,34 @@ function collectStatus(openclawHome) {
     }
   }
 
-  return { counts, chip, files, bootLegacyFiles };
+  // Runtime state leftovers from pre-API-first Project Mode. These files are
+  // display-only advisories: FlowBoard must not delete user/workspace files
+  // automatically, but the dashboard should make stale state visible during
+  // upgrades.
+  const legacyStateFiles = [];
+  for (const name of ['SESSION-STATE.md', 'BOOTSTRAP.md', 'ACTIVE-PROJECT.md']) {
+    const candidates = findCandidateFiles(openclawHome, name);
+    for (const filePath of candidates) {
+      legacyStateFiles.push({
+        id: makeFileId(openclawHome, filePath),
+        path: filePath,
+        name,
+        state: 'legacy-state',
+        summary: `${name} is legacy project-state residue. FlowBoard now uses /api/status and flowboard_agents; archive or remove this file manually after checking it contains no durable notes.`,
+        variant: 'info',
+      });
+    }
+  }
+
+  let chip = null;
+  const hasLegacy = counts.identical > 0 || counts.drifted > 0;
+  if (hasLegacy || bootLegacyFiles.length > 0 || legacyStateFiles.length > 0) {
+    chip = { text: 'Migration required', variant: 'warn' };
+  } else if (counts.missing > 0) {
+    chip = { text: 'FlowBoard setup', variant: 'warn' };
+  }
+
+  return { counts, chip, files, bootLegacyFiles, legacyStateFiles };
 }
 
 // Apply a list of {id, action} pairs atomically per file.

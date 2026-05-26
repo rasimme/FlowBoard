@@ -21,6 +21,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { pathToFileURL } = require('url');
 
 const API_BASE = process.env.FLOWBOARD_API || 'http://localhost:18790';
 const TEST_AGENT = 'test-agent-suite';
@@ -190,6 +191,12 @@ async function testInfoEndpointPublic() {
 async function loadHandler() {
   // Dynamic import (handler is ESM)
   const mod = await import(HOOK_HANDLER_PATH);
+  return mod.default;
+}
+
+async function loadFreshHandler() {
+  const url = pathToFileURL(HOOK_HANDLER_PATH).href + `?cache=${Date.now()}-${Math.random()}`;
+  const mod = await import(url);
   return mod.default;
 }
 
@@ -436,6 +443,61 @@ async function testHookHandlesMissingBootstrapFiles() {
   ok(!threw, `handler does not throw on missing bootstrapFiles`);
 }
 
+async function testHookLegacyFileFallbackGate() {
+  section('T-205: legacy ACTIVE-PROJECT.md fallback is env-gated');
+
+  const originalFetch = global.fetch;
+  const originalEnv = process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-hook-fallback-'));
+  const workspaceDir = path.join(tmp, 'workspace-fallback-agent');
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  fs.writeFileSync(path.join(workspaceDir, 'ACTIVE-PROJECT.md'), 'project: flowboard\n');
+
+  try {
+    // API success always wins and should not consult the legacy file.
+    delete process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK;
+    global.fetch = async (url) => {
+      const textUrl = String(url);
+      if (textUrl.includes('/api/status')) {
+        return { ok: true, json: async () => ({ activeProject: PROJECT_FOR_TESTS }) };
+      }
+      if (textUrl.includes('/tasks')) {
+        return { ok: true, json: async () => ({ tasks: [] }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    let handler = await loadFreshHandler();
+    let event = makeBootstrapEvent({ agentId: 'fallback-agent', workspaceDir, existingFiles: [] });
+    await handler(event);
+    let bs = getBootstrapEntry(event);
+    ok(bs && bs.content.startsWith(`# Active Project: ${PROJECT_FOR_TESTS}`),
+      'API success produces active-project context');
+
+    // API failure with env unset must not resurrect stale ACTIVE-PROJECT.md.
+    global.fetch = async () => { throw new Error('offline'); };
+    handler = await loadFreshHandler();
+    event = makeBootstrapEvent({ agentId: 'fallback-agent', workspaceDir, existingFiles: [] });
+    await handler(event);
+    bs = getBootstrapEntry(event);
+    ok(bs && bs.content.startsWith('# No Active Project'),
+      'API failure + env unset ignores ACTIVE-PROJECT.md');
+
+    // Explicit migration mode re-enables the file fallback.
+    process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK = 'true';
+    handler = await loadFreshHandler();
+    event = makeBootstrapEvent({ agentId: 'fallback-agent', workspaceDir, existingFiles: [] });
+    await handler(event);
+    bs = getBootstrapEntry(event);
+    ok(bs && bs.content.startsWith(`# Active Project: ${PROJECT_FOR_TESTS}`),
+      'API failure + env=true reads ACTIVE-PROJECT.md');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalEnv === undefined) delete process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK;
+    else process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK = originalEnv;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
@@ -512,6 +574,7 @@ async function main() {
     await testHookDoesNotWriteToDisk();
     await testHookSourceHasNoWritePatterns();
     await testHookHandlesMissingBootstrapFiles();
+    await testHookLegacyFileFallbackGate();
   } finally {
     await cleanup();
   }

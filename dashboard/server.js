@@ -684,10 +684,10 @@ app.post('/api/auth', (req, res) => {
 
 // --- Helpers ---
 
-// LEGACY (T-161): retained for non-HZL deployments and as a one-shot bootstrap
-// fallback in getCanonicalActiveProject() before the m003 migration backfills
-// the agent row. Under HZL with a populated flowboard_agents table this never
-// fires. Remove once non-HZL deployments are gone.
+// LEGACY (T-161): retained for non-HZL deployments only. HZL deployments must
+// not read ACTIVE-PROJECT.md as a fallback, because stale workspace files can
+// resurrect an old project during compaction/bootstrap. m003 handles the one-
+// time file -> DB migration explicitly during startup.
 function readActiveProject() {
   try {
     const text = fs.readFileSync(ACTIVE_PROJECT_FILE, 'utf8');
@@ -705,7 +705,7 @@ function getCanonicalActiveProject(agentId) {
   if (!agentId) return null;
   if (HZL_ENABLED) {
     const row = fbMeta.getAgentRow(agentId);
-    if (row) return row.active_project || null;
+    return row?.active_project || null;
   }
   return readActiveProject(); // LEGACY: see readActiveProject() comment.
 }

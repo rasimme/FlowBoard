@@ -32,6 +32,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `INTEGRITY_WEBHOOK_URL` | empty | Optional. On integrity regression at boot, the server `POST`s a JSON body to this URL: `{ message, regression, current, stored, host }`. The `message` field matches the OpenClaw gateway `/hooks/agent` contract; the structured fields ride alongside for monitoring tools. Empty disables the push channel — the stderr WARN block and `GET /api/health/integrity` remain the only signal. Adopters running Slack / Discord / PagerDuty wire a small relay (those surfaces expect `text` / `content` / `payload.summary` respectively). |
 | `INTEGRITY_WEBHOOK_TOKEN` | empty | Bearer token sent with `Authorization: Bearer <token>` on the `INTEGRITY_WEBHOOK_URL` `POST`. Empty = unauthenticated request. |
 | `AUTH_ALWAYS` | unset (off) | Forces auth middleware on every request (otherwise loopback bypass applies in non-production). |
+| `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset (off) | Hook-only migration escape hatch. Set to `true` only during explicit legacy recovery if the FlowBoard API is unreachable and `ACTIVE-PROJECT.md` must be read once. Normal installs must leave this off so stale files cannot resurrect old project state during bootstrap or compaction. |
 
 ## Authentication
 
@@ -69,6 +70,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_REPO` | `~/repos/FlowBoard` | See Storage paths. |
 | `FLOWBOARD_PORT` | `18790` | Hook reads this to construct the local API URL. |
 | `FLOWBOARD_PROJECTS_DIR` | `~/.openclaw/projects` | See Storage paths. |
+| `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset | See Feature flags. |
 
 ## Node defaults
 

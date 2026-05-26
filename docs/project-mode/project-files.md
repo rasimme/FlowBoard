@@ -69,4 +69,4 @@ Context docs are **lazy-loaded** - agents read them when relevant, not on every 
 
 Project registry and per-agent active-project state are DB-backed (m005+). For endpoints and DB details, see `tasks-api.md` § Project & Agent State.
 
-**Migration note:** `ACTIVE-PROJECT.md` and `_index.md` may still exist as transitional fallback. DB is canonical when HZL is enabled.
+**Migration note:** `ACTIVE-PROJECT.md` and `_index.md` may still exist as stale local artifacts from older installs. They are never authoritative when the FlowBoard API is available; trust `flowboard_projects` and `flowboard_agents` instead.

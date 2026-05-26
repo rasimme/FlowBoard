@@ -445,7 +445,8 @@ section('Batch apply — upgrade + migrate + add in one call');
     }
 
     // Status after batch: workspace-voice + workspace-claude remain missing;
-    // BOOT.md legacy remains display-only and does not affect migration counts.
+    // BOOT.md legacy remains display-only but still keeps the migration
+    // advisory visible because manual cleanup is required.
     const status2 = doctor.collectStatus(home);
     // 4 current total: the 3 we just applied + workspace-done which was
     // already current from the seed.
@@ -453,7 +454,7 @@ section('Batch apply — upgrade + migrate + add in one call');
       'four files now current (3 batch-applied + 1 pre-existing)');
     assertEqual(status2.counts.drifted, 0, 'no drifted migratable files remain');
     assertEqual(status2.bootLegacyFiles?.length || 0, 1, 'BOOT.md legacy advisory still visible');
-    assertEqual(status2.chip.text, 'FlowBoard setup', 'chip reflects remaining missing AGENTS.md files');
+    assertEqual(status2.chip.text, 'Migration required', 'chip reflects remaining manual cleanup advisory');
   } finally { cleanup(); }
 }
 
@@ -500,6 +501,30 @@ section('BOOT.md - legacy advisory is display-only');
     assertEqual(r.applied.length, 0, 'BOOT migrate is not applied');
     assertEqual(r.skipped.length, 1, 'BOOT migrate request is skipped');
     assertEqual(fs.readFileSync(paths.bootLegacyPath, 'utf8'), before, 'BOOT.md left untouched');
+  } finally { cleanup(); }
+}
+
+// ============================================================
+section('Legacy project-state files - display-only advisory');
+// ============================================================
+{
+  const home = mkSandbox();
+  try {
+    fs.mkdirSync(path.join(home, 'workspace'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'workspace', 'AGENTS.md'), `${doctor.readCurrent('AGENTS-trigger.md')}\n`);
+    fs.writeFileSync(path.join(home, 'workspace', 'SESSION-STATE.md'), '# stale session\n');
+    fs.writeFileSync(path.join(home, 'workspace', 'BOOTSTRAP.md'), '# stale bootstrap\n');
+    fs.writeFileSync(path.join(home, 'workspace', 'ACTIVE-PROJECT.md'), 'project: stale\n');
+
+    const status = doctor.collectStatus(home);
+    assertEqual(status.files.length, 0, 'current AGENTS.md has no migratable rows');
+    assertEqual(status.legacyStateFiles?.length || 0, 3, 'three legacy project-state advisories visible');
+    assertEqual(status.chip.text, 'Migration required', 'legacy project-state files keep migration chip visible');
+
+    const r = doctor.applyActions(home, [{ id: status.legacyStateFiles[0].id, action: 'migrate' }]);
+    assertEqual(r.applied.length, 0, 'legacy state file is not auto-migrated');
+    assertEqual(r.skipped.length, 1, 'legacy state migrate request is skipped');
+    assert(fs.existsSync(path.join(home, 'workspace', 'SESSION-STATE.md')), 'SESSION-STATE.md left untouched');
   } finally { cleanup(); }
 }
 

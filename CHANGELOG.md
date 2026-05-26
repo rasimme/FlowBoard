@@ -1,5 +1,11 @@
 # Changelog
 
+### Unreleased — Legacy Project-State Hardening (T-205)
+
+- **Legacy `ACTIVE-PROJECT.md` fallback is opt-in**. The project-context hook now emits projectless context when the FlowBoard API is unreachable unless `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` is set for an explicit migration recovery window.
+- **HZL/API state stays authoritative**. Under HZL, server-side active-project resolution no longer falls back to `ACTIVE-PROJECT.md` when an agent row is missing.
+- **Upgrade visibility for stale state files**. The snippets doctor/dashboard now surfaces `SESSION-STATE.md`, `BOOTSTRAP.md`, and `ACTIVE-PROJECT.md` as manual cleanup advisories instead of mutating them automatically.
+
 ### Unreleased — Per-Agent API Hardening (T-177)
 
 **Breaking change for installs that set `OPENCLAW_AGENT_ID` on the dashboard service.**

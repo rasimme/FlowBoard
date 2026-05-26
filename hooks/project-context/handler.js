@@ -22,6 +22,7 @@ const OPENCLAW_HOME = join(homedir(), ".openclaw");
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
 const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || join(homedir(), "repos", "FlowBoard");
 const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
+const ALLOW_LEGACY_FILE_FALLBACK = process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK === "true";
 const BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 
 // Single source of truth for the rules manifest: load from the FlowBoard repo
@@ -112,11 +113,12 @@ async function resolveActiveProjectFromApi(agentId) {
   }
 }
 
-// Pre-bootstrap fallback: if the API is unreachable (gateway boot before
-// FlowBoard server is up, migration setups), read the legacy
-// ACTIVE-PROJECT.md file. An authoritative `null` from the API does NOT
-// trigger this path.
+// Legacy fallback is opt-in only. Reading ACTIVE-PROJECT.md on ordinary
+// compaction/bootstrap paths can resurrect stale project state; DB/API is
+// authoritative when FlowBoard is installed. Keep this for explicit migration
+// windows by setting FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true.
 function resolveActiveProjectFromFile(workspaceDir) {
+  if (!ALLOW_LEGACY_FILE_FALLBACK) return null;
   if (!workspaceDir) return null;
   const activeProjectPath = join(workspaceDir, "ACTIVE-PROJECT.md");
   if (!existsSync(activeProjectPath)) return null;
@@ -197,12 +199,14 @@ async function getTaskStatusSummary(projectName) {
 async function buildBootstrapContent(workspaceDir, agentId) {
   const identitySection = buildIdentitySection(agentId);
 
-  // Resolve active project: DB canonical via API, file fallback only on network failure
+  // Resolve active project: DB canonical via API. Legacy file fallback is
+  // opt-in only and never runs after an authoritative API null.
   const apiResult = await resolveActiveProjectFromApi(agentId);
   let projectName = null;
   if (apiResult.ok) {
     projectName = apiResult.project;
   } else {
+    console.warn(`[project-context] FlowBoard status unavailable for ${agentId}: ${apiResult.reason}; trying legacy file fallback if enabled`);
     projectName = resolveActiveProjectFromFile(workspaceDir);
   }
 

@@ -11,7 +11,7 @@ Graceful-degradation rules when FlowBoard state is partial, stale, or inconsiste
 - **Missing spec or capability doc** → report and continue. Use the rules manifest in `BOOTSTRAP.md` as the coarse-grained fallback.
 - **Corrupt or unreadable state file** → prefer the DB-backed canonical source. FlowBoard runtime owns project registry (`flowboard_projects`) and per-agent active-project state (`flowboard_agents`).
 - **Migration leftovers** → when a legacy file (`ACTIVE-PROJECT.md`, `_index.md`, `tasks.json`) disagrees with the DB, trust the DB. File state is transitional.
-- **API unreachable during bootstrap** → the project-context hook falls back to the local `ACTIVE-PROJECT.md` for legacy compatibility. This is a soft fallback, not the intended path; if the server is expected to be up, surface the connection failure.
+- **API unreachable during bootstrap** → emit projectless context and surface the connection failure. `ACTIVE-PROJECT.md` fallback is disabled by default and only available for explicit migration recovery via `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true`.
 - **Claim conflicts (409)** → another agent holds the claim. Read recent checkpoints/comments, then either wait, coordinate, or (if the lease has expired) steal.
 
 ## Related

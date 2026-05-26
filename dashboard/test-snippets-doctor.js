@@ -531,6 +531,39 @@ section('collectStatus() — chip variants');
     fs.rmSync(path.join(dir, 'workspace-fresh'), { recursive: true, force: true });
     const s3 = doctor.collectStatus(dir);
     assertEqual(s3.chip, null, 'current-only → chip hidden');
+
+    // (4) Legacy project-state file only → Migration required advisory.
+    fs.writeFileSync(path.join(dir, 'workspace', 'SESSION-STATE.md'), '# SESSION-STATE.md\n\nActive project: stale\n');
+    const s4 = doctor.collectStatus(dir);
+    assertEqual(s4.legacyStateFiles.length, 1, 'legacy state file detected');
+    assertEqual(s4.legacyStateFiles[0].name, 'SESSION-STATE.md', 'legacy state file keeps its name');
+    assertEqual(s4.legacyStateFiles[0].state, 'legacy-state', 'legacy state file uses display-only state');
+    assertEqual(s4.chip?.text, 'Migration required', 'legacy state only → Migration required');
+    assertEqual(s4.chip?.variant, 'warn', 'legacy state chip variant = warn');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('collectStatus() — legacy project-state advisories');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), `${doctor.readCurrent('AGENTS-trigger.md')}\n`);
+    fs.writeFileSync(path.join(dir, 'workspace', 'SESSION-STATE.md'), '# stale session\n');
+    fs.writeFileSync(path.join(dir, 'workspace', 'BOOTSTRAP.md'), '# stale bootstrap\n');
+    fs.writeFileSync(path.join(dir, 'workspace', 'ACTIVE-PROJECT.md'), 'project: stale\n');
+
+    const status = doctor.collectStatus(dir);
+    assertEqual(status.files.length, 0, 'current AGENTS.md leaves no migratable snippet rows');
+    assertEqual(status.legacyStateFiles.length, 3, 'detects all three legacy project-state files');
+    assert(status.legacyStateFiles.every(f => f.state === 'legacy-state'), 'all state files are display-only advisories');
+    assert(status.legacyStateFiles.every(f => f.variant === 'info'), 'all state files use info variant');
+    assert(status.legacyStateFiles.some(f => f.name === 'ACTIVE-PROJECT.md'), 'ACTIVE-PROJECT.md detected');
+    assert(status.legacyStateFiles.some(f => f.name === 'BOOTSTRAP.md'), 'BOOTSTRAP.md detected');
+    assert(status.legacyStateFiles.some(f => f.name === 'SESSION-STATE.md'), 'SESSION-STATE.md detected');
+    assertEqual(status.chip?.text, 'Migration required', 'legacy state advisories show chip');
   } finally {
     cleanupTmp();
   }

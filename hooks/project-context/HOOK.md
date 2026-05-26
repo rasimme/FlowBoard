@@ -20,10 +20,11 @@ the local API.
 2. Derives the canonical `agentId` from the workspace directory name
    (`workspace-<id>` → `<id>`, plain `workspace` → `main`).
 3. Resolves the active project from the FlowBoard API (`GET /api/status`).
-   Falls back to the legacy `ACTIVE-PROJECT.md` file only when the API
-   is unreachable (gateway boot before FlowBoard server is up,
-   migration setups). An authoritative `null` from the API means "no
-   project active" and does not trigger the file fallback.
+   If the API is unreachable, the hook emits projectless context by default.
+   Legacy `ACTIVE-PROJECT.md` fallback is opt-in only via
+   `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` for explicit migration
+   recovery windows. An authoritative `null` from the API means "no project
+   active" and never triggers the file fallback.
 4. Builds the bootstrap document in memory:
    - `# Active Project: <name>` header
    - `## Identity` section with the agent's canonical id
@@ -58,9 +59,11 @@ and eliminates the cache↔projection drift class of bugs.
 
 ## Failure Modes
 
-- **API unreachable**: falls back to `ACTIVE-PROJECT.md` (legacy
-  per-workspace file) for the project name; rules manifest still served
-  (inline fallback if `rules-api.js` cannot be required).
+- **API unreachable**: emits projectless context by default; rules manifest
+  still served (inline fallback if `rules-api.js` cannot be required).
+  `ACTIVE-PROJECT.md` fallback is available only when
+  `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` is set for a migration
+  recovery window.
 - **No active project**: writes only the Identity section so the agent
   can still call `PUT /api/status` with the correct `agentId`.
 - **Build error**: leaves `bootstrapFiles` untouched (whatever the
