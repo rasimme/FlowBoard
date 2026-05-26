@@ -5,6 +5,7 @@
 - **Stable agent identity validation.** `/api/status`, task claim/release/complete/checkpoint/route, and canvas promote now share one agent-id validator. Known OpenClaw ids and stable external ids still work; placeholders and generated workspace/replay ids are rejected.
 - **External agents remain first-class.** Unknown stable lowercase kebab-case ids are accepted and marked as external, so Codex/Cursor/Claude-style tools can still self-onboard without pre-registration.
 - **Legacy generated ids stop mutating state.** Existing rows such as `codex-workspace` or `main-workspace` can still appear in agent listings, but rejected ids can no longer activate projects or mutate task state. Canvas promote also rejects a literal `default` agent id; dashboard-originated promotes without an agent id continue to broadcast through the gateway.
+- **Task activity authors are less anonymous.** Checkpoint reads now preserve their agent id, UI comments use the authenticated dashboard author, and unowned status events render as `flowboard` instead of the generic `system`.
 - **Snippets and docs tightened.** OpenClaw-managed agents must use the bootstrap-provided id; external agents must choose one stable runtime id instead of deriving names from cwd/session state.
 
 ### Unreleased — Legacy Project-State Hardening (T-205)

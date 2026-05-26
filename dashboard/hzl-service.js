@@ -1346,20 +1346,29 @@ function addCheckpoint(project, flowboardId, opts) {
 
 /**
  * Get all checkpoints for a task.
- * Uses hzl-core native getCheckpoints().
+ * Reads checkpoint events directly so author/agent metadata survives.
  */
 function getCheckpoints(project, flowboardId) {
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
 
-  const rows = _taskService.getCheckpoints(ulid);
-  return rows.map(r => ({
-    id: r.event_rowid,
-    taskId: flowboardId,
-    message: r.name,
-    data: r.data,
-    timestamp: r.timestamp,
-  }));
+  // hzl-core's getCheckpoints() returns the checkpoint payload but currently
+  // drops event author/agent metadata. Read the immutable event rows directly
+  // so the activity feed can show the real writer.
+  const rows = _eventStore.getByTaskId(ulid)
+    .filter(ev => ev.type === 'checkpoint_recorded');
+  return rows.map(ev => {
+    const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
+    return {
+      id: ev.id || ev.event_rowid || ev.event_id || ev.eventId,
+      taskId: flowboardId,
+      message: data.name || ev.name || '',
+      data: data.data || {},
+      agent: ev.author || ev.agent_id || null,
+      progress: typeof data.progress === 'number' ? data.progress : null,
+      timestamp: ev.timestamp,
+    };
+  });
 }
 
 /**

@@ -133,6 +133,23 @@ function currentAgent() {
   return 'human';
 }
 
+function cleanActorName(value) {
+  return String(value || '').trim().replace(/^@/, '');
+}
+
+function currentHumanAuthor() {
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  const telegramName = [tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ');
+  return cleanActorName(telegramName || tgUser?.username || window.appState?.authUser) || currentAgent();
+}
+
+function displayActivityAuthor(author) {
+  const name = cleanActorName(author);
+  if (!name || name === 'system') return 'flowboard';
+  if (name === 'human') return currentHumanAuthor();
+  return name;
+}
+
 function refreshKanban() {
   if (window.appState?._refreshBoard) window.appState._refreshBoard();
 }
@@ -346,7 +363,7 @@ export default function DetailPanel() {
   function addSyntheticItem(type, message) {
     setSyntheticItems((prev) => [
       ...prev,
-      { type, message, author: currentAgent(), timestamp: new Date().toISOString() },
+      { type, message, author: currentHumanAuthor(), timestamp: new Date().toISOString() },
     ]);
   }
 
@@ -836,7 +853,7 @@ export default function DetailPanel() {
     try {
       const result = await apiFetch(`/projects/${project}/tasks/${taskId}/comment`, {
         method: 'POST',
-        body: { message: text, author: currentAgent() },
+        body: { message: text, author: currentHumanAuthor() },
       });
       if (!result?.error) {
         setComment('');
@@ -1349,11 +1366,11 @@ export default function DetailPanel() {
           </div>
         </div>
 
-        {/* Comment Footer — @human chip prefix makes the author
-            explicit in a multi-agent stream (hzl-semantics-for-ui §4). */}
+        {/* Comment Footer — show the authenticated UI author while task-claim
+            semantics keep using the reserved `human` agent internally. */}
         <div className="px-4 py-3 border-t border-border bg-card">
           <div className="flex gap-2 items-center">
-            <AgentChip name={currentAgent()} size="sm" title="Commenting as @human" />
+            <AgentChip name={currentHumanAuthor()} size="sm" title={`Commenting as @${currentHumanAuthor()}`} />
             <Textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
@@ -1384,7 +1401,7 @@ export default function DetailPanel() {
 //   label + body. Checkpoints can also show a progress line.
 // - Status event: dim one-liner, no chip, no bubble (system-info tone).
 function ActivityItem({ item }) {
-  const author = item.author || item.agent || 'system';
+  const author = displayActivityAuthor(item.author || item.agent);
   const time = relativeTime(item.timestamp);
   const handle = author.startsWith('@') ? author : `@${author}`;
 

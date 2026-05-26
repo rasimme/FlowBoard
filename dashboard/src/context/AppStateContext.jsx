@@ -19,6 +19,7 @@ function fingerprint(s) {
   return [
     s.viewedProject,
     s.activeProject,
+    s.authUser,
     s.currentTab,
     s.projects?.length,
     tasksHash,
