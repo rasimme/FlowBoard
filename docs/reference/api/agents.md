@@ -70,7 +70,7 @@ Set or clear the agent's active project. Lazy-registers the agent on first call.
 
 `agentId` is required. `project` may be `null` or the string `"none"` to clear. Display names (e.g. `"FlowBoard"`) are accepted and resolved to the canonical name (`"flowboard"`).
 
-`agentId` must be a stable lowercase kebab-case identity. Known OpenClaw ids and stable external ids are accepted. Placeholders and generated names such as `default`, `<agentId>`, `workspace-*`, `*-workspace`, or replay/timestamp ids are rejected with `400`.
+`agentId` must be a stable lowercase kebab-case identity. Known OpenClaw ids and stable external ids are accepted. OpenClaw-managed agents normally use the bootstrap `## Identity` value; if it is absent, `~/.openclaw/workspace` maps to `main` and `~/.openclaw/workspace-<id>` maps to `<id>`. Placeholders and generated names such as `default`, `<agentId>`, `workspace-*`, `*-workspace`, `codex-workspace`, or replay/timestamp ids are rejected with `400`.
 
 **Response 200:** `{"ok": true, "activeProject": "<canonical-name>" | null, "agentId": "<id>"}`
 

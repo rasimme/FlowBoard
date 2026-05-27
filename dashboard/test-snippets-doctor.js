@@ -52,8 +52,8 @@ const NEW_BLOCK = `## Projects (MANDATORY)
 FlowBoard delivers project context automatically as \`BOOTSTRAP.md\`.
 
 ### Agent identity
-Read BOOTSTRAP.md — the \`## Identity\` section gives you your
-\`<your-agentId-from-BOOTSTRAP>\`.
+Resolve \`<resolved-agentId>\` from BOOTSTRAP first, then from the
+OpenClaw workspace convention if the identity block is absent.
 `;
 
 section('detectLegacyMarkers()');
@@ -280,7 +280,7 @@ section('applySelected() — byte-identical only, with .bak');
     const currentBlock = doctor.readCurrent('AGENTS-trigger.md');
     assert(afterIdentical.includes(currentBlock.trim().slice(0, 60)), 'new block present in identical file');
     assert(!afterIdentical.includes('echo "$OPENCLAW_AGENT_ID"'), 'legacy shell-introspection guidance gone');
-    assert(afterIdentical.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder present');
+    assert(afterIdentical.includes('<resolved-agentId>'), 'resolved agentId placeholder present');
     assert(afterIdentical.includes('local-capable tool'), 'local API tool contract present');
     assert(afterIdentical.includes('do not infer state'), 'no-inference contract present');
     assert(afterIdentical.includes('contextReady === true'), 'contextReady verification contract present');
@@ -290,7 +290,8 @@ section('applySelected() — byte-identical only, with .bak');
     assert(afterIdentical.includes('explicit command wins over passive startup'), 'explicit-command precedence contract present');
     assert(afterIdentical.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract present');
     assert(afterIdentical.includes('never JSON.parse this body'), 'markdown parsing contract present');
-    assert(afterIdentical.includes('do not invent a runtime/workspace fallback'), 'no invented fallback agentId contract present');
+    assert(afterIdentical.includes('~/.openclaw/workspace'), 'OpenClaw workspace fallback contract present');
+    assert(afterIdentical.includes('Do not invent cwd/runtime hybrids'), 'no invented hybrid agentId contract present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -430,7 +431,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r1.applied.length, 1, 'migrate applied');
     assertEqual(r1.applied[0].action, 'migrate', 'action recorded as migrate');
     const afterDrift = fs.readFileSync(driftedPath, 'utf8');
-    assert(afterDrift.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder inserted');
+    assert(afterDrift.includes('<resolved-agentId>'), 'resolved agentId placeholder inserted');
     assert(afterDrift.includes('local-capable tool'), 'local API tool contract inserted');
     assert(afterDrift.includes('do not infer state'), 'no-inference contract inserted');
     assert(afterDrift.includes('contextReady === true'), 'contextReady verification contract inserted');
@@ -440,7 +441,8 @@ section('applyActions() — migrate + add + state guards');
     assert(afterDrift.includes('explicit command wins over passive startup'), 'explicit-command precedence contract inserted');
     assert(afterDrift.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract inserted');
     assert(afterDrift.includes('never JSON.parse this body'), 'markdown parsing contract inserted');
-    assert(afterDrift.includes('do not invent a runtime/workspace fallback'), 'no invented fallback agentId contract inserted');
+    assert(afterDrift.includes('~/.openclaw/workspace'), 'OpenClaw workspace fallback contract inserted');
+    assert(afterDrift.includes('Do not invent cwd/runtime hybrids'), 'no invented hybrid agentId contract inserted');
     assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
@@ -449,7 +451,7 @@ section('applyActions() — migrate + add + state guards');
     assertEqual(r2.applied[0].action, 'add', 'action recorded as add');
     const afterMissing = fs.readFileSync(missingPath, 'utf8');
     assert(afterMissing.startsWith('# my beta config'), 'existing content preserved at top');
-    assert(afterMissing.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder appended');
+    assert(afterMissing.includes('<resolved-agentId>'), 'resolved agentId placeholder appended');
     assert(afterMissing.includes('local-capable tool'), 'local API tool contract appended');
     assert(afterMissing.includes('do not infer state'), 'no-inference contract appended');
     assert(afterMissing.includes('contextReady === true'), 'contextReady verification contract appended');
@@ -459,7 +461,8 @@ section('applyActions() — migrate + add + state guards');
     assert(afterMissing.includes('explicit command wins over passive startup'), 'explicit-command precedence contract appended');
     assert(afterMissing.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract appended');
     assert(afterMissing.includes('never JSON.parse this body'), 'markdown parsing contract appended');
-    assert(afterMissing.includes('do not invent a runtime/workspace fallback'), 'no invented fallback agentId contract appended');
+    assert(afterMissing.includes('~/.openclaw/workspace'), 'OpenClaw workspace fallback contract appended');
+    assert(afterMissing.includes('Do not invent cwd/runtime hybrids'), 'no invented hybrid agentId contract appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset
@@ -688,7 +691,7 @@ section('runCli() — --migrate force-replaces drifted blocks');
     assert(/MIGRATED/.test(r3.out), '--migrate emits MIGRATED');
     assertEqual(r3.code, 0, '--migrate exit code 0 (no remaining divergent)');
     const after = fs.readFileSync(filePath, 'utf8');
-    assert(after.includes('<your-agentId-from-BOOTSTRAP>'), 'v1.4 BOOTSTRAP.md placeholder present after migrate');
+    assert(after.includes('<resolved-agentId>'), 'resolved agentId placeholder present after migrate');
     assert(!after.includes('Read `BOOTSTRAP.md` carefully'), 'drift line gone after migrate');
     const baks = fs.readdirSync(path.join(dir, 'workspace')).filter(n => n.includes('.bak-'));
     assert(baks.length === 1, 'exactly one backup file created');
@@ -712,7 +715,7 @@ section('runCli() — stale current snippets are surfaced and migrated');
 
     const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
     const staleAgents = currentAgents.replace(
-      'Use the stable `agentId` from BOOTSTRAP/OpenClaw context (example: `<your-agentId-from-BOOTSTRAP>`). For OpenClaw-managed agents this is the only authoritative identity; do not invent a runtime/workspace fallback such as `codex-workspace` or `main-workspace`. Use the same value for status, claims, checkpoints, and task updates. If the bootstrap identity is missing, or a status response echoes a different `agentId`, stop and report the blocker.',
+      'Resolve one stable `agentId` before any FlowBoard API call and reuse it for status, claims, checkpoints, and task updates. Prefer the `## Identity` section from the live BOOTSTRAP/OpenClaw context. If that identity block is absent but the run is clearly inside an OpenClaw-managed workspace, derive it only from the workspace convention: `~/.openclaw/workspace` → `main`, `~/.openclaw/workspace-<id>` → `<id>`. Do not invent cwd/runtime hybrids such as `codex-workspace`, `main-workspace`, or `<runtime>-<workspace-slug>`. If neither bootstrap identity nor OpenClaw workspace convention is available, stop and report the blocker. If a status response echoes a different `agentId`, stop and report the blocker.',
       'Use the stable `agentId` from BOOTSTRAP/OpenClaw context when present (example: `<your-agentId-from-BOOTSTRAP>`). Otherwise use the configured runtime identity. If neither exists, derive `<runtime>-<workspace-slug>` deterministically and use the same value for status, claims, checkpoints, and task updates. If a status response echoes a different `agentId`, stop and report the blocker.'
     );
     const filePath = path.join(dir, 'workspace', 'AGENTS.md');
@@ -735,7 +738,8 @@ section('runCli() — stale current snippets are surfaced and migrated');
     assert(/MIGRATED/.test(r2.out), '--migrate updates stale current snippet');
     assertEqual(r2.code, 0, '--migrate exits cleanly after stale current update');
     const after = fs.readFileSync(filePath, 'utf8');
-    assert(after.includes('do not invent a runtime/workspace fallback'), 'new no-runtime-workspace fallback contract present');
+    assert(after.includes('~/.openclaw/workspace` → `main`'), 'new OpenClaw workspace fallback contract present');
+    assert(after.includes('Do not invent cwd/runtime hybrids'), 'new no-hybrid fallback contract present');
     assert(!after.includes('derive `<runtime>-<workspace-slug>`'), 'old runtime-workspace fallback removed');
   } finally {
     cleanupTmp();

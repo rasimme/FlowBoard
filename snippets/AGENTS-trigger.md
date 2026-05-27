@@ -6,7 +6,7 @@ Use a local-capable tool for this localhost API (exec/curl/node or an internal A
 
 ### Identity
 
-Use the stable `agentId` from BOOTSTRAP/OpenClaw context (example: `<your-agentId-from-BOOTSTRAP>`). For OpenClaw-managed agents this is the only authoritative identity; do not invent a runtime/workspace fallback such as `codex-workspace` or `main-workspace`. Use the same value for status, claims, checkpoints, and task updates. If the bootstrap identity is missing, or a status response echoes a different `agentId`, stop and report the blocker.
+Resolve one stable `agentId` before any FlowBoard API call and reuse it for status, claims, checkpoints, and task updates. Prefer the `## Identity` section from the live BOOTSTRAP/OpenClaw context. If that identity block is absent but the run is clearly inside an OpenClaw-managed workspace, derive it only from the workspace convention: `~/.openclaw/workspace` → `main`, `~/.openclaw/workspace-<id>` → `<id>`. Do not invent cwd/runtime hybrids such as `codex-workspace`, `main-workspace`, or `<runtime>-<workspace-slug>`. If neither bootstrap identity nor OpenClaw workspace convention is available, stop and report the blocker. If a status response echoes a different `agentId`, stop and report the blocker.
 
 ### HTTP parsing contract
 
@@ -22,7 +22,7 @@ Status endpoints return JSON. Project context and rules endpoints return Markdow
 Use this only when the user did not issue an explicit FlowBoard command.
 
 1. **Check your status:**
-   `GET /api/status?agentId=<your-agentId-from-BOOTSTRAP>`
+   `GET /api/status?agentId=<resolved-agentId>`
 
 2. **If `activeProject === null`:** no project active. Work normally, do not ask, and do not infer state.
 

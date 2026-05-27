@@ -116,7 +116,7 @@ const TARGETS = [
     ],
     currentMarkers: [
       'flowboard-snippet-contract: v3-command-startup-response',
-      '<your-agentId-from-BOOTSTRAP>',
+      '<resolved-agentId>',
       'local-capable tool',
       'do not infer state',
       'explicit command wins over passive startup',
@@ -125,7 +125,9 @@ const TARGETS = [
       'do not rely on memory or generic knowledge',
       'maximum 3 attempts total, 500 ms between attempts, then report blocker and stop',
       'never JSON.parse this body',
-      'do not invent a runtime/workspace fallback',
+      '~/.openclaw/workspace',
+      '~/.openclaw/workspace-<id>',
+      'Do not invent cwd/runtime hybrids',
     ],
   },
 ];

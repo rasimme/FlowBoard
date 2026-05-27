@@ -21,7 +21,9 @@ There are two independent layers that happen to use the same agent-id string.
 - `~/.openclaw/workspace` → `main`
 - `~/.openclaw/workspace-<id>` → `<id>`
 
-The workspace-derived id wins over `event.context.agentId` if they disagree — the workspace is the durable signal, the event field is sometimes empty or stale (see ADR-0001 for the trigger code path that exposed this). The hook then writes the resulting id into the live-injected `## Identity` section of the bootstrap document, which is how the agent learns its own name for the duration of the run.
+The workspace-derived id wins over `event.context.agentId` if they disagree — the workspace is the durable signal, the event field is sometimes empty or stale (see ADR-0001 for the trigger code path that exposed this). The hook then writes the resulting id into the live-injected `## Identity` section of the bootstrap document, which is how the agent normally learns its own name for the duration of the run.
+
+If an OpenClaw-managed agent run does not receive the bootstrap identity block, the workspace convention is still the stable fallback: `~/.openclaw/workspace` resolves to `main`, and `~/.openclaw/workspace-<id>` resolves to `<id>`. This fallback is deliberately narrower than deriving from arbitrary cwd/runtime names. Generated hybrids such as `codex-workspace`, `main-workspace`, or `<runtime>-<workspace-slug>` are invalid because they create phantom agents instead of using the configured OpenClaw identity.
 
 **FlowBoard layer.** The `flowboard_agents` table is FlowBoard's bookkeeping for *which agent is active on which project*:
 
@@ -41,11 +43,11 @@ The workspace-derived id wins over `event.context.agentId` if they disagree — 
 
 The `GET /api/info` endpoint documents the convention and serves the external-trigger snippet for self-onboarding.
 
-**Identity guardrails.** FlowBoard validates agent ids at API ingress. Stable unknown external ids are still accepted because external tools must remain first-class. Obvious placeholders and generated names are rejected: examples include `default`, `unknown`, `<agentId>`, `workspace-*`, `*-workspace`, and replay/timestamp ids like `t198-replay-1777837445357`. This catches the common failure mode where a model invents an identity from the current directory instead of using the bootstrap/runtime id.
+**Identity guardrails.** FlowBoard validates agent ids at API ingress. Stable unknown external ids are still accepted because external tools must remain first-class. Obvious placeholders and generated names are rejected: examples include `default`, `unknown`, `<agentId>`, `workspace-*`, `*-workspace`, and replay/timestamp ids like `t198-replay-1777837445357`. This catches the common failure mode where a model invents an identity from the current directory instead of using the bootstrap identity or the narrow OpenClaw workspace convention.
 
 ## Consequences
 
-- **The string is the contract.** A typo in the agent-id can create a new lazy-registered external agent if it still looks stable. There is no fuzzy match. Agents must use the exact id from their bootstrap (for OpenClaw agents, the `## Identity` section) or their stable convention (for external agents).
+- **The string is the contract.** A typo in the agent-id can create a new lazy-registered external agent if it still looks stable. There is no fuzzy match. Agents must use the exact id from their bootstrap (for OpenClaw agents, the `## Identity` section), the OpenClaw workspace convention when that bootstrap identity is absent, or their stable convention (for external agents).
 - **Attribution survives agent deletion.** `DELETE /api/agents/:id` removes the `flowboard_agents` row, but `tasks_current.agent = "<id>"` and the HZL event log are unaffected — agent-id is a string, not an FK. Old comments, checkpoints, and completed tasks keep their authorship even if the agent is later removed.
 - **Active-claim conflict on delete.** `DELETE /api/agents/:id` returns 409 if the agent has open task claims, listing them. `?force=true` releases the claims (status preserved, lease dropped) and proceeds. This is the only place where agent-id behaves like a relationship.
 - **No auth boundary.** Anyone with access to the dashboard port can pose as any agent-id. This is intentional for the personal-tool deployment model. Don't expose the dashboard to a network you don't trust.
