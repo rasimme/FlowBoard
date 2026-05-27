@@ -348,6 +348,15 @@ section('classifyFile() — state machine');
     });
     assertEqual(cCur.state, 'current', 'current marker present → current');
 
+    // Marked but manually shortened current snippets must be migrated, not
+    // treated as missing and appended a second time.
+    const pMarkedShort = path.join(dir, 'workspace', 'AGENTS-marked-short.md');
+    fs.writeFileSync(pMarkedShort, '# header\n\n## FlowBoard (API-First)\n<!-- flowboard-snippet-contract: v3-command-startup-response -->\n\nShort custom FlowBoard block.\n');
+    const cMarkedShort = doctor.classifyFile(pMarkedShort, target, {
+      legacyBlock: legacyAgents, newBlock: currentAgents,
+    });
+    assertEqual(cMarkedShort.state, 'drifted', 'marked custom current snippet → drifted, not missing');
+
     // current wins over legacy (stray legacy marker after add)
     const pMixed = path.join(dir, 'workspace', 'AGENTS-mixed.md');
     fs.writeFileSync(pMixed, `# header\n\nSee ACTIVE-PROJECT.md for legacy notes.\n\n${currentAgents}\n`);
@@ -615,6 +624,44 @@ section('runCli() — --migrate force-replaces drifted blocks');
     const r4 = captureRun(['--base', dir]);
     assert(!/DIVERGENT/.test(r4.out), 'no DIVERGENT after migration');
     assert(!/With legacy markers: [1-9]/.test(r4.out), 'no legacy markers detected');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('runCli() — stale current snippets are surfaced and migrated');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+
+    const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
+    const staleAgents = currentAgents.replace(
+      'Use the stable `agentId` from BOOTSTRAP/OpenClaw context (example: `<your-agentId-from-BOOTSTRAP>`). For OpenClaw-managed agents this is the only authoritative identity; do not invent a runtime/workspace fallback such as `codex-workspace` or `main-workspace`. Use the same value for status, claims, checkpoints, and task updates. If the bootstrap identity is missing, or a status response echoes a different `agentId`, stop and report the blocker.',
+      'Use the stable `agentId` from BOOTSTRAP/OpenClaw context when present (example: `<your-agentId-from-BOOTSTRAP>`). Otherwise use the configured runtime identity. If neither exists, derive `<runtime>-<workspace-slug>` deterministically and use the same value for status, claims, checkpoints, and task updates. If a status response echoes a different `agentId`, stop and report the blocker.'
+    );
+    const filePath = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(filePath, staleAgents);
+
+    function captureRun(argv) {
+      const out = [], err = [];
+      const stdout = { write: s => out.push(s) };
+      const stderr = { write: s => err.push(s) };
+      const code = doctor.runCli(argv, { stdout, stderr });
+      return { code, out: out.join(''), err: err.join('') };
+    }
+
+    const r1 = captureRun(['--base', dir]);
+    assert(/DIVERGENT/.test(r1.out), 'dry-run surfaces stale current snippet as DIVERGENT');
+    assert(/Divergent: 1/.test(r1.out), 'summary counts stale current snippet as divergent');
+    assertEqual(fs.readFileSync(filePath, 'utf8'), staleAgents, 'dry-run does not modify stale current');
+
+    const r2 = captureRun(['--base', dir, '--apply', '--migrate']);
+    assert(/MIGRATED/.test(r2.out), '--migrate updates stale current snippet');
+    assertEqual(r2.code, 0, '--migrate exits cleanly after stale current update');
+    const after = fs.readFileSync(filePath, 'utf8');
+    assert(after.includes('do not invent a runtime/workspace fallback'), 'new no-runtime-workspace fallback contract present');
+    assert(!after.includes('derive `<runtime>-<workspace-slug>`'), 'old runtime-workspace fallback removed');
   } finally {
     cleanupTmp();
   }
