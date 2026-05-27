@@ -161,6 +161,11 @@ Every change writes a `.bak-<timestamp>` copy first. If you prefer the
 CLI path: `node dashboard/snippets-doctor.js` does the same detection
 and `--apply` upgrades byte-identical blocks only.
 
+The migration modal also shows display-only advisories for legacy
+project-state files and OpenClaw config/runtime leftovers. After changing
+OpenClaw config such as `memoryFlush`, restart the OpenClaw gateway/runtime;
+already-running processes can keep the old compaction prompt in memory.
+
 ### 5. Create your first project
 
 Once the chip disappears, tell your agent:

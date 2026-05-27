@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const childProcess = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -132,6 +133,93 @@ const TARGETS = [
 function containsAny(content, markers) {
   if (!Array.isArray(markers) || markers.length === 0) return false;
   return markers.some(m => content.includes(m));
+}
+
+const LEGACY_MEMORY_FLUSH_MARKERS = [
+  'Read ACTIVE-PROJECT.md and update SESSION-STATE.md',
+  'Update projects/[name]/PROJECT.md "Current Status" section',
+  'Read projects/PROJECT-RULES.md and projects/[name]/PROJECT.md',
+];
+
+const API_FIRST_MEMORY_FLUSH_MARKERS = [
+  'If you need project state, use FlowBoard API-first',
+  'GET /api/status?agentId=<agentId>',
+  'Do not read or write ACTIVE-PROJECT.md',
+];
+
+function parsePsLstart(value) {
+  if (!value || typeof value !== 'string') return null;
+  const ts = Date.parse(value.trim());
+  return Number.isNaN(ts) ? null : new Date(ts);
+}
+
+function readGatewayProcesses({ processRows } = {}) {
+  if (Array.isArray(processRows)) return processRows;
+  try {
+    const out = childProcess.execFileSync('ps', ['-axo', 'pid,lstart,command'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.split(/\r?\n/).slice(1).map(line => {
+      const m = line.match(/^\s*(\d+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d+\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.+)$/);
+      if (!m) return null;
+      return { pid: Number(m[1]), startedAt: parsePsLstart(m[2]), command: m[3] };
+    }).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function collectConfigAdvisories(openclawHome, options = {}) {
+  const advisories = [];
+  const configPath = path.join(openclawHome, 'openclaw.json');
+  let content;
+  let stat;
+  try {
+    content = fs.readFileSync(configPath, 'utf8');
+    stat = fs.statSync(configPath);
+  } catch {
+    return advisories;
+  }
+
+  const hasLegacyMemoryFlush = matchesFingerprint(content, LEGACY_MEMORY_FLUSH_MARKERS, 0.34).meetsThreshold;
+  const hasApiFirstMemoryFlush = matchesFingerprint(content, API_FIRST_MEMORY_FLUSH_MARKERS, 0.67).meetsThreshold;
+
+  if (hasLegacyMemoryFlush) {
+    advisories.push({
+      id: `${makeFileId(openclawHome, configPath)}__legacy-memory-flush`,
+      path: configPath,
+      name: 'openclaw.json',
+      state: 'legacy-config',
+      summary: 'openclaw.json still contains the legacy memoryFlush prompt that reads ACTIVE-PROJECT.md / SESSION-STATE.md. Update the OpenClaw config from the current FlowBoard install guidance, then restart OpenClaw.',
+      variant: 'warn',
+    });
+    return advisories;
+  }
+
+  if (!hasApiFirstMemoryFlush) return advisories;
+
+  const gatewayProcesses = readGatewayProcesses(options)
+    .filter(p => p && p.startedAt && /openclaw/.test(p.command || '') && /\bgateway\b/.test(p.command || ''));
+  const stale = gatewayProcesses
+    .filter(p => p.startedAt.getTime() < stat.mtime.getTime())
+    .sort((a, b) => a.startedAt - b.startedAt)[0];
+
+  if (stale) {
+    advisories.push({
+      id: `${makeFileId(openclawHome, configPath)}__stale-runtime-config`,
+      path: configPath,
+      name: 'OpenClaw Gateway',
+      state: 'stale-runtime-config',
+      summary: 'openclaw.json is API-first, but the running OpenClaw gateway was started before the config file changed. Restart OpenClaw so new sessions and compaction prompts use the migrated memoryFlush config.',
+      variant: 'warn',
+      pid: stale.pid,
+      startedAt: stale.startedAt.toISOString(),
+      configMtime: stat.mtime.toISOString(),
+    });
+  }
+
+  return advisories;
 }
 
 // Extract the actual snippet body to INSERT into a user's file. For AGENTS.md
@@ -438,15 +526,17 @@ function collectStatus(openclawHome) {
     }
   }
 
+  const configAdvisories = collectConfigAdvisories(openclawHome);
+
   let chip = null;
   const hasLegacy = counts.identical > 0 || counts.drifted > 0;
-  if (hasLegacy || bootLegacyFiles.length > 0 || legacyStateFiles.length > 0) {
+  if (hasLegacy || bootLegacyFiles.length > 0 || legacyStateFiles.length > 0 || configAdvisories.length > 0) {
     chip = { text: 'Migration required', variant: 'warn' };
   } else if (counts.missing > 0) {
     chip = { text: 'FlowBoard setup', variant: 'warn' };
   }
 
-  return { counts, chip, files, bootLegacyFiles, legacyStateFiles };
+  return { counts, chip, files, bootLegacyFiles, legacyStateFiles, configAdvisories };
 }
 
 // Apply a list of {id, action} pairs atomically per file.
@@ -662,6 +752,7 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
 module.exports = {
   TARGETS,
   detectLegacyMarkers,
+  collectConfigAdvisories,
   matchesLegacyBlockExactly,
   replaceLegacyBlock,
   replaceDriftedBlock,

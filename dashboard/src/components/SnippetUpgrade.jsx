@@ -75,6 +75,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const missingFiles = status.files.filter(f => f.state === 'missing');
   const bootLegacyFiles = status.bootLegacyFiles || [];
   const legacyStateFiles = status.legacyStateFiles || [];
+  const configAdvisories = status.configAdvisories || [];
 
   // Selection maps per group. Defaults follow the "mandatory vs optional"
   // distinction: anything needed for FlowBoard to function correctly is
@@ -180,7 +181,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const skippedCount = result?.skipped?.length || 0;
   const applied = !!result?.ok && appliedCount > 0 && skippedCount === 0;
   const applyFailed = !!result && (!result.ok || appliedCount === 0 || skippedCount > 0);
-  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length > 0;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length > 0;
 
   // Modal title & subtitle follow the chip variant
   const title = status.chip?.variant === 'warn'
@@ -192,6 +193,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     missingFiles.length > 0 && `${missingFiles.length} AGENTS.md file${missingFiles.length !== 1 ? 's' : ''} missing FlowBoard`,
     bootLegacyFiles.length > 0 && `${bootLegacyFiles.length} legacy BOOT.md advisory${bootLegacyFiles.length !== 1 ? 'ies' : ''}`,
     legacyStateFiles.length > 0 && `${legacyStateFiles.length} legacy state file${legacyStateFiles.length !== 1 ? 's' : ''}`,
+    configAdvisories.length > 0 && `${configAdvisories.length} OpenClaw config advisory${configAdvisories.length !== 1 ? 'ies' : ''}`,
   ].filter(Boolean).join(' · ');
 
   return createPortal(
@@ -288,6 +290,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
           {legacyStateFiles.length > 0 && (
             <LegacyStateSection files={legacyStateFiles} />
+          )}
+
+          {configAdvisories.length > 0 && (
+            <ConfigAdvisorySection files={configAdvisories} />
           )}
 
           {!hasAnything && (
@@ -456,6 +462,36 @@ function LegacyStateSection({ files }) {
           <div className="group-title">Legacy project-state cleanup required</div>
           <div className="group-sub">Display-only advisory: these files can contain stale active-project/session state and FlowBoard will not edit them automatically.</div>
           <div className="group-sub">Archive or remove them manually after checking they do not contain durable notes. Current project state comes from `/api/status` and `flowboard_agents`.</div>
+        </div>
+      </div>
+      <div className="group-body">
+        {files.map(file => (
+          <div key={file.id} className="file-row">
+            <div className="file-row-main">
+              <div className="file-row-text">
+                <div className="file-row-path">
+                  <span className="mono" title={file.path}>{shortPath(file.path)}</span>
+                  <span className="chip warn">Manual cleanup</span>
+                </div>
+                <div className="file-row-summary">{file.summary}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ConfigAdvisorySection({ files }) {
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <div className="group-header-icon warn"><AlertTriangle size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">OpenClaw config cleanup required</div>
+          <div className="group-sub">Display-only advisory: FlowBoard can detect stale OpenClaw config/runtime state, but will not rewrite config or restart OpenClaw automatically.</div>
+          <div className="group-sub">Update the config if needed, then restart OpenClaw so new sessions and compaction prompts use the migrated API-first memoryFlush rules.</div>
         </div>
       </div>
       <div className="group-body">

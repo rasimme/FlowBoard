@@ -578,6 +578,81 @@ section('collectStatus() — legacy project-state advisories');
   }
 }
 
+section('collectConfigAdvisories() — OpenClaw memoryFlush config');
+{
+  const dir = mkTmp();
+  try {
+    const configPath = path.join(dir, 'openclaw.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      agents: {
+        defaults: {
+          compaction: {
+            memoryFlush: {
+              prompt: [
+                'Read ACTIVE-PROJECT.md and update SESSION-STATE.md:',
+                'Update projects/[name]/PROJECT.md "Current Status" section',
+                'Read projects/PROJECT-RULES.md and projects/[name]/PROJECT.md',
+              ].join('\n'),
+            },
+          },
+        },
+      },
+    }, null, 2));
+
+    const advisories = doctor.collectConfigAdvisories(dir, { processRows: [] });
+    assertEqual(advisories.length, 1, 'legacy memoryFlush config is detected');
+    assertEqual(advisories[0].state, 'legacy-config', 'legacy config advisory has explicit state');
+  } finally {
+    cleanupTmp();
+  }
+}
+
+section('collectConfigAdvisories() — stale gateway runtime');
+{
+  const dir = mkTmp();
+  try {
+    const configPath = path.join(dir, 'openclaw.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      agents: {
+        defaults: {
+          compaction: {
+            memoryFlush: {
+              prompt: [
+                'If you need project state, use FlowBoard API-first.',
+                'GET /api/status?agentId=<agentId>',
+                'Do not read or write ACTIVE-PROJECT.md',
+              ].join('\n'),
+            },
+          },
+        },
+      },
+    }, null, 2));
+    const now = new Date();
+    fs.utimesSync(configPath, now, now);
+
+    const advisories = doctor.collectConfigAdvisories(dir, {
+      processRows: [{
+        pid: 1234,
+        startedAt: new Date(now.getTime() - 60_000),
+        command: '/usr/local/bin/node /opt/openclaw/dist/index.js gateway --port 18789',
+      }],
+    });
+    assertEqual(advisories.length, 1, 'gateway older than config mtime is detected');
+    assertEqual(advisories[0].state, 'stale-runtime-config', 'stale runtime advisory has explicit state');
+
+    const clean = doctor.collectConfigAdvisories(dir, {
+      processRows: [{
+        pid: 1235,
+        startedAt: new Date(now.getTime() + 60_000),
+        command: '/usr/local/bin/node /opt/openclaw/dist/index.js gateway --port 18789',
+      }],
+    });
+    assertEqual(clean.length, 0, 'gateway newer than config mtime is clean');
+  } finally {
+    cleanupTmp();
+  }
+}
+
 section('runCli() — --migrate force-replaces drifted blocks');
 {
   const dir = mkTmp();
