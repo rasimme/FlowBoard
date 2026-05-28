@@ -8,7 +8,7 @@
  * and exercises collectStatus + applyActions through every code path:
  *
  *   - state classification per workspace
- *   - chip variant derivation (Migration required / FlowBoard setup / hidden)
+ *   - chip variant derivation (Migration required / Finish setup / Optional setup / hidden)
  *   - upgrade  action on identical → new block, backup written, content right
  *   - migrate  action on drifted   → structural replace, backup, content right
  *   - add      action on missing   → append at end, idempotent, backup
@@ -140,7 +140,7 @@ section('Chip — "Migration required" when any legacy remains');
 }
 
 // ============================================================
-section('Chip — "FlowBoard setup" when only missing');
+section('Chip — "Finish setup" when only missing');
 // ============================================================
 {
   const home = mkSandbox();
@@ -151,8 +151,8 @@ section('Chip — "FlowBoard setup" when only missing');
       '# Fresh agent\n\nNothing here yet.\n');
     const status = doctor.collectStatus(home);
     assert(status.chip, 'chip present');
-    assertEqual(status.chip.text, 'FlowBoard setup', 'fresh install → FlowBoard setup');
-    assertEqual(status.chip.variant, 'warn', 'variant = warn');
+    assertEqual(status.chip.text, 'Finish setup', 'fresh install → Finish setup');
+    assertEqual(status.chip.variant, 'info', 'variant = info');
   } finally { cleanup(); }
 }
 
@@ -180,7 +180,7 @@ section('UI copy — FlowBoard setup makes existing AGENTS.md files explicit');
 }
 
 // ============================================================
-section('Chip — "FlowBoard setup" when current exists and missing remains');
+section('Chip — "Optional setup" when current exists and missing remains');
 // ============================================================
 {
   const home = mkSandbox();
@@ -194,8 +194,8 @@ section('Chip — "FlowBoard setup" when current exists and missing remains');
       '# Fresh\n\n');
     const status = doctor.collectStatus(home);
     assert(status.chip, 'chip present');
-    assertEqual(status.chip.text, 'FlowBoard setup', 'current exists + missing → FlowBoard setup');
-    assertEqual(status.chip.variant, 'warn', 'variant = warn');
+    assertEqual(status.chip.text, 'Optional setup', 'current exists + missing → Optional setup');
+    assertEqual(status.chip.variant, 'info', 'variant = info');
   } finally { cleanup(); }
 }
 

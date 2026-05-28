@@ -534,8 +534,10 @@ function collectStatus(openclawHome) {
   const hasLegacy = counts.identical > 0 || counts.drifted > 0;
   if (hasLegacy || bootLegacyFiles.length > 0 || legacyStateFiles.length > 0 || configAdvisories.length > 0) {
     chip = { text: 'Migration required', variant: 'warn' };
-  } else if (counts.missing > 0) {
-    chip = { text: 'FlowBoard setup', variant: 'warn' };
+  } else if (counts.current === 0 && counts.missing > 0) {
+    chip = { text: 'Finish setup', variant: 'info' };
+  } else if (counts.current > 0 && counts.missing > 0) {
+    chip = { text: 'Optional setup', variant: 'info' };
   }
 
   return { counts, chip, files, bootLegacyFiles, legacyStateFiles, configAdvisories };

@@ -4,7 +4,7 @@
 const http = require('http');
 
 const BASE = process.env.FLOWBOARD_TEST_BASE || 'http://127.0.0.1:18790';
-const AGENT_ID = process.env.TEST_AGENT || `t198-replay-${Date.now()}`;
+const AGENT_ID = process.env.TEST_AGENT || `test-t198-replay-${Date.now()}`;
 const PROJECT = process.env.PROJECT_FOR_TESTS || 'flowboard';
 
 let passed = 0;
