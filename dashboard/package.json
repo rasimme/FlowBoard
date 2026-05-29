@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
-    "test": "node test-agent-identity.js && node test-parent-activity.mjs && node test-app-state-bridge.mjs && node test-snippets-doctor.js && node test-snippets-integration.js && node test-rules-api.js && node test-snippets-realdata.js && node test-t168-t177-integration.js && node test-docs-drift.js && node test-heal-project.js && node test-hzl-integrity.js && node test-workflows.js"
+    "test": "node test-agent-identity.js && node test-parent-activity.mjs && node test-app-state-bridge.mjs && node test-task-state.mjs && node test-snippets-doctor.js && node test-snippets-integration.js && node test-rules-api.js && node test-snippets-realdata.js && node test-t168-t177-integration.js && node test-docs-drift.js && node test-heal-project.js && node test-hzl-integrity.js && node test-workflows.js"
   },
   "keywords": [],
   "author": "",
