@@ -8,8 +8,11 @@ Temporary, diagnostic instrumentation on the `/api/projects/:name/rules` and
 ## What it logs
 
 When `FLOWBOARD_RULES_TELEMETRY=1` is set in the server env, every hit on
-either rules endpoint writes one line to stdout (picked up by systemd into
-`/tmp/dashboard.log`):
+either rules endpoint writes one line to stdout. The log path depends on the
+service manager:
+
+- systemd user service: usually `/tmp/dashboard.log`
+- macOS launchd service: currently `/tmp/flowboard-dashboard.log`
 
 ```
 [rules-telemetry] section=<name>|_manifest|<name>[404] agent=<id> project=<name>
@@ -24,6 +27,8 @@ Off by default. Zero runtime overhead when the env var isn't `1`.
 
 ## Enabling on the live service
 
+### systemd
+
 ```bash
 systemctl --user edit flowboard-dashboard
 # In the drop-in editor add:
@@ -32,11 +37,19 @@ systemctl --user edit flowboard-dashboard
 systemctl --user restart flowboard-dashboard
 ```
 
+### macOS launchd
+
+```bash
+PLIST=~/Library/LaunchAgents/ai.simme-ns5.flowboard-dashboard.plist
+/usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:FLOWBOARD_RULES_TELEMETRY string 1' "$PLIST"
+launchctl kickstart -k "gui/$(id -u)/ai.simme-ns5.flowboard-dashboard"
+```
+
 Verify the flag is picked up:
 
 ```bash
 curl -s http://localhost:18790/api/projects/flowboard/rules >/dev/null
-grep "rules-telemetry" /tmp/dashboard.log | tail -5
+grep "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | tail -5
 # Expect: one new line with section=_manifest
 ```
 
@@ -44,16 +57,16 @@ grep "rules-telemetry" /tmp/dashboard.log | tail -5
 
 ```bash
 # Total hits since instrumentation was enabled
-grep -c "rules-telemetry" /tmp/dashboard.log
+grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | wc -l
 
 # Hits per section
-grep "rules-telemetry" /tmp/dashboard.log | awk '{for (i=1;i<=NF;i++) if ($i ~ /^section=/) print $i}' | sort | uniq -c | sort -rn
+grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^section=/) print $i}' | sort | uniq -c | sort -rn
 
 # Hits per agent
-grep "rules-telemetry" /tmp/dashboard.log | awk '{for (i=1;i<=NF;i++) if ($i ~ /^agent=/) print $i}' | sort | uniq -c | sort -rn
+grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^agent=/) print $i}' | sort | uniq -c | sort -rn
 
 # Hits per day
-grep "rules-telemetry" /tmp/dashboard.log | awk '{print $1}' | cut -d'T' -f1 | sort | uniq -c
+grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | awk '{print $1}' | cut -d'T' -f1 | sort | uniq -c
 ```
 
 ## Interpreting outcomes
@@ -69,7 +82,7 @@ grep "rules-telemetry" /tmp/dashboard.log | awk '{print $1}' | cut -d'T' -f1 | s
 
 Once the question is answered:
 
-1. Unset the env var: `systemctl --user edit flowboard-dashboard` and delete the `Environment=FLOWBOARD_RULES_TELEMETRY=1` line.
+1. Unset the env var in the service manager (`systemctl --user edit ...` on Linux, or remove `EnvironmentVariables:FLOWBOARD_RULES_TELEMETRY` from the launchd plist on macOS).
 2. Remove the three log-emit sites + the `RULES_TELEMETRY` constant + `logRuleHit()` function from `dashboard/server.js` (search for `rules-telemetry`).
 3. Delete this doc (`docs/dev/rules-telemetry.md`).
 4. Commit as `remove: rules-telemetry instrumentation — answered <summary>`.

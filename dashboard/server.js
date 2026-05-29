@@ -1089,7 +1089,7 @@ app.post('/api/snippets/apply', (req, res) => {
 
 // --- Rules-endpoint telemetry (diagnostic, env-gated) ---------------------
 // Off by default. Enable via `FLOWBOARD_RULES_TELEMETRY=1` in the service env
-// to log every /rules/* hit to stdout (picked up by systemd -> /tmp/dashboard.log).
+// to log every /rules/* hit to stdout (picked up by the service manager log).
 // Format is grep/awk-friendly. Purpose: answer "do agents actually use the
 // lazy-load?"; remove the three log lines below once the question is settled.
 const RULES_TELEMETRY = process.env.FLOWBOARD_RULES_TELEMETRY === '1';
