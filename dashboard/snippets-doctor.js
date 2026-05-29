@@ -84,7 +84,7 @@ const TARGETS = [
     legacyFingerprint: [
       'FlowBoard delivers project context automatically',
       'At session start',
-      'fetch project context',
+      'Fetch project context',
       'Fetch individual sections on demand',
     ],
     legacyStructuralMarkers: [
@@ -93,9 +93,10 @@ const TARGETS = [
       'At session start',
       'project-context',
     ],
-    // staleCurrentFingerprint matches the previous API-first lazy-loading trigger
-    // (with local-capable/no-inference contract, but without contextReady
-    // verification and without memory ban).
+    // staleCurrentFingerprint matches previous API-first lazy-loading triggers.
+    // These may already carry the current marker but still contain too much
+    // operational detail; exact current-block matching is the only "current"
+    // state, marker-only snippets remain drifted.
     staleCurrentFingerprint: [
       'Check your status',
       'GET /api/status',
@@ -109,25 +110,22 @@ const TARGETS = [
       'activeProject === null',
       'local-capable tool',
       'do not infer state',
-      'before answering project questions',
-      'contextReady === true',
-      'fetch project context',
-      'do not rely on memory or generic knowledge',
+      'contextReady',
+      'Fetch project context',
+      'This file is only the trigger',
     ],
     currentMarkers: [
       'flowboard-snippet-contract: v3-command-startup-response',
       '<resolved-agentId>',
       'local-capable tool',
       'do not infer state',
-      'explicit command wins over passive startup',
-      'contextReady === true',
-      'fetch project context',
-      'do not rely on memory or generic knowledge',
-      'maximum 3 attempts total, 500 ms between attempts, then report blocker and stop',
-      'never JSON.parse this body',
-      '~/.openclaw/workspace',
-      '~/.openclaw/workspace-<id>',
-      'Do not invent cwd/runtime hybrids',
+      'contextReady',
+      'Fetch project context',
+      'This file is only the trigger',
+      'Do not add workflow/API detail here',
+      'rules/commands',
+      'rules/agent-bridge',
+      'Task execution: load `rules/agent-bridge` and `rules/api-access`',
     ],
   },
 ];

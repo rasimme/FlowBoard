@@ -13,6 +13,8 @@ Graceful-degradation rules when FlowBoard state is partial, stale, or inconsiste
 - **Migration leftovers** → when a legacy file (`ACTIVE-PROJECT.md`, `_index.md`, `tasks.json`) disagrees with the DB, trust the DB. File state is transitional.
 - **API unreachable during bootstrap** → emit projectless context and surface the connection failure. `ACTIVE-PROJECT.md` fallback is disabled by default and only available for explicit migration recovery via `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true`.
 - **Claim conflicts (409)** → another agent holds the claim. Read recent checkpoints/comments, then either wait, coordinate, or (if the lease has expired) steal.
+- **Project context not ready** → poll status with maximum 3 attempts total, 500 ms between attempts, then report blocker and stop.
+- **Failed project/context/rules API call** → report the endpoint, expected vs actual state, agentId used, and next safe action. Do not infer active project, task state, or readiness from memory or project Markdown.
 
 ## Related
 

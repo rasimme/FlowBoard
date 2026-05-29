@@ -27,3 +27,11 @@ Accepted
 - **Positive:** The same minimal trigger works for OpenClaw-managed agents (with live-inject ADR-0001) and external agents (which fetch `/bootstrap` on demand per ADR-0003).
 - **Negative:** First-turn latency increases for active projects: a session-start `/api/status` call plus, when active, two more API calls (bootstrap + at least one rule section). Local API on the same host — typically tens of milliseconds total.
 - **Operational:** Existing workspaces need migration via `snippets-doctor --apply` to swap the long snippet for the minimal trigger. ADR-0006 covers the drift detection that drives the doctor.
+
+## Regression guardrails
+
+The trigger must stay minimal. It may contain only the FlowBoard URL, local-tool/no-inference warning, status check, project-context fetch, rule-section list, and pointers to the rule sections that hold details.
+
+Do not add workflow endpoints, task checkpoint/complete steps, HTTP content-type parsing, full identity policy, or retry/blocker detail to `snippets/AGENTS-trigger.md`. Put those contracts in `docs/project-mode/commands.md`, `api-access`, `agent-bridge`, or `error-handling`.
+
+The snippet-doctor test suite enforces this decision with a maximum line count and forbidden-detail phrases. If a future runtime fix needs new mandatory behavior, update the appropriate rule section first and only change the trigger when the trigger itself changes.

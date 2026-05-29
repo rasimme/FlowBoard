@@ -208,12 +208,14 @@ async function testInfoEndpointPublic() {
     `trigger_snippet documents local-capable API tooling`);
   ok(d.trigger_snippet && d.trigger_snippet.includes('do not infer state'),
     `trigger_snippet documents no-inference failure handling`);
-  ok(d.trigger_snippet && d.trigger_snippet.includes('contextReady === true'),
-    `trigger_snippet requires contextReady verification`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('contextReady'),
+    `trigger_snippet documents context readiness gate`);
   ok(d.trigger_snippet && d.trigger_snippet.includes('project context'),
     `trigger_snippet uses project context wording`);
-  ok(d.trigger_snippet && d.trigger_snippet.includes('do not rely on memory or generic knowledge'),
-    `trigger_snippet forbids memory-only project answers`);
+  ok(d.trigger_snippet && d.trigger_snippet.includes('This file is only the trigger'),
+    `trigger_snippet preserves minimal-trigger boundary`);
+  ok(!d.trigger_snippet.includes('/api/workflows/start') && !d.trigger_snippet.includes('Content-Type'),
+    `trigger_snippet does not embed detailed workflow or HTTP parsing contracts`);
 }
 
 // ---------------------------------------------------------------------------

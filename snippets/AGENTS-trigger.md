@@ -4,22 +4,7 @@
 Project coordination via FlowBoard dashboard at `http://127.0.0.1:18790`.
 Use a local-capable tool for this localhost API (exec/curl/node or an internal API tool), never external web-fetch/browser. If an API call fails, do not infer state; report the blocker.
 
-### Identity
-
-Resolve one stable `agentId` before any FlowBoard API call and reuse it for status, claims, checkpoints, and task updates. Prefer the `## Identity` section from the live BOOTSTRAP/OpenClaw context. If that identity block is absent but the run is clearly inside an OpenClaw-managed workspace, derive it only from the workspace convention: `~/.openclaw/workspace` → `main`, `~/.openclaw/workspace-<id>` → `<id>`. Do not invent cwd/runtime hybrids such as `codex-workspace`, `main-workspace`, or `<runtime>-<workspace-slug>`. If neither bootstrap identity nor OpenClaw workspace convention is available, stop and report the blocker. If a status response echoes a different `agentId`, stop and report the blocker.
-
-### HTTP parsing contract
-
-Branch by HTTP status and `Content-Type` before parsing:
-- 2xx + `application/json` → parse JSON.
-- 2xx + `text/markdown` or `text/plain` → read text; never JSON.parse this body.
-- non-2xx + JSON/text → read the error body and report the blocker.
-
-Status endpoints return JSON. Project context and rules endpoints return Markdown/plain text on success.
-
-### Passive startup / before project-related work
-
-Use this only when the user did not issue an explicit FlowBoard command.
+### Minimal trigger
 
 1. **Check your status:**
    `GET /api/status?agentId=<resolved-agentId>`
@@ -27,34 +12,14 @@ Use this only when the user did not issue an explicit FlowBoard command.
 2. **If `activeProject === null`:** no project active. Work normally, do not ask, and do not infer state.
 
 3. **If `activeProject !== null`:**
-   - Wait until `contextReady === true` with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.
-   - Then immediately fetch project context as Markdown/plain text: `GET /api/projects/<activeProject>/bootstrap`
-   - Do this before answering project questions; do not rely on memory or generic knowledge.
+   - Wait for `contextReady` to be true; details live in `rules/error-handling`.
+   - Fetch project context: `GET /api/projects/<activeProject>/bootstrap`
    - Treat `Operational Task State` / `GET /api/projects/<activeProject>/tasks` as the only current task truth. `PROJECT.md` content in bootstrap is stable project knowledge, not current work.
    - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
    - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`
 
-### Project commands (explicit command wins over passive startup)
+### Where details live
 
-If the user says `Projekt: X`, `activate project X`, `set project to X`, `Projekt beenden`, `Projekte`, or `Neues Projekt: X`, execute the command immediately. Do not let a passive `activeProject === null` startup check swallow the explicit command.
-
-- Activate: `PUT /api/status` → `{ project, agentId }`, then verify with `GET /api/status?agentId=...` using the same agentId. If `activeProject` matches and `contextReady === true`, fetch project context as Markdown/plain text before announcing success. If readiness is false, poll with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.
-- Deactivate: `PUT /api/status` → `{ project: null, agentId }`, then verify with `GET /api/status?agentId=...`
-- List: `GET /api/projects` plus `GET /api/status?agentId=...`
-- Create: `POST /api/projects` → `{ name }` (does not auto-activate)
-
-### Blocker behavior
-
-When reporting a blocker, stop the activation/context-loading flow and do not retry activation again unless the user explicitly asks. Include endpoint, expected vs actual state, agentId used, and next safe action.
-
-### Task workflow (API-first)
-
-Use workflow endpoints as the normal path for task execution:
-
-1. **Start or resume:** `POST /api/workflows/start` with `{ agent, project, lease?, resumePolicy? }`.
-   This resumes your in-progress work for the project, or claims the next eligible open/backlog task atomically.
-2. **Checkpoint while working:** `POST /api/projects/<project>/tasks/<id>/checkpoint` with `{ agent, message, progress? }`.
-3. **Finish:** use `POST /api/projects/<project>/tasks/<id>/complete` for normal review handoff, or `POST /api/workflows/handoff` / `POST /api/workflows/delegate` when creating follow-on or delegated work.
-
-Primitive list/claim/release endpoints remain available for debugging and edge cases, but do not use manual "list open tasks, then claim one" as the default workflow.
-Endpoints: `GET /api/projects/<project>/rules/api-access` for full schema.
+This file is only the trigger. Do not add workflow/API detail here.
+Project commands: load `rules/commands`.
+Task execution: load `rules/agent-bridge` and `rules/api-access`.

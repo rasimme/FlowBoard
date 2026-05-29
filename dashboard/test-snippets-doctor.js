@@ -283,15 +283,13 @@ section('applySelected() — byte-identical only, with .bak');
     assert(afterIdentical.includes('<resolved-agentId>'), 'resolved agentId placeholder present');
     assert(afterIdentical.includes('local-capable tool'), 'local API tool contract present');
     assert(afterIdentical.includes('do not infer state'), 'no-inference contract present');
-    assert(afterIdentical.includes('contextReady === true'), 'contextReady verification contract present');
+    assert(afterIdentical.includes('contextReady'), 'contextReady trigger present');
     assert(afterIdentical.includes('project context'), 'project context wording present');
-    assert(afterIdentical.includes('do not rely on memory or generic knowledge'), 'no-memory project-answer contract present');
     assert(afterIdentical.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker present');
-    assert(afterIdentical.includes('explicit command wins over passive startup'), 'explicit-command precedence contract present');
-    assert(afterIdentical.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract present');
-    assert(afterIdentical.includes('never JSON.parse this body'), 'markdown parsing contract present');
-    assert(afterIdentical.includes('~/.openclaw/workspace'), 'OpenClaw workspace fallback contract present');
-    assert(afterIdentical.includes('Do not invent cwd/runtime hybrids'), 'no invented hybrid agentId contract present');
+    assert(afterIdentical.includes('This file is only the trigger'), 'minimal-trigger boundary present');
+    assert(afterIdentical.includes('rules/commands'), 'commands rule pointer present');
+    assert(afterIdentical.includes('rules/agent-bridge'), 'agent-bridge rule pointer present');
+    assert(afterIdentical.includes('rules/api-access'), 'api-access rule pointer present');
 
     // Verify drifted was NOT touched
     const afterDrifted = fs.readFileSync(divergentPath, 'utf8');
@@ -369,14 +367,8 @@ section('classifyFile() — state machine');
     // stale-current (previous API-first trigger, missing runtime contract)
     const pStale = path.join(dir, 'workspace', 'AGENTS-stale.md');
     const staleCurrent = currentAgents
-      .replace('<!-- flowboard-snippet-contract: v3-command-startup-response -->\n\n', '')
-      .replace('### HTTP parsing contract\n\nBranch by HTTP status and `Content-Type` before parsing:\n- 2xx + `application/json` → parse JSON.\n- 2xx + `text/markdown` or `text/plain` → read text; never JSON.parse this body.\n- non-2xx + JSON/text → read the error body and report the blocker.\n\nStatus endpoints return JSON. Project context and rules endpoints return Markdown/plain text on success.\n\n', '')
-      .replace('Use this only when the user did not issue an explicit FlowBoard command.\n\n', '')
-      .replace('   - Wait until `contextReady === true` with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.\n   - Then immediately fetch project context as Markdown/plain text: `GET /api/projects/<activeProject>/bootstrap`\n', '   - Wait until `contextReady === true` (briefly re-check status; if it stays false, report the blocker).\n   - Then immediately fetch project context: `GET /api/projects/<activeProject>/bootstrap`\n')
-      .replace('### Project commands (explicit command wins over passive startup)', '### Project commands')
-      .replace('If the user says `Projekt: X`, `activate project X`, `set project to X`, `Projekt beenden`, `Projekte`, or `Neues Projekt: X`, execute the command immediately. Do not let a passive `activeProject === null` startup check swallow the explicit command.\n\n', '')
-      .replace('- Activate: `PUT /api/status` → `{ project, agentId }`, then verify with `GET /api/status?agentId=...` using the same agentId. If `activeProject` matches and `contextReady === true`, fetch project context as Markdown/plain text before announcing success. If readiness is false, poll with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.', '- Activate: `PUT /api/status` → `{ project, agentId }`, then verify with `GET /api/status?agentId=...` until `activeProject` matches and `contextReady === true`, then fetch project context before announcing success')
-      .replace('\n### Blocker behavior\n\nWhen reporting a blocker, stop the activation/context-loading flow and do not retry activation again unless the user explicitly asks. Include endpoint, expected vs actual state, agentId used, and next safe action.\n', '');
+      .replace('This file is only the trigger. Do not add workflow/API detail here.', 'Detailed API and workflow protocol lives here.')
+      .replace('Task execution: load `rules/agent-bridge` and `rules/api-access`.', 'Task execution: call checkpoint and complete endpoints directly from this snippet.');
     fs.writeFileSync(pStale, `# header\n\n${staleCurrent}\n`);
     const cStale = doctor.classifyFile(pStale, target, {
       legacyBlock: legacyAgents, newBlock: currentAgents,
@@ -434,15 +426,13 @@ section('applyActions() — migrate + add + state guards');
     assert(afterDrift.includes('<resolved-agentId>'), 'resolved agentId placeholder inserted');
     assert(afterDrift.includes('local-capable tool'), 'local API tool contract inserted');
     assert(afterDrift.includes('do not infer state'), 'no-inference contract inserted');
-    assert(afterDrift.includes('contextReady === true'), 'contextReady verification contract inserted');
+    assert(afterDrift.includes('contextReady'), 'contextReady trigger inserted');
     assert(afterDrift.includes('project context'), 'project context wording inserted');
-    assert(afterDrift.includes('do not rely on memory or generic knowledge'), 'no-memory project-answer contract inserted');
     assert(afterDrift.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker inserted');
-    assert(afterDrift.includes('explicit command wins over passive startup'), 'explicit-command precedence contract inserted');
-    assert(afterDrift.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract inserted');
-    assert(afterDrift.includes('never JSON.parse this body'), 'markdown parsing contract inserted');
-    assert(afterDrift.includes('~/.openclaw/workspace'), 'OpenClaw workspace fallback contract inserted');
-    assert(afterDrift.includes('Do not invent cwd/runtime hybrids'), 'no invented hybrid agentId contract inserted');
+    assert(afterDrift.includes('This file is only the trigger'), 'minimal-trigger boundary inserted');
+    assert(afterDrift.includes('rules/commands'), 'commands rule pointer inserted');
+    assert(afterDrift.includes('rules/agent-bridge'), 'agent-bridge rule pointer inserted');
+    assert(afterDrift.includes('rules/api-access'), 'api-access rule pointer inserted');
     assert(!afterDrift.includes('Read `BOOTSTRAP.md` carefully'), 'custom drift line removed');
 
     // add: should append insertBody at end of missing file
@@ -454,15 +444,13 @@ section('applyActions() — migrate + add + state guards');
     assert(afterMissing.includes('<resolved-agentId>'), 'resolved agentId placeholder appended');
     assert(afterMissing.includes('local-capable tool'), 'local API tool contract appended');
     assert(afterMissing.includes('do not infer state'), 'no-inference contract appended');
-    assert(afterMissing.includes('contextReady === true'), 'contextReady verification contract appended');
+    assert(afterMissing.includes('contextReady'), 'contextReady trigger appended');
     assert(afterMissing.includes('project context'), 'project context wording appended');
-    assert(afterMissing.includes('do not rely on memory or generic knowledge'), 'no-memory project-answer contract appended');
     assert(afterMissing.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker appended');
-    assert(afterMissing.includes('explicit command wins over passive startup'), 'explicit-command precedence contract appended');
-    assert(afterMissing.includes('maximum 3 attempts total, 500 ms between attempts, then report blocker and stop'), 'bounded polling contract appended');
-    assert(afterMissing.includes('never JSON.parse this body'), 'markdown parsing contract appended');
-    assert(afterMissing.includes('~/.openclaw/workspace'), 'OpenClaw workspace fallback contract appended');
-    assert(afterMissing.includes('Do not invent cwd/runtime hybrids'), 'no invented hybrid agentId contract appended');
+    assert(afterMissing.includes('This file is only the trigger'), 'minimal-trigger boundary appended');
+    assert(afterMissing.includes('rules/commands'), 'commands rule pointer appended');
+    assert(afterMissing.includes('rules/agent-bridge'), 'agent-bridge rule pointer appended');
+    assert(afterMissing.includes('rules/api-access'), 'api-access rule pointer appended');
 
     // State guard: migrate on missing → rejected
     fs.writeFileSync(missingPath, missingContent); // reset
@@ -514,6 +502,47 @@ section('TARGETS ↔ snippet files — marker coherence');
         !legacyText.includes(marker),
         `current marker "${marker}" is NOT present in snippets/legacy/${target.vendored} (would confuse detection)`
       );
+    }
+  }
+}
+
+section('AGENTS-trigger.md — minimal-trigger guardrails');
+{
+  const snippets = [
+    ['AGENTS-trigger.md', doctor.readCurrent('AGENTS-trigger.md')],
+    ['external-trigger.md', fs.readFileSync(path.join(__dirname, '..', 'snippets', 'external-trigger.md'), 'utf8')],
+  ];
+  const forbidden = [
+    '/api/workflows/start',
+    '/checkpoint',
+    '/complete',
+    'Content-Type',
+    'never JSON.parse',
+    'maximum 3 attempts total',
+    'Do not invent cwd/runtime hybrids',
+    'codex-workspace',
+  ];
+
+  for (const [name, content] of snippets) {
+    const lines = content.trimEnd().split(/\r?\n/);
+    assert(lines.length <= 30, `${name} stays <=30 lines (got ${lines.length})`);
+
+    for (const phrase of forbidden) {
+      assert(!content.includes(phrase), `${name} does not contain detail phrase: ${phrase}`);
+    }
+
+    for (const required of [
+      'GET /api/status',
+      'activeProject === null',
+      'contextReady',
+      'GET /api/projects/<activeProject>/bootstrap',
+      'GET /api/projects/<activeProject>/rules/<section>',
+      'This file is only the trigger',
+      'rules/commands',
+      'rules/agent-bridge',
+      'rules/api-access',
+    ]) {
+      assert(content.includes(required), `${name} keeps required phrase: ${required}`);
     }
   }
 }
@@ -776,8 +805,8 @@ section('runCli() — stale current snippets are surfaced and migrated');
 
     const currentAgents = doctor.readCurrent('AGENTS-trigger.md');
     const staleAgents = currentAgents.replace(
-      'Resolve one stable `agentId` before any FlowBoard API call and reuse it for status, claims, checkpoints, and task updates. Prefer the `## Identity` section from the live BOOTSTRAP/OpenClaw context. If that identity block is absent but the run is clearly inside an OpenClaw-managed workspace, derive it only from the workspace convention: `~/.openclaw/workspace` → `main`, `~/.openclaw/workspace-<id>` → `<id>`. Do not invent cwd/runtime hybrids such as `codex-workspace`, `main-workspace`, or `<runtime>-<workspace-slug>`. If neither bootstrap identity nor OpenClaw workspace convention is available, stop and report the blocker. If a status response echoes a different `agentId`, stop and report the blocker.',
-      'Use the stable `agentId` from BOOTSTRAP/OpenClaw context when present (example: `<your-agentId-from-BOOTSTRAP>`). Otherwise use the configured runtime identity. If neither exists, derive `<runtime>-<workspace-slug>` deterministically and use the same value for status, claims, checkpoints, and task updates. If a status response echoes a different `agentId`, stop and report the blocker.'
+      'This file is only the trigger. Do not add workflow/API detail here.',
+      'This file includes detailed runtime contracts, HTTP parsing, and task workflow steps.'
     );
     const filePath = path.join(dir, 'workspace', 'AGENTS.md');
     fs.writeFileSync(filePath, staleAgents);
@@ -799,9 +828,9 @@ section('runCli() — stale current snippets are surfaced and migrated');
     assert(/MIGRATED/.test(r2.out), '--migrate updates stale current snippet');
     assertEqual(r2.code, 0, '--migrate exits cleanly after stale current update');
     const after = fs.readFileSync(filePath, 'utf8');
-    assert(after.includes('~/.openclaw/workspace` → `main`'), 'new OpenClaw workspace fallback contract present');
-    assert(after.includes('Do not invent cwd/runtime hybrids'), 'new no-hybrid fallback contract present');
-    assert(!after.includes('derive `<runtime>-<workspace-slug>`'), 'old runtime-workspace fallback removed');
+    assert(after.includes('This file is only the trigger'), 'minimal-trigger boundary restored');
+    assert(after.includes('rules/commands'), 'rules pointer restored');
+    assert(!after.includes('detailed runtime contracts'), 'stale detail wording removed');
   } finally {
     cleanupTmp();
   }
