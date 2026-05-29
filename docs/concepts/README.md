@@ -17,6 +17,7 @@ Each concept doc answers five questions:
 - [Hook Architecture](hook-architecture.md) — the single `agent:bootstrap` subscription, what it mutates, why no other events
 - [Multi-Agent Model](multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`, lazy registration, claim/release/handoff
 - [Kanban](kanban.md) — five-column workflow, lease semantics, subtask depth, blocked-as-flag, archived-vs-trashed
+- [Frontend Runtime](frontend-runtime.md) — React task-state convergence, optimistic mutations, and the `window.appState` bridge boundary
 - [Idea Canvas](idea-canvas.md) — visual brainstorm, notes/connections/clusters, promote pipeline via Specify session
 - [HZL Event Sourcing](hzl-event-sourcing.md) — event log + projections, brain/muscle split, `tasks_current` materialization, single-writer constraint
 - [Specify Workflow](specify-workflow.md) — 6-step agent process for unstructured-to-structured work, session lifecycle, RAM-only sessions
@@ -35,6 +36,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | ✅ ADR-0007 | — |
 | Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | ✅ ADR-0007 | — |
+| Frontend Runtime | React task-state convergence; optimistic mutation contract; legacy bridge boundary | ✅ [frontend-runtime.md](frontend-runtime.md) | ✅ ADR-0019 | T-215 |
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | ✅ ADR-0012, ADR-0014 | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | ✅ ADR-0007 | — |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | ✅ ADR-0015, ADR-0016 | — |

@@ -59,6 +59,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0016](0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract (2026-05-02)
 - [ADR-0017](0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path (2026-05-22)
 - [ADR-0018](0018-hzl-filesystem-rollback-detection.md) — HZL filesystem-level rollback detection via boot watermark (2026-05-22)
+- [ADR-0019](0019-frontend-runtime-foundation.md) — Frontend runtime foundation owns task UI state convergence (2026-05-29)
 
 ## See also
 

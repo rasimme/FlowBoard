@@ -11,23 +11,45 @@ Thanks for helping improve FlowBoard!
 
 ```
 dashboard/
-├── server.js          # Express 5 API + auth
-├── index.html         # SPA shell
+├── server.js           # Express 5 API + auth + project/task endpoints
+├── index.html          # SPA shell
 ├── js/
-│   ├── app.js         # Main app, routing, sidebar
-│   ├── kanban.js      # Kanban board logic
-│   ├── canvas/        # Idea Canvas (notes, connections, clusters, toolbar)
-│   └── utils.js       # Shared helpers
+│   ├── app.js          # Legacy shell bridge and project refresh
+│   ├── canvas/         # Vanilla Idea Canvas runtime
+│   └── utils.js        # Legacy shared helpers
+├── src/
+│   ├── components/     # React UI components
+│   ├── context/        # React bridge over app state
+│   ├── pages/          # React-owned views
+│   └── utils/          # React-side utility modules
 └── styles/
-    ├── dashboard.css   # Global styles
+    ├── dashboard.css   # Global/dashboard styles
     └── canvas.css      # Canvas-specific styles
+docs/
+├── adr/                # Architecture Decision Records
+├── concepts/           # Conceptual architecture docs
+└── reference/          # API/env/reference docs
 ```
 
 **Key conventions:**
-- Vanilla JS (ES modules), no framework, no build step
-- Modules are small and cohesive — one concern per file
+- Backend: Express 5 API; HZL/SQLite is canonical task state
+- Frontend: React is the primary dashboard UI runtime
+- Legacy JS is compatibility infrastructure and still hosts the vanilla Canvas
+- Modules are small and cohesive - one concern per file
 - Dark theme, mobile-responsive
-- All state is file-based (JSON + Markdown, no database)
+- Project knowledge is Markdown/JSON; operational task state lives in HZL/SQLite
+- T-215 introduces `dashboard/src/state/` as the task-runtime helper boundary
+
+## Frontend runtime rules
+
+Task UI state has one intended mutation path. Read [Frontend Runtime](docs/concepts/frontend-runtime.md) and [ADR-0019](docs/adr/0019-frontend-runtime-foundation.md) before changing task UI state behavior.
+
+- Do not add new direct writes to `window.appState.tasks` outside the runtime bridge.
+- Use the task runtime helpers for new task actions once they exist.
+- Apply optimistic UI changes through the runtime, then merge the canonical server response.
+- Handle related server records such as `parentUpdated` explicitly.
+- Treat polling as reconciliation only, not as the visible update path for local actions.
+- Keep Canvas vanilla until ADR-0012 is superseded, but use the runtime foundation for future Canvas task-state work.
 
 ## Development workflow
 

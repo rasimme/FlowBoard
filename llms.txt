@@ -17,6 +17,7 @@
 - [Hook Architecture](docs/concepts/hook-architecture.md) — the single `agent:bootstrap` subscription; mutates `bootstrapFiles`; no on-disk writes
 - [Multi-Agent Model](docs/concepts/multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`; lazy registration; claim/release/handoff
 - [Kanban](docs/concepts/kanban.md) — five-column workflow; lease semantics; subtask depth; blocked-as-flag; archived-vs-trashed
+- [Frontend Runtime](docs/concepts/frontend-runtime.md) — React task-state convergence; optimistic mutations; `window.appState` bridge rules
 - [Idea Canvas](docs/concepts/idea-canvas.md) — visual brainstorm; notes/connections/clusters; promote pipeline via Specify session
 - [HZL Event Sourcing](docs/concepts/hzl-event-sourcing.md) — event log + projections; brain/muscle split; single-writer constraint
 - [Specify Workflow](docs/concepts/specify-workflow.md) — 6-step agent process; session lifecycle; RAM-only sessions
@@ -44,6 +45,7 @@
 - [ADR-0016](docs/adr/0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract
 - [ADR-0017](docs/adr/0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path
 - [ADR-0018](docs/adr/0018-hzl-filesystem-rollback-detection.md) — HZL filesystem-level rollback detection via boot watermark
+- [ADR-0019](docs/adr/0019-frontend-runtime-foundation.md) — Frontend runtime foundation owns task UI state convergence
 
 ## Reference
 
