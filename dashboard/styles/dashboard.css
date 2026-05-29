@@ -315,18 +315,18 @@
     .task-card.task-card-active-claim,
     .task-card.task-card-active-claim:hover {
       border-color: var(--agent-claim-color, rgba(127,142,166,1));
-      animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+      animation: fb-card-claim-pulse 2.4s ease-out infinite;
       animation-delay: var(--agent-pulse-delay, 0ms);
     }
     .subtask-card.subtask-card-active-claim,
     .subtask-card.subtask-card-active-claim:hover {
       border-color: var(--agent-claim-color, rgba(127,142,166,1));
-      animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+      animation: fb-card-claim-pulse 2.4s ease-out infinite;
       animation-delay: var(--agent-pulse-delay, 0ms);
     }
     @keyframes fb-card-claim-pulse {
-      0%, 100% { border-color: var(--agent-claim-color-soft, rgba(127,142,166,0.4)); }
-      50%      { border-color: var(--agent-claim-color,      rgba(127,142,166,1));   }
+      0%        { border-color: var(--agent-claim-color,      rgba(127,142,166,1));   }
+      70%, 100% { border-color: var(--agent-claim-color-soft, rgba(127,142,166,0.4)); }
     }
     @media (prefers-reduced-motion: reduce) {
       .task-card.task-card-active-claim,

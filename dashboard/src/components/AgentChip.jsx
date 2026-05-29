@@ -113,7 +113,7 @@ export default function AgentChip({
         className="agent-chip-pulse-wrap"
         style={{
           ['--agent-pulse-color']: c.ring,
-          ...(pulseDelay ? { ['--agent-pulse-delay']: pulseDelay } : {}),
+          ...(pulseDelay !== null ? { ['--agent-pulse-delay']: pulseDelay } : {}),
         }}
       >
         <span className="agent-chip-pulse-halo" aria-hidden="true" />
