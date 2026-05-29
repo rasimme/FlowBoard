@@ -13,6 +13,8 @@ import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils.js';
+import { getTasks, refreshTasks, replaceTasks } from '../state/appStateBridge.mjs';
+import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
 // critical parts are the resets (`border-0 outline-none`) — without
@@ -148,10 +150,6 @@ function displayActivityAuthor(author) {
   if (!name || name === 'system') return 'flowboard';
   if (name === 'human') return currentHumanAuthor();
   return name;
-}
-
-function refreshKanban() {
-  if (window.appState?._refreshBoard) window.appState._refreshBoard();
 }
 
 function showToast(msg, type = 'info') {
@@ -367,6 +365,34 @@ export default function DetailPanel() {
     ]);
   }
 
+  function syncPanelTask(nextTask) {
+    if (!nextTask) return null;
+    setTask(nextTask);
+    taskRef.current = nextTask;
+    replaceTasks(patchTask(getTasks(), nextTask.id, nextTask));
+    return nextTask;
+  }
+
+  function mergeTaskResponse(res, baseTask = taskRef.current) {
+    if (!baseTask && !res?.task) return null;
+    const merged = res?.task ? { ...(baseTask || {}), ...res.task } : baseTask;
+    setTask(merged);
+    taskRef.current = merged;
+    replaceTasks(applyTaskResponse(getTasks(), res));
+    return merged;
+  }
+
+  async function refreshSharedTasks() {
+    const tasks = await refreshTasks(project);
+    const current = taskRef.current;
+    const fresh = current ? tasks?.find((x) => x.id === current.id) : null;
+    if (fresh) {
+      setTask(fresh);
+      taskRef.current = fresh;
+    }
+    return tasks;
+  }
+
   // --- Action Handlers (optimistic updates) ---
 
   async function handleClaim() {
@@ -377,8 +403,7 @@ export default function DetailPanel() {
     const oldStatus = t.status;
 
     const updated = { ...t, agent, status: (t.status === 'open' || t.status === 'ready') ? 'in-progress' : t.status };
-    setTask(updated);
-    taskRef.current = updated;
+    syncPanelTask(updated);
 
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}/claim`, {
@@ -386,22 +411,12 @@ export default function DetailPanel() {
         body: { agent, lease: 60 },
       });
       if (res?.error) throw new Error(res.error);
-      const merged = { ...updated };
-      if (res.task) {
-        merged.status = res.task.status ?? merged.status;
-        merged.agent = res.task.agent ?? merged.agent;
-        merged.blocked = res.task.blocked ?? merged.blocked;
-        merged.previousStatus = res.task.previousStatus ?? merged.previousStatus;
-      }
-      setTask(merged);
-      taskRef.current = merged;
-      refreshKanban();
+      mergeTaskResponse(res, updated);
       addSyntheticItem('status', `Task claimed by ${agent}`);
       showToast('Task claimed', 'success');
     } catch (err) {
       const reverted = { ...t, agent: oldAgent, status: oldStatus };
-      setTask(reverted);
-      taskRef.current = reverted;
+      syncPanelTask(reverted);
       if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
         setHzlAvailable(false);
       }
@@ -417,8 +432,7 @@ export default function DetailPanel() {
     const oldStatus = t.status;
 
     const updated = { ...t, agent: null, status: t.previousStatus || 'open' };
-    setTask(updated);
-    taskRef.current = updated;
+    syncPanelTask(updated);
 
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}/release`, {
@@ -426,21 +440,13 @@ export default function DetailPanel() {
         body: { agent, force: true },
       });
       if (res?.error) throw new Error(res.error);
-      // Re-fetch to get accurate status
-      const data = await apiFetch(`/projects/${project}/tasks?includeArchived=true`);
-      const tasks = Array.isArray(data) ? data : Array.isArray(data?.tasks) ? data.tasks : [];
-      const fresh = tasks.find((x) => x.id === t.id);
-      if (fresh) {
-        setTask(fresh);
-        taskRef.current = fresh;
-      }
-      refreshKanban();
+      if (res.task) mergeTaskResponse(res, updated);
+      else await refreshSharedTasks();
       addSyntheticItem('status', 'Task released');
       showToast('Task released', 'success');
     } catch (err) {
       const reverted = { ...t, agent: oldAgent, status: oldStatus };
-      setTask(reverted);
-      taskRef.current = reverted;
+      syncPanelTask(reverted);
       if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
         setHzlAvailable(false);
       }
@@ -461,16 +467,7 @@ export default function DetailPanel() {
         body: { agent, lease: 60 },
       });
       if (res?.error) throw new Error(res.error);
-      const merged = { ...t };
-      if (res.task) {
-        merged.status = res.task.status ?? merged.status;
-        merged.agent = res.task.agent ?? merged.agent;
-        merged.claimedAt = res.task.claimedAt ?? merged.claimedAt;
-        merged.leaseUntil = res.task.leaseUntil ?? merged.leaseUntil;
-      }
-      setTask(merged);
-      taskRef.current = merged;
-      refreshKanban();
+      mergeTaskResponse(res, t);
       addSyntheticItem('status', `Stolen by ${agent} (previous claim by ${oldAgent || 'unknown'})`);
       showToast('Task stolen', 'success');
     } catch (err) {
@@ -491,8 +488,7 @@ export default function DetailPanel() {
       optimistic.claimedAt = null;
       optimistic.leaseUntil = null;
     }
-    setTask(optimistic);
-    taskRef.current = optimistic;
+    syncPanelTask(optimistic);
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
         method: 'PUT',
@@ -500,15 +496,11 @@ export default function DetailPanel() {
       });
       if (res?.error) throw new Error(res.error);
       if (res.task) {
-        const merged = { ...optimistic, ...res.task };
-        setTask(merged);
-        taskRef.current = merged;
+        mergeTaskResponse(res, optimistic);
       }
-      refreshKanban();
       addSyntheticItem('status', `Status: ${oldStatus} -> ${newStatus}`);
     } catch (err) {
-      setTask({ ...t, status: oldStatus });
-      taskRef.current = { ...t, status: oldStatus };
+      syncPanelTask({ ...t, status: oldStatus });
       showToast('Status change failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -517,18 +509,16 @@ export default function DetailPanel() {
     const t = taskRef.current;
     if (!t || t.priority === newPriority) return;
     const oldPriority = t.priority;
-    setTask({ ...t, priority: newPriority });
-    taskRef.current = { ...t, priority: newPriority };
+    syncPanelTask({ ...t, priority: newPriority });
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
         method: 'PUT',
         body: { priority: newPriority },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      mergeTaskResponse(res, taskRef.current);
     } catch (err) {
-      setTask({ ...t, priority: oldPriority });
-      taskRef.current = { ...t, priority: oldPriority };
+      syncPanelTask({ ...t, priority: oldPriority });
       showToast('Priority change failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -557,23 +547,21 @@ export default function DetailPanel() {
     if (!t) return;
     closeRoutePopover();
     const oldRouted = t.routedAgent || null;
-    setTask({ ...t, routedAgent: targetAgent });
-    taskRef.current = { ...t, routedAgent: targetAgent };
+    syncPanelTask({ ...t, routedAgent: targetAgent });
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}/route`, {
         method: 'POST',
         body: { agent: targetAgent },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      mergeTaskResponse(res, taskRef.current);
       // The HZL event store emits a task_updated event with the new
       // routedAgent value; loadActivity picks it up on the next poll
       // so no local synthetic is needed. Trigger a refresh now for
       // immediate feedback instead of waiting 12s.
       loadActivity();
     } catch (err) {
-      setTask({ ...t, routedAgent: oldRouted });
-      taskRef.current = { ...t, routedAgent: oldRouted };
+      syncPanelTask({ ...t, routedAgent: oldRouted });
       showToast('Route failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -595,8 +583,7 @@ export default function DetailPanel() {
     try {
       const res = await apiFetch(`/projects/${project}/specs/${t.id}`, { method: 'POST' });
       if (res?.ok && res.specFile) {
-        setTask({ ...t, specFile: res.specFile });
-        taskRef.current = { ...t, specFile: res.specFile };
+        syncPanelTask({ ...t, specFile: res.specFile });
         if (window._openSpec) window._openSpec(res.specFile, t.id);
         showToast(`Spec created for ${t.id}`, 'success');
         close();
@@ -620,8 +607,7 @@ export default function DetailPanel() {
     // Optimistic update plus authoritative merge from server response so
     // state.tasks and the local view agree — without this the app-state
     // poll can race and re-paint the old blocked=true.
-    setTask({ ...t, blocked: true });
-    taskRef.current = { ...t, blocked: true };
+    syncPanelTask({ ...t, blocked: true });
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
         method: 'PUT',
@@ -629,15 +615,7 @@ export default function DetailPanel() {
       });
       if (res?.error) throw new Error(res.error);
       if (res.task) {
-        const merged = { ...t, ...res.task };
-        setTask(merged);
-        taskRef.current = merged;
-        // Sync the shared task list so background polls / Kanban renders
-        // see the same truth the panel does.
-        const shared = window.appState?.tasks?.find((x) => x.id === t.id);
-        if (shared) Object.assign(shared, res.task);
-        if (window.appState) window.appState.tasks = [...(window.appState.tasks || [])];
-        window.dispatchEvent(new CustomEvent('appstate:change'));
+        mergeTaskResponse(res, t);
       }
       if (reason) {
         try {
@@ -650,8 +628,7 @@ export default function DetailPanel() {
       }
       addSyntheticItem('status', reason ? `Blocked - ${reason}` : 'Blocked');
     } catch (err) {
-      setTask({ ...t, blocked: oldBlocked });
-      taskRef.current = { ...t, blocked: oldBlocked };
+      syncPanelTask({ ...t, blocked: oldBlocked });
       showToast('Block failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -659,8 +636,7 @@ export default function DetailPanel() {
     const t = taskRef.current;
     if (!t) return;
     const oldBlocked = t.blocked;
-    setTask({ ...t, blocked: false });
-    taskRef.current = { ...t, blocked: false };
+    syncPanelTask({ ...t, blocked: false });
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
         method: 'PUT',
@@ -668,20 +644,13 @@ export default function DetailPanel() {
       });
       if (res?.error) throw new Error(res.error);
       if (res.task) {
-        const merged = { ...t, ...res.task };
-        setTask(merged);
-        taskRef.current = merged;
-        const shared = window.appState?.tasks?.find((x) => x.id === t.id);
-        if (shared) Object.assign(shared, res.task);
-        if (window.appState) window.appState.tasks = [...(window.appState.tasks || [])];
-        window.dispatchEvent(new CustomEvent('appstate:change'));
+        mergeTaskResponse(res, t);
       }
       // hzl-core emits a task_updated event for the blocked flag
       // change; /events picks it up. Refresh now for immediate feedback.
       loadActivity();
     } catch (err) {
-      setTask({ ...t, blocked: oldBlocked });
-      taskRef.current = { ...t, blocked: oldBlocked };
+      syncPanelTask({ ...t, blocked: oldBlocked });
       showToast('Unblock failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -708,7 +677,7 @@ export default function DetailPanel() {
         body: { status: 'archived' },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      mergeTaskResponse(res, t);
       showToast(`${t.id} archived`, 'success');
       close();
     } catch (err) {
@@ -728,7 +697,7 @@ export default function DetailPanel() {
         body: { status: 'done' },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      mergeTaskResponse(res, t);
       showToast(`${t.id} restored`, 'success');
       close();
     } catch (err) {
@@ -746,7 +715,7 @@ export default function DetailPanel() {
         body: { trashedAt: new Date().toISOString() },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      mergeTaskResponse(res, t);
       showToast(`${t.id} moved to Trash`, 'success');
       close();
     } catch (err) {
@@ -760,8 +729,7 @@ export default function DetailPanel() {
     const oldBlocked = t.blocked;
 
     const updated = { ...t, blocked: !t.blocked };
-    setTask(updated);
-    taskRef.current = updated;
+    syncPanelTask(updated);
 
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
@@ -769,13 +737,12 @@ export default function DetailPanel() {
         body: { blocked: updated.blocked },
       });
       if (res?.error && !res.ok) throw new Error(res.error || 'Update failed');
-      refreshKanban();
+      mergeTaskResponse(res, updated);
       addSyntheticItem('status', updated.blocked ? 'Task blocked' : 'Task unblocked');
       showToast(updated.blocked ? 'Task blocked' : 'Task unblocked', 'success');
     } catch (err) {
       const reverted = { ...t, blocked: oldBlocked };
-      setTask(reverted);
-      taskRef.current = reverted;
+      syncPanelTask(reverted);
       if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
         setHzlAvailable(false);
       }
@@ -815,22 +782,21 @@ export default function DetailPanel() {
 
     const oldTitle = task.title;
     const updated = { ...task, title: newTitle };
-    setTask(updated);
-    taskRef.current = updated;
+    syncPanelTask(updated);
     setIsEditingTitle(false);
 
     try {
-      await apiFetch(`/projects/${project}/tasks/${task.id}`, {
+      const res = await apiFetch(`/projects/${project}/tasks/${task.id}`, {
         method: 'PUT',
         body: { title: newTitle },
       });
-      refreshKanban();
+      if (res?.error) throw new Error(res.error);
+      mergeTaskResponse(res, updated);
       showToast('Task title updated', 'success');
       try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light'); } catch {}
     } catch (err) {
       const reverted = { ...updated, title: oldTitle };
-      setTask(reverted);
-      taskRef.current = reverted;
+      syncPanelTask(reverted);
       showToast('Title update failed: ' + (err.message || 'Unknown error'), 'error');
     }
   }
@@ -887,8 +853,7 @@ export default function DetailPanel() {
     const next = editDescription;
     if (next === (t.description || '')) { setIsEditingDescription(false); return; }
     const oldDescription = t.description || '';
-    setTask({ ...t, description: next });
-    taskRef.current = { ...t, description: next };
+    syncPanelTask({ ...t, description: next });
     setIsEditingDescription(false);
     try {
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
@@ -896,10 +861,9 @@ export default function DetailPanel() {
         body: { description: next },
       });
       if (res?.error) throw new Error(res.error);
-      refreshKanban();
+      mergeTaskResponse(res, taskRef.current);
     } catch (err) {
-      setTask({ ...t, description: oldDescription });
-      taskRef.current = { ...t, description: oldDescription };
+      syncPanelTask({ ...t, description: oldDescription });
       showToast('Description save failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -1244,7 +1208,7 @@ export default function DetailPanel() {
                 <span>Parent: {task.parentId}</span>
                 <span className="text-muted">
                   {(() => {
-                    const parent = (window.appState?.tasks || []).find(t => t.id === task.parentId);
+                    const parent = getTasks().find(t => t.id === task.parentId);
                     return parent?.title ? ` - ${parent.title}` : '';
                   })()}
                 </span>
@@ -1294,13 +1258,13 @@ export default function DetailPanel() {
               <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">
                 Subtasks
                 {(() => {
-                  const subs = (window.appState?.tasks || []).filter(t => t.parentId === task.id && t.status !== 'archived' && !t.trashedAt);
+                  const subs = getTasks().filter(t => t.parentId === task.id && t.status !== 'archived' && !t.trashedAt);
                   const done = subs.filter(t => t.status === 'done').length;
                   return <span className="ml-2 normal-case tracking-normal text-muted font-normal">{done}/{subs.length} done</span>;
                 })()}
               </div>
               <div className="space-y-1">
-                {(window.appState?.tasks || [])
+                {getTasks()
                   .filter(t => t.parentId === task.id && !t.trashedAt)
                   .sort((a, b) => {
                     const na = parseInt((a.id.split('-').pop() || '0'), 10);
