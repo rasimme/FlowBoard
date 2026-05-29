@@ -145,12 +145,26 @@ section('getBootstrapReadiness()');
 
 section('buildBootstrapDocument() — non-empty context contract');
 {
-  const doc = rulesApi.buildBootstrapDocument('flowboard');
+  const doc = rulesApi.buildBootstrapDocument('flowboard', {
+    tasks: [
+      { id: 'T-202', title: 'Bootstrap live task summary', status: 'in-progress', priority: 'high', parentId: null, blocked: false },
+    ],
+  });
   assert(typeof doc === 'string', 'returns markdown string');
   assert(doc.trim().length > 1000, 'context document is substantial, not empty');
   assert(doc.startsWith('# Active Project: flowboard'), 'starts with active project header');
-  assert(doc.includes('## Project: flowboard'), 'includes project-resolved PROJECT.md section');
+  assert(doc.includes('## Operational Task State'), 'includes live operational task section');
+  assert(doc.includes('- T-202: Bootstrap live task summary'), 'includes task supplied by Tasks API');
+  assert(doc.includes('## Project Knowledge: flowboard'), 'includes task-neutral PROJECT.md section');
+  assert(doc.indexOf('## Operational Task State') < doc.indexOf('## Project Knowledge: flowboard'), 'task state appears before project knowledge');
+  assert(doc.includes('not authoritative for current task focus'), 'marks PROJECT.md as non-authoritative for task state');
   assert(doc.includes('FlowBoard'), 'includes project document content');
+
+  const blockerDoc = rulesApi.buildBootstrapDocument('flowboard', {
+    taskStateBlocker: 'Could not fetch live task state from test.',
+  });
+  assert(blockerDoc.includes('**BLOCKER:** Could not fetch live task state from test.'), 'renders task-state blocker when live tasks unavailable');
+  assert(blockerDoc.includes('Do not infer current work'), 'blocker forbids task inference');
 
   let threw = false;
   try { rulesApi.buildBootstrapDocument(null); } catch (err) {

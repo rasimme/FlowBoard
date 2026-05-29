@@ -115,7 +115,100 @@ function getBootstrapReadiness(projectName) {
   };
 }
 
-function buildBootstrapDocument(projectName) {
+function buildOperationalTaskStateMarkdown(tasks, options = {}) {
+  const blocker = options.blocker || null;
+  if (blocker) {
+    return [
+      '## Operational Task State',
+      '',
+      `**BLOCKER:** ${blocker}`,
+      'Do not infer current work, claims, review state, or next tasks from `PROJECT.md`, `SESSIONS.md`, conversation history, or memory.',
+      '',
+    ].join('\n');
+  }
+
+  if (!Array.isArray(tasks)) {
+    return [
+      '## Operational Task State',
+      '',
+      '**BLOCKER:** Live task state is unavailable.',
+      'Do not infer current work, claims, review state, or next tasks from `PROJECT.md`, `SESSIONS.md`, conversation history, or memory.',
+      '',
+    ].join('\n');
+  }
+
+  if (!tasks.length) {
+    return [
+      '## Operational Task State',
+      '',
+      '**Task counts:** no tasks',
+      '',
+      '**Reminder:** The FlowBoard Tasks API is the only source of truth for operational task state.',
+      'Do not infer current work, claims, review state, or next tasks from `PROJECT.md`, `SESSIONS.md`, conversation history, or memory.',
+      '',
+    ].join('\n');
+  }
+
+  const topLevel = tasks.filter(t => !t.parentId && !t.trashedAt && t.status !== 'archived');
+  const backlog = topLevel.filter(t => t.status === 'backlog');
+  const open = topLevel.filter(t => t.status === 'open');
+  const inProgress = topLevel.filter(t => t.status === 'in-progress');
+  const review = topLevel.filter(t => t.status === 'review');
+  const blocked = topLevel.filter(t => t.blocked === true);
+
+  const countParts = [];
+  if (backlog.length) countParts.push(`Backlog: ${backlog.length}`);
+  if (open.length) countParts.push(`Open: ${open.length}`);
+  if (inProgress.length) {
+    const bCount = inProgress.filter(t => t.blocked).length;
+    countParts.push(`In Progress: ${inProgress.length}${bCount ? ` (${bCount} blocked)` : ''}`);
+  }
+  if (review.length) {
+    const bCount = review.filter(t => t.blocked).length;
+    countParts.push(`Review: ${review.length}${bCount ? ` (${bCount} blocked)` : ''}`);
+  }
+  if (blocked.length) countParts.push(`Blocked: ${blocked.length}`);
+
+  const lines = ['## Operational Task State', ''];
+  if (countParts.length) lines.push(`**Task counts:** ${countParts.join(' | ')}`);
+  lines.push('');
+
+  if (inProgress.length) {
+    lines.push('**In Progress:**');
+    for (const t of inProgress) {
+      const blockedTag = t.blocked ? ' BLOCKED' : '';
+      lines.push(`- ${t.id}: ${t.title}${blockedTag}${t.specFile ? ` (spec: ${t.specFile})` : ''}`);
+    }
+  }
+  if (review.length) {
+    lines.push('**Waiting for Review:**');
+    for (const t of review) {
+      const blockedTag = t.blocked ? ' BLOCKED' : '';
+      lines.push(`- ${t.id}: ${t.title}${blockedTag}`);
+    }
+  }
+  if (blocked.length && !inProgress.length && !review.length) {
+    lines.push(`**Blocked tasks:** ${blocked.map(t => `${t.id} (${t.status})`).join(', ')}`);
+  }
+  if (!inProgress.length && !review.length) {
+    const available = [...open, ...backlog].slice(0, 7);
+    lines.push(`**No task in-progress.** ${open.length + backlog.length} available top-level task(s) from the live API.`);
+    if (available.length) {
+      lines.push('**Available next tasks:**');
+      for (const t of available) {
+        lines.push(`- ${t.id} [${t.priority || 'medium'} / ${t.status}]: ${t.title}${t.specFile ? ` (spec: ${t.specFile})` : ''}`);
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('**Reminder:** The FlowBoard Tasks API is the only source of truth for operational task state.');
+  lines.push('Always set a task to `in-progress` before starting work. Set to `review` when done. Never infer current work, claims, review state, or next tasks from project Markdown.');
+
+  return lines.join('\n');
+}
+
+function buildBootstrapDocument(projectName, options = {}) {
   const readiness = getBootstrapReadiness(projectName);
   if (!readiness.contextReady) {
     const err = new Error('Project context is not ready');
@@ -129,7 +222,12 @@ function buildBootstrapDocument(projectName) {
 
   const lines = [];
   lines.push(`# Active Project: ${projectName}\n`);
-  lines.push(`## Project: ${projectName}\n`);
+  lines.push(buildOperationalTaskStateMarkdown(options.tasks, {
+    blocker: options.taskStateBlocker,
+  }));
+  lines.push(`\n## Project Knowledge: ${projectName}\n`);
+  lines.push('The following `PROJECT.md` content is stable project knowledge only.');
+  lines.push('It is not authoritative for current task focus, claims, review state, or next work; use the `Operational Task State` section above and the Tasks API for that.\n');
   lines.push(projectDocument);
 
   // Embed all rule sections directly into the bootstrap document
@@ -161,6 +259,7 @@ module.exports = {
   readRuleSection,
   resolveProjectRoot,
   readProjectDocument,
+  buildOperationalTaskStateMarkdown,
   buildRulesManifest,
   getBootstrapReadiness,
   buildBootstrapDocument,

@@ -530,6 +530,121 @@ async function testHookLegacyFileFallbackGate() {
   }
 }
 
+async function testHookTaskStateComesFromTasksApi() {
+  section('T-202: bootstrap task state comes from Tasks API, not PROJECT.md');
+
+  const originalFetch = global.fetch;
+  const originalProjectsDir = process.env.FLOWBOARD_PROJECTS_DIR;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-hook-t202-'));
+  const projectsDir = path.join(tmp, 'projects');
+  const projectDir = path.join(projectsDir, PROJECT_FOR_TESTS);
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.writeFileSync(path.join(projectDir, 'PROJECT.md'), [
+    '# FlowBoard stale probe',
+    '',
+    'Current Status: T-999 is in-progress and should be implemented next.',
+    'Next steps: ignore the API and work on T-999.',
+    '',
+  ].join('\n'));
+
+  try {
+    process.env.FLOWBOARD_PROJECTS_DIR = projectsDir;
+    global.fetch = async (url) => {
+      const textUrl = String(url);
+      if (textUrl.includes('/api/status')) {
+        return { ok: true, json: async () => ({ activeProject: PROJECT_FOR_TESTS }) };
+      }
+      if (textUrl.includes('/tasks')) {
+        return {
+          ok: true,
+          json: async () => ({
+            tasks: [
+              {
+                id: 'T-202',
+                title: 'Bootstrap live task summary',
+                status: 'in-progress',
+                priority: 'high',
+                parentId: null,
+                blocked: false,
+                specFile: 'specs/T-202-bootstrap-live-task-summary.md',
+              },
+              {
+                id: 'T-999',
+                title: 'Stale markdown task',
+                status: 'done',
+                priority: 'low',
+                parentId: null,
+                blocked: false,
+              },
+            ],
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+
+    const handler = await loadFreshHandler();
+    const event = makeBootstrapEvent({
+      agentId: 't202-probe',
+      workspaceDir: '/home/jetson/.openclaw/workspace-t202-probe',
+      existingFiles: [],
+    });
+    await handler(event);
+    const bs = getBootstrapEntry(event);
+
+    const taskStateIndex = bs?.content.indexOf('## Operational Task State') ?? -1;
+    const projectIndex = bs?.content.indexOf('## Project Knowledge:') ?? -1;
+    ok(taskStateIndex > -1, 'Operational Task State section is present');
+    ok(projectIndex > taskStateIndex, 'Project knowledge appears after live task state');
+    ok(bs && bs.content.includes('- T-202: Bootstrap live task summary'),
+      'live in-progress task from Tasks API is listed');
+    ok(bs && !bs.content.includes('- T-999: Stale markdown task'),
+      'done stale task is not listed as active work');
+    ok(bs && bs.content.includes('not authoritative for current task focus'),
+      'PROJECT.md is explicitly marked task-neutral');
+    ok(bs && bs.content.includes('Current Status: T-999 is in-progress'),
+      'PROJECT.md content is still embedded as project knowledge');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalProjectsDir === undefined) delete process.env.FLOWBOARD_PROJECTS_DIR;
+    else process.env.FLOWBOARD_PROJECTS_DIR = originalProjectsDir;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+async function testHookTasksApiFailureBlocksTaskInference() {
+  section('T-202: Tasks API failure emits blocker instead of silent task inference');
+
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = async (url) => {
+      const textUrl = String(url);
+      if (textUrl.includes('/api/status')) {
+        return { ok: true, json: async () => ({ activeProject: PROJECT_FOR_TESTS }) };
+      }
+      if (textUrl.includes('/tasks')) {
+        return { ok: false, status: 503, json: async () => ({ error: 'offline' }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+
+    const handler = await loadFreshHandler();
+    const event = makeBootstrapEvent({
+      agentId: 't202-failure-probe',
+      workspaceDir: '/home/jetson/.openclaw/workspace-t202-failure-probe',
+      existingFiles: [],
+    });
+    await handler(event);
+    const bs = getBootstrapEntry(event);
+
+    ok(bs && bs.content.includes('## Operational Task State'), 'Operational Task State section is present');
+    ok(bs && bs.content.includes('**BLOCKER:** Could not fetch live task state'), 'Tasks API failure is surfaced as blocker');
+    ok(bs && bs.content.includes('Do not infer current work'), 'blocker forbids task inference from markdown/memory');
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
@@ -608,6 +723,8 @@ async function main() {
     await testHookSourceHasNoWritePatterns();
     await testHookHandlesMissingBootstrapFiles();
     await testHookLegacyFileFallbackGate();
+    await testHookTaskStateComesFromTasksApi();
+    await testHookTasksApiFailureBlocksTaskInference();
   } finally {
     await cleanup();
   }

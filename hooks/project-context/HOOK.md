@@ -1,6 +1,6 @@
 ---
 name: project-context
-description: "Live-injects the active-project bootstrap (Identity + rules manifest + PROJECT.md) into bootstrapFiles on every agent run"
+description: "Live-injects the active-project bootstrap (Identity + rules manifest + live task state + PROJECT.md) into bootstrapFiles on every agent run"
 metadata: { "openclaw": { "emoji": "📋", "events": ["agent:bootstrap"], "requires": { "config": ["workspace.dir"] } } }
 ---
 
@@ -29,8 +29,8 @@ the local API.
    - `# Active Project: <name>` header
    - `## Identity` section with the agent's canonical id
    - Rules manifest (lazy-load index — see `dashboard/rules-api.js`)
-   - Embedded `PROJECT.md` from `~/.openclaw/projects/<name>/`
-   - Current task status summary (in-progress, review, blocked, counts)
+   - Live operational task state from `/api/projects/<name>/tasks`
+   - Embedded `PROJECT.md` from `~/.openclaw/projects/<name>/` as task-neutral project knowledge
 5. Replaces the `BOOTSTRAP.md` entry in `event.context.bootstrapFiles`
    with the freshly built content. If no entry exists, appends one.
 6. Agent fetches individual rule sections on demand via
@@ -59,11 +59,15 @@ and eliminates the cache↔projection drift class of bugs.
 
 ## Failure Modes
 
-- **API unreachable**: emits projectless context by default; rules manifest
+- **Status API unreachable**: emits projectless context by default; rules manifest
   still served (inline fallback if `rules-api.js` cannot be required).
   `ACTIVE-PROJECT.md` fallback is available only when
   `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` is set for a migration
   recovery window.
+- **Tasks API unreachable**: still injects active-project context, but the
+  `Operational Task State` section becomes an explicit blocker and tells the
+  agent not to infer task focus from `PROJECT.md`, `SESSIONS.md`, memory, or
+  conversation history.
 - **No active project**: writes only the Identity section so the agent
   can still call `PUT /api/status` with the correct `agentId`.
 - **Build error**: leaves `bootstrapFiles` untouched (whatever the

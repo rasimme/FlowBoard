@@ -7,7 +7,8 @@
  * (via the local API) and replaces the BOOTSTRAP.md entry in
  * `event.context.bootstrapFiles` with a live-built document containing
  * the active-project header, the agent's identity, the rules manifest,
- * the PROJECT.md content, and a task-status summary.
+ * live task state from the FlowBoard API, and task-neutral PROJECT.md
+ * content.
  *
  * No on-disk writes. Single source of truth: flowboard_agents DB row.
  * Documented in specs/T-168-hook-lifecycle-coverage.md (T-168-3).
@@ -134,66 +135,36 @@ function resolveActiveProjectFromFile(workspaceDir) {
 
 async function getTaskStatusSummary(projectName) {
   let data;
+  const url = `http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`;
   try {
-    const url = `http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`;
     const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return null;
+    if (!res.ok) return {
+      ok: false,
+      markdown: rulesApi?.buildOperationalTaskStateMarkdown?.(null, {
+        blocker: `Could not fetch live task state from \`${url}\` (HTTP ${res.status}).`,
+      }) || `## Operational Task State\n\n**BLOCKER:** Could not fetch live task state from \`${url}\` (HTTP ${res.status}).\n`,
+    };
     data = await res.json();
-  } catch {
-    return null;
+  } catch (err) {
+    return {
+      ok: false,
+      markdown: rulesApi?.buildOperationalTaskStateMarkdown?.(null, {
+        blocker: `Could not fetch live task state from \`${url}\` (${err?.message || "fetch failed"}).`,
+      }) || `## Operational Task State\n\n**BLOCKER:** Could not fetch live task state from \`${url}\` (${err?.message || "fetch failed"}).\n`,
+    };
   }
-  if (!data?.tasks?.length) return null;
-
-  const topLevel = data.tasks.filter(t => !t.parentId);
-  const backlog = topLevel.filter(t => t.status === "backlog");
-  const open = topLevel.filter(t => t.status === "open");
-  const inProgress = topLevel.filter(t => t.status === "in-progress");
-  const review = topLevel.filter(t => t.status === "review");
-  const done = topLevel.filter(t => t.status === "done");
-  const blocked = topLevel.filter(t => t.blocked === true);
-
-  const countParts = [];
-  if (backlog.length) countParts.push(`Backlog: ${backlog.length}`);
-  if (open.length) countParts.push(`Open: ${open.length}`);
-  if (inProgress.length) {
-    const bCount = inProgress.filter(t => t.blocked).length;
-    countParts.push(`In Progress: ${inProgress.length}${bCount ? ` (${bCount} blocked)` : ""}`);
+  if (!Array.isArray(data?.tasks)) {
+    return {
+      ok: false,
+      markdown: rulesApi?.buildOperationalTaskStateMarkdown?.(null, {
+        blocker: `\`${url}\` returned JSON without a \`tasks\` array.`,
+      }) || `## Operational Task State\n\n**BLOCKER:** \`${url}\` returned JSON without a \`tasks\` array.\n`,
+    };
   }
-  if (review.length) {
-    const bCount = review.filter(t => t.blocked).length;
-    countParts.push(`Review: ${review.length}${bCount ? ` (${bCount} blocked)` : ""}`);
-  }
-  if (done.length) countParts.push(`Done: ${done.length}`);
-
-  const lines = [];
-  if (countParts.length) lines.push(`**Task counts:** ${countParts.join(" | ")}`);
-  lines.push("");
-
-  if (inProgress.length) {
-    lines.push("**⚡ In Progress:**");
-    for (const t of inProgress) {
-      const blockedTag = t.blocked ? " 🚫 BLOCKED" : "";
-      lines.push(`- ${t.id}: ${t.title}${blockedTag}${t.specFile ? ` (spec: ${t.specFile})` : ""}`);
-    }
-  }
-  if (review.length) {
-    lines.push("**🔍 Waiting for Review:**");
-    for (const t of review) {
-      const blockedTag = t.blocked ? " 🚫 BLOCKED" : "";
-      lines.push(`- ${t.id}: ${t.title}${blockedTag}`);
-    }
-  }
-  if (blocked.length && !inProgress.length && !review.length) {
-    lines.push(`**🚫 Blocked tasks:** ${blocked.map(t => `${t.id} (${t.status})`).join(", ")}`);
-  }
-  if (!inProgress.length && !review.length) {
-    lines.push(`**💡 No task in-progress.** ${open.length} open task(s) available — pick one and set it to in-progress before starting work.`);
-  }
-
-  lines.push("");
-  lines.push("**Reminder:** Always set a task to `in-progress` before starting work. Set to `review` when done. Never leave tasks in stale states.");
-
-  return lines.join("\n");
+  return {
+    ok: true,
+    markdown: rulesApi?.buildOperationalTaskStateMarkdown?.(data.tasks) || "## Operational Task State\n\nLive task state is available from the Tasks API.\n",
+  };
 }
 
 async function buildBootstrapContent(workspaceDir, agentId) {
@@ -231,10 +202,21 @@ async function buildBootstrapContent(workspaceDir, agentId) {
     `${identitySection}`,
     `${rulesManifest}\n`,
   ];
-  if (projectContent) sections.push(`## Project: ${projectName}\n\n${projectContent}\n`);
 
   const taskSummary = await getTaskStatusSummary(projectName);
-  if (taskSummary) sections.push(`## Current Task Status\n\n${taskSummary}\n`);
+  sections.push(`${taskSummary.markdown}\n`);
+
+  if (projectContent) {
+    sections.push([
+      `## Project Knowledge: ${projectName}`,
+      "",
+      "The following `PROJECT.md` content is stable project knowledge only.",
+      "It is not authoritative for current task focus, claims, review state, or next work; use the `Operational Task State` section above and the Tasks API for that.",
+      "",
+      projectContent,
+      "",
+    ].join("\n"));
+  }
 
   return sections.join("\n");
 }

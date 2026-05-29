@@ -1126,7 +1126,28 @@ app.get('/api/projects/:name/rules/:section', (req, res) => {
 // substantial markdown context or an explicit not-ready/error response.
 app.get('/api/projects/:name/bootstrap', (req, res) => {
   try {
-    const content = rulesApi.buildBootstrapDocument(req.params.name);
+    const bootstrapOptions = {};
+    try {
+      if (HZL_ENABLED) {
+        if (projectExists(req.params.name)) {
+          const tasks = hzlService.listTasks(req.params.name, { includeArchived: false });
+          bootstrapOptions.tasks = enrichTasks(req.params.name, tasks);
+        } else {
+          bootstrapOptions.taskStateBlocker = `Could not fetch live task state for project \`${req.params.name}\`: project not found.`;
+        }
+      } else {
+        const data = readTasksFile(req.params.name);
+        if (data && Array.isArray(data.tasks)) {
+          bootstrapOptions.tasks = enrichTasks(req.params.name, data.tasks);
+        } else {
+          bootstrapOptions.taskStateBlocker = `Could not fetch live task state for project \`${req.params.name}\`: tasks data unavailable.`;
+        }
+      }
+    } catch (taskErr) {
+      bootstrapOptions.taskStateBlocker = `Could not fetch live task state for project \`${req.params.name}\` (${taskErr?.message || 'task read failed'}).`;
+    }
+
+    const content = rulesApi.buildBootstrapDocument(req.params.name, bootstrapOptions);
     res.type('text/markdown; charset=utf-8').send(content);
   } catch (err) {
     if (err.code === 'CONTEXT_NOT_READY') {
