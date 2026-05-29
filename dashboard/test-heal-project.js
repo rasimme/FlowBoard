@@ -79,6 +79,29 @@ function makeDir(root, name) {
 }
 
 // ---------------------------------------------------------------------------
+// createProject scenarios
+// ---------------------------------------------------------------------------
+
+function testCreateProjectScaffoldIsTaskNeutral() {
+  section('createProject — PROJECT.md scaffold is task-neutral');
+  const projectsDir = tmpProjectsDir();
+  const { hzlService, fbMeta } = makeStubs();
+
+  lifecycle.createProject(
+    { name: 'task-neutral', displayName: 'Task Neutral', description: 'Stable description.' },
+    { hzlService, fbMeta, projectsDir }
+  );
+
+  const projectMd = fs.readFileSync(path.join(projectsDir, 'task-neutral', 'PROJECT.md'), 'utf8');
+  ok(projectMd.includes('## Operational State'), 'PROJECT.md includes operational state boundary');
+  ok(projectMd.includes('FlowBoard/HZL tasks'), 'PROJECT.md points operational state to FlowBoard/HZL tasks');
+  ok(!projectMd.includes('## Current Status'), 'PROJECT.md has no Current Status section');
+  ok(!projectMd.includes('## Key Next Steps'), 'PROJECT.md has no Key Next Steps section');
+  ok(!projectMd.includes('Project created.'), 'PROJECT.md does not record creation as current state');
+  ok(fs.existsSync(path.join(projectsDir, 'task-neutral', 'SESSIONS.md')), 'SESSIONS.md still exists for historical log');
+}
+
+// ---------------------------------------------------------------------------
 // healProject scenarios
 // ---------------------------------------------------------------------------
 
@@ -288,6 +311,8 @@ function testDetectDriftIgnoresDeleted() {
 // ---------------------------------------------------------------------------
 
 (function main() {
+  testCreateProjectScaffoldIsTaskNeutral();
+
   testHealWhenMetaOnly();
   testHealWhenFsOnly();
   testHealWithExplicitDisplayName();

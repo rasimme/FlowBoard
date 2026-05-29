@@ -14,16 +14,10 @@
 ## Architecture
 [Technical details — for projects with a Git repo, reference `docs/` in the repo instead of duplicating here. Optional for small/non-technical projects.]
 
+## Operational State
+Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.
+
 ## Project Files
-[List non-standard files when created. specs/ are linked via tasks.json and don't need entries here.]
+[List stable non-standard project knowledge files when created. Specs are linked via FlowBoard tasks and don't need entries here.]
 <!-- Example: -->
 <!-- - `context/hardware-guide.md` — External hardware reference -->
-
-## Current Status
-[Updated by agent after each significant session]
-
-## Session Log
-<!-- Newest on top -->
-
-### [DATE]
-- Project created

@@ -8,31 +8,32 @@ Defines the standard file structure and conventions for FlowBoard projects. Each
 
 | File | Purpose | Character |
 |------|---------|-----------|
-| `PROJECT.md` | Current state, next steps, bootstrap-worthy overview | Slim, frequently updated |
-| `SESSIONS.md` | Chronological session log | Append-only timeline |
+| `PROJECT.md` | Stable project map: goal, scope, background, repo/files, durable constraints | Slim, task-neutral |
+| `SESSIONS.md` | Historical session log | Append-only timeline; not current truth |
 | `DECISIONS.md` | Durable architecture and design reasoning | Why-records, rarely deleted |
 | `canvas.json` | Spatial idea workspace | API-managed (see canvas-and-notes.md) |
 
 ### PROJECT.md
 
-The bootstrap document. Should be readable in isolation and give an agent enough context to start working. Contains:
+Stable project knowledge. Should be readable in isolation and explain what the project is, without describing current task state. Contains:
 
 - Project goal / one-liner
-- Current status and active focus
-- Key next steps
 - Git repo reference (if applicable)
 - Tech stack summary
+- Stable constraints, scope, background, and important project files
 
-**Not for:** session history, decision rationale, task lists, specs.
+**Not for:** current task focus, next implementation steps, claims, priorities, status labels, session history, decision rationale, task lists, specs.
+
+Operational work lives in FlowBoard/HZL tasks. If the bootstrap includes both `Operational Task State` and `PROJECT.md`, agents must use `Operational Task State` or `GET /api/projects/:name/tasks` for current work and treat `PROJECT.md` as non-authoritative project knowledge.
 
 ### SESSIONS.md
 
-Chronological log of work sessions. Each entry records:
+Historical log of work sessions. Each entry records:
 - Date and agent
 - What was done
 - Key outcomes or blockers
 
-Append-only. Old entries are not edited.
+Append-only. Old entries are not edited. `SESSIONS.md` may mention tasks historically, but it must not be used as the current task source of truth.
 
 ### DECISIONS.md
 

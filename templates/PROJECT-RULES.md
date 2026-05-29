@@ -20,7 +20,7 @@ These rules apply whenever a project is active.
 - All work relates to project context (unrelated questions answered normally)
 - **Decisions:** Record in DECISIONS.md (date + reasoning) — load on demand only
 - **Tasks:** Break work into tasks before execution (tracking + dashboard visibility). Exception: quick questions/discussions
-- **PROJECT.md:** Keep "Current Status" updated after significant progress
+- **PROJECT.md:** Keep stable project knowledge only. Never write current task focus, claims, priorities, status, or next implementation steps there.
 
 ---
 
@@ -56,7 +56,7 @@ Dashboard server manages all data. **Always use API for mutations:**
 | Batch delete notes | `DELETE /api/projects/:name/canvas/notes/batch` `{noteIds:[...]}` |
 | Promote notes | `POST /api/projects/:name/canvas/promote` `{notes, connections, mode}` |
 
-**Reading tasks:** Use `GET /api/projects/:name/tasks`. Bootstrap may include a compact task summary, but the API is canonical. Never read `tasks.json` directly.
+**Reading tasks:** Use `GET /api/projects/:name/tasks`. Bootstrap may include an `Operational Task State` section from the same API, but the API is canonical. Never read `tasks.json` directly and never derive current task work from `PROJECT.md` or `SESSIONS.md`.
 
 ### Spec Files
 - Live in `~/.openclaw/workspace/projects/<name>/specs/` (NOT in git repo)
@@ -98,7 +98,7 @@ The Idea Canvas is a visual brainstorming space. Notes can be promoted to tasks.
 ## File Management
 
 - **context/ folder:** External references only (hardware guides, API docs). NOT for code docs (git repo) or planning (specs/)
-- **Project Files section:** Update in PROJECT.md when creating files in context/
+- **Project Files section:** Update in PROJECT.md only when creating stable reference files in context/. Do not record task progress or next work there.
 
 ---
 
@@ -115,5 +115,6 @@ The Idea Canvas is a visual brainstorming space. Notes can be promoted to tasks.
 
 - **flowboard_agents.active_project** = single source of truth for per-agent active project state
 - **API-first** for all mutations (never edit JSON/state files directly)
+- **HZL/Tasks API** = single source of truth for task state, claims, priorities, and next work
 - **Bootstrap endpoint** = current project context; on-disk `BOOTSTRAP.md` is legacy/stale unless injected by runtime
 - **DECISIONS.md** loaded on demand only

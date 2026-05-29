@@ -28,6 +28,8 @@ FlowBoard server owns all operational project/task mutations. Use the API for:
 
 Never edit state files directly. `POST /api/projects` is the canonical creation path — never `mkdir` + hand-scaffolded files.
 
+Operational task truth comes from HZL through the Tasks API. Do not derive current work, claims, review state, priorities, or next steps from project Markdown.
+
 ### 4. Lazy-load capability docs
 
 The bootstrap endpoint carries the project rules index and compact current context. Detailed operational docs (`tasks-api.md`, `canvas-and-notes.md`, `agent-bridge.md`, `hzl.md`, `specify-workflow.md`, `project-files.md`) are requested on demand via `GET /api/projects/{project}/rules/{section}`. Read deeper detail only when the task actually needs it.
@@ -36,8 +38,8 @@ The bootstrap endpoint carries the project rules index and compact current conte
 
 | File | Role |
 |------|------|
-| `PROJECT.md` | Current state, active focus, next steps (bootstrap-small) |
-| `SESSIONS.md` | Chronological session log (append-only) |
+| `PROJECT.md` | Stable project map: goal, scope, background, repos/files, durable constraints |
+| `SESSIONS.md` | Historical session log (append-only; not current truth) |
 | `DECISIONS.md` | Architecture and design rationale (durable why-records) |
 | `context/*.md` | Detailed operational docs, lazy-loaded on demand |
 | `specs/*.md` | Task/feature specs, linked from tasks |

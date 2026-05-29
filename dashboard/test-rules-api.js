@@ -85,6 +85,10 @@ section('readRuleSection() — alias sections (reuse existing docs)');
 
   const files = rulesApi.readRuleSection('files');
   assert(files && files.length > 0, 'files returns content (alias → project-files.md)');
+  assert(files.includes('Stable project map'), 'files defines PROJECT.md as stable project map');
+  assert(files.includes('not be used as the current task source of truth'), 'files marks SESSIONS.md as historical, not current truth');
+  assert(!files.includes('Current status and active focus'), 'files no longer tells agents to put active focus in PROJECT.md');
+  assert(!files.includes('Key next steps'), 'files no longer tells agents to put next steps in PROJECT.md');
 }
 
 section('readRuleSection() — unknown sections');

@@ -30,6 +30,7 @@ Use this only when the user did not issue an explicit FlowBoard command.
    - Wait until `contextReady === true` with **maximum 3 attempts total, 500 ms between attempts, then report blocker and stop**.
    - Then immediately fetch project context as Markdown/plain text: `GET /api/projects/<activeProject>/bootstrap`
    - Do this before answering project questions; do not rely on memory or generic knowledge.
+   - Treat `Operational Task State` / `GET /api/projects/<activeProject>/tasks` as the only current task truth. `PROJECT.md` content in bootstrap is stable project knowledge, not current work.
    - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
    - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`
 

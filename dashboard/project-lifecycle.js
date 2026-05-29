@@ -65,11 +65,11 @@ function _scaffoldFilesystem(projectsDir, name, displayName, description) {
     '## Goal',
     '[What should be achieved?]',
     '',
-    '## Current Status',
-    'Project created.',
+    '## Operational State',
+    'Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.',
     '',
-    '## Key Next Steps',
-    '- [ ] Define project scope',
+    '## Project Files',
+    '[List stable non-standard project knowledge files when created. Specs are linked via FlowBoard tasks and do not need entries here.]',
     '',
   ].join('\n');
 
