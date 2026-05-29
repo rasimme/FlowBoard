@@ -88,7 +88,19 @@ PUT /projects/:name/tasks/:id
 
 Note: `parentId` cannot be changed via PUT after creation.
 
+### Coordination Workflows
+
+Use these endpoints as the default agent execution protocol.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/workflows/start` | Resume agent work or claim next eligible task atomically. Body: `{ agent, project, lease?, resumePolicy? }` |
+| `POST` | `/workflows/handoff` | Complete source task and create follow-on work. Body: `{ project, fromTaskId, title, agent? }` |
+| `POST` | `/workflows/delegate` | Create delegated child work. Body: `{ project, fromTaskId, title, agent?, pauseParent?, checkpoint? }` |
+
 ### Coordination Primitives
+
+Primitive endpoints are used by the dashboard UI and for explicit edge cases. Agents should prefer the workflow endpoints above for normal task execution.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -101,9 +113,6 @@ Note: `parentId` cannot be changed via PUT after creation.
 | `GET` | `/projects/:name/tasks/:id/checkpoints` | List checkpoints |
 | `GET` | `/projects/:name/tasks/:id/comments` | List comments |
 | `GET` | `/projects/:name/tasks/:id/handoff` | Get handoff context for agent spawning |
-| `POST` | `/workflows/start` | Resume agent work or claim next eligible task. Body: `{ agent, project, lease?, resumePolicy? }` |
-| `POST` | `/workflows/handoff` | Complete source task and create follow-on work. Body: `{ project, fromTaskId, title, agent? }` |
-| `POST` | `/workflows/delegate` | Create delegated child work. Body: `{ project, fromTaskId, title, agent?, pauseParent?, checkpoint? }` |
 
 ### Cross-Project
 
@@ -115,9 +124,9 @@ Note: `parentId` cannot be changed via PUT after creation.
 
 The soft/global protocol for agent task execution:
 
-1. **Claim** — Agent takes ownership with optional lease duration
+1. **Start** — Agent calls `/workflows/start` to resume or claim work atomically
 2. **Checkpoint** — Periodic progress updates (message + optional progress %)
-3. **Complete** — Agent marks task done
+3. **Complete / Handoff / Delegate** — Agent marks work ready for review or creates follow-on/delegated work
 4. **Release** — Agent relinquishes without completing (e.g. blocked, reassign)
 
 Rules:

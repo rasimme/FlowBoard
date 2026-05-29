@@ -49,5 +49,12 @@ When reporting a blocker, stop the activation/context-loading flow and do not re
 
 ### Task workflow (API-first)
 
-Claim before work, update while working, complete when done.
+Use workflow endpoints as the normal path for task execution:
+
+1. **Start or resume:** `POST /api/workflows/start` with `{ agent, project, lease?, resumePolicy? }`.
+   This resumes your in-progress work for the project, or claims the next eligible open/backlog task atomically.
+2. **Checkpoint while working:** `POST /api/projects/<project>/tasks/<id>/checkpoint` with `{ agent, message, progress? }`.
+3. **Finish:** use `POST /api/projects/<project>/tasks/<id>/complete` for normal review handoff, or `POST /api/workflows/handoff` / `POST /api/workflows/delegate` when creating follow-on or delegated work.
+
+Primitive list/claim/release endpoints remain available for debugging and edge cases, but do not use manual "list open tasks, then claim one" as the default workflow.
 Endpoints: `GET /api/projects/<project>/rules/api-access` for full schema.

@@ -2,25 +2,43 @@
 
 ## Purpose
 
-How agents interact with FlowBoard tasks at runtime - the claim/execute/complete protocol and handoff semantics for multi-agent and ACP-spawned work.
+How agents interact with FlowBoard tasks at runtime - the workflow-first execution protocol, claim/lease semantics, and handoff behavior for multi-agent and ACP-spawned work.
 
 ## Task Execution Protocol
 
-The protocol is **soft and global** - it's a convention enforced by the API, not a hard scheduler.
+The protocol is **soft and global** - it is a convention enforced by the API, not a hard scheduler.
+
+Agents should use the workflow endpoints for normal execution. The primitive endpoints still exist, but they are fallback/debug tools.
+
+### Workflow-First Path
+
+1. **Start or resume work**
+   `POST /api/workflows/start` with `{ agent, project, lease?, resumePolicy? }`.
+   This either refreshes/resumes the agent's in-progress task or claims the next eligible open/backlog task.
+2. **Checkpoint progress**
+   `POST /api/projects/:name/tasks/:id/checkpoint` with `{ agent, message, progress? }`.
+3. **Finish or transfer**
+   Use `POST /api/projects/:name/tasks/:id/complete` for normal completion into review.
+   Use `POST /api/workflows/handoff` to complete the source and create follow-on work.
+   Use `POST /api/workflows/delegate` to create delegated child work and optionally pause the parent.
+
+Manual "list open tasks, choose one, then claim" should only be used when the workflow endpoint is unavailable or the user explicitly needs a custom selection.
 
 ### Lifecycle
 
 ```
-ready → [claim] → in_progress → [checkpoint]* → [complete] → done
-                              → [release] → ready
-                              → [block] → blocked → [unblock] → ready
+open/backlog → [workflow start] → in-progress → [checkpoint]* → [complete] → review
+                                            → [workflow handoff] → review + follow-on open
+                                            → [workflow delegate] → child open, parent optionally blocked
+                                            → [release] → open
 ```
 
 ### Behavioral Rules
 
 For concrete endpoint shapes and request bodies, see `tasks-api.md` § Coordination Primitives.
 
-- **Claim**: Only one agent at a time. Rejects if already claimed (409) unless lease expired. Rejects if routed to different agent (403). Rejects if dependencies incomplete.
+- **Workflow start**: Default entry point. Resumes in-progress work for the agent or atomically claims the next eligible task.
+- **Claim**: Primitive ownership operation. Only one agent at a time. Rejects if already claimed (409) unless lease expired. Rejects if routed to different agent (403). Rejects if dependencies incomplete.
 - **Checkpoint**: Only the claiming agent can checkpoint. Progress (0–100) updates the task. Checkpoints are append-only.
 - **Complete**: Only the claiming agent. Triggers parent status recalculation for subtasks.
 - **Release**: Returns task to `ready`, clears agent and lease. Use when blocked or reassigning.
@@ -48,13 +66,13 @@ If Agent A's lease expires, Agent B can claim the task. The original agent loses
 
 ## HZL Workflow Integration
 
-The three hzl-core workflows (`start`, `handoff`, `delegate`) provide atomic multi-step operations:
+The three hzl-core workflows (`start`, `handoff`, `delegate`) are the normal FlowBoard runtime contract:
 
 - **start**: Find and claim the next task for an agent (with resume logic for interrupted work)
 - **handoff**: Complete current task + create follow-on in one atomic operation, carrying checkpoint context
 - **delegate**: Create child task + optional dependency + optional parent pause
 
-All support idempotency via `op_id` to safely retry without double-execution.
+`handoff` and `delegate` support `opId` for safe retries without double-execution. FlowBoard exposes `start` as a resumable/claim-next operation and keeps primitive endpoints available for explicit edge cases.
 
 ## Event Context
 

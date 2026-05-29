@@ -2,7 +2,7 @@
 
 ## Purpose
 
-How FlowBoard uses HZL (Hazel) as its event-sourced coordination backend. This doc covers the HZL-specific model and multi-agent state surfaces. For the task API endpoints and lifecycle rules, see `api-access` (aka `tasks-api.md`). For the claim/checkpoint/complete protocol and handoff semantics, see `agent-bridge`.
+How FlowBoard uses HZL (Hazel) as its event-sourced coordination backend. This doc covers the HZL-specific model and multi-agent state surfaces. For endpoint shapes, see `api-access` (aka `tasks-api.md`). For the workflow-first execution protocol, see `agent-bridge`.
 
 ## What HZL is
 
@@ -10,6 +10,19 @@ How FlowBoard uses HZL (Hazel) as its event-sourced coordination backend. This d
 - **Canonical truth** for task state, claims, leases, checkpoints, and comments. All task mutations append events; the current task state is a projection over that event log.
 - **Scoped by `project` field**, not by HZL-native projects. HZL itself has no concept of FlowBoard projects — FlowBoard assigns each task a `project` string (the FlowBoard project name) at creation time.
 - **Append-only**. History is reconstructable by replaying events. Checkpoints and comments are first-class events, not mutable fields.
+
+## Integration boundary
+
+FlowBoard does not try to mirror every HZL capability in the UI. HZL is the runtime/ledger layer; FlowBoard exposes the parts needed for reliable agent work:
+
+- task state projections
+- claims and leases
+- checkpoints and comments
+- stuck/stale signals
+- workflow `start`, `handoff`, and `delegate`
+- hook drain for completion notifications
+
+Search, backup, pruning, dependency validation, and hook observability are integrated only when they serve a concrete FlowBoard workflow.
 
 ## Storage layout
 
@@ -28,6 +41,16 @@ The cache DB is regenerable from the event store. If cache and event store disag
 - **Dependencies** (`depends_on`) block claiming until all referenced tasks are `done`.
 
 The lease is a soft coordination primitive, not a hard lock. Agents must read recent checkpoints/comments before resuming long-running work in case another agent left steering context.
+
+## Workflow semantics
+
+HZL's workflow layer combines primitive task operations into safer multi-step actions. FlowBoard exposes these as API endpoints:
+
+- `POST /api/workflows/start` — resume an agent's in-progress work for a project or claim the next eligible task.
+- `POST /api/workflows/handoff` — complete the source task and create follow-on work with carried context.
+- `POST /api/workflows/delegate` — create child work, optionally route it and pause the parent.
+
+These workflows are the preferred agent-facing path. Primitive claim/release/complete endpoints remain available for UI actions, debugging, and edge cases.
 
 ## Multi-agent state isolation
 
@@ -59,5 +82,5 @@ If you find code treating these as derivable from HZL events, that is a bug.
 ## Related
 
 - `api-access` — endpoint reference, task model, lifecycle protocol
-- `agent-bridge` — claim/checkpoint/complete behavior, handoff, multi-agent patterns
+- `agent-bridge` — workflow-first execution protocol, checkpoint/complete behavior, handoff, multi-agent patterns
 - `key-principles` — why DB is canonical and state files are transitional

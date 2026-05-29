@@ -66,7 +66,12 @@ When reporting a blocker, stop the activation/context-loading flow and do not re
 
 ## Task workflow (API-first)
 
-Claim before work, update while working, complete when done.
+Use workflow endpoints as the normal path:
+- `POST /api/workflows/start` to resume existing in-progress work or claim the next eligible task atomically.
+- `POST /api/projects/:name/tasks/:id/checkpoint` while working.
+- `POST /api/projects/:name/tasks/:id/complete` for normal completion, or `POST /api/workflows/handoff` / `POST /api/workflows/delegate` when creating follow-on work.
+
+Primitive list/claim/release endpoints are fallback/debug tools, not the default execution protocol.
 See `tasks-api` section for full schema and endpoint reference.
 
 ## Related
