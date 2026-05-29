@@ -149,6 +149,93 @@ const API_FIRST_MEMORY_FLUSH_MARKERS = [
   'Do not read or write ACTIVE-PROJECT.md',
 ];
 
+const TASK_STATE_LEAKAGE_RULES = [
+  {
+    id: 'operational-heading',
+    pattern: /^#{1,6}\s+(current status|key next steps|active focus|aktueller fokus|naechste schritte|nächste schritte|next steps)\b/i,
+    recommendation: 'Move current task focus or next work into FlowBoard/HZL tasks. Keep PROJECT.md as stable project knowledge.',
+  },
+  {
+    id: 'task-id-with-status',
+    pattern: /\bT-\d+(?:-\d+)?\b.*\b(in-progress|in progress|review|done|blocked|backlog|open|in bearbeitung|erledigt|blockiert)\b/i,
+    recommendation: 'Record task status in FlowBoard/HZL, not in PROJECT.md.',
+  },
+  {
+    id: 'task-id-with-next-work',
+    pattern: /\bT-\d+(?:-\d+)?\b.*\b(next|naechste|nächste|focus|fokus|implement|umsetzen|angehen)\b/i,
+    recommendation: 'Use FlowBoard/HZL tasks for next implementation work.',
+  },
+  {
+    id: 'claim-or-lease',
+    pattern: /\b(claimed by|claimed|lease|routed to|assigned to)\b/i,
+    recommendation: 'Claims, leases, and routing belong to FlowBoard/HZL task state.',
+  },
+];
+
+const TASK_STATE_LEAKAGE_ALLOWLIST = [
+  'Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.',
+  'not authoritative for current task focus',
+  'Operational work lives in FlowBoard/HZL tasks',
+  'single source of truth for task state',
+];
+
+function isAllowedTaskBoundaryLine(line) {
+  return TASK_STATE_LEAKAGE_ALLOWLIST.some(phrase => line.includes(phrase));
+}
+
+function scanProjectDocumentForTaskLeakage(filePath, content) {
+  const findings = [];
+  const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed || isAllowedTaskBoundaryLine(trimmed)) return;
+    const rule = TASK_STATE_LEAKAGE_RULES.find(r => r.pattern.test(trimmed));
+    if (!rule) return;
+    findings.push({
+      path: filePath,
+      line: idx + 1,
+      rule: rule.id,
+      snippet: trimmed.slice(0, 240),
+      recommendation: rule.recommendation,
+    });
+  });
+  return findings;
+}
+
+function collectBootstrapDocAdvisories(openclawHome) {
+  const projectsDir = path.join(openclawHome, 'projects');
+  let entries;
+  try { entries = fs.readdirSync(projectsDir, { withFileTypes: true }); }
+  catch { return []; }
+
+  const advisories = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const projectMd = path.join(projectsDir, entry.name, 'PROJECT.md');
+    let content;
+    try { content = fs.readFileSync(projectMd, 'utf8'); }
+    catch { continue; }
+
+    const findings = scanProjectDocumentForTaskLeakage(projectMd, content);
+    for (const finding of findings) {
+      advisories.push({
+        id: `${makeFileId(openclawHome, projectMd)}__task-state-leakage__${finding.line}`,
+        path: projectMd,
+        name: 'PROJECT.md',
+        state: 'task-state-leakage',
+        project: entry.name,
+        line: finding.line,
+        rule: finding.rule,
+        snippet: finding.snippet,
+        summary: `Possible task-state leakage in ${entry.name}/PROJECT.md:${finding.line} (${finding.rule}). ${finding.recommendation}`,
+        recommendation: finding.recommendation,
+        variant: 'warn',
+      });
+    }
+  }
+  return advisories;
+}
+
 function parsePsLstart(value) {
   if (!value || typeof value !== 'string') return null;
   const ts = Date.parse(value.trim());
@@ -529,10 +616,11 @@ function collectStatus(openclawHome) {
   }
 
   const configAdvisories = collectConfigAdvisories(openclawHome);
+  const bootstrapDocAdvisories = collectBootstrapDocAdvisories(openclawHome);
 
   let chip = null;
   const hasLegacy = counts.identical > 0 || counts.drifted > 0;
-  if (hasLegacy || bootLegacyFiles.length > 0 || legacyStateFiles.length > 0 || configAdvisories.length > 0) {
+  if (hasLegacy || bootLegacyFiles.length > 0 || legacyStateFiles.length > 0 || configAdvisories.length > 0 || bootstrapDocAdvisories.length > 0) {
     chip = { text: 'Migration required', variant: 'warn' };
   } else if (counts.current === 0 && counts.missing > 0) {
     chip = { text: 'Finish setup', variant: 'info' };
@@ -540,7 +628,7 @@ function collectStatus(openclawHome) {
     chip = { text: 'Optional setup', variant: 'info' };
   }
 
-  return { counts, chip, files, bootLegacyFiles, legacyStateFiles, configAdvisories };
+  return { counts, chip, files, bootLegacyFiles, legacyStateFiles, configAdvisories, bootstrapDocAdvisories };
 }
 
 // Apply a list of {id, action} pairs atomically per file.
@@ -755,7 +843,10 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
 
 module.exports = {
   TARGETS,
+  TASK_STATE_LEAKAGE_RULES,
   detectLegacyMarkers,
+  scanProjectDocumentForTaskLeakage,
+  collectBootstrapDocAdvisories,
   collectConfigAdvisories,
   matchesLegacyBlockExactly,
   replaceLegacyBlock,

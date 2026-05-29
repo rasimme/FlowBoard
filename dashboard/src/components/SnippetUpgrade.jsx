@@ -76,6 +76,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const bootLegacyFiles = status.bootLegacyFiles || [];
   const legacyStateFiles = status.legacyStateFiles || [];
   const configAdvisories = status.configAdvisories || [];
+  const bootstrapDocAdvisories = status.bootstrapDocAdvisories || [];
 
   // Selection maps per group. Defaults follow the "mandatory vs optional"
   // distinction: anything needed for FlowBoard to function correctly is
@@ -181,7 +182,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const skippedCount = result?.skipped?.length || 0;
   const applied = !!result?.ok && appliedCount > 0 && skippedCount === 0;
   const applyFailed = !!result && (!result.ok || appliedCount === 0 || skippedCount > 0);
-  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length > 0;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length + bootstrapDocAdvisories.length > 0;
 
   // Modal title & subtitle follow the chip variant
   const title = status.chip?.variant === 'warn'
@@ -194,6 +195,7 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     bootLegacyFiles.length > 0 && `${bootLegacyFiles.length} legacy BOOT.md advisory${bootLegacyFiles.length !== 1 ? 'ies' : ''}`,
     legacyStateFiles.length > 0 && `${legacyStateFiles.length} legacy state file${legacyStateFiles.length !== 1 ? 's' : ''}`,
     configAdvisories.length > 0 && `${configAdvisories.length} OpenClaw config advisory${configAdvisories.length !== 1 ? 'ies' : ''}`,
+    bootstrapDocAdvisories.length > 0 && `${bootstrapDocAdvisories.length} project doc warning${bootstrapDocAdvisories.length !== 1 ? 's' : ''}`,
   ].filter(Boolean).join(' · ');
 
   return createPortal(
@@ -294,6 +296,10 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
           {configAdvisories.length > 0 && (
             <ConfigAdvisorySection files={configAdvisories} />
+          )}
+
+          {bootstrapDocAdvisories.length > 0 && (
+            <BootstrapDocAdvisorySection files={bootstrapDocAdvisories} />
           )}
 
           {!hasAnything && (
@@ -504,6 +510,36 @@ function ConfigAdvisorySection({ files }) {
                   <span className="chip warn">Manual cleanup</span>
                 </div>
                 <div className="file-row-summary">{file.summary}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BootstrapDocAdvisorySection({ files }) {
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <div className="group-header-icon warn"><AlertTriangle size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">Project doc task-state warnings</div>
+          <div className="group-sub">Display-only advisory: PROJECT.md should stay stable project knowledge. Current work, claims, priorities, and next steps belong to FlowBoard/HZL tasks.</div>
+        </div>
+      </div>
+      <div className="group-body">
+        {files.map(file => (
+          <div key={file.id} className="file-row">
+            <div className="file-row-main">
+              <div className="file-row-text">
+                <div className="file-row-path">
+                  <span className="mono" title={file.path}>{shortPath(file.path)}:{file.line}</span>
+                  <span className="chip warn">{file.rule}</span>
+                </div>
+                <div className="file-row-summary">{file.summary}</div>
+                {file.snippet && <div className="file-row-summary mono">{file.snippet}</div>}
               </div>
             </div>
           </div>

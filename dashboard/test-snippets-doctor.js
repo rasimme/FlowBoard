@@ -656,6 +656,67 @@ section('collectConfigAdvisories() — stale gateway runtime');
   }
 }
 
+section('scanProjectDocumentForTaskLeakage() — PROJECT.md operational state guardrail');
+{
+  const filePath = '/tmp/projects/demo/PROJECT.md';
+  const findings = doctor.scanProjectDocumentForTaskLeakage(filePath, [
+    '# Demo',
+    '',
+    '## Current Status',
+    'T-020 is in-progress and should be implemented next.',
+    'Claimed by dev-botti until later.',
+    '',
+    '## Operational State',
+    'Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.',
+  ].join('\n'));
+
+  assertEqual(findings.length, 3, 'detects heading, task-status line, and claim line');
+  assert(findings.some(f => f.line === 3 && f.rule === 'operational-heading'), 'reports Current Status heading');
+  assert(findings.some(f => f.line === 4 && f.rule === 'task-id-with-status'), 'reports task id with status');
+  assert(findings.some(f => f.line === 5 && f.rule === 'claim-or-lease'), 'reports claim state');
+  assert(!findings.some(f => f.line === 8), 'allows explicit task-neutral boundary line');
+}
+
+section('collectStatus() — project doc task-state leakage advisories');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'workspace', 'AGENTS.md'), `${doctor.readCurrent('AGENTS-trigger.md')}\n`);
+
+    const cleanProject = path.join(dir, 'projects', 'clean');
+    fs.mkdirSync(cleanProject, { recursive: true });
+    fs.writeFileSync(path.join(cleanProject, 'PROJECT.md'), [
+      '# Clean',
+      '',
+      '## Goal',
+      'Stable project map.',
+      '',
+      '## Operational State',
+      'Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.',
+      '',
+    ].join('\n'));
+
+    const staleProject = path.join(dir, 'projects', 'stale');
+    fs.mkdirSync(staleProject, { recursive: true });
+    fs.writeFileSync(path.join(staleProject, 'PROJECT.md'), [
+      '# Stale',
+      '',
+      '## Key Next Steps',
+      '- Continue T-204 review implementation next.',
+      '',
+    ].join('\n'));
+
+    const status = doctor.collectStatus(dir);
+    assertEqual(status.bootstrapDocAdvisories.length, 2, 'detects stale heading and task-next-work line');
+    assert(status.bootstrapDocAdvisories.every(f => f.state === 'task-state-leakage'), 'advisories carry task-state-leakage state');
+    assert(status.bootstrapDocAdvisories.some(f => f.project === 'stale' && f.line === 3), 'reports file line for stale heading');
+    assertEqual(status.chip?.text, 'Migration required', 'project doc advisory keeps migration chip visible');
+  } finally {
+    cleanupTmp();
+  }
+}
+
 section('runCli() — --migrate force-replaces drifted blocks');
 {
   const dir = mkTmp();
