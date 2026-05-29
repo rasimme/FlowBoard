@@ -11,6 +11,8 @@ import { isActivelyClaimed, ownerLabel } from '../utils.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
+import { getTasks, replaceTasks, refreshTasks, notify } from '../state/appStateBridge.mjs';
+import { patchTask, applyTaskResponse, snapshotTask, rollbackSnapshot } from '../state/taskState.mjs';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
 // animates between -soft (alpha ~25%) and the full ring hex. Returning null
@@ -249,7 +251,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
     try {
       await onTaskTrashed?.(task.id, task.status);
       if (options.deleteSubtasks && task.subtaskIds && task.subtaskIds.length > 0) {
-        const subs = (window.appState?.tasks || []).filter(t => task.subtaskIds.includes(t.id) && !t.trashedAt);
+        const subs = getTasks().filter(t => task.subtaskIds.includes(t.id) && !t.trashedAt);
         for (const sub of subs) {
           try { await onTaskTrashed?.(sub.id, sub.status); } catch { /* best-effort per child */ }
         }
@@ -544,15 +546,14 @@ function AddSubtaskForm({ parentId, project, onCreated, onCancel }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create subtask');
       haptic.medium();
-      // Push subtask into local state + update parent's subtaskIds
       if (data.task) {
-        window.appState.tasks.push(data.task);
-        const parent = window.appState.tasks.find(t => t.id === parentId);
-        if (parent) {
-          if (!parent.subtaskIds) parent.subtaskIds = [];
-          parent.subtaskIds.push(data.task.id);
+        let next = applyTaskResponse(getTasks(), data);
+        const parent = next.find(t => t.id === parentId);
+        if (parent && !parent.subtaskIds?.includes(data.task.id)) {
+          const subtaskIds = [...(parent.subtaskIds || []), data.task.id];
+          next = patchTask(next, parentId, { subtaskIds });
         }
-        window.appState.tasks = [...window.appState.tasks];
+        replaceTasks(next);
       }
       if (window.showToast) window.showToast(`Subtask ${data.task?.id} created`, 'success');
       onCreated?.();
@@ -759,10 +760,8 @@ function AddTaskForm({ project, onCreated }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create task');
       haptic.medium();
-      // Push new task into local state for instant UI update
       if (data.task) {
-        window.appState.tasks.push(data.task);
-        window.appState.tasks = [...window.appState.tasks];
+        replaceTasks(applyTaskResponse(getTasks(), data));
       }
       if (window.showToast) window.showToast(`Created ${data.task?.id || 'task'}`, 'success');
       onCreated?.(data.task?.id);
@@ -992,12 +991,12 @@ export default function TasksView() {
   }, []);
 
   const handleTaskDeleted = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('appstate:change'));
+    notify();
   }, []);
 
   const handleTaskCreated = useCallback((newTaskId) => {
     if (newTaskId) setLastCreatedId(newTaskId);
-    window.dispatchEvent(new CustomEvent('appstate:change'));
+    notify();
   }, []);
 
   const handleAddSubtask = useCallback((parentId) => {
@@ -1013,7 +1012,7 @@ export default function TasksView() {
 
   const handleSubtaskCreated = useCallback(() => {
     setAddingSubtaskParentId(null);
-    window.dispatchEvent(new CustomEvent('appstate:change'));
+    notify();
   }, []);
 
   const handleCancelAddSubtask = useCallback(() => {
@@ -1026,8 +1025,8 @@ export default function TasksView() {
   // bucket. Card disappears from the Kanban via the grouped-filter re-run.
   const handleTaskTrashed = useCallback(async (taskId, prevStatus) => {
     const now = new Date().toISOString();
-    const snapshot = window.appState?.tasks?.find(t => t.id === taskId);
-    const title = snapshot?.title || taskId;
+    const existing = getTasks().find(t => t.id === taskId);
+    const title = existing?.title || taskId;
     try {
       const res = await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
         method: 'PUT',
@@ -1036,10 +1035,7 @@ export default function TasksView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to move to trash');
-      const localTask = window.appState.tasks.find(t => t.id === taskId);
-      if (localTask && data.task) Object.assign(localTask, data.task);
-      window.appState.tasks = [...window.appState.tasks];
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      replaceTasks(applyTaskResponse(getTasks(), data));
       setUndoState({ taskId, title, prevStatus });
     } catch (err) {
       if (window.showToast) window.showToast('Delete failed: ' + err.message, 'error');
@@ -1059,10 +1055,7 @@ export default function TasksView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to restore');
-      const localTask = window.appState.tasks.find(t => t.id === taskId);
-      if (localTask && data.task) Object.assign(localTask, data.task);
-      window.appState.tasks = [...window.appState.tasks];
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      replaceTasks(applyTaskResponse(getTasks(), data));
       if (window.showToast) window.showToast('Restored', 'success');
     } catch (err) {
       if (window.showToast) window.showToast('Undo failed: ' + err.message, 'error');
@@ -1081,10 +1074,7 @@ export default function TasksView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to restore');
-      const localTask = window.appState.tasks.find(t => t.id === task.id);
-      if (localTask && data.task) Object.assign(localTask, data.task);
-      window.appState.tasks = [...window.appState.tasks];
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      replaceTasks(applyTaskResponse(getTasks(), data));
       if (window.showToast) window.showToast(`Restored ${task.id}`, 'success');
     } catch (err) {
       if (window.showToast) window.showToast('Restore failed: ' + err.message, 'error');
@@ -1096,17 +1086,7 @@ export default function TasksView() {
   // reflect the new empty state.
   const handleTrashEmptied = useCallback(() => {
     window._refreshProjects?.();
-    // Also refresh the task list for the viewed project
-    (async () => {
-      try {
-        const res = await apiFetch(`/api/projects/${viewedProject}/tasks?includeArchived=true`);
-        const data = await res.json();
-        if (res.ok && Array.isArray(data.tasks)) {
-          window.appState.tasks = data.tasks;
-          window.dispatchEvent(new CustomEvent('appstate:change'));
-        }
-      } catch { /* ignore */ }
-    })();
+    refreshTasks(viewedProject).catch(() => { /* ignore */ });
     setTrashPanelOpen(false);
   }, [viewedProject]);
 
@@ -1119,15 +1099,7 @@ export default function TasksView() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update task');
-      // Merge server response into local task to prevent stale-data reverts
-      const localTask = window.appState.tasks.find(t => t.id === taskId);
-      if (localTask && data.task) Object.assign(localTask, data.task);
-      if (data.parentUpdated) {
-        const parent = window.appState.tasks.find(t => t.id === data.parentUpdated.id);
-        if (parent) Object.assign(parent, data.parentUpdated);
-      }
-      window.appState.tasks = [...window.appState.tasks];
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      replaceTasks(applyTaskResponse(getTasks(), data));
     } catch (err) {
       console.warn('[update-task]', err);
       if (window.showToast) window.showToast(err.message, 'error');
@@ -1137,16 +1109,17 @@ export default function TasksView() {
   const handleDrop = useCallback((newStatus) => {
     const id = draggedId.current;
     if (!id) return;
-    const task = window.appState.tasks.find(t => t.id === id);
+    const tasksBefore = getTasks();
+    const task = tasksBefore.find(t => t.id === id);
     if (!task || task.status === newStatus) return;
 
     const oldStatus = task.status;
-    task.status = newStatus;
-    if (newStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
-    if (oldStatus === 'done' && newStatus !== 'done') task.completed = null;
-    // New array reference so useMemo recomputes grouped columns instantly
-    window.appState.tasks = [...window.appState.tasks];
-    window.dispatchEvent(new CustomEvent('appstate:change'));
+    const snapshot = snapshotTask(tasksBefore, id);
+
+    const optimistic = { status: newStatus };
+    if (newStatus === 'done') optimistic.completed = new Date().toISOString().slice(0, 10);
+    if (oldStatus === 'done' && newStatus !== 'done') optimistic.completed = null;
+    replaceTasks(patchTask(tasksBefore, id, optimistic));
 
     apiFetch(`/api/projects/${viewedProject}/tasks/${id}`, {
       method: 'PUT',
@@ -1155,20 +1128,13 @@ export default function TasksView() {
     }).then(async (res) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to move task');
-      // Merge server response to prevent poll from reverting
-      if (data.task) Object.assign(task, data.task);
-      window.appState.tasks = [...window.appState.tasks];
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      replaceTasks(applyTaskResponse(getTasks(), data));
       if (window.showToast) {
         window.showToast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
       }
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
     }).catch(() => {
-      task.status = oldStatus;
-      if (oldStatus === 'done') task.completed = new Date().toISOString().slice(0, 10);
-      else task.completed = null;
-      window.appState.tasks = [...window.appState.tasks];
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      replaceTasks(rollbackSnapshot(getTasks(), snapshot));
       if (window.showToast) window.showToast('Failed to move task', 'error');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
     });
