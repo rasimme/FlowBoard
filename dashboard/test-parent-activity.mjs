@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { getActiveSubtaskClaims } from './src/parentActivity.mjs';
+import { CLAIM_PULSE_MS, getActiveSubtaskClaims, getSyncedPulseDelayMs } from './src/parentActivity.mjs';
 
 const parent = { id: 'T-100', title: 'Parent' };
 const tasks = [
@@ -34,5 +34,9 @@ assert.deepEqual(
   ['dev-botti'],
   'limit caps visible derived agents',
 );
+
+assert.equal(getSyncedPulseDelayMs(0), 0, 'pulse delay starts at zero on cycle boundary');
+assert.equal(getSyncedPulseDelayMs(600), -600, 'pulse delay offsets to current cycle phase');
+assert.equal(getSyncedPulseDelayMs(CLAIM_PULSE_MS + 50), -50, 'pulse delay wraps on cycle boundaries');
 
 console.log('✅ parent activity derivation tests passed');

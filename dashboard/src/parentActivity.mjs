@@ -5,6 +5,14 @@ function isActiveClaim(task) {
   return true;
 }
 
+export const CLAIM_PULSE_MS = 2400;
+
+export function getSyncedPulseDelayMs(now = Date.now()) {
+  const phase = ((now % CLAIM_PULSE_MS) + CLAIM_PULSE_MS) % CLAIM_PULSE_MS;
+  if (phase === 0) return 0;
+  return -phase;
+}
+
 export function getActiveSubtaskClaims(parentTask, allTasks, limit = 3) {
   if (!parentTask?.id || parentTask.parentId) return [];
   const seenAgents = new Set();

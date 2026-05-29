@@ -54,6 +54,7 @@ export default function AgentChip({
   title,
   style,
   pulse = false,
+  pulseDelay = null,
 }) {
   const c = agentColor(name);
   const dims = SIZE_DIM[size] ?? SIZE_DIM.sm;
@@ -110,7 +111,10 @@ export default function AgentChip({
     ? (
       <span
         className="agent-chip-pulse-wrap"
-        style={{ ['--agent-pulse-color']: c.ring }}
+        style={{
+          ['--agent-pulse-color']: c.ring,
+          ...(pulseDelay ? { ['--agent-pulse-delay']: pulseDelay } : {}),
+        }}
       >
         <span className="agent-chip-pulse-halo" aria-hidden="true" />
         {chip}

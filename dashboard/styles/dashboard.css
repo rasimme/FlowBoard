@@ -291,6 +291,7 @@
       border-radius: 50%;
       background: var(--agent-pulse-color, rgba(180, 200, 220, 0.6));
       animation: fb-chip-pulse 2.4s ease-out infinite;
+      animation-delay: var(--agent-pulse-delay, 0ms);
       pointer-events: none;
       z-index: 0;
     }
@@ -315,11 +316,13 @@
     .task-card.task-card-active-claim:hover {
       border-color: var(--agent-claim-color, rgba(127,142,166,1));
       animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+      animation-delay: var(--agent-pulse-delay, 0ms);
     }
     .subtask-card.subtask-card-active-claim,
     .subtask-card.subtask-card-active-claim:hover {
       border-color: var(--agent-claim-color, rgba(127,142,166,1));
       animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+      animation-delay: var(--agent-pulse-delay, 0ms);
     }
     @keyframes fb-card-claim-pulse {
       0%, 100% { border-color: var(--agent-claim-color-soft, rgba(127,142,166,0.4)); }
@@ -1137,7 +1140,7 @@
     .subtask-card-row::after {
       content: '';
       position: absolute;
-      left: -14px;
+      left: -24px;
       top: 50%;
       width: 10px;
       height: 1.5px;
@@ -1148,7 +1151,7 @@
     /* Tree-line: dot connector */
     .tree-dot {
       position: absolute;
-      left: -6px;
+      left: -16px;
       top: 50%;
       width: 5px;
       height: 5px;

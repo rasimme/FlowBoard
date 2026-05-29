@@ -8,7 +8,7 @@ import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils.js';
-import { getActiveSubtaskClaims } from '../parentActivity.mjs';
+import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 
@@ -23,9 +23,11 @@ function activeClaimColors(task) {
 function activeClaimColorsForAgent(agent) {
   if (!agent) return null;
   const c = agentColor(agent);
+  const pulseDelay = `${getSyncedPulseDelayMs()}ms`;
   return {
     ['--agent-claim-color']: c.ring,
     ['--agent-claim-color-soft']: `${c.ring}40`, // hex8: ~25% alpha.
+    ['--agent-pulse-delay']: pulseDelay,
   };
 }
 
@@ -153,6 +155,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
             variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
             title={ownerLabel(task)}
             pulse={isActivelyClaimed(task)}
+            pulseDelay={subtaskStyle['--agent-pulse-delay']}
           />
         )}
         {!task.agent && task.routedAgent && (
@@ -394,6 +397,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   variant="solid"
                   title={`Active subtask ${claim.taskId} claimed by ${claim.agent}: ${claim.title}`}
                   pulse
+                  pulseDelay={cardStyle?.['--agent-pulse-delay']}
                 />
               ))}
               {!hasDerivedSubtaskActivity && task.agent && (
@@ -403,6 +407,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
                   title={ownerLabel(task)}
                   pulse={isActivelyClaimed(task)}
+                  pulseDelay={cardStyle?.['--agent-pulse-delay']}
                 />
               )}
               {!task.agent && task.routedAgent && (
