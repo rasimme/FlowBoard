@@ -17,17 +17,17 @@ import { apiFetch } from '../utils/apiFetch.js';
 // signals "not actively claimed" so the caller can skip the class+style.
 function activeClaimColors(task) {
   if (!isActivelyClaimed(task)) return null;
-  return activeClaimColorsForAgent(task.agent);
+  return activeClaimColorsForAgent(task.agent, task.claimedAt);
 }
 
-function activeClaimColorsForAgent(agent) {
+function activeClaimColorsForAgent(agent, claimedAt = null, pulseDelayMs = null) {
   if (!agent) return null;
   const c = agentColor(agent);
-  const pulseDelay = `${getSyncedPulseDelayMs()}ms`;
+  const delay = pulseDelayMs ?? getSyncedPulseDelayMs(Date.now(), Date.parse(claimedAt || ''));
   return {
     ['--agent-claim-color']: c.ring,
     ['--agent-claim-color-soft']: `${c.ring}40`, // hex8: ~25% alpha.
-    ['--agent-pulse-delay']: pulseDelay,
+    ['--agent-pulse-delay']: `${delay}ms`,
   };
 }
 
@@ -154,8 +154,6 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
             size="xs"
             variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
             title={ownerLabel(task)}
-            pulse={isActivelyClaimed(task)}
-            pulseDelay={subtaskStyle['--agent-pulse-delay']}
           />
         )}
         {!task.agent && task.routedAgent && (
@@ -336,10 +334,16 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   else if (isNew && !animated) cardClass += ' animate-rise';
 
   // Active-claim contour — pulsing border in agent color when this card is
-  // currently being worked on. Pairs with the chip pulse below for the
-  // "owner color" + "active right now" two-channel signal.
+  // currently being worked on. Keep the chip static here; two independent
+  // pulse layers were visually noisy and made parent/subtask timing drift.
   const claimColors = activeClaimColors(task)
-    || (hasDerivedSubtaskActivity ? activeClaimColorsForAgent(activeSubtaskClaims[0].agent) : null);
+    || (hasDerivedSubtaskActivity
+      ? activeClaimColorsForAgent(
+        activeSubtaskClaims[0].agent,
+        activeSubtaskClaims[0].claimedAt,
+        activeSubtaskClaims[0].pulseDelayMs,
+      )
+      : null);
   if (claimColors) cardClass += ' task-card-active-claim';
   const cardStyle = claimColors || undefined;
 
@@ -396,8 +400,6 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   size="sm"
                   variant="solid"
                   title={`Active subtask ${claim.taskId} claimed by ${claim.agent}: ${claim.title}`}
-                  pulse
-                  pulseDelay={cardStyle?.['--agent-pulse-delay']}
                 />
               ))}
               {!hasDerivedSubtaskActivity && task.agent && (
@@ -406,8 +408,6 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   size="sm"
                   variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
                   title={ownerLabel(task)}
-                  pulse={isActivelyClaimed(task)}
-                  pulseDelay={cardStyle?.['--agent-pulse-delay']}
                 />
               )}
               {!task.agent && task.routedAgent && (

@@ -7,8 +7,12 @@ function isActiveClaim(task) {
 
 export const CLAIM_PULSE_MS = 2400;
 
-export function getSyncedPulseDelayMs(now = Date.now()) {
+export function getSyncedPulseDelayMs(now = Date.now(), origin = 0) {
+  const elapsed = now - origin;
+  if (!Number.isFinite(elapsed)) return 0;
   const phase = ((now % CLAIM_PULSE_MS) + CLAIM_PULSE_MS) % CLAIM_PULSE_MS;
+  const claimPhase = ((elapsed % CLAIM_PULSE_MS) + CLAIM_PULSE_MS) % CLAIM_PULSE_MS;
+  if (origin > 0) return claimPhase === 0 ? 0 : -claimPhase;
   if (phase === 0) return 0;
   return -phase;
 }
@@ -31,6 +35,7 @@ export function getActiveSubtaskClaims(parentTask, allTasks, limit = 3) {
       title: task.title || 'Untitled subtask',
       claimedAt: task.claimedAt || null,
       leaseUntil: task.leaseUntil || null,
+      pulseDelayMs: getSyncedPulseDelayMs(Date.now(), Date.parse(task.claimedAt || '')),
     });
     if (claims.length >= limit) break;
   }

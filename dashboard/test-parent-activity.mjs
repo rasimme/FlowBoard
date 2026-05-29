@@ -38,5 +38,6 @@ assert.deepEqual(
 assert.equal(getSyncedPulseDelayMs(0), 0, 'pulse delay starts at zero on cycle boundary');
 assert.equal(getSyncedPulseDelayMs(600), -600, 'pulse delay offsets to current cycle phase');
 assert.equal(getSyncedPulseDelayMs(CLAIM_PULSE_MS + 50), -50, 'pulse delay wraps on cycle boundaries');
+assert.equal(getSyncedPulseDelayMs(1_000, 400), -600, 'pulse delay can sync around a shared claim timestamp');
 
 console.log('✅ parent activity derivation tests passed');
