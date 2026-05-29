@@ -101,6 +101,9 @@ Note: `parentId` cannot be changed via PUT after creation.
 | `GET` | `/projects/:name/tasks/:id/checkpoints` | List checkpoints |
 | `GET` | `/projects/:name/tasks/:id/comments` | List comments |
 | `GET` | `/projects/:name/tasks/:id/handoff` | Get handoff context for agent spawning |
+| `POST` | `/workflows/start` | Resume agent work or claim next eligible task. Body: `{ agent, project, lease?, resumePolicy? }` |
+| `POST` | `/workflows/handoff` | Complete source task and create follow-on work. Body: `{ project, fromTaskId, title, agent? }` |
+| `POST` | `/workflows/delegate` | Create delegated child work. Body: `{ project, fromTaskId, title, agent?, pauseParent?, checkpoint? }` |
 
 ### Cross-Project
 

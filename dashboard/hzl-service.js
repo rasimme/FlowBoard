@@ -18,6 +18,7 @@ let _onCompleteCallback = null;
 
 // RAM cache: flowboardId (string like "T-042") → full FlowBoard task object
 const _cache = new Map();
+const _workflowOps = new Map(); // "project:workflow:opId" → completed workflow response
 
 // Bidirectional ID map
 const _fbToUlid = new Map(); // "T-042" → ULID
@@ -341,6 +342,7 @@ async function init(dbPath) {
 
 async function rebuildCache() {
   _cache.clear();
+  _workflowOps.clear();
   _fbToUlid.clear();
   _ulidToFb.clear();
 
@@ -474,6 +476,26 @@ function getTask(project, flowboardId, opts = {}) {
   return _publicTask(task);
 }
 
+function _priorityRank(priority) {
+  return ({ critical: 4, high: 3, medium: 2, low: 1 })[priority] || 0;
+}
+
+function _taskSortPriority(a, b) {
+  const byPriority = _priorityRank(b.priority) - _priorityRank(a.priority);
+  if (byPriority) return byPriority;
+  return String(a.created || '').localeCompare(String(b.created || '')) || String(a.id).localeCompare(String(b.id));
+}
+
+function _workflowOpKey(project, workflow, opId) {
+  if (!opId || typeof opId !== 'string') return null;
+  return `${project}:${workflow}:${opId}`;
+}
+
+function _rememberWorkflowOp(key, result) {
+  if (key) _workflowOps.set(key, result);
+  return result;
+}
+
 function _publicTask(t) {
   // Return a copy without internal fields; ensure blocked is always present
   const { _ulid, _project, ...pub } = t;
@@ -487,6 +509,131 @@ function _publicTask(t) {
   pub.routedAgent = pub.routedAgent || null;
   pub.trashedAt = pub.trashedAt || null;
   return pub;
+}
+
+function workflowStart(project, opts = {}) {
+  const { agent, lease = 30, resumePolicy = 'priority', includeAlternates = true } = opts;
+  if (!agent) throw new Error('Agent name is required');
+  if (!project) throw new Error('Project is required');
+  if (!['priority', 'first', 'latest'].includes(resumePolicy)) throw new Error('Invalid resumePolicy');
+
+  const tasks = listTasks(project, { includeArchived: false }).filter(t => !t.trashedAt);
+  const inProgress = tasks.filter(t => t.status === 'in-progress' && t.agent === agent);
+  const orderedResume = [...inProgress].sort((a, b) => {
+    if (resumePolicy === 'latest') return String(b.claimedAt || b.lastCheckpointAt || '').localeCompare(String(a.claimedAt || a.lastCheckpointAt || ''));
+    if (resumePolicy === 'first') return String(a.claimedAt || a.lastCheckpointAt || '').localeCompare(String(b.claimedAt || b.lastCheckpointAt || ''));
+    return _taskSortPriority(a, b);
+  });
+
+  if (orderedResume[0]) {
+    const resumed = claimTask(project, orderedResume[0].id, { agent, lease });
+    return {
+      workflow: 'start',
+      mode: 'resume',
+      resumed,
+      alternates: includeAlternates ? orderedResume.slice(1) : [],
+    };
+  }
+
+  const candidates = tasks
+    .filter(t => ['open', 'backlog'].includes(t.status))
+    .filter(t => !t.blocked)
+    .filter(t => !(t.subtaskIds && t.subtaskIds.length > 0))
+    .filter(t => !t.routedAgent || t.routedAgent === agent)
+    .sort(_taskSortPriority);
+
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const claimed = claimTask(project, candidates[i].id, { agent, lease });
+      return {
+        workflow: 'start',
+        mode: 'claim_next',
+        claimed,
+        alternates: includeAlternates ? candidates.filter((_, idx) => idx !== i) : [],
+      };
+    } catch {
+      // Another agent may have claimed it between list and claim; try next.
+    }
+  }
+
+  return { workflow: 'start', mode: 'none', alternates: [] };
+}
+
+function workflowHandoff(project, opts = {}) {
+  const { fromTaskId, title, agent = null, carryCheckpoints = 3, carryMaxChars = 4000, opId = null } = opts;
+  if (!fromTaskId) throw new Error('fromTaskId is required');
+  if (!title) throw new Error('title is required');
+  const opKey = _workflowOpKey(project, 'handoff', opId);
+  if (opKey && _workflowOps.has(opKey)) return _workflowOps.get(opKey);
+
+  const source = getTask(project, fromTaskId);
+  if (!source) throw new Error(`Task not found: ${fromTaskId}`);
+  if (source.status !== 'in-progress') throw new Error(`Cannot handoff task in status "${source.status}"`);
+
+  const followOn = createTask(project, {
+    title,
+    priority: source.priority,
+    status: 'open',
+  });
+  if (agent) routeTask(project, followOn.id, agent);
+
+  const checkpoints = getCheckpoints(project, fromTaskId).slice(-Math.max(0, carryCheckpoints));
+  const carriedText = checkpoints
+    .map(cp => `- ${cp.timestamp || ''} ${cp.agent || 'unknown'}: ${cp.message || ''}`.trim())
+    .join('\n')
+    .slice(0, Math.max(0, carryMaxChars));
+  if (carriedText) {
+    addCheckpoint(project, followOn.id, {
+      agent: agent || source.agent || null,
+      message: `Handoff context from ${fromTaskId}`,
+      progress: undefined,
+    });
+    addComment(project, followOn.id, {
+      author: agent || source.agent || null,
+      message: carriedText,
+    });
+  }
+
+  const completedTask = completeTask(project, fromTaskId, { agent: source.agent || agent || null });
+  return _rememberWorkflowOp(opKey, {
+    workflow: 'handoff',
+    opId,
+    completedTask,
+    followOnTask: getTask(project, followOn.id),
+    carriedCheckpointCount: checkpoints.length,
+    carriedChars: carriedText.length,
+  });
+}
+
+function workflowDelegate(project, opts = {}) {
+  const { fromTaskId, title, agent = null, noDepends = false, pauseParent = false, checkpoint = null, opId = null } = opts;
+  if (!fromTaskId) throw new Error('fromTaskId is required');
+  if (!title) throw new Error('title is required');
+  const opKey = _workflowOpKey(project, 'delegate', opId);
+  if (opKey && _workflowOps.has(opKey)) return _workflowOps.get(opKey);
+
+  const source = getTask(project, fromTaskId);
+  if (!source) throw new Error(`Task not found: ${fromTaskId}`);
+
+  const delegated = createTask(project, {
+    title,
+    priority: source.priority,
+    parentId: noDepends ? null : fromTaskId,
+    status: 'open',
+  });
+  if (agent) routeTask(project, delegated.id, agent);
+  if (checkpoint) addCheckpoint(project, fromTaskId, { agent: source.agent || agent || null, message: checkpoint });
+  if (pauseParent) updateTask(project, fromTaskId, { blocked: true });
+
+  return _rememberWorkflowOp(opKey, {
+    workflow: 'delegate',
+    opId,
+    sourceTask: getTask(project, fromTaskId),
+    delegatedTask: getTask(project, delegated.id),
+    dependencyAdded: !noDepends,
+    checkpointAdded: !!checkpoint,
+    parentPaused: !!pauseParent,
+  });
 }
 
 /**
@@ -1733,6 +1880,9 @@ module.exports = {
   getStuckTasks,
   getHandoffContext,
   routeTask,
+  workflowStart,
+  workflowHandoff,
+  workflowDelegate,
   setOnComplete,
   drainHooks,
   getCacheDb,

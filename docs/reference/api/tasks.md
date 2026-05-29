@@ -108,6 +108,27 @@ Cross-project list of tasks with stale claims or expired leases.
 **Query:** `staleThreshold` — minutes (default `10`).
 **Response 200:** `{"ok": true, "stuck": [{<task with reason>}, ...]}`
 
+### `POST /api/workflows/start`
+
+Resume the agent's in-progress task in a project, or claim the next eligible open/backlog task.
+
+**Body:** `{"agent":"<id>","project":"<name>","lease":120,"resumePolicy":"priority"}`
+**Response 200:** `{"ok": true, "workflow":"start", "mode":"resume|claim_next|none", "resumed": {...}, "claimed": {...}, "alternates": [...]}`
+
+### `POST /api/workflows/handoff`
+
+Complete an in-progress source task into review and create a follow-on task with carried checkpoint context.
+
+**Body:** `{"project":"<name>","fromTaskId":"T-001","title":"Follow-up","agent":"<optional-routed-agent>"}`
+**Response 200:** `{"ok": true, "workflow":"handoff", "completedTask": {...}, "followOnTask": {...}}`
+
+### `POST /api/workflows/delegate`
+
+Create delegated child work from a source task, optionally route it, checkpoint the parent, and pause the parent.
+
+**Body:** `{"project":"<name>","fromTaskId":"T-001","title":"Sub-work","agent":"<optional-routed-agent>","pauseParent":true}`
+**Response 200:** `{"ok": true, "workflow":"delegate", "sourceTask": {...}, "delegatedTask": {...}}`
+
 ### `GET /api/projects/:name/tasks/:id/handoff`
 
 Handoff context — bundle of task, recent checkpoints, comments, status events — for spawning a sub-agent or transferring claim ownership.

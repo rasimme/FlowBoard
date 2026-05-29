@@ -2335,6 +2335,82 @@ app.get('/api/tasks/stuck', (req, res) => {
   }
 });
 
+// POST /api/workflows/start — resume current agent work or claim next eligible task
+app.post('/api/workflows/start', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { agent, project, lease, resumePolicy, includeAlternates } = req.body || {};
+    const identity = agentIdentity.validateAgentId(agent, 'agent');
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    const result = hzlService.workflowStart(project, {
+      agent: identity.id,
+      lease,
+      resumePolicy,
+      includeAlternates,
+    });
+    res.json({ ok: true, ...result, agentIdentity: agentIdentity.responseMeta(identity) });
+  } catch (err) {
+    const status = err.message.includes('not found') ? 404 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/workflows/handoff — complete source task and create follow-on work
+app.post('/api/workflows/handoff', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { project, fromTaskId, title, agent, carryCheckpoints, carryMaxChars, opId } = req.body || {};
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    let routedAgent = null;
+    if (agent !== undefined && agent !== null && agent !== '') {
+      const identity = agentIdentity.validateAgentId(agent, 'agent');
+      if (!identity.ok) return res.status(400).json({ error: identity.error });
+      routedAgent = identity.id;
+    }
+    const result = hzlService.workflowHandoff(project, {
+      fromTaskId,
+      title,
+      agent: routedAgent,
+      carryCheckpoints,
+      carryMaxChars,
+      opId,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/workflows/delegate — create delegated child work from a source task
+app.post('/api/workflows/delegate', (req, res) => {
+  if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
+  try {
+    const { project, fromTaskId, title, agent, noDepends, pauseParent, checkpoint, opId } = req.body || {};
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    let routedAgent = null;
+    if (agent !== undefined && agent !== null && agent !== '') {
+      const identity = agentIdentity.validateAgentId(agent, 'agent');
+      if (!identity.ok) return res.status(400).json({ error: identity.error });
+      routedAgent = identity.id;
+    }
+    const result = hzlService.workflowDelegate(project, {
+      fromTaskId,
+      title,
+      agent: routedAgent,
+      noDepends: noDepends === true,
+      pauseParent: pauseParent === true,
+      checkpoint,
+      opId,
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
 // GET /api/projects/:name/tasks/:id/handoff — handoff context for CC/ACP spawning
 app.get('/api/projects/:name/tasks/:id/handoff', (req, res) => {
   if (!HZL_ENABLED) return res.status(503).json({ error: 'HZL not enabled' });
