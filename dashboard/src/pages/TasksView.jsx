@@ -8,20 +8,26 @@ import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils.js';
+import { getActiveSubtaskClaims } from '../parentActivity.mjs';
+import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
+import { apiFetch } from '../utils/apiFetch.js';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
 // animates between -soft (alpha ~25%) and the full ring hex. Returning null
 // signals "not actively claimed" so the caller can skip the class+style.
 function activeClaimColors(task) {
   if (!isActivelyClaimed(task)) return null;
-  const c = agentColor(task.agent);
+  return activeClaimColorsForAgent(task.agent);
+}
+
+function activeClaimColorsForAgent(agent) {
+  if (!agent) return null;
+  const c = agentColor(agent);
   return {
     ['--agent-claim-color']: c.ring,
     ['--agent-claim-color-soft']: `${c.ring}40`, // hex8: ~25% alpha.
   };
 }
-import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
-import { apiFetch } from '../utils/apiFetch.js';
 
 const STATUS_KEYS = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = {
@@ -205,6 +211,8 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
 
   const hasSubtasks = task.subtaskIds && task.subtaskIds.length > 0;
   const hasUsableSpec = task.specFile && task.specExists !== false;
+  const activeSubtaskClaims = getActiveSubtaskClaims(task, allTasks);
+  const hasDerivedSubtaskActivity = !isActivelyClaimed(task) && activeSubtaskClaims.length > 0;
 
   const handleClick = () => {
     if (window.openTaskDetail) window.openTaskDetail(task.id);
@@ -327,7 +335,8 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   // Active-claim contour — pulsing border in agent color when this card is
   // currently being worked on. Pairs with the chip pulse below for the
   // "owner color" + "active right now" two-channel signal.
-  const claimColors = activeClaimColors(task);
+  const claimColors = activeClaimColors(task)
+    || (hasDerivedSubtaskActivity ? activeClaimColorsForAgent(activeSubtaskClaims[0].agent) : null);
   if (claimColors) cardClass += ' task-card-active-claim';
   const cardStyle = claimColors || undefined;
 
@@ -377,7 +386,17 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   </button>
                 </Tooltip>
               </span>
-              {task.agent && (
+              {hasDerivedSubtaskActivity && activeSubtaskClaims.map(claim => (
+                <AgentChip
+                  key={`${claim.taskId}:${claim.agent}`}
+                  name={claim.agent}
+                  size="sm"
+                  variant="solid"
+                  title={`Active subtask ${claim.taskId} claimed by ${claim.agent}: ${claim.title}`}
+                  pulse
+                />
+              ))}
+              {!hasDerivedSubtaskActivity && task.agent && (
                 <AgentChip
                   name={task.agent}
                   size="sm"
