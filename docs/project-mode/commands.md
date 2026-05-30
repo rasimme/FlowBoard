@@ -64,19 +64,135 @@ When reporting a blocker, stop the activation/context-loading flow and do not re
 - agentId used
 - Next safe action
 
-## Task workflow (API-first)
+## Task workflow (API-first — MANDATORY protocol)
 
-Use workflow endpoints as the normal path:
-- `POST /api/workflows/start` to resume existing in-progress work or claim the next eligible task atomically.
-- `POST /api/projects/:name/tasks/:id/checkpoint` while working.
-- `POST /api/projects/:name/tasks/:id/complete` for normal completion, or `POST /api/workflows/handoff` / `POST /api/workflows/delegate` when creating follow-on work.
+This is a strict protocol, not a suggestion. The agent MUST follow these steps in order for every task:
 
-Primitive list/claim/release endpoints are fallback/debug tools, not the default execution protocol.
+### 1. Start
+`POST /api/workflows/start` with `{ agent, project }`.
+- Resumes existing in-progress work for this agent, OR claims the next eligible task atomically.
+- **Do NOT** use `GET /api/tasks` + manual `claim` — that is the legacy fallback path.
+- After a successful start, the claimed task is in `in-progress` with a lease.
+
+### 2. Work + Checkpoint
+Call `POST /api/projects/:name/tasks/:id/checkpoint` with `{ agent, message, progress }`:
+- **After every significant action** (file change, tool call, sub-agent completion, architectural decision, test run).
+- Checkpoints are append-only. They are the only way the system knows the task isn't stale.
+- Include a meaningful `message` and optional `progress` (0–100).
+- The lease timer is reset with each checkpoint.
+
+### 3. Complete → Review
+`POST /api/projects/:name/tasks/:id/complete` with `{ agent }`.
+- Sets status to `review`. The task is no longer claimable.
+- For follow-on work (separate task, delegation): use `POST /api/workflows/handoff` or `POST /api/workflows/delegate` instead.
+
+### 4. Exception: primitive endpoints
+`POST /api/projects/:name/tasks/:id/claim`, `release`, `route` — these are **fallback/debug tools only**.
+Use them only when the workflow endpoint is unavailable or the user explicitly needs a custom selection.
+Default protocol: **workflow-first, primitives-never** unless blocked.
+
 See `tasks-api` section for full schema and endpoint reference.
 
-## Related
+## Conversational task creation
 
-- `api-access` — full task & project API reference
-- `tasks-api` — task CRUD, status flow, claim/release/complete
-- `key-principles` — API-first rule and canonical-state semantics
-- `error-handling` — graceful degradation and fallback rules
+When a user describes work that fits the active project scope, the agent SHOULD create structured tasks without being explicitly told to.
+
+Rules:
+- One task per coherent unit of work. Use `POST /api/projects/:name/tasks`.
+- If the work has identifiable sub-steps, create subtasks (use `parentId` with the parent task's id).
+- If the task needs a spec (multi-file, new UI, complex logic, unclear scope), create one via `POST /api/projects/:name/specs/:taskId`.
+- Do NOT create tasks for every offhand remark — only when the user is clearly requesting work, or the request has an actionable scope.
+- Do NOT create speculative tasks. If the user says "maybe" / "someday" / "später", leave it as conversation, not a task.
+
+This rule is only active when a project is loaded (lazy-loaded via bootstrap). It does not apply without an active project.
+
+## Stale notification handling
+
+The dashboard runs a 5-minute interval stale check (`GET /api/tasks/stuck`). When stuck tasks are found, it posts a notification to the gateway, which reaches the agent as a chat message starting with `🔍 Stuck-Check (`.
+
+The notification body **already contains** a `stuck[]` array with task IDs and types — the agent MUST use this embedded data rather than re-fetching, because the embed matches the exact threshold that triggered the alert.
+
+**When the agent receives a Stuck-Check notification:**
+1. Read the embedded `stuck[]` array from the notification body.
+2. Filter for tasks assigned to *this* agent (`agentId` matches).
+3. For each matching task:
+   - If stale (no recent checkpoint): review progress, write a checkpoint, or complete if done.
+   - If stale but legitimately paused: write a checkpoint with a `paused` message to reset the timer.
+   - If truly stuck (can't progress): release back to `open` so another agent can pick it up.
+4. For tasks assigned to other agents: ignore.
+5. Report summary back to the user: "X stale tasks, Y handled, Z released."
+
+Fallback: if the notification body has no `stuck` array, re-fetch via `GET /api/tasks/stuck?staleThreshold=30`.
+
+The agent MUST NOT ignore Stuck-Check notifications when a project is active. This is the primary feedback loop for workflow health.
+
+## Task status & lifecycle
+
+Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `archived`
+
+| Status | Meaning |
+|--------|---------|
+| `open` | Unassigned, available to claim |
+| `in-progress` | Assigned + actively worked |
+| `review` | Done by agent, waits for user review |
+| `done` | Reviewed and accepted |
+| `backlog` | Deprioritized / archived, but still visible |
+| `archived` | Hidden from default lists |
+
+### Status transitions via PUT
+`PUT /api/projects/:name/tasks/:id` with `{ status: "<new-status>" }`.
+
+**Additional writable fields** on the same PUT endpoint:
+- `priority` — `low`, `medium`, `high`, `critical`
+- `agent` — only `null` allowed (clears assignment; set via claim or workflow/start)
+- `blocked` — `true` | `false`
+- `trashedAt` — ISO string (moves to trash) or `null` (restores from trash)
+- `completed` — ISO date string (auto-set on `→done`, auto-cleared on `←done`)
+
+### Task actions via POST
+| Action | Endpoint | Body |
+|--------|----------|------|
+| **Claim** | `POST /api/projects/:name/tasks/:id/claim` | `{ agent }` |
+| **Release** | `POST /api/projects/:name/tasks/:id/release` | `{ agent, reason }` |
+| **Complete → review** | `POST /api/projects/:name/tasks/:id/complete` | `{ agent }` |
+| **Checkpoint** | `POST /api/projects/:name/tasks/:id/checkpoint` | `{ agent, message, progress? }` |
+| **Route** | `POST /api/projects/:name/tasks/:id/route` | `{ agent }` — redirects to another agent |
+| **Comment** | `POST /api/projects/:name/tasks/:id/comment` | `{ agent, text }` |
+
+### Trash & delete
+| Action | Endpoint | Effect |
+|--------|----------|--------|
+| **Trash** | `PUT /api/projects/:name/tasks/:id` `{ trashedAt: "<ISO>" }` | Moves to trash (soft delete) |
+| **Restore** | `PUT /api/projects/:name/tasks/:id` `{ trashedAt: null }` | Restores from trash |
+| **Empty trash** | `DELETE /api/projects/:name/tasks/trash` | Permanently deletes all trashed tasks |
+| **Hard delete** | `DELETE /api/projects/:name/tasks/:id` | Immediate permanent deletion. Requires `?mode=all` if task has subtasks. |
+| **Hard delete + subtasks** | `DELETE /api/projects/:name/tasks/:id?mode=all` | Hard-deletes task and all subtasks |
+
+### Archive vs Trash vs Delete
+- **Archive** (`status: archived`): task ist sauber wegsortiert, taucht nicht in default queries auf. Nur möglich wenn alle Subtasks done/archived sind. Subtasks werden automatisch mitarchiviert.
+- **Backlog** (`status: backlog`): deprioritize, aber noch sichtbar. Leichter als Archiv.
+- **Trash** (`trashedAt` set): soft delete, hidden, aber restorable. Behält original status.
+- **Delete** (DELETE endpoint): permanent, unrecoverable. Nur bei expliziter Bestätigung.
+
+### Subtask operations
+- When creating with a `parentId`, the task is a subtask.
+- Subtasks inherit the parent's priority via cascade on PUT.
+- DELETE requires `?mode=all` if subtasks exist.
+- PUT `trashedAt` on a parent also trashes subtasks.
+
+### Workflow endpoints
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/workflows/start` | `{ agent, project }` — resume or claim next task atomically |
+| `POST /api/workflows/handoff` | Transition task to another agent with context |
+| `POST /api/workflows/delegate` | Delegate work to another agent without transferring ownership |
+
+### Read endpoints
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/projects/:name/tasks` | All tasks for project (supports filters) |
+| `GET /api/projects/:name/tasks/:id` | Single task (requires `includeArchived=true` for archived) |
+| `GET /api/projects/:name/tasks/:id/events` | Full status event history |
+| `GET /api/projects/:name/tasks/:id/comments` | Comments on a task |
+| `GET /api/projects/:name/tasks/:id/handoff` | Handoff context for a task |
+| `GET /api/tasks/stuck?staleThreshold=N` | All stuck/stale tasks across projects |

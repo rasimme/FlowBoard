@@ -2648,24 +2648,42 @@ async function startServer() {
         const staleList   = (stuck && Array.isArray(stuck.stale))   ? stuck.stale   : [];
         const expiredList = (stuck && Array.isArray(stuck.expired)) ? stuck.expired : [];
         if (staleList.length > 0 || expiredList.length > 0) {
-          const parts = [];
-          for (const t of staleList)   parts.push(`⚠️ Stale: ${t.id} "${t.title}" (${t.agent}, ${t.staleSinceMinutes}min ohne Checkpoint)`);
-          for (const t of expiredList) parts.push(`🔴 Lease expired: ${t.id} "${t.title}" (${t.agent})`);
-          const msg = `🔍 Stuck-Check:\n${parts.join('\n')}`;
+          // Group stuck tasks by agent for targeted notification
+          const byAgent = {};
+          for (const t of staleList) {
+            const a = t.agent || 'unassigned';
+            if (!byAgent[a]) byAgent[a] = [];
+            byAgent[a].push({ type: 'stale', id: t.id, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
+          }
+          for (const t of expiredList) {
+            const a = t.agent || 'unassigned';
+            if (!byAgent[a]) byAgent[a] = [];
+            byAgent[a].push({ type: 'lease_expired', id: t.id, title: t.title });
+          }
 
-          // T-177-3: stale-check is a periodic broadcast — no caller agent
-          // context, so no agentId/sessionKey routing. Gateway handles default
-          // delivery. Per-agent grouping is a possible UX improvement (open
-          // follow-up), but routing to a single static agent is wrong.
+          // Send one structured notification per affected agent
           const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
           const token = process.env.HOOKS_TOKEN || '';
-          fetch(`${gatewayUrl}/hooks/agent`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            body: JSON.stringify({
-              text: msg,
-            }),
-          }).catch(e => console.warn('[stale-check] Gateway unreachable:', e.message));
+          for (const [agent, tasks] of Object.entries(byAgent)) {
+            // Skip unassigned — no agent to route to
+            if (agent === 'unassigned') continue;
+            const parts = tasks.map(t =>
+              t.type === 'stale'
+                ? `⚠️ ${t.id} "${t.title}" — ${t.staleSinceMinutes}min ohne Checkpoint`
+                : `🔴 ${t.id} "${t.title}" — Lease abgelaufen`
+            );
+            const msg = `🔍 Stuck-Check (${agent}):\n${parts.join('\n')}`;
+            fetch(`${gatewayUrl}/hooks/agent`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: JSON.stringify({
+                text: msg,
+                stuck: tasks,
+                agentId: agent,
+                sessionKey: `agent:${agent}:main`,
+              }),
+            }).catch(e => console.warn(`[stale-check] Gateway unreachable (${agent}):`, e.message));
+          }
         }
       } catch (e) { console.warn('[stale-check] Error:', e.message); }
     }, 5 * 60 * 1000);

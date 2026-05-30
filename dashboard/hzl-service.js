@@ -758,7 +758,6 @@ function updateTask(project, flowboardId, updates) {
     if (updates.status === 'archived') {
       // Subtasks cannot be archived individually — only via parent
       if (cached.parentId) throw new Error('Cannot archive subtasks individually. Archive the parent task instead.');
-      if (cached.status !== 'done') throw new Error('Can only archive tasks with status "done"');
       // All children must be done (or already archived)
       if (cached.subtaskIds && cached.subtaskIds.length > 0) {
         const children = cached.subtaskIds.map(id => _cache.get(`${project}:${id}`)).filter(Boolean);
