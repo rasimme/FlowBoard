@@ -504,14 +504,15 @@ export default function FilesView() {
   }, [viewedProject, fetchTree]);
 
   // Consume pending spec file from _openSpec bridge (T-221).
-  // useRef guard ensures it only fires once, avoiding a race where the
-  // second run (triggered by setFromTaskId) finds the value already deleted.
-  const consumedSpecRef = useRef(false);
+  // useRef guard prevents double-consumption within the same spec-open
+  // cycle (avoids a race where setFromTaskId triggers re-render before
+  // the bridge values are gone). Resets when a NEW pending spec arrives
+  // (different value than last consumed) so sequential opens work.
+  const lastSpecRef = useRef(null);
   useEffect(() => {
-    if (consumedSpecRef.current) return;
     const pending = window.appState?.pendingSpecFile;
-    if (!pending) return;
-    consumedSpecRef.current = true;
+    if (!pending || pending === lastSpecRef.current) return;
+    lastSpecRef.current = pending;
     const pendingTaskId = window.appState?.pendingSpecTaskId || null;
     const pendingFromPanel = window.appState?.pendingSpecFromPanel || false;
     delete window.appState.pendingSpecFile;
