@@ -193,6 +193,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 | `GET /api/projects/:name/tasks` | All tasks for project (supports filters) |
 | `GET /api/projects/:name/tasks/:id` | Single task (requires `includeArchived=true` for archived) |
 | `GET /api/projects/:name/tasks/:id/events` | Full status event history |
+| `GET /api/projects/:name/tasks/:id/checkpoints` | Checkpoint log for a task |
 | `GET /api/projects/:name/tasks/:id/comments` | Comments on a task |
 | `GET /api/projects/:name/tasks/:id/handoff` | Handoff context for a task |
 | `GET /api/tasks/stuck?staleThreshold=N` | All stuck/stale tasks across projects |
