@@ -1,18 +1,12 @@
-import { useLayoutEffect, useState, useRef, Suspense } from 'react';
+import { useLayoutEffect, useEffect, useState, useRef, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 import { getView } from '../config/views.js';
 
-/**
- * ViewShell — migration boundary for per-view rendering.
- *
- * For legacy-owned views: renders nothing (vanilla switchTab populates #content).
- * For react-owned views: renders the component from the view registry into #content.
- *
- * This is the single place to plug in future React views.
- */
 export default function ViewShell() {
   const { state } = useAppState();
+  const { applyTelegramTheme } = useDashboard();
   const [container, setContainer] = useState(null);
   const prevOwnerRef = useRef(null);
 
@@ -24,34 +18,69 @@ export default function ViewShell() {
   useLayoutEffect(() => {
     const path = window.location.pathname;
     if (path === '/design-test') {
-      window.dispatchEvent(new CustomEvent('appstate:change', { 
-        detail: { currentTab: 'design' } 
+      window.dispatchEvent(new CustomEvent('appstate:change', {
+        detail: { currentTab: 'design' }
       }));
     }
   }, []);
+
+  // Telegram theme: apply once on mount and re-apply on themeChanged events.
+  useEffect(() => {
+    applyTelegramTheme();
+    const tg = window.Telegram?.WebApp;
+    if (tg?.onEvent && tg?.offEvent) {
+      tg.onEvent('themeChanged', applyTelegramTheme);
+      return () => tg.offEvent('themeChanged', applyTelegramTheme);
+    }
+    return undefined;
+  }, [applyTelegramTheme]);
 
   const currentTab = state?.currentTab || 'tasks';
   const view = getView(currentTab);
   const isReactOwned = view?.owner === 'react';
 
-  // Clean up when switching between view types
+  // Mirror the active tab onto the .app element so CSS can scope per-view styles.
+  useEffect(() => {
+    const app = document.querySelector('.app');
+    if (app) app.setAttribute('data-view', currentTab);
+  }, [currentTab]);
+
   useLayoutEffect(() => {
     if (!container) return;
     const wasLegacy = prevOwnerRef.current === 'legacy';
     if (wasLegacy && isReactOwned) {
-      // Legacy → React: remove only legacy-created DOM (canvas-wrap etc.)
-      // Don't use innerHTML='' — that destroys React's portal mount
       const legacyChildren = container.querySelectorAll('.canvas-wrap');
       legacyChildren.forEach(el => el.remove());
     }
     if (prevOwnerRef.current === 'react' && !isReactOwned) {
-      // React → Legacy: clear so legacy has clean slate
       container.innerHTML = '';
     }
     prevOwnerRef.current = isReactOwned ? 'react' : 'legacy';
   }, [currentTab, isReactOwned, container]);
 
-  // Legacy views: don't render anything — vanilla code manages #content
+  // Legacy ideas tab: lazy-load and render the canvas into #content.
+  // Lives here (not in DashboardContext) so the import only fires on demand.
+  useEffect(() => {
+    if (!container) return;
+    if (currentTab !== 'ideas') return;
+    let cancelled = false;
+    const id = setTimeout(async () => {
+      if (cancelled) return;
+      if (container.querySelector('.canvas-wrap')) return;
+      try {
+        const mod = await import('../../js/canvas/index.js');
+        if (cancelled) return;
+        mod.renderIdeaCanvas?.(window.appState);
+      } catch (err) {
+        console.warn('[ideas-canvas]', err);
+      }
+    }, 50);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+  }, [currentTab, container, state?.viewedProject]);
+
   if (!container || !state || !isReactOwned) return null;
 
   const ViewComponent = view.component;
