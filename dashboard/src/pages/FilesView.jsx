@@ -3,7 +3,7 @@ import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
-import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2, Upload } from 'lucide-react';
+import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2, Upload, Download } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 
 function isEditablePath(filePath) {
@@ -231,6 +231,19 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
                 <X size={14} />
               </button>
             </>
+          )}
+          {!editing && (
+            <button className="btn btn-ghost btn-sm" onClick={() => {
+              const blob = new Blob([fileData.content], { type: 'text/markdown' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = fileName;
+              a.click();
+              URL.revokeObjectURL(url);
+            }} title="Download">
+              <Download size={14} />
+            </button>
           )}
           {editable && !editing && (
             <button className="delete-btn" onClick={() => { haptic.light(); setShowDeleteModal(true); }} title="Delete" style={{ opacity: 0.6 }}>
@@ -490,18 +503,22 @@ export default function FilesView() {
     setFileData(null);
   }, [viewedProject, fetchTree]);
 
-  // Consume pending spec file from _openSpec bridge
+  // Consume pending spec file from _openSpec bridge (T-221).
+  // useRef guard ensures it only fires once, avoiding a race where the
+  // second run (triggered by setFromTaskId) finds the value already deleted.
+  const consumedSpecRef = useRef(false);
   useEffect(() => {
+    if (consumedSpecRef.current) return;
     const pending = window.appState?.pendingSpecFile;
-    if (pending) {
-      const pendingTaskId = window.appState?.pendingSpecTaskId || null;
-      delete window.appState.pendingSpecFile;
-      delete window.appState.pendingSpecTaskId;
-      // Set fromTaskId BEFORE selectFile so the resulting render already has
-      // it; selectFile only clears it when the user picks a different file.
-      setFromTaskId(pendingTaskId);
-      selectFile(pending, { keepFromTaskId: true });
-    }
+    if (!pending) return;
+    consumedSpecRef.current = true;
+    const pendingTaskId = window.appState?.pendingSpecTaskId || null;
+    delete window.appState.pendingSpecFile;
+    delete window.appState.pendingSpecTaskId;
+    // Set fromTaskId BEFORE selectFile so the resulting render already has
+    // it; selectFile only clears it when the user picks a different file.
+    setFromTaskId(pendingTaskId);
+    selectFile(pending, { keepFromTaskId: true });
   });
 
   // Scroll selected tree item into view
