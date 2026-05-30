@@ -203,6 +203,9 @@ export default function DetailPanel() {
   const project = state?.viewedProject;
   const isOpen = taskId !== null;
 
+  // Sync global flag for vanilla JS bridge
+  if (isOpen) window._detailPanelOpen = true;
+
   // Keep taskRef in sync
   taskRef.current = task;
 
@@ -226,6 +229,7 @@ export default function DetailPanel() {
   useEffect(() => {
     const handler = (id) => {
       setTaskId(id);
+      window._detailPanelOpen = true;
       setTask(null);
       setFeed([]);
       setSyntheticItems([]);
@@ -350,6 +354,7 @@ export default function DetailPanel() {
   }, [isOpen, isEditingTitle]);
 
   function close() {
+    window._detailPanelOpen = false;
     setTaskId(null);
     setTask(null);
     setFeed([]);

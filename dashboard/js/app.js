@@ -203,7 +203,7 @@ window._openSpec = function(specPath, taskId) {
   window.appState.pendingSpecTaskId = taskId || null;
   // T-221: track whether the detail panel was open when spec was opened.
   // Panel open → Back to Panel; no panel → Back to Kanban with scroll.
-  window.appState.pendingSpecFromPanel = window.openTaskDetail !== undefined;
+  window.appState.pendingSpecFromPanel = !!window._detailPanelOpen;
   switchTab('files');
 };
 
