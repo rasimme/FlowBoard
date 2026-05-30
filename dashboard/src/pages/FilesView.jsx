@@ -509,6 +509,7 @@ export default function FilesView() {
   // the bridge values are gone). Resets when a NEW pending spec arrives
   // (different value than last consumed) so sequential opens work.
   const lastSpecRef = useRef(null);
+  const [triggerFromPanel, setTriggerFromPanel] = useState(false);
   useEffect(() => {
     const pending = window.appState?.pendingSpecFile;
     if (!pending || pending === lastSpecRef.current) return;
@@ -518,15 +519,10 @@ export default function FilesView() {
     delete window.appState.pendingSpecFile;
     delete window.appState.pendingSpecTaskId;
     delete window.appState.pendingSpecFromPanel;
-    // Set fromTaskId BEFORE selectFile so the resulting render already has
-    // it; selectFile only clears it when the user picks a different file.
-    // fromTaskId is set whenever we came from a task context (Kanban or
-    // Sidepanel) — if null, the user opened the file from Files tab directly
-    // and should get the normal ← Files back-button.
-    // fromTaskId is always set when a task context opened the spec
-    // (Panel or Kanban). The back action uses _detailPanelOpen to
-    // decide: reopen panel, or just switch to Kanban with scroll.
+    // fromTaskId is set whenever a task context opened the spec.
+    // triggerFromPanel remembers how onBackToTask should route.
     setFromTaskId(pendingTaskId);
+    setTriggerFromPanel(pendingFromPanel);
     selectFile(pending, { keepFromTaskId: true });
   });
 
@@ -741,13 +737,12 @@ export default function FilesView() {
             fromTaskId={fromTaskId}
             onBackToTask={() => {
               const taskId = fromTaskId;
-              const wasPanelOpen = window.appState?.pendingSpecFromPanel;
               setFromTaskId(null);
+              setTriggerFromPanel(false);
               setShowPreview(false);
-              delete window.appState.pendingSpecFromPanel;
               if (window._switchTab) window._switchTab('tasks');
               if (taskId) {
-                if (wasPanelOpen && window.openTaskDetail) {
+                if (triggerFromPanel && window.openTaskDetail) {
                   window.openTaskDetail(taskId);
                 } else {
                   window._scrollToTaskId = taskId;
