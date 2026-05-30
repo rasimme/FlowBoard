@@ -2392,7 +2392,6 @@ async function startServer() {
   app.listen(PORT, HOST, () => {
     console.log(`Dashboard API running on http://${HOST}:${PORT}`);
   });
-}
 startServer().catch(err => {
   console.error('Startup failed:', err);
   process.exit(1);
