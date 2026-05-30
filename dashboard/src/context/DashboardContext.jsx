@@ -210,6 +210,11 @@ export function DashboardProvider({ children }) {
     window._refreshProjects = refreshProjectsOnly;
     window._openSpec = openSpec;
 
+    // Restore sidebar-backdrop click handler (was in legacy app.js, lost in migration)
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    const onBackdropClick = () => toggleSidebar();
+    backdrop?.addEventListener('click', onBackdropClick);
+
     const installed = bridge.installRefreshBridge(async () => {
       const project = window.appState?.viewedProject || window.appState?.activeProject;
       if (!project) return null;
@@ -227,6 +232,7 @@ export function DashboardProvider({ children }) {
       delete window._switchTab;
       delete window._refreshProjects;
       delete window._openSpec;
+      backdrop?.removeEventListener('click', onBackdropClick);
       if (window.appState && installed && window.appState._refreshBoard === installed) {
         delete window.appState._refreshBoard;
       }
