@@ -523,6 +523,9 @@ export default function FilesView() {
     // fromTaskId is set whenever we came from a task context (Kanban or
     // Sidepanel) — if null, the user opened the file from Files tab directly
     // and should get the normal ← Files back-button.
+    // fromTaskId is always set when a task context opened the spec
+    // (Panel or Kanban). The back action uses _detailPanelOpen to
+    // decide: reopen panel, or just switch to Kanban with scroll.
     setFromTaskId(pendingTaskId);
     selectFile(pending, { keepFromTaskId: true });
   });
@@ -738,11 +741,13 @@ export default function FilesView() {
             fromTaskId={fromTaskId}
             onBackToTask={() => {
               const taskId = fromTaskId;
+              const wasPanelOpen = window.appState?.pendingSpecFromPanel;
               setFromTaskId(null);
               setShowPreview(false);
+              delete window.appState.pendingSpecFromPanel;
               if (window._switchTab) window._switchTab('tasks');
               if (taskId) {
-                if (window._detailPanelOpen && window.openTaskDetail) {
+                if (wasPanelOpen && window.openTaskDetail) {
                   window.openTaskDetail(taskId);
                 } else {
                   window._scrollToTaskId = taskId;

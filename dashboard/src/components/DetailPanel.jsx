@@ -578,6 +578,7 @@ export default function DetailPanel() {
   function handleOpenSpec() {
     const t = taskRef.current;
     if (t && t.specFile && window._openSpec) {
+      window.appState.pendingSpecFromPanel = true;
       window._openSpec(t.specFile, t.id);
       close();
     }
@@ -589,7 +590,10 @@ export default function DetailPanel() {
       const res = await apiFetch(`/projects/${project}/specs/${t.id}`, { method: 'POST' });
       if (res?.ok && res.specFile) {
         syncPanelTask({ ...t, specFile: res.specFile });
-        if (window._openSpec) window._openSpec(res.specFile, t.id);
+        if (window._openSpec) {
+          window.appState.pendingSpecFromPanel = true;
+          window._openSpec(res.specFile, t.id);
+        }
         showToast(`Spec created for ${t.id}`, 'success');
         close();
       }
