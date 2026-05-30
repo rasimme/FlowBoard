@@ -60,6 +60,10 @@ const TELEGRAM_BOT_TOKENS = [
     .map(s => s.trim())
     .filter(Boolean)
 ].filter(Boolean);
+const TELEGRAM_AGENT_IDS = (process.env.FLOWBOARD_TELEGRAM_AGENT_IDS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
@@ -97,18 +101,23 @@ function validateTelegramWebApp(initData) {
     .map(([k, v]) => `${k}=${v}`).join('\n');
 
   // S-01: Timing-safe HMAC comparison to prevent timing side-channel attacks
-  const isValid = TELEGRAM_BOT_TOKENS.some((token) => {
+  let matchedBotIndex = -1;
+  const isValid = TELEGRAM_BOT_TOKENS.some((token, index) => {
     const secretKey = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
     const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
     const checkBuf = Buffer.from(checkHash, 'utf8');
     const hashBuf = Buffer.from(hash, 'utf8');
     if (checkBuf.length !== hashBuf.length) return false;
-    return crypto.timingSafeEqual(checkBuf, hashBuf);
+    const valid = crypto.timingSafeEqual(checkBuf, hashBuf);
+    if (valid) matchedBotIndex = index;
+    return valid;
   });
 
   if (!isValid) return null;
   const user = JSON.parse(params.get('user') || 'null');
   if (!user || !ALLOWED_USER_IDS.includes(user.id)) return null;
+  const mappedAgentId = TELEGRAM_AGENT_IDS[matchedBotIndex] || null;
+  if (mappedAgentId) user.agentId = mappedAgentId;
   return user;
 }
 
@@ -135,7 +144,7 @@ function telegramAuthMiddleware(req, res, next) {
       console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+    const sessionToken = jwt.sign({ id: user.id, username: user.username, agentId: user.agentId || null }, JWT_SECRET, { expiresIn: '8h' });
     res.cookie('flowboard_session', sessionToken, {
       httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
     });
@@ -165,7 +174,7 @@ function telegramAuthMiddleware(req, res, next) {
       console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
       return res.status(403).json({ error: 'Unauthorized' });
     }
-    const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+    const sessionToken = jwt.sign({ id: user.id, username: user.username, agentId: user.agentId || null }, JWT_SECRET, { expiresIn: '8h' });
     res.cookie('flowboard_session', sessionToken, {
       httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
     });
@@ -203,7 +212,7 @@ function telegramAuthMiddleware(req, res, next) {
     console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
     return res.status(403).json({ error: 'Unauthorized' });
   }
-  const sessionToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '8h' });
+  const sessionToken = jwt.sign({ id: user.id, username: user.username, agentId: user.agentId || null }, JWT_SECRET, { expiresIn: '8h' });
   res.cookie('flowboard_session', sessionToken, {
     httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
   });
@@ -682,7 +691,14 @@ app.get('/api/info', (req, res) => {
 
 // Auth-Endpoint (vor dem generellen API-Auth)
 app.post('/api/auth', (req, res) => {
-  res.json({ ok: true, user: req.user });
+  // Existing session cookies created before FLOWBOARD_TELEGRAM_AGENT_IDS do not
+  // carry agentId. If fresh Telegram initData is present, re-read the signed
+  // payload so the dashboard can still infer the caller agent immediately.
+  const freshUser = validateTelegramWebApp(req.headers['x-telegram-init-data']);
+  const mergedUser = freshUser || req.user || {};
+  const agentId = freshUser?.agentId || req.user?.agentId || null;
+  const { agentId: _agentId, ...user } = mergedUser;
+  res.json({ ok: true, user, agentId });
 });
 
 // Auth auf alle API-Routes wird jetzt global oben angewendet (nach Debug-Logger)
@@ -1764,6 +1780,55 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
       path: filePath,
       size: stat.size,
       modified: stat.mtime.toISOString()
+    });
+  } catch (err) {
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:name/files/context — upload a markdown file to context/ (T-222)
+//
+// Accepts JSON { filename, content } so we avoid pulling in multer for a
+// markdown-only upload path. The body parser is scoped to 5 MB just for this
+// route — global express.json() stays at its default 100 KB limit.
+app.post('/api/projects/:name/files/context', express.json({ limit: '5mb' }), (req, res) => {
+  const projectDir = path.join(PROJECTS_DIR, req.params.name);
+  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
+
+  const { filename, content } = req.body || {};
+  if (!filename || typeof filename !== 'string') {
+    return res.status(400).json({ error: 'filename required' });
+  }
+  if (typeof content !== 'string') {
+    return res.status(400).json({ error: 'content (string) required' });
+  }
+  // Reject path separators / traversal in the filename — uploads are flat,
+  // single files into context/. No nested directories from the UI.
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('\0') || filename.startsWith('.')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  if (!filename.toLowerCase().endsWith('.md')) {
+    return res.status(400).json({ error: 'Only .md files are allowed' });
+  }
+  if (Buffer.byteLength(content, 'utf8') > 5 * 1024 * 1024) {
+    return res.status(413).json({ error: 'Content too large (max 5MB)' });
+  }
+
+  const contextDir = path.join(projectDir, 'context');
+  const resolved = path.resolve(contextDir, filename);
+  if (!resolved.startsWith(contextDir + path.sep)) {
+    return res.status(403).json({ error: 'Path traversal not allowed' });
+  }
+
+  try {
+    fs.mkdirSync(contextDir, { recursive: true });
+    fs.writeFileSync(resolved, content);
+    const stat = fs.statSync(resolved);
+    res.json({
+      ok: true,
+      path: `context/${filename}`,
+      size: stat.size,
+      modified: stat.mtime.toISOString(),
     });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });

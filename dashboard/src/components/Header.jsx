@@ -43,12 +43,17 @@ export default function Header() {
       </div>
       <div className="flex items-center gap-2.5" id="headerRight">
         <SnippetUpgrade />
-        {state.viewedProject && (
-          <>
-            <span className="text-[13px] font-semibold text-text-strong tracking-[0.02em]">
+        {state.viewedProject ? (
+          <span className="text-[13px] tracking-[0.02em]">
+            <span className="text-muted font-normal mr-1">Projekt:</span>
+            <span className="font-semibold text-text-strong">
               {formatDisplayName(state.viewedProject, state.projects)}
             </span>
-          </>
+          </span>
+        ) : (
+          <span className="text-[13px] text-muted tracking-[0.02em]">
+            Kein aktives Projekt
+          </span>
         )}
       </div>
     </>,

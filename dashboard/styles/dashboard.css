@@ -1400,6 +1400,39 @@
 
     .file-tree-items { flex: 1; overflow-y: auto; }
 
+    /* T-222: Upload area for context/ folder */
+    .file-upload-area {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .file-upload-area.drag-over {
+      background: var(--bg-hover);
+      border: 2px dashed var(--accent);
+      border-radius: 6px;
+      margin: 8px;
+      padding: 24px 14px;
+      justify-content: center;
+    }
+    .file-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .file-upload-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+    .file-upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .file-upload-hint { color: var(--muted); font-size: 11px; }
+
     .file-tree-footer {
       padding: 12px 14px;
       border-top: 1px solid var(--border);

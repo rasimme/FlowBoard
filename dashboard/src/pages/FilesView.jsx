@@ -3,7 +3,7 @@ import { useAppState } from '../context/AppStateContext.jsx';
 import { Modal } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
-import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2 } from 'lucide-react';
+import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2, Upload } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 
 function isEditablePath(filePath) {
@@ -91,7 +91,7 @@ function TreeNode({ entry, depth, expandedDirs, onToggleDir, selectedFile, onSel
 }
 
 // --- File preview (uses legacy CSS classes) ---
-function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previewScrollRef }) {
+function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previewScrollRef, fromTaskId, onBackToTask }) {
   const haptic = useHaptic();
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -199,7 +199,11 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
   return (
     <>
       <div className="file-preview-header">
-        <button className="file-back-btn" onClick={onBack}>← Files</button>
+        {fromTaskId ? (
+          <button className="file-back-btn" onClick={onBackToTask}>← Back to Task</button>
+        ) : (
+          <button className="file-back-btn" onClick={onBack}>← Files</button>
+        )}
         <div className="file-preview-info">
           <span className="file-preview-name">
             {filePath}
@@ -450,6 +454,15 @@ export default function FilesView() {
   const [loading, setLoading] = useState(false);
   const [treeLoading, setTreeLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const uploadInputRef = useRef(null);
+  // T-221: when FilesView is opened from a task's "Open spec" action, we
+  // remember the originating task ID so the spec preview can render a
+  // "← Back to Task" button. Cleared as soon as the user picks a different
+  // file from the tree (manual navigation = no implicit "back" target).
+  const [fromTaskId, setFromTaskId] = useState(null);
+  // T-222: file upload state
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const abortRef = useRef(null);
 
   const treeScrollRef = useCustomScroll();
@@ -481,8 +494,13 @@ export default function FilesView() {
   useEffect(() => {
     const pending = window.appState?.pendingSpecFile;
     if (pending) {
+      const pendingTaskId = window.appState?.pendingSpecTaskId || null;
       delete window.appState.pendingSpecFile;
-      selectFile(pending);
+      delete window.appState.pendingSpecTaskId;
+      // Set fromTaskId BEFORE selectFile so the resulting render already has
+      // it; selectFile only clears it when the user picks a different file.
+      setFromTaskId(pendingTaskId);
+      selectFile(pending, { keepFromTaskId: true });
     }
   });
 
@@ -494,6 +512,65 @@ export default function FilesView() {
       if (item) item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }, [selectedFile]);
+
+  // T-222: handle file upload to context/
+  const handleUpload = useCallback(async (file) => {
+    if (!viewedProject) return;
+    if (!file.name.toLowerCase().endsWith('.md')) {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Nur .md Dateien erlaubt', type: 'warn' } }));
+      return;
+    }
+    setUploading(true);
+    try {
+      const content = await file.text();
+      const res = await apiFetch(`/api/projects/${viewedProject}/files/context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, content }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${file.name} hochgeladen`, type: 'success' } }));
+      fetchTree();
+    } catch (err) {
+      console.warn('[upload]', err);
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Upload fehlgeschlagen', type: 'error' } }));
+    } finally {
+      setUploading(false);
+    }
+  }, [viewedProject, fetchTree]);
+
+  const handleUploadClick = useCallback(() => {
+    uploadInputRef.current?.click();
+  }, []);
+
+  const handleUploadFile = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (file) handleUpload(file);
+    e.target.value = '';
+  }, [handleUpload]);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleUpload(file);
+  }, [handleUpload]);
 
   const handleFileDeleted = useCallback(() => {
     setSelectedFile(null);
@@ -511,7 +588,7 @@ export default function FilesView() {
     });
   }, []);
 
-  const selectFile = useCallback((filePath) => {
+  const selectFile = useCallback((filePath, opts = {}) => {
     if (!viewedProject) return;
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -521,6 +598,9 @@ export default function FilesView() {
     setShowPreview(true);
     setLoading(true);
     setFileData(null);
+    // T-221: a manual click on a different file means the user is no longer
+    // viewing the spec that was opened from a task — clear the back-target.
+    if (!opts.keepFromTaskId) setFromTaskId(null);
 
     // Auto-expand parent dirs
     setExpandedDirs(prev => expandParentsOf(filePath, prev));
@@ -555,7 +635,30 @@ export default function FilesView() {
   const tree = fileTree?.tree || [];
 
   return (
-    <div className={`file-explorer${showPreview ? ' show-preview' : ''}`} data-react-files>
+    <div
+      className={`file-explorer${showPreview ? ' show-preview' : ''}`}
+      data-react-files
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* T-222: Upload area — only shown when context/ dir exists in tree */}
+      {!showPreview && !treeLoading && tree.some(e => e.path === 'context') && (
+        <div className={`file-upload-area${dragOver ? ' drag-over' : ''}`}>
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept=".md"
+            style={{ display: 'none' }}
+            onChange={handleUploadFile}
+          />
+          <button className="file-upload-btn" onClick={handleUploadClick} disabled={uploading}>
+            <Upload size={14} />
+            {uploading ? 'Uploading…' : '.md hochladen'}
+          </button>
+          <span className="file-upload-hint">oder hier reinziehen</span>
+        </div>
+      )}
       {/* File tree */}
       <div className="file-tree">
         <div className="file-tree-items" ref={treeScrollRef} style={{ overflowY: 'auto' }}>
@@ -608,6 +711,14 @@ export default function FilesView() {
             onDeleted={handleFileDeleted}
             onBack={() => setShowPreview(false)}
             previewScrollRef={previewScrollRef}
+            fromTaskId={fromTaskId}
+            onBackToTask={() => {
+              const taskId = fromTaskId;
+              setFromTaskId(null);
+              setShowPreview(false);
+              if (window._switchTab) window._switchTab('tasks');
+              if (taskId && window.openTaskDetail) window.openTaskDetail(taskId);
+            }}
           />
         )}
       </div>

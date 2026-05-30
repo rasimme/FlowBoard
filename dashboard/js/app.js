@@ -1,5 +1,6 @@
 import { api, toast, showModal, escHtml, formatDisplayName, registerDisplayNames } from './utils.js?v=9';
 import { canvasState, renderIdeaCanvas, refreshCanvas, resetCanvasState } from './canvas/index.js?v=5';
+import { resolveDashboardAgentId, selectViewedProject } from './project-selection.mjs';
 
 // Global state
 const state = {
@@ -13,6 +14,7 @@ const state = {
   // T-161: per-agent active project state from flowboard_agents.
   // Each row: { agent_id, active_project, activated_at }
   agents: [],
+  agentId: null,
 };
 
 // Make state accessible to modules
@@ -23,6 +25,16 @@ let prevTasksJson = '';
 let prevCanvasJson = '';
 let prevActiveProject = null;
 let prevAgentsJson = '';
+
+async function fetchActiveProjectForAgent(agentId) {
+  if (!agentId) return null;
+  const data = await api(`/status?agentId=${encodeURIComponent(agentId)}`);
+  if (data?.agentId !== agentId) {
+    console.warn('[status] agentId mismatch', { requested: agentId, received: data?.agentId });
+    return null;
+  }
+  return data.activeProject || null;
+}
 
 // --- Sidebar toggle ---
 function toggleSidebar() {
@@ -95,7 +107,11 @@ async function viewProject(name) {
 }
 
 async function activateProject() {
-  await api('/status', { method: 'PUT', body: { project: state.viewedProject } });
+  if (!state.agentId) {
+    toast('No agent context for activation.', 'warn');
+    return;
+  }
+  await api('/status', { method: 'PUT', body: { project: state.viewedProject, agentId: state.agentId } });
   state.activeProject = state.viewedProject;
   toast(`Project "${state.viewedProject}" activated`, 'success');
   renderSidebar();
@@ -103,7 +119,11 @@ async function activateProject() {
 }
 
 async function deactivateProject() {
-  await api('/status', { method: 'PUT', body: { project: null } });
+  if (!state.agentId) {
+    toast('No agent context for deactivation.', 'warn');
+    return;
+  }
+  await api('/status', { method: 'PUT', body: { project: null, agentId: state.agentId } });
   state.activeProject = null;
   toast('Project deactivated.', 'info');
   renderSidebar();
@@ -138,13 +158,20 @@ async function refreshProjectsOnly() {
   try {
     const data = await api('/projects');
     const newProjects = data.projects || [];
+    const newAgents = await fetchAgents();
+    const newActive = await fetchActiveProjectForAgent(state.agentId);
     state.projects = newProjects;
+    state.agents = newAgents;
     registerDisplayNames(newProjects);
-    state.activeProject = data.activeProject;
+    state.activeProject = newActive;
     prevProjectsJson = JSON.stringify(state.projects);
     prevActiveProject = state.activeProject;
     if (state.viewedProject && !newProjects.some(p => p.name === state.viewedProject)) {
-      state.viewedProject = newProjects[0]?.name || null;
+      state.viewedProject = selectViewedProject({
+        projects: newProjects,
+        agents: newAgents,
+        activeProject: newActive,
+      });
       state.tasks = [];
       prevTasksJson = '';
     }
@@ -164,13 +191,16 @@ window._toggleSidebar = toggleSidebar;
 window._switchTab = switchTab;
 window._refreshProjects = refreshProjectsOnly;
 
-// Spec file bridge — sets pending path and switches to files tab
+// Spec file bridge — sets pending path and switches to files tab.
+// When opened from a task (taskId given), the originating task is tracked so
+// FilesView can render a "← Back to Task" button (T-221).
 window._openSpec = function(specPath, taskId) {
   if (!specPath) {
     if (window.showToast) window.showToast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
     return;
   }
   window.appState.pendingSpecFile = specPath;
+  window.appState.pendingSpecTaskId = taskId || null;
   switchTab('files');
 };
 
@@ -196,7 +226,8 @@ async function refresh() {
   try {
     const data = await api('/projects');
     const newProjects = data.projects || [];
-    const newActive = data.activeProject;
+    const newAgents = await fetchAgents();
+    const newActive = await fetchActiveProjectForAgent(state.agentId);
     const projectsJson = JSON.stringify(newProjects);
     const projectsChanged = projectsJson !== prevProjectsJson || newActive !== prevActiveProject;
 
@@ -209,7 +240,6 @@ async function refresh() {
     // T-161: refresh multi-agent active-project state. Poll cadence matches
     // project refresh so sidebar pulse + active-context bar stay in sync
     // without an extra timer.
-    const newAgents = await fetchAgents();
     const agentsJson = JSON.stringify(newAgents);
     const agentsChanged = agentsJson !== prevAgentsJson;
     if (agentsChanged) {
@@ -218,8 +248,11 @@ async function refresh() {
     }
 
     if (!state.viewedProject) {
-      if (state.activeProject) state.viewedProject = state.activeProject;
-      else if (state.projects.length > 0) state.viewedProject = state.projects[0].name;
+      state.viewedProject = selectViewedProject({
+        projects: state.projects,
+        agents: state.agents,
+        activeProject: state.activeProject,
+      });
     }
 
     let tasksChanged = false;
@@ -273,21 +306,24 @@ async function init() {
   const data = await api('/projects');
   state.projects = data.projects || [];
   registerDisplayNames(state.projects);
-  state.activeProject = data.activeProject;
   prevProjectsJson = JSON.stringify(state.projects);
+
+  state.agents = await fetchAgents();
+  prevAgentsJson = JSON.stringify(state.agents);
+  state.activeProject = await fetchActiveProjectForAgent(state.agentId);
   prevActiveProject = state.activeProject;
 
-  if (state.activeProject) state.viewedProject = state.activeProject;
-  else if (state.projects.length > 0) state.viewedProject = state.projects[0].name;
+  state.viewedProject = selectViewedProject({
+    projects: state.projects,
+    agents: state.agents,
+    activeProject: state.activeProject,
+  });
 
   if (state.viewedProject) {
     const taskData = await api(`/projects/${state.viewedProject}/tasks?includeArchived=true`);
     state.tasks = taskData.tasks || [];
     prevTasksJson = JSON.stringify(state.tasks);
   }
-
-  state.agents = await fetchAgents();
-  prevAgentsJson = JSON.stringify(state.agents);
 
   // Tab bar delegation — React owns tab buttons when _reactOwnsShell is set;
   // legacy handler only needed for non-React fallback
@@ -374,7 +410,22 @@ document.addEventListener('click', e => {
       });
       const authData = await authRes.json().catch(() => null);
       if (authData?.user?.username) state.authUser = authData.user.username;
+      state.agentId = resolveDashboardAgentId({
+        urlSearch: window.location.search,
+        telegramWebApp: tg,
+        authAgentId: authData?.agentId,
+        storedAgentId: localStorage.getItem('flowboard_agent_id'),
+      });
     } catch (e) { console.warn('Auth failed:', e); }
+  } else {
+    state.agentId = resolveDashboardAgentId({
+      urlSearch: window.location.search,
+      telegramWebApp: tg,
+      storedAgentId: localStorage.getItem('flowboard_agent_id'),
+    });
+  }
+  if (state.agentId) {
+    try { localStorage.setItem('flowboard_agent_id', state.agentId); } catch { /* ignore */ }
   }
   await init();
 })();

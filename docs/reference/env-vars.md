@@ -42,6 +42,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `ALLOWED_USER_IDS` | empty | Comma-separated Telegram user IDs allowed to authenticate. |
 | `TELEGRAM_BOT_TOKEN` | empty | Primary bot token for Telegram-init-data verification. |
 | `TELEGRAM_BOT_TOKENS` | empty | Additional bot tokens, comma-separated. Server accepts any matching token. |
+| `FLOWBOARD_TELEGRAM_AGENT_IDS` | empty | Optional comma-separated agent IDs matching `TELEGRAM_BOT_TOKEN` followed by `TELEGRAM_BOT_TOKENS`; lets the dashboard infer the caller agent from the bot that signed Telegram init data. |
 | `DASHBOARD_ORIGIN` | empty | Allowed CORS origin for browser clients. |
 | `OPENCLAW_HOOKS_TOKEN` (alias `HOOKS_TOKEN`) | empty | Shared secret required on `POST /api/hooks/task-complete`. Empty disables the endpoint. |
 | `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server logs a warning. |
