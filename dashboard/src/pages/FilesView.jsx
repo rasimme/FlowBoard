@@ -551,6 +551,7 @@ export default function FilesView() {
       }
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${file.name} hochgeladen`, type: 'success' } }));
       fetchTree();
+      setExpandedDirs(prev => new Set(prev).add('context'));
     } catch (err) {
       console.warn('[upload]', err);
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Upload fehlgeschlagen', type: 'error' } }));
@@ -671,7 +672,7 @@ export default function FilesView() {
           />
           <button className="file-upload-btn" onClick={handleUploadClick} disabled={uploading}>
             <Upload size={14} />
-            {uploading ? 'Uploading…' : '.md hochladen'}
+            {uploading ? 'Uploading…' : '.md in context/ hochladen'}
           </button>
           <span className="file-upload-hint">oder hier reinziehen</span>
         </div>
