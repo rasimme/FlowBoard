@@ -520,7 +520,10 @@ export default function FilesView() {
     delete window.appState.pendingSpecFromPanel;
     // Set fromTaskId BEFORE selectFile so the resulting render already has
     // it; selectFile only clears it when the user picks a different file.
-    setFromTaskId(pendingFromPanel ? pendingTaskId : null);
+    // fromTaskId is set whenever we came from a task context (Kanban or
+    // Sidepanel) — if null, the user opened the file from Files tab directly
+    // and should get the normal ← Files back-button.
+    setFromTaskId(pendingTaskId);
     selectFile(pending, { keepFromTaskId: true });
   });
 
@@ -739,11 +742,9 @@ export default function FilesView() {
               setShowPreview(false);
               if (window._switchTab) window._switchTab('tasks');
               if (taskId) {
-                if (window.openTaskDetail) {
+                if (window._detailPanelOpen && window.openTaskDetail) {
                   window.openTaskDetail(taskId);
                 } else {
-                  // No panel → back to Kanban. Set a flag so TasksView
-                  // knows to scroll the task card into view.
                   window._scrollToTaskId = taskId;
                 }
               }
