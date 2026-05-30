@@ -355,6 +355,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
         <div
           className={cardClass}
           style={cardStyle}
+          data-task-id={task.id}
           draggable={!removing}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
@@ -631,6 +632,7 @@ function ArchivedTaskCard({ task, project, onTaskUpdated, onTaskTrashed }) {
       <div className="relative group">
         <div
           className="task-card is-archived"
+          data-task-id={task.id}
           onClick={handleClick}
         >
           <div className="flex items-start justify-between gap-2 mb-1">
@@ -1221,6 +1223,10 @@ export default function TasksView() {
           </button>
         )}
       </div>
+      {/* Scroll-to-task effect: consumed when coming back from spec view
+          without a detail panel (Kanban-only flow). The flag is set by
+          FilesView's onBackToTask when there's no openTaskDetail bridge. */}
+      <ScrollToTask />
       <div className="kanban">
         {STATUS_KEYS.map(status => (
           <Column
@@ -1266,6 +1272,29 @@ export default function TasksView() {
           onDismiss={() => setUndoState(null)}
         />
       )}
+      <ScrollToTask />
     </div>
   );
+}
+
+// Scrolls a task card into view when coming back from spec view
+// without an active detail panel. Consumes window._scrollToTaskId
+// set by FilesView's onBackToTask.
+function ScrollToTask() {
+  useEffect(() => {
+    const taskId = window._scrollToTaskId;
+    if (!taskId) return;
+    delete window._scrollToTaskId;
+    // Give the kanban DOM a tick to render
+    requestAnimationFrame(() => {
+      const card = document.querySelector(`[data-task-id="${taskId}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Briefly highlight the card
+        card.classList.add('highlighted-from-back');
+        setTimeout(() => card.classList.remove('highlighted-from-back'), 2000);
+      }
+    });
+  });
+  return null;
 }

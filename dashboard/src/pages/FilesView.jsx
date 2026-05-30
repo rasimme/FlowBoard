@@ -513,11 +513,13 @@ export default function FilesView() {
     if (!pending) return;
     consumedSpecRef.current = true;
     const pendingTaskId = window.appState?.pendingSpecTaskId || null;
+    const pendingFromPanel = window.appState?.pendingSpecFromPanel || false;
     delete window.appState.pendingSpecFile;
     delete window.appState.pendingSpecTaskId;
+    delete window.appState.pendingSpecFromPanel;
     // Set fromTaskId BEFORE selectFile so the resulting render already has
     // it; selectFile only clears it when the user picks a different file.
-    setFromTaskId(pendingTaskId);
+    setFromTaskId(pendingFromPanel ? pendingTaskId : null);
     selectFile(pending, { keepFromTaskId: true });
   });
 
@@ -735,7 +737,15 @@ export default function FilesView() {
               setFromTaskId(null);
               setShowPreview(false);
               if (window._switchTab) window._switchTab('tasks');
-              if (taskId && window.openTaskDetail) window.openTaskDetail(taskId);
+              if (taskId) {
+                if (window.openTaskDetail) {
+                  window.openTaskDetail(taskId);
+                } else {
+                  // No panel → back to Kanban. Set a flag so TasksView
+                  // knows to scroll the task card into view.
+                  window._scrollToTaskId = taskId;
+                }
+              }
             }}
           />
         )}
