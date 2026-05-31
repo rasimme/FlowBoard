@@ -74,12 +74,29 @@ The three hzl-core workflows (`start`, `handoff`, `delegate`) are the normal Flo
 
 `handoff` and `delegate` support `opId` for safe retries without double-execution. FlowBoard exposes `start` as a resumable/claim-next operation and keeps primitive endpoints available for explicit edge cases.
 
-## Event Context
+## Frontend Runtime Bridge (`appStateBridge`)
 
-All mutations accept optional context fields:
-- `author` - Human or system initiator
-- `agent_id` - Agent performing the action
-- `session_id` - Session identifier for tracing
-- `correlation_id` / `causation_id` - Event chain tracing
+Since Phase 6 (T-129), the legacy Vanilla JS runtime (`app.js`) coexists with the React shell via a **bridge boundary** — `dashboard/src/state/appStateBridge.mjs`. This is the *only* module allowed to read or write `window.appState.tasks`, and the only place that owns:
 
-These are recorded on the append-only event store and visible in the event log.
+- **`getTasks()` / `setTasks()` / `replaceTasks()`** — task state access from React
+- **`getCurrentProject()`** — project context from the legacy runtime
+- **`notify()`** — signals React to re-render (dispatches `appstate:change` event or calls `window._notifyReact`)
+- **`refreshTasks()`** — fetches current tasks from the API and pushes them into `appState`, then notifies React
+
+**Contract:**
+
+| Access | Owner | Path |
+|---|---|---|
+| Read `appState.tasks` | React components through `appStateBridge` only | `getTasks()` / `replaceTasks()` / `refreshTasks()` |
+| Write `appState.tasks` | `taskMutations` (via `setTasks`) or legacy `app.js` (direct) | `appStateBridge.setTasks()` → `window.appState.tasks = [...]` |
+| Trigger React re-render | `appStateBridge.notify()` | `window._notifyReact()` or `CustomEvent('appstate:change')` |
+| Read current project | React components through `appStateBridge` only | `getCurrentProject()` |
+
+**Why it exists:**
+
+1. The legacy `app.js` still owns `window.appState` — React cannot mutate it directly.
+2. `taskMutations.mjs` is browser-independent — all `window` access goes through the bridge.
+3. `notify()` abstracts two notification paths (direct callback + custom event) so React state stays in sync regardless of how the API response arrives.
+4. The bridge makes it safe to migrate individual components incrementally — a component never knows whether the task data came from an API call by the legacy runtime or by React itself.
+
+**Code:** `dashboard/src/state/appStateBridge.mjs` — see also [ADR-0019](../adr/0019-frontend-runtime-foundation.md) and [Frontend Runtime concept](../concepts/frontend-runtime.md).

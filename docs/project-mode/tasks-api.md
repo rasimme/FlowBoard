@@ -18,8 +18,8 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `task_id` | ULID | Immutable, auto-generated |
 | `title` | string | Max 128 chars |
 | `project` | string | Project name |
-| `status` | enum | `backlog`, `ready`, `in_progress`, `blocked`, `done`, `archived` |
-| `priority` | 0–3 | 0=none, 3=critical |
+| `status` | enum | `backlog`, `open`, `in-progress`, `review`, `done`, `archived` (see [Kanban concept](../concepts/kanban.md) for semantics) |
+| `priority` | integer | 0–3 (0=none, 3=critical). UI vocabulary: `low`, `medium`, `high`, `critical` |
 | `agent` | string? | Claimed-by agent identifier |
 | `parent_id` | string? | Subtask relationship |
 | `description` | string? | Max 16KB |
