@@ -4,34 +4,29 @@
 
 import * as bridge from './appStateBridge.mjs'
 import * as state from './taskState.mjs'
+import { apiJson } from '../utils/apiFetch.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function apiHeaders() {
-  const h = { 'Content-Type': 'application/json' }
-  if (typeof Telegram !== 'undefined' && Telegram?.WebApp?.initData) {
-    h['X-Telegram-Init-Data'] = Telegram.WebApp.initData
-  }
-  return h
+function currentAgent() {
+  return '@human'
 }
 
 async function apiRequest(url, method, body) {
-  const opts = { method, headers: apiHeaders(), credentials: 'include' }
-  if (body !== undefined) opts.body = JSON.stringify(body)
-  const res = await fetch(url, opts)
-  const data = await res.json()
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`)
-  return data
+  return apiJson(url, { method, body })
 }
 
-async function mutate(project, taskId, mutationFn) {
+async function mutate(project, taskId, optimisticPatch, mutationFn) {
   if (!project) return { ok: false, error: 'No active project' }
 
   // Snapshot for rollback
   const tasks = bridge.getTasks()
   const snap = state.snapshotTask(tasks, taskId)
+  if (optimisticPatch && typeof optimisticPatch === 'object') {
+    bridge.replaceTasks(state.patchTask(tasks, taskId, optimisticPatch))
+  }
 
   try {
     const result = await mutationFn()
@@ -57,39 +52,55 @@ async function mutate(project, taskId, mutationFn) {
 // ---------------------------------------------------------------------------
 
 export async function claimTask(project, taskId) {
-  return mutate(project, taskId, () =>
-    apiRequest(`/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/claim`, 'PUT')
+  const agent = currentAgent()
+  return mutate(project, taskId, { agent, claimedAt: new Date().toISOString(), status: 'in-progress' }, () =>
+    apiRequest(
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/claim`,
+      'POST',
+      { agent, lease: 60 }
+    )
   )
 }
 
 export async function releaseTask(project, taskId) {
-  return mutate(project, taskId, () =>
-    apiRequest(`/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/release`, 'PUT')
+  return mutate(project, taskId, { agent: null, claimedAt: null, leaseUntil: null }, () =>
+    apiRequest(
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/release`,
+      'POST',
+      { agent: currentAgent(), force: true }
+    )
   )
 }
 
 export async function completeTask(project, taskId, status) {
-  return mutate(project, taskId, () =>
+  return mutate(project, taskId, { status: status || 'done', agent: null, claimedAt: null, leaseUntil: null }, () =>
     apiRequest(
       `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/complete`,
-      'PUT',
-      status ? { status } : undefined
+      'POST',
+      { agent: currentAgent() }
     )
   )
 }
 
 export async function routeTask(project, taskId, agentId) {
-  return mutate(project, taskId, () =>
+  return mutate(project, taskId, { routedAgent: agentId || null }, () =>
     apiRequest(
       `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/route`,
-      'PUT',
-      { agentId }
+      'POST',
+      { agent: agentId || null }
     )
   )
 }
 
 export async function updateTaskStatus(project, taskId, status, priority) {
-  return mutate(project, taskId, () => {
+  const optimistic = { status }
+  if (priority !== undefined) optimistic.priority = priority
+  if (status === 'review' || status === 'done') {
+    optimistic.agent = null
+    optimistic.claimedAt = null
+    optimistic.leaseUntil = null
+  }
+  return mutate(project, taskId, optimistic, () => {
     const body = { status }
     if (priority !== undefined) body.priority = priority
     return apiRequest(
@@ -101,7 +112,7 @@ export async function updateTaskStatus(project, taskId, status, priority) {
 }
 
 export async function updateTaskPriority(project, taskId, priority) {
-  return mutate(project, taskId, () =>
+  return mutate(project, taskId, { priority }, () =>
     apiRequest(
       `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
       'PUT',
@@ -111,25 +122,28 @@ export async function updateTaskPriority(project, taskId, priority) {
 }
 
 export async function deleteTask(project, taskId) {
-  return mutate(project, taskId, () =>
+  return mutate(project, taskId, { status: 'archived' }, () =>
     apiRequest(`/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`, 'DELETE')
   )
 }
 
 export async function restoreTask(project, taskId) {
-  return mutate(project, taskId, () =>
+  return mutate(project, taskId, { trashedAt: null }, () =>
     apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/restore`,
-      'PUT'
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
+      'PUT',
+      { trashedAt: null }
     )
   )
 }
 
 export async function trashTask(project, taskId) {
-  return mutate(project, taskId, () =>
+  const trashedAt = new Date().toISOString()
+  return mutate(project, taskId, { trashedAt }, () =>
     apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/trash`,
-      'PUT'
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
+      'PUT',
+      { trashedAt }
     )
   )
 }

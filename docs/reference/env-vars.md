@@ -27,7 +27,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `HZL_ENABLED` | unset (off) | Enables HZL-backed task lifecycle, `flowboard_agents`, and `tasks_current`. Must be `true` for any task or agent endpoint to function. |
+| ~~HZL_ENABLED~~ | ~~unset (off)~~ | **Removed in T-129-1.** HZL is always enabled now. |
 | `HZL_INTEGRITY_STRICT` | unset (off) | Boot-time integrity check (see ADR-0018). When unset, a watermark regression is logged as a loud WARN and the service continues. When `true`, the service `process.exit(1)`s on regression — for setups that prefer hard fail-fast over silent operation on a rolled-back DB. To reset the baseline after a legitimate restore, clear the watermark manually: `DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%';` |
 | `INTEGRITY_WEBHOOK_URL` | empty | Optional. On integrity regression at boot, the server `POST`s a JSON body to this URL: `{ message, regression, current, stored, host }`. The `message` field matches the OpenClaw gateway `/hooks/agent` contract; the structured fields ride alongside for monitoring tools. Empty disables the push channel — the stderr WARN block and `GET /api/health/integrity` remain the only signal. Adopters running Slack / Discord / PagerDuty wire a small relay (those surfaces expect `text` / `content` / `payload.summary` respectively). |
 | `INTEGRITY_WEBHOOK_TOKEN` | empty | Bearer token sent with `Authorization: Bearer <token>` on the `INTEGRITY_WEBHOOK_URL` `POST`. Empty = unauthenticated request. |

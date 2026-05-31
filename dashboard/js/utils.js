@@ -1,4 +1,7 @@
-// utils.js — API calls & helpers
+// utils.js — legacy Idea Canvas API calls & helpers.
+//
+// React-owned dashboard code uses src/utils/* and the ADR-0019 task runtime.
+// Keep this module scoped to dashboard/js/canvas/* until ADR-0012 is revisited.
 
 // Always use relative URLs — works for direct access (port 18790),
 // SSH tunnels, and Cloudflare Tunnel (HTTPS proxy)
@@ -148,4 +151,3 @@ export function formatSize(bytes) {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
-

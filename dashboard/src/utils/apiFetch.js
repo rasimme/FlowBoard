@@ -23,14 +23,29 @@ export function apiFetch(path, opts = {}) {
     headers['X-Telegram-Init-Data'] = tg.initData;
   }
 
+  let body = opts.body;
+  const isJsonObject = body && typeof body === 'object' && !(body instanceof FormData);
+
   // Auto-set Content-Type for JSON bodies
-  if (opts.body && typeof opts.body === 'string' && !headers['Content-Type']) {
+  if ((isJsonObject || typeof body === 'string') && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
+  if (isJsonObject) body = JSON.stringify(body);
 
   return fetch(path, {
     ...opts,
     headers,
     credentials,
+    body,
   });
+}
+
+export async function apiJson(path, opts = {}) {
+  const normalizedPath = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
+  const res = await apiFetch(normalizedPath, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
+  return data;
 }

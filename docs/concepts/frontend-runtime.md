@@ -6,7 +6,7 @@ The frontend runtime is the client-side contract for keeping FlowBoard's task UI
 
 It sits between React views, the legacy `window.appState` shell bridge, and the Express/HZL API. Its job is not to own canonical task truth. Its job is to make local UI state converge quickly and predictably with canonical server responses.
 
-The current implementation is still in transition. Historically, `dashboard/js/app.js` owns `window.appState`, while React views read it through `AppStateContext`. Some task actions mutate the global task list directly, while others update local component state and wait for a later refresh. T-215 changes that by introducing an explicit runtime foundation.
+The current implementation is still in transition, but the ownership boundary is now explicit. `dashboard/js/app.js` is bootstrap-only: it creates the initial `window.appState` shape and resolves Telegram auth/agent identity. React's `DashboardContext` owns shell refresh, project actions, tab switching, and the remaining compatibility bridge. Task-list reads and writes go through `appStateBridge`, and mutation wrappers live under `src/state/`.
 
 ## Why
 
@@ -67,7 +67,6 @@ React owns interactive dashboard UI state:
 Legacy JS remains compatibility infrastructure while migration is incomplete:
 
 - bootstrap shell state
-- maintain tab/project shell behavior where still needed
 - host the vanilla Idea Canvas runtime
 - expose bridge entry points for React
 
@@ -150,18 +149,18 @@ This order is intentional. It lets FlowBoard improve convergence without a large
 
 Current relevant files:
 
-- `dashboard/js/app.js` - legacy shell state, project refresh, and `window.appState`
+- `dashboard/js/app.js` - bootstrap-only state shape, Telegram auth, agent id resolution
+- `dashboard/js/utils.js` - legacy Idea Canvas helpers only; not a React task runtime surface
 - `dashboard/src/context/AppStateContext.jsx` - React bridge over global app state
+- `dashboard/src/context/DashboardContext.jsx` - React-owned shell runtime and compatibility bridge
 - `dashboard/src/pages/TasksView.jsx` - Kanban task UI
 - `dashboard/src/components/DetailPanel.jsx` - task detail drawer and task actions
 - `dashboard/src/utils/apiFetch.js` - React API helper
-
-Planned files:
-
-- `dashboard/src/state/appStateBridge.*`
-- `dashboard/src/state/taskState.*`
-- `dashboard/src/state/taskMutations.*`
-- `dashboard/src/hooks/useTaskActions.*`
+- `dashboard/src/utils/toast.js` - React toast bridge
+- `dashboard/src/state/appStateBridge.mjs`
+- `dashboard/src/state/taskState.mjs`
+- `dashboard/src/state/taskMutations.mjs`
+- `dashboard/src/hooks/useTaskActions.jsx`
 
 ## See also
 

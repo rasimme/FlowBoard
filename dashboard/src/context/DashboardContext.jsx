@@ -3,34 +3,16 @@ import { useAppState } from './AppStateContext.jsx';
 import { selectViewedProject } from '../../js/project-selection.mjs';
 import * as bridge from '../state/appStateBridge.mjs';
 import useTaskActions from '../hooks/useTaskActions.jsx';
+import { apiJson } from '../utils/apiFetch.js';
+import { installGlobalToast, showToast } from '../utils/toast.js';
 
 const DashboardContext = createContext(null);
 
 const POLL_INTERVAL_MS = 5000;
 
-async function apiFetch(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
-  if (tg?.initData) headers['X-Telegram-Init-Data'] = tg.initData;
-  const res = await fetch('/api' + path, {
-    ...opts,
-    headers,
-    credentials: 'include',
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    if (res.status !== 403) {
-      console.warn('API error', res.status, path, data?.error || '');
-    }
-    return data;
-  }
-  return res.json();
-}
-
 async function fetchAgentsList() {
   try {
-    const data = await apiFetch('/agents');
+    const data = await apiJson('/agents');
     return Array.isArray(data?.agents) ? data.agents : [];
   } catch {
     return [];
@@ -39,25 +21,12 @@ async function fetchAgentsList() {
 
 async function fetchActiveProjectForAgent(agentId) {
   if (!agentId) return null;
-  const data = await apiFetch(`/status?agentId=${encodeURIComponent(agentId)}`);
+  const data = await apiJson(`/status?agentId=${encodeURIComponent(agentId)}`);
   if (data?.agentId !== agentId) {
     console.warn('[status] agentId mismatch', { requested: agentId, received: data?.agentId });
     return null;
   }
   return data.activeProject || null;
-}
-
-function toast(msg, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  if (!container) return;
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => {
-    el.classList.add('removing');
-    setTimeout(() => el.remove(), 200);
-  }, 3000);
 }
 
 function isUserInteracting() {
@@ -98,13 +67,13 @@ export function DashboardProvider({ children }) {
 
   const fetchTasksForProject = useCallback(async (project) => {
     if (!project) return [];
-    const data = await apiFetch(`/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`);
+    const data = await apiJson(`/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`);
     return data?.tasks || [];
   }, []);
 
   const refreshProjectsOnly = useCallback(async () => {
     try {
-      const data = await apiFetch('/projects');
+      const data = await apiJson('/projects');
       const newProjects = data?.projects || [];
       const newAgents = await fetchAgentsList();
       const newActive = await fetchActiveProjectForAgent(window.appState?.agentId);
@@ -154,26 +123,26 @@ export function DashboardProvider({ children }) {
     const agentId = window.appState?.agentId;
     const viewed = window.appState?.viewedProject;
     if (!agentId) {
-      toast('No agent context for activation.', 'warn');
+      showToast('No agent context for activation.', 'warn');
       return;
     }
     if (!viewed) return;
-    await apiFetch('/status', { method: 'PUT', body: { project: viewed, agentId } });
+    await apiJson('/status', { method: 'PUT', body: { project: viewed, agentId } });
     dispatch({ activeProject: viewed });
     prevActiveRef.current = viewed;
-    toast(`Project "${viewed}" activated`, 'success');
+    showToast(`Project "${viewed}" activated`, 'success');
   }, [dispatch]);
 
   const deactivateProject = useCallback(async () => {
     const agentId = window.appState?.agentId;
     if (!agentId) {
-      toast('No agent context for deactivation.', 'warn');
+      showToast('No agent context for deactivation.', 'warn');
       return;
     }
-    await apiFetch('/status', { method: 'PUT', body: { project: null, agentId } });
+    await apiJson('/status', { method: 'PUT', body: { project: null, agentId } });
     dispatch({ activeProject: null });
     prevActiveRef.current = null;
-    toast('Project deactivated.', 'info');
+    showToast('Project deactivated.', 'info');
   }, [dispatch]);
 
   const switchTab = useCallback((tab) => {
@@ -188,7 +157,7 @@ export function DashboardProvider({ children }) {
 
   const openSpec = useCallback((specPath, taskId) => {
     if (!specPath) {
-      toast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
+      showToast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
       return;
     }
     dispatch({
@@ -209,6 +178,7 @@ export function DashboardProvider({ children }) {
     window._switchTab = switchTab;
     window._refreshProjects = refreshProjectsOnly;
     window._openSpec = openSpec;
+    const uninstallToast = installGlobalToast();
 
     // Restore sidebar-backdrop click handler (was in legacy app.js, lost in migration)
     const backdrop = document.querySelector('.sidebar-backdrop');
@@ -232,6 +202,7 @@ export function DashboardProvider({ children }) {
       delete window._switchTab;
       delete window._refreshProjects;
       delete window._openSpec;
+      uninstallToast();
       backdrop?.removeEventListener('click', onBackdropClick);
       if (window.appState && installed && window.appState._refreshBoard === installed) {
         delete window.appState._refreshBoard;
@@ -249,7 +220,7 @@ export function DashboardProvider({ children }) {
         // Wait for js/app.js to finish Telegram auth + agentId resolution so the
         // very first /projects + /status calls see a populated agentId.
         if (window.__flowboardBootstrap) await window.__flowboardBootstrap;
-        const data = await apiFetch('/projects');
+        const data = await apiJson('/projects');
         const projects = data?.projects || [];
         const agents = await fetchAgentsList();
         const agentId = window.appState?.agentId;
@@ -291,7 +262,7 @@ export function DashboardProvider({ children }) {
     const tick = async () => {
       try {
         const agentId = window.appState?.agentId;
-        const data = await apiFetch('/projects');
+        const data = await apiJson('/projects');
         const newProjects = data?.projects || [];
         const newAgents = await fetchAgentsList();
         const newActive = await fetchActiveProjectForAgent(agentId);
