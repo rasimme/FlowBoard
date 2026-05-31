@@ -11,7 +11,7 @@ import { apiJson } from '../utils/apiFetch.js'
 // ---------------------------------------------------------------------------
 
 function currentAgent() {
-  return '@human'
+  return bridge.getAppState()?.agentId || 'human'
 }
 
 async function apiRequest(url, method, body) {

@@ -74,6 +74,8 @@ assert.match(taskMutations.text, /\/release`?,\s*'POST'/, 'release uses POST pri
 assert.match(taskMutations.text, /\/complete`?,\s*'POST'/, 'complete uses POST primitive endpoint')
 assert.match(taskMutations.text, /\/route`?,\s*'POST'/, 'route uses POST primitive endpoint')
 assert.doesNotMatch(taskMutations.text, /\/(?:restore|trash)`?/, 'trash/restore use canonical task update endpoint, not fake routes')
+assert.doesNotMatch(taskMutations.text, /@human/, 'taskMutations must use a valid FlowBoard agent id fallback')
+assert.match(taskMutations.text, /bridge\.getAppState\(\)\?\.agentId \|\| 'human'/, 'taskMutations derives current agent through appStateBridge')
 console.log('✅ runtime guard: taskMutations matches task API primitives')
 
 const dashboardContext = sourceFiles.find(file => file.path === 'src/context/DashboardContext.jsx')
