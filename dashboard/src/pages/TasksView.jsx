@@ -7,7 +7,7 @@ import BlockedChip from '../components/BlockedChip.jsx';
 import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
-import { isActivelyClaimed, ownerLabel } from '../utils.js';
+import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';

@@ -1,6 +1,6 @@
 import AgentChip from './AgentChip.jsx';
 import { computeHealth } from './LeaseIndicator.jsx';
-import { isActivelyClaimed } from '../utils.js';
+import { isActivelyClaimed } from '../utils/formatting.js';
 
 /**
  * ClaimStateLine — Zone 1 of the DetailPanel.

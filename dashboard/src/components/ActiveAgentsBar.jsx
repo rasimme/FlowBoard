@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import AgentChip from './AgentChip.jsx';
-import { isActivelyClaimed } from '../utils.js';
+import { isActivelyClaimed } from '../utils/formatting.js';
 
 /**
  * T-161 C2 Labeled bar — the active-context zone above the kanban.

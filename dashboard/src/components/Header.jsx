@@ -2,7 +2,7 @@ import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Menu } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { formatDisplayName } from '../utils.js';
+import { formatDisplayName } from '../utils/formatting.js';
 import SnippetUpgrade from './SnippetUpgrade.jsx';
 import logoSvg from '/favicon.svg';
 

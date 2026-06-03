@@ -2,7 +2,7 @@ import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { formatDisplayName } from '../utils.js';
+import { formatDisplayName } from '../utils/formatting.js';
 import CreateProjectModal from './CreateProjectModal.jsx';
 import DeleteProjectModal from './DeleteProjectModal.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';

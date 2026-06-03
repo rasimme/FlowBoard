@@ -14,7 +14,7 @@
  * adding badge soup.  Tooltip carries the detail.
  */
 
-import { isActivelyClaimed } from '../utils.js';
+import { isActivelyClaimed } from '../utils/formatting.js';
 
 const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
 

@@ -12,7 +12,7 @@ import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
-import { isActivelyClaimed, ownerLabel } from '../utils.js';
+import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getTasks, refreshTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 
