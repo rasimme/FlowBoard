@@ -181,6 +181,20 @@
     },
     {
       "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/approve",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/reject",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
       "path": "/api/projects/:name/tasks/:id/checkpoint",
       "auth": "user",
       "group": "tasks",

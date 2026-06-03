@@ -1094,11 +1094,22 @@ export default function TasksView() {
 
   const handleTaskUpdated = useCallback(async (taskId, updates) => {
     try {
-      const res = await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
+      // T-186: status-picker review -> done goes through the explicit
+      // /approve endpoint so the activity feed records the approval.
+      const tasksNow = getTasks();
+      const current = tasksNow.find(t => t.id === taskId);
+      const reviewApproval = (updates && updates.status === 'done' && current && current.status === 'review');
+      const res = reviewApproval
+        ? await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actor: window.appState?.agentId || 'dashboard' }),
+          })
+        : await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates),
+          });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update task');
       replaceTasks(applyTaskResponse(getTasks(), data));
@@ -1123,11 +1134,21 @@ export default function TasksView() {
     if (oldStatus === 'done' && newStatus !== 'done') optimistic.completed = null;
     replaceTasks(patchTask(tasksBefore, id, optimistic));
 
-    apiFetch(`/api/projects/${viewedProject}/tasks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: newStatus }),
-    }).then(async (res) => {
+    // T-186: drag from review column to done = explicit review approval,
+    // not a generic PUT. Other transitions still go via PUT.
+    const reviewApproval = (oldStatus === 'review' && newStatus === 'done');
+    const dropPromise = reviewApproval
+      ? apiFetch(`/api/projects/${viewedProject}/tasks/${id}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actor: window.appState?.agentId || 'dashboard' }),
+        })
+      : apiFetch(`/api/projects/${viewedProject}/tasks/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus }),
+        });
+    dropPromise.then(async (res) => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to move task');
       replaceTasks(applyTaskResponse(getTasks(), data));

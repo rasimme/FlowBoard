@@ -100,6 +100,30 @@ export async function updateTaskStatus(project, taskId, status, priority) {
     optimistic.claimedAt = null
     optimistic.leaseUntil = null
   }
+
+  // T-186: review -> done is now an explicit review-approval action, not a
+  // generic PUT. Route it through /approve so the activity feed records the
+  // approval. Priority is bundled as a follow-up PUT if also supplied.
+  const tasks = bridge.getTasks()
+  const current = tasks.find(t => t.id === taskId)
+  if (status === 'done' && current && current.status === 'review') {
+    return mutate(project, taskId, optimistic, async () => {
+      const approveRes = await apiRequest(
+        `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/approve`,
+        'POST',
+        { actor: currentAgent() }
+      )
+      if (priority !== undefined) {
+        await apiRequest(
+          `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
+          'PUT',
+          { priority }
+        )
+      }
+      return approveRes
+    })
+  }
+
   return mutate(project, taskId, optimistic, () => {
     const body = { status }
     if (priority !== undefined) body.priority = priority
@@ -109,6 +133,28 @@ export async function updateTaskStatus(project, taskId, status, priority) {
       body
     )
   })
+}
+
+export async function approveTask(project, taskId, reason) {
+  return mutate(project, taskId, { status: 'done', agent: null, claimedAt: null, leaseUntil: null }, () =>
+    apiRequest(
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/approve`,
+      'POST',
+      { actor: currentAgent(), ...(reason ? { reason } : {}) }
+    )
+  )
+}
+
+export async function rejectTask(project, taskId, reason, target) {
+  const optimistic = { status: 'in-progress' }
+  if (target === 'blocked') optimistic.blocked = true
+  return mutate(project, taskId, optimistic, () =>
+    apiRequest(
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/reject`,
+      'POST',
+      { actor: currentAgent(), reason, ...(target ? { target } : {}) }
+    )
+  )
 }
 
 export async function updateTaskPriority(project, taskId, priority) {

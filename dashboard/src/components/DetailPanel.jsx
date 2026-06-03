@@ -675,10 +675,17 @@ export default function DetailPanel() {
     setArchiveConfirmOpen(false);
     try {
       if (t.status !== 'done') {
-        const doneRes = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
-          method: 'PUT',
-          body: { status: 'done' },
-        });
+        // T-186: archive-from-review must approve first (review -> done is
+        // sensitive). Other non-done sources still chain via PUT.
+        const doneRes = (t.status === 'review')
+          ? await apiFetch(`/projects/${project}/tasks/${t.id}/approve`, {
+              method: 'POST',
+              body: { actor: window.appState?.agentId || 'dashboard' },
+            })
+          : await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+              method: 'PUT',
+              body: { status: 'done' },
+            });
         if (doneRes?.error) throw new Error(doneRes.error);
       }
       const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {

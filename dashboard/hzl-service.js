@@ -1439,6 +1439,77 @@ function completeTask(project, flowboardId, opts = {}) {
 }
 
 /**
+ * T-186: Approve a task in review — review → done.
+ * Records an audit comment naming the actor and (optional) reason so the
+ * activity feed reflects who accepted the work.
+ */
+function approveTask(project, flowboardId, opts = {}) {
+  const { actor, reason } = opts;
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found: ${flowboardId}`);
+  if (cached.status !== 'review') {
+    throw Object.assign(
+      new Error(`Task ${flowboardId} is not in review (status: ${cached.status}); cannot approve`),
+      { code: 'NOT_IN_REVIEW' }
+    );
+  }
+
+  const updated = updateTask(project, flowboardId, { status: 'done' });
+
+  const auditParts = [`Approved by ${actor || 'unknown'} (review -> done)`];
+  if (reason && String(reason).trim()) auditParts.push(`Reason: ${String(reason).trim()}`);
+  try {
+    addComment(project, flowboardId, {
+      message: auditParts.join(' — '),
+      author: actor || null,
+    });
+  } catch (e) {
+    console.warn('[hzl-service] approve audit comment failed:', e.message);
+  }
+  return updated;
+}
+
+/**
+ * T-186: Reject a task in review — sends it back to actionable work.
+ * Default target: in-progress. With target='blocked', the task lands in
+ * in-progress with blocked=true so the reviewer can request changes
+ * without leaving the task adrift in review.
+ *
+ * A non-empty reason is required so the activity feed records WHY the
+ * reviewer rejected.
+ */
+function rejectTask(project, flowboardId, opts = {}) {
+  const { actor, reason, target } = opts;
+  if (!reason || !String(reason).trim()) {
+    throw Object.assign(new Error('reason is required to reject a review task'), { code: 'REASON_REQUIRED' });
+  }
+  const cleanReason = String(reason).trim();
+
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw new Error(`Task not found: ${flowboardId}`);
+  if (cached.status !== 'review') {
+    throw Object.assign(
+      new Error(`Task ${flowboardId} is not in review (status: ${cached.status}); cannot reject`),
+      { code: 'NOT_IN_REVIEW' }
+    );
+  }
+
+  const wantBlocked = (target === 'blocked');
+  const nextUpdates = { status: 'in-progress' };
+  if (wantBlocked) nextUpdates.blocked = true;
+  const updated = updateTask(project, flowboardId, nextUpdates);
+
+  const arrow = wantBlocked ? 'review -> in-progress (blocked)' : 'review -> in-progress';
+  const msg = `Rejected by ${actor || 'unknown'} (${arrow}) — Reason: ${cleanReason}`;
+  try {
+    addComment(project, flowboardId, { message: msg, author: actor || null });
+  } catch (e) {
+    console.warn('[hzl-service] reject audit comment failed:', e.message);
+  }
+  return updated;
+}
+
+/**
  * Add a checkpoint to a task.
  * Uses hzl-core native addCheckpoint().
  */
@@ -1871,6 +1942,8 @@ module.exports = {
   claimTask,
   releaseTask,
   completeTask,
+  approveTask,
+  rejectTask,
   addCheckpoint,
   getCheckpoints,
   getStatusEvents,

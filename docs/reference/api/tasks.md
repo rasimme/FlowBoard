@@ -24,6 +24,16 @@ Update a task. Property whitelist enforced server-side.
 **Body:** any whitelisted subset (`title`, `priority`, `status`, `blocked`, `parentId`, `routedAgent`, ...).
 **Response 200:** `{"ok": true, "task": {<updated>}}`
 
+**Guarded status transitions (T-186).** Generic PUT does NOT silently perform privileged workflow transitions:
+
+| Transition | Behaviour |
+|---|---|
+| `review` → `done` | **409** with `Use POST /api/projects/:project/tasks/:id/approve for review -> done`. Use `/approve`. |
+| `done` → `open` / `in-progress` / `review` / `backlog` | **409**. Pass `adminOverride: true` together with a `reason` (and optional `actor`) to bypass; the override is recorded as an audit comment. |
+| `done` → `archived` | Allowed (terminal cleanup). |
+| `archived` → `done` | Allowed (restore from archive). |
+| Other transitions | Allowed. |
+
 ### `DELETE /api/projects/:name/tasks/:id`
 
 Soft-delete (tombstones with `trashedAt`).
@@ -66,7 +76,35 @@ Transition the task to `review` (work done, awaiting acceptance). For subtasks, 
 **403** `AGENT_REQUIRED` or `NOT_OWNER`.
 **404** if the task doesn't exist.
 
-Acceptance (review → done) is performed via `PUT /api/projects/:name/tasks/:id` with `{"status": "done"}`.
+Acceptance (review → done) is performed via `POST /api/projects/:name/tasks/:id/approve` — see below.
+
+### `POST /api/projects/:name/tasks/:id/approve`
+
+Review/admin action — accept a task that is in `review` and finalise it as `done`. Unlike `/complete`, this is **not** owner-gated; it represents a human/admin reviewer signing off.
+
+**Body:** `{"actor"?: "<id>", "reason"?: "<text>"}`
+**Response 200:** `{"ok": true, "task": {<task in done>}}`
+**409** `NOT_IN_REVIEW` — task is not in `review`.
+**404** task not found.
+
+The approval is recorded as a comment on the task (`Approved by <actor> (review -> done)`), surfaced via `GET .../comments` and in the activity feed.
+
+### `POST /api/projects/:name/tasks/:id/reject`
+
+Review/admin action — send a reviewed task back to actionable work with a required reason.
+
+**Body:** `{"actor"?: "<id>", "reason": "<text>", "target"?: "in-progress" | "blocked"}`
+- Default target is `in-progress`.
+- `target: "blocked"` lands the task in `in-progress` with `blocked=true` so the reviewer can request changes without leaving the task adrift in review.
+
+**Response 200:** `{"ok": true, "task": {<task back in actionable state>}}`
+**400** `REASON_REQUIRED` — `reason` was missing or whitespace-only.
+**409** `NOT_IN_REVIEW` — task is not in `review`.
+**404** task not found.
+
+The rejection is recorded as a comment (`Rejected by <actor> (review -> in-progress) — Reason: <text>`).
+
+> **Note on `reopen`.** A `/reopen` endpoint (`done -> backlog|in-progress|review`) is intentionally **not** included in T-186. The same effect can be achieved via the generic `PUT` with `adminOverride: true` and a `reason`. Promote to a first-class endpoint later if usage patterns warrant.
 
 ### `POST /api/projects/:name/tasks/:id/checkpoint`
 
@@ -155,6 +193,8 @@ Error codes are surfaced as HTTP status:
 | `ROUTING_MISMATCH`      | 403 | Task is routed to a different agent |
 | `NOT_OWNER`             | 403 | Caller does not hold the lease |
 | `AGENT_REQUIRED`        | 403 | Operation needs an `agent` field |
+| `NOT_IN_REVIEW`         | 409 | `/approve` or `/reject` called on a task not in `review` |
+| `REASON_REQUIRED`       | 400 | `/reject` body lacked a non-empty `reason` |
 | `not found` (substring) | 404 | Task does not exist |
 
 ## See also

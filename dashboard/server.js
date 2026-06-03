@@ -41,6 +41,7 @@ const specifySession = require('./specify-sessions');
 const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
+const taskTransitionGuard = require('./task-transition-guard.js');
 
 // Gateway webhook config (for project-switch wake events)
 const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
@@ -1211,6 +1212,29 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     if (!VALID.has(hzlUpdates.status)) {
       return res.status(400).json({ error: `Invalid status: "${hzlUpdates.status}"` });
     }
+
+    // T-186: guard sensitive transitions. Generic PUT may still drive most
+    // status edits, but review->done and done->reopen must go through their
+    // explicit endpoints (or pass adminOverride with a reason for the
+    // legacy/cleanup case). The override is recorded as an audit comment so
+    // the activity feed reflects who took the back-door path.
+    const fromStatus = prevStatus;
+    const toStatus = hzlUpdates.status;
+    if (taskTransitionGuard.isSensitiveTransition(fromStatus, toStatus)) {
+      const override = updates.adminOverride === true;
+      if (!override) {
+        return res.status(409).json({ error: taskTransitionGuard.transitionErrorMessage(fromStatus, toStatus) });
+      }
+      const overrideReason = updates.reason && String(updates.reason).trim();
+      const actor = updates.actor && String(updates.actor).trim();
+      const auditMsg = `admin-status-override by ${actor || 'unknown'} (${fromStatus} -> ${toStatus})` +
+        (overrideReason ? ` — Reason: ${overrideReason}` : '');
+      try {
+        hzlService.addComment(req.params.name, req.params.id, { message: auditMsg, author: actor || null });
+      } catch (e) {
+        console.warn('[admin-status-override audit]', e);
+      }
+    }
   }
 
   // Pass blocked flag through
@@ -1983,6 +2007,48 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
   } catch (err) {
     const status = err.message.includes('not found') ? 404
                  : err.code === 'AGENT_REQUIRED' || err.code === 'NOT_OWNER' ? 403
+                 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// T-186: POST /api/projects/:name/tasks/:id/approve
+// Review/admin action — accept work in review and finalise (review -> done).
+// Unlike /complete this is NOT owner-gated: it represents a human/admin
+// reviewer signing off on completed work, which is typically a different
+// actor than the agent that filed it for review.
+app.post('/api/projects/:name/tasks/:id/approve', (req, res) => {
+  try {
+    const { actor, reason } = req.body || {};
+    const task = hzlService.approveTask(req.params.name, req.params.id, { actor, reason });
+    const full = hzlService.getTask(req.params.name, req.params.id);
+    if (full && full.parentId) {
+      try { hzlService.recalcParentStatus(req.params.name, full.parentId); } catch (e) { console.warn('[approve recalcParent]', e); }
+    }
+    res.json({ ok: true, task });
+  } catch (err) {
+    const status = err.message && err.message.includes('not found') ? 404
+                 : err.code === 'NOT_IN_REVIEW' ? 409
+                 : 400;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// T-186: POST /api/projects/:name/tasks/:id/reject
+// Review/admin action — send task back to actionable work with a reason.
+// Body: { actor?, reason (required), target? ('in-progress'|'blocked') }
+app.post('/api/projects/:name/tasks/:id/reject', (req, res) => {
+  try {
+    const { actor, reason, target } = req.body || {};
+    if (target !== undefined && target !== null && target !== 'in-progress' && target !== 'blocked') {
+      return res.status(400).json({ error: `Invalid target: "${target}". Must be "in-progress" or "blocked".` });
+    }
+    const task = hzlService.rejectTask(req.params.name, req.params.id, { actor, reason, target });
+    res.json({ ok: true, task });
+  } catch (err) {
+    const status = err.message && err.message.includes('not found') ? 404
+                 : err.code === 'NOT_IN_REVIEW' ? 409
+                 : err.code === 'REASON_REQUIRED' ? 400
                  : 400;
     res.status(status).json({ error: err.message });
   }
