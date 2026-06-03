@@ -1225,6 +1225,10 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       if (!override) {
         return res.status(409).json({ error: taskTransitionGuard.transitionErrorMessage(fromStatus, toStatus) });
       }
+      const reasonError = taskTransitionGuard.adminOverrideReasonError(updates.reason);
+      if (reasonError) {
+        return res.status(400).json({ error: reasonError });
+      }
       const overrideReason = updates.reason && String(updates.reason).trim();
       const actor = updates.actor && String(updates.actor).trim();
       const auditMsg = `admin-status-override by ${actor || 'unknown'} (${fromStatus} -> ${toStatus})` +

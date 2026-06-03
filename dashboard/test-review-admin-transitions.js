@@ -64,6 +64,7 @@ function throws(fn, codeOrPattern, msg) {
   // -------------------------------------------------------------------------
   ok(typeof guard.isSensitiveTransition === 'function', 'exports isSensitiveTransition');
   ok(typeof guard.transitionErrorMessage === 'function', 'exports transitionErrorMessage');
+  ok(typeof guard.adminOverrideReasonError === 'function', 'exports adminOverrideReasonError');
 
   ok(guard.isSensitiveTransition('review', 'done'),
     'review→done is sensitive');
@@ -94,6 +95,12 @@ function throws(fn, codeOrPattern, msg) {
   const reopen = guard.transitionErrorMessage('done', 'open');
   ok(typeof reopen === 'string' && /reopen|adminOverride|done/i.test(reopen),
     'transitionErrorMessage(done, open) explains the reopen / override path');
+  ok(guard.adminOverrideReasonError('') && /reason/i.test(guard.adminOverrideReasonError('')),
+    'adminOverrideReasonError rejects empty reason');
+  ok(guard.adminOverrideReasonError('   ') && /reason/i.test(guard.adminOverrideReasonError('   ')),
+    'adminOverrideReasonError rejects whitespace-only reason');
+  eq(guard.adminOverrideReasonError('manual cleanup'), null,
+    'adminOverrideReasonError accepts non-empty reason');
 
   // -------------------------------------------------------------------------
   section('2. hzl-service.completeTask — owner-only (regression)');

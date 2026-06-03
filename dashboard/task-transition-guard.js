@@ -43,7 +43,13 @@ function transitionErrorMessage(fromStatus, toStatus) {
   return `Refusing sensitive status transition ${fromStatus} -> ${toStatus}.`;
 }
 
+function adminOverrideReasonError(reason) {
+  if (reason && String(reason).trim()) return null;
+  return 'adminOverride requires a non-empty reason for sensitive status transitions';
+}
+
 module.exports = {
+  adminOverrideReasonError,
   isSensitiveTransition,
   transitionErrorMessage,
 };
