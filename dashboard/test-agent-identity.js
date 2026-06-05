@@ -81,5 +81,32 @@ section('server-facing helpers');
   assertEqual(identity.responseMeta({ ok: false }), undefined, 'responseMeta ignores invalid identities');
 }
 
+section('resolveActivityAuthor() — T-232 comment attribution');
+{
+  // validated agent wins and is normalized via validateAgentId
+  const a = identity.resolveActivityAuthor({ agent: 'claude' });
+  assertEqual(a.ok, true, 'agent-only resolves ok');
+  assertEqual(a.author, 'claude', 'agent becomes the author');
+
+  // agent wins over a free-form author when both are present
+  const both = identity.resolveActivityAuthor({ agent: 'dev-botti', author: 'someone-else' });
+  assertEqual(both.author, 'dev-botti', 'validated agent wins over free-form author');
+
+  // free-form author passes through when no agent (UI/human path)
+  const human = identity.resolveActivityAuthor({ author: 'Ada' });
+  assertEqual(human.ok, true, 'author-only resolves ok');
+  assertEqual(human.author, 'Ada', 'free-form author passes through unchanged');
+
+  // nothing provided → null (legitimately unattributed; UI renders "flowboard")
+  assertEqual(identity.resolveActivityAuthor({}).author, null, 'no agent/author → null author');
+  assertEqual(identity.resolveActivityAuthor().author, null, 'no body → null author');
+  assertEqual(identity.resolveActivityAuthor({ agent: '' }).author, null, 'blank agent falls through to author/null');
+
+  // invalid agent is rejected (not silently dropped, unlike the old bug)
+  const bad = identity.resolveActivityAuthor({ agent: 'Not A Valid ID!!' });
+  assertEqual(bad.ok, false, 'invalid agent is rejected');
+  assert(bad.error && bad.error.startsWith('agent '), 'rejection uses the "agent" label');
+}
+
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);
 process.exit(failed === 0 ? 0 : 1);

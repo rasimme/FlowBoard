@@ -96,11 +96,30 @@ function responseMeta(identity) {
   };
 }
 
+/**
+ * T-232: resolve the author for an activity entry (comment). The comment
+ * endpoint historically took only a free-form `author` (the UI's human display
+ * name), so a machine posting with `agent` — the field every sibling endpoint
+ * (checkpoint/claim/complete) uses — was silently dropped and the entry stored
+ * with a null author (rendered as "flowboard"). Accept both: a provided `agent`
+ * is validated and wins; otherwise the free-form `author` (or null) is used.
+ * Returns { ok, author } or { ok:false, error }.
+ */
+function resolveActivityAuthor({ agent, author } = {}) {
+  if (agent !== undefined && agent !== null && String(agent).trim() !== '') {
+    const result = validateAgentId(agent, 'agent');
+    if (!result.ok) return { ok: false, error: result.error };
+    return { ok: true, author: result.id };
+  }
+  return { ok: true, author: author || null };
+}
+
 module.exports = {
   DEFAULT_KNOWN_AGENT_IDS,
   classifyAgentId,
   validateAgentId,
   responseMeta,
+  resolveActivityAuthor,
   normalizeAgentId,
   isEphemeralAgentId,
 };

@@ -2109,8 +2109,12 @@ app.get('/api/projects/:name/tasks/:id/checkpoints', (req, res) => {
 // POST /api/projects/:name/tasks/:id/comment
 app.post('/api/projects/:name/tasks/:id/comment', (req, res) => {
   try {
-    const { message, author } = req.body;
-    const comment = hzlService.addComment(req.params.name, req.params.id, { message, author });
+    const { message } = req.body;
+    // T-232: accept `agent` (validated, consistent with checkpoint/claim) as the
+    // author source; fall back to the free-form `author` the UI sends for humans.
+    const resolved = agentIdentity.resolveActivityAuthor(req.body);
+    if (!resolved.ok) return res.status(400).json({ error: resolved.error });
+    const comment = hzlService.addComment(req.params.name, req.params.id, { message, author: resolved.author });
     res.json({ ok: true, comment });
   } catch (err) {
     const status = err.message.includes('not found') ? 404 : 400;
