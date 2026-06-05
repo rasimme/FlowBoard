@@ -60,6 +60,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0017](0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path (2026-05-22)
 - [ADR-0018](0018-hzl-filesystem-rollback-detection.md) — HZL filesystem-level rollback detection via boot watermark (2026-05-22)
 - [ADR-0019](0019-frontend-runtime-foundation.md) — Frontend runtime foundation owns task UI state convergence (2026-05-29)
+- [ADR-0020](0020-agent-idle-auto-deactivation.md) — Agent idle auto-deactivation via `last_seen` heartbeat, lease-protected TTL (2026-06-05)
 
 ## See also
 

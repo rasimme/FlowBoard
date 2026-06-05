@@ -66,6 +66,28 @@ check(
 );
 
 // ---------------------------------------------------------------------------
+// countLiveClaims — lease-aware protection signal (T-231 review fix #1)
+// ---------------------------------------------------------------------------
+{
+  const live = () => ({ leaseUntil: new Date(NOW + 1 * HOUR).toISOString() });
+  const expired = { leaseUntil: new Date(NOW - 1 * HOUR).toISOString() };
+  const noLease = { leaseUntil: null };
+
+  check(meta.countLiveClaims([live()], NOW) === 1, 'live lease counts as a protecting claim');
+  check(meta.countLiveClaims([expired], NOW) === 0, 'EXPIRED lease does NOT protect (the dead-agent bug)');
+  check(meta.countLiveClaims([noLease], NOW) === 1, 'claim with no lease is treated as live/protecting');
+  check(meta.countLiveClaims([live(), expired, noLease], NOW) === 2, 'mixed: only live + no-lease count');
+  check(meta.countLiveClaims([], NOW) === 0 && meta.countLiveClaims(undefined, NOW) === 0, 'empty/undefined → 0');
+
+  // end-to-end: an agent idle past TTL whose only claim has an EXPIRED lease
+  // must still be expired (this is the scenario the bug fix targets).
+  const deadRow = { agent_id: 'dead', active_project: 'flowboard', last_seen: iso(100 * HOUR) };
+  const claimCount = meta.countLiveClaims([expired], NOW);
+  check(meta.isAgentIdleExpired(deadRow, { nowMs: NOW, ttlHours: TTL, claimCount }) === true,
+    'idle agent with only an expired-lease claim IS deactivated (regression guard for #1)');
+}
+
+// ---------------------------------------------------------------------------
 // DB-glue tests against an in-memory node:sqlite DB (built-in, no dependency).
 // Validates the SQL in touch/clear/setActive against real SQLite; production
 // uses better-sqlite3 via hzl-core, but the statements are standard SQLite.

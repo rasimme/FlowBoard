@@ -291,6 +291,20 @@ function isAgentIdleExpired(row, { nowMs, ttlHours, claimCount } = {}) {
 }
 
 /**
+ * T-231: count an agent's claims that are still *live* (lease not expired).
+ * A claim with an expired `leaseUntil` is dead work the system would reclaim
+ * (see hzl-service getStuckTasks / claimTask leaseExpired), so it must NOT
+ * protect an idle agent from auto-deactivation — that is exactly the
+ * "grabbed a task, died, never released" case this feature targets. A claim
+ * with no lease is treated as live/protecting (conservative, consistent with
+ * getStuckTasks only flagging leased claims).
+ */
+function countLiveClaims(claims, nowMs) {
+  if (!Array.isArray(claims)) return 0;
+  return claims.filter(c => !c.leaseUntil || Date.parse(c.leaseUntil) >= nowMs).length;
+}
+
+/**
  * T-231: refresh an agent's heartbeat. Upsert-safe — creates the row with
  * last_seen set if absent, without touching active_project.
  */
@@ -448,6 +462,7 @@ module.exports = {
   listAgents,
   resolveProjectName,
   isAgentIdleExpired,
+  countLiveClaims,
   touchAgentLastSeen,
   clearAgentActiveProject,
   AGENT_IDLE_TTL_HOURS,

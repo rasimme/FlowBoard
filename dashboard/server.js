@@ -539,13 +539,16 @@ app.put('/api/status', async (req, res) => {
 app.get('/api/agents', (req, res) => {
   try {
     // T-231: lazy idle auto-deactivation. Clear active_project for agents idle
-    // past the TTL that hold no active task claim (lease protection). Done on
-    // read so /api/agents reflects truth without a scheduler.
+    // past the TTL that hold no *live* task claim (lease protection). Done on
+    // read so /api/agents reflects truth without a scheduler. Correctness of
+    // the idle window relies on the bootstrap hook calling GET /api/status
+    // before every agent run (that refreshes last_seen) — see GET /api/status.
     const nowMs = Date.now();
     const ttlHours = fbMeta.AGENT_IDLE_TTL_HOURS;
     const agents = fbMeta.listAgents();
     for (const a of agents) {
-      const claimCount = hzlService.listTasksClaimedBy(a.agent_id).length;
+      // Lease-aware: an expired-lease claim is dead work and must not protect.
+      const claimCount = fbMeta.countLiveClaims(hzlService.listTasksClaimedBy(a.agent_id), nowMs);
       if (fbMeta.isAgentIdleExpired(a, { nowMs, ttlHours, claimCount })) {
         if (fbMeta.clearAgentActiveProject(a.agent_id)) {
           const idleH = Math.round((nowMs - Date.parse(a.last_seen)) / 3600000);
