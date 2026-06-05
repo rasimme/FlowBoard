@@ -59,7 +59,7 @@ Dashboard server manages all data. **Always use API for mutations:**
 **Reading tasks:** Use `GET /api/projects/:name/tasks`. Bootstrap may include an `Operational Task State` section from the same API, but the API is canonical. Never read `tasks.json` directly and never derive current task work from `PROJECT.md` or `SESSIONS.md`.
 
 ### Spec Files
-- Live in `~/.openclaw/workspace/projects/<name>/specs/` (NOT in git repo)
+- Live in `~/.openclaw/projects/<name>/specs/` (NOT in git repo)
 - Created via Dashboard or API; `specFile` field links automatically
 - Auto-load spec when task moves to in-progress
 - Update checkboxes + log as work progresses
