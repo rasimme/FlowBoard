@@ -72,6 +72,8 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_PORT` | `18790` | Hook reads this to construct the local API URL. |
 | `FLOWBOARD_PROJECTS_DIR` | `~/.openclaw/projects` | See Storage paths. |
 | `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset | See Feature flags. |
+| `FLOWBOARD_HOOK_FETCH_TIMEOUT_MS` | `2000` | Per-attempt timeout (ms) for the hook's calls to the local FlowBoard API. |
+| `FLOWBOARD_HOOK_FETCH_RETRIES` | `2` | Extra retries (after the first attempt) on a transient API failure (connection refused during a KeepAlive restart, or a 5xx). Backoff: 150/400/800 ms. Rides out brief server restarts so a transient miss does not surface as a failed tool call. |
 
 ## Node defaults
 

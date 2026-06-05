@@ -26,6 +26,15 @@ const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
 const ALLOW_LEGACY_FILE_FALLBACK = process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK === "true";
 const BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 
+// T-230: transient-failure resilience. The FlowBoard server is a launchd
+// KeepAlive service, so unavailability is almost always a brief restart
+// window. A single short attempt occasionally lands in that gap, surfacing a
+// visible "failed" tool call and nudging the agent into improvising file
+// scans. Retry a few times with short backoff to ride out the restart.
+const FETCH_TIMEOUT_MS = Number(process.env.FLOWBOARD_HOOK_FETCH_TIMEOUT_MS) || 2000;
+const FETCH_MAX_RETRIES = Number(process.env.FLOWBOARD_HOOK_FETCH_RETRIES) || 2; // extra attempts after the first
+const FETCH_BACKOFF_MS = [150, 400, 800];
+
 // Single source of truth for the rules manifest: load from the FlowBoard repo
 // so the bootstrap manifest matches the server's. Fall back to an inline
 // minimal manifest if the repo module can't be resolved.
@@ -83,6 +92,26 @@ function buildNoActiveProjectSection() {
   ].join("\n");
 }
 
+// T-230: the status API was transiently unreachable (e.g. a brief KeepAlive
+// restart window) AND no legacy fallback resolved a project. Unlike the
+// authoritative null above, we must NOT assert "no active project" — that is a
+// strong, misleading signal on a transient blip. Tell the agent the state is
+// unknown, to retry, and to neither assume "none" nor guess one.
+function buildProjectUnavailableSection(reason) {
+  return [
+    "# Active Project: Unknown (FlowBoard API temporarily unavailable)",
+    "",
+    `The FlowBoard status API could not be reached (${reason}). This is almost`,
+    "always a brief restart window of the local service, **not** a sign that no",
+    "project is active. Retry shortly: `GET /api/status?agentId=<agentId>`.",
+    "",
+    "Treat the active project as **unknown** until the API answers. Do **not**",
+    "assume there is no active project, and do **not** infer one from",
+    "conversation history, recent topics, or file paths in tool results.",
+    "",
+  ].join("\n");
+}
+
 function buildInlineManifestFallback() {
   return [
     "## Project Rules (lazy-load)",
@@ -100,12 +129,35 @@ function buildRulesManifest() {
   return rulesApi ? rulesApi.buildRulesManifest() : buildInlineManifestFallback();
 }
 
+// T-230: fetch with retry + backoff. Retries thrown errors (connection
+// refused during a restart) and 5xx responses (a still-starting server); a
+// 4xx is a definitive answer and returned immediately. `fetchImpl`/`sleep`
+// are injectable so the retry behaviour can be unit-tested without a server.
+export async function fetchWithRetry(url, { fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  let lastErr = null;
+  let lastRes = null;
+  for (let attempt = 0; attempt <= FETCH_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (res.ok || res.status < 500) return res;
+      lastRes = res; // 5xx → treat as transient and retry
+    } catch (err) {
+      lastErr = err;
+    }
+    if (attempt < FETCH_MAX_RETRIES) {
+      await sleep(FETCH_BACKOFF_MS[attempt] ?? 800);
+    }
+  }
+  if (lastRes) return lastRes;
+  throw lastErr;
+}
+
 // Discriminated result so callers can distinguish authoritative null
 // (no project active) from a network failure.
 async function resolveActiveProjectFromApi(agentId) {
   try {
     const url = `http://localhost:${FLOWBOARD_PORT}/api/status?agentId=${encodeURIComponent(agentId)}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+    const res = await fetchWithRetry(url);
     if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
     const data = await res.json();
     return { ok: true, project: data.activeProject || null };
@@ -133,25 +185,29 @@ function resolveActiveProjectFromFile(workspaceDir) {
   }
 }
 
+// T-230: render a transient task-state miss as a soft "retry, don't scan
+// files" note rather than a hard BLOCKER, so a brief restart window does not
+// push the agent into improvising file scans.
+function buildTaskStateUnavailableMarkdown(url, reason) {
+  const fallback = [
+    "## Operational Task State",
+    "",
+    `**Live task state temporarily unavailable** (\`${url}\`: ${reason}). Retry the Tasks API in a moment.`,
+    "Do **not** fall back to scanning files (`PROJECT.md`, `SESSIONS.md`, `tasks.json`, or the `~/.openclaw/projects` tree) for task state.",
+    "",
+  ].join("\n");
+  return rulesApi?.buildOperationalTaskStateMarkdown?.(null, { transient: { url, reason } }) || fallback;
+}
+
 async function getTaskStatusSummary(projectName) {
   let data;
   const url = `http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return {
-      ok: false,
-      markdown: rulesApi?.buildOperationalTaskStateMarkdown?.(null, {
-        blocker: `Could not fetch live task state from \`${url}\` (HTTP ${res.status}).`,
-      }) || `## Operational Task State\n\n**BLOCKER:** Could not fetch live task state from \`${url}\` (HTTP ${res.status}).\n`,
-    };
+    const res = await fetchWithRetry(url);
+    if (!res.ok) return { ok: false, markdown: buildTaskStateUnavailableMarkdown(url, `HTTP ${res.status}`) };
     data = await res.json();
   } catch (err) {
-    return {
-      ok: false,
-      markdown: rulesApi?.buildOperationalTaskStateMarkdown?.(null, {
-        blocker: `Could not fetch live task state from \`${url}\` (${err?.message || "fetch failed"}).`,
-      }) || `## Operational Task State\n\n**BLOCKER:** Could not fetch live task state from \`${url}\` (${err?.message || "fetch failed"}).\n`,
-    };
+    return { ok: false, markdown: buildTaskStateUnavailableMarkdown(url, err?.message || "fetch failed") };
   }
   if (!Array.isArray(data?.tasks)) {
     return {
@@ -174,18 +230,27 @@ async function buildBootstrapContent(workspaceDir, agentId) {
   // opt-in only and never runs after an authoritative API null.
   const apiResult = await resolveActiveProjectFromApi(agentId);
   let projectName = null;
+  // T-230: distinguish an authoritative null (API said no project) from a
+  // transient API failure (status unknown). They must produce different
+  // headers — see below.
+  let statusUnknown = false;
   if (apiResult.ok) {
     projectName = apiResult.project;
   } else {
     console.warn(`[project-context] FlowBoard status unavailable for ${agentId}: ${apiResult.reason}; trying legacy file fallback if enabled`);
     projectName = resolveActiveProjectFromFile(workspaceDir);
+    if (!projectName) statusUnknown = true;
   }
 
   if (!projectName) {
-    // No active project — emit the explicit "no project" header before
-    // Identity so the model has a load-bearing marker to read instead of
-    // inferring an active project from conversation context.
-    return buildNoActiveProjectSection() + "\n" + identitySection;
+    // Emit a load-bearing header before Identity so the model reads it instead
+    // of inferring a project from conversation context. On a transient API
+    // failure use the soft "unknown" header (do not assert "no project"); only
+    // an authoritative API null gets the hard "No Active Project" header.
+    const header = statusUnknown
+      ? buildProjectUnavailableSection(apiResult.reason)
+      : buildNoActiveProjectSection();
+    return header + "\n" + identitySection;
   }
 
   const rulesManifest = buildRulesManifest();

@@ -178,5 +178,22 @@ section('buildBootstrapDocument() — non-empty context contract');
   assert(threw, 'null project does not render an empty successful document');
 }
 
+section('buildOperationalTaskStateMarkdown() — T-230 transient degradation');
+{
+  const transient = rulesApi.buildOperationalTaskStateMarkdown(null, {
+    transient: { url: 'http://localhost:18790/api/projects/flowboard/tasks', reason: 'fetch failed' },
+  });
+  assert(transient.includes('## Operational Task State'), 'transient note keeps the section header');
+  assert(transient.includes('temporarily unavailable'), 'transient note is framed as temporary, not a hard blocker');
+  assert(!transient.includes('**BLOCKER:**'), 'transient note does NOT use the hard BLOCKER framing');
+  assert(transient.includes('Retry the Tasks API'), 'transient note tells the agent to retry the API');
+  assert(transient.includes('find') && transient.includes('PROJECT.md'), 'transient note explicitly forbids find/file scans');
+  assert(transient.includes('fetch failed'), 'transient note surfaces the underlying reason');
+
+  // blocker still wins and stays hard when both are (mistakenly) supplied
+  const stillBlocks = rulesApi.buildOperationalTaskStateMarkdown(null, { blocker: 'hard fail', transient: { url: 'x', reason: 'y' } });
+  assert(stillBlocks.includes('**BLOCKER:** hard fail'), 'explicit blocker still renders as a hard blocker');
+}
+
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);
 process.exit(failed === 0 ? 0 : 1);

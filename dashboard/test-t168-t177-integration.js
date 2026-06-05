@@ -508,13 +508,17 @@ async function testHookLegacyFileFallbackGate() {
       'API success produces active-project context');
 
     // API failure with env unset must not resurrect stale ACTIVE-PROJECT.md.
+    // T-230: a transient API failure yields the soft "Unknown" header (not the
+    // authoritative "No Active Project"), but it still must not read the file.
     global.fetch = async () => { throw new Error('offline'); };
     handler = await loadFreshHandler();
     event = makeBootstrapEvent({ agentId: 'fallback-agent', workspaceDir, existingFiles: [] });
     await handler(event);
     bs = getBootstrapEntry(event);
-    ok(bs && bs.content.startsWith('# No Active Project'),
-      'API failure + env unset ignores ACTIVE-PROJECT.md');
+    ok(bs && bs.content.startsWith('# Active Project: Unknown'),
+      'API failure + env unset → soft "Unknown" header (T-230)');
+    ok(bs && !bs.content.includes(`# Active Project: ${PROJECT_FOR_TESTS}`),
+      'API failure + env unset ignores ACTIVE-PROJECT.md (no stale resurrection)');
 
     // Explicit migration mode re-enables the file fallback.
     process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK = 'true';
@@ -615,7 +619,7 @@ async function testHookTaskStateComesFromTasksApi() {
 }
 
 async function testHookTasksApiFailureBlocksTaskInference() {
-  section('T-202: Tasks API failure emits blocker instead of silent task inference');
+  section('T-202/T-230: Tasks API failure degrades to a soft retry note that still blocks task inference');
 
   const originalFetch = global.fetch;
   try {
@@ -640,8 +644,42 @@ async function testHookTasksApiFailureBlocksTaskInference() {
     const bs = getBootstrapEntry(event);
 
     ok(bs && bs.content.includes('## Operational Task State'), 'Operational Task State section is present');
-    ok(bs && bs.content.includes('**BLOCKER:** Could not fetch live task state'), 'Tasks API failure is surfaced as blocker');
-    ok(bs && bs.content.includes('Do not infer current work'), 'blocker forbids task inference from markdown/memory');
+    // T-230: a transient API miss (503) degrades softly after retries — no hard
+    // BLOCKER framing that pushed agents into improvising file scans.
+    ok(bs && bs.content.includes('temporarily unavailable'), 'Tasks API failure is surfaced as a soft transient note');
+    ok(bs && !bs.content.includes('**BLOCKER:**'), 'transient failure does NOT use hard BLOCKER framing');
+    ok(bs && bs.content.includes('Retry the Tasks API'), 'note tells the agent to retry the API');
+    ok(bs && bs.content.includes('find') && bs.content.includes('PROJECT.md'), 'note still blocks inference by forbidding file scans');
+  } finally {
+    global.fetch = originalFetch;
+  }
+}
+
+async function testHookStatusApiTransientFailureIsUnknownNotNone() {
+  section('T-230: transient status-API failure → "Unknown" header, never a false "No Active Project"');
+
+  const originalFetch = global.fetch;
+  try {
+    // Status fetch throws on every attempt (e.g. connection refused during a
+    // KeepAlive restart). With retries exhausted and no legacy fallback, the
+    // project is unknown — not authoritatively null.
+    global.fetch = async () => { throw new Error('ECONNREFUSED'); };
+
+    const handler = await loadFreshHandler();
+    const event = makeBootstrapEvent({
+      agentId: 't230-status-probe',
+      workspaceDir: '/home/jetson/.openclaw/workspace-t230-status-probe',
+      existingFiles: [],
+    });
+    await handler(event);
+    const bs = getBootstrapEntry(event);
+
+    ok(bs && bs.content.startsWith('# Active Project: Unknown'), 'uses the soft "Unknown" header on transient failure');
+    ok(bs && !bs.content.startsWith('# No Active Project'), 'does NOT falsely assert "No Active Project" on a transient blip');
+    ok(bs && bs.content.includes('temporarily unavailable'), 'frames the situation as temporary');
+    ok(bs && bs.content.includes('ECONNREFUSED'), 'surfaces the underlying reason');
+    ok(bs && bs.content.includes('assume there is no active project'), 'tells the agent not to assume "no project"');
+    ok(bs && bs.content.includes("agentId` is: `t230-status-probe`"), 'identity section is still present');
   } finally {
     global.fetch = originalFetch;
   }
@@ -727,6 +765,7 @@ async function main() {
     await testHookLegacyFileFallbackGate();
     await testHookTaskStateComesFromTasksApi();
     await testHookTasksApiFailureBlocksTaskInference();
+    await testHookStatusApiTransientFailureIsUnknownNotNone();
   } finally {
     await cleanup();
   }

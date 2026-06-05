@@ -127,6 +127,24 @@ function buildOperationalTaskStateMarkdown(tasks, options = {}) {
     ].join('\n');
   }
 
+  // T-230: soft, non-alarming degradation for a *transient* API miss (e.g. a
+  // brief KeepAlive restart window). Unlike `blocker`, this does not frame the
+  // situation as a hard failure to be "solved" — the hard-blocker framing used
+  // to nudge agents into improvising `find PROJECT.md` over the projects
+  // symlink. It tells the agent to retry the API and explicitly NOT to scan
+  // files for task or project state.
+  const transient = options.transient || null;
+  if (transient) {
+    return [
+      '## Operational Task State',
+      '',
+      `**Live task state temporarily unavailable** (\`${transient.url}\`: ${transient.reason}).`,
+      'This is almost always a brief restart window of the local FlowBoard service — not a missing project. Retry the Tasks API in a moment: `GET /api/projects/<project>/tasks`.',
+      'Do **not** fall back to scanning files for task or project state — do not `find`/grep `PROJECT.md`, `SESSIONS.md`, `tasks.json`, or the `~/.openclaw/projects` tree (that path is a symlink and is never authoritative for current work).',
+      '',
+    ].join('\n');
+  }
+
   if (!Array.isArray(tasks)) {
     return [
       '## Operational Task State',
