@@ -27,6 +27,7 @@ const TOOL_PATHS     = [
   path.join(REPO_ROOT, 'dashboard', 'install-trigger.mjs'),
   path.join(REPO_ROOT, 'dashboard', 'migrate-tasks.js'),
   path.join(REPO_ROOT, 'dashboard', 'hzl-service.js'),
+  path.join(REPO_ROOT, 'dashboard', 'flowboard-metadata.js'),
 ];
 const MANIFEST_PATH  = path.join(REPO_ROOT, 'docs', 'reference', 'api-manifest.json');
 const ENV_DOCS_PATH  = path.join(REPO_ROOT, 'docs', 'reference', 'env-vars.md');

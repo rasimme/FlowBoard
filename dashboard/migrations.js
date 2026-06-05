@@ -271,6 +271,26 @@ const migrations = [
       console.warn('[m006] Manual merge remains the intended path — AGENTS.md is user-owned.');
     },
   },
+
+  {
+    id:   'm007-agent-last-seen',
+    name: 'flowboard_agents: add last_seen column for idle auto-deactivation (T-231)',
+    run: (db) => {
+      // Idempotent: fresh installs already have the column from
+      // CREATE_AGENTS_TABLE_SQL; existing installs need the ALTER. Use the
+      // pragma_table_info table-valued function via a plain prepared statement
+      // so this does not depend on a driver-specific .pragma() helper.
+      const hasColumn = db.prepare(
+        "SELECT COUNT(*) AS c FROM pragma_table_info('flowboard_agents') WHERE name = 'last_seen'"
+      ).get().c > 0;
+      if (!hasColumn) {
+        db.exec('ALTER TABLE flowboard_agents ADD COLUMN last_seen TEXT');
+      }
+      // Backfill: treat existing rows as last seen at activation time, so stale
+      // pre-T-231 activations become eligible for expiry immediately.
+      db.prepare('UPDATE flowboard_agents SET last_seen = activated_at WHERE last_seen IS NULL').run();
+    },
+  },
 ];
 
 /**

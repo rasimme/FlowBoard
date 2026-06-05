@@ -24,9 +24,15 @@ const CREATE_AGENTS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS flowboard_agents (
     agent_id        TEXT PRIMARY KEY,
     active_project  TEXT,
-    activated_at    TEXT
+    activated_at    TEXT,
+    last_seen       TEXT
   )
 `;
+
+// T-231: default idle threshold before an agent's active_project is auto-cleared
+// (generous on purpose — a live session heartbeats via GET /api/status on every
+// bootstrap, and a held task claim protects regardless of idle time).
+const AGENT_IDLE_TTL_HOURS = Number(process.env.FLOWBOARD_AGENT_IDLE_TTL_HOURS) || 48;
 
 const CREATE_MIGRATIONS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS flowboard_migrations (
@@ -266,7 +272,47 @@ function _parseJson(str, defaultVal) {
  */
 function getAgentRow(agentId) {
   if (!_db) return null;
-  return _db.prepare('SELECT agent_id, active_project, activated_at FROM flowboard_agents WHERE agent_id = ?').get(agentId) || null;
+  return _db.prepare('SELECT agent_id, active_project, activated_at, last_seen FROM flowboard_agents WHERE agent_id = ?').get(agentId) || null;
+}
+
+/**
+ * T-231: pure idle-expiry decision. Returns true iff this agent's
+ * `active_project` should be auto-cleared. An agent is NOT expired when it has
+ * no active project, has no recorded heartbeat (defensive), holds an active
+ * task claim (lease protection), or was seen within the TTL window.
+ */
+function isAgentIdleExpired(row, { nowMs, ttlHours, claimCount } = {}) {
+  if (!row || !row.active_project) return false;
+  if (!row.last_seen) return false;
+  if (claimCount > 0) return false;
+  const seenMs = Date.parse(row.last_seen);
+  if (Number.isNaN(seenMs)) return false;
+  return (nowMs - seenMs) > ttlHours * 3600 * 1000;
+}
+
+/**
+ * T-231: refresh an agent's heartbeat. Upsert-safe — creates the row with
+ * last_seen set if absent, without touching active_project.
+ */
+function touchAgentLastSeen(agentId) {
+  if (!_db || !agentId) return;
+  const now = new Date().toISOString();
+  _db.prepare(`
+    INSERT INTO flowboard_agents (agent_id, active_project, activated_at, last_seen)
+    VALUES (?, NULL, ?, ?)
+    ON CONFLICT(agent_id) DO UPDATE SET last_seen = excluded.last_seen
+  `).run(agentId, now, now);
+}
+
+/**
+ * T-231: clear an agent's active_project (auto-deactivation). Keeps the row and
+ * last_seen so the agent stays visible and re-establishes liveness on its next
+ * heartbeat. Returns true if a row was actually changed.
+ */
+function clearAgentActiveProject(agentId) {
+  if (!_db || !agentId) return false;
+  const res = _db.prepare('UPDATE flowboard_agents SET active_project = NULL WHERE agent_id = ? AND active_project IS NOT NULL').run(agentId);
+  return res.changes > 0;
 }
 
 function getAgentActiveProject(agentId) {
@@ -282,12 +328,13 @@ function setAgentActiveProject(agentId, projectName) {
   if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
   const now = new Date().toISOString();
   _db.prepare(`
-    INSERT INTO flowboard_agents (agent_id, active_project, activated_at)
-    VALUES (?, ?, ?)
+    INSERT INTO flowboard_agents (agent_id, active_project, activated_at, last_seen)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(agent_id) DO UPDATE SET
       active_project = excluded.active_project,
-      activated_at   = excluded.activated_at
-  `).run(agentId, projectName || null, now);
+      activated_at   = excluded.activated_at,
+      last_seen      = excluded.last_seen
+  `).run(agentId, projectName || null, now, now);
 }
 
 /**
@@ -366,7 +413,7 @@ function resolveProjectName(input, hzlProjects) {
  */
 function listAgents() {
   if (!_db) return [];
-  return _db.prepare('SELECT agent_id, active_project, activated_at FROM flowboard_agents ORDER BY agent_id').all();
+  return _db.prepare('SELECT agent_id, active_project, activated_at, last_seen FROM flowboard_agents ORDER BY agent_id').all();
 }
 
 /**
@@ -400,4 +447,8 @@ module.exports = {
   deleteAgentRow,
   listAgents,
   resolveProjectName,
+  isAgentIdleExpired,
+  touchAgentLastSeen,
+  clearAgentActiveProject,
+  AGENT_IDLE_TTL_HOURS,
 };

@@ -458,6 +458,10 @@ app.get('/api/status', (req, res) => {
     });
   }
   const agentId = identity.id;
+  // T-231: this read is the per-run heartbeat — the bootstrap hook calls it
+  // before every agent run. Refresh last_seen so a live agent is never
+  // auto-deactivated as idle. (Upsert keeps any existing active_project.)
+  fbMeta.touchAgentLastSeen(agentId);
   // T-131-3: DB is canonical. Unknown agents → null, no file fallback.
   // (The pre-backfill `agentId === AGENT_ID` branch is removed in T-177-3 —
   // there is no service-default agent anymore. The m003 migration handles
@@ -534,7 +538,23 @@ app.put('/api/status', async (req, res) => {
 // GET /api/agents — list all known agents and their active project (T-131-3)
 app.get('/api/agents', (req, res) => {
   try {
-    res.json({ ok: true, agents: fbMeta.listAgents() });
+    // T-231: lazy idle auto-deactivation. Clear active_project for agents idle
+    // past the TTL that hold no active task claim (lease protection). Done on
+    // read so /api/agents reflects truth without a scheduler.
+    const nowMs = Date.now();
+    const ttlHours = fbMeta.AGENT_IDLE_TTL_HOURS;
+    const agents = fbMeta.listAgents();
+    for (const a of agents) {
+      const claimCount = hzlService.listTasksClaimedBy(a.agent_id).length;
+      if (fbMeta.isAgentIdleExpired(a, { nowMs, ttlHours, claimCount })) {
+        if (fbMeta.clearAgentActiveProject(a.agent_id)) {
+          const idleH = Math.round((nowMs - Date.parse(a.last_seen)) / 3600000);
+          console.log(`[flowboard-meta] auto-deactivated idle agent "${a.agent_id}" (idle ${idleH}h, no active claims)`);
+        }
+        a.active_project = null;
+      }
+    }
+    res.json({ ok: true, agents });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }

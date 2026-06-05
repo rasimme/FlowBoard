@@ -61,6 +61,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | Variable | Default | Purpose |
 |---|---|---|
 | `STALE_THRESHOLD_MINUTES` | `30` | Minutes of idle before a claimed task is considered stale by the cron sweeper. |
+| `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |
 | `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback. |
 
 ## Hook-only
