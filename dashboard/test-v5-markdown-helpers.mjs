@@ -61,7 +61,7 @@ function prefixSelectedLines(block, prefix) {
 
 function insertTable() {
   return [
-    '| Spalte | Wert |',
+    '| Column | Value |',
     '| --- | --- |',
     '|  |  |',
   ].join('\n');
@@ -191,7 +191,7 @@ section('insertTable - Table creation');
 {
   const result = insertTable();
   ok(typeof result === 'string', 'returns string');
-  ok(result.includes('| Spalte | Wert |'), 'includes header row');
+  ok(result.includes('| Column | Value |'), 'includes header row');
   ok(result.includes('| --- | --- |'), 'includes separator row');
   ok(result.split('\n').length === 3, 'creates 3-row table');
 }
@@ -239,7 +239,7 @@ section('MarkdownEditor use cases');
 {
   // User inserts table from toolbar
   const table = insertTable();
-  ok(table.includes('Spalte'), 'table has expected columns (German locale)');
+  ok(table.includes('Column'), 'table has expected columns');
   ok(table.split('|').length > 8, 'table has cell structure');
 }
 
@@ -250,15 +250,15 @@ section('MarkdownEditor use cases');
 section('MarkdownEditor toolbar tools (expected mappings)');
 
 const tools = [
-  { label: 'Fett (Bold)', before: '**', after: '**' },
-  { label: 'Kursiv (Italic)', before: '*', after: '*' },
+  { label: 'Bold', before: '**', after: '**' },
+  { label: 'Italic', before: '*', after: '*' },
   { label: 'Link', before: '[', after: '](url)' },
   { label: 'Code', before: '`', after: '`' },
-  { label: 'Überschrift (Heading)', prefix: '# ' },
-  { label: 'Zitat (Quote)', prefix: '> ' },
-  { label: 'Liste (List)', prefix: '- ' },
-  { label: 'Aufgabenliste (Checklist)', prefix: '- [ ] ' },
-  { label: 'Tabelle (Table)', fn: 'insertTable' },
+  { label: 'Heading', prefix: '# ' },
+  { label: 'Quote', prefix: '> ' },
+  { label: 'List', prefix: '- ' },
+  { label: 'Checklist', prefix: '- [ ] ' },
+  { label: 'Table', fn: 'insertTable' },
 ];
 
 ok(tools.length === 9, 'toolbar has 9 tools');

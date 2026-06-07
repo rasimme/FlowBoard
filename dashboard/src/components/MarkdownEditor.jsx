@@ -59,7 +59,7 @@ function prefixSelectedLines(view, prefix) {
 
 function insertTable(view) {
   const table = [
-    '| Spalte | Wert |',
+    '| Column | Value |',
     '| --- | --- |',
     '|  |  |',
   ].join('\n');
@@ -142,12 +142,12 @@ export default function MarkdownEditor({
 
   const tools = [
     {
-      label: 'Fett',
+      label: 'Bold',
       icon: Bold,
       command: (view) => wrapSelection(view, '**'),
     },
     {
-      label: 'Kursiv',
+      label: 'Italic',
       icon: Italic,
       command: (view) => wrapSelection(view, '*'),
     },
@@ -162,27 +162,27 @@ export default function MarkdownEditor({
       command: (view) => wrapSelection(view, '`'),
     },
     {
-      label: 'Überschrift',
+      label: 'Heading',
       icon: Heading1,
       command: (view) => prefixSelectedLines(view, '# '),
     },
     {
-      label: 'Zitat',
+      label: 'Quote',
       icon: Quote,
       command: (view) => prefixSelectedLines(view, '> '),
     },
     {
-      label: 'Liste',
+      label: 'List',
       icon: List,
       command: (view) => prefixSelectedLines(view, '- '),
     },
     {
-      label: 'Aufgabenliste',
+      label: 'Checklist',
       icon: ListChecks,
       command: (view) => prefixSelectedLines(view, '- [ ] '),
     },
     {
-      label: 'Tabelle',
+      label: 'Table',
       icon: Table2,
       command: insertTable,
     },
@@ -190,7 +190,7 @@ export default function MarkdownEditor({
 
   return (
     <div className={`markdown-editor ${className}`.trim()}>
-      <div className="markdown-editor-toolbar" aria-label="Markdown Formatierung">
+      <div className="markdown-editor-toolbar" aria-label="Markdown formatting">
         {tools.map(({ label, icon: Icon, command }) => (
           <button
             key={label}

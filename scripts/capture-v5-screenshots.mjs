@@ -206,26 +206,33 @@ async function anonymizeSidebar(client) {
   await client.eval(`(() => {
     const scroll = document.querySelector('.sidebar-scroll');
     if (!scroll) return false;
+    const grip = '<span class="row-grip" aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>';
+    const kebab = '<button class="row-kebab" type="button" aria-label="Project actions"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>';
+    const chevron = '<span class="chev"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>';
+    const folderIcon = '<span class="folder-ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>';
+    const archiveIcon = '<span class="folder-ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg></span>';
     const item = (name, active = false) => (
       '<div class="project-item' + (active ? ' viewed' : '') + '">' +
+      grip +
       '<span class="proj-name">' + name + '</span>' +
-      (active ? '<span class="active-dot"></span>' : '') +
+      kebab +
       '</div>'
     );
     const folder = (name, children) => (
       '<div class="folder-group">' +
-      '<button class="folder-head"><span class="chev">v</span><span class="folder-ico"></span>' + name + '</button>' +
+      '<button class="folder-head" type="button">' + chevron + folderIcon + '<span>' + name + '</span></button>' +
+      '<div class="folder-body">' + children.join('') + '</div>' +
+      '</div>'
+    );
+    const archive = (children) => (
+      '<div class="archive-section">' +
+      '<button class="archive-head" type="button">' + chevron + archiveIcon + '<span>Archive</span></button>' +
       '<div class="folder-body">' + children.join('') + '</div>' +
       '</div>'
     );
     scroll.innerHTML = [
-      item('Website Launch Demo', true),
-      item('Core Platform'),
-      item('Brand System'),
-      item('Content Studio'),
-      item('QA Workspace'),
       folder('LAUNCH WORK', [
-        item('Website Launch Demo', true),
+        item('Launch Demo', true),
         item('Core Platform'),
         item('Brand System'),
         item('Content Studio'),
@@ -235,7 +242,7 @@ async function anonymizeSidebar(client) {
         item('Plugin Lab'),
         item('Research Notes'),
       ]),
-      folder('ARCHIVE', [
+      archive([
         item('Archived Sprint'),
         item('Discovery Notes'),
       ]),
@@ -276,7 +283,7 @@ async function captureFiles(client) {
 
 async function captureCanvas(client) {
   await clickText(client, 'Ideas');
-  await waitFor(client, `document.body.innerText.includes('Hero: single promise') || document.querySelector('canvas') || document.querySelector('.canvas-note')`, 'canvas content');
+  await waitFor(client, `document.body.innerText.includes('Hero direction') || document.querySelector('canvas') || document.querySelector('.canvas-note')`, 'canvas content');
   await anonymizeSidebar(client);
   await sleep(800);
   await capture(client, 'docs/screenshot-canvas.png');

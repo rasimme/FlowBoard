@@ -588,7 +588,7 @@ export default function FilesView() {
   const handleUpload = useCallback(async (file) => {
     if (!viewedProject) return;
     if (!file.name.toLowerCase().endsWith('.md')) {
-      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Nur .md Dateien erlaubt', type: 'warn' } }));
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Only .md files are allowed', type: 'warn' } }));
       return;
     }
     setUploading(true);
@@ -604,13 +604,13 @@ export default function FilesView() {
         throw new Error(err);
       }
       const uploaded = await res.json();
-      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${file.name} hochgeladen`, type: 'success' } }));
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${file.name} uploaded`, type: 'success' } }));
       await fetchTree({ background: true });
       setExpandedDirs(prev => new Set(prev).add('context'));
       if (uploaded?.path) loadFile(uploaded.path, { keepFromTaskId: true });
     } catch (err) {
       console.warn('[upload]', err);
-      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Upload fehlgeschlagen', type: 'error' } }));
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Upload failed', type: 'error' } }));
     } finally {
       setUploading(false);
     }
@@ -633,7 +633,7 @@ export default function FilesView() {
     const filename = filenameFromTitle(title);
     const path = `context/${filename}`;
     if (fileExists(fileTree?.tree || [], path)) {
-      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} existiert bereits`, type: 'warn' } }));
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} already exists`, type: 'warn' } }));
       return;
     }
     setCreatingFile(true);
@@ -649,7 +649,7 @@ export default function FilesView() {
         throw new Error(err);
       }
       const created = await res.json();
-      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} angelegt`, type: 'success' } }));
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} created`, type: 'success' } }));
       setCreateOpen(false);
       setNewFileTitle('');
       await fetchTree({ background: true });
@@ -657,7 +657,7 @@ export default function FilesView() {
       if (created?.path) loadFile(created.path, { keepFromTaskId: true });
     } catch (err) {
       console.warn('[create-file]', err);
-      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Datei konnte nicht angelegt werden', type: 'error' } }));
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'File could not be created', type: 'error' } }));
     } finally {
       setCreatingFile(false);
     }
@@ -815,13 +815,13 @@ export default function FilesView() {
             />
             <button className="file-upload-btn" onClick={handleUploadClick} disabled={uploading}>
               <Upload size={14} />
-              {uploading ? 'Uploading…' : '.md in context/ hochladen'}
+              {uploading ? 'Uploading…' : 'Upload .md to context/'}
             </button>
             <button className="file-upload-btn" onClick={() => setCreateOpen(true)} disabled={uploading || creatingFile}>
               <FilePlus size={14} />
-              Neue .md anlegen
+              New .md file
             </button>
-            <span className="file-upload-hint">oder hier reinziehen</span>
+            <span className="file-upload-hint">or drop here</span>
           </div>
         )}
         <div className="file-tree-items" ref={treeScrollRef} style={{ overflowY: 'auto' }}>
@@ -868,11 +868,11 @@ export default function FilesView() {
           if (creatingFile) return;
           setCreateOpen(false);
         }}
-        title="Markdown-Datei anlegen"
+        title="Create Markdown file"
         actions={(
           <>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creatingFile}>Abbrechen</Button>
-            <Button onClick={handleCreateFile} disabled={creatingFile}>Anlegen</Button>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creatingFile}>Cancel</Button>
+            <Button onClick={handleCreateFile} disabled={creatingFile}>Create</Button>
           </>
         )}
       >
@@ -881,7 +881,7 @@ export default function FilesView() {
             autoFocus
             value={newFileTitle}
             onChange={(e) => setNewFileTitle(e.target.value)}
-            placeholder="Titel"
+            placeholder="Title"
             disabled={creatingFile}
           />
           <div className="text-xs text-muted">
