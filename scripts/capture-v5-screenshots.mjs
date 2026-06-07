@@ -202,6 +202,48 @@ async function clickText(client, text) {
   })()`);
 }
 
+async function anonymizeSidebar(client) {
+  await client.eval(`(() => {
+    const scroll = document.querySelector('.sidebar-scroll');
+    if (!scroll) return false;
+    const item = (name, active = false) => (
+      '<div class="project-item' + (active ? ' viewed' : '') + '">' +
+      '<span class="proj-name">' + name + '</span>' +
+      (active ? '<span class="active-dot"></span>' : '') +
+      '</div>'
+    );
+    const folder = (name, children) => (
+      '<div class="folder-group">' +
+      '<button class="folder-head"><span class="chev">v</span><span class="folder-ico"></span>' + name + '</button>' +
+      '<div class="folder-body">' + children.join('') + '</div>' +
+      '</div>'
+    );
+    scroll.innerHTML = [
+      item('Website Launch Demo', true),
+      item('Core Platform'),
+      item('Brand System'),
+      item('Content Studio'),
+      item('QA Workspace'),
+      folder('LAUNCH WORK', [
+        item('Website Launch Demo', true),
+        item('Core Platform'),
+        item('Brand System'),
+        item('Content Studio'),
+      ]),
+      folder('AGENT LAB', [
+        item('QA Workspace'),
+        item('Plugin Lab'),
+        item('Research Notes'),
+      ]),
+      folder('ARCHIVE', [
+        item('Archived Sprint'),
+        item('Discovery Notes'),
+      ]),
+    ].join('');
+    return true;
+  })()`);
+}
+
 async function captureKanban(client) {
   await clickText(client, 'Tasks');
   await waitFor(client, `document.body.innerText.includes('Launch landing page for Atelier Nova')`, 'kanban content');
@@ -211,6 +253,7 @@ async function captureKanban(client) {
     for (const column of document.querySelectorAll('.column-body')) column.scrollTo({ top: 0, left: 0 });
     return true;
   })()`);
+  await anonymizeSidebar(client);
   await sleep(500);
   await capture(client, 'docs/screenshot-kanban.png');
 }
@@ -226,6 +269,7 @@ async function captureFiles(client) {
     return !!edit;
   })()`);
   await waitFor(client, `document.body.innerText.includes('Content Matrix')`, 'markdown editor content');
+  await anonymizeSidebar(client);
   await sleep(500);
   await capture(client, 'docs/screenshot-files.png');
 }
@@ -233,6 +277,7 @@ async function captureFiles(client) {
 async function captureCanvas(client) {
   await clickText(client, 'Ideas');
   await waitFor(client, `document.body.innerText.includes('Hero: single promise') || document.querySelector('canvas') || document.querySelector('.canvas-note')`, 'canvas content');
+  await anonymizeSidebar(client);
   await sleep(800);
   await capture(client, 'docs/screenshot-canvas.png');
 }
