@@ -24,9 +24,44 @@ jobs:
         run: npm run privacy:scan
       - name: Package dry run
         run: npm pack --dry-run
+      - name: Prepare dashboard integration fixture
+        run: |
+          mkdir -p ~/.openclaw/workspace/projects
+          mkdir -p /tmp/flowboard-ci-projects/flowboard
+          cat > /tmp/flowboard-ci-projects/flowboard/PROJECT.md <<'EOF'
+          # FlowBoard
+
+          ## Goal
+          CI fixture project for FlowBoard integration tests.
+
+          ## Operational State
+          Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.
+          EOF
+      - name: Start dashboard server
+        run: |
+          nohup npm start > /tmp/flowboard-dashboard.log 2>&1 &
+          for i in {1..40}; do
+            if curl -fsS http://localhost:18790/api/health >/dev/null; then
+              curl -fsS -X POST http://localhost:18790/api/projects/flowboard/heal \
+                -H 'Content-Type: application/json' \
+                -d '{"displayName":"FlowBoard","description":"CI fixture project."}' >/dev/null
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/flowboard-dashboard.log
+          exit 1
+        working-directory: dashboard
+        env:
+          FLOWBOARD_PROJECTS_DIR: /tmp/flowboard-ci-projects
+          FLOWBOARD_REPO: ${{ github.workspace }}
       - name: Dashboard tests
         run: npm test
         working-directory: dashboard
+        env:
+          FLOWBOARD_PROJECTS_DIR: /tmp/flowboard-ci-projects
+          FLOWBOARD_API: http://localhost:18790
+          FLOWBOARD_REPO: ${{ github.workspace }}
       - name: Dashboard build
         run: npm run build
         working-directory: dashboard

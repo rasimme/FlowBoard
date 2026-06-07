@@ -28,8 +28,8 @@ process.on('uncaughtException', (e) => { console.error('UNCAUGHT:', e); cleanup(
 
 function mirrorWorkspaces(srcHome, dstHome) {
   if (!fs.existsSync(srcHome)) {
-    console.error(`[realdata] source ${srcHome} does not exist`);
-    process.exit(2);
+    console.log(`[realdata] source ${srcHome} does not exist; skipping host-local real-data snapshot`);
+    process.exit(0);
   }
   const entries = fs.readdirSync(srcHome, { withFileTypes: true });
   let copied = 0;

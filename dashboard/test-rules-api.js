@@ -8,6 +8,24 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-rules-api-'));
+const fixtureProjectsDir = path.join(fixtureRoot, 'projects');
+const fixtureProjectDir = path.join(fixtureProjectsDir, 'flowboard');
+fs.mkdirSync(fixtureProjectDir, { recursive: true });
+fs.writeFileSync(path.join(fixtureProjectDir, 'PROJECT.md'), [
+  '# FlowBoard',
+  '',
+  '## Goal',
+  'Fixture project for rules-api tests.',
+  '',
+  '## Operational State',
+  'Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.',
+  '',
+].join('\n'));
+
+process.env.FLOWBOARD_PROJECTS_DIR = fixtureProjectsDir;
+
 const rulesApi = require('./rules-api.js');
 
 let passed = 0;
@@ -126,7 +144,7 @@ section('buildRulesManifest()');
 
 section('getBootstrapReadiness()');
 {
-  assert(rulesApi.PROJECTS_DIR.endsWith(path.join('.openclaw', 'projects')) || fs.existsSync(rulesApi.PROJECTS_DIR), 'readiness is rooted in project directory');
+  assertEqual(rulesApi.PROJECTS_DIR, fixtureProjectsDir, 'readiness uses isolated fixture project directory');
   const ready = rulesApi.getBootstrapReadiness('flowboard');
   assert(ready && typeof ready === 'object', 'returns readiness object');
   assert(typeof ready.contextReady === 'boolean', 'contextReady is boolean');

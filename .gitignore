@@ -22,6 +22,8 @@ CLAUDE.md
 
 # Vite build output
 dashboard/dist/
+.flowboard-v5-demo.json
+.tmp/
 
 # HZL database files — contain private project/task names, never commit
 data/*.db
