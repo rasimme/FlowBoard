@@ -1,6 +1,6 @@
 # FlowBoard
 
-> Project workspaces for AI agents. Self-hosted FlowBoard server provides an API-driven Kanban + project-context system where agents (OpenClaw-managed or external like Codex/Cursor/Claude Code) coordinate work through a single REST surface.
+> Project workspaces for AI agents. Self-hosted FlowBoard server provides an API-driven Kanban, project-context, file, canvas, and Specify system where OpenClaw-managed and external agents coordinate through one local REST surface.
 
 ## Overview
 
@@ -56,7 +56,7 @@
 - [API endpoint docs (Discovery)](docs/reference/api/discovery.md) — `/api/health`, `/api/info`
 - [API endpoint docs (Agents)](docs/reference/api/agents.md) — `/api/agents`, `/api/status`
 - [API endpoint docs (Projects)](docs/reference/api/projects.md) — projects CRUD, bootstrap, rules
-- [API endpoint docs (Tasks)](docs/reference/api/tasks.md) — task CRUD + lifecycle
+- [API endpoint docs (Tasks)](docs/reference/api/tasks.md) — task CRUD + lifecycle, including workflow and stuck-task endpoints
 
 ## How to
 

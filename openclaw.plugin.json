@@ -1,0 +1,45 @@
+{
+  "id": "flowboard",
+  "name": "FlowBoard",
+  "version": "4.0.1",
+  "description": "Project workspaces, dashboard, and project-context hook for OpenClaw agents.",
+  "enabledByDefault": false,
+  "activation": {
+    "onStartup": false
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "projectsDir": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Optional override for FLOWBOARD_PROJECTS_DIR."
+      },
+      "dashboardPort": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 65535,
+        "description": "Optional dashboard port when FlowBoard is launched by an external supervisor."
+      }
+    }
+  },
+  "uiHints": {
+    "projectsDir": {
+      "label": "Projects Directory",
+      "help": "Optional path for FlowBoard project files. Prefer the FLOWBOARD_PROJECTS_DIR environment variable for service deployments.",
+      "advanced": true
+    },
+    "dashboardPort": {
+      "label": "Dashboard Port",
+      "help": "Optional dashboard port metadata for local deployments. FlowBoard still reads its runtime port from the service environment.",
+      "advanced": true
+    }
+  },
+  "configContracts": {
+    "secretInputs": {
+      "bundledDefaultEnabled": false,
+      "paths": []
+    }
+  }
+}

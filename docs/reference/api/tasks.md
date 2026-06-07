@@ -1,6 +1,6 @@
 # Tasks Endpoints
 
-Task CRUD + lifecycle (claim, release, complete, checkpoint, comment, route, handoff). All require `HZL_ENABLED=true`. All return `503` if HZL is off.
+Task CRUD + lifecycle (claim, release, complete, checkpoint, comment, route, handoff). HZL is always enabled in current FlowBoard releases.
 
 ## CRUD
 
@@ -144,7 +144,14 @@ Status-change event stream sourced from the HZL event store. Includes block/unbl
 Cross-project list of tasks with stale claims or expired leases.
 
 **Query:** `staleThreshold` — minutes (default `10`).
-**Response 200:** `{"ok": true, "stuck": [{<task with reason>}, ...]}`
+**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "combined": [...]}}`
+
+### `GET /api/tasks/notifiable-stuck`
+
+Cross-project list of stuck tasks that should notify now. Applies the same stale/expired detection as `/api/tasks/stuck`, then suppresses repeat notifications within the configured notification window.
+
+**Query:** `staleThreshold` — minutes (default `30`); `notificationWindow` — minutes between repeat notifications for the same stuck task (default `60`).
+**Response 200:** `{"ok": true, "notifiable": {"stale": [...], "expired": [...], "combined": [...]}, "appliedThresholds": {...}}`
 
 ### `POST /api/workflows/start`
 

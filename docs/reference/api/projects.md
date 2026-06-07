@@ -1,6 +1,6 @@
 # Projects Endpoints
 
-Project CRUD + the bootstrap and rules endpoints used by external agents to fetch context. All require `HZL_ENABLED=true`.
+Project CRUD + the bootstrap and rules endpoints used by external agents to fetch context. HZL is always enabled in current FlowBoard releases.
 
 ## `GET /api/projects`
 

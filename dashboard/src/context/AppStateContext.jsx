@@ -1,6 +1,10 @@
-import { createContext, useContext, useReducer, useEffect, useRef, useCallback } from 'react';
+import { createContext, useContext, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 
 const AppStateContext = createContext(null);
+const APPSTATE_EVENT = 'appstate:change';
+const LEGACY_WATCHDOG_MS = 5000;
+let appStateVersion = 0;
+let lastSnapshotFingerprint = '';
 
 /**
  * Lightweight fingerprint of window.appState for change detection.
@@ -27,9 +31,46 @@ function fingerprint(s) {
   ].join('|');
 }
 
+function notifyAppStateChanged() {
+  window.dispatchEvent(new CustomEvent(APPSTATE_EVENT));
+}
+
+function subscribeAppState(callback) {
+  if (typeof window === 'undefined') return () => {};
+
+  const publish = () => {
+    lastSnapshotFingerprint = fingerprint(window.appState);
+    appStateVersion += 1;
+    callback();
+  };
+
+  const handler = () => publish();
+  window.addEventListener(APPSTATE_EVENT, handler);
+
+  // Legacy compatibility: older vanilla paths can still mutate window.appState
+  // without dispatching appstate:change. Keep a slow watchdog so those paths do
+  // not go stale, but make explicit events the normal render path.
+  const interval = window.setInterval(() => {
+    const fp = fingerprint(window.appState);
+    if (fp !== lastSnapshotFingerprint) publish();
+  }, LEGACY_WATCHDOG_MS);
+
+  return () => {
+    window.removeEventListener(APPSTATE_EVENT, handler);
+    window.clearInterval(interval);
+  };
+}
+
+function getAppStateSnapshot() {
+  return appStateVersion;
+}
+
 export function AppStateProvider({ children }) {
-  const [version, bump] = useReducer(x => x + 1, 0);
-  const lastFp = useRef('');
+  const version = useSyncExternalStore(
+    subscribeAppState,
+    getAppStateSnapshot,
+    getAppStateSnapshot
+  );
   const initDone = useRef(false);
 
   // T-161: fetch agents immediately on mount so React doesn't render with an
@@ -59,7 +100,7 @@ export function AppStateProvider({ children }) {
         const data = await res.json();
         const agents = Array.isArray(data?.agents) ? data.agents : [];
         window.appState.agents = agents;
-        window.dispatchEvent(new CustomEvent('appstate:change'));
+        notifyAppStateChanged();
       } catch (err) {
         console.warn('[AppStateProvider] initial agents fetch failed:', err);
       }
@@ -67,33 +108,10 @@ export function AppStateProvider({ children }) {
     fetchAgents();
   }, []);
 
-  useEffect(() => {
-    // Poll for changes to window.appState (lightweight fingerprint check)
-    const interval = setInterval(() => {
-      const fp = fingerprint(window.appState);
-      if (fp !== lastFp.current) {
-        lastFp.current = fp;
-        bump();
-      }
-    }, 500);
-
-    // Also accept explicit notifications from legacy code
-    const handler = () => {
-      lastFp.current = fingerprint(window.appState);
-      bump();
-    };
-    window.addEventListener('appstate:change', handler);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('appstate:change', handler);
-    };
-  }, []);
-
   // Expose a notify function so legacy code can trigger React re-renders
   useEffect(() => {
     window._notifyReact = () => {
-      window.dispatchEvent(new CustomEvent('appstate:change'));
+      notifyAppStateChanged();
     };
     return () => { delete window._notifyReact; };
   }, []);
@@ -103,7 +121,7 @@ export function AppStateProvider({ children }) {
     if (window.appState) {
       Object.assign(window.appState, updates);
     }
-    window.dispatchEvent(new CustomEvent('appstate:change'));
+    notifyAppStateChanged();
   }, []);
 
   // The value object changes when version changes, triggering consumer re-renders.

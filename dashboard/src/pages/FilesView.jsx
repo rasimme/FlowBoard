@@ -1,10 +1,19 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
-import { Modal } from '../components/index.js';
+import { Button, Input, Modal } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
-import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2, Upload, Download } from 'lucide-react';
+import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2, Upload, Download, FilePlus } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
+import {
+  fileExists,
+  getDefaultFileSelectionAction,
+  getFileReconciliationAction,
+  getFileVersion,
+} from '../utils/fileRuntime.mjs';
+
+const MarkdownEditor = lazy(() => import('../components/MarkdownEditor.jsx'));
+const MarkdownPreview = lazy(() => import('../components/MarkdownPreview.jsx'));
 
 function isEditablePath(filePath) {
   if (!filePath) return false;
@@ -12,6 +21,8 @@ function isEditablePath(filePath) {
 }
 
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
+const LAST_OPENED_STORAGE_KEY = 'flowboard.files.lastOpenedByProject';
+const FILE_POLL_INTERVAL_MS = 5000;
 
 function formatSize(bytes) {
   if (bytes == null) return '';
@@ -28,10 +39,6 @@ function getFileIcon(name) {
   return <File size={14} />;
 }
 
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 function expandParentsOf(path, dirs) {
   const parts = path.split('/');
   const next = new Set(dirs);
@@ -39,6 +46,38 @@ function expandParentsOf(path, dirs) {
     next.add(parts.slice(0, i).join('/'));
   }
   return next;
+}
+
+function readLastOpenedFiles() {
+  try {
+    return JSON.parse(sessionStorage.getItem(LAST_OPENED_STORAGE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writeLastOpenedFile(project, filePath) {
+  try {
+    sessionStorage.setItem(LAST_OPENED_STORAGE_KEY, JSON.stringify({
+      ...readLastOpenedFiles(),
+      [project]: filePath,
+    }));
+  } catch {
+    // Session persistence is a convenience only; runtime state still works.
+  }
+}
+
+function filenameFromTitle(title) {
+  const base = String(title || '')
+    .trim()
+    .replace(/\u00df/g, 'ss')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\.md$/i, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${base || 'untitled'}.md`;
 }
 
 // --- Tree node (uses legacy CSS classes) ---
@@ -91,18 +130,43 @@ function TreeNode({ entry, depth, expandedDirs, onToggleDir, selectedFile, onSel
 }
 
 // --- File preview (uses legacy CSS classes) ---
-function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previewScrollRef, fromTaskId, onBackToTask }) {
+function FilePreview({
+  fileData,
+  filePath,
+  projectName,
+  onDeleted,
+  onSaved,
+  previewScrollRef,
+  fromTaskId,
+  onBackToTask,
+  conflict,
+  onReloadFromDisk,
+  onKeepLocalChanges,
+  onDirtyChange,
+}) {
   const haptic = useHaptic();
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const textareaRef = useRef(null);
+  const dirtyStateRef = useRef(false);
 
+  const fileVersion = getFileVersion(fileData);
   useEffect(() => {
     setEditing(false);
     setEditContent('');
   }, [filePath]);
+
+  useEffect(() => {
+    if (editing && !conflict && !dirtyStateRef.current) setEditContent(fileData?.content || '');
+  }, [conflict, editing, fileData?.content, fileVersion]);
+
+  const dirty = editing && editContent !== (fileData?.content || '');
+  useEffect(() => {
+    dirtyStateRef.current = dirty;
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -124,12 +188,18 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
     haptic.light();
     setEditContent(fileData.content);
     setEditing(true);
-    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const handleCancel = () => {
     setEditing(false);
     setEditContent('');
+  };
+
+  const handleReloadFromDisk = () => {
+    dirtyStateRef.current = false;
+    onDirtyChange?.(false);
+    setEditContent(fileData?.content || '');
+    onReloadFromDisk?.();
   };
 
   const handleSave = async () => {
@@ -141,11 +211,15 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
         body: JSON.stringify({ content: editContent }),
       });
       if (!res.ok) throw new Error('Save failed');
+      const saved = await res.json();
       haptic.medium();
       if (window.showToast) window.showToast('File saved', 'success');
-      // Update fileData content + size so preview shows new content
-      fileData.content = editContent;
-      fileData.size = new Blob([editContent]).size;
+      onSaved?.({
+        ...fileData,
+        ...saved,
+        content: editContent,
+        category: fileData.category,
+      });
       setEditContent('');
       setEditing(false);
     } catch (err) {
@@ -173,36 +247,20 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
     }
   };
 
-  const handleEditorKeyDown = (e) => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const ta = e.target;
-      const start = ta.selectionStart;
-      const end = ta.selectionEnd;
-      const val = editContent;
-      setEditContent(val.substring(0, start) + '  ' + val.substring(end));
-      requestAnimationFrame(() => {
-        ta.selectionStart = ta.selectionEnd = start + 2;
-      });
-    }
-  };
-
   if (!fileData) {
     return <div className="file-preview-empty">Select a file to preview</div>;
   }
 
   const ext = filePath.split('.').pop();
   const editable = isEditablePath(filePath);
-  const unsaved = editing && editContent !== fileData.content;
+  const unsaved = dirty;
   const fileName = filePath.split('/').pop();
 
   return (
     <>
       <div className="file-preview-header">
-        {fromTaskId ? (
+        {fromTaskId && (
           <button className="file-back-btn" onClick={onBackToTask}>← Back to Task</button>
-        ) : (
-          <button className="file-back-btn" onClick={onBack}>← Files</button>
         )}
         <div className="file-preview-info">
           <span className="file-preview-name">
@@ -252,20 +310,29 @@ function FilePreview({ fileData, filePath, projectName, onDeleted, onBack, previ
           )}
         </div>
       </div>
+      {conflict && (
+        <div className="file-conflict-banner">
+          <span>{conflict.deleted ? 'File was deleted on disk.' : 'File changed on disk.'}</span>
+          <button className="btn btn-ghost btn-sm" onClick={handleReloadFromDisk}>Reload</button>
+          <button className="btn btn-ghost btn-sm" onClick={onKeepLocalChanges}>Keep editing</button>
+        </div>
+      )}
       <div className={`file-preview-body${editing ? '' : ''}`} ref={editing ? undefined : previewScrollRef}>
         {editing ? (
-          <textarea
-            ref={textareaRef}
-            className="file-editor"
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            onKeyDown={handleEditorKeyDown}
-            spellCheck={false}
-          />
+          <Suspense fallback={<div className="file-preview-loading">Loading editor...</div>}>
+            <MarkdownEditor
+              value={editContent}
+              onChange={setEditContent}
+              onSave={handleSave}
+              onCancel={handleCancel}
+            />
+          </Suspense>
         ) : ext === 'json' ? (
           <JsonPreview content={fileData.content} />
         ) : ext === 'md' ? (
-          <MarkdownPreview content={fileData.content} />
+          <Suspense fallback={<div className="file-preview-loading">Loading preview...</div>}>
+            <MarkdownPreview content={fileData.content} />
+          </Suspense>
         ) : (
           <pre className="mono" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '12px', lineHeight: 1.5 }}>
             {fileData.content}
@@ -352,109 +419,6 @@ function JsonPreview({ content }) {
   );
 }
 
-// --- Markdown rendering (uses .md-content CSS from dashboard.css) ---
-function MarkdownPreview({ content }) {
-  const html = useMemo(() => {
-    try {
-      const escaped = escHtml(content);
-      const lines = escaped.split('\n');
-      const out = [];
-      let i = 0;
-      let inList = false;
-
-      while (i < lines.length) {
-        const line = lines[i];
-
-        // Code block
-        if (line.match(/^```/)) {
-          if (inList) { out.push('</ul>'); inList = false; }
-          const lang = line.slice(3).trim();
-          const codeLines = [];
-          i++;
-          while (i < lines.length && !lines[i].match(/^```/)) {
-            codeLines.push(lines[i]);
-            i++;
-          }
-          i++;
-          const cls = lang ? ` class="language-${lang}"` : '';
-          out.push(`<pre><code${cls}>${codeLines.join('\n')}</code></pre>`);
-          continue;
-        }
-
-        // HR
-        if (line.match(/^---+\s*$/)) {
-          if (inList) { out.push('</ul>'); inList = false; }
-          out.push('<hr />');
-          i++;
-          continue;
-        }
-
-        // Headings
-        const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
-        if (headingMatch) {
-          if (inList) { out.push('</ul>'); inList = false; }
-          const level = headingMatch[1].length;
-          const text = inlineFormat(headingMatch[2]);
-          out.push(`<h${level}>${text}</h${level}>`);
-          i++;
-          continue;
-        }
-
-        // Blockquote
-        if (line.match(/^>\s/)) {
-          if (inList) { out.push('</ul>'); inList = false; }
-          out.push(`<blockquote><p>${inlineFormat(line.replace(/^>\s+/, ''))}</p></blockquote>`);
-          i++;
-          continue;
-        }
-
-        // Unordered list item
-        if (line.match(/^[-*]\s+/)) {
-          if (!inList) { out.push('<ul>'); inList = true; }
-          out.push(`<li>${inlineFormat(line.replace(/^[-*]\s+/, ''))}</li>`);
-          i++;
-          continue;
-        }
-
-        if (inList) { out.push('</ul>'); inList = false; }
-
-        // Empty line
-        if (line.trim() === '') { i++; continue; }
-
-        // Paragraph
-        const paraLines = [line];
-        i++;
-        while (i < lines.length && lines[i].trim() !== '' && !lines[i].match(/^#{1,4}\s/) && !lines[i].match(/^[-*]\s+/) && !lines[i].match(/^```/) && !lines[i].match(/^---+\s*$/) && !lines[i].match(/^>\s/)) {
-          paraLines.push(lines[i]);
-          i++;
-        }
-        out.push(`<p>${inlineFormat(paraLines.join(' '))}</p>`);
-      }
-
-      if (inList) out.push('</ul>');
-      return out.join('\n');
-    } catch (err) {
-      console.warn('[markdown-parse]', err);
-      return null;
-    }
-  }, [content]);
-
-  if (html === null) {
-    return <pre className="mono" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{content}</pre>;
-  }
-
-  return <div className="md-content" dangerouslySetInnerHTML={{ __html: html }} />;
-}
-
-function inlineFormat(text) {
-  return text
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-}
-
 // --- Main view ---
 export default function FilesView() {
   const { state } = useAppState();
@@ -466,7 +430,7 @@ export default function FilesView() {
   const [fileData, setFileData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [treeLoading, setTreeLoading] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
+  const [fileConflict, setFileConflict] = useState(null);
   const uploadInputRef = useRef(null);
   // T-221: when FilesView is opened from a task's "Open spec" action, we
   // remember the originating task ID so the spec preview can render a
@@ -476,19 +440,58 @@ export default function FilesView() {
   // T-222: file upload state
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newFileTitle, setNewFileTitle] = useState('');
+  const [creatingFile, setCreatingFile] = useState(false);
   const abortRef = useRef(null);
+  const lastOpenedRef = useRef(readLastOpenedFiles());
+  const selectedFileRef = useRef(null);
+  const fileDataRef = useRef(null);
+  const dirtyRef = useRef(false);
+  const ignoredConflictRef = useRef(null);
 
   const treeScrollRef = useCustomScroll();
   const previewScrollRef = useCustomScroll();
 
-  // Load file tree
-  const fetchTree = useCallback(() => {
+  useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
+  useEffect(() => { fileDataRef.current = fileData; }, [fileData]);
+
+  const setLastOpenedFile = useCallback((filePath) => {
     if (!viewedProject) return;
-    setTreeLoading(true);
-    apiFetch(`/api/projects/${viewedProject}/files`)
-      .then(r => r.json())
-      .then(data => { setFileTree(data); setTreeLoading(false); })
-      .catch(err => { console.warn('[file-tree]', err); setTreeLoading(false); });
+    lastOpenedRef.current = {
+      ...lastOpenedRef.current,
+      [viewedProject]: filePath,
+    };
+    writeLastOpenedFile(viewedProject, filePath);
+  }, [viewedProject]);
+
+  const clearLastOpenedFile = useCallback((filePath) => {
+    if (!viewedProject || lastOpenedRef.current[viewedProject] !== filePath) return;
+    lastOpenedRef.current = { ...lastOpenedRef.current };
+    delete lastOpenedRef.current[viewedProject];
+    try {
+      sessionStorage.setItem(LAST_OPENED_STORAGE_KEY, JSON.stringify(lastOpenedRef.current));
+    } catch {
+      // Ignore storage errors; the tree refresh will pick a default.
+    }
+  }, [viewedProject]);
+
+  // Load file tree
+  const fetchTree = useCallback(async (opts = {}) => {
+    if (!viewedProject) return null;
+    if (!opts.background) setTreeLoading(true);
+    try {
+      const res = await apiFetch(`/api/projects/${viewedProject}/files`);
+      if (!res.ok) throw new Error('File tree failed');
+      const data = await res.json();
+      setFileTree(data);
+      return data;
+    } catch (err) {
+      console.warn('[file-tree]', err);
+      return null;
+    } finally {
+      if (!opts.background) setTreeLoading(false);
+    }
   }, [viewedProject]);
 
   useEffect(() => {
@@ -496,11 +499,13 @@ export default function FilesView() {
       setFileTree(null);
       setSelectedFile(null);
       setFileData(null);
+      setFileConflict(null);
       return;
     }
     fetchTree();
     setSelectedFile(null);
     setFileData(null);
+    setFileConflict(null);
   }, [viewedProject, fetchTree]);
 
   // Consume pending spec file from _openSpec bridge (T-221).
@@ -536,6 +541,50 @@ export default function FilesView() {
   }, [selectedFile]);
 
   // T-222: handle file upload to context/
+  const loadFile = useCallback(async (filePath, opts = {}) => {
+    if (!viewedProject || !filePath) return null;
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setSelectedFile(filePath);
+    if (!opts.background) setLoading(true);
+    if (!opts.keepPreview) setFileData(null);
+    if (!opts.keepFromTaskId) setFromTaskId(null);
+
+    setExpandedDirs(prev => expandParentsOf(filePath, prev));
+    setLastOpenedFile(filePath);
+
+    try {
+      const res = await apiFetch(`/api/projects/${viewedProject}/files/${filePath}`, { signal: controller.signal });
+      if (res.status === 404) {
+        clearLastOpenedFile(filePath);
+        setSelectedFile(null);
+        setFileData(null);
+        setFileConflict(null);
+        return null;
+      }
+      if (!res.ok) throw new Error('File load failed');
+      const data = await res.json();
+      if (data?.error) {
+        console.warn('[file-load]', data.error);
+        setFileData(null);
+        return null;
+      }
+      setFileData(data);
+      setFileConflict(null);
+      ignoredConflictRef.current = null;
+      return data;
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('[file-load]', err);
+      }
+      return null;
+    } finally {
+      if (!opts.background) setLoading(false);
+    }
+  }, [clearLastOpenedFile, setLastOpenedFile, viewedProject]);
+
   const handleUpload = useCallback(async (file) => {
     if (!viewedProject) return;
     if (!file.name.toLowerCase().endsWith('.md')) {
@@ -554,16 +603,18 @@ export default function FilesView() {
         const err = await res.text();
         throw new Error(err);
       }
+      const uploaded = await res.json();
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${file.name} hochgeladen`, type: 'success' } }));
-      fetchTree();
+      await fetchTree({ background: true });
       setExpandedDirs(prev => new Set(prev).add('context'));
+      if (uploaded?.path) loadFile(uploaded.path, { keepFromTaskId: true });
     } catch (err) {
       console.warn('[upload]', err);
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Upload fehlgeschlagen', type: 'error' } }));
     } finally {
       setUploading(false);
     }
-  }, [viewedProject, fetchTree]);
+  }, [viewedProject, fetchTree, loadFile]);
 
   const handleUploadClick = useCallback(() => {
     uploadInputRef.current?.click();
@@ -574,6 +625,43 @@ export default function FilesView() {
     if (file) handleUpload(file);
     e.target.value = '';
   }, [handleUpload]);
+
+  const handleCreateFile = useCallback(async (e) => {
+    e?.preventDefault?.();
+    if (!viewedProject || creatingFile) return;
+    const title = newFileTitle.trim();
+    const filename = filenameFromTitle(title);
+    const path = `context/${filename}`;
+    if (fileExists(fileTree?.tree || [], path)) {
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} existiert bereits`, type: 'warn' } }));
+      return;
+    }
+    setCreatingFile(true);
+    try {
+      const content = title ? `# ${title}\n\n` : '';
+      const res = await apiFetch(`/api/projects/${viewedProject}/files/context`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, content }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err);
+      }
+      const created = await res.json();
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} angelegt`, type: 'success' } }));
+      setCreateOpen(false);
+      setNewFileTitle('');
+      await fetchTree({ background: true });
+      setExpandedDirs(prev => new Set(prev).add('context'));
+      if (created?.path) loadFile(created.path, { keepFromTaskId: true });
+    } catch (err) {
+      console.warn('[create-file]', err);
+      window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Datei konnte nicht angelegt werden', type: 'error' } }));
+    } finally {
+      setCreatingFile(false);
+    }
+  }, [creatingFile, fetchTree, fileTree?.tree, loadFile, newFileTitle, viewedProject]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
@@ -596,11 +684,13 @@ export default function FilesView() {
   }, [handleUpload]);
 
   const handleFileDeleted = useCallback(() => {
+    const deletedPath = selectedFileRef.current;
     setSelectedFile(null);
     setFileData(null);
-    setShowPreview(false);
+    setFileConflict(null);
+    clearLastOpenedFile(deletedPath);
     fetchTree();
-  }, [fetchTree]);
+  }, [clearLastOpenedFile, fetchTree]);
 
   const toggleDir = useCallback((dirPath) => {
     setExpandedDirs(prev => {
@@ -612,40 +702,86 @@ export default function FilesView() {
   }, []);
 
   const selectFile = useCallback((filePath, opts = {}) => {
-    if (!viewedProject) return;
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setSelectedFile(filePath);
-    setShowPreview(true);
-    setLoading(true);
-    setFileData(null);
     // T-221: a manual click on a different file means the user is no longer
     // viewing the spec that was opened from a task — clear the back-target.
-    if (!opts.keepFromTaskId) setFromTaskId(null);
+    loadFile(filePath, opts);
+  }, [loadFile]);
 
-    // Auto-expand parent dirs
-    setExpandedDirs(prev => expandParentsOf(filePath, prev));
+  const reloadSelectedFromDisk = useCallback(() => {
+    const current = selectedFileRef.current;
+    if (!current) return;
+    dirtyRef.current = false;
+    setFileConflict(null);
+    ignoredConflictRef.current = null;
+    loadFile(current, { keepPreview: true, keepFromTaskId: true });
+  }, [loadFile]);
 
-    apiFetch(`/api/projects/${viewedProject}/files/${filePath}`, { signal: controller.signal })
-      .then(r => r.json())
-      .then(data => {
-        if (data?.error) {
-          console.warn('[file-load]', data.error);
-          setFileData(null);
-        } else {
-          setFileData(data);
-        }
-        setLoading(false);
-      })
-      .catch(err => {
-        if (err.name !== 'AbortError') {
-          console.warn('[file-load]', err);
-          setLoading(false);
-        }
-      });
-  }, [viewedProject]);
+  const handleSaved = useCallback(async (nextFileData) => {
+    setFileData(nextFileData);
+    setFileConflict(null);
+    ignoredConflictRef.current = null;
+    await fetchTree({ background: true });
+  }, [fetchTree]);
+
+  const handleDirtyChange = useCallback((dirty) => {
+    dirtyRef.current = dirty;
+  }, []);
+
+  const reconcileSelectedFile = useCallback((nextTree) => {
+    const currentPath = selectedFileRef.current;
+    const action = getFileReconciliationAction({
+      entries: nextTree?.tree || [],
+      currentPath,
+      loadedFile: fileDataRef.current,
+      dirty: dirtyRef.current,
+      ignoredConflict: ignoredConflictRef.current,
+    });
+
+    if (action.type === 'missing') {
+      clearLastOpenedFile(currentPath);
+      setSelectedFile(null);
+      setFileData(null);
+      setFileConflict(null);
+      return;
+    }
+
+    if (action.type === 'conflict') {
+      setFileConflict(action.conflict);
+      return;
+    }
+
+    if (action.type === 'reload') {
+      loadFile(action.path, { background: true, keepPreview: true, keepFromTaskId: true });
+    }
+  }, [clearLastOpenedFile, loadFile]);
+
+  useEffect(() => {
+    if (!viewedProject || state?.currentTab !== 'files') return;
+    let stopped = false;
+    const tick = async () => {
+      const nextTree = await fetchTree({ background: true });
+      if (stopped || !nextTree) return;
+      reconcileSelectedFile(nextTree);
+    };
+    const id = setInterval(tick, FILE_POLL_INTERVAL_MS);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  }, [fetchTree, reconcileSelectedFile, state?.currentTab, viewedProject]);
+
+  useEffect(() => {
+    if (!viewedProject || treeLoading || !fileTree?.tree?.length) return;
+    const action = getDefaultFileSelectionAction({
+      entries: fileTree.tree,
+      selectedPath: selectedFile,
+      preferredPath: lastOpenedRef.current[viewedProject],
+      dirty: dirtyRef.current,
+      conflict: fileConflict,
+      pendingSpecFile: window.appState?.pendingSpecFile,
+    });
+    if (action.type === 'select') selectFile(action.path);
+  }, [fileConflict, fileTree, selectedFile, selectFile, treeLoading, viewedProject]);
 
   if (!viewedProject) {
     return (
@@ -659,31 +795,35 @@ export default function FilesView() {
 
   return (
     <div
-      className={`file-explorer${showPreview ? ' show-preview' : ''}`}
+      className="file-explorer"
       data-react-files
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* T-222: Upload area — only shown when context/ dir exists in tree */}
-      {!showPreview && !treeLoading && tree.some(e => e.path === 'context') && (
-        <div className={`file-upload-area${dragOver ? ' drag-over' : ''}`}>
-          <input
-            ref={uploadInputRef}
-            type="file"
-            accept=".md"
-            style={{ display: 'none' }}
-            onChange={handleUploadFile}
-          />
-          <button className="file-upload-btn" onClick={handleUploadClick} disabled={uploading}>
-            <Upload size={14} />
-            {uploading ? 'Uploading…' : '.md in context/ hochladen'}
-          </button>
-          <span className="file-upload-hint">oder hier reinziehen</span>
-        </div>
-      )}
       {/* File tree */}
       <div className="file-tree">
+        {/* T-228: Upload area is part of the left file navigator, not a separate screen. */}
+        {!treeLoading && tree.some(e => e.path === 'context') && (
+          <div className={`file-upload-area${dragOver ? ' drag-over' : ''}`}>
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".md"
+              style={{ display: 'none' }}
+              onChange={handleUploadFile}
+            />
+            <button className="file-upload-btn" onClick={handleUploadClick} disabled={uploading}>
+              <Upload size={14} />
+              {uploading ? 'Uploading…' : '.md in context/ hochladen'}
+            </button>
+            <button className="file-upload-btn" onClick={() => setCreateOpen(true)} disabled={uploading || creatingFile}>
+              <FilePlus size={14} />
+              Neue .md anlegen
+            </button>
+            <span className="file-upload-hint">oder hier reinziehen</span>
+          </div>
+        )}
         <div className="file-tree-items" ref={treeScrollRef} style={{ overflowY: 'auto' }}>
           {treeLoading ? (
             <div className="text-muted text-xs text-center py-8">Loading…</div>
@@ -722,6 +862,34 @@ export default function FilesView() {
         </div>
       </div>
 
+      <Modal
+        open={createOpen}
+        onClose={() => {
+          if (creatingFile) return;
+          setCreateOpen(false);
+        }}
+        title="Markdown-Datei anlegen"
+        actions={(
+          <>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creatingFile}>Abbrechen</Button>
+            <Button onClick={handleCreateFile} disabled={creatingFile}>Anlegen</Button>
+          </>
+        )}
+      >
+        <form onSubmit={handleCreateFile} className="space-y-3">
+          <Input
+            autoFocus
+            value={newFileTitle}
+            onChange={(e) => setNewFileTitle(e.target.value)}
+            placeholder="Titel"
+            disabled={creatingFile}
+          />
+          <div className="text-xs text-muted">
+            {`context/${filenameFromTitle(newFileTitle)}`}
+          </div>
+        </form>
+      </Modal>
+
       {/* File preview */}
       <div className="file-preview">
         {loading ? (
@@ -732,14 +900,20 @@ export default function FilesView() {
             filePath={selectedFile}
             projectName={viewedProject}
             onDeleted={handleFileDeleted}
-            onBack={() => setShowPreview(false)}
+            onSaved={handleSaved}
             previewScrollRef={previewScrollRef}
             fromTaskId={fromTaskId}
+            conflict={fileConflict}
+            onReloadFromDisk={reloadSelectedFromDisk}
+            onKeepLocalChanges={() => {
+              if (fileConflict) ignoredConflictRef.current = fileConflict;
+              setFileConflict(null);
+            }}
+            onDirtyChange={handleDirtyChange}
             onBackToTask={() => {
               const taskId = fromTaskId;
               setFromTaskId(null);
               setTriggerFromPanel(false);
-              setShowPreview(false);
               if (window._switchTab) window._switchTab('tasks');
               if (taskId) {
                 if (triggerFromPanel && window.openTaskDetail) {

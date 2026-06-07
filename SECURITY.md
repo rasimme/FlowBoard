@@ -13,8 +13,6 @@ If you discover a security issue, please **do not** open a public issue.
 
 **Preferred:** Open a [private security advisory](https://github.com/rasimme/FlowBoard/security/advisories/new) on GitHub.
 
-**Fallback:** Email `simeon.ortmueller@arcor.de` with subject `[SECURITY] FlowBoard`.
-
 Please include:
 - Description of the vulnerability
 - Steps to reproduce

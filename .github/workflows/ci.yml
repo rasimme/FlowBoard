@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dashboard dependencies
+        run: npm ci
+        working-directory: dashboard
+      - name: Privacy scan
+        run: npm run privacy:scan
+      - name: Package dry run
+        run: npm pack --dry-run
+      - name: Dashboard tests
+        run: npm test
+        working-directory: dashboard
+      - name: Dashboard build
+        run: npm run build
+        working-directory: dashboard

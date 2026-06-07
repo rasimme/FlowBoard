@@ -685,6 +685,36 @@ async function testHookStatusApiTransientFailureIsUnknownNotNone() {
   }
 }
 
+async function testContextFilePostRejectsOverwrite() {
+  section('T-237: POST /files/context rejects overwrite');
+
+  const filename = `test-no-overwrite-${Date.now()}.md`;
+  const filePath = `context/${filename}`;
+  const bodyA = JSON.stringify({ filename, content: '# First\n' });
+  const bodyB = JSON.stringify({ filename, content: '# Second\n' });
+
+  try {
+    const created = await fetchJson('POST', `/api/projects/${PROJECT_FOR_TESTS}/files/context`, {
+      headers: { 'Content-Type': 'application/json' },
+      body: bodyA,
+    });
+    ok(created.status === 200, `first create returns 200 (got ${created.status})`);
+    ok(created.body?.path === filePath, `first create returns ${filePath}`);
+
+    const duplicate = await fetchJson('POST', `/api/projects/${PROJECT_FOR_TESTS}/files/context`, {
+      headers: { 'Content-Type': 'application/json' },
+      body: bodyB,
+    });
+    ok(duplicate.status === 409, `duplicate create returns 409 (got ${duplicate.status})`);
+    ok(/exists/i.test(duplicate.body?.error || ''), `duplicate error mentions existing file`);
+
+    const readBack = await fetchJson('GET', `/api/projects/${PROJECT_FOR_TESTS}/files/${filePath}`);
+    ok(readBack.body?.content === '# First\n', `duplicate create does not overwrite original content`);
+  } finally {
+    await fetchJson('DELETE', `/api/projects/${PROJECT_FOR_TESTS}/files/${filePath}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Cleanup
 // ---------------------------------------------------------------------------
@@ -766,6 +796,7 @@ async function main() {
     await testHookTaskStateComesFromTasksApi();
     await testHookTasksApiFailureBlocksTaskInference();
     await testHookStatusApiTransientFailureIsUnknownNotNone();
+    await testContextFilePostRejectsOverwrite();
   } finally {
     await cleanup();
   }

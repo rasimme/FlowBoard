@@ -1,7 +1,7 @@
 <h1 align="center">FlowBoard</h1>
 
 <p align="center">
-  <strong>Project workspaces for AI agents. Built for <a href="https://github.com/openclaw/openclaw">OpenClaw</a>.</strong>
+  <strong>Project workspaces for AI agents. Built for <a href="https://github.com/openclaw/openclaw">OpenClaw</a> and external coding agents.</strong>
 </p>
 
 <p align="center">
@@ -24,8 +24,8 @@ Your agent loses context every session. What was I building? What decisions did 
 
 **FlowBoard fixes that.**
 
-- **📂 Project context on demand** — Activate a project and your agent gets goals, decisions, tasks, and specs. Lazy-loaded to save tokens.
-- **📋 Kanban you both use** — Your agent creates tasks, writes specs, moves cards, breaks work into subtasks. You see progress live.
+- **📂 Project context on demand** — Activate a project and your agent gets goals, decisions, live task state, and specs. Lazy-loaded to save tokens.
+- **📋 Kanban you both use** — Your agent creates tasks, writes specs, claims work, checkpoints progress, and moves cards through review. You see the full multi-agent workflow live.
 - **💡 Idea Canvas** — Brainstorm together visually. One click turns connected ideas into tasks with specs and subtasks.
 
 ![FlowBoard Kanban](docs/screenshot-kanban.png)
@@ -36,20 +36,21 @@ Your agent loses context every session. What was I building? What decisions did 
 
 ### 📂 Project Workspaces
 
-Activate a project and the agent instantly gets the context it needs — goal, scope, architecture, decisions, task status, specs. Everything is loaded on demand: the agent pulls in what it needs, when it needs it, keeping token usage low. Switch between projects without losing track.
+Activate a project and the agent gets the context it needs — goal, scope, architecture, decisions, current task state, specs. Everything is loaded on demand: the agent pulls in what it needs, when it needs it, keeping token usage low. Switch between projects without losing track.
 
-- Structured workspace: `PROJECT.md` → `DECISIONS.md` → `tasks.json` → `specs/`
+- Structured project files: `PROJECT.md` → `DECISIONS.md` → `canvas.json` → `specs/`
+- HZL-backed task runtime with claims, leases, checkpoints, comments, and review gates
 - Lazy loading — zero overhead when no project is active
 - Session handoff — pick up exactly where you left off
 
 ### 📋 Agent-Native Kanban
 
-Your agent operates the board through the same REST API as the dashboard. It creates tasks, sets priorities, writes specs with acceptance criteria, and updates status as it works.
+Your agent operates the board through the same REST API as the dashboard. It creates tasks, sets priorities, writes specs with acceptance criteria, claims work with leases, checkpoints progress, and hands completed work to review.
 
 - Tasks with workflow: `open → in-progress → review → done`
-- Parent tasks with subtasks and progress tracking
+- Parent tasks with subtasks, progress tracking, and automatic parent status updates
 - Spec files with acceptance criteria and logs
-- Real-time visibility into what the agent is doing
+- Multi-agent visibility: active agents, claimed cards, checkpoints, comments, and review approvals
 
 ### 💡 Idea Canvas
 
@@ -65,7 +66,7 @@ Visual brainstorming → structured tasks, zero manual overhead.
 
 ### 📁 File Explorer
 
-Browse, preview, and edit project files without leaving the dashboard. Markdown rendering with syntax highlighting, inline editing, and auto-refresh.
+Browse, preview, and edit project files without leaving the dashboard. Markdown rendering, a CodeMirror-powered editor, spec files, context uploads, and auto-refresh keep the project workspace inspectable without dropping to a shell.
 
 ![FlowBoard Files](docs/screenshot-files.png)
 
@@ -129,16 +130,18 @@ existing entries intact.
 
 ### 3. Start the dashboard
 
-Migrations run automatically on server start (tasks migration, per-agent
-active-project DB setup, PROJECT-RULES canonical-path symlink, legacy-snippet
-advisory).
+Migrations run automatically on server start (HZL project metadata,
+per-agent active-project DB setup, PROJECT-RULES canonical-path symlink,
+legacy-snippet advisory).
 
-The server defaults to `~/.openclaw/workspace`. Override with `OPENCLAW_WORKSPACE` if needed:
+The server stores shared project data under `FLOWBOARD_PROJECTS_DIR` when set,
+or `<OPENCLAW_HOME>/projects` by default. `OPENCLAW_WORKSPACE` is still
+accepted for older installs and for the HZL DB default.
 
 ```bash
-HZL_ENABLED=true node server.js
-# Or with custom workspace:
-# OPENCLAW_WORKSPACE=/path/to/workspace HZL_ENABLED=true node server.js
+node server.js
+# Optional custom locations:
+# OPENCLAW_HOME=/path/to/.openclaw FLOWBOARD_PROJECTS_DIR=/path/to/projects node server.js
 
 # Or with systemd (auto-start on boot):
 cp templates/dashboard.service ~/.local/share/systemd/user/
@@ -172,7 +175,8 @@ Once the chip disappears, tell your agent:
 
 > "New project: my-app"
 
-The agent creates the folder structure, task file, and registers it in the dashboard.
+The agent creates the project through `POST /api/projects`, registers it in
+FlowBoard metadata/HZL, and uses the Tasks API for operational task state.
 
 ---
 
@@ -305,9 +309,9 @@ Any tunnel works. Recommended: **Cloudflare Tunnel** (free, stable).
 ```bash
 cloudflared tunnel login
 cloudflared tunnel create flowboard
-cloudflared tunnel route dns flowboard dashboard.your-domain.com
+cloudflared tunnel route dns flowboard flowboard.example.com
 cp templates/cloudflare-config.yml ~/.cloudflared/config.yml
-# Edit: replace <TUNNEL_ID>, <USER>, <YOUR_DOMAIN>
+# Edit: replace placeholder values
 cloudflared tunnel run flowboard
 ```
 
@@ -322,7 +326,7 @@ cp templates/systemd-auth.conf.example \
 # Edit with your values:
 # - TELEGRAM_BOT_TOKEN (from @BotFather)
 # - JWT_SECRET
-# - ALLOWED_USER_IDS (your Telegram user ID)
+# - ALLOWED_USER_IDS (comma-separated allowed user ids)
 # - DASHBOARD_ORIGIN (your public URL)
 
 systemctl --user daemon-reload
@@ -348,16 +352,16 @@ systemctl --user restart dashboard
 ├── BOOTSTRAP.md                  # OpenClaw-owned runtime bootstrap; FlowBoard does not write this
 └── (ACTIVE-PROJECT.md)           # Legacy fallback, DB is canonical (flowboard_agents)
 
-~/.openclaw/projects/             # Shared project data (m004-moved from workspace/projects)
+~/.openclaw/projects/             # Shared project data (or FLOWBOARD_PROJECTS_DIR)
 └── my-project/
-    ├── PROJECT.md                # Current state, focus, next steps
+    ├── PROJECT.md                # Stable project map, not current task truth
     ├── SESSIONS.md               # Chronological session log
     ├── DECISIONS.md              # Architecture + design rationale
     ├── canvas.json               # Idea canvas state
     ├── context/                  # External reference docs
     └── specs/                    # Task specs
 
-~/.openclaw/workspace/.hzl/       # Coordination backend (SQLite)
+~/.openclaw/workspace/.hzl/       # Coordination backend by default (or HZL_DB_PATH)
 ├── flowboard.db                  # HZL event store — tasks, claims, checkpoints, comments
 └── flowboard-cache.db            # Projections + flowboard_projects, flowboard_agents
 
@@ -372,7 +376,6 @@ systemctl --user restart dashboard
 │   ├── commands.md / tasks-api.md / hzl.md / canvas-and-notes.md
 │   ├── project-files.md / specify-workflow.md / agent-bridge.md
 │   ├── error-handling.md / key-principles.md
-│   └── legacy/PROJECT-RULES.md   # Archived pre-lazy-load monolith
 ├── snippets/
 │   ├── AGENTS-trigger.md         # Minimal trigger block for AGENTS.md
 │   ├── external-trigger.md       # Minimal trigger for external agents
@@ -383,11 +386,8 @@ systemctl --user restart dashboard
 **Key principles:**
 - 📡 **DB-canonical** — project + per-agent state live in `flowboard_agents` / `flowboard_projects`
 - 🧩 **Lazy-load rules** — agent checks `/api/status`, then fetches bootstrap/rules on demand
-- 🔒 **Local-first** — everything runs on your machine; API is localhost
+- 🔒 **Local-first** — everything runs on your machine; public remote access is opt-in
 - 🧪 **API-driven** — dashboard and agents share the same REST surface
-- ⚡ **Lazy loading** — Zero overhead when no project active
-- 🔒 **Local-first** — Everything runs on your machine
-- 📡 **API-driven** — Dashboard and agent use the same REST API
 
 ---
 

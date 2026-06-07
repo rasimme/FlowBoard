@@ -236,6 +236,13 @@
       "doc": "api/tasks.md"
     },
     {
+      "method": "GET",
+      "path": "/api/tasks/notifiable-stuck",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
       "method": "POST",
       "path": "/api/workflows/start",
       "auth": "user",

@@ -12,9 +12,11 @@ import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
+import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getTasks, refreshTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
+import { apiJson as apiFetch } from '../utils/apiFetch.js';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
 // critical parts are the resets (`border-0 outline-none`) — without
@@ -77,6 +79,26 @@ function showStatusRail(task) {
   return !task.trashedAt;
 }
 
+function clampProgress(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function latestCheckpointProgress(items = []) {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    if (item?.type !== 'checkpoint') continue;
+    const progress = clampProgress(item.progress);
+    if (progress !== null) return progress;
+  }
+  return null;
+}
+
+function taskProgressFor(task, items = []) {
+  if (task?.status === 'review' || task?.status === 'done') return 100;
+  return latestCheckpointProgress(items);
+}
+
 // The operational statuses plus `archived` as a deliberate restore target
 // inside the panel. Archived surfaces only when the currently viewed task
 // is itself archived, so the picker becomes the restore affordance.
@@ -84,28 +106,6 @@ function statusOptionsFor(task) {
   const base = ['backlog', 'open', 'in-progress', 'review', 'done'];
   if (task?.status === 'archived') return [...base, 'archived'];
   return base;
-}
-
-const API = '/api';
-
-async function apiFetch(path, opts = {}) {
-  const headers = { 'Content-Type': 'application/json', ...opts.headers };
-  // Telegram WebApp auth — send initData on every request
-  const tg = window.Telegram?.WebApp;
-  if (tg?.initData) headers['X-Telegram-Init-Data'] = tg.initData;
-
-  const res = await fetch(API + path, {
-    ...opts,
-    headers,
-    credentials: 'include',
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    if (data.error) throw new Error(data.error);
-    throw new Error(`HTTP ${res.status}`);
-  }
-  return res.json();
 }
 
 function fmtTime(ts) {
@@ -168,6 +168,7 @@ function showToast(msg, type = 'info') {
 
 export default function DetailPanel() {
   const { state } = useAppState();
+  const taskActions = useTaskActions();
   const [taskId, setTaskId] = useState(null);
   const [task, setTask] = useState(null);
   const [feed, setFeed] = useState([]);
@@ -398,30 +399,26 @@ export default function DetailPanel() {
     return tasks;
   }
 
+  async function syncActionResult(result, fallbackTask = taskRef.current) {
+    if (!result?.ok) throw new Error(result?.error || 'Unknown error');
+    if (result.task) {
+      return syncPanelTask({ ...(fallbackTask || {}), ...result.task });
+    }
+    await refreshSharedTasks();
+    return taskRef.current;
+  }
+
   // --- Action Handlers (optimistic updates) ---
 
   async function handleClaim() {
     const t = taskRef.current;
     if (!t) return;
     const agent = currentAgent();
-    const oldAgent = t.agent;
-    const oldStatus = t.status;
-
-    const updated = { ...t, agent, status: (t.status === 'open' || t.status === 'ready') ? 'in-progress' : t.status };
-    syncPanelTask(updated);
-
     try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/claim`, {
-        method: 'POST',
-        body: { agent, lease: 60 },
-      });
-      if (res?.error) throw new Error(res.error);
-      mergeTaskResponse(res, updated);
+      await syncActionResult(await taskActions.claimTask(t.id), t);
       addSyntheticItem('status', `Task claimed by ${agent}`);
       showToast('Task claimed', 'success');
     } catch (err) {
-      const reverted = { ...t, agent: oldAgent, status: oldStatus };
-      syncPanelTask(reverted);
       if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
         setHzlAvailable(false);
       }
@@ -432,26 +429,11 @@ export default function DetailPanel() {
   async function handleRelease() {
     const t = taskRef.current;
     if (!t) return;
-    const agent = currentAgent();
-    const oldAgent = t.agent;
-    const oldStatus = t.status;
-
-    const updated = { ...t, agent: null, status: t.previousStatus || 'open' };
-    syncPanelTask(updated);
-
     try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/release`, {
-        method: 'POST',
-        body: { agent, force: true },
-      });
-      if (res?.error) throw new Error(res.error);
-      if (res.task) mergeTaskResponse(res, updated);
-      else await refreshSharedTasks();
+      await syncActionResult(await taskActions.releaseTask(t.id), t);
       addSyntheticItem('status', 'Task released');
       showToast('Task released', 'success');
     } catch (err) {
-      const reverted = { ...t, agent: oldAgent, status: oldStatus };
-      syncPanelTask(reverted);
       if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
         setHzlAvailable(false);
       }
@@ -467,12 +449,7 @@ export default function DetailPanel() {
     const agent = currentAgent();
     const oldAgent = t.agent;
     try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/claim`, {
-        method: 'POST',
-        body: { agent, lease: 60 },
-      });
-      if (res?.error) throw new Error(res.error);
-      mergeTaskResponse(res, t);
+      await syncActionResult(await taskActions.claimTask(t.id), t);
       addSyntheticItem('status', `Stolen by ${agent} (previous claim by ${oldAgent || 'unknown'})`);
       showToast('Task stolen', 'success');
     } catch (err) {
@@ -487,25 +464,10 @@ export default function DetailPanel() {
     const t = taskRef.current;
     if (!t || t.status === newStatus) return;
     const oldStatus = t.status;
-    const optimistic = { ...t, status: newStatus };
-    if (newStatus === 'review' || newStatus === 'done') {
-      optimistic.agent = null;
-      optimistic.claimedAt = null;
-      optimistic.leaseUntil = null;
-    }
-    syncPanelTask(optimistic);
     try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
-        method: 'PUT',
-        body: { status: newStatus },
-      });
-      if (res?.error) throw new Error(res.error);
-      if (res.task) {
-        mergeTaskResponse(res, optimistic);
-      }
+      await syncActionResult(await taskActions.updateStatus(t.id, newStatus), t);
       addSyntheticItem('status', `Status: ${oldStatus} -> ${newStatus}`);
     } catch (err) {
-      syncPanelTask({ ...t, status: oldStatus });
       showToast('Status change failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -513,17 +475,9 @@ export default function DetailPanel() {
   async function handlePriorityChange(newPriority) {
     const t = taskRef.current;
     if (!t || t.priority === newPriority) return;
-    const oldPriority = t.priority;
-    syncPanelTask({ ...t, priority: newPriority });
     try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
-        method: 'PUT',
-        body: { priority: newPriority },
-      });
-      if (res?.error) throw new Error(res.error);
-      mergeTaskResponse(res, taskRef.current);
+      await syncActionResult(await taskActions.updatePriority(t.id, newPriority), t);
     } catch (err) {
-      syncPanelTask({ ...t, priority: oldPriority });
       showToast('Priority change failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
@@ -552,14 +506,8 @@ export default function DetailPanel() {
     if (!t) return;
     closeRoutePopover();
     const oldRouted = t.routedAgent || null;
-    syncPanelTask({ ...t, routedAgent: targetAgent });
     try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}/route`, {
-        method: 'POST',
-        body: { agent: targetAgent },
-      });
-      if (res?.error) throw new Error(res.error);
-      mergeTaskResponse(res, taskRef.current);
+      await syncActionResult(await taskActions.routeTask(t.id, targetAgent), t);
       // The HZL event store emits a task_updated event with the new
       // routedAgent value; loadActivity picks it up on the next poll
       // so no local synthetic is needed. Trigger a refresh now for
@@ -906,6 +854,7 @@ export default function DetailPanel() {
     const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
     return ta - tb;
   });
+  const taskProgress = taskProgressFor(task, allFeedItems);
 
   return createPortal(
     <>
@@ -1002,6 +951,17 @@ export default function DetailPanel() {
                   Archived — change status to restore
                 </span>
               )}
+            </div>
+          )}
+          {taskProgress !== null && (
+            <div className="mt-3 rounded-md border border-border bg-bg-accent px-3 py-2">
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <span className="text-[10px] uppercase tracking-wider text-muted font-semibold">Progress</span>
+                <span className="font-mono text-[11px] text-text-strong">{taskProgress}%</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-bg-hover overflow-hidden">
+                <div className="h-full bg-danger" style={{ width: `${taskProgress}%` }} />
+              </div>
             </div>
           )}
           {/* Shared popover for Status and Priority pickers */}
@@ -1378,7 +1338,7 @@ export default function DetailPanel() {
 
 // T-161-4 Zone 4: Activity entry — three visually differentiated types.
 // - Comment / Checkpoint: AgentChip + handle + timestamp + optional type
-//   label + body. Checkpoints can also show a progress line.
+//   label + body. Checkpoint progress is consolidated in the task header.
 // - Status event: dim one-liner, no chip, no bubble (system-info tone).
 function ActivityItem({ item }) {
   const author = displayActivityAuthor(item.author || item.agent);
@@ -1397,7 +1357,6 @@ function ActivityItem({ item }) {
   }
 
   const typeLabel = item.type === 'checkpoint' ? ' - checkpoint' : '';
-  const progress = item.type === 'checkpoint' && typeof item.progress === 'number' ? item.progress : null;
 
   return (
     <div className="flex gap-3 py-2.5">
@@ -1410,14 +1369,6 @@ function ActivityItem({ item }) {
           <span className="text-xs text-muted">{time}{typeLabel}</span>
         </div>
         <div className="text-sm text-text break-words whitespace-pre-wrap">{item.message || ''}</div>
-        {progress !== null && (
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="flex-1 h-1 bg-bg-hover rounded-full overflow-hidden">
-              <div className="h-full bg-ok" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
-            </div>
-            <span className="text-[10px] text-muted font-mono">{progress}%</span>
-          </div>
-        )}
       </div>
     </div>
   );

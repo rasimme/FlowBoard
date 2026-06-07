@@ -1,6 +1,6 @@
 # Agents & Status Endpoints
 
-Per-agent state: who exists, what each is currently working on. All require `HZL_ENABLED=true`.
+Per-agent state: who exists, what each is currently working on. HZL is always enabled in current FlowBoard releases.
 
 ## `GET /api/agents`
 
@@ -18,8 +18,6 @@ Lists every row in `flowboard_agents`. Used by the UI's active-agents bar.
   ]
 }
 ```
-
-**503** if `HZL_ENABLED` is not `true`.
 
 ## `DELETE /api/agents/:id`
 

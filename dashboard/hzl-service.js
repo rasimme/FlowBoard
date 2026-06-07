@@ -3,6 +3,43 @@
 const path = require('path');
 const fs = require('fs');
 
+// =============================================================================
+// T-248: Stuck-Task Notification Contract
+// =============================================================================
+//
+// Problem: Stuck/stale task notifications may not follow a consistent contract
+// or may not properly track which notifications have been sent, resulting in
+// duplicate alerts every check cycle.
+//
+// Solution: Implement notification state tracking in task metadata with guards
+// to prevent duplicate notifications within a configurable time window.
+//
+// SCHEMA (in task.metadata.flowboard.notifications.stuck):
+//   {
+//     lastNotifiedAt: ISO-8601 timestamp | null,
+//     lastNotificationReason: 'stale' | 'expired' | null,
+//     notificationCount: number (cumulative),
+//   }
+//
+// GUARD LOGIC (in _shouldNotifyStuckTask):
+//   - First notification: lastNotifiedAt is null → always notify
+//   - Subsequent: (now - lastNotifiedAt) >= notificationWindow → re-notify
+//   - Default window: 60 minutes (configurable via NOTIFICATION_WINDOW_MINUTES env var)
+//
+// FLOW:
+//   1. Scheduler calls getNotifiableStuckTasks() every 5 minutes
+//   2. Function queries all stuck tasks via getStuckTasks()
+//   3. For each stuck task, checks _shouldNotifyStuckTask() guard
+//   4. Only tasks passing guard are returned; _recordStuckNotification() marks them sent
+//   5. Scheduler sends notifications only for tasks in the notifiable list
+//   6. Next cycle: same task won't re-notify until window expires
+//
+// API ENDPOINTS:
+//   GET /api/tasks/stuck — all currently stuck tasks (no guard, for monitoring)
+//   GET /api/tasks/notifiable-stuck — only tasks due for notification (guard-filtered)
+//
+// =============================================================================
+
 // --- Module-level state (set during init, never before) ---
 let _taskService = null;
 let _projectService = null;
@@ -898,6 +935,49 @@ function updateTask(project, flowboardId, updates) {
   //    matches the authoritative on-disk state.
   _alignProjectionToCache(ulid, cached);
   const refreshed = _resyncCachedTask(ulid);
+
+  // T-250: Parent status aggregation - if this is a subtask status change,
+  // derive children from the cache. `parent.subtaskIds` is a public/read-model
+  // convenience and can be stale during direct mutation tests.
+  if (cached.parentId && updates.status !== undefined) {
+    const parent = _cache.get(`${project}:${cached.parentId}`);
+    if (parent) {
+      const children = [..._cache.values()].filter(t => (
+        t._project === project &&
+        t.parentId === parent.id &&
+        t.status !== 'archived' &&
+        !t.trashedAt
+      ));
+
+      if (children.length > 0) {
+        // Count child statuses to determine parent target
+        let allDone = true;
+        let anyReview = false;
+        for (const child of children) {
+          if (child.status !== 'done') allDone = false;
+          if (child.status === 'review') anyReview = true;
+        }
+
+        // Determine target parent status based on children:
+        // Priority: done > review > (current parent status if lower)
+        let targetParentStatus = null;
+        if (allDone && parent.status !== 'done' && parent.status !== 'archived') {
+          targetParentStatus = 'done';
+        } else if (anyReview && parent.status !== 'done' && parent.status !== 'review') {
+          targetParentStatus = 'review';
+        }
+
+        if (targetParentStatus && targetParentStatus !== parent.status) {
+          try {
+            updateTask(project, parent.id, { status: targetParentStatus });
+          } catch (e) {
+            console.warn('[hzl-service] parent status aggregation failed:', e.message);
+          }
+        }
+      }
+    }
+  }
+
   return _publicTask(refreshed || cached);
 }
 
@@ -1539,6 +1619,18 @@ function addCheckpoint(project, flowboardId, opts) {
   const now = new Date().toISOString();
   const hzlTask = _taskService.getTaskById(ulid);
   const fb = hzlTask?.metadata?.flowboard || {};
+
+  // T-249: Renew lease when checkpoint is created
+  // Extend lease_until by default checkpoint-renewal window (20 minutes)
+  let leaseUntil = cached.leaseUntil;
+  if (cached.agent && cached.agent === agent) {
+    const checkpointRenewalMinutes = 20;
+    leaseUntil = new Date(Date.now() + checkpointRenewalMinutes * 60 * 1000).toISOString();
+    _taskService.db.prepare(`
+      UPDATE tasks_current SET lease_until = ? WHERE task_id = ?
+    `).run(leaseUntil, ulid);
+  }
+
   const meta = {
     flowboard: {
       ...fb,
@@ -1551,6 +1643,7 @@ function addCheckpoint(project, flowboardId, opts) {
   // Update RAM cache
   cached.lastCheckpointAt = now;
   cached.checkpointCount = meta.flowboard.checkpointCount;
+  cached.leaseUntil = leaseUntil;
 
   return {
     id: result.event_rowid,
@@ -1728,15 +1821,108 @@ function renderStatusEventMessage(type, data) {
 }
 
 /**
+ * T-248: Stuck-Task Notification Contract
+ *
+ * A stuck-task notification tracks the last time a notification was sent
+ * for a given task to prevent duplicate alerts within a time window.
+ * Notifications are tracked in task metadata.flowboard.notifications.stuck.
+ *
+ * Schema:
+ *   notifications: {
+ *     stuck: {
+ *       lastNotifiedAt: ISO-8601 timestamp | null,
+ *       lastNotificationReason: 'stale' | 'expired' | null,
+ *       notificationCount: number,
+ *     }
+ *   }
+ *
+ * Guards against duplicate notifications:
+ * - notificationWindow: minimum minutes between notifications for same task (default: 60)
+ * - A new notification is sent only if:
+ *   1. lastNotifiedAt is null (first time), OR
+ *   2. (now - lastNotifiedAt) >= notificationWindow, AND
+ *   3. the task is still stuck (validates stale/expired condition still holds)
+ */
+
+function _initStuckNotificationMeta(flowboardMeta = {}) {
+  if (!flowboardMeta.notifications) flowboardMeta.notifications = {};
+  if (!flowboardMeta.notifications.stuck) {
+    flowboardMeta.notifications.stuck = {
+      lastNotifiedAt: null,
+      lastNotificationReason: null,
+      notificationCount: 0,
+    };
+  }
+  return flowboardMeta.notifications.stuck;
+}
+
+function _shouldNotifyStuckTask(task, stuckReason, notificationWindow = 60) {
+  if (!task || !task._ulid) return false;
+  if (!stuckReason) return false; // Not actually stuck
+
+  const hzlTask = _taskService.getTaskById(task._ulid);
+  if (!hzlTask) return false;
+
+  const fb = hzlTask.metadata?.flowboard || {};
+  const notifMeta = _initStuckNotificationMeta(fb);
+
+  const now = Date.now();
+  const lastNotified = notifMeta.lastNotifiedAt ? new Date(notifMeta.lastNotifiedAt).getTime() : null;
+
+  // First notification: lastNotifiedAt is null
+  if (!lastNotified) return true;
+
+  // Subsequent notifications: check window + re-validate condition
+  const windowMs = notificationWindow * 60 * 1000;
+  if (now - lastNotified < windowMs) return false; // Too soon
+
+  return true; // Window expired, re-notify
+}
+
+function _recordStuckNotification(task, stuckReason) {
+  if (!task || !task._ulid) return;
+
+  const ulid = task._ulid;
+  const hzlTask = _taskService.getTaskById(ulid);
+  if (!hzlTask) return;
+
+  const fb = hzlTask.metadata?.flowboard || {};
+  const notifMeta = _initStuckNotificationMeta(fb);
+
+  const now = new Date().toISOString();
+  notifMeta.lastNotifiedAt = now;
+  notifMeta.lastNotificationReason = stuckReason;
+  notifMeta.notificationCount = (notifMeta.notificationCount || 0) + 1;
+
+  const meta = {
+    flowboard: {
+      ...fb,
+      notifications: {
+        ...fb.notifications,
+        stuck: notifMeta,
+      }
+    }
+  };
+
+  try {
+    _updateMetadata(ulid, meta);
+  } catch (e) {
+    console.warn('[hzl-service] Failed to record stuck notification for', task.id, ':', e.message);
+  }
+}
+
+/**
  * Get stuck tasks (stale + expired leases) across all projects.
  * Stale = in_progress + lastCheckpointAt older than threshold.
  * Expired = leaseUntil in the past.
- * Returns combined list with reason field.
+ * T-248: Returns contract with separate stale and expired arrays for scheduler compatibility.
  */
 function getStuckTasks(opts = {}) {
   const staleThreshold = opts.staleThreshold !== undefined ? opts.staleThreshold : 10; // minutes
   const now = Date.now();
-  const stuck = [];
+  const stale = [];
+  const expired = [];
+  const combined = []; // For legacy/API compatibility
 
   for (const [key, task] of _cache) {
     if (task.status !== 'in-progress') continue;
@@ -1745,6 +1931,7 @@ function getStuckTasks(opts = {}) {
     const entry = {
       project: task._project,
       taskId: task.id,
+      id: task.id,
       title: task.title,
       agent: task.agent || null,
       status: task.status,
@@ -1755,12 +1942,15 @@ function getStuckTasks(opts = {}) {
       const lastCp = new Date(task.lastCheckpointAt).getTime();
       const staleMs = now - lastCp;
       if (staleMs > staleThreshold * 60 * 1000) {
-        stuck.push({
+        const staleEntry = {
           ...entry,
           reason: 'stale',
           lastCheckpointAt: task.lastCheckpointAt,
           staleMinutes: Math.floor(staleMs / 60000),
-        });
+          staleSinceMinutes: Math.floor(staleMs / 60000),
+        };
+        stale.push(staleEntry);
+        combined.push(staleEntry);
         continue; // Don't double-list as stale AND expired
       }
     }
@@ -1769,17 +1959,67 @@ function getStuckTasks(opts = {}) {
     if (task.leaseUntil) {
       const leaseEnd = new Date(task.leaseUntil).getTime();
       if (leaseEnd < now) {
-        stuck.push({
+        const expiredEntry = {
           ...entry,
           reason: 'expired',
           leaseUntil: task.leaseUntil,
           expiredMinutes: Math.floor((now - leaseEnd) / 60000),
-        });
+        };
+        expired.push(expiredEntry);
+        combined.push(expiredEntry);
       }
     }
   }
 
-  return stuck;
+  return { stale, expired, combined };
+}
+
+/**
+ * T-248: Get stuck tasks that should trigger a notification.
+ * Filters getStuckTasks() result through notification guards to prevent
+ * duplicate alerts within the notification window (default 60 minutes).
+ * Returns same contract as getStuckTasks but only includes tasks that haven't
+ * been notified recently.
+ *
+ * Call this from the scheduler; getStuckTasks() from the API endpoint.
+ */
+function getNotifiableStuckTasks(opts = {}) {
+  const { staleThreshold, notificationWindow = 60 } = opts;
+  const allStuck = getStuckTasks(opts);
+  const notifiableStale = [];
+  const notifiableExpired = [];
+
+  // Check stale tasks
+  for (const staleTask of (allStuck.stale || [])) {
+    const task = _cache.get(`${staleTask.project}:${staleTask.taskId}`);
+    if (task && _shouldNotifyStuckTask(task, 'stale', notificationWindow)) {
+      notifiableStale.push(staleTask);
+    }
+  }
+
+  // Check expired tasks
+  for (const expiredTask of (allStuck.expired || [])) {
+    const task = _cache.get(`${expiredTask.project}:${expiredTask.taskId}`);
+    if (task && _shouldNotifyStuckTask(task, 'expired', notificationWindow)) {
+      notifiableExpired.push(expiredTask);
+    }
+  }
+
+  // Record notifications for notifiable tasks so they won't trigger again within window
+  for (const t of notifiableStale) {
+    const task = _cache.get(`${t.project}:${t.taskId}`);
+    if (task) _recordStuckNotification(task, 'stale');
+  }
+  for (const t of notifiableExpired) {
+    const task = _cache.get(`${t.project}:${t.taskId}`);
+    if (task) _recordStuckNotification(task, 'expired');
+  }
+
+  return {
+    stale: notifiableStale,
+    expired: notifiableExpired,
+    combined: [...notifiableStale, ...notifiableExpired],
+  };
 }
 
 /**
@@ -1950,6 +2190,7 @@ module.exports = {
   addComment,
   getComments,
   getStuckTasks,
+  getNotifiableStuckTasks, // T-248: notification-aware stuck-task filter
   getHandoffContext,
   routeTask,
   workflowStart,

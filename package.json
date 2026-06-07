@@ -1,18 +1,65 @@
 {
   "name": "flowboard",
   "version": "4.0.1",
-  "description": "FlowBoard — project workspaces for AI agents. Hook pack registering the project-context hook with OpenClaw.",
-  "private": true,
+  "description": "FlowBoard project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "type": "module",
   "license": "MIT",
+  "scripts": {
+    "plugin:lint": "node scripts/plugin-lint.mjs",
+    "privacy:scan": "node scripts/privacy-scan.mjs",
+    "release:check": "node scripts/release-check.mjs"
+  },
   "homepage": "https://github.com/rasimme/FlowBoard",
+  "keywords": [
+    "openclaw",
+    "flowboard",
+    "project-management",
+    "multi-agent",
+    "hooks"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/rasimme/FlowBoard.git"
   },
   "openclaw": {
+    "install": {
+      "defaultChoice": "git",
+      "minHostVersion": ">=2026.5.20"
+    },
+    "compat": {
+      "pluginApi": ">=2026.5.20"
+    },
+    "release": {
+      "publishToClawHub": true,
+      "publishToNpm": false
+    },
     "hooks": [
       "./hooks/project-context"
     ]
-  }
+  },
+  "files": [
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "SECURITY-REVIEW.md",
+    "CONTRIBUTING.md",
+    "llms.txt",
+    "hooks/**",
+    "scripts/**",
+    "snippets/**",
+    "templates/**",
+    "docs/**",
+    "dashboard/**",
+    ".env.example",
+    "!dashboard/node_modules/**",
+    "!dashboard/dist/**",
+    "!dashboard/.env*",
+    "!dashboard/dashboard-data.json",
+    "!dashboard/.cloudflared/**",
+    "!**/*.db",
+    "!**/*.sqlite",
+    "!**/*.log"
+  ]
 }

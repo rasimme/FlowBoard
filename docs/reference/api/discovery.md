@@ -43,8 +43,6 @@ Boot-time integrity watermark plus the current state of the `events` table. Buil
 - `boot_check` — the snapshot recorded at server startup. Useful for diagnosing whether a regression existed at boot vs developed later (the latter is impossible under normal SQL triggers, but the field is reported for transparency).
 - `strict_mode` — `true` when `HZL_INTEGRITY_STRICT=true` is set. In strict mode the service `process.exit(1)`s on regression at boot, so a running service with `strict_mode: true` is by definition regression-free.
 
-**501** if `HZL_ENABLED=false`.
-
 Operators wiring this into a monitoring tool: poll on whatever cadence makes sense (every minute is fine — the response is cheap), and alert on `regression !== null`. To reset the baseline after a deliberate restore: `DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%';` in `flowboard-cache.db`.
 
 If you want a push notification at boot instead of polling, set `INTEGRITY_WEBHOOK_URL` (and optionally `INTEGRITY_WEBHOOK_TOKEN`). On regression the server `POST`s a JSON body to that URL with both a human-readable `text` field and the structured `regression` / `current` / `stored` / `host` fields. See [env-vars.md](../env-vars.md) and [ADR-0018](../../adr/0018-hzl-filesystem-rollback-detection.md) for the full contract.

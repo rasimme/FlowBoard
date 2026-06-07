@@ -87,6 +87,19 @@ Every task mutation should follow the same sequence:
 
 Polling is reconciliation. It is not the primary state propagation mechanism for a local action.
 
+## File Runtime
+
+Project files are not HZL records. They live on disk under the project directory and may be changed by the dashboard, by agents, or by normal filesystem tools. The Files view therefore uses a smaller convergence contract than task state:
+
+1. The server file tree is the canonical metadata snapshot.
+2. Each file entry exposes `modifiedMs`, `size`, and `version` (`mtimeMs:size`) for cheap change detection.
+3. FilesView polls that metadata while the Files tab is visible.
+4. If the selected file's version changes and the editor is clean, FilesView reloads the preview from the API.
+5. If the selected file disappears, FilesView clears the selection and falls back through the normal default-file path.
+6. If the editor is dirty, external changes are surfaced as a conflict prompt instead of overwriting local edits.
+
+This deliberately avoids WebSocket/SSE for now. Polling is the right first runtime because external agents may write files directly on disk and not through a FlowBoard mutation endpoint.
+
 ## Target Modules
 
 The intended module boundary is:
@@ -154,6 +167,7 @@ Current relevant files:
 - `dashboard/src/context/AppStateContext.jsx` - React bridge over global app state
 - `dashboard/src/context/DashboardContext.jsx` - React-owned shell runtime and compatibility bridge
 - `dashboard/src/pages/TasksView.jsx` - Kanban task UI
+- `dashboard/src/pages/FilesView.jsx` - project file tree, preview, editor, and file-metadata reconciliation
 - `dashboard/src/components/DetailPanel.jsx` - task detail drawer and task actions
 - `dashboard/src/utils/apiFetch.js` - React API helper
 - `dashboard/src/utils/toast.js` - React toast bridge

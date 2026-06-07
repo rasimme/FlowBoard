@@ -1405,8 +1405,10 @@
       padding: 12px 14px;
       border-bottom: 1px solid var(--border);
       display: flex;
-      align-items: center;
-      gap: 10px;
+      align-items: stretch;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
     }
     .file-upload-area.drag-over {
       background: var(--bg-hover);
@@ -1419,6 +1421,7 @@
     .file-upload-btn {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
       padding: 6px 12px;
       border: 1px solid var(--border);
@@ -1428,6 +1431,7 @@
       font-size: 12px;
       cursor: pointer;
       transition: all 0.15s;
+      width: 100%;
     }
     .file-upload-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
     .file-upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1492,7 +1496,7 @@
     }
 
     .file-back-btn {
-      display: none;
+      display: flex;
       align-items: center; gap: 4px;
       background: none; border: 1px solid var(--border); border-radius: var(--radius-md);
       color: var(--text); font-size: 13px; font-family: inherit;
@@ -1523,6 +1527,19 @@
     .file-preview-badge.optional { color: var(--info); border: 1px solid #3b82f659; background: var(--info-subtle); }
 
     .file-preview-actions { display: flex; gap: 6px; }
+
+    .file-conflict-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-bottom: 1px solid var(--warn-border);
+      background: var(--warn-subtle);
+      color: var(--text);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .file-conflict-banner span { flex: 1; color: var(--text-strong); }
 
     .file-preview-body {
       flex: 1; overflow-y: auto; padding: 18px 24px;
@@ -1595,16 +1612,63 @@
     .json-null { color: var(--muted); }
 
     /* Edit mode */
-    .file-editor {
+    .file-editor,
+    .markdown-editor {
       width: 100%; height: 100%; resize: none;
       background: var(--bg); color: var(--text);
       border: none; outline: none;
       font-family: "JetBrains Mono", monospace;
       font-size: 13px; line-height: 1.6;
-      padding: 18px 24px;
       overflow-y: auto;
     }
-    .file-editor:focus { outline: none; }
+    .markdown-editor {
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .file-editor {
+      padding: 18px 24px;
+    }
+    .file-editor:focus,
+    .markdown-editor:focus { outline: none; }
+
+    .markdown-editor-toolbar {
+      display: flex; align-items: center; gap: 4px;
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    .markdown-editor-tool {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    }
+    .markdown-editor-tool:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+      border-color: var(--border);
+    }
+    .markdown-editor-tool:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .markdown-editor-body {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .markdown-editor-body > div {
+      height: 100%;
+    }
+
+    .markdown-editor .cm-editor {
+      height: 100%;
+      background: var(--bg);
+    }
 
     .unsaved-dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -1614,14 +1678,37 @@
 
     @media (max-width: 900px) {
       .app { grid-template-columns: 0px 1fr; }
-      .file-explorer { grid-template-columns: 1fr; display: block; height: 100%; overflow: hidden; }
-      /* Mobile file nav: show tree OR preview, not both */
-      .file-explorer .file-tree { display: flex; flex-direction: column; border-right: none; height: 100%; overflow-y: auto; }
-      .file-explorer .file-preview { display: none; }
-      .file-explorer.show-preview .file-tree { display: none; }
-      .file-explorer.show-preview .file-preview { display: flex; flex-direction: column; height: 100%; overflow: auto; }
-      /* Back button — only visible on mobile */
-      .file-back-btn { display: flex !important; }
+      .file-explorer {
+        grid-template-columns: minmax(132px, 38%) minmax(0, 1fr);
+        display: grid;
+        height: 100%;
+        overflow: hidden;
+      }
+      .file-explorer .file-tree {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .file-explorer .file-preview {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .file-upload-area {
+        padding: 8px 10px;
+      }
+      .file-upload-hint {
+        display: none;
+      }
+      .file-upload-btn {
+        padding: 6px 8px;
+        font-size: 11px;
+      }
+      .file-back-btn { display: flex; }
 
       /* File preview header: two rows on mobile */
       .file-preview-header {

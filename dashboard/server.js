@@ -1408,13 +1408,16 @@ function buildFileTree(projectName) {
         walk(fullPath, relPath);
       } else {
         const stat = fs.statSync(fullPath);
+        const version = `${stat.mtimeMs}:${stat.size}`;
         entries.push({
           name: item.name,
           path: relPath,
           type: 'file',
           size: stat.size,
           category: getFileCategory(relPath),
-          modified: stat.mtime.toISOString()
+          modified: stat.mtime.toISOString(),
+          modifiedMs: stat.mtimeMs,
+          version
         });
       }
     }
@@ -1495,12 +1498,15 @@ app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
 
   try {
     const content = fs.readFileSync(resolved, 'utf8');
+    const version = `${stat.mtimeMs}:${stat.size}`;
     res.json({
       path: filePath,
       content,
       size: stat.size,
       category: getFileCategory(filePath),
-      modified: stat.mtime.toISOString()
+      modified: stat.mtime.toISOString(),
+      modifiedMs: stat.mtimeMs,
+      version
     });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -1529,11 +1535,14 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
 
     fs.writeFileSync(resolved, content);
     const stat = fs.statSync(resolved);
+    const version = `${stat.mtimeMs}:${stat.size}`;
     res.json({
       ok: true,
       path: filePath,
       size: stat.size,
-      modified: stat.mtime.toISOString()
+      modified: stat.mtime.toISOString(),
+      modifiedMs: stat.mtimeMs,
+      version
     });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -1576,15 +1585,21 @@ app.post('/api/projects/:name/files/context', express.json({ limit: '5mb' }), (r
 
   try {
     fs.mkdirSync(contextDir, { recursive: true });
-    fs.writeFileSync(resolved, content);
+    fs.writeFileSync(resolved, content, { flag: 'wx' });
     const stat = fs.statSync(resolved);
+    const version = `${stat.mtimeMs}:${stat.size}`;
     res.json({
       ok: true,
       path: `context/${filename}`,
       size: stat.size,
       modified: stat.mtime.toISOString(),
+      modifiedMs: stat.mtimeMs,
+      version
     });
   } catch (err) {
+    if (err && err.code === 'EEXIST') {
+      return res.status(409).json({ error: 'File already exists' });
+    }
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -2157,6 +2172,21 @@ app.get('/api/tasks/stuck', (req, res) => {
   }
 });
 
+// GET /api/tasks/notifiable-stuck — T-248: stuck tasks due for notification (filters by window)
+app.get('/api/tasks/notifiable-stuck', (req, res) => {
+  try {
+    const staleThreshold = req.query.staleThreshold !== undefined ? Math.max(0, parseInt(req.query.staleThreshold) || 0) : 30;
+    const notificationWindow = req.query.notificationWindow !== undefined ? Math.max(1, parseInt(req.query.notificationWindow) || 60) : 60;
+    const notifiable = hzlService.getNotifiableStuckTasks({
+      staleThreshold,
+      notificationWindow,
+    });
+    res.json({ ok: true, notifiable, appliedThresholds: { staleThreshold, notificationWindow } });
+  } catch (err) {
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/workflows/start — resume current agent work or claim next eligible task
 app.post('/api/workflows/start', (req, res) => {
   try {
@@ -2391,13 +2421,22 @@ async function startServer() {
       } catch (e) { console.warn('[hook-drain] Error:', e.message); }
     }, 2 * 60 * 1000);
 
-    // Stale-check — detect stuck tasks every 5 minutes, notify via gateway
+    // T-248: Stale-check — detect stuck tasks every 5 minutes, notify via gateway
+    // Uses getNotifiableStuckTasks() to filter out duplicates within notification window (60min default)
     setInterval(() => {
       try {
         const staleMinutes = parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30;
-        const stuck = hzlService.getStuckTasks({ staleThreshold: staleMinutes });
-        const staleList   = (stuck && Array.isArray(stuck.stale))   ? stuck.stale   : [];
-        const expiredList = (stuck && Array.isArray(stuck.expired)) ? stuck.expired : [];
+        const notificationWindowMinutes = parseInt(process.env.NOTIFICATION_WINDOW_MINUTES) || 60;
+
+        // Get only tasks that should trigger a notification (avoids duplicates)
+        const notifiable = hzlService.getNotifiableStuckTasks({
+          staleThreshold: staleMinutes,
+          notificationWindow: notificationWindowMinutes,
+        });
+
+        const staleList   = (notifiable && Array.isArray(notifiable.stale))   ? notifiable.stale   : [];
+        const expiredList = (notifiable && Array.isArray(notifiable.expired)) ? notifiable.expired : [];
+
         if (staleList.length > 0 || expiredList.length > 0) {
           // Group stuck tasks by agent for targeted notification
           const byAgent = {};
