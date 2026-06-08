@@ -2085,6 +2085,184 @@ function getHandoffContext(project, flowboardId) {
 }
 
 /**
+ * Build markdown handoff package for agent spawning (T-263).
+ * Returns agent-ready markdown with task context, API contract, and claim/checkpoint protocol.
+ * Must include marker `flowboard-handoff-contract: v1` for audit/validation.
+ *
+ * Options:
+ * - apiBase: API base URL (default: http://127.0.0.1:18790)
+ * - maxSpecSize: Max spec content size in bytes (default: 10000, 0 = unlimited)
+ */
+function buildHandoffMarkdown(project, flowboardId, options = {}) {
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) {
+    const hint = !project ? 'Project name is required' : !flowboardId ? 'Task ID is required' :
+                 'Task may have been archived or deleted. Check project backlog.';
+    throw new Error(`Task not found: ${flowboardId}. ${hint}`);
+  }
+
+  const context = getHandoffContext(project, flowboardId);
+  const task = _publicTask(cached);
+  const projectDir = path.join(PROJECTS_DIR, project);
+  let projectTitle = project;
+  let comments = [];
+  const warnings = [];
+
+  try {
+    const projectMdPath = path.join(projectDir, 'PROJECT.md');
+    const projectMd = fs.readFileSync(projectMdPath, 'utf8');
+    const titleMatch = projectMd.match(/^#\s+(.+)/m);
+    if (titleMatch) projectTitle = titleMatch[1].trim();
+  } catch (e) {
+    warnings.push(`PROJECT.md not found (${projectDir})`);
+  }
+
+  try {
+    comments = getComments(project, flowboardId) || [];
+  } catch { /* graceful */ }
+
+  const apiBase = options.apiBase || 'http://127.0.0.1:18790';
+  const maxSpecSize = options.maxSpecSize !== undefined ? options.maxSpecSize : 10000;
+  const lines = [];
+
+  lines.push('```');
+  lines.push('flowboard-handoff-contract: v1');
+  lines.push('```');
+  lines.push('');
+
+  lines.push(`# FlowBoard Task Handoff: ${project}/${flowboardId}`);
+  lines.push('');
+
+  lines.push('## Project');
+  lines.push(`- **Name**: ${project}`);
+  lines.push(`- **Title**: ${projectTitle}`);
+  lines.push('');
+
+  lines.push('## Task');
+  lines.push(`- **ID**: ${task.id}`);
+  lines.push(`- **Title**: ${task.title}`);
+  lines.push(`- **Status**: ${task.status}`);
+  lines.push(`- **Priority**: ${task.priority || 'unknown'}`);
+  if (task.agent) lines.push(`- **Assigned Agent**: ${task.agent}`);
+  if (task.completed) lines.push(`- **Completed**: ${task.completed}`);
+  lines.push('');
+
+  if (task.specFile) {
+    lines.push(`## Spec`);
+    lines.push(`- **File**: \`${task.specFile}\``);
+    if (context.spec) {
+      lines.push('');
+      let spec = context.spec;
+      if (maxSpecSize > 0 && spec.length > maxSpecSize) {
+        spec = spec.substring(0, maxSpecSize) + `\n\n[... truncated (${spec.length - maxSpecSize} bytes). Get full spec via API: GET ${apiBase}/api/projects/${project}/tasks/${flowboardId} with format=spec]`;
+      }
+      lines.push(spec);
+    } else {
+      warnings.push(`Spec file ${task.specFile} could not be read`);
+    }
+    lines.push('');
+  }
+
+  if (context.repo) {
+    lines.push('## Repository');
+    lines.push(`- **Path**: \`${context.repo}\``);
+    lines.push('');
+  }
+
+  if (context.claudeMd) {
+    lines.push('## Project Instructions (CLAUDE.md)');
+    lines.push('');
+    lines.push(context.claudeMd);
+    lines.push('');
+  }
+
+  if (context.constraints && context.constraints.length > 0) {
+    lines.push('## Constraints');
+    context.constraints.forEach(c => {
+      lines.push(`- ${c}`);
+    });
+    lines.push('');
+  }
+
+  lines.push('## API Contract');
+  lines.push(`- **Base URL**: ${apiBase}`);
+  lines.push(`- **Project**: \`${project}\``);
+  lines.push(`- **Task ID**: \`${flowboardId}\``);
+  lines.push('');
+  lines.push('### Status & Bootstrap');
+  lines.push(`1. Check status: \`GET ${apiBase}/api/status?agentId=<YOUR_AGENT_ID>\``);
+  lines.push(`2. Load bootstrap with rules: \`GET ${apiBase}/api/projects/${project}/bootstrap\``);
+  lines.push(`3. Load specific rule: \`GET ${apiBase}/api/projects/${project}/rules/<section>\``);
+  lines.push('');
+  lines.push('### Claim Task');
+  lines.push(`\`\`\`json`);
+  lines.push(`POST ${apiBase}/api/projects/${project}/tasks/${flowboardId}/claim`);
+  lines.push(`{`);
+  lines.push(`  "agent": "<YOUR_AGENT_ID>",`);
+  lines.push(`  "reason": "Starting work"`);
+  lines.push(`}`);
+  lines.push(`\`\`\``);
+  lines.push('');
+  lines.push('### Record Checkpoint');
+  lines.push(`\`\`\`json`);
+  lines.push(`POST ${apiBase}/api/projects/${project}/tasks/${flowboardId}/checkpoint`);
+  lines.push(`{`);
+  lines.push(`  "message": "Progress description",`);
+  lines.push(`  "status": "in-progress"`);
+  lines.push(`}`);
+  lines.push(`\`\`\``);
+  lines.push('');
+  lines.push('### Set Task to Review');
+  lines.push(`\`\`\`json`);
+  lines.push(`PUT ${apiBase}/api/projects/${project}/tasks/${flowboardId}`);
+  lines.push(`{`);
+  lines.push(`  "status": "review",`);
+  lines.push(`  "completed": "${new Date().toISOString().slice(0, 10)}"`);
+  lines.push(`}`);
+  lines.push(`\`\`\``);
+  lines.push('');
+
+  if (context.checkpoints && context.checkpoints.length > 0) {
+    lines.push('## Checkpoints');
+    context.checkpoints.forEach(cp => {
+      const author = cp.agent || cp.author || 'unknown';
+      lines.push(`- **${cp.timestamp}** by ${author}`);
+      lines.push(`  ${cp.message}`);
+    });
+    lines.push('');
+  }
+
+  if (comments.length > 0) {
+    lines.push('## Comments');
+    comments.forEach(c => {
+      lines.push(`- **${c.timestamp}** by ${c.author || 'unknown'}`);
+      lines.push(`  ${c.message}`);
+    });
+    lines.push('');
+  }
+
+  if (warnings.length > 0) {
+    lines.push('## ⚠️ Context Warnings');
+    warnings.forEach(w => {
+      lines.push(`- ${w}`);
+    });
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('');
+  lines.push('**Contract Version**: 1');
+  lines.push(`**Generated**: ${new Date().toISOString()}`);
+  if (warnings.length > 0) {
+    lines.push(`**Quality**: ⚠️ Partial context (${warnings.length} warnings)`);
+  } else {
+    lines.push('**Quality**: ✅ Complete context');
+  }
+
+  return lines.join('\n');
+}
+
+/**
  * Route a task to a specific agent.
  * Sets metadata.flowboard.routedAgent — enforced by claimTask().
  */
@@ -2192,6 +2370,7 @@ module.exports = {
   getStuckTasks,
   getNotifiableStuckTasks, // T-248: notification-aware stuck-task filter
   getHandoffContext,
+  buildHandoffMarkdown,
   routeTask,
   workflowStart,
   workflowHandoff,
