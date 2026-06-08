@@ -35,5 +35,7 @@ dashboard/*.db
 dashboard/*.db-shm
 dashboard/*.db-wal
 dashboard/hzl-data/
+dashboard/test-workspace/
+dashboard/test-workspace-endpoint/
 hzl-spike/
 specs/
