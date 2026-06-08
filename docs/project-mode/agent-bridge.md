@@ -49,6 +49,53 @@ For concrete endpoint shapes and request bodies, see `tasks-api.md` § Coordinat
 
 The `/handoff` endpoint returns structured context for spawning a coding agent (CC, Codex, etc.): task title, description, spec content, recent checkpoints/comments, and parent context if subtask. Used to construct ACP spawn payloads.
 
+### Delegating FlowBoard Task Work
+
+When you spawn or delegate another agent for FlowBoard project work, do not create a free-form prompt from memory. First fetch the task handoff package:
+
+`GET /api/projects/:name/tasks/:id/handoff?agentId=<target-agent-id>`
+
+The markdown handoff package is the official spawn preamble. It contains the audit marker `flowboard-handoff-contract: v1` and a mandatory startup contract for the spawned agent:
+
+1. activate/check the project with `PUT /api/status { project, agentId }`
+2. fetch bootstrap and lazy-load required rules
+3. claim the exact task
+4. write a first checkpoint
+5. only then inspect or edit repository files
+
+All localhost FlowBoard API calls must use a local-capable tool such as shell/curl/node. Do not use external web-fetch/browser tools for `127.0.0.1` or `localhost`.
+
+AGENTS.md snippets stay minimal and only tell agents to consult FlowBoard when a project is active. This rule section and the handoff package carry the delegation details.
+
+### Spawn-Wrapper Utility (T-263)
+
+The `buildSpawnPrompt()` function (in `dashboard/hzl-service.js`) combines a handoff package with custom spawn instructions. Use it when programmatically building prompts for agent delegation:
+
+```js
+const hzlService = require('./hzl-service.js');
+
+// Simple: handoff only (no custom instructions)
+const spawnPrompt = hzlService.buildSpawnPrompt('flowboard', 'T-262-5');
+
+// With custom task instructions
+const spawnPrompt = hzlService.buildSpawnPrompt(
+  'flowboard',
+  'T-262-5',
+  'Implement the session handoff endpoint and add error handling for invalid project names',
+  { targetAgentId: 'agent-xyz' }
+);
+```
+
+The function always returns the handoff package followed by custom instructions (if provided). The handoff contract marker `flowboard-handoff-contract: v1` is always at the start so spawned agents can detect and follow the startup contract.
+
+**Parameters:**
+- `project` — project name (e.g., `'flowboard'`)
+- `taskId` — task ID (e.g., `'T-262-5'`)
+- `customPrompt` — optional spawn instructions; whitespace-only treated as empty (default: `''`)
+- `options` — optional: `{ apiBase, targetAgentId, maxSpecSize, ... }`; forwarded to `buildHandoffMarkdown()`
+
+**Returns:** Markdown string with handoff prepended to custom instructions.
+
 ## Stuck Detection
 
 The `/tasks/stuck` endpoint returns cross-project tasks that are `in_progress` with no checkpoint beyond a threshold or with an expired lease. Used for monitoring and automatic intervention.

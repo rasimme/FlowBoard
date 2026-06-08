@@ -1922,10 +1922,10 @@ function getStuckTasks(opts = {}) {
   const now = Date.now();
   const stale = [];
   const expired = [];
+  const routedUnclaimed = [];
   const combined = []; // For legacy/API compatibility
 
   for (const [key, task] of _cache) {
-    if (task.status !== 'in-progress') continue;
     if (task.status === 'archived') continue;
 
     const entry = {
@@ -1936,6 +1936,21 @@ function getStuckTasks(opts = {}) {
       agent: task.agent || null,
       status: task.status,
     };
+
+    // Check routed-unclaimed: agent is assigned but not yet claimed (T-263-4)
+    if (task.routedAgent && !task.claimedAt) {
+      const routedEntry = {
+        ...entry,
+        reason: 'routed-unclaimed',
+        routedAgent: task.routedAgent,
+      };
+      routedUnclaimed.push(routedEntry);
+      combined.push(routedEntry);
+      continue;
+    }
+
+    // Only check stale/expired for in-progress tasks
+    if (task.status !== 'in-progress') continue;
 
     // Check stale (no checkpoint for > threshold minutes)
     if (task.lastCheckpointAt) {
@@ -1971,7 +1986,7 @@ function getStuckTasks(opts = {}) {
     }
   }
 
-  return { stale, expired, combined };
+  return { stale, expired, routedUnclaimed, combined };
 }
 
 /**
@@ -1988,6 +2003,12 @@ function getNotifiableStuckTasks(opts = {}) {
   const allStuck = getStuckTasks(opts);
   const notifiableStale = [];
   const notifiableExpired = [];
+  const notifiableRoutedUnclaimed = [];
+
+  // Routed-unclaimed is a critical compliance violation: notify immediately (T-263-4)
+  for (const routedTask of (allStuck.routedUnclaimed || [])) {
+    notifiableRoutedUnclaimed.push(routedTask);
+  }
 
   // Check stale tasks
   for (const staleTask of (allStuck.stale || [])) {
@@ -2006,6 +2027,10 @@ function getNotifiableStuckTasks(opts = {}) {
   }
 
   // Record notifications for notifiable tasks so they won't trigger again within window
+  for (const t of notifiableRoutedUnclaimed) {
+    const task = _cache.get(`${t.project}:${t.taskId}`);
+    if (task) _recordStuckNotification(task, 'routed-unclaimed');
+  }
   for (const t of notifiableStale) {
     const task = _cache.get(`${t.project}:${t.taskId}`);
     if (task) _recordStuckNotification(task, 'stale');
@@ -2018,8 +2043,148 @@ function getNotifiableStuckTasks(opts = {}) {
   return {
     stale: notifiableStale,
     expired: notifiableExpired,
-    combined: [...notifiableStale, ...notifiableExpired],
+    routedUnclaimed: notifiableRoutedUnclaimed,
+    combined: [...notifiableRoutedUnclaimed, ...notifiableStale, ...notifiableExpired],
   };
+}
+
+/**
+ * T-263-4: Get checkpoint health metrics for a task.
+ * Verifies compliance with handoff contract: tasks should have regular checkpoints.
+ * Returns checkpoint count, last checkpoint timestamp, and staleness indicators.
+ */
+function getCheckpointHealth(project, taskId) {
+  const task = _cache.get(`${project}:${taskId}`);
+  if (!task) return { error: `Task not found: ${taskId}` };
+
+  const now = Date.now();
+  const health = {
+    taskId,
+    project,
+    status: task.status,
+    agent: task.agent || null,
+    claimedAt: task.claimedAt || null,
+    checkpointCount: task.checkpointCount || 0,
+    lastCheckpointAt: task.lastCheckpointAt || null,
+    healthy: true,
+    issues: [],
+  };
+
+  // Check if agent claimed the task
+  if (task.routedAgent && !task.claimedAt) {
+    health.healthy = false;
+    health.issues.push('routed-unclaimed: agent assigned but task not claimed yet');
+    return health;
+  }
+
+  // For in-progress tasks, check checkpoint freshness
+  if (task.status === 'in-progress') {
+    if (!task.lastCheckpointAt) {
+      health.healthy = false;
+      health.issues.push('no-checkpoint: task in-progress but has no checkpoints');
+    } else {
+      const lastCpTime = new Date(task.lastCheckpointAt).getTime();
+      const staleMins = Math.floor((now - lastCpTime) / 60000);
+
+      // Warn if no checkpoint in last 30 minutes
+      if (staleMins > 30) {
+        health.healthy = false;
+        health.issues.push(`stale-checkpoint: last checkpoint ${staleMins}min ago`);
+      } else if (staleMins > 15) {
+        health.issues.push(`warning-stale: checkpoint ${staleMins}min old`);
+      }
+    }
+
+    // Warn if lease is about to expire
+    if (task.leaseUntil) {
+      const leaseEnd = new Date(task.leaseUntil).getTime();
+      const leaseRemaining = Math.floor((leaseEnd - now) / 60000);
+      if (leaseRemaining <= 0) {
+        health.healthy = false;
+        health.issues.push('lease-expired: agent lease expired');
+      } else if (leaseRemaining <= 5) {
+        health.issues.push(`warning-lease: lease expires in ${leaseRemaining}min`);
+      }
+    }
+  }
+
+  return health;
+}
+
+/**
+ * T-263-4: Get compliance status for a project or agent.
+ * Audits handoff contract adherence: routed-unclaimed, checkpoint health, contract violations.
+ */
+function getComplianceStatus(opts = {}) {
+  const { project = null, agent = null, includeDetails = false } = opts;
+  const now = Date.now();
+  const compliance = {
+    timestamp: new Date().toISOString(),
+    summary: {
+      totalTasks: 0,
+      routedUnclaimedCount: 0,
+      staleCheckpointCount: 0,
+      expiredLeaseCount: 0,
+      healthy: true,
+    },
+    details: [],
+  };
+
+  for (const [key, task] of _cache) {
+    if (project && task._project !== project) continue;
+    if (agent && task.agent !== agent) continue;
+
+    compliance.summary.totalTasks++;
+
+    const detail = {
+      taskId: task.id,
+      project: task._project,
+      status: task.status,
+      agent: task.agent || null,
+      routedAgent: task.routedAgent || null,
+      issues: [],
+    };
+
+    // Routed-unclaimed check
+    if (task.routedAgent && !task.claimedAt) {
+      compliance.summary.routedUnclaimedCount++;
+      compliance.summary.healthy = false;
+      detail.issues.push('routed-unclaimed');
+    }
+
+    // Checkpoint health for in-progress tasks
+    if (task.status === 'in-progress') {
+      if (!task.lastCheckpointAt) {
+        compliance.summary.staleCheckpointCount++;
+        compliance.summary.healthy = false;
+        detail.issues.push('no-checkpoint');
+      } else {
+        const lastCpTime = new Date(task.lastCheckpointAt).getTime();
+        const staleMs = now - lastCpTime;
+        if (staleMs > 30 * 60 * 1000) {
+          compliance.summary.staleCheckpointCount++;
+          compliance.summary.healthy = false;
+          detail.issues.push('stale-checkpoint');
+        }
+      }
+
+      // Lease expiration check
+      if (task.leaseUntil) {
+        const leaseEnd = new Date(task.leaseUntil).getTime();
+        if (leaseEnd < now) {
+          compliance.summary.expiredLeaseCount++;
+          compliance.summary.healthy = false;
+          detail.issues.push('expired-lease');
+        }
+      }
+    }
+
+    if (includeDetails || detail.issues.length > 0) {
+      compliance.details.push(detail);
+    }
+  }
+
+  return compliance;
 }
 
 /**
@@ -2091,6 +2256,7 @@ function getHandoffContext(project, flowboardId) {
  *
  * Options:
  * - apiBase: API base URL (default: http://127.0.0.1:18790)
+ * - targetAgentId: concrete agent id expected to own the handoff
  * - maxSpecSize: Max spec content size in bytes (default: 10000, 0 = unlimited)
  */
 function buildHandoffMarkdown(project, flowboardId, options = {}) {
@@ -2122,6 +2288,7 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   } catch { /* graceful */ }
 
   const apiBase = options.apiBase || 'http://127.0.0.1:18790';
+  const targetAgentId = options.targetAgentId || '<YOUR_AGENT_ID>';
   const maxSpecSize = options.maxSpecSize !== undefined ? options.maxSpecSize : 10000;
   const lines = [];
 
@@ -2131,6 +2298,20 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   lines.push('');
 
   lines.push(`# FlowBoard Task Handoff: ${project}/${flowboardId}`);
+  lines.push('');
+
+  lines.push('## Mandatory Startup Contract');
+  lines.push('');
+  lines.push('Do these steps before reading or editing repository files. Do not rely on chat history, cwd, memory, or guessed project state.');
+  lines.push('Use a local-capable tool for the FlowBoard localhost API, such as shell/curl/node. Do not use external web-fetch/browser tools for `127.0.0.1` or `localhost` calls.');
+  lines.push('');
+  lines.push('1. Activate/check this project for your own agent id.');
+  lines.push('2. Fetch the FlowBoard bootstrap and lazy-load required rules.');
+  lines.push('3. Claim this exact task.');
+  lines.push('4. Write a first checkpoint.');
+  lines.push('5. Only then start implementation or review work.');
+  lines.push('');
+  lines.push('If any step fails, stop and report the blocker instead of continuing silently.');
   lines.push('');
 
   lines.push('## Project');
@@ -2188,18 +2369,26 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   lines.push(`- **Base URL**: ${apiBase}`);
   lines.push(`- **Project**: \`${project}\``);
   lines.push(`- **Task ID**: \`${flowboardId}\``);
+  lines.push(`- **Agent ID**: \`${targetAgentId}\``);
   lines.push('');
   lines.push('### Status & Bootstrap');
-  lines.push(`1. Check status: \`GET ${apiBase}/api/status?agentId=<YOUR_AGENT_ID>\``);
-  lines.push(`2. Load bootstrap with rules: \`GET ${apiBase}/api/projects/${project}/bootstrap\``);
-  lines.push(`3. Load specific rule: \`GET ${apiBase}/api/projects/${project}/rules/<section>\``);
+  lines.push(`\`\`\`json`);
+  lines.push(`PUT ${apiBase}/api/status`);
+  lines.push(`{`);
+  lines.push(`  "project": "${project}",`);
+  lines.push(`  "agentId": "${targetAgentId}"`);
+  lines.push(`}`);
+  lines.push(`\`\`\``);
+  lines.push('');
+  lines.push(`Then verify: \`GET ${apiBase}/api/status?agentId=${encodeURIComponent(targetAgentId)}\``);
+  lines.push(`Then load bootstrap: \`GET ${apiBase}/api/projects/${project}/bootstrap\``);
+  lines.push(`Load rules on demand: \`GET ${apiBase}/api/projects/${project}/rules/<section>\``);
   lines.push('');
   lines.push('### Claim Task');
   lines.push(`\`\`\`json`);
   lines.push(`POST ${apiBase}/api/projects/${project}/tasks/${flowboardId}/claim`);
   lines.push(`{`);
-  lines.push(`  "agent": "<YOUR_AGENT_ID>",`);
-  lines.push(`  "reason": "Starting work"`);
+  lines.push(`  "agent": "${targetAgentId}"`);
   lines.push(`}`);
   lines.push(`\`\`\``);
   lines.push('');
@@ -2207,17 +2396,17 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   lines.push(`\`\`\`json`);
   lines.push(`POST ${apiBase}/api/projects/${project}/tasks/${flowboardId}/checkpoint`);
   lines.push(`{`);
+  lines.push(`  "agent": "${targetAgentId}",`);
   lines.push(`  "message": "Progress description",`);
-  lines.push(`  "status": "in-progress"`);
+  lines.push(`  "progress": 10`);
   lines.push(`}`);
   lines.push(`\`\`\``);
   lines.push('');
   lines.push('### Set Task to Review');
   lines.push(`\`\`\`json`);
-  lines.push(`PUT ${apiBase}/api/projects/${project}/tasks/${flowboardId}`);
+  lines.push(`POST ${apiBase}/api/projects/${project}/tasks/${flowboardId}/complete`);
   lines.push(`{`);
-  lines.push(`  "status": "review",`);
-  lines.push(`  "completed": "${new Date().toISOString().slice(0, 10)}"`);
+  lines.push(`  "agent": "${targetAgentId}"`);
   lines.push(`}`);
   lines.push(`\`\`\``);
   lines.push('');
@@ -2260,6 +2449,33 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * Build a complete spawn prompt by combining the handoff package with custom instructions.
+ * Used when spawning agents for FlowBoard task delegation.
+ *
+ * @param {string} project - Project name (e.g., 'flowboard')
+ * @param {string} taskId - Task ID (e.g., 'T-263-3')
+ * @param {string} customPrompt - Optional custom spawn instructions (can be empty)
+ * @param {object} options - Optional config: { apiBase, targetAgentId, ... }
+ * @returns {string} Combined prompt with handoff prepended to custom instructions
+ *
+ * Example:
+ *   const prompt = buildSpawnPrompt('flowboard', 'T-263-3',
+ *     'Fix the bug in the canvas toolbar',
+ *     { targetAgentId: 'agent-xyz' }
+ *   );
+ *   // Result: handoff package + "\n\n---\n\n" + custom instructions
+ */
+function buildSpawnPrompt(project, taskId, customPrompt = '', options = {}) {
+  const handoff = buildHandoffMarkdown(project, taskId, options);
+
+  if (!customPrompt || customPrompt.trim() === '') {
+    return handoff;
+  }
+
+  return `${handoff}\n\n---\n\n# Custom Instructions\n\n${customPrompt}`;
 }
 
 /**
@@ -2369,8 +2585,11 @@ module.exports = {
   getComments,
   getStuckTasks,
   getNotifiableStuckTasks, // T-248: notification-aware stuck-task filter
+  getCheckpointHealth, // T-263-4: checkpoint health monitoring
+  getComplianceStatus, // T-263-4: handoff contract compliance audit
   getHandoffContext,
   buildHandoffMarkdown,
+  buildSpawnPrompt, // T-263: spawn-wrapper for delegation
   routeTask,
   workflowStart,
   workflowHandoff,
