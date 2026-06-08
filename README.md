@@ -350,7 +350,7 @@ systemctl --user restart dashboard
 ~/.openclaw/workspace-<agent>/
 ├── AGENTS.md                     # Minimal FlowBoard trigger — status check + lazy load
 ├── BOOTSTRAP.md                  # OpenClaw-owned runtime bootstrap; FlowBoard does not write this
-└── (ACTIVE-PROJECT.md)           # Legacy fallback, DB is canonical (flowboard_agents)
+└── (ACTIVE-PROJECT.md)           # Legacy artifact; ignored unless migration fallback is explicitly enabled
 
 ~/.openclaw/projects/             # Shared project data (or FLOWBOARD_PROJECTS_DIR)
 └── my-project/

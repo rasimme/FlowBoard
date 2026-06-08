@@ -45,14 +45,14 @@ export default function Header() {
         <SnippetUpgrade />
         {state.viewedProject ? (
           <span className="text-[13px] tracking-[0.02em]">
-            <span className="text-muted font-normal mr-1">Projekt:</span>
+            <span className="text-muted font-normal mr-1">Project:</span>
             <span className="font-semibold text-text-strong">
               {formatDisplayName(state.viewedProject, state.projects)}
             </span>
           </span>
         ) : (
           <span className="text-[13px] text-muted tracking-[0.02em]">
-            Kein aktives Projekt
+            No active project
           </span>
         )}
       </div>

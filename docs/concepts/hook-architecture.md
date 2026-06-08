@@ -23,7 +23,7 @@ on agent:bootstrap event:
   agentId        = deriveAgentIdFromWorkspace(workspaceDir)   // workspace-<id> → <id>
   apiResult      = GET /api/status?agentId=<agentId>           // local FlowBoard API
   if API unreachable:
-    projectName  = read ACTIVE-PROJECT.md from workspace        // legacy fallback only
+    projectName  = read ACTIVE-PROJECT.md only if opt-in env is enabled
   else:
     projectName  = apiResult.activeProject                      // may be null
 
@@ -44,7 +44,7 @@ on agent:bootstrap event:
 
 **Workspace-derived id wins over `event.context.agentId`.** The filesystem convention `~/.openclaw/workspace-<id>` is durable; the event field is sometimes empty (see the trigger code path in `auto-reply/reply/commands-reset-hooks.ts:108-115`). When they disagree, the workspace wins.
 
-**API-canonical with file fallback.** The hook reads `flowboard_agents.active_project` via the local API. If the API is unreachable (e.g. gateway booted before the FlowBoard server is up), the hook falls back to the legacy `ACTIVE-PROJECT.md` file in the workspace. An *authoritative* `null` from the API does not trigger the file fallback — the file is only consulted when the API itself failed.
+**API-canonical with opt-in file fallback.** The hook reads `flowboard_agents.active_project` via the local API. If the API is unreachable (e.g. gateway booted before the FlowBoard server is up), the hook emits an `# Active Project: Unknown` bootstrap by default so agents retry the API instead of resurrecting stale file state. The legacy `ACTIVE-PROJECT.md` fallback is available only during explicit migration recovery with `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true`. An *authoritative* `null` from the API never triggers the file fallback.
 
 **No file writes.** The handler never calls `fs.writeFileSync`. A regression test parses the handler source and asserts no `fs.writeFileSync(.*BOOTSTRAP)` pattern exists. ADR-0004 covers the rationale.
 
@@ -56,7 +56,7 @@ on agent:bootstrap event:
 - **Per-run cost is one DB read plus one in-memory build.** SQLite local on the same machine, prepared statements — sub-millisecond. Negligible compared to the per-turn model latency.
 - **State changes propagate within one turn.** `PUT /api/status` writes the DB; the next `agent:bootstrap` fire (next agent message) sees the new state. There is no caching, no invalidation, no stale window beyond a single turn.
 - **The hook is the only writer of the bootstrap document.** Nothing else in FlowBoard writes `BOOTSTRAP.md`, in any form. If the file appears on disk, something has gone wrong (or a contributor reverted ADR-0004's behavior — the regression test should catch this in CI).
-- **Failure is graceful.** If the FlowBoard API is unreachable *and* the legacy fallback file is missing or unparseable, the hook returns just the identity section. The agent learns its own id and that no project is active — never a crash, never a stale project name from a stuck cache.
+- **Failure is graceful.** If the FlowBoard API is unreachable, the hook returns identity plus a soft `# Active Project: Unknown` header. The agent learns its own id and that project state must be retried via the API — never a crash, never a stale project name from a stuck cache.
 
 ## Code
 
