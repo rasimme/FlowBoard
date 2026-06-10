@@ -81,6 +81,30 @@ ok(!policy.validateWorkerResponse({ action: 'proposal', proposal: { summary: 's'
 ok(!policy.validateWorkerResponse({ action: 'proposal', proposal: { summary: 's', specContent: 'x', taskBreakdown: [{ notitle: 1 }] } }).ok,
   'taskBreakdown entries need titles');
 
+const multiParentProposal = {
+  action: 'proposal',
+  proposal: {
+    summary: 'Two features',
+    taskStructure: 'Multiple parents',
+    specContent: '# Umbrella',
+    taskBreakdown: [
+      { title: 'Feature A', role: 'parent' },
+      { title: 'A slice', role: 'subtask' },
+      { title: 'Feature B', role: 'parent', specContent: '# B Spec' },
+      { title: 'B slice', role: 'subtask', specContent: '# B slice spec' },
+    ],
+  },
+};
+ok(policy.validateWorkerResponse(multiParentProposal).ok, 'multi-parent role breakdown passes');
+ok(!policy.validateWorkerResponse({
+  action: 'proposal',
+  proposal: { summary: 's', specContent: 'x', taskBreakdown: [{ title: 'orphan', role: 'subtask' }] },
+}).ok, 'subtask before any parent rejected');
+ok(!policy.validateWorkerResponse({
+  action: 'proposal',
+  proposal: { summary: 's', specContent: 'x', taskBreakdown: [{ title: 'x', role: 'epic' }] },
+}).ok, 'unknown role rejected');
+
 // ---------------------------------------------------------------------------
 section('Worker Response Schema — general');
 

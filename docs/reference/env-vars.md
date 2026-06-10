@@ -40,6 +40,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 |---|---|---|
 | `SPECIFY_WORKER_AGENT` | `main` | OpenClaw agent id the CLI worker adapter runs Specify steps on. The default targets the `main` agent (exists on every install — zero setup). Point it at a dedicated lean agent if desired. |
 | `SPECIFY_WORKER_TIMEOUT` | `90` | Per-step worker timeout in seconds, passed to `openclaw agent --timeout`. The adapter kills the process 15s after that. |
+| `SPECIFY_MAX_QUESTIONS` | `4` | Clarification question budget per Specify session (hard cap, server-enforced). Raise cautiously — beyond ~5 questions answer quality drops; prefer the proposal revise loop for complex topics. |
 | `SPECIFY_OPENCLAW_CLI` | `openclaw` | Path to the OpenClaw CLI binary used by the worker adapter. |
 | `SPECIFY_WORKER_DISABLED` | unset (off) | Set to `true` to skip registering the OpenClaw CLI worker adapter at startup. Without an adapter, Specify sessions return a recoverable error (or the fallback proposal where allowed). |
 | `SPECIFY_ALLOW_FALLBACK` | unset (off) | Dev/test opt-in: when no worker adapter is configured, serve the static single-task fallback proposal instead of an error. Also implied by `NODE_ENV=test`. Never enable in production — the fallback skips clarification entirely. |

@@ -76,6 +76,56 @@ module.exports = {
       return _proposal(' (after retry)');
     }
 
+    if (desc.includes('[SCENARIO:parent]')) {
+      const p = _proposal(' (parent scenario)');
+      p.proposal.taskStructure = 'Parent + subtasks';
+      p.proposal.taskBreakdown = [
+        { title: 'Umbrella Feature Task', description: 'Parent', priority: 'high' },
+        { title: 'Subtask one', description: 'First slice', priority: 'high' },
+        { title: 'Subtask two', description: 'Second slice', priority: 'high' },
+      ];
+      return p;
+    }
+
+    if (desc.includes('[SCENARIO:revise]')) {
+      const notes = (workerRequest.input && workerRequest.input.revisionNotes) || [];
+      if (directive === 'revise' || notes.length > 0) {
+        const p = _proposal(' (revised)');
+        p.proposal.taskStructure = 'Multiple parents';
+        p.proposal.summary = `Revised after feedback: ${notes[notes.length - 1] || ''}`;
+        p.proposal.taskBreakdown = [
+          { title: 'Split Feature One', role: 'parent', priority: 'high' },
+          { title: 'One slice', role: 'subtask', priority: 'high' },
+          { title: 'Split Feature Two', role: 'parent', priority: 'high',
+            specContent: '# Feature Two Spec\n\n## Goal\nSecond feature' },
+          { title: 'Two slice', role: 'subtask', priority: 'high' },
+        ];
+        return p;
+      }
+      const first = _proposal(' (first draft)');
+      first.proposal.taskStructure = 'Parent + subtasks';
+      first.proposal.taskBreakdown = [
+        { title: 'Lumped feature one and two', role: 'parent', priority: 'high' },
+        { title: 'Some slice', role: 'subtask', priority: 'high' },
+      ];
+      return first;
+    }
+
+    if (desc.includes('[SCENARIO:multiparent]')) {
+      const p = _proposal(' (multi-parent scenario)');
+      p.proposal.taskStructure = 'Multiple parents';
+      p.proposal.taskBreakdown = [
+        { title: 'Feature Alpha', description: 'First feature', priority: 'high', role: 'parent' },
+        { title: 'Alpha slice one', description: '', priority: 'high', role: 'subtask' },
+        { title: 'Feature Beta', description: 'Second feature', priority: 'medium', role: 'parent',
+          specContent: '# Feature Beta Spec\n\n## Goal\nBeta goal\n\n## Requirements\n- **FR-001**: beta works' },
+        { title: 'Beta slice one', description: '', priority: 'medium', role: 'subtask',
+          specContent: '# Beta Slice Spec\n\n## Goal\nSlice goal' },
+        { title: 'Beta slice two', description: '', priority: 'medium', role: 'subtask' },
+      ];
+      return p;
+    }
+
     return _proposal();
   },
 };

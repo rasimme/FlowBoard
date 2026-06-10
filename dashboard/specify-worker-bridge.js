@@ -83,6 +83,7 @@ function _buildWorkerRequest(session, directive) {
       sourceNoteIds: session.sourceNoteIds,
       sourceDescription: session.sourceDescription || '',
       previousClarifications: session.clarifications,
+      revisionNotes: session.revisionNotes || [],
       proposalDraft: session.draftProposal,
     },
   };
@@ -208,7 +209,8 @@ async function _step(sessionId, directive, attempt = 0) {
 
   if (result.action === 'question') {
     const proposalDirective = directive === policy.DIRECTIVES.SKIP_REMAINING ||
-      directive === policy.DIRECTIVES.FORCE_PROPOSAL;
+      directive === policy.DIRECTIVES.FORCE_PROPOSAL ||
+      directive === policy.DIRECTIVES.REVISE;
     if (proposalDirective) {
       return {
         action: 'error',
@@ -283,6 +285,15 @@ async function skipRemaining(sessionId) {
 }
 
 /**
+ * User rejected the draft proposal with feedback — direct the worker to
+ * produce an improved proposal. The feedback must already be recorded on
+ * session.revisionNotes by the caller.
+ */
+async function reviseProposal(sessionId) {
+  return _step(sessionId, policy.DIRECTIVES.REVISE);
+}
+
+/**
  * Record user confirmation of proposal.
  * Transitions: proposal-ready → confirmed → persisting.
  * Returns confirmation details (spec path, task IDs, cleaned notes).
@@ -353,6 +364,7 @@ module.exports = {
   requestNext,
   recordAnswer,
   skipRemaining,
+  reviseProposal,
   confirmProposal,
   createFakeWorkerAdapter,
 };

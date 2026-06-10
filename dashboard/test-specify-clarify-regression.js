@@ -94,6 +94,9 @@ async function runTests() {
       HZL_DB_PATH,
       FLOWBOARD_PORT: PORT,
       OPENCLAW_WORKSPACE: WORKSPACE,
+      // Isolate from host/CI env — a global FLOWBOARD_PROJECTS_DIR would
+      // leak into the spawned server and confuse the m004 migration.
+      FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
       SPECIFY_WORKER_MOCK: path.join(__dirname, 'test-fixtures', 'specify-mock-worker.js'),
     },
@@ -196,6 +199,150 @@ async function runTests() {
 
     const retryOnHealthy = await makeRequest('POST', `/api/specify/sessions/${malformedSession.id}/retry`);
     ok(retryOnHealthy.statusCode === 409, 'retry on non-error session rejected with 409');
+
+    // -----------------------------------------------------------------------
+    section('Confirm: note cleanup opt-out and backlog status (T-262-14/15)');
+
+    async function promoteNotes(marker) {
+      const ids = [];
+      for (let i = 0; i < 2; i++) {
+        const noteRes = await makeRequest('POST', `/api/projects/${TEST_PROJECT}/canvas/notes`, {
+          text: `${marker} note ${i + 1}`, color: 'yellow', x: 100 + i * 50, y: 100,
+        });
+        ids.push((noteRes.body.note || noteRes.body).id);
+      }
+      const promoteRes2 = await makeRequest('POST', `/api/projects/${TEST_PROJECT}/canvas/promote`, {
+        notes: ids.map(id => ({ id, text: `${marker} idea`, color: 'yellow' })),
+        connections: [], mode: 'selected',
+      });
+      return { noteIds: ids, sessionId: promoteRes2.body.sessionId };
+    }
+
+    async function canvasHasNote(id) {
+      const res = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/canvas`);
+      return (res.body.notes || []).some(n => n.id === id);
+    }
+
+    // Opt-out: cleanupNotes=false keeps the notes on the canvas
+    const keep = await promoteNotes('keep-my-notes');
+    await makeRequest('POST', `/api/specify/sessions/${keep.sessionId}/next`);
+    const keepConfirm = await makeRequest('POST', `/api/specify/sessions/${keep.sessionId}/confirm`, {
+      userApproval: true,
+      customizations: { cleanupNotes: false },
+    });
+    ok(keepConfirm.statusCode === 200, 'confirm with cleanupNotes=false succeeds');
+    ok((keepConfirm.body.cleanedNotes || []).length === 0, 'no notes reported cleaned');
+    ok(await canvasHasNote(keep.noteIds[0]), 'source notes stay on canvas with opt-out');
+
+    const keepTaskId = (keepConfirm.body.createdTasks || [])[0];
+    const tasksRes = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`);
+    const keepTask = (tasksRes.body.tasks || []).find(t => t.id === keepTaskId);
+    ok(keepTask && keepTask.status === 'backlog', `created tasks start in backlog (got: ${keepTask?.status})`);
+
+    // Default: notes are removed
+    const clean = await promoteNotes('clean-these-notes');
+    await makeRequest('POST', `/api/specify/sessions/${clean.sessionId}/next`);
+    const cleanConfirm = await makeRequest('POST', `/api/specify/sessions/${clean.sessionId}/confirm`, {
+      userApproval: true,
+    });
+    ok((cleanConfirm.body.cleanedNotes || []).length === 2, 'default confirm cleans source notes');
+    ok(!(await canvasHasNote(clean.noteIds[0])), 'source notes removed from canvas by default');
+
+    // -----------------------------------------------------------------------
+    section('Parent + subtasks structure and canonical spec naming');
+
+    const parentFlow = await promoteNotes('[SCENARIO:parent]');
+    await makeRequest('POST', `/api/specify/sessions/${parentFlow.sessionId}/next`);
+    const parentConfirm = await makeRequest('POST', `/api/specify/sessions/${parentFlow.sessionId}/confirm`, {
+      userApproval: true,
+    });
+    const createdIds = parentConfirm.body.createdTasks || [];
+    ok(createdIds.length === 3, `three tasks created (got ${createdIds.length})`);
+
+    const allTasks = (await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`)).body.tasks || [];
+    const parentTask = allTasks.find(t => t.id === createdIds[0]);
+    const subTasks = createdIds.slice(1).map(id => allTasks.find(t => t.id === id));
+
+    ok(parentTask && (parentTask.subtaskIds || []).length === 2, 'first entry became the parent with 2 subtasks');
+    ok(subTasks.every(t => t && t.parentId === parentTask.id), 'remaining entries are subtasks of the parent');
+    ok(subTasks.every(t => t && t.id.startsWith(`${parentTask.id}-`)), 'subtask IDs derive from the parent ID');
+
+    const specFile = parentConfirm.body.specPath;
+    ok(new RegExp(`^specs/${parentTask.id}-[a-z0-9-]+\\.md$`).test(specFile || ''),
+      `spec follows canonical naming specs/<taskId>-<slug>.md (got: ${specFile})`);
+    ok(parentTask.specFile === specFile, 'spec is linked to the parent');
+    ok(subTasks.every(t => !t.specFile), 'subtasks carry no spec link (spec lives on the parent)');
+
+    // -----------------------------------------------------------------------
+    section('Multiple parents with individual specs (high complexity)');
+
+    const multi = await promoteNotes('[SCENARIO:multiparent]');
+    await makeRequest('POST', `/api/specify/sessions/${multi.sessionId}/next`);
+    const multiConfirm = await makeRequest('POST', `/api/specify/sessions/${multi.sessionId}/confirm`, {
+      userApproval: true,
+    });
+    const multiIds = multiConfirm.body.createdTasks || [];
+    ok(multiIds.length === 5, `five tasks created (got ${multiIds.length})`);
+
+    const tasksNow = (await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`)).body.tasks || [];
+    const byId = id => tasksNow.find(t => t.id === id);
+    const [alphaId, alphaSub1Id, betaId, betaSub1Id, betaSub2Id] = multiIds;
+    const alpha = byId(alphaId), beta = byId(betaId);
+
+    ok(alpha && (alpha.subtaskIds || []).length === 1, 'first parent has its own subtask');
+    ok(beta && (beta.subtaskIds || []).length === 2, 'second parent has its two subtasks');
+    ok(byId(alphaSub1Id)?.parentId === alphaId, 'alpha subtask attached to alpha');
+    ok(byId(betaSub1Id)?.parentId === betaId && byId(betaSub2Id)?.parentId === betaId,
+      'beta subtasks attached to beta');
+
+    const multiSpecs = multiConfirm.body.createdArtifacts?.specFiles || [];
+    ok(multiSpecs.length === 3, `three spec files written (umbrella + beta + beta slice; got ${multiSpecs.length})`);
+    ok(alpha.specFile && new RegExp(`^specs/${alphaId}-`).test(alpha.specFile),
+      'umbrella spec attached to first parent with canonical name');
+    ok(beta.specFile && new RegExp(`^specs/${betaId}-`).test(beta.specFile),
+      'second parent carries its own canonical spec');
+    ok(byId(betaSub1Id)?.specFile && new RegExp(`^specs/${betaSub1Id}-`).test(byId(betaSub1Id).specFile),
+      'subtask with individual specContent got its own spec');
+    ok(!byId(betaSub2Id)?.specFile, 'subtask without specContent has no spec link');
+
+    // -----------------------------------------------------------------------
+    section('Revise loop: proposal feedback produces improved proposal');
+
+    const rev = await promoteNotes('[SCENARIO:revise]');
+    await makeRequest('POST', `/api/specify/sessions/${rev.sessionId}/next`);
+    let revSession = (await makeRequest('GET', `/api/specify/sessions/${rev.sessionId}`)).body;
+    ok(revSession.status === 'proposal-ready', 'first draft proposal ready');
+    ok(/Lumped/.test(revSession.draftProposal?.taskBreakdown?.[0]?.title || ''), 'first draft lumps features');
+
+    const badRevise = await makeRequest('POST', `/api/specify/sessions/${rev.sessionId}/revise`, {});
+    ok(badRevise.statusCode === 400, 'revise without feedback rejected (400)');
+
+    const reviseRes = await makeRequest('POST', `/api/specify/sessions/${rev.sessionId}/revise`, {
+      feedback: 'Split this into two parent tasks, one per feature',
+    });
+    ok(reviseRes.statusCode === 200, 'POST /revise returns 200');
+    ok(reviseRes.body.action === 'proposal', 'revise yields a new proposal');
+    revSession = reviseRes.body.session;
+    ok(revSession.status === 'proposal-ready', 'session back to proposal-ready');
+    ok((revSession.revisionNotes || []).length === 1, 'feedback recorded on session');
+    ok(revSession.draftProposal.taskStructure === 'Multiple parents', 'revised proposal restructured');
+    ok(/Revised after feedback/.test(revSession.draftProposal.summary || ''), 'worker saw the revision notes');
+
+    const reviseConfirm = await makeRequest('POST', `/api/specify/sessions/${rev.sessionId}/confirm`, {
+      userApproval: true,
+    });
+    ok((reviseConfirm.body.createdTasks || []).length === 4, 'revised structure persisted (2 parents + 2 subtasks)');
+
+    const reviseOnDone = await makeRequest('POST', `/api/specify/sessions/${rev.sessionId}/revise`, {
+      feedback: 'too late',
+    });
+    ok(reviseOnDone.statusCode === 409, 'revise after confirm rejected (409)');
+
+    // maxQuestions exposed for the UI label
+    ok(typeof revSession.maxQuestions === 'undefined' || revSession.maxQuestions === 4,
+      'session payload carries maxQuestions consistent with policy default');
+    const freshGet = (await makeRequest('GET', `/api/specify/sessions/${rev.sessionId}`)).body;
+    ok(freshGet.maxQuestions === 4, 'GET session exposes maxQuestions (default 4)');
 
     // -----------------------------------------------------------------------
     section('Promote endpoint still creates dashboard sessions');

@@ -45,6 +45,7 @@ Specify sessions are in-memory (RAM-only, lost on server restart). They track:
 | `POST` | `/specify/sessions/:id/answer` | Record an answer (dashboard) or push question/proposal (chat) |
 | `POST` | `/specify/sessions/:id/skip` | Skip remaining questions — proposal from recommended answers/defaults |
 | `POST` | `/specify/sessions/:id/retry` | Recover an errored session and re-run the step |
+| `POST` | `/specify/sessions/:id/revise` | Reject the draft proposal with feedback — worker returns an improved proposal |
 | `POST` | `/specify/sessions/:id/confirm` | Confirm (persist) or reject the proposal |
 | `POST` | `/specify/sessions/:id/abort` | Abort session (notes stay on canvas) |
 | `POST` | `/specify/sessions/:id/complete` | Mark session done |
@@ -80,10 +81,11 @@ Enforced server-side for the dashboard path (`specify-policy.js`) and mirrored i
 
 1. **ANALYZE** — Worker assesses input across 5 categories. Determines whether clarification is needed.
 2. **CLARIFY** — Up to 4 questions, one at a time, with recommended answers. Stops early on user signal (skip / "weiter" / "passt").
-3. **GENERATE** — Worker writes spec (template: `context/specify-spec-template.md`) and proposes task structure:
-   - Simple → 1 task
-   - Medium → Parent + subtasks (spec on parent)
-   - Complex → Parent + subtasks (individual specs per subtask)
+3. **GENERATE** — Worker writes spec (template: `context/specify-spec-template.md`) and proposes task structure, scaled to complexity:
+   - Simple → 1 task (session spec on the task)
+   - Medium → Parent + subtasks (session spec on the parent)
+   - Complex → Parent + subtasks with individual specs (subtasks may carry their own `specContent`)
+   - Very complex / multiple distinct features → Multiple parents: each `role: parent` entry in the breakdown starts a group with its own spec, `role: subtask` entries attach to the closest preceding parent; the session spec is the umbrella overview on the first parent
 4. **CONFIRM** — Summary + collapsible spec preview shown to user. Explicit confirmation required before any writes.
 5. **PERSIST** — In strict order: write spec file(s) → create task(s) via API → delete source canvas notes (batch delete). Session marked complete.
 6. **ERROR HANDLING** — On failure at any persist step: undo partial writes, abort session, inform user. Notes stay on canvas. Worker failures before persistence are recoverable via retry.

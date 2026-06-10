@@ -40,6 +40,7 @@ let _bootIntegrity = null;
 const specifySession = require('./specify-sessions');
 const specifyWorkerBridge = require('./specify-worker-bridge');
 const specifyWorkerOpenclaw = require('./specify-worker-openclaw');
+const specifyPolicy = require('./specify-policy');
 
 // Production Specify worker: OpenClaw CLI one-shot adapter (T-262-11).
 // Tests configure their own (fake) adapter; SPECIFY_WORKER_DISABLED opts out.
@@ -438,53 +439,80 @@ function normalizeTaskBreakdown(proposal) {
   }
   return raw.map((item, idx) => {
     if (typeof item === 'string') {
-      return { title: item, description: '', priority: 'medium' };
+      return { title: item, description: '', priority: 'medium', role: null, specContent: null };
     }
     return {
       title: item.title || item.name || `Specify task ${idx + 1}`,
       description: item.description || item.summary || '',
       priority: item.priority || 'medium',
+      role: item.role === 'parent' || item.role === 'subtask' ? item.role : null,
+      specContent: typeof item.specContent === 'string' && item.specContent.trim() ? item.specContent : null,
     };
   });
 }
 
-function persistSpecifyProposal(session) {
+function persistSpecifyProposal(session, opts = {}) {
+  // Note cleanup is the default; the proposal confirm step offers an opt-out
+  // checkbox (customizations.cleanupNotes === false keeps the notes).
+  const cleanupNotes = opts.cleanupNotes !== false;
   const proposal = session.draftProposal;
   if (!proposal) throw new Error('No draft proposal to persist');
 
-  const projectDir = path.join(PROJECTS_DIR, session.project);
-  const specsDir = path.join(projectDir, 'specs');
-  fs.mkdirSync(specsDir, { recursive: true });
-
   const tasks = normalizeTaskBreakdown(proposal);
-  const title = proposal.summary || proposal.title || tasks[0]?.title || 'Specify proposal';
-  const specRel = `specs/${session.id}-${slugifyTitle(title)}.md`;
-  const specAbs = path.join(projectDir, specRel);
   const specContent = proposal.specContent || [
-    `# ${title}`,
+    `# ${proposal.summary || tasks[0]?.title || 'Specify proposal'}`,
     '',
     '## Goal',
-    proposal.summary || title,
+    proposal.summary || tasks[0]?.title || '',
   ].join('\n');
+
+  // Structure walk (decomposition rules in specify-workflow.md):
+  //  * explicit roles: each role=parent entry starts a group, role=subtask
+  //    entries attach to the closest preceding parent ("Multiple parents")
+  //  * no roles + taskStructure "Parent ...": first entry parent, rest subtasks
+  //  * otherwise: standalone task(s)
+  // Specs go through the canonical path (writeSpecFileForTask). The session
+  // spec attaches to the first parent (or single task); entries may carry
+  // their own specContent ("... with individual specs" / multi-parent).
+  const usesRoles = tasks.some(t => t.role);
+  const legacyParentMode = !usesRoles && /^parent/i.test(proposal.taskStructure || '') && tasks.length > 1;
 
   const createdTaskIds = [];
   const cleanedNoteIds = [];
+  const specFiles = [];
 
   try {
-    fs.writeFileSync(specAbs, specContent);
+    let currentParentId = null;
+    let sessionSpecPlaced = false;
+    tasks.forEach((taskDef, idx) => {
+      const role = usesRoles
+        ? (taskDef.role || 'subtask')
+        : (legacyParentMode ? (idx === 0 ? 'parent' : 'subtask') : 'standalone');
+      const parentId = role === 'subtask' ? currentParentId : null;
 
-    for (const taskDef of tasks) {
       const task = hzlService.createTask(session.project, {
         title: taskDef.title,
         description: taskDef.description,
         priority: taskDef.priority,
-        status: 'open',
+        parentId,
+        // New Specify tasks land in Backlog (Kanban semantics) — picking
+        // them up into Open is a deliberate user/agent decision.
+        status: 'backlog',
       });
       createdTaskIds.push(task.id);
-      hzlService.setSpecLink(session.project, task.id, specRel);
-    }
+      if (role === 'parent') currentParentId = task.id;
 
-    if (session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
+      let entrySpec = taskDef.specContent;
+      if (!sessionSpecPlaced && role !== 'subtask') {
+        entrySpec = specContent || entrySpec;
+        sessionSpecPlaced = true;
+      }
+      if (entrySpec) {
+        specFiles.push(writeSpecFileForTask(session.project, task, entrySpec));
+      }
+    });
+
+    if (cleanupNotes && session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
       const data = readCanvasFile(session.project);
       const deleteSet = new Set(session.sourceNoteIds);
       const before = data.notes.length;
@@ -500,12 +528,19 @@ function persistSpecifyProposal(session) {
     }
 
     return {
-      specFiles: [specRel],
+      specFiles,
       taskIds: createdTaskIds,
       cleanedNoteIds,
     };
   } catch (err) {
-    try { fs.rmSync(specAbs, { force: true }); } catch {}
+    // Roll back partial writes: spec files first, then created task records
+    // (subtasks before the parent so parent archiving never blocks).
+    for (const rel of specFiles) {
+      try { fs.rmSync(path.join(PROJECTS_DIR, session.project, rel), { force: true }); } catch {}
+    }
+    for (const id of [...createdTaskIds].reverse()) {
+      try { hzlService.deleteTask(session.project, id, 'all'); } catch {}
+    }
     throw err;
   }
 }
@@ -1770,19 +1805,6 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
     // stale link — allow recreation
   }
 
-  // Generate slug from title
-  const slug = task.title.toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 40)
-    .replace(/-$/, '');
-
-  const specFilename = `${taskId}-${slug}.md`;
-  const specsDir = path.join(projectDir, 'specs');
-  fs.mkdirSync(specsDir, { recursive: true });
-
-  const specPath = path.join(specsDir, specFilename);
   const date = new Date().toISOString().slice(0, 10);
   let customContent = req.body?.content;
   // Defensive: replace literal '\n' (escaped newlines from callers) with real newlines
@@ -1791,14 +1813,34 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   }
   const template = customContent || `# ${taskId}: ${task.title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Approach\n\n\n## Log\n- ${date}: Spec created\n`;
 
-  fs.writeFileSync(specPath, template);
-
-  const specFileRelPath = `specs/${specFilename}`;
-
-  hzlService.setSpecLink(req.params.name, taskId, specFileRelPath);
-  const updatedTask = hzlService.getTask(req.params.name, taskId);
+  const specFileRelPath = writeSpecFileForTask(req.params.name, task, template);
+  const updatedTask = hzlService.getTask(req.params.name, task.id);
   return res.json({ ok: true, specFile: specFileRelPath, taskId, task: taskWithSpecStatus(req.params.name, updatedTask) });
 });
+
+/**
+ * Canonical spec file creation — single source for naming
+ * (`specs/<taskId>-<title-slug>.md`) and task linking. Used by the specs API
+ * and by Specify persistence; never duplicate this logic.
+ */
+function writeSpecFileForTask(projectName, task, content) {
+  const slug = task.title.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 40)
+    .replace(/-$/, '');
+
+  const specsDir = path.join(PROJECTS_DIR, projectName, 'specs');
+  fs.mkdirSync(specsDir, { recursive: true });
+
+  const specFilename = `${task.id}-${slug}.md`;
+  fs.writeFileSync(path.join(specsDir, specFilename), content);
+
+  const specFileRelPath = `specs/${specFilename}`;
+  hzlService.setSpecLink(projectName, task.id, specFileRelPath);
+  return specFileRelPath;
+}
 
 
 // GET /api/projects/:name/canvas
@@ -2105,7 +2147,8 @@ app.get('/api/specify/sessions/:id', (req, res) => {
   try {
     const session = specifySession.getSession(req.params.id);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    res.json(session);
+    // maxQuestions: UI label stays correct when SPECIFY_MAX_QUESTIONS overrides
+    res.json({ ...session, maxQuestions: specifyPolicy.MAX_CLARIFICATIONS });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
   }
@@ -2133,9 +2176,10 @@ app.post('/api/specify/sessions/:id/complete', (req, res) => {
   }
 });
 
-// Shared step handler for /next, /skip and /retry (T-262-11).
+// Shared step handler for /next, /skip, /retry and /revise (T-262-11/17).
 // mode: 'next' → normal step; 'skip' → produce proposal from defaults;
-//       'retry' → recover an errored session, then run a normal step.
+//       'retry' → recover an errored session, then run a normal step;
+//       'revise' → record proposal feedback, then request improved proposal.
 async function handleSpecifyStep(req, res, mode) {
   try {
     const session = specifySession.getSession(req.params.id);
@@ -2148,6 +2192,18 @@ async function handleSpecifyStep(req, res, mode) {
       specifySession.recoverFromError(req.params.id);
     }
 
+    if (mode === 'revise') {
+      if (session.status !== 'proposal-ready') {
+        return res.status(409).json({ error: `Session has no proposal to revise (${session.status})` });
+      }
+      const feedback = typeof req.body?.feedback === 'string' ? req.body.feedback.trim() : '';
+      if (!feedback) return res.status(400).json({ error: 'feedback is required' });
+      specifySession.updateSession(req.params.id, {
+        status: 'analyzing',
+        revisionNotes: [...(session.revisionNotes || []), feedback],
+      });
+    }
+
     // Transition created → analyzing on first call
     if (specifySession.getSession(req.params.id).status === 'created') {
       specifySession.updateSession(req.params.id, { status: 'analyzing' });
@@ -2155,7 +2211,9 @@ async function handleSpecifyStep(req, res, mode) {
 
     const result = mode === 'skip'
       ? await specifyWorkerBridge.skipRemaining(req.params.id)
-      : await specifyWorkerBridge.requestNext(req.params.id);
+      : mode === 'revise'
+        ? await specifyWorkerBridge.reviseProposal(req.params.id)
+        : await specifyWorkerBridge.requestNext(req.params.id);
 
     // Update session based on worker response
     if (result.action === 'question') {
@@ -2207,6 +2265,9 @@ app.post('/api/specify/sessions/:id/skip', (req, res) => handleSpecifyStep(req, 
 
 // POST /api/specify/sessions/:id/retry — recover an errored session and re-request
 app.post('/api/specify/sessions/:id/retry', (req, res) => handleSpecifyStep(req, res, 'retry'));
+
+// POST /api/specify/sessions/:id/revise — reject draft proposal with feedback, request improved one
+app.post('/api/specify/sessions/:id/revise', (req, res) => handleSpecifyStep(req, res, 'revise'));
 
 // POST /api/specify/sessions/:id/answer — record user answer to clarification or proposal
 app.post('/api/specify/sessions/:id/answer', async (req, res) => {
@@ -2353,7 +2414,9 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
     }
 
     const result = await specifyWorkerBridge.confirmProposal(req.params.id, approval, customizations);
-    const artifacts = persistSpecifyProposal(result.session);
+    const artifacts = persistSpecifyProposal(result.session, {
+      cleanupNotes: customizations?.cleanupNotes,
+    });
 
     specifySession.updateSession(req.params.id, { createdArtifacts: artifacts });
     specifySession.updateSession(req.params.id, { status: 'done' });

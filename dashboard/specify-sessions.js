@@ -13,7 +13,8 @@ const TRANSITIONS = {
   created: ['analyzing', 'error', 'aborted'],
   analyzing: ['clarifying', 'proposal-ready', 'error', 'aborted'],
   clarifying: ['proposal-ready', 'clarifying', 'error', 'aborted'],
-  'proposal-ready': ['confirmed', 'error', 'aborted'],
+  // proposal-ready → analyzing: user requested changes (revise loop)
+  'proposal-ready': ['confirmed', 'analyzing', 'error', 'aborted'],
   confirmed: ['persisting', 'error', 'aborted'],
   persisting: ['done', 'error', 'aborted'],
   done: [],
@@ -62,6 +63,7 @@ function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDes
     status: 'created',
     clarifications: [],
     ambiguityScan: null,
+    revisionNotes: [],
     draftProposal: null,
     createdArtifacts: {
       specFiles: [],

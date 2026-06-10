@@ -11,7 +11,8 @@
 
 // Hard cap: a session asks at most this many clarification questions.
 // A worker "question" beyond the cap is rejected and a proposal is forced.
-const MAX_CLARIFICATIONS = 4;
+// Operators may tune it via SPECIFY_MAX_QUESTIONS (default: 4).
+const MAX_CLARIFICATIONS = parseInt(process.env.SPECIFY_MAX_QUESTIONS, 10) || 4;
 
 // Multiple-choice questions carry 2-4 options. Zero options means
 // free-text only (allowed, but discouraged by the worker prompt).
@@ -26,6 +27,7 @@ const DIRECTIVES = {
   SKIP_REMAINING: 'skip-remaining',            // user skipped: produce proposal from recommendations/defaults
   FORCE_PROPOSAL: 'force-proposal',            // question cap reached: produce proposal now
   REQUIRE_CLARIFICATION: 'require-clarification', // single-note guard: ask at least one question first
+  REVISE: 'revise',                            // user rejected the draft with feedback: produce improved proposal
 };
 
 function _isNonEmptyString(v) {
@@ -102,12 +104,30 @@ function _validateProposal(proposal, errors) {
   if (!Array.isArray(proposal.taskBreakdown) || proposal.taskBreakdown.length === 0) {
     errors.push('proposal.taskBreakdown must be a non-empty array');
   } else {
+    let sawParent = false;
+    let usesRoles = false;
     for (const item of proposal.taskBreakdown) {
       const title = typeof item === 'string' ? item : item && item.title;
       if (!_isNonEmptyString(title)) {
         errors.push('each taskBreakdown entry needs a title');
         break;
       }
+      const role = typeof item === 'object' ? item.role : undefined;
+      if (role !== undefined) {
+        usesRoles = true;
+        if (!['parent', 'subtask'].includes(role)) {
+          errors.push(`invalid taskBreakdown role: ${role}`);
+          break;
+        }
+        if (role === 'parent') sawParent = true;
+        if (role === 'subtask' && !sawParent) {
+          errors.push('a subtask entry must follow a parent entry');
+          break;
+        }
+      }
+    }
+    if (usesRoles && !sawParent && errors.length === 0) {
+      errors.push('role-based taskBreakdown needs at least one parent entry');
     }
   }
 }

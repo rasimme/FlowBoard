@@ -432,6 +432,13 @@
     },
     {
       "method": "POST",
+      "path": "/api/specify/sessions/:id/revise",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
       "path": "/api/specify/sessions/:id/answer",
       "auth": "user",
       "group": "specify",

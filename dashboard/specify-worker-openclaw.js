@@ -33,11 +33,22 @@ const RESPONSE_SCHEMA_HINT = `Respond with EXACTLY ONE JSON object and nothing e
   // when action = "proposal":
   "proposal": {
     "summary": "<1-2 sentence summary of what will be built>",
-    "taskStructure": "Single task" | "Parent + subtasks" | "Parent + subtasks with individual specs",
+    "taskStructure": "Single task" | "Parent + subtasks" | "Parent + subtasks with individual specs" | "Multiple parents",
     "specContent": "<full spec markdown: Goal, User Stories, Functional Requirements (testable), Success Criteria (measurable), Clarifications (if any were asked)>",
-    "taskBreakdown": [ { "title": "<task title, max 128 chars>", "description": "<short description>", "priority": "low"|"medium"|"high" }, ... ],
+    "taskBreakdown": [ { "title": "<task title, max 128 chars>", "description": "<short description>", "priority": "low"|"medium"|"high", "role": "parent"|"subtask", "specContent": "<optional own spec markdown for this entry>" }, ... ],
     "sourceCleanupPlan": ["<source note ids to delete after persistence>"]
   },
+  // taskBreakdown contract — pick the structure by complexity:
+  //  * "Single task": exactly one entry, the session spec is attached to it.
+  //  * "Parent + subtasks": one role=parent entry first, then 2-6 role=subtask
+  //    entries. The session spec is attached to the parent.
+  //  * "Parent + subtasks with individual specs": like above, but subtasks
+  //    carry their own "specContent" where a work item needs its own spec.
+  //  * "Multiple parents": several distinct features — each role=parent entry
+  //    starts a new group, followed by its role=subtask entries. Every parent
+  //    MUST carry its own "specContent"; the top-level specContent is the
+  //    umbrella overview and is attached to the first parent.
+  // A subtask always belongs to the closest preceding parent entry.
   // when action = "error":
   "message": "<why you cannot proceed>"
 }`;
@@ -46,10 +57,12 @@ const POLICY_RULES = `Rules:
 - First, internally scan the input across 5 categories: Scope, Users, Data, Behavior, Constraints. Report gaps in ambiguityScan.
 - Ask AT MOST ${policy.MAX_CLARIFICATIONS} clarification questions per session, ONE per response. Prefer 2-4 concrete options with one recommended; free-text only when options make no sense.
 - Only ask when the answer materially changes a requirement, user story, success criterion, task decomposition, test design, or operational risk. Name that in affectedFields.
+- After each answered question, re-assess the remaining gaps. While high-impact gaps remain (ambiguityScan confidence below ~0.75) and you still have question budget, prefer asking the next highest-impact question over proposing early. Truly simple inputs may finish after 0-1 questions; medium or complex features should typically use 2-4 before the proposal.
 - Never ask about implementation details. Never ask when a reasonable low-risk default exists — use the default instead.
 - Questions, options, and the spec are written in English.
 - When you produce the proposal: justify the task structure (single task vs parent+subtasks) in the summary, make functional requirements testable and success criteria measurable, and include a Clarifications section recording every question and answer.
-- Directive semantics: "next" = normal step; "skip-remaining" = the user skipped remaining questions, produce the proposal now using recommended options/defaults; "force-proposal" = question budget exhausted, produce the proposal now; "require-clarification" = the input is a single underspecified note, ask at least one clarifying question before proposing.`;
+- Structure decision: if the input contains two or more features that could ship independently and have separate user-facing value, you MUST use "Multiple parents" with an own spec per parent. Warning sign: if the parent title needs an "and" to describe the work, split it. One feature with separable slices = "Parent + subtasks".
+- Directive semantics: "next" = normal step; "skip-remaining" = the user skipped remaining questions, produce the proposal now using recommended options/defaults; "force-proposal" = question budget exhausted, produce the proposal now; "require-clarification" = the input is a single underspecified note, ask at least one clarifying question before proposing; "revise" = the user rejected the current proposalDraft — read input.revisionNotes (newest last), address every point, and return an improved proposal (never a question).`;
 
 function _defaults() {
   return {
