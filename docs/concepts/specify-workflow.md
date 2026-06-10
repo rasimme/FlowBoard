@@ -2,93 +2,165 @@
 
 ## What
 
-The Specify Workflow is the agent-driven process that converts unstructured input (canvas notes, but the architecture is extensible to other origins) into structured FlowBoard work — task records, optionally with spec files. It is a six-step pipeline (analyze, clarify, generate, confirm, persist, done) executed by an agent in conversation with the user, bookended by a server-side **Specify Session** that tracks the bridge from input to output.
+The Specify Workflow is the guided process that converts unstructured input
+(canvas notes or a chat description) into structured FlowBoard work — task
+records with linked spec files. It is a pipeline (analyze, clarify, generate,
+confirm, persist) executed in dialogue with the user, bookended by a
+server-side **Specify Session** that tracks the bridge from input to output.
 
-The session is the bookkeeping; the workflow is the discipline. The session prevents collisions (an agent can have at most one active session) and provides rollback context (the input note ids are remembered so cleanup can find them). The workflow is encoded in the prompt template `context/specify-prompt.md` (per-project file) — it is *content*, not code, so it can be revised per project without server changes.
+One session core serves two transports: the **Dashboard Stepper** (Canvas →
+Create Task in the browser, questions answered in a modal) and **chat** (a
+chat-bound agent asks the questions in conversation). FlowBoard owns the
+session state machine and all persistence; model intelligence comes from an
+OpenClaw-backed worker (ADR-0021) for the dashboard path, or from the chat
+agent itself for the chat path.
+
+The session is the bookkeeping; the workflow is the discipline; the policy is
+enforced server-side. Question discipline (cap, one-at-a-time, impact
+requirement) lives in `dashboard/specify-policy.js` and applies to every
+transport — the prompt instructions in `context/specify-prompt.md` mirror it
+for chat agents.
 
 ## Why
 
-The motivating problem: unstructured input + structured output is a gap that humans solve poorly. Asked to convert a cluster of brainstormed notes into tasks, the typical human jumps straight to creating tasks — and then realizes mid-way that a spec was needed, or that this should have been one task with three subtasks instead of three peer tasks. The structuring decision is best made *after* the input is fully understood, but a freeform conversation tends to commit early.
+The motivating problem: unstructured input + structured output is a gap that
+humans solve poorly. Asked to convert a cluster of brainstormed notes into
+tasks, the typical human jumps straight to creating tasks — and then realizes
+mid-way that a spec was needed, or that this should have been one task with
+three subtasks instead of three peer tasks. The structuring decision is best
+made *after* the input is fully understood, but a freeform conversation tends
+to commit early.
 
-Specify codifies that "understand first, structure second" discipline as a 6-step protocol the agent must follow. The step order is the value: ANALYZE before CLARIFY before GENERATE means the agent commits to a task-structure proposal only after assessing scope. The CONFIRM step before PERSIST means the user can reject a structure proposal *before* any spec or task exists — no rollback needed because nothing was written.
+Specify codifies that "understand first, structure second" discipline.
+ANALYZE before CLARIFY before GENERATE means a task-structure proposal is
+committed only after assessing scope. The CONFIRM step before PERSIST means
+the user can reject (or revise) a structure proposal *before* any spec or
+task exists — no rollback needed because nothing was written.
 
-The server-side session exists for two reasons. First, it enforces *one-at-a-time-per-agent* concurrency at the API boundary, so two simultaneous canvas promotes for the same agent can't tangle. Second, it gives explicit abort and complete endpoints — the agent or the UI can signal terminal state, and stale sessions become visible (lastActivity timestamp). Without a session, a failed-mid-step workflow would leak inconsistent state.
+The server-side session enforces *one-at-a-time-per-agent* concurrency,
+rejects overlapping source notes, and provides explicit abort/retry/complete
+endpoints so failed or stale workflows stay visible and recoverable.
 
 ## How
 
-The workflow is two concurrent state machines: the *agent's* (the 6 steps it executes in conversation with the user) and the *server's* (the session lifecycle).
-
-**The agent's six steps:**
+**The workflow steps:**
 
 ```
-1. ANALYZE   — assess across 5 categories (Scope, Users, Data, Behavior, Constraints).
-                Decide: Simple or Complex.
-2. CLARIFY   — if Complex: ask max 4 questions, one at a time, each with a
-                recommended answer. Skip if Simple.
-3. GENERATE  — write a spec following context/specify-spec-template.md.
-                Decide task structure: one of
-                  (a) 1 task
-                  (b) parent task + subtasks (sharing one spec)
-                  (c) parent task + subtasks, each with its own spec file
-4. CONFIRM   — show summary to user. Wait for explicit confirmation.
-5. PERSIST   — strict ordering:
-                  (i)   write spec file(s)
-                  (ii)  create task(s) via API
-                  (iii) delete canvas notes via batch-delete
-6. DONE      — confirmation message; call POST .../complete on the session.
+1. ANALYZE   — worker scans 5 categories (Scope, Users, Data, Behavior,
+                Constraints); the scan is stored on the session.
+2. CLARIFY   — up to MAX questions (default 4, SPECIFY_MAX_QUESTIONS), one at
+                a time, each with 2-4 options and a recommended answer plus
+                free-text override. Server-enforced: a question beyond the cap
+                is rejected and a proposal forced; a single underspecified
+                canvas note must trigger at least one question; the user can
+                skip remaining questions at any time.
+3. GENERATE  — worker writes the spec (context/specify-spec-template.md) and
+                proposes a structure scaled to complexity:
+                  (a) single task
+                  (b) parent + subtasks (session spec on the parent)
+                  (c) parent + subtasks with individual subtask specs
+                  (d) multiple parents — role-tagged breakdown entries; each
+                      parent starts a group with its own spec, the session
+                      spec is the umbrella on the first parent
+4. CONFIRM   — proposal review (structure, tasks, collapsible spec preview,
+                note-cleanup checkbox). The user confirms, cancels, or
+                requests changes — feedback loops back to the worker for an
+                improved proposal (revise loop).
+5. PERSIST   — create parent/single task record → write spec file(s) via the
+                canonical path (specs/<taskId>-<slug>.md) → create remaining
+                task records → delete canvas notes (only with cleanup opted
+                in). Automatic rollback of specs + created tasks on failure;
+                canvas-note deletion stays strictly last (ADR-0016, amended).
+                New tasks land in Backlog.
+6. DONE      — success state with created task ids and View-in-Kanban jump;
+                session marked complete.
 ```
-
-The strict ordering in step 5 is rollback-safe: spec files are written first (reversible by deletion); tasks are created next (reversible by deletion); canvas notes are deleted last (irreversible — but only after the rest succeeded). Failure in step 5(i) — abort, nothing persisted. Failure in 5(ii) — delete the spec file, abort. Failure in 5(iii) — tasks remain (they're valid), notes stay (also fine — the user can re-promote without canvas data loss).
 
 **The server's session lifecycle:**
 
 ```
-                createSession()
-                       │  validates: agent has no other active session;
-                       │  no overlap of sourceNoteIds with another active
-                       │  session for the same project
-                       ▼
-                  status: active
-                       │
-        ┌──────────────┼──────────────┐
-        │                             │
-        ▼                             ▼
-   abortSession()              completeSession()
-        │                             │
-        ▼                             ▼
-  status: aborted              status: done
-   (terminal)                   (terminal)
+created ──► analyzing ──► clarifying ──► proposal-ready ──► confirmed ──► persisting ──► done
+                │  ▲           │ ▲  │          │   ▲
+                │  └───────────┘ └──┘          │   │ revise (feedback recorded,
+                │   more questions             └───┘  back through analyzing)
+                │
+                ├──► error ──retry──► analyzing      (recoverable: worker
+                │                                     timeout/malformed output)
+                └──► aborted                          (user cancel; notes stay)
 ```
 
-**Sessions live in RAM only.** The session store (`dashboard/specify-sessions.js`) is a `Map<id, session>` — no database, no file I/O, no persistence across server restarts. Sessions exist for minutes (the time of one Specify conversation); a server restart aborts everything in flight implicitly, which is the correct semantics — agents that lose their session mid-workflow should restart cleanly rather than try to recover. This is a deliberate asymmetry to the rest of FlowBoard's persistence model (HZL event store, canvas.json) — Specify sessions are *transactional bridges*, not records to keep.
+Worker responses are validated against the policy contract
+(`question | proposal | done | error`); malformed output becomes a
+recoverable `error` state with a retry control — never a silent shallow
+proposal (the static fallback exists only behind `SPECIFY_ALLOW_FALLBACK` /
+`NODE_ENV=test`).
 
-**Concurrency is enforced at the agent level, not project level.** Two different agents (`dev-botti` and `claude-code`) can have simultaneous active sessions for the same project, working on different note clusters. One agent cannot have two active sessions in any project — the constraint is "one Specify dialogue at a time per agent."
+**Sessions live in RAM only** (`dashboard/specify-sessions.js`, ADR-0015) —
+a `Map<id, session>`, no persistence across restarts. Sessions exist for
+minutes; a restart aborts everything in flight implicitly, which is the
+correct semantics for a transactional bridge.
 
-**Note-overlap rejection.** A second session for the same project that lists overlapping `sourceNoteIds` is rejected with 409. This is a guard against the failure mode where canvas A and canvas B both promoted the same notes — the second promote returns an error rather than creating a parallel session.
+**Concurrency is enforced at the agent level, not project level.** Dashboard
+sessions without a chat agent run under the `human` agent id. One agent
+cannot have two active sessions; overlapping `sourceNoteIds` within a project
+are rejected with 409.
 
-**The session's `origin` field is extensible.** Today it is always `canvas` — the canvas-promote endpoint creates the session. The field exists because the workflow itself is generic: any origin that produces unstructured input could create a Specify session. Voice transcription, email, even a paste from another tool — none implemented today, but the field reserves the namespace.
-
-**Wake message format.** When canvas promote creates a session, it sends a structured `[SPECIFY_SESSION]` message via the OpenClaw gateway webhook. The message embeds session id, project, origin, mode, the notes themselves, the connections, and the workflow steps as numbered instructions. The agent receives it as the next message in its session and starts at step 1.
+**Transports.** Canvas promote without an `agentId` opens the Dashboard
+Stepper — no chat binding, no hooks token required. Scripted callers may pass
+a validated `agentId`; only then is the structured `[SPECIFY_SESSION]` wake
+message sent to that specific chat-bound agent via the gateway webhook
+(broadcast to project-active agents is deliberately not a thing). Chat-origin
+sessions are created by trigger phrases (`specify: …`, brainstorm-style
+intents) and push their questions/proposals through the same session API.
 
 ## Consequences
 
-- **A server restart cancels every in-flight Specify session.** No recovery, no resume. This is appropriate given the workflow length (minutes) but means operators should avoid restarting the dashboard while a Specify dialogue is happening — a restart will leave the agent talking to a session id the server no longer knows about, and the eventual `/complete` will return 404.
-- **There is no "history" of past Specify sessions.** Once a session is `aborted` or `done`, it stays in the in-memory map until restart. There is no DB query for "all Specify sessions in the last 30 days" — that's by design (sessions are bridges, not records). The actual audit trail of *what was created* lives in the HZL event log of the resulting tasks.
-- **The 6-step protocol is content, not code.** It lives in `context/specify-prompt.md` per project. A project that wants different rules (e.g. "always create a parent + subtasks for clusters of 4 or more notes") edits its prompt file. The server doesn't enforce or validate the protocol — it only enforces the session lifecycle.
-- **The agent owns the structure decision.** Step 3 says the agent decides "1 task / parent+subtasks / parent+subtasks-with-specs." The user only confirms in step 4. This is the same trade-off as Idea Canvas: the agent is the architect of the resulting work, not the user. Users who want manual control should create tasks via the Kanban API, not via canvas promote / Specify.
-- **Step ordering in PERSIST is the rollback contract.** Spec → Tasks → Canvas-cleanup. Any contributor changing the persist order risks a failure mode where canvas notes are deleted before the spec is written, leaving the user with no source-of-record for what was promoted. The order is documented in `context/specify-prompt.md` and in the wake message itself; both must stay aligned.
-- **Two agents with the same agent-id collide.** If both `claude-code` instances on different machines try to promote canvas notes in the same project at the same time, the second one gets 409. This is correct (one logical agent shouldn't run two Specify dialogues) but worth knowing for operators running multiple machines under the same agent-id.
+- **A server restart cancels every in-flight Specify session.** No recovery,
+  no resume. Acceptable for minutes-long workflows, but operators should not
+  restart the dashboard mid-dialogue.
+- **No history of past sessions.** Sessions are bridges, not records; the
+  audit trail of what was created lives in the HZL event log of the resulting
+  tasks, the linked spec files, and the clarifications/ambiguity scan captured
+  in the generated spec.
+- **Policy is code, prompt is content.** The question cap, single-note guard
+  and response schema are enforced in `specify-policy.js` for every transport.
+  The conversational instructions (`context/specify-prompt.md`) are per-project
+  content and must stay aligned with the policy — they say so explicitly.
+- **The worker proposes, the user decides, FlowBoard persists.** The worker
+  never writes; persistence runs only after explicit confirmation, with the
+  cleanup checkbox controlling the only irreversible step.
+- **Structure decisions are revisable, not final.** The revise loop means a
+  wrong decomposition (e.g. two features lumped under one parent) costs one
+  round of feedback, not a restart.
+- **Two agents with the same agent-id collide.** The second concurrent
+  promote under one agent id gets 409 — correct, but worth knowing for
+  operators running multiple machines under one id.
 
 ## Code
 
-- `dashboard/specify-sessions.js` — the session store. Pure in-memory Map; functions: `createSession`, `getSession`, `getActiveSessionForAgent`, `updateSession`, `abortSession`, `completeSession`, `listSessions`.
-- `dashboard/server.js` — endpoints under `/api/specify/sessions/...`. Session creation is internal (called from the canvas promote handler), not a public endpoint.
-- `dashboard/server.js` (canvas promote, around line 1916) — the integration point: creates the session, builds the `[SPECIFY_SESSION]` wake message, fires the gateway webhook.
-- `context/specify-prompt.md` (per active project) — the 6-step protocol the agent runs. Authored content, not generated.
-- `context/specify-spec-template.md` (per active project) — the template the agent uses in step 3. Authored content.
+- `dashboard/specify-sessions.js` — session store and state machine
+  (`createSession`, `updateSession`, `recoverFromError`, …).
+- `dashboard/specify-policy.js` — response schema validation, question cap,
+  single-note guard, worker directives.
+- `dashboard/specify-worker-bridge.js` — policy enforcement, response
+  normalization, gated fallback; adapter interface.
+- `dashboard/specify-worker-openclaw.js` — the OpenClaw CLI one-shot adapter
+  (ADR-0021).
+- `dashboard/server.js` — `/api/specify/sessions/...` endpoints
+  (`next`, `answer`, `skip`, `retry`, `revise`, `confirm`, `abort`,
+  `complete`), `persistSpecifyProposal`, `writeSpecFileForTask` (canonical
+  spec creation shared with the specs API), canvas promote integration.
+- `dashboard/src/components/SpecifyStepper.jsx`,
+  `dashboard/src/context/SpecifyContext.jsx` — the Dashboard transport.
+- `context/specify-prompt.md`, `context/specify-spec-template.md` (per
+  project) — chat-agent instructions and spec template. Authored content.
 
 ## See also
 
-- [Idea Canvas](idea-canvas.md) — the only origin that creates Specify sessions today
-- [Kanban](kanban.md) — where the resulting tasks land
-- [Multi-Agent Model](multi-agent-model.md) — how `agentId` routing and the 1-per-agent concurrency rule fit together
+- [Idea Canvas](idea-canvas.md) — the canvas origin and promote pipeline
+- [Kanban](kanban.md) — where the resulting tasks land (Backlog)
+- [Multi-Agent Model](multi-agent-model.md) — agent-id routing and concurrency
+- ADR-0015 (RAM-only sessions), ADR-0016 (persist ordering, amended),
+  ADR-0021 (OpenClaw CLI worker)
+- `docs/project-mode/specify-workflow.md` — the operational rule section
+  served to agents

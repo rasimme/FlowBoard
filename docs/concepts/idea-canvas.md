@@ -30,32 +30,54 @@ The canvas data model is intentionally simple — three primitives.
 canvas (notes + connections)
     │
     │  POST /api/projects/:name/canvas/promote
-    │       body: { notes: [...], connections: [...], mode, agentId }
+    │       body: { notes: [...], connections: [...], mode, agentId? }
     ▼
-Specify Session created (server-side, ./specify-session.js)
+Specify Session created (server-side, ./specify-sessions.js)
     │
-    │  webhook to OpenClaw gateway after explicit target validation
-    │  (POST gatewayUrl/hooks/agent with structured [SPECIFY_SESSION] message)
-    ▼
-agent receives wake message + Specify instructions
+    ├─ no agentId (the normal browser case):
+    │     Dashboard Specify Stepper opens — the OpenClaw worker
+    │     (ADR-0021) asks the clarification questions in a modal,
+    │     the user answers/skips, reviews the proposal (with spec
+    │     preview, note-cleanup checkbox, revise loop), confirms.
     │
-    │  agent runs the 6-step Specify workflow:
-    │    1. ANALYZE   (5-category assessment, simple-or-complex)
-    │    2. CLARIFY   (max 4 questions if complex)
-    │    3. GENERATE  (write spec following template; choose task structure)
-    │    4. CONFIRM   (show summary, await user OK)
-    │    5. PERSIST   (write spec → create tasks → delete canvas notes)
-    │    6. DONE      (confirmation message)
+    └─ explicit agentId (scripted/chat-bound callers):
+          webhook to the OpenClaw gateway after target validation
+          ([SPECIFY_SESSION] message) — the chat agent runs the same
+          workflow conversationally through the same session API.
     ▼
-tasks now in Kanban; canvas notes cleaned up;
-specify session marked complete or aborted
+ANALYZE → CLARIFY (max N questions) → GENERATE (structure scaled to
+complexity, up to multiple parents with own specs) → CONFIRM →
+PERSIST (rollback-safe, notes deleted last and only with cleanup
+opted in) → DONE
+    ▼
+tasks in the Kanban Backlog; canvas notes cleaned up (unless opted
+out); success screen offers a View-in-Kanban jump with task highlight
 ```
 
-**Routing of the promote message.** The `agentId` from the request body becomes the wake target and is required. Promote is a clarification workflow, not a background task dispatch: the target must be a user-visible agent chat that can ask follow-up questions and receive confirmation. If the dashboard cannot prove a chat-bound agent target (URL/start parameter or authenticated runtime identity), the UI blocks promote instead of using a remembered localStorage value or broadcasting to arbitrary active project agents.
+**Routing of the promote.** Promote is a clarification workflow, not a
+background task dispatch. Without an `agentId`, the Dashboard Stepper is the
+clarify surface — no chat binding, no hooks token, works on a fresh install
+(SC-001). With an explicit, validated `agentId` (scripted callers), that
+specific chat-bound agent is woken instead. There is deliberately no
+broadcast to project-active agents and no remembered localStorage target —
+"active on a project" does not mean "currently talking to the user."
 
-**Origin of structure decisions.** The agent — not the user, not the server — decides whether the cluster becomes one task, one task with subtasks, or a parent task with subtasks-each-with-spec-files. The Specify prompt (`context/specify-prompt.md`) encodes the heuristics for that decision. The user only confirms the agent's structure proposal at step 4.
+**Origin of structure decisions.** The worker/agent — not the user, not the
+server — proposes whether the cluster becomes one task, a parent with
+subtasks, subtasks with individual specs, or multiple parents (role-tagged
+breakdown, own spec per parent). The user confirms at step 4 — or sends the
+proposal back with feedback (revise loop) until the structure fits.
 
-**Session lifecycle.** The Specify Session is the bookkeeping bridge between canvas state and the eventual task creation. It tracks `sourceNoteIds` (so cleanup can find them), `agentId` (so concurrent sessions for different agents don't collide), and a status (`active` / `complete` / `aborted`). If the user cancels at step 4, the agent calls `POST /api/specify/sessions/:id/abort` and nothing is persisted; canvas notes stay. If task creation fails mid-step-5, the agent aborts and rolls back any spec files it wrote.
+**Session lifecycle.** The Specify Session is the bookkeeping bridge between
+canvas state and the eventual task creation. It tracks `sourceNoteIds` (so
+cleanup can find them), `agentId` (dashboard sessions run as `human`), the
+clarifications with their options and answers, the ambiguity scan, revision
+feedback, and a status machine (`created → analyzing → clarifying →
+proposal-ready → confirmed → persisting → done`, plus recoverable `error`
+and `aborted`). Cancel at any pre-persist step aborts with nothing written;
+worker failures are retryable; persistence failures roll back created tasks
+and spec files automatically — canvas notes are only ever deleted last
+(ADR-0016).
 
 ## Consequences
 

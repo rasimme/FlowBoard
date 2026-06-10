@@ -1,7 +1,21 @@
 # ADR-0016: Specify PERSIST step — strict ordering as rollback contract
 
 ## Status
-Accepted
+Accepted — **amended 2026-06-10** (T-262-16)
+
+> **Amendment:** the dashboard persistence path (`persistSpecifyProposal` in
+> `dashboard/server.js`) now creates the first task *record* before writing
+> the spec file, because canonical spec naming (`specs/<taskId>-<slug>.md`,
+> via the shared `writeSpecFileForTask` helper) requires the task id. The
+> effective order is: create parent/single task record → write spec file(s) →
+> create remaining task records → delete canvas notes. The *invariant* of this
+> ADR is unchanged: the irreversible step (canvas-note deletion) still runs
+> strictly last, and every reversible step before it is rolled back
+> automatically on failure (spec files removed, created task records
+> archived). HZL task records are reversible, so creating one before the spec
+> does not weaken the contract. The chat-agent instructions in
+> `specify-prompt.md` keep the original spec-first wording for the
+> agent-driven path; both paths preserve the notes-last invariant.
 
 ## Date
 2026-05-02

@@ -1,5 +1,36 @@
 # Changelog
 
+### Unreleased — Specify Clarify Loop (T-262)
+
+- **Real iterative clarification for Canvas → Create Task.** The Dashboard
+  Specify Stepper now runs a genuine ANALYZE → CLARIFY → GENERATE loop:
+  multiple-choice questions with a recommended option and free-text override,
+  one at a time, capped (default 4, `SPECIFY_MAX_QUESTIONS`), with skip,
+  retry, and a proposal revise loop ("Request changes"). No more static
+  fallback proposal in production — a missing worker is a retryable error.
+- **OpenClaw-backed Specify worker, zero setup.** Worker steps run as
+  synchronous `openclaw agent --json` one-shots against `SPECIFY_WORKER_AGENT`
+  (default `main`) in isolated session keys (ADR-0021). FlowBoard owns no
+  model credentials; responses are schema-validated server-side.
+- **All decomposition tiers persist correctly.** Single task, parent +
+  subtasks, individual subtask specs, and multiple parents (role-tagged
+  breakdown, own spec per parent). Specs are created through one canonical
+  path (`specs/<taskId>-<slug>.md`) shared with the specs API and linked to
+  the owning task only. New tasks land in Backlog. Persistence rolls back
+  tasks and specs on failure; canvas notes are deleted last and only with
+  the (default-on) cleanup checkbox.
+- **Post-create flow.** Success screen with created task ids, success toast,
+  canvas refresh, and a View-in-Kanban jump that highlights the new task.
+- **Dashboard promote needs no hooks token.** The 503 on installations
+  without webhook configuration is gone; only the chat-agent path requires
+  `OPENCLAW_HOOKS_TOKEN`.
+- **Design-system foundation fix.** A scoped base layer restores the two
+  preflight guarantees the React components rely on (solid/zero-width border
+  defaults, button background reset) — fixes the recurring 3D-bevel contour
+  and unreadable raw-button backgrounds. `Modal` gains a `size` prop.
+- **Migration hardening.** m004 now skips symlinked or physically identical
+  project roots instead of crashing (fixes CI with test-spawned servers).
+
 ### Unreleased — Agent Identity Guardrails (T-206)
 
 - **Stable agent identity validation.** `/api/status`, task claim/release/complete/checkpoint/route, and canvas promote now share one agent-id validator. Known OpenClaw ids and stable external ids still work; placeholders and generated workspace/replay ids are rejected.
