@@ -382,6 +382,13 @@
       "doc": null
     },
     {
+      "method": "POST",
+      "path": "/api/specify/sessions",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
       "method": "GET",
       "path": "/api/specify/sessions/:id",
       "auth": "user",
@@ -398,6 +405,41 @@
     {
       "method": "POST",
       "path": "/api/specify/sessions/:id/complete",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/specify/sessions/:id/next",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/specify/sessions/:id/skip",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/specify/sessions/:id/retry",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/specify/sessions/:id/answer",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/specify/sessions/:id/confirm",
       "auth": "user",
       "group": "specify",
       "doc": null

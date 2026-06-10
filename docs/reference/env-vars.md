@@ -34,6 +34,17 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `AUTH_ALWAYS` | unset (off) | Forces auth middleware on every request (otherwise loopback bypass applies in non-production). |
 | `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset (off) | Hook-only migration escape hatch. Set to `true` only during explicit legacy recovery if the FlowBoard API is unreachable and `ACTIVE-PROJECT.md` must be read once. Normal installs must leave this off so stale files cannot resurrect old project state during bootstrap or compaction. |
 
+## Specify worker (T-262)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SPECIFY_WORKER_AGENT` | `main` | OpenClaw agent id the CLI worker adapter runs Specify steps on. The default targets the `main` agent (exists on every install — zero setup). Point it at a dedicated lean agent if desired. |
+| `SPECIFY_WORKER_TIMEOUT` | `90` | Per-step worker timeout in seconds, passed to `openclaw agent --timeout`. The adapter kills the process 15s after that. |
+| `SPECIFY_OPENCLAW_CLI` | `openclaw` | Path to the OpenClaw CLI binary used by the worker adapter. |
+| `SPECIFY_WORKER_DISABLED` | unset (off) | Set to `true` to skip registering the OpenClaw CLI worker adapter at startup. Without an adapter, Specify sessions return a recoverable error (or the fallback proposal where allowed). |
+| `SPECIFY_ALLOW_FALLBACK` | unset (off) | Dev/test opt-in: when no worker adapter is configured, serve the static single-task fallback proposal instead of an error. Also implied by `NODE_ENV=test`. Never enable in production — the fallback skips clarification entirely. |
+| `SPECIFY_WORKER_MOCK` | unset | Test-only (`NODE_ENV=test`): path to a module exporting a scripted worker adapter, injected at startup. Used by `test-specify-clarify-regression.js`. |
+
 ## Authentication
 
 | Variable | Default | Purpose |
@@ -60,6 +71,8 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `FLOWBOARD_MANAGED_AGENT_IDS` | empty | Comma-separated local OpenClaw-managed agent ids for this installation. Exact ids are accepted as managed identities; near-collision variants such as `<id>-main` are rejected so managed agents do not silently fork into phantom external identities. |
+| `FLOWBOARD_KNOWN_AGENT_IDS` | empty | Comma-separated extra stable agent ids to classify as known without near-collision protection. Prefer `FLOWBOARD_MANAGED_AGENT_IDS` for OpenClaw-managed local agents. |
 | `STALE_THRESHOLD_MINUTES` | `30` | Minutes of idle before a claimed task is considered stale by the cron sweeper. |
 | `NOTIFICATION_WINDOW_MINUTES` | `60` | Minimum minutes between repeat stuck-task notifications for the same task in the cron sweeper. |
 | `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |

@@ -38,6 +38,18 @@ let _bootIntegrity = null;
 // per-agent call (T-177-2) and routing-by-action-context for outbound paths
 // (T-177-3 Option C). The dashboard service has no own identity.
 const specifySession = require('./specify-sessions');
+const specifyWorkerBridge = require('./specify-worker-bridge');
+const specifyWorkerOpenclaw = require('./specify-worker-openclaw');
+
+// Production Specify worker: OpenClaw CLI one-shot adapter (T-262-11).
+// Tests configure their own (fake) adapter; SPECIFY_WORKER_DISABLED opts out.
+if (process.env.NODE_ENV !== 'test' && process.env.SPECIFY_WORKER_DISABLED !== 'true') {
+  specifyWorkerBridge.setWorkerAdapter(specifyWorkerOpenclaw.createOpenClawCliAdapter());
+} else if (process.env.NODE_ENV === 'test' && process.env.SPECIFY_WORKER_MOCK) {
+  // Regression tests (T-262-13) inject a scripted worker into the spawned
+  // server. Only honored under NODE_ENV=test.
+  specifyWorkerBridge.setWorkerAdapter(require(process.env.SPECIFY_WORKER_MOCK));
+}
 const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
@@ -401,7 +413,101 @@ function readCanvasFile(projectName) {
 
 function writeCanvasFile(projectName, data) {
   const file = path.join(PROJECTS_DIR, projectName, 'canvas.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
+}
+
+function slugifyTitle(value, fallback = 'specify') {
+  const slug = String(value || fallback).toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 48)
+    .replace(/^-|-$/g, '');
+  return slug || fallback;
+}
+
+function normalizeTaskBreakdown(proposal) {
+  const raw = proposal?.taskBreakdown || proposal?.tasks || proposal?.subtasks || [];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [{
+      title: proposal?.summary || proposal?.title || 'Specify task',
+      description: proposal?.summary || proposal?.specContent || '',
+      priority: 'medium',
+    }];
+  }
+  return raw.map((item, idx) => {
+    if (typeof item === 'string') {
+      return { title: item, description: '', priority: 'medium' };
+    }
+    return {
+      title: item.title || item.name || `Specify task ${idx + 1}`,
+      description: item.description || item.summary || '',
+      priority: item.priority || 'medium',
+    };
+  });
+}
+
+function persistSpecifyProposal(session) {
+  const proposal = session.draftProposal;
+  if (!proposal) throw new Error('No draft proposal to persist');
+
+  const projectDir = path.join(PROJECTS_DIR, session.project);
+  const specsDir = path.join(projectDir, 'specs');
+  fs.mkdirSync(specsDir, { recursive: true });
+
+  const tasks = normalizeTaskBreakdown(proposal);
+  const title = proposal.summary || proposal.title || tasks[0]?.title || 'Specify proposal';
+  const specRel = `specs/${session.id}-${slugifyTitle(title)}.md`;
+  const specAbs = path.join(projectDir, specRel);
+  const specContent = proposal.specContent || [
+    `# ${title}`,
+    '',
+    '## Goal',
+    proposal.summary || title,
+  ].join('\n');
+
+  const createdTaskIds = [];
+  const cleanedNoteIds = [];
+
+  try {
+    fs.writeFileSync(specAbs, specContent);
+
+    for (const taskDef of tasks) {
+      const task = hzlService.createTask(session.project, {
+        title: taskDef.title,
+        description: taskDef.description,
+        priority: taskDef.priority,
+        status: 'open',
+      });
+      createdTaskIds.push(task.id);
+      hzlService.setSpecLink(session.project, task.id, specRel);
+    }
+
+    if (session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
+      const data = readCanvasFile(session.project);
+      const deleteSet = new Set(session.sourceNoteIds);
+      const before = data.notes.length;
+      data.notes = data.notes.filter(n => !deleteSet.has(n.id));
+      const remainingIds = new Set(data.notes.map(n => n.id));
+      data.connections = (data.connections || []).filter(
+        c => remainingIds.has(c.from) && remainingIds.has(c.to)
+      );
+      if (data.notes.length !== before) {
+        writeCanvasFile(session.project, data);
+        cleanedNoteIds.push(...session.sourceNoteIds);
+      }
+    }
+
+    return {
+      specFiles: [specRel],
+      taskIds: createdTaskIds,
+      cleanedNoteIds,
+    };
+  } catch (err) {
+    try { fs.rmSync(specAbs, { force: true }); } catch {}
+    throw err;
+  }
 }
 
 function nextNoteId(notes) {
@@ -1866,17 +1972,20 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
   const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789';
   const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN;
 
-  if (!hooksToken) {
-    console.error('Promote bridge: OPENCLAW_HOOKS_TOKEN not set');
-    return res.status(503).json({ error: 'Agent not configured — hooks token missing' });
-  }
-
   const sourceNoteIds = notes.map(n => n.id);
   const hasTriggerAgent = req.body.agentId !== undefined && req.body.agentId !== null && String(req.body.agentId).trim() !== '';
   const identity = hasTriggerAgent ? agentIdentity.validateAgentId(req.body.agentId) : null;
   if (identity && !identity.ok) return res.status(400).json({ error: identity.error });
   const triggerAgentId = identity?.id || null;
   const sessionAgentId = triggerAgentId || 'human';
+
+  // The hooks token is only needed for the chat-agent webhook path. The
+  // dashboard path (no agentId) runs the Specify Stepper and must work on
+  // installations without any hook configuration (SC-001).
+  if (triggerAgentId && !hooksToken) {
+    console.error('Promote bridge: OPENCLAW_HOOKS_TOKEN not set');
+    return res.status(503).json({ error: 'Agent not configured — hooks token missing' });
+  }
 
   // Create Specify session (errors on duplicate notes or concurrent agent session)
   let session;
@@ -1886,6 +1995,8 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
       origin: 'canvas',
       sourceNoteIds,
       agentId: sessionAgentId,
+      sourceDescription: `${noteLines}\nConnections: ${connLines}`,
+      transport: triggerAgentId ? 'chat' : 'dashboard',
     });
   } catch (err) {
     return res.status(409).json({ error: err.message });
@@ -1920,31 +2031,32 @@ If task create fails: delete spec file, inform user. Call POST /api/specify/sess
 When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
 
   // Send immediately, don't await
-  res.json({ ok: true, message: 'Idea sent to agent', sessionId: session.id });
+  res.json({ ok: true, message: 'Idea sent to session', sessionId: session.id });
 
-  try {
-    // T-177-3: route promote-trigger to the agent that issued the promote
-    // request when a scripted caller passes agentId. Dashboard UI does not
-    // provide one, so omit routing metadata and let the gateway broadcast.
-    const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${hooksToken}`,
-      },
-      body: JSON.stringify({
-        message,
-        name: 'Canvas Specify',
-        agentId: triggerAgentId,
-        sessionKey: triggerAgentId ? `agent:${triggerAgentId}:main` : undefined,
-        wakeMode: 'now',
-      }),
-    });
-    if (!hookRes.ok) {
-      console.error('Promote webhook error:', hookRes.status, await hookRes.text());
+  // T-177-3: Only send webhook if agentId was explicitly provided (scripted callers).
+  // Dashboard UI (no agentId) handles the session directly via the Specify Stepper.
+  if (triggerAgentId) {
+    try {
+      const hookRes = await fetch(`${gatewayUrl}/hooks/agent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${hooksToken}`,
+        },
+        body: JSON.stringify({
+          message,
+          name: 'Canvas Specify',
+          agentId: triggerAgentId,
+          sessionKey: `agent:${triggerAgentId}:main`,
+          wakeMode: 'now',
+        }),
+      });
+      if (!hookRes.ok) {
+        console.error('Promote webhook error:', hookRes.status, await hookRes.text());
+      }
+    } catch (err) {
+      console.error('Promote webhook error:', err.message || err);
     }
-  } catch (err) {
-    console.error('Promote webhook error:', err.message || err);
   }
 });
 
@@ -1962,6 +2074,29 @@ app.get('/api/specify/sessions', (req, res) => {
     res.json(sessions);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/specify/sessions — create a new session
+app.post('/api/specify/sessions', (req, res) => {
+  try {
+    const { project, origin, agentId, sourceNoteIds = [], sourceDescription = '', transport = 'api' } = req.body;
+    if (!project) return res.status(400).json({ error: 'project is required' });
+    if (!agentId) return res.status(400).json({ error: 'agentId is required' });
+
+    const session = specifySession.createSession({
+      project,
+      origin: origin || 'canvas',
+      agentId,
+      sourceNoteIds,
+      sourceDescription,
+      transport,
+    });
+
+    res.status(201).json({ session });
+  } catch (err) {
+    console.error('[api]', err);
+    res.status(400).json({ error: err.message });
   }
 });
 
@@ -1995,6 +2130,252 @@ app.post('/api/specify/sessions/:id/complete', (req, res) => {
     res.json(session);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Shared step handler for /next, /skip and /retry (T-262-11).
+// mode: 'next' → normal step; 'skip' → produce proposal from defaults;
+//       'retry' → recover an errored session, then run a normal step.
+async function handleSpecifyStep(req, res, mode) {
+  try {
+    const session = specifySession.getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    if (mode === 'retry') {
+      if (session.status !== 'error') {
+        return res.status(409).json({ error: `Session is not in error state (${session.status})` });
+      }
+      specifySession.recoverFromError(req.params.id);
+    }
+
+    // Transition created → analyzing on first call
+    if (specifySession.getSession(req.params.id).status === 'created') {
+      specifySession.updateSession(req.params.id, { status: 'analyzing' });
+    }
+
+    const result = mode === 'skip'
+      ? await specifyWorkerBridge.skipRemaining(req.params.id)
+      : await specifyWorkerBridge.requestNext(req.params.id);
+
+    // Update session based on worker response
+    if (result.action === 'question') {
+      const qId = `q-${session.clarifications.length + 1}`;
+      const updated = session.clarifications.concat([{
+        id: qId,
+        question: result.workerRequest.question,
+        options: result.workerRequest.options || [],
+        recommended: result.workerRequest.recommended,
+        answer: null,
+        affectedFields: result.workerRequest.affectedFields || [],
+      }]);
+      specifySession.updateSession(req.params.id, {
+        status: 'clarifying',
+        clarifications: updated,
+      });
+    } else if (result.action === 'proposal') {
+      specifySession.updateSession(req.params.id, {
+        status: 'proposal-ready',
+        draftProposal: result.workerRequest,
+      });
+    } else if (result.action === 'error') {
+      specifySession.updateSession(req.params.id, {
+        status: 'error',
+        failureState: {
+          action: 'worker-request',
+          error: result.message || 'Worker returned error',
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    res.json({
+      action: result.action,
+      session: specifySession.getSession(req.params.id),
+      workerRequest: result.workerRequest,
+    });
+  } catch (err) {
+    console.error('[api]', err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+}
+
+// POST /api/specify/sessions/:id/next — request next action from worker
+app.post('/api/specify/sessions/:id/next', (req, res) => handleSpecifyStep(req, res, 'next'));
+
+// POST /api/specify/sessions/:id/skip — skip remaining questions, request proposal from defaults
+app.post('/api/specify/sessions/:id/skip', (req, res) => handleSpecifyStep(req, res, 'skip'));
+
+// POST /api/specify/sessions/:id/retry — recover an errored session and re-request
+app.post('/api/specify/sessions/:id/retry', (req, res) => handleSpecifyStep(req, res, 'retry'));
+
+// POST /api/specify/sessions/:id/answer — record user answer to clarification or proposal
+app.post('/api/specify/sessions/:id/answer', async (req, res) => {
+  try {
+    const session = specifySession.getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const { action, clarificationId, answer, specContent, taskBreakdown } = req.body;
+
+    if (action === 'error') {
+      specifySession.updateSession(req.params.id, {
+        status: 'error',
+        failureState: {
+          action: 'worker-error',
+          error: req.body.error || req.body.message || 'Worker returned error',
+          timestamp: Date.now(),
+        },
+      });
+      return res.json({
+        action: 'error',
+        session: specifySession.getSession(req.params.id),
+      });
+    }
+
+    if (action === 'question') {
+      if (!req.body.question || !answer) {
+        return res.status(400).json({ error: 'question and answer are required' });
+      }
+      const qId = `q-${session.clarifications.length + 1}`;
+      const updated = session.clarifications.concat([{
+        id: qId,
+        question: req.body.question,
+        options: req.body.options || [],
+        recommended: req.body.recommended || null,
+        answer,
+        affectedFields: req.body.affectedFields || [],
+      }]);
+      if (session.status === 'created') specifySession.updateSession(req.params.id, { status: 'analyzing' });
+      if (['analyzing', 'clarifying'].includes(specifySession.getSession(req.params.id).status)) {
+        specifySession.updateSession(req.params.id, { status: 'clarifying', clarifications: updated });
+      } else {
+        specifySession.updateSession(req.params.id, { clarifications: updated });
+      }
+      return res.json({
+        action: 'question',
+        session: specifySession.getSession(req.params.id),
+      });
+    }
+
+    // Handle action-based flow (chat-origin: proposal directly)
+    if (action === 'proposal') {
+      const proposal = {
+        specContent: specContent || '',
+        taskBreakdown: taskBreakdown || [],
+        quality: 'draft',
+        sourceCleanupPlan: [],
+      };
+      if (session.status === 'created') specifySession.updateSession(req.params.id, { status: 'analyzing' });
+      specifySession.updateSession(req.params.id, {
+        status: 'proposal-ready',
+        draftProposal: proposal,
+      });
+      return res.json({
+        action: 'proposal',
+        session: specifySession.getSession(req.params.id),
+        workerRequest: proposal,
+      });
+    }
+
+    // Original flow: clarification questions via worker
+    if (!clarificationId || !answer) {
+      return res.status(400).json({ error: 'For question action, clarificationId and answer are required' });
+    }
+
+    const result = await specifyWorkerBridge.recordAnswer(req.params.id, clarificationId, answer);
+
+    // Update session based on worker response.
+    // Re-fetch the session: recordAnswer just persisted the user's answer,
+    // and concatenating onto the stale pre-answer snapshot would drop it.
+    if (result.action === 'question') {
+      const fresh = specifySession.getSession(req.params.id);
+      const qId = `q-${fresh.clarifications.length + 1}`;
+      const updated = fresh.clarifications.concat([{
+        id: qId,
+        question: result.workerRequest.question,
+        options: result.workerRequest.options || [],
+        recommended: result.workerRequest.recommended,
+        answer: null,
+        affectedFields: result.workerRequest.affectedFields || [],
+      }]);
+      specifySession.updateSession(req.params.id, {
+        clarifications: updated,
+      });
+    } else if (result.action === 'proposal') {
+      specifySession.updateSession(req.params.id, {
+        status: 'proposal-ready',
+        draftProposal: result.workerRequest,
+      });
+    } else if (result.action === 'done') {
+      specifySession.updateSession(req.params.id, {
+        status: 'done',
+      });
+    } else if (result.action === 'error') {
+      specifySession.updateSession(req.params.id, {
+        status: 'error',
+        failureState: {
+          action: 'answer-processing',
+          error: result.message || 'Worker error processing answer',
+          timestamp: Date.now(),
+        },
+      });
+    }
+
+    res.json({
+      action: result.action,
+      session: specifySession.getSession(req.params.id),
+      workerRequest: result.workerRequest,
+    });
+  } catch (err) {
+    console.error('[api]', err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+// POST /api/specify/sessions/:id/confirm — confirm proposal and persist
+app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
+  try {
+    const session = specifySession.getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    // Accept both 'userApproval' and 'approved' for compatibility with different flows
+    const approval = req.body.userApproval !== undefined ? req.body.userApproval : req.body.approved;
+    if (approval === undefined) {
+      return res.status(400).json({ error: 'userApproval or approved is required' });
+    }
+
+    const { customizations } = req.body;
+
+    if (!approval) {
+      specifySession.updateSession(req.params.id, { status: 'aborted' });
+      return res.json({
+        session: specifySession.getSession(req.params.id),
+      });
+    }
+
+    const result = await specifyWorkerBridge.confirmProposal(req.params.id, approval, customizations);
+    const artifacts = persistSpecifyProposal(result.session);
+
+    specifySession.updateSession(req.params.id, { createdArtifacts: artifacts });
+    specifySession.updateSession(req.params.id, { status: 'done' });
+
+    res.json({
+      session: specifySession.getSession(req.params.id),
+      createdArtifacts: artifacts,
+      specPath: artifacts.specFiles[0] || null,
+      createdTasks: artifacts.taskIds,
+      cleanedNotes: artifacts.cleanedNoteIds,
+    });
+  } catch (err) {
+    console.error('[api]', err);
+    const session = specifySession.getSession(req.params.id);
+    if (session) {
+      res.status(err.message.includes('not found') ? 404 : 400).json({
+        error: err.message,
+        session,
+      });
+    } else {
+      res.status(404).json({ error: 'Session not found' });
+    }
   }
 });
 
