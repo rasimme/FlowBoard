@@ -270,6 +270,7 @@ async function runTests() {
     ok(res.body.includes('3. Claim this exact task.'), 'Step 3 present');
     ok(res.body.includes('4. Write a first checkpoint.'), 'Step 4 present');
     ok(res.body.includes('5. Only then start implementation or review work.'), 'Step 5 present');
+    ok(res.body.includes('6. When the task is complete'), 'Step 6 terminal deactivation present');
   } catch (err) {
     fail++;
     failures.push(`Startup contract steps regression test failed: ${err.message}`);
@@ -282,6 +283,7 @@ async function runTests() {
     ok(res.body.includes('### Claim Task'), 'Claim Task section present');
     ok(res.body.includes('### Record Checkpoint'), 'Record Checkpoint section present');
     ok(res.body.includes('### Set Task to Review'), 'Set Task to Review section present');
+    ok(res.body.includes('### Deactivate Project Context'), 'Deactivate Project Context section present');
   } catch (err) {
     fail++;
     failures.push(`Task lifecycle sections regression test failed: ${err.message}`);
@@ -340,7 +342,17 @@ async function runTests() {
     failures.push(`Quality marker regression test failed: ${err.message}`);
   }
 
-  // Regression 12: Error handling for non-existent tasks
+  // Regression 12: Git policy is explicit and context-derived/defaulted
+  try {
+    const res = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks/${taskId}/handoff`);
+    ok(res.body.includes('## Git & External Action Policy'), 'Git policy section present');
+    ok(res.body.includes('- **Source**:'), 'Git policy source present');
+  } catch (err) {
+    fail++;
+    failures.push(`Git policy regression test failed: ${err.message}`);
+  }
+
+  // Regression 13: Error handling for non-existent tasks
   try {
     const res = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks/T-999999/handoff`);
     ok(res.statusCode === 400, 'Non-existent task returns 400');

@@ -506,6 +506,28 @@ section('TARGETS ↔ snippet files — marker coherence');
   }
 }
 
+section('scanSnippetForContractViolations() — minimal-trigger contract');
+{
+  const validSnippet = doctor.readCurrent('AGENTS-trigger.md');
+  const violations = doctor.scanSnippetForContractViolations(validSnippet, doctor.TARGETS[0]);
+  assert(violations.length === 0, 'valid snippet has no violations');
+
+  // Test oversized snippet
+  const oversized = validSnippet + '\n\n' + Array(20).fill('Extra detail line').join('\n');
+  const oversizedViolations = doctor.scanSnippetForContractViolations(oversized, doctor.TARGETS[0]);
+  assert(oversizedViolations.some(v => v.id === 'oversized-snippet'), 'detects oversized snippet');
+
+  // Test forbidden phrase
+  const withForbidden = validSnippet.replace('Fetch project context', 'POST /api/workflows/start here');
+  const forbiddenViolations = doctor.scanSnippetForContractViolations(withForbidden, doctor.TARGETS[0]);
+  assert(forbiddenViolations.some(v => v.id === 'forbidden-phrase' && v.phrase === '/api/workflows/start'), 'detects forbidden workflow endpoint');
+
+  // Test that MINIMAL_SNIPPET_CONSTRAINTS is exported
+  assert(Array.isArray(doctor.MINIMAL_SNIPPET_CONSTRAINTS.forbiddenPhrases), 'forbidden phrases list exported');
+  assert(doctor.MINIMAL_SNIPPET_CONSTRAINTS.forbiddenPhrases.includes('/checkpoint'), 'checkpoint endpoint in forbidden list');
+  assert(doctor.MINIMAL_SNIPPET_CONSTRAINTS.maxLines === 30, 'max lines constraint is 30');
+}
+
 section('AGENTS-trigger.md — minimal-trigger guardrails');
 {
   const snippets = [

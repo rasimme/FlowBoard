@@ -2,7 +2,7 @@
 
 ## What
 
-Every action against the FlowBoard API is attributed to an **agent-id**: a plain string like `dev-botti`, `main`, or `claude-code`. The agent-id is the routing key for per-agent state (active project, task claims) and the attribution key on every task mutation (claim, release, checkpoint, comment, complete).
+Every action against the FlowBoard API is attributed to an **agent-id**: a plain string like `main`, `alpha-agent`, or `claude-code`. The agent-id is the routing key for per-agent state (active project, task claims) and the attribution key on every task mutation (claim, release, checkpoint, comment, complete).
 
 There is no central registration step and no foreign key — the agent-id is *just a string*, agreed by convention between the agent and the server.
 
@@ -16,7 +16,7 @@ The string-based model has one explicit invariant: the agent must always pass it
 
 There are two independent layers that happen to use the same agent-id string.
 
-**OpenClaw layer.** For agents managed by OpenClaw (Telegram bots, channel-routed runs), the agent-id is a property of the workspace. OpenClaw's config (`~/.openclaw/openclaw.json`) defines which workspace a channel routes to: `agent dev-botti` → `~/.openclaw/workspace-dev-botti`. The `project-context` hook derives the canonical agent-id from `event.context.workspaceDir` using the filesystem convention:
+**OpenClaw layer.** For agents managed by OpenClaw (Telegram bots, channel-routed runs), the agent-id is a property of the workspace. OpenClaw's config (`~/.openclaw/openclaw.json`) defines which workspace a channel routes to: `agent alpha-agent` → `~/.openclaw/workspace-alpha-agent`. The `project-context` hook derives the canonical agent-id from `event.context.workspaceDir` using the filesystem convention:
 
 - `~/.openclaw/workspace` → `main`
 - `~/.openclaw/workspace-<id>` → `<id>`
@@ -35,6 +35,8 @@ If an OpenClaw-managed agent run does not receive the bootstrap identity block, 
 
 **Lazy registration.** A row in `flowboard_agents` is created on the first `PUT /api/status {agentId, project}` for an unknown agent. Task mutations alone (claim, release, complete) do not create an agent row — they store the agent-id in `tasks_current.agent` and that's it. The table answers "which agents have an active project", not "which agents exist". An agent that only claims tasks but never activates a project shows up as `tasks_current.agent` but is invisible to `GET /api/agents`.
 
+**Managed ids.** FlowBoard's public defaults only include portable ids such as `main`, `human`, `claude-code`, `codex`, `cursor`, and `cron-nightly`. Installations with named OpenClaw agents should declare those local names through `FLOWBOARD_MANAGED_AGENT_IDS`, for example `FLOWBOARD_MANAGED_AGENT_IDS=alpha-agent,beta-agent`. Exact managed ids are accepted and classified as `managed`. Near-collision variants such as `alpha-agent-main` or `prod-alpha-agent` are rejected so a managed agent cannot accidentally fork itself into a phantom identity after a session reset.
+
 **External agents** are first-class citizens under the same rules. They:
 - pick a stable agent-id (recommended convention: `codex`, `cursor`, `claude-code`, `cron-nightly`, or deliberately stable variants like `claude-code-lab`)
 - pass `agent` / `agentId` in every API call (no server defaults — see ADR-0002, ADR-0003)
@@ -43,7 +45,7 @@ If an OpenClaw-managed agent run does not receive the bootstrap identity block, 
 
 The `GET /api/info` endpoint documents the convention and serves the external-trigger snippet for self-onboarding.
 
-**Identity guardrails.** FlowBoard validates agent ids at API ingress. Stable unknown external ids are still accepted because external tools must remain first-class. Obvious placeholders and generated names are rejected: examples include `default`, `unknown`, `<agentId>`, `workspace-*`, `*-workspace`, and replay/timestamp ids like `t198-replay-1777837445357`. This catches the common failure mode where a model invents an identity from the current directory instead of using the bootstrap identity or the narrow OpenClaw workspace convention.
+**Identity guardrails.** FlowBoard validates agent ids at API ingress. Stable unknown external ids are still accepted because external tools must remain first-class. Obvious placeholders and generated names are rejected: examples include `default`, `unknown`, `<agentId>`, `workspace-*`, `*-workspace`, and replay/timestamp ids like `t198-replay-1777837445357`. Configured managed ids also get a near-collision guard: variants that start or end with the managed id plus a hyphen are rejected. This catches the common failure mode where a model invents an identity from the current directory instead of using the bootstrap identity or the narrow OpenClaw workspace convention.
 
 ## Consequences
 

@@ -35,7 +35,7 @@ function section(title) {
 section('v5 Core Flows: fileRuntime utilities');
 
 // Test 1: MarkdownEditor component file exists
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 try {
   const stat = statSync('./src/components/MarkdownEditor.jsx');
   ok(stat.isFile(), 'MarkdownEditor.jsx file exists');
@@ -203,6 +203,33 @@ const reconAction3 = fileRuntimeUtils.getFileReconciliationAction({
 ok(
   reconAction3.type === 'missing',
   'getFileReconciliationAction detects missing file'
+);
+
+section('Canvas Create Task release gate');
+
+const canvasToolbarSource = readFileSync('./js/canvas/toolbar.js', 'utf8');
+const sendPromoteBody = canvasToolbarSource.slice(
+  canvasToolbarSource.indexOf('export async function sendPromote'),
+  canvasToolbarSource.indexOf('// Collect connections within the selected set')
+);
+ok(
+  !canvasToolbarSource.includes("toast('Open FlowBoard from an agent chat to create tasks from canvas', 'warn')") &&
+    !canvasToolbarSource.includes('agentId: targetAgentId') &&
+    canvasToolbarSource.includes('window.__showSpecifyStepper(res.sessionId)'),
+  'Canvas Create Task starts Dashboard Specify Stepper without chat-bound agentId'
+);
+
+const serverSource = readFileSync('./server.js', 'utf8');
+ok(
+  serverSource.includes("const sessionAgentId = triggerAgentId || 'human'") &&
+    serverSource.includes("if (triggerAgentId)") &&
+    serverSource.includes("transport: triggerAgentId ? 'chat' : 'dashboard'"),
+  'Canvas promote creates Dashboard Specify session locally and dispatches only for explicit agentId'
+);
+ok(
+  serverSource.includes("agentId: sessionAgentId") &&
+    serverSource.includes('sourceDescription: `${noteLines}\\nConnections: ${connLines}`'),
+  'Canvas promote stores session agent and source description for Specify'
 );
 
 // --- Test Summary ---

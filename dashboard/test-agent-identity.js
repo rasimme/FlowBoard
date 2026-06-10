@@ -18,18 +18,38 @@ function section(name) { console.log(`\n## ${name}`); }
 
 section('known stable identities');
 {
-  const dev = identity.classifyAgentId('dev-botti');
-  assertEqual(dev.ok, true, 'dev-botti accepted');
-  assertEqual(dev.kind, 'known', 'dev-botti classified as known');
+  const main = identity.classifyAgentId('main');
+  assertEqual(main.ok, true, 'main accepted');
+  assertEqual(main.kind, 'known', 'main classified as known');
 
   const human = identity.classifyAgentId('human');
   assertEqual(human.ok, true, 'human accepted');
   assertEqual(human.kind, 'known', 'human classified as known');
 }
 
+section('managed identities from configuration');
+{
+  const previous = process.env.FLOWBOARD_MANAGED_AGENT_IDS;
+  process.env.FLOWBOARD_MANAGED_AGENT_IDS = 'alpha-agent,beta-worker';
+
+  const managed = identity.classifyAgentId('alpha-agent');
+  assertEqual(managed.ok, true, 'configured managed agent accepted');
+  assertEqual(managed.kind, 'managed', 'configured managed agent classified as managed');
+
+  assertEqual(identity.classifyAgentId('alpha-agent-main').ok, false, 'managed suffix variant rejected');
+  assertEqual(identity.classifyAgentId('prod-alpha-agent').ok, false, 'managed prefix variant rejected');
+
+  const external = identity.classifyAgentId('gamma-agent-main');
+  assertEqual(external.ok, true, 'distinct external agent still accepted');
+  assertEqual(external.kind, 'external', 'distinct external agent remains external');
+
+  if (previous === undefined) delete process.env.FLOWBOARD_MANAGED_AGENT_IDS;
+  else process.env.FLOWBOARD_MANAGED_AGENT_IDS = previous;
+}
+
 section('normalization and shape validation');
 {
-  assertEqual(identity.classifyAgentId(' dev-botti ').id, 'dev-botti', 'agent ids are trimmed');
+  assertEqual(identity.classifyAgentId(' main ').id, 'main', 'agent ids are trimmed');
   assertEqual(identity.classifyAgentId(undefined).ok, false, 'undefined rejected');
   assertEqual(identity.classifyAgentId(null).ok, false, 'null rejected');
   assertEqual(identity.classifyAgentId(123).ok, false, 'non-string numeric id rejected by kebab-case rule');
@@ -51,7 +71,7 @@ section('external stable identities');
 section('generated or placeholder identities');
 {
   assertEqual(identity.classifyAgentId('codex-workspace').ok, false, 'runtime-workspace id rejected');
-  assertEqual(identity.classifyAgentId('workspace-dev-botti').ok, false, 'workspace-prefixed id rejected');
+  assertEqual(identity.classifyAgentId('workspace-alpha-agent').ok, false, 'workspace-prefixed id rejected');
   assertEqual(identity.classifyAgentId('t198-replay-1777837445357').ok, false, 'replay timestamp id rejected');
   assertEqual(identity.classifyAgentId('<agentId>').ok, false, 'placeholder rejected');
   assertEqual(identity.classifyAgentId('default').ok, false, 'default pseudo-id rejected');
@@ -70,9 +90,17 @@ section('server-facing helpers');
   assertEqual(badAgent.ok, false, 'validateAgentId rejects bad id');
   assert(badAgent.error.startsWith('agent '), 'validateAgentId uses caller label in error');
 
-  const knownMeta = identity.responseMeta(identity.validateAgentId('dev-botti'));
+  const knownMeta = identity.responseMeta(identity.validateAgentId('main'));
   assertEqual(knownMeta.kind, 'known', 'responseMeta exposes known kind');
   assertEqual(Object.prototype.hasOwnProperty.call(knownMeta, 'warning'), false, 'known responseMeta omits warning');
+
+  const previous = process.env.FLOWBOARD_MANAGED_AGENT_IDS;
+  process.env.FLOWBOARD_MANAGED_AGENT_IDS = 'alpha-agent';
+  const managedMeta = identity.responseMeta(identity.validateAgentId('alpha-agent'));
+  assertEqual(managedMeta.kind, 'managed', 'responseMeta exposes managed kind');
+  assertEqual(Object.prototype.hasOwnProperty.call(managedMeta, 'warning'), false, 'managed responseMeta omits warning');
+  if (previous === undefined) delete process.env.FLOWBOARD_MANAGED_AGENT_IDS;
+  else process.env.FLOWBOARD_MANAGED_AGENT_IDS = previous;
 
   const externalMeta = identity.responseMeta(identity.validateAgentId('qwen-worker'));
   assertEqual(externalMeta.kind, 'external', 'responseMeta exposes external kind');
@@ -89,8 +117,8 @@ section('resolveActivityAuthor() — T-232 comment attribution');
   assertEqual(a.author, 'claude', 'agent becomes the author');
 
   // agent wins over a free-form author when both are present
-  const both = identity.resolveActivityAuthor({ agent: 'dev-botti', author: 'someone-else' });
-  assertEqual(both.author, 'dev-botti', 'validated agent wins over free-form author');
+  const both = identity.resolveActivityAuthor({ agent: 'main', author: 'someone-else' });
+  assertEqual(both.author, 'main', 'validated agent wins over free-form author');
 
   // free-form author passes through when no agent (UI/human path)
   const human = identity.resolveActivityAuthor({ author: 'Ada' });

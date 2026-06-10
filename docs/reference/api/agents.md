@@ -12,7 +12,7 @@ Lists every row in `flowboard_agents`. Used by the UI's active-agents bar.
 {
   "ok": true,
   "agents": [
-    { "agent_id": "dev-botti",  "active_project": "flowboard", "activated_at": "2026-04-29T20:09:26.222Z" },
+    { "agent_id": "alpha-agent","active_project": "flowboard", "activated_at": "2026-04-29T20:09:26.222Z" },
     { "agent_id": "main",       "active_project": null,         "activated_at": "2026-04-15T08:00:00.000Z" },
     { "agent_id": "claude-code","active_project": "flowboard",  "activated_at": "2026-05-02T22:23:09.339Z" }
   ]
@@ -68,7 +68,18 @@ Set or clear the agent's active project. Lazy-registers the agent on first call.
 
 `agentId` is required. `project` may be `null` or the string `"none"` to clear. Display names (e.g. `"FlowBoard"`) are accepted and resolved to the canonical name (`"flowboard"`).
 
-`agentId` must be a stable lowercase kebab-case identity. Known OpenClaw ids and stable external ids are accepted. OpenClaw-managed agents normally use the bootstrap `## Identity` value; if it is absent, `~/.openclaw/workspace` maps to `main` and `~/.openclaw/workspace-<id>` maps to `<id>`. Placeholders and generated names such as `default`, `<agentId>`, `workspace-*`, `*-workspace`, `codex-workspace`, or replay/timestamp ids are rejected with `400`.
+`agentId` must be a stable lowercase kebab-case identity. Known OpenClaw ids, configured managed ids (`FLOWBOARD_MANAGED_AGENT_IDS`), and stable external ids are accepted. OpenClaw-managed agents normally use the bootstrap `## Identity` value; if it is absent, `~/.openclaw/workspace` maps to `main` and `~/.openclaw/workspace-<id>` maps to `<id>`. Placeholders and generated names such as `default`, `<agentId>`, `workspace-*`, `*-workspace`, `codex-workspace`, or replay/timestamp ids are rejected with `400`. Variants of configured managed ids, such as `<id>-main`, are also rejected so managed agents keep their canonical identity.
+
+For short-lived delegated task agents, clear the active project after the task is completed/reviewed:
+
+```json
+{
+  "agentId": "claude-task-agent",
+  "project": null
+}
+```
+
+This deactivates project context without deleting the agent row, so task attribution and history remain intact.
 
 **Response 200:** `{"ok": true, "activeProject": "<canonical-name>" | null, "agentId": "<id>"}`
 

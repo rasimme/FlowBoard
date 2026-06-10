@@ -5,7 +5,7 @@
 // window.__flowboardBootstrap is a Promise the React shell awaits before its
 // first /api/* fetch so agentId is populated when the session is Telegram-backed.
 
-import { resolveDashboardAgentId } from './project-selection.mjs';
+import { resolveDashboardAgentIdentity } from './project-selection.mjs';
 
 window.appState = {
   projects: [],
@@ -17,6 +17,8 @@ window.appState = {
   currentTab: 'tasks',
   agents: [],
   agentId: null,
+  agentIdSource: null,
+  agentIdChatBound: false,
 };
 
 let resolveBootstrap;
@@ -49,21 +51,27 @@ document.addEventListener('click', (e) => {
         });
         const authData = await authRes.json().catch(() => null);
         if (authData?.user?.username) window.appState.authUser = authData.user.username;
-        window.appState.agentId = resolveDashboardAgentId({
+        const identity = resolveDashboardAgentIdentity({
           urlSearch: window.location.search,
           telegramWebApp: tg,
           authAgentId: authData?.agentId,
           storedAgentId: localStorage.getItem('flowboard_agent_id'),
         });
+        window.appState.agentId = identity.agentId;
+        window.appState.agentIdSource = identity.source;
+        window.appState.agentIdChatBound = identity.chatBound;
       } catch (e) {
         console.warn('Auth failed:', e);
       }
     } else {
-      window.appState.agentId = resolveDashboardAgentId({
+      const identity = resolveDashboardAgentIdentity({
         urlSearch: window.location.search,
         telegramWebApp: tg,
         storedAgentId: localStorage.getItem('flowboard_agent_id'),
       });
+      window.appState.agentId = identity.agentId;
+      window.appState.agentIdSource = identity.source;
+      window.appState.agentIdChatBound = identity.chatBound;
     }
     if (window.appState.agentId) {
       try { localStorage.setItem('flowboard_agent_id', window.appState.agentId); } catch { /* ignore */ }

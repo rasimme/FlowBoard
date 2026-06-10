@@ -2,11 +2,8 @@
 
 const DEFAULT_KNOWN_AGENT_IDS = [
   'main',
-  'botti',
-  'dev-botti',
-  'design-botti',
-  'claude-code',
   'human',
+  'claude-code',
   'codex',
   'cursor',
   'cron-nightly',
@@ -20,8 +17,8 @@ const RESERVED_BAD_IDS = new Set([
   'unknown',
 ]);
 
-function envList(name) {
-  return (process.env[name] || '')
+function envList(value) {
+  return (value || '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
@@ -30,8 +27,13 @@ function envList(name) {
 function knownAgentIds() {
   return new Set([
     ...DEFAULT_KNOWN_AGENT_IDS,
-    ...envList('FLOWBOARD_KNOWN_AGENT_IDS'),
+    ...envList(process.env.FLOWBOARD_KNOWN_AGENT_IDS),
+    ...managedAgentIds(),
   ]);
+}
+
+function managedAgentIds() {
+  return new Set(envList(process.env.FLOWBOARD_MANAGED_AGENT_IDS));
 }
 
 function normalizeAgentId(value) {
@@ -45,6 +47,16 @@ function isEphemeralAgentId(id) {
   if (/^t\d+-replay-\d+$/i.test(id)) return true;
   if (/(^|-)replay-\d{8,}$/i.test(id)) return true;
   return false;
+}
+
+function findManagedNearCollision(id) {
+  for (const managedId of managedAgentIds()) {
+    if (id === managedId) continue;
+    if (id.startsWith(`${managedId}-`) || id.endsWith(`-${managedId}`)) {
+      return managedId;
+    }
+  }
+  return null;
 }
 
 function classifyAgentId(value) {
@@ -64,7 +76,17 @@ function classifyAgentId(value) {
     return { ok: false, id, error: `agentId "${id}" is reserved and not a stable agent identity` };
   }
 
+  const managedCollision = findManagedNearCollision(id);
+  if (managedCollision) {
+    return {
+      ok: false,
+      id,
+      error: `agentId "${id}" looks like a variant of managed agent "${managedCollision}"; use the canonical managed id or choose a distinct external id`,
+    };
+  }
+
   const known = knownAgentIds().has(id);
+  const managed = managedAgentIds().has(id);
   const test = /^test-[a-z0-9-]+$/.test(id);
   if (!known && !test && isEphemeralAgentId(id)) {
     return {
@@ -77,7 +99,7 @@ function classifyAgentId(value) {
   return {
     ok: true,
     id,
-    kind: known ? 'known' : test ? 'test' : 'external',
+    kind: managed ? 'managed' : known ? 'known' : test ? 'test' : 'external',
     warning: known || test ? null : `Unknown external agentId "${id}" will be lazy-registered; keep it stable across runs.`,
   };
 }
@@ -122,4 +144,6 @@ module.exports = {
   resolveActivityAuthor,
   normalizeAgentId,
   isEphemeralAgentId,
+  managedAgentIds,
+  findManagedNearCollision,
 };

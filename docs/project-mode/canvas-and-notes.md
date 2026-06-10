@@ -70,11 +70,11 @@ Body:
   "notes": [{ "id": "n1", "text": "...", "color": "yellow" }],
   "connections": [{ "from": "n1", "to": "n2" }],
   "mode": "single",
-  "agentId": "default"
+  "agentId": "dev-botti"
 }
 ```
 
-Promote is fire-and-forget: it creates a Specify session, sends a webhook to the OpenClaw gateway, and returns immediately. The agent receives structured instructions and runs the Specify workflow asynchronously.
+Promote requires an explicit, chat-bound `agentId`. It creates a Specify session and returns success after the OpenClaw gateway accepts the agent webhook. If `agentId` is missing, invalid, dispatch fails, or dispatch times out, the session is not left active and the endpoint returns an error. Do not broadcast canvas promote to arbitrary project-active agents; Specify clarification must happen in a user-visible agent chat.
 
 ## Behavior Notes
 

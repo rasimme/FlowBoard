@@ -34,7 +34,7 @@ canvas (notes + connections)
     ▼
 Specify Session created (server-side, ./specify-session.js)
     │
-    │  fire-and-forget webhook to OpenClaw gateway
+    │  webhook to OpenClaw gateway after explicit target validation
     │  (POST gatewayUrl/hooks/agent with structured [SPECIFY_SESSION] message)
     ▼
 agent receives wake message + Specify instructions
@@ -51,7 +51,7 @@ tasks now in Kanban; canvas notes cleaned up;
 specify session marked complete or aborted
 ```
 
-**Routing of the promote message.** The `agentId` from the request body becomes the wake target. If the UI knows which agent issued the promote (because the human is logged in as a specific Telegram user), the gateway routes to that agent's session. If `agentId` is missing, the gateway falls back to broadcast.
+**Routing of the promote message.** The `agentId` from the request body becomes the wake target and is required. Promote is a clarification workflow, not a background task dispatch: the target must be a user-visible agent chat that can ask follow-up questions and receive confirmation. If the dashboard cannot prove a chat-bound agent target (URL/start parameter or authenticated runtime identity), the UI blocks promote instead of using a remembered localStorage value or broadcasting to arbitrary active project agents.
 
 **Origin of structure decisions.** The agent — not the user, not the server — decides whether the cluster becomes one task, one task with subtasks, or a parent task with subtasks-each-with-spec-files. The Specify prompt (`context/specify-prompt.md`) encodes the heuristics for that decision. The user only confirms the agent's structure proposal at step 4.
 

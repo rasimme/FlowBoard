@@ -62,10 +62,40 @@ The markdown handoff package is the official spawn preamble. It contains the aud
 3. claim the exact task
 4. write a first checkpoint
 5. only then inspect or edit repository files
+6. when complete, set the task to review and deactivate the project context unless explicitly configured as a persistent worker
 
 All localhost FlowBoard API calls must use a local-capable tool such as shell/curl/node. Do not use external web-fetch/browser tools for `127.0.0.1` or `localhost`.
 
+Git and external-action behavior is policy-driven. The handoff package first looks for a project-level `## Agent Git Policy` / `## Git Policy` section, then falls back to the conservative default: no `git commit`, `git push`, release, publish, or external delivery commands unless the user explicitly asked for that action in the current task. This keeps FlowBoard safe by default without forcing one installation's workflow onto every project.
+
+Short-lived delegated task agents should deactivate after completion:
+
+```json
+PUT /api/status
+{
+  "project": null,
+  "agentId": "<target-agent-id>"
+}
+```
+
+Do not delete the agent row for normal completion; deactivation preserves attribution/history while removing the agent from the active project context. Persistent orchestrators or long-lived workers may stay active only when the handoff or user explicitly says so.
+
+#### Minimal-Snippet Contract
+
 AGENTS.md snippets stay minimal and only tell agents to consult FlowBoard when a project is active. This rule section and the handoff package carry the delegation details.
+
+**The Contract:**
+- AGENTS.md trigger is ≤30 lines total
+- **Trigger only**: status check, active-project detection, bootstrap fetch, rule pointers
+- **Never embed**: delegation endpoints, workflow details, HTTP protocol, error handling, retry logic
+- **All details in rules/**: agent-bridge (task execution), api-access (endpoint reference), error-handling (recovery)
+- **Detection**: `snippets-doctor` validates constraint violations at lint/CI time
+
+**Why Minimal:**
+- Smaller footprint for agents to parse at startup
+- Clear separation: snippets are shallow triggers, rules are deep operational detail
+- Safer to iterate rules without agents carrying stale instructions
+- Easier to detect contract drift if the snippet grows
 
 ### Spawn-Wrapper Utility (T-263)
 
@@ -96,9 +126,14 @@ The function always returns the handoff package followed by custom instructions 
 
 **Returns:** Markdown string with handoff prepended to custom instructions.
 
-## Stuck Detection
+## Stuck Detection & Compliance (T-263-4)
 
-The `/tasks/stuck` endpoint returns cross-project tasks that are `in_progress` with no checkpoint beyond a threshold or with an expired lease. Used for monitoring and automatic intervention.
+The `/tasks/stuck` endpoint returns cross-project tasks that are:
+- `in_progress` with no checkpoint beyond a threshold (stale)
+- with an expired lease (expired)
+- **routed to an agent but not yet claimed** (routed-unclaimed) — indicates handoff contract violation
+
+See `compliance.md` for detailed compliance monitoring, health metrics, and troubleshooting.
 
 ## Multi-Agent Patterns
 

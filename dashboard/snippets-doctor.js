@@ -147,6 +147,80 @@ const API_FIRST_MEMORY_FLUSH_MARKERS = [
   'Do not read or write ACTIVE-PROJECT.md',
 ];
 
+// Snippet size and content constraints for minimal-trigger contract
+const MINIMAL_SNIPPET_CONSTRAINTS = {
+  maxLines: 30,
+  forbiddenPhrases: [
+    '/api/workflows/start',
+    '/checkpoint',
+    '/complete',
+    'Content-Type',
+    'never JSON.parse',
+    'maximum 3 attempts total',
+    'Do not invent cwd/runtime hybrids',
+    'codex-workspace',
+  ],
+  requiredPhrases: [
+    'GET /api/status',
+    'activeProject === null',
+    'contextReady',
+    'GET /api/projects',
+    'bootstrap',
+    'rules/',
+    'This file is only the trigger',
+  ],
+};
+
+function scanSnippetForContractViolations(content, target) {
+  const findings = [];
+  if (!content || typeof content !== 'string') return findings;
+
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+
+  // Check line count
+  if (lines.length > MINIMAL_SNIPPET_CONSTRAINTS.maxLines) {
+    findings.push({
+      id: 'oversized-snippet',
+      severity: 'error',
+      line: 1,
+      message: `Snippet exceeds ${MINIMAL_SNIPPET_CONSTRAINTS.maxLines} lines (has ${lines.length})`,
+      suggestion: 'Move operational details to rules/ sections; keep AGENTS.md as minimal trigger only',
+    });
+  }
+
+  // Check for forbidden phrases
+  for (const phrase of MINIMAL_SNIPPET_CONSTRAINTS.forbiddenPhrases) {
+    if (content.includes(phrase)) {
+      const lineNum = lines.findIndex(l => l.includes(phrase)) + 1;
+      findings.push({
+        id: 'forbidden-phrase',
+        severity: 'error',
+        line: lineNum || 1,
+        phrase,
+        message: `Forbidden detail embedded in snippet: "${phrase}"`,
+        suggestion: 'Move this detail to rules/agent-bridge or rules/api-access',
+      });
+    }
+  }
+
+  // Check for required phrases (only if not a legacy block)
+  if (!content.includes('echo "$OPENCLAW_AGENT_ID"')) {
+    const missing = MINIMAL_SNIPPET_CONSTRAINTS.requiredPhrases.filter(p => !content.includes(p));
+    if (missing.length > 0) {
+      findings.push({
+        id: 'missing-required-phrase',
+        severity: 'warn',
+        line: 1,
+        missing,
+        message: `Minimal-trigger missing required phrases: ${missing.join(', ')}`,
+        suggestion: 'Add trigger phrases for status check, bootstrap fetch, and rule pointers',
+      });
+    }
+  }
+
+  return findings;
+}
+
 const TASK_STATE_LEAKAGE_RULES = [
   {
     id: 'operational-heading',
@@ -842,8 +916,10 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
 module.exports = {
   TARGETS,
   TASK_STATE_LEAKAGE_RULES,
+  MINIMAL_SNIPPET_CONSTRAINTS,
   detectLegacyMarkers,
   scanProjectDocumentForTaskLeakage,
+  scanSnippetForContractViolations,
   collectBootstrapDocAdvisories,
   collectConfigAdvisories,
   matchesLegacyBlockExactly,

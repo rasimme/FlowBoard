@@ -26,7 +26,7 @@ function section(title) {
 }
 
 const TEST_PROJECT = 'test-handoff';
-const TEST_TASKS_DIR = path.join(__dirname, 'test-workspace', 'projects', TEST_PROJECT);
+const TEST_PROJECT_DIR = path.join(__dirname, '..', 'projects', TEST_PROJECT);
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-test-handoff.db');
 const TEST_ROOT = path.join(__dirname, 'test-workspace');
 
@@ -35,6 +35,7 @@ async function setup() {
 
   // Initialize hzlService for testing
   await hzlService.init(HZL_DB_PATH);
+  fs.rmSync(TEST_PROJECT_DIR, { recursive: true, force: true });
 
   // Create test project and task
   try {
@@ -115,6 +116,14 @@ async function runTests() {
       markdown.includes('local-capable tool') && markdown.includes('Do not use external web-fetch'),
       'Markdown warns agents to use local-capable tools for localhost API calls'
     );
+    ok(
+      markdown.includes('Do not run `git commit`') && markdown.includes('`git push`'),
+      'Markdown uses conservative default git policy'
+    );
+    ok(
+      markdown.includes('## Git & External Action Policy') && markdown.includes('**Source**: default'),
+      'Markdown labels default git policy as default-derived'
+    );
     ok(markdown.includes('## API Contract'), 'Markdown includes API Contract section');
     ok(markdown.includes('GET'), 'Markdown includes GET method');
     ok(markdown.includes('POST'), 'Markdown includes POST method');
@@ -148,6 +157,14 @@ async function runTests() {
     ok(
       markdown.includes('Set Task to Review'),
       'Markdown includes Set Task to Review section'
+    );
+    ok(
+      markdown.includes('Deactivate Project Context'),
+      'Markdown includes terminal project deactivation section'
+    );
+    ok(
+      markdown.includes('"project": null') && markdown.includes('"agentId": "test-handoff-agent"'),
+      'Markdown deactivates target agent id after completion'
     );
   } catch (err) {
     fail++;
@@ -225,9 +242,34 @@ async function runTests() {
     failures.push(`Backward compatibility test failed: ${err.message}`);
   }
 
+  // Test 11: Project-level Git policy overrides conservative default
+  try {
+    fs.mkdirSync(TEST_PROJECT_DIR, { recursive: true });
+    fs.writeFileSync(path.join(TEST_PROJECT_DIR, 'PROJECT.md'), [
+      '# Handoff Test Project',
+      '',
+      '## Agent Git Policy',
+      'mode: commit-ok',
+      'Agents may create local commits when the assigned task asks for code changes, but must not push without explicit user approval.',
+      '',
+    ].join('\n'));
+
+    const markdown = hzlService.buildHandoffMarkdown(TEST_PROJECT, taskId, {
+      apiBase: 'http://127.0.0.1:18790',
+      targetAgentId: 'test-handoff-agent',
+    });
+    ok(markdown.includes('- **Mode**: commit-ok'), 'Markdown derives git policy mode from project context');
+    ok(markdown.includes('- **Source**: project'), 'Markdown labels git policy as project-derived');
+    ok(markdown.includes('must not push without explicit user approval'), 'Markdown includes project git policy instructions');
+  } catch (err) {
+    fail++;
+    failures.push(`Project git policy override test failed: ${err.message}`);
+  }
+
   // Cleanup
   try {
     if (fs.existsSync(HZL_DB_PATH)) fs.unlinkSync(HZL_DB_PATH);
+    fs.rmSync(TEST_PROJECT_DIR, { recursive: true, force: true });
   } catch { /* ignored */ }
 
   // Report

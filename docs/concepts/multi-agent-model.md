@@ -6,9 +6,9 @@ FlowBoard treats agents as first-class but lightweight: each agent owns a row in
 
 ## Why
 
-The classical alternatives — single-agent (one operator, no collaboration) or session-scoped (each browser tab is its own identity) — both break the dogfooding model where multiple OpenClaw bots (`dev-botti`, `design-botti`, `main`) plus external agents (`claude-code`, `codex`) collaborate on the same FlowBoard project. The operator needs to see at a glance who is doing what, hand off work between agents without losing context, and audit who completed which task.
+The classical alternatives — single-agent (one operator, no collaboration) or session-scoped (each browser tab is its own identity) — both break the dogfooding model where multiple OpenClaw-managed agents (`main`, `alpha-agent`, `beta-agent`) plus external agents (`claude-code`, `codex`) collaborate on the same FlowBoard project. The operator needs to see at a glance who is doing what, hand off work between agents without losing context, and audit who completed which task.
 
-A second consideration: the system must work for agents that don't have an OpenClaw workspace. External CLI tools running in a developer's repo cannot rely on `agent:bootstrap` injection. They need a uniform protocol — same endpoints, same agent-id contract, same task lifecycle — so the dashboard treats `claude-code` and `dev-botti` identically. ADR-0003 records the decision that the dashboard has no agent identity of its own; that decision is what makes external agents first-class.
+A second consideration: the system must work for agents that don't have an OpenClaw workspace. External CLI tools running in a developer's repo cannot rely on `agent:bootstrap` injection. They need a uniform protocol — same endpoints, same agent-id contract, same task lifecycle — so the dashboard treats `claude-code` and `alpha-agent` identically. ADR-0003 records the decision that the dashboard has no agent identity of its own; that decision is what makes external agents first-class.
 
 ## How
 
@@ -27,12 +27,12 @@ The model has three components: agent registration (lazy), active-project tracki
 - `PUT /api/status {agentId, project|null}` — set or clear the agent's active project.
 - `DELETE /api/agents/:id` — remove the row. Returns 409 if the agent has active claims; `?force=true` releases them (status preserved, lease dropped) and proceeds.
 
-**String-based attribution.** `agent_id` is a string in `flowboard_agents.agent_id` and a string in `tasks_current.agent`. There is no foreign key. Deleting an agent removes the bookkeeping row but does not orphan completed work — `tasks_current.agent = "dev-botti"` and the HZL event log keep the historical attribution intact even after `dev-botti` is deleted from `flowboard_agents`.
+**String-based attribution.** `agent_id` is a string in `flowboard_agents.agent_id` and a string in `tasks_current.agent`. There is no foreign key. Deleting an agent removes the bookkeeping row but does not orphan completed work — `tasks_current.agent = "alpha-agent"` and the HZL event log keep the historical attribution intact even after `alpha-agent` is deleted from `flowboard_agents`.
 
 ## Consequences
 
 - **Multi-agent collaboration is unceremonious.** Two agents on the same project simply both `PUT /api/status` with that project name. They both appear in `GET /api/agents`. They both see the same task list. Claims serialize via the lease mechanism; everything else is shared state.
-- **Project switching is per-agent.** When `dev-botti` switches from `flowboard` to `coreops`, only `dev-botti`'s row changes. `main`'s active project (and live-injected bootstrap) is untouched.
+- **Project switching is per-agent.** When `alpha-agent` switches from `flowboard` to `coreops`, only `alpha-agent`'s row changes. `main`'s active project (and live-injected bootstrap) is untouched.
 - **Handoff has no special API.** An agent releases a claim (`POST .../release`) and another claims it. The lease mechanism makes this race-free without explicit lock transfer. The HZL event log records both events with their respective `agent` strings.
 - **Attribution outlives membership.** Completed work attributed to a now-deleted agent shows the original agent-id forever. The UI will render `agent: "old-bot"` even if `old-bot` no longer exists in `flowboard_agents`. This is intentional — audit trail matters more than referential cleanliness.
 - **No quota, no concurrency cap.** Any number of agents can register; any number can claim tasks (subject to one-claim-per-task by the lease). This is appropriate for a personal coordination tool; it would not survive a hostile multi-tenant deployment, which FlowBoard explicitly does not target.

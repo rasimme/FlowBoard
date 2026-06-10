@@ -2132,7 +2132,8 @@ function getComplianceStatus(opts = {}) {
 
   for (const [key, task] of _cache) {
     if (project && task._project !== project) continue;
-    if (agent && task.agent !== agent) continue;
+    // Filter by agent: check both claiming agent and routed agent
+    if (agent && task.agent !== agent && task.routedAgent !== agent) continue;
 
     compliance.summary.totalTasks++;
 
@@ -2249,6 +2250,70 @@ function getHandoffContext(project, flowboardId) {
   };
 }
 
+function _extractMarkdownSection(markdown, headings) {
+  if (!markdown) return null;
+  const wanted = new Set(headings.map(h => h.toLowerCase()));
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex(line => {
+    const match = line.match(/^##\s+(.+?)\s*$/);
+    return match && wanted.has(match[1].trim().toLowerCase());
+  });
+  if (start === -1) return null;
+
+  const body = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^##\s+/.test(lines[i])) break;
+    if (/^---\s*$/.test(lines[i])) break;
+    body.push(lines[i]);
+  }
+  return body.join('\n').trim() || null;
+}
+
+function _buildGitPolicy(projectMd, options = {}) {
+  const defaultPolicy = {
+    mode: 'explicit-request-only',
+    source: 'default',
+    instructions: 'Do not run `git commit`, `git push`, release, publish, or external delivery commands unless the user explicitly asked for that action in the current task.',
+  };
+
+  if (options.gitPolicy) {
+    if (typeof options.gitPolicy === 'string') {
+      return { ...defaultPolicy, source: 'options', instructions: options.gitPolicy.trim() };
+    }
+    return {
+      ...defaultPolicy,
+      ...options.gitPolicy,
+      source: options.gitPolicy.source || 'options',
+      instructions: options.gitPolicy.instructions || defaultPolicy.instructions,
+    };
+  }
+
+  const section = _extractMarkdownSection(projectMd, [
+    'Agent Git Policy',
+    'Git Policy',
+    'Git Automation Policy',
+    'Git-Automation Policy',
+  ]);
+
+  if (!section) return defaultPolicy;
+
+  const lower = section.toLowerCase();
+  let mode = 'project-defined';
+  if (lower.includes('commit-and-push-ok') || lower.includes('push-ok')) {
+    mode = 'push-ok';
+  } else if (lower.includes('commit-ok')) {
+    mode = 'commit-ok';
+  } else if (lower.includes('explicit-request-only') || lower.includes('no commit') || lower.includes('no-commit')) {
+    mode = 'explicit-request-only';
+  }
+
+  return {
+    mode,
+    source: 'project',
+    instructions: section,
+  };
+}
+
 /**
  * Build markdown handoff package for agent spawning (T-263).
  * Returns agent-ready markdown with task context, API contract, and claim/checkpoint protocol.
@@ -2258,6 +2323,7 @@ function getHandoffContext(project, flowboardId) {
  * - apiBase: API base URL (default: http://127.0.0.1:18790)
  * - targetAgentId: concrete agent id expected to own the handoff
  * - maxSpecSize: Max spec content size in bytes (default: 10000, 0 = unlimited)
+ * - gitPolicy: Optional project-specific Git policy override (string or object)
  */
 function buildHandoffMarkdown(project, flowboardId, options = {}) {
   const cached = _cache.get(`${project}:${flowboardId}`);
@@ -2271,12 +2337,13 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   const task = _publicTask(cached);
   const projectDir = path.join(PROJECTS_DIR, project);
   let projectTitle = project;
+  let projectMd = '';
   let comments = [];
   const warnings = [];
 
   try {
     const projectMdPath = path.join(projectDir, 'PROJECT.md');
-    const projectMd = fs.readFileSync(projectMdPath, 'utf8');
+    projectMd = fs.readFileSync(projectMdPath, 'utf8');
     const titleMatch = projectMd.match(/^#\s+(.+)/m);
     if (titleMatch) projectTitle = titleMatch[1].trim();
   } catch (e) {
@@ -2290,6 +2357,7 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   const apiBase = options.apiBase || 'http://127.0.0.1:18790';
   const targetAgentId = options.targetAgentId || '<YOUR_AGENT_ID>';
   const maxSpecSize = options.maxSpecSize !== undefined ? options.maxSpecSize : 10000;
+  const gitPolicy = _buildGitPolicy(projectMd, options);
   const lines = [];
 
   lines.push('```');
@@ -2310,8 +2378,16 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   lines.push('3. Claim this exact task.');
   lines.push('4. Write a first checkpoint.');
   lines.push('5. Only then start implementation or review work.');
+  lines.push('6. When the task is complete, set it to review, write any final checkpoint needed, then deactivate your project context unless the handoff explicitly says you are a persistent worker.');
   lines.push('');
   lines.push('If any step fails, stop and report the blocker instead of continuing silently.');
+  lines.push('');
+
+  lines.push('## Git & External Action Policy');
+  lines.push(`- **Mode**: ${gitPolicy.mode}`);
+  lines.push(`- **Source**: ${gitPolicy.source}`);
+  lines.push('');
+  lines.push(gitPolicy.instructions);
   lines.push('');
 
   lines.push('## Project');
@@ -2409,6 +2485,18 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   lines.push(`  "agent": "${targetAgentId}"`);
   lines.push(`}`);
   lines.push(`\`\`\``);
+  lines.push('');
+  lines.push('### Deactivate Project Context');
+  lines.push('Do this after completion for short-lived task agents. Persistent orchestrators/workers may stay active only when the handoff or user explicitly says so.');
+  lines.push(`\`\`\`json`);
+  lines.push(`PUT ${apiBase}/api/status`);
+  lines.push(`{`);
+  lines.push(`  "project": null,`);
+  lines.push(`  "agentId": "${targetAgentId}"`);
+  lines.push(`}`);
+  lines.push(`\`\`\``);
+  lines.push('');
+  lines.push(`Then verify: \`GET ${apiBase}/api/status?agentId=${encodeURIComponent(targetAgentId)}\` returns \`"activeProject": null\`.`);
   lines.push('');
 
   if (context.checkpoints && context.checkpoints.length > 0) {

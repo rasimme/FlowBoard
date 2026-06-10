@@ -37,6 +37,21 @@ assert.equal(
   'auth agent fallback is used'
 )
 
+assert.deepEqual(
+  selection.resolveDashboardAgentIdentity({ storedAgentId: 'dev-botti' }),
+  { agentId: 'dev-botti', source: 'stored', chatBound: false },
+  'stored agent id is remembered but not chat-bound'
+)
+
+assert.deepEqual(
+  selection.resolveDashboardAgentIdentity({
+    telegramWebApp: { initDataUnsafe: { start_param: 'agent=dev-botti' } },
+    storedAgentId: 'old-agent',
+  }),
+  { agentId: 'dev-botti', source: 'telegram-start', chatBound: true },
+  'telegram start_param is chat-bound'
+)
+
 const projects = [{ name: 'alpha' }, { name: 'flowboard' }, { name: 'zeta' }]
 const agents = [
   { agent_id: 'main', active_project: null },

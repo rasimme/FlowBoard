@@ -666,7 +666,7 @@ export function renderPromoteButton() {
   updateToolbar();
 }
 
-// --- Promote to task (agent-assisted via session bridge) ---
+// --- Promote to task (Specify-assisted via session bridge) ---
 export async function sendPromote(noteIds, mode = 'single') {
   const project = window.appState?.viewedProject;
   if (!project) return;
@@ -686,56 +686,34 @@ export async function sendPromote(noteIds, mode = 'single') {
     c => idSet.has(c.from) && idSet.has(c.to)
   );
 
-  // Show persistent loading toast
-  const loadingEl = document.createElement('div');
-  loadingEl.className = 'toast loading';
-  loadingEl.innerHTML = '<span class="toast-spinner"></span> Creating task…';
-  document.getElementById('toastContainer').appendChild(loadingEl);
-
   try {
     const res = await api(`/projects/${project}/canvas/promote`, {
       method: 'POST',
       body: {
         notes: notes.map(n => ({ id: n.id, text: n.text, color: n.color || 'grey' })),
         connections: connections.map(c => ({ from: c.from, to: c.to })),
-        mode
+        mode,
       }
     });
     if (!res.ok) {
-      loadingEl.remove();
+      // If duplicate active session error, try to extract and show existing session
+      if (res.error?.includes('active Specify session')) {
+        const match = res.error.match(/(specify-[\w-]+)/);
+        if (match?.[1] && window.__showSpecifyStepper) {
+          window.__showSpecifyStepper(match[1]);
+          return;
+        }
+      }
       toast(res.error || 'Promote failed', 'error');
       return;
     }
     window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
-
-    // Poll: wait for notes to disappear from canvas (agent batch-deletes them)
-    const promotedIds = new Set(notes.map(n => n.id));
-    let elapsed = 0;
-    const poll = setInterval(async () => {
-      elapsed += 3000;
-      try {
-        const data = await api(`/projects/${project}/canvas`);
-        const remaining = (data.notes || []).filter(n => promotedIds.has(n.id));
-        if (remaining.length === 0) {
-          clearInterval(poll);
-          loadingEl.classList.remove('loading');
-          loadingEl.classList.add('success');
-          loadingEl.innerHTML = '✓ Task created';
-          setTimeout(() => { loadingEl.classList.add('removing'); setTimeout(() => loadingEl.remove(), 200); }, 3000);
-          // Refresh canvas to remove promoted notes
-          if (window.refreshCanvas) window.refreshCanvas();
-        }
-      } catch { /* ignore poll errors */ }
-      if (elapsed >= 60000) {
-        clearInterval(poll);
-        loadingEl.classList.remove('loading');
-        loadingEl.classList.add('warn');
-        loadingEl.textContent = 'Task creation in progress…';
-        setTimeout(() => { loadingEl.classList.add('removing'); setTimeout(() => loadingEl.remove(), 200); }, 5000);
-      }
-    }, 3000);
-  } catch {
-    loadingEl.remove();
-    toast('Promote failed', 'error');
+    if (!window.__showSpecifyStepper) {
+      toast('Specify stepper not available', 'error');
+      return;
+    }
+    window.__showSpecifyStepper(res.sessionId);
+  } catch (err) {
+    toast('Promote failed: ' + (err.message || 'Unknown error'), 'error');
   }
 }

@@ -18,14 +18,24 @@ export function agentIdFromStartParam(value) {
 }
 
 export function resolveDashboardAgentId({ urlSearch = '', telegramWebApp = null, authAgentId = null, storedAgentId = null } = {}) {
+  return resolveDashboardAgentIdentity({ urlSearch, telegramWebApp, authAgentId, storedAgentId }).agentId;
+}
+
+export function resolveDashboardAgentIdentity({ urlSearch = '', telegramWebApp = null, authAgentId = null, storedAgentId = null } = {}) {
   const params = new URLSearchParams(urlSearch || '');
-  return (
-    normalizeAgentId(params.get('agentId')) ||
-    normalizeAgentId(params.get('agent')) ||
-    agentIdFromStartParam(telegramWebApp?.initDataUnsafe?.start_param) ||
-    normalizeAgentId(authAgentId) ||
-    normalizeAgentId(storedAgentId)
-  );
+  const candidates = [
+    ['url', normalizeAgentId(params.get('agentId'))],
+    ['url', normalizeAgentId(params.get('agent'))],
+    ['telegram-start', agentIdFromStartParam(telegramWebApp?.initDataUnsafe?.start_param)],
+    ['auth', normalizeAgentId(authAgentId)],
+    ['stored', normalizeAgentId(storedAgentId)],
+  ];
+  const found = candidates.find(([, agentId]) => agentId);
+  return {
+    agentId: found?.[1] || null,
+    source: found?.[0] || null,
+    chatBound: !!found && found[0] !== 'stored',
+  };
 }
 
 export function selectViewedProject({ projects = [], agents = [], activeProject = null, currentViewedProject = null } = {}) {
