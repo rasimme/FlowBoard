@@ -83,6 +83,9 @@ async function runTests() {
       HZL_DB_PATH,
       FLOWBOARD_PORT: PORT,
       OPENCLAW_WORKSPACE: WORKSPACE,
+      // Isolate from host/CI env — a global FLOWBOARD_PROJECTS_DIR would
+      // leak into the spawned server and confuse the m004 migration.
+      FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
     },
     stdio: 'pipe',

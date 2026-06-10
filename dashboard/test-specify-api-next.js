@@ -65,6 +65,8 @@ async function runTests() {
       ...process.env,
       HZL_DB_PATH,
       FLOWBOARD_PORT: PORT,
+      // Isolate from host/CI env (see m004 migration)
+      FLOWBOARD_PROJECTS_DIR: path.join(__dirname, 'test-workspace', 'projects'),
       NODE_ENV: 'test',
     },
     stdio: 'pipe',

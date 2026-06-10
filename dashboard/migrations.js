@@ -107,6 +107,23 @@ const migrations = [
         return;
       }
 
+      // If the old root is already a symlink, a previous run of this
+      // migration (possibly under a different openclawHome, e.g. a
+      // test-spawned server) has replaced it with the compat link. Copying
+      // a symlink root would crash cpSync (EEXIST on the just-created
+      // newRoot) — and there is nothing left to migrate anyway.
+      if (fs.lstatSync(oldRoot).isSymbolicLink()) {
+        console.log('[m004] Old root is already a compat symlink — migration done; skipping.');
+        return;
+      }
+
+      // Same physical directory (e.g. oldRoot resolves into newRoot):
+      // nothing to move, and copying onto itself would corrupt the tree.
+      if (path.resolve(fs.realpathSync(oldRoot)) === path.resolve(newRoot)) {
+        console.log('[m004] Old root and new root are the same directory — skipping.');
+        return;
+      }
+
       console.log(`[m004] Copying ${oldRoot} → ${newRoot} ...`);
       fs.mkdirSync(newRoot, { recursive: true });
       try {
