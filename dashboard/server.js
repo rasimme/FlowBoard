@@ -434,7 +434,7 @@ function normalizeTaskBreakdown(proposal) {
     return {
       title: item.title || item.name || `Specify task ${idx + 1}`,
       description: item.description || item.summary || '',
-      priority: item.priority || 'medium',
+      priority: normalizePriority(item.priority) || 'medium',
       role: item.role === 'parent' || item.role === 'subtask' ? item.role : null,
       specContent: typeof item.specContent === 'string' && item.specContent.trim() ? item.specContent : null,
     };
@@ -1295,11 +1295,25 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   res.json(response);
 });
 
+// FlowBoard uses exactly three priorities (T-246-8). "critical" is accepted
+// as a legacy alias and normalized to high; anything else unknown is invalid.
+function normalizePriority(value) {
+  if (value === undefined || value === null || value === '') return 'medium';
+  if (['low', 'medium', 'high'].includes(value)) return value;
+  if (value === 'critical') return 'high';
+  return null;
+}
+
 // POST /api/projects/:name/tasks
 app.post('/api/projects/:name/tasks', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const { title, priority, parentId } = req.body;
   if (!title) return res.status(400).json({ error: 'Title required' });
+
+  const normalizedPriority = normalizePriority(priority);
+  if (!normalizedPriority) {
+    return res.status(400).json({ error: `Invalid priority "${priority}" — use low, medium or high` });
+  }
 
   if (parentId) {
     const parent = hzlService.getTask(req.params.name, parentId);
@@ -1307,10 +1321,10 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     if (parent.parentId) return res.status(400).json({ error: 'Cannot nest subtasks (max 1 level)' });
   }
 
-  let effectivePriority = priority || 'medium';
+  let effectivePriority = normalizedPriority;
   if (parentId) {
     const parent = hzlService.getTask(req.params.name, parentId);
-    if (parent) effectivePriority = parent.priority;
+    if (parent) effectivePriority = normalizePriority(parent.priority) || 'medium';
   }
 
   try {
@@ -1336,6 +1350,14 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   const task = hzlService.getTask(req.params.name, req.params.id, { includeArchived: true });
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const updates = req.body;
+
+  if (updates.priority !== undefined) {
+    const normalized = normalizePriority(updates.priority);
+    if (!normalized) {
+      return res.status(400).json({ error: `Invalid priority "${updates.priority}" — use low, medium or high` });
+    }
+    updates.priority = normalized;
+  }
 
   if (Object.prototype.hasOwnProperty.call(updates, 'specFile')) {
     const nextSpec = updates.specFile;

@@ -2,7 +2,7 @@
 
 ## What
 
-The Kanban board is FlowBoard's primary work surface — a five-column view (`Backlog`, `Open`, `In Progress`, `Review`, `Done`) where tasks move through their lifecycle. Each task can have subtasks (one level of nesting), can be claimed by an agent (with a lease), can be marked blocked (orthogonal flag), can carry a priority (`low`/`medium`/`high`/`critical`), and can be soft-deleted into a trash bin before permanent removal.
+The Kanban board is FlowBoard's primary work surface — a five-column view (`Backlog`, `Open`, `In Progress`, `Review`, `Done`) where tasks move through their lifecycle. Each task can have subtasks (one level of nesting), can be claimed by an agent (with a lease), can be marked blocked (orthogonal flag), can carry a priority (`low`/`medium`/`high`), and can be soft-deleted into a trash bin before permanent removal.
 
 The board is the same view for humans (dashboard UI) and agents (REST API). A drag-and-drop in the UI and a `PUT /api/projects/:name/tasks/:id` body call hit the same lifecycle code path.
 
@@ -25,7 +25,7 @@ The board's state model has four orthogonal axes plus a soft-delete pointer.
 - → `review` or `done` while claimed: auto-releases the lease (preserves `agent` for attribution but clears `claimed_at` and `lease_until`).
 - → `done` from `archived`: explicit unarchive event in the HZL log.
 
-**Priority (one of 4).** `low`, `medium`, `high`, `critical`. Internally stored as a 0–3 integer in HZL's `priority` column; mapped to the strings on read. New top-level tasks default to `medium`. New subtasks **inherit the parent's priority** at creation time and cannot diverge later.
+**Priority (one of 3).** `low`, `medium`, `high`. Internally stored as a 0–2 integer in HZL's `priority` column; mapped to the strings on read. Legacy rows stored as `critical` (3) read as `high` and converge to `high` on the next write; the API normalizes a submitted `critical` to `high` and rejects other unknown values (T-246-8). New top-level tasks default to `medium`. New subtasks **inherit the parent's priority** at creation time and cannot diverge later.
 
 **Blocked (boolean).** `blocked: true` is a flag, **not a status**. It overlays on top of any column — a card in `In Progress` can be `blocked` simultaneously. The UI renders blocked cards with a visual indicator. This is deliberate: blocked is a *reason for not progressing*, not a destination state. Modeling it as a flag keeps the column count small and keeps a blocked task in the column where the work actually lives, so the holder knows where to come back to.
 

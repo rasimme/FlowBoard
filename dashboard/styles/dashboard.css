@@ -710,6 +710,13 @@
       background: rgba(239, 68, 68, 0.04);
     }
     .task-card.is-blocked:hover { border-color: var(--status-blocked); box-shadow: none; }
+    /* T-246-9: blocked subtasks mirror the parent's blocked card layout */
+    .subtask-card.is-blocked {
+      border: 1px dashed var(--status-blocked);
+      opacity: 0.65;
+      background: rgba(239, 68, 68, 0.04);
+    }
+    .subtask-card.is-blocked:hover { border-color: var(--status-blocked); box-shadow: none; }
     /* Archived cards: deliberately low visual weight — these are
        historical records, not actionable. Keep a faint border so
        adjacent cards don't blur together, but strip colour from the

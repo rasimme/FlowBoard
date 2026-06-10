@@ -273,18 +273,9 @@ export function DashboardProvider({ children }) {
         const agentsChanged = agentsJson !== prevAgentsRef.current;
 
         const updates = {};
-        if (projectsJson !== prevProjectsRef.current) {
-          updates.projects = newProjects;
-          prevProjectsRef.current = projectsJson;
-        }
-        if (agentsChanged) {
-          updates.agents = newAgents;
-          prevAgentsRef.current = agentsJson;
-        }
-        if (newActive !== prevActiveRef.current) {
-          updates.activeProject = newActive;
-          prevActiveRef.current = newActive;
-        }
+        if (projectsJson !== prevProjectsRef.current) updates.projects = newProjects;
+        if (agentsChanged) updates.agents = newAgents;
+        if (newActive !== prevActiveRef.current) updates.activeProject = newActive;
 
         let viewedProject = window.appState?.viewedProject;
         if (!viewedProject) {
@@ -297,19 +288,28 @@ export function DashboardProvider({ children }) {
         }
 
         let tasksChanged = false;
+        let tasksJson = prevTasksRef.current;
         if (viewedProject) {
           const newTasks = await fetchTasksForProject(viewedProject);
-          const tasksJson = JSON.stringify(newTasks);
+          tasksJson = JSON.stringify(newTasks);
           if (tasksJson !== prevTasksRef.current) {
             tasksChanged = true;
             updates.tasks = newTasks;
-            prevTasksRef.current = tasksJson;
           }
         }
 
+        // T-246-7: commit the "seen" refs only when we actually dispatch.
+        // The old code updated the refs first and then bailed on the
+        // interaction guard — the change was marked as seen and the kanban
+        // never received it (stale cards until the next real server change
+        // or a reload).
         if (isUserInteracting() && !projectsChanged) return;
 
         if (projectsChanged || tasksChanged || agentsChanged) {
+          prevProjectsRef.current = projectsJson;
+          prevAgentsRef.current = agentsJson;
+          prevActiveRef.current = newActive;
+          prevTasksRef.current = tasksJson;
           dispatch(updates);
         }
       } catch (err) {

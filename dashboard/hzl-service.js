@@ -132,12 +132,15 @@ function _priorityFromInt(n) {
   if (n === undefined || n === null) return 'medium';
   if (n <= 0) return 'low';
   if (n === 1) return 'medium';
-  if (n === 2) return 'high';
-  return 'critical';
+  // FlowBoard uses exactly three priorities (T-246-8). Legacy rows stored
+  // as critical (3) read as high, so existing data converges without a
+  // migration: the next write persists high (2).
+  return 'high';
 }
 
 function _priorityToInt(s) {
-  const map = { low: 0, medium: 1, high: 2, critical: 3 };
+  // critical: legacy alias accepted on write, stored as high (T-246-8)
+  const map = { low: 0, medium: 1, high: 2, critical: 2 };
   return map[s] ?? 1;
 }
 
@@ -514,7 +517,8 @@ function getTask(project, flowboardId, opts = {}) {
 }
 
 function _priorityRank(priority) {
-  return ({ critical: 4, high: 3, medium: 2, low: 1 })[priority] || 0;
+  // critical kept as a legacy alias of high for in-flight callers (T-246-8)
+  return ({ high: 3, critical: 3, medium: 2, low: 1 })[priority] || 0;
 }
 
 function _taskSortPriority(a, b) {

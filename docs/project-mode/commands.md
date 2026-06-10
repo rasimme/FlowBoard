@@ -143,7 +143,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 `PUT /api/projects/:name/tasks/:id` with `{ status: "<new-status>" }`.
 
 **Additional writable fields** on the same PUT endpoint:
-- `priority` — `low`, `medium`, `high`, `critical`
+- `priority` — `low`, `medium`, `high`
 - `agent` — only `null` allowed (clears assignment; set via claim or workflow/start)
 - `blocked` — `true` | `false`
 - `trashedAt` — ISO string (moves to trash) or `null` (restores from trash)

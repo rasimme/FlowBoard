@@ -139,7 +139,13 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 
   const hasUsableSpec = task.specFile && task.specExists !== false;
   const claimColors = activeClaimColors(task);
-  const subtaskClass = claimColors ? 'subtask-card subtask-card-active-claim' : 'subtask-card';
+  const subtaskClass = [
+    'subtask-card',
+    claimColors && 'subtask-card-active-claim',
+    // Blocked subtasks get the same dashed card treatment as blocked
+    // parents — not just the chip (T-246-9).
+    task.blocked && 'is-blocked',
+  ].filter(Boolean).join(' ');
   const subtaskStyle = { cursor: 'pointer', ...(claimColors || null) };
 
   return (
@@ -507,7 +513,15 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
 
 // --- Expanded subtask list (uses legacy CSS tree-line system) ---
 function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated, showAddForm, onSubtaskCreated, onCancelAdd }) {
-  const subtasks = allTasks.filter(t => t.parentId === task.id && t.status !== 'archived');
+  // Stable numeric order by FlowBoard id (T-x-1 … T-x-10) — never by
+  // status/update order, so status changes don't reshuffle the list (T-246-6).
+  const subtasks = allTasks
+    .filter(t => t.parentId === task.id && t.status !== 'archived')
+    .sort((a, b) => {
+      const na = parseInt(a.id.split('-').pop() || '0', 10);
+      const nb = parseInt(b.id.split('-').pop() || '0', 10);
+      return (Number.isNaN(na) || Number.isNaN(nb)) ? a.id.localeCompare(b.id) : na - nb;
+    });
 
   if (subtasks.length === 0 && !showAddForm) return null;
 
