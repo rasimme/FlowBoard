@@ -2,11 +2,18 @@ import { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Button from './Button.jsx';
 
+const widths = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-2xl',
+};
+
 /**
  * Modal — Portal-based dialog with overlay, Escape-to-close, and action slot.
  * @param {boolean} open - Whether the modal is visible
  * @param {function} onClose - Called on overlay click or Escape key
  * @param {string} [title] - Header title
+ * @param {'sm'|'md'|'lg'} [size='md'] - Dialog max width (384/448/672px)
  * @param {ReactNode} [actions] - Footer action buttons
  * @param {ReactNode} children - Modal body content
  * @example <Modal open={show} onClose={close} title="Confirm">{body}</Modal>
@@ -17,6 +24,7 @@ export default function Modal({
   title,
   children,
   actions,
+  size = 'md',
 }) {
   const overlayRef = useRef(null);
 
@@ -42,7 +50,7 @@ export default function Modal({
       onClick={handleOverlayClick}
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60"
     >
-      <div className="bg-card border border-border rounded-lg shadow-card w-full max-w-md mx-4 overflow-hidden animate-scale-in">
+      <div className={`bg-card border border-border rounded-lg shadow-lg w-full ${widths[size] || widths.md} mx-4 overflow-hidden animate-scale-in`}>
         {title && (
           <div className="px-5 pt-5 pb-0">
             <h3 className="text-base font-semibold text-text-strong m-0">
