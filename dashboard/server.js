@@ -418,16 +418,6 @@ function writeCanvasFile(projectName, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-function slugifyTitle(value, fallback = 'specify') {
-  const slug = String(value || fallback).toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 48)
-    .replace(/^-|-$/g, '');
-  return slug || fallback;
-}
-
 function normalizeTaskBreakdown(proposal) {
   const raw = proposal?.taskBreakdown || proposal?.tasks || proposal?.subtasks || [];
   if (!Array.isArray(raw) || raw.length === 0) {
@@ -512,6 +502,14 @@ function persistSpecifyProposal(session, opts = {}) {
       }
     });
 
+    // Defensive: a breakdown of only subtask-role entries (policy-invalid,
+    // but reachable via permissive callers) would otherwise drop the session
+    // spec entirely — anchor it to the first created task.
+    if (!sessionSpecPlaced && specContent && createdTaskIds.length > 0) {
+      const firstTask = hzlService.getTask(session.project, createdTaskIds[0]);
+      if (firstTask) specFiles.push(writeSpecFileForTask(session.project, firstTask, specContent));
+    }
+
     if (cleanupNotes && session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
       const data = readCanvasFile(session.project);
       const deleteSet = new Set(session.sourceNoteIds);
@@ -535,11 +533,20 @@ function persistSpecifyProposal(session, opts = {}) {
   } catch (err) {
     // Roll back partial writes: spec files first, then created task records
     // (subtasks before the parent so parent archiving never blocks).
+    // Rollback failures must be visible — silent leftovers look like bugs.
     for (const rel of specFiles) {
-      try { fs.rmSync(path.join(PROJECTS_DIR, session.project, rel), { force: true }); } catch {}
+      try {
+        fs.rmSync(path.join(PROJECTS_DIR, session.project, rel), { force: true });
+      } catch (e) {
+        console.warn(`[specify] rollback: failed to remove spec ${rel}: ${e.message}`);
+      }
     }
     for (const id of [...createdTaskIds].reverse()) {
-      try { hzlService.deleteTask(session.project, id, 'all'); } catch {}
+      try {
+        hzlService.deleteTask(session.project, id, 'all');
+      } catch (e) {
+        console.warn(`[specify] rollback: failed to remove task ${id}: ${e.message} — manual cleanup may be needed`);
+      }
     }
     throw err;
   }
@@ -2125,6 +2132,12 @@ app.post('/api/specify/sessions', (req, res) => {
     const { project, origin, agentId, sourceNoteIds = [], sourceDescription = '', transport = 'api' } = req.body;
     if (!project) return res.status(400).json({ error: 'project is required' });
     if (!agentId) return res.status(400).json({ error: 'agentId is required' });
+    // Path-traversal guard + existence check (review finding): the project
+    // name becomes a filesystem path segment during persistence. Same
+    // fs-based check as the canvas promote path.
+    if (/[/\\]|\.\./.test(project) || !fs.existsSync(path.join(PROJECTS_DIR, project))) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
 
     const session = specifySession.createSession({
       project,
@@ -2204,6 +2217,14 @@ async function handleSpecifyStep(req, res, mode) {
       });
     }
 
+    // Status guard (review finding): /next and /skip on a session that is
+    // not awaiting a worker step would burn a full worker call (up to 90s)
+    // only to fail the state transition afterwards.
+    if ((mode === 'next' || mode === 'skip') &&
+        !['created', 'analyzing', 'clarifying'].includes(session.status)) {
+      return res.status(409).json({ error: `Session is not awaiting a worker step (${session.status})` });
+    }
+
     // Transition created → analyzing on first call
     if (specifySession.getSession(req.params.id).status === 'created') {
       specifySession.updateSession(req.params.id, { status: 'analyzing' });
@@ -2215,10 +2236,13 @@ async function handleSpecifyStep(req, res, mode) {
         ? await specifyWorkerBridge.reviseProposal(req.params.id)
         : await specifyWorkerBridge.requestNext(req.params.id);
 
-    // Update session based on worker response
+    // Update session based on worker response.
+    // Re-fetch the session: concatenating onto the pre-step snapshot would
+    // drop concurrent updates (same stale-snapshot class as in /answer).
     if (result.action === 'question') {
-      const qId = `q-${session.clarifications.length + 1}`;
-      const updated = session.clarifications.concat([{
+      const fresh = specifySession.getSession(req.params.id);
+      const qId = `q-${fresh.clarifications.length + 1}`;
+      const updated = fresh.clarifications.concat([{
         id: qId,
         question: result.workerRequest.question,
         options: result.workerRequest.options || [],
@@ -2317,14 +2341,23 @@ app.post('/api/specify/sessions/:id/answer', async (req, res) => {
       });
     }
 
-    // Handle action-based flow (chat-origin: proposal directly)
+    // Handle action-based flow (chat-origin: proposal directly).
+    // Validate against the same policy contract as worker proposals
+    // (review finding) — chat agents must not bypass the schema either.
     if (action === 'proposal') {
       const proposal = {
+        summary: req.body.summary ||
+          (specContent || '').split('\n').find(l => l.trim())?.replace(/^#+\s*/, '') ||
+          'Specify proposal',
+        taskStructure: req.body.taskStructure || 'Single task',
         specContent: specContent || '',
         taskBreakdown: taskBreakdown || [],
         quality: 'draft',
-        sourceCleanupPlan: [],
       };
+      const check = specifyPolicy.validateWorkerResponse({ action: 'proposal', proposal });
+      if (!check.ok) {
+        return res.status(400).json({ error: `Invalid proposal: ${check.errors.join('; ')}` });
+      }
       if (session.status === 'created') specifySession.updateSession(req.params.id, { status: 'analyzing' });
       specifySession.updateSession(req.params.id, {
         status: 'proposal-ready',
@@ -2430,9 +2463,21 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
     });
   } catch (err) {
     console.error('[api]', err);
-    const session = specifySession.getSession(req.params.id);
+    let session = specifySession.getSession(req.params.id);
     if (session) {
-      res.status(err.message.includes('not found') ? 404 : 400).json({
+      // Review finding: without this, a persist failure strands the session
+      // in non-terminal 'persisting' — unretryable, unabortable, and (via the
+      // shared 'human' agent id) blocking every new dashboard session until
+      // the 2h cleanup. error is reachable from any active state and the
+      // stepper offers retry/close there.
+      if (!specifySession.isTerminal(session.status)) {
+        try {
+          session = specifySession.recordFailure(req.params.id, 'persist', err) || session;
+        } catch (transitionErr) {
+          console.error('[specify] failed to record persist failure:', transitionErr.message);
+        }
+      }
+      res.status(err.message.includes('Session not found') ? 404 : 400).json({
         error: err.message,
         session,
       });

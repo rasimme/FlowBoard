@@ -111,6 +111,17 @@ module.exports = {
       return first;
     }
 
+    if (desc.includes('[SCENARIO:persistfail]')) {
+      // First proposal carries a title beyond the 128-char task limit so
+      // persistence throws; after one revise/retry round, a valid proposal.
+      if (count === 1) {
+        const p = _proposal(' (will fail persistence)');
+        p.proposal.taskBreakdown = [{ title: 'x'.repeat(200), description: 'too long', priority: 'medium' }];
+        return p;
+      }
+      return _proposal(' (persistable)');
+    }
+
     if (desc.includes('[SCENARIO:multiparent]')) {
       const p = _proposal(' (multi-parent scenario)');
       p.proposal.taskStructure = 'Multiple parents';

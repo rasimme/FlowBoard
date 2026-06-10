@@ -22,7 +22,7 @@ const WORKSPACE = path.join(__dirname, 'test-workspace');
 if (fs.existsSync(HZL_DB_PATH)) {
   try { fs.unlinkSync(HZL_DB_PATH); } catch {}
 }
-fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true });
 
 async function waitForServer(child) {
   const deadline = Date.now() + 5000;
@@ -121,9 +121,10 @@ async function runTests() {
     ok(ans1.statusCode === 200, 'First clarification recorded');
     ok(ans1.body.session.clarifications.length === 1, '1 clarification recorded');
 
-    // Ask worker for next step after clarification 1
+    // Status guard: the early fallback proposal settled the session —
+    // a redundant /next must be rejected instead of re-running the worker.
     const next2 = await makeRequest('POST', `/api/specify/sessions/${sessionId}/next`);
-    ok(next2.statusCode === 200, 'POST /next returns 200 after clarification');
+    ok(next2.statusCode === 409, `redundant /next on settled session rejected (got ${next2.statusCode})`);
 
     // Answer second clarification
     const ans2 = await makeRequest('POST', `/api/specify/sessions/${sessionId}/answer`, {

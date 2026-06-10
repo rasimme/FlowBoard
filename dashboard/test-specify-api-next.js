@@ -4,7 +4,6 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const specifySession = require('./specify-sessions');
 
 let pass = 0, fail = 0, failures = [];
 
@@ -58,6 +57,9 @@ function makeRequest(method, path, body = null) {
 }
 
 async function runTests() {
+  // Session-create now validates project existence (path-traversal guard)
+  fs.mkdirSync(path.join(__dirname, 'test-workspace', 'projects', 'test-proj'), { recursive: true });
+
   // Start server
   const server = spawn('node', ['server.js'], {
     cwd: __dirname,
@@ -78,8 +80,8 @@ async function runTests() {
   try {
     section('POST /api/specify/sessions/:id/next Tests');
 
-    // Create a session first
-    const session = specifySession.createSession({
+    // Create the session via HTTP — the spawned server owns the session store.
+    const createRes = await makeRequest('POST', '/api/specify/sessions', {
       project: 'test-proj',
       origin: 'canvas',
       agentId: 'test-agent-1',
@@ -87,17 +89,20 @@ async function runTests() {
       sourceDescription: 'Test notes',
       transport: 'dashboard',
     });
+    ok(createRes.statusCode === 201, `session created via API (got ${createRes.statusCode})`);
+    const session = createRes.body.session;
 
-    // Transition to analyzing
-    specifySession.updateSession(session.id, { status: 'analyzing' });
-
-    // Call /next endpoint
+    // NODE_ENV=test without adapter → gated fallback proposal
     const res = await makeRequest('POST', `/api/specify/sessions/${session.id}/next`);
     ok(res.statusCode === 200, `POST /next returns 200 (got ${res.statusCode})`);
     ok(res.body && res.body.session, 'Response includes session');
     ok(res.body.workerRequest, 'Response includes workerRequest');
-    ok(res.body.session.status === 'clarifying', 'Status transitioned to clarifying');
-    ok(res.body.workerRequest.action === 'ask' || res.body.workerRequest.action === 'propose', 'workerRequest has action');
+    ok(res.body.action === 'proposal', `fallback proposal returned (got ${res.body.action})`);
+    ok(res.body.session.status === 'proposal-ready', 'Status transitioned to proposal-ready');
+
+    // Status guard: /next on a settled session must not run a worker step
+    const guarded = await makeRequest('POST', `/api/specify/sessions/${session.id}/next`);
+    ok(guarded.statusCode === 409, `POST /next on proposal-ready returns 409 (got ${guarded.statusCode})`);
 
     // Test 404 for non-existent session
     const res404 = await makeRequest('POST', `/api/specify/sessions/nonexistent/next`);
@@ -109,6 +114,9 @@ async function runTests() {
       console.log(`\n❌ ${fail} failed, ${pass} passed`);
       failures.forEach(f => console.log(`  - ${f}`));
     }
+  } catch (e) {
+    fail++;
+    console.error('Test error:', e.message);
   } finally {
     server.kill();
     process.exit(fail > 0 ? 1 : 0);

@@ -44,6 +44,12 @@ ok(extractJsonObject('Here you go:\n{"action":"question","question":{"text":"x?"
 ok(extractJsonObject('{"a":{"b":"{not json}"},"action":"done"}')?.action === 'done',
   'nested braces inside strings handled');
 ok(extractJsonObject('no json here') === null, 'no JSON → null');
+const fencedSpec = extractJsonObject(JSON.stringify({
+  action: 'proposal',
+  proposal: { specContent: '# Spec\n\n```js\nconst x = 1;\n```\n\nDone.' },
+}));
+ok(fencedSpec?.proposal?.specContent.includes('```js\nconst x = 1;\n```'),
+  'code fences inside JSON string values survive extraction (review finding)');
 ok(extractJsonObject('{"broken": ') === null, 'truncated JSON → null');
 ok(extractJsonObject('') === null, 'empty string → null');
 

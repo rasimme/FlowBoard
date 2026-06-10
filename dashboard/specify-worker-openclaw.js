@@ -35,8 +35,7 @@ const RESPONSE_SCHEMA_HINT = `Respond with EXACTLY ONE JSON object and nothing e
     "summary": "<1-2 sentence summary of what will be built>",
     "taskStructure": "Single task" | "Parent + subtasks" | "Parent + subtasks with individual specs" | "Multiple parents",
     "specContent": "<full spec markdown: Goal, User Stories, Functional Requirements (testable), Success Criteria (measurable), Clarifications (if any were asked)>",
-    "taskBreakdown": [ { "title": "<task title, max 128 chars>", "description": "<short description>", "priority": "low"|"medium"|"high", "role": "parent"|"subtask", "specContent": "<optional own spec markdown for this entry>" }, ... ],
-    "sourceCleanupPlan": ["<source note ids to delete after persistence>"]
+    "taskBreakdown": [ { "title": "<task title, max 128 chars>", "description": "<short description>", "priority": "low"|"medium"|"high", "role": "parent"|"subtask", "specContent": "<optional own spec markdown for this entry>" }, ... ]
   },
   // taskBreakdown contract — pick the structure by complexity:
   //  * "Single task": exactly one entry, the session spec is attached to it.
@@ -96,11 +95,14 @@ function buildWorkerPrompt(workerRequest) {
 
 /**
  * Extract the first JSON object from raw model output.
- * Tolerates code fences and surrounding prose. Returns null on failure.
+ * Tolerates code fences and surrounding prose: the brace scanner starts at
+ * the first '{' and tracks strings, so fences never need stripping — a
+ * global fence-replace would corrupt markdown inside JSON string values
+ * (e.g. code blocks in specContent).
  */
 function extractJsonObject(text) {
   if (typeof text !== 'string' || !text.trim()) return null;
-  const cleaned = text.replace(/```(?:json)?/g, '');
+  const cleaned = text;
   const start = cleaned.indexOf('{');
   if (start === -1) return null;
   let depth = 0;

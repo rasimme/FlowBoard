@@ -107,19 +107,27 @@ const migrations = [
         return;
       }
 
-      // If the old root is already a symlink, a previous run of this
-      // migration (possibly under a different openclawHome, e.g. a
-      // test-spawned server) has replaced it with the compat link. Copying
-      // a symlink root would crash cpSync (EEXIST on the just-created
-      // newRoot) — and there is nothing left to migrate anyway.
+      // If the old root is already a symlink, do not copy through it —
+      // cpSync on a symlink root crashes with EEXIST on the just-created
+      // newRoot. A link pointing at newRoot means a previous run (possibly
+      // under a different openclawHome, e.g. a test-spawned server) already
+      // migrated; any other target is a user-managed setup we must not
+      // silently rewire.
       if (fs.lstatSync(oldRoot).isSymbolicLink()) {
-        console.log('[m004] Old root is already a compat symlink — migration done; skipping.');
+        let linkTarget = null;
+        try { linkTarget = fs.realpathSync(oldRoot); } catch {}
+        if (linkTarget && path.resolve(linkTarget) === path.resolve(newRoot)) {
+          console.log('[m004] Old root already links to the shared root — migration done; skipping.');
+        } else {
+          console.warn(`[m004] Old root is a user-managed symlink (→ ${linkTarget || 'unresolvable'}) — leaving it untouched; skipping migration.`);
+        }
         return;
       }
 
       // Same physical directory (e.g. oldRoot resolves into newRoot):
       // nothing to move, and copying onto itself would corrupt the tree.
-      if (path.resolve(fs.realpathSync(oldRoot)) === path.resolve(newRoot)) {
+      const newRootReal = fs.existsSync(newRoot) ? fs.realpathSync(newRoot) : path.resolve(newRoot);
+      if (path.resolve(fs.realpathSync(oldRoot)) === path.resolve(newRootReal)) {
         console.log('[m004] Old root and new root are the same directory — skipping.');
         return;
       }

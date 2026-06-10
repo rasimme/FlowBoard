@@ -22,7 +22,7 @@ const WORKSPACE = path.join(__dirname, 'test-workspace');
 if (fs.existsSync(HZL_DB_PATH)) {
   try { fs.unlinkSync(HZL_DB_PATH); } catch {}
 }
-fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true });
 
 async function waitForServer(child) {
   const deadline = Date.now() + 5000;

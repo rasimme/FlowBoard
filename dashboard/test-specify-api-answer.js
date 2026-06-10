@@ -4,7 +4,6 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const specifySession = require('./specify-sessions');
 
 let pass = 0, fail = 0, failures = [];
 
@@ -57,6 +56,9 @@ function makeRequest(method, path, body = null) {
 }
 
 async function runTests() {
+  // Session-create now validates project existence (path-traversal guard)
+  fs.mkdirSync(path.join(__dirname, 'test-workspace', 'projects', 'test-proj'), { recursive: true });
+
   const server = spawn('node', ['server.js'], {
     cwd: __dirname,
     env: {
@@ -75,15 +77,16 @@ async function runTests() {
   try {
     section('POST /api/specify/sessions/:id/answer Tests');
 
-    // Create and set up session
-    const session = specifySession.createSession({
+    // Create the session via HTTP — the spawned server owns the session
+    // store; in-process module calls would target a different Map.
+    const createRes = await makeRequest('POST', '/api/specify/sessions', {
       project: 'test-proj',
       agentId: 'test-agent-2',
       sourceNoteIds: ['note-1'],
       sourceDescription: 'Test notes',
     });
-
-    specifySession.updateSession(session.id, { status: 'clarifying' });
+    ok(createRes.statusCode === 201, `session created via API (got ${createRes.statusCode})`);
+    const session = createRes.body.session;
 
     // Test answer with question response
     const answerRes = await makeRequest('POST', `/api/specify/sessions/${session.id}/answer`, {
@@ -101,7 +104,15 @@ async function runTests() {
     const proposalRes = await makeRequest('POST', `/api/specify/sessions/${session.id}/answer`, {
       action: 'proposal',
       specContent: '# Spec\n\nLogin form',
+      taskBreakdown: [{ title: 'Build login form' }],
     });
+
+    // Schema is enforced for chat-origin proposals too (review finding)
+    const invalidProposal = await makeRequest('POST', `/api/specify/sessions/${session.id}/answer`, {
+      action: 'proposal',
+      specContent: '',
+    });
+    ok(invalidProposal.statusCode === 400, `proposal without content/breakdown rejected (got ${invalidProposal.statusCode})`);
 
     ok(proposalRes.statusCode === 200, `POST /answer for proposal returns 200`);
     ok(proposalRes.body.session.draftProposal, 'Proposal recorded');
@@ -119,6 +130,9 @@ async function runTests() {
       console.log(`\n❌ ${fail} failed, ${pass} passed`);
       failures.forEach(f => console.log(`  - ${f}`));
     }
+  } catch (e) {
+    fail++;
+    console.error('Test error:', e.message);
   } finally {
     server.kill();
     process.exit(fail > 0 ? 1 : 0);

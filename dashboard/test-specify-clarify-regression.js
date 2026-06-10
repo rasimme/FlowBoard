@@ -345,6 +345,56 @@ async function runTests() {
     ok(freshGet.maxQuestions === 4, 'GET session exposes maxQuestions (default 4)');
 
     // -----------------------------------------------------------------------
+    section('Persist failure must leave a recoverable session (review HIGH)');
+
+    const pf = await promoteNotes('[SCENARIO:persistfail]');
+    await makeRequest('POST', `/api/specify/sessions/${pf.sessionId}/next`);
+    const pfConfirm = await makeRequest('POST', `/api/specify/sessions/${pf.sessionId}/confirm`, {
+      userApproval: true,
+    });
+    ok(pfConfirm.statusCode === 400, `failed persist returns 400 (got ${pfConfirm.statusCode})`);
+    ok(pfConfirm.body.session?.status === 'error',
+      `session lands in recoverable error state, not stuck persisting (got: ${pfConfirm.body.session?.status})`);
+
+    // The shared 'human'/dashboard agent must not stay blocked: error is a
+    // terminal status for the concurrency check, so a fresh promote for
+    // other notes must work immediately.
+    const pfSecond = await promoteNotes('loop');
+    ok(!!pfSecond.sessionId, 'new dashboard session possible after persist failure');
+    await makeRequest('POST', `/api/specify/sessions/${pfSecond.sessionId}/abort`);
+
+    // And the failed session itself is retryable end-to-end.
+    const pfRetry = await makeRequest('POST', `/api/specify/sessions/${pf.sessionId}/retry`);
+    ok(pfRetry.statusCode === 200 && pfRetry.body.action === 'proposal', 'failed session retries to a new proposal');
+    const pfConfirm2 = await makeRequest('POST', `/api/specify/sessions/${pf.sessionId}/confirm`, {
+      userApproval: true,
+    });
+    ok(pfConfirm2.statusCode === 200 && (pfConfirm2.body.createdTasks || []).length === 1,
+      'retried session persists successfully');
+
+    // -----------------------------------------------------------------------
+    section('Session create validates project (review HIGH: path traversal)');
+
+    for (const evil of ['../../../tmp/evil', 'no-such-project-xyz']) {
+      const evilRes = await makeRequest('POST', '/api/specify/sessions', {
+        project: evil, origin: 'canvas', agentId: `evil-${evil.length}`, sourceNoteIds: [],
+        sourceDescription: 'x',
+      });
+      ok(evilRes.statusCode === 404, `project "${evil}" rejected with 404 (got ${evilRes.statusCode})`);
+    }
+
+    // -----------------------------------------------------------------------
+    section('Status guards: no worker call on settled sessions');
+
+    const settled = await promoteNotes('loop');
+    await makeRequest('POST', `/api/specify/sessions/${settled.sessionId}/skip`);
+    const nextOnReady = await makeRequest('POST', `/api/specify/sessions/${settled.sessionId}/next`);
+    ok(nextOnReady.statusCode === 409, `/next on proposal-ready rejected with 409 (got ${nextOnReady.statusCode})`);
+    const skipOnReady = await makeRequest('POST', `/api/specify/sessions/${settled.sessionId}/skip`);
+    ok(skipOnReady.statusCode === 409, `/skip on proposal-ready rejected with 409 (got ${skipOnReady.statusCode})`);
+    await makeRequest('POST', `/api/specify/sessions/${settled.sessionId}/abort`);
+
+    // -----------------------------------------------------------------------
     section('Promote endpoint still creates dashboard sessions');
 
     const promoteRes = await makeRequest('POST', `/api/projects/${TEST_PROJECT}/canvas/promote`, {

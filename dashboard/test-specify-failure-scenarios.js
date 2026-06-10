@@ -21,7 +21,7 @@ const TEST_PROJECT = 'failure-test-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
 
 fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
-fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true });
 try { fs.unlinkSync(HZL_DB_PATH); } catch {}
 
 function makeRequest(method, requestPath, body = null) {

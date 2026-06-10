@@ -94,12 +94,16 @@ function _buildWorkerRequest(session, directive) {
  *   { action, workerRequest, message, ambiguityScan }
  *
  * Accepts the structured worker contract ({ action, question | proposal })
- * and the legacy fake-adapter shape ({ action, workerRequest }).
+ * and — for test adapters only — the legacy fake-adapter shape
+ * ({ action, workerRequest }). The legacy path bypasses policy validation,
+ * so model-produced output (openclaw-cli adapter) must never reach it:
+ * a prompt-injected worker could otherwise smuggle arbitrary proposals
+ * past the schema (review finding).
  * Malformed structured responses become recoverable 'error' results.
  * Legacy responses with unknown actions throw (historical contract).
  */
-function _normalizeResponse(response) {
-  if (response && typeof response === 'object' && 'workerRequest' in response) {
+function _normalizeResponse(response, allowLegacy) {
+  if (allowLegacy && response && typeof response === 'object' && 'workerRequest' in response) {
     // Legacy shape — validate action only.
     if (!response.action || !['question', 'proposal', 'done', 'error'].includes(response.action)) {
       throw new Error(`Invalid worker response action: ${response && response.action}`);
@@ -147,7 +151,8 @@ function _normalizeResponse(response) {
         specContent: p.specContent,
         taskBreakdown: p.taskBreakdown,
         quality: p.quality || 'worker',
-        sourceCleanupPlan: Array.isArray(p.sourceCleanupPlan) ? p.sourceCleanupPlan : [],
+        // Note: persistence deletes session.sourceNoteIds only — worker
+        // output never controls cleanup (prompt-injection boundary).
       },
       message: response.message || null,
       ambiguityScan: response.ambiguityScan || null,
@@ -205,7 +210,7 @@ async function _step(sessionId, directive, attempt = 0) {
     };
   }
 
-  const result = _normalizeResponse(raw);
+  const result = _normalizeResponse(raw, _workerAdapter.kind !== 'openclaw-cli');
 
   if (result.action === 'question') {
     const proposalDirective = directive === policy.DIRECTIVES.SKIP_REMAINING ||
