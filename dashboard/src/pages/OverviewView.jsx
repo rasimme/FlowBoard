@@ -268,15 +268,18 @@ export default function OverviewView() {
             resizeConfig={{ enabled: true, handles: ['se', 'sw'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
-            onResize={(layout, oldItem, newItem, placeholder, e, element) => {
+            onResize={(layout, oldItem, newItem) => {
               setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
-              // snap the live element to the grid step (RGL itself scales
-              // continuously); RGL rewrites the style every tick, so this
-              // override after each tick keeps content and preview in step
-              if (element) {
+              // Snap the live item to the grid step — RGL itself scales it
+              // continuously with the cursor. The callback's element param
+              // is react-resizable's handle node, so we grab the actual
+              // grid item via RGL's `resizing` marker class and override
+              // its size after every tick.
+              const itemEl = containerEl?.querySelector('.react-grid-item.resizing');
+              if (itemEl) {
                 const colW = (width - 12 * 11) / 12;
-                element.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
-                element.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
+                itemEl.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
+                itemEl.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
               }
             }}
             onResizeStop={() => setResizing(null)}
