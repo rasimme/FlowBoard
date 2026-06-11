@@ -1,5 +1,25 @@
 # Changelog
 
+### Unreleased — v5 Release Hardening (T-288)
+
+- **Packaging no longer leaks private data.** The npm `files` allowlist gained
+  negations for local plan docs, test residue (project dirs, test-workspaces,
+  test files, fixtures) and SQLite WAL/SHM; the privacy scanner now also
+  dry-runs `npm pack` and rejects forbidden paths and the bare operator name.
+- **Git history scrubbed.** Pre-anonymization screenshots (real project names)
+  and the internal SECURITY-REVIEW.md were removed from the entire history;
+  the synthetic demo screenshots remain.
+- **Version bumped to 5.0.0** across both package.json files, the OpenClaw
+  plugin manifest, and the README badge.
+- **Fresh install works.** Quick Start now builds the frontend; the server
+  warns and serves a build-required page instead of a bare 500 when `dist/`
+  is missing, while keeping the API up for headless/CI installs.
+- **Docs match v5 promote behavior.** README, the idea-canvas concept, and the
+  canvas-and-notes rule no longer claim webhooks are required for promote —
+  the dashboard stepper path needs none; only the chat-agent path does.
+- **Dependencies clean.** `npm audit` reports zero vulnerabilities (was 2 high
+  / 2 moderate). Agent-facing wake-event strings are English.
+
 ### Unreleased — Specify Clarify Loop (T-262)
 
 - **Real iterative clarification for Canvas → Create Task.** The Dashboard
