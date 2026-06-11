@@ -7,7 +7,7 @@ System-level reference for the Specify capability — the structured path from i
 ## Overview
 
 Specify turns unstructured input into:
-1. A written **spec document** (markdown, stored in `context/`)
+1. A written **spec document** (markdown under `specs/`, created via `POST /api/projects/:name/specs/:taskId` — never written by hand)
 2. One or more **FlowBoard tasks** linked to the spec
 
 It runs as a guided session with user confirmation before any persistence. FlowBoard owns the session state machine; OpenClaw owns worker execution; Dashboard and chat are transports over the same workflow.
@@ -97,7 +97,7 @@ Enforced server-side for the dashboard path (`specify-policy.js`) and mirrored i
 
 ## Spec Storage
 
-Specs are written to `~/.openclaw/projects/<project>/context/` and indexed in `specs/_index.json` with FlowBoard task ID mappings.
+Specs are created via `POST /api/projects/:name/specs/:taskId` (canonical name `specs/{taskId}-{slug}.md`) under `~/.openclaw/projects/<project>/specs/` and indexed in `specs/_index.json` with FlowBoard task ID mappings. Agents must never write spec files by hand — always use the endpoint so naming and the task link stay canonical.
 
 ## Integration with Tasks API
 

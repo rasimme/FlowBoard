@@ -641,7 +641,11 @@ app.get('/api/status', (req, res) => {
   const readiness = activeProject
     ? rulesApi.getBootstrapReadiness(activeProject)
     : { contextReady: false, missingSections: [] };
-  res.json({ activeProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) });
+  const statusBody = { activeProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
+  // T-296: surface the rules pointer on activation so external agents learn
+  // the /rules endpoint and the action→section mapping.
+  if (activeProject) statusBody.rules = rulesApi.buildRulesPointer(activeProject);
+  res.json(statusBody);
 });
 
 // PUT /api/status
@@ -699,6 +703,8 @@ app.put('/api/status', async (req, res) => {
       ? rulesApi.getBootstrapReadiness(effectiveProject)
       : { contextReady: false };
     const body = { ok: true, activeProject: effectiveProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
+    // T-296: same rules pointer on the activation (PUT) path.
+    if (effectiveProject) body.rules = rulesApi.buildRulesPointer(effectiveProject);
     res.json(body);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -2797,8 +2803,20 @@ app.post('/api/workflows/delegate', (req, res) => {
 // GET /api/projects/:name/tasks/:id/handoff — handoff context for CC/ACP spawning
 app.get('/api/projects/:name/tasks/:id/handoff', (req, res) => {
   try {
-    const context = hzlService.getHandoffContext(req.params.name, req.params.id);
-    res.json({ ok: true, ...context });
+    // T-296: default to the markdown startup contract (what AGENTS.md tells
+    // agents to fetch and follow). ?format=json returns the legacy structured
+    // context. Previously this endpoint only returned JSON, so the markdown
+    // contract never reached HTTP callers — a drift the old test missed by
+    // reimplementing the route instead of exercising the real one.
+    if (req.query.format === 'json') {
+      const context = hzlService.getHandoffContext(req.params.name, req.params.id);
+      return res.json({ ok: true, ...context });
+    }
+    const markdown = hzlService.buildHandoffMarkdown(req.params.name, req.params.id, {
+      apiBase: `http://127.0.0.1:${PORT}`,
+      targetAgentId: req.query.agentId || req.query.agent || undefined,
+    });
+    res.type('text/markdown; charset=utf-8').send(markdown);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

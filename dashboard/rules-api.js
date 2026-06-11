@@ -89,8 +89,36 @@ function buildRulesManifest() {
     lines.push(`- \`${name}\` — ${label}`);
   }
   lines.push('');
+  // T-296: action→section mapping. The contract is "soft" by design (no
+  // enforcement middleware), so it must at least tell the agent which section
+  // to read before which action — otherwise an agent proceeds on stale
+  // assumptions (e.g. writing a spec file by hand instead of via the API).
+  lines.push('When to load what — read the section BEFORE the action:');
+  lines.push('- Before creating, claiming, or transitioning tasks → `api-access`.');
+  lines.push('- Before creating or editing specs, or writing ANY file under the project dir → `files` and `specify`. **Spec files are never written by hand — always use `POST /api/projects/{project}/specs/{taskId}`.**');
+  lines.push('- Before canvas / promote operations → `canvas`.');
+  lines.push('- On any API error or when blocked → `error-handling`.');
+  lines.push('- For activate/deactivate/list project commands → `commands`.');
+  lines.push('');
   lines.push('Legacy reference: the full monolithic ruleset is archived at `docs/project-mode/legacy/PROJECT-RULES.md` in the FlowBoard repo. Prefer the lazy-load sections above for targeted context.');
   return lines.join('\n');
+}
+
+// T-296: structured rules pointer for the /status activation responses, so an
+// external agent that activates a project (and never fetches a per-task
+// handoff) still learns the /rules endpoint exists and what to load when.
+function buildRulesPointer(projectName) {
+  const p = projectName || '{project}';
+  return {
+    manifestUrl: `/api/projects/${p}/rules`,
+    sectionUrlTemplate: `/api/projects/${p}/rules/{section}`,
+    sections: listRuleSections(),
+    directive: 'Load the rule section relevant to your next action before acting: '
+      + '`api-access` before creating/claiming/transitioning tasks; '
+      + '`files` + `specify` before creating or editing specs or writing any project file '
+      + '(spec files are never written by hand — use POST /api/projects/' + p + '/specs/{taskId}); '
+      + '`canvas` before promote; `error-handling` on any API error.',
+  };
 }
 
 function getBootstrapReadiness(projectName) {
@@ -248,6 +276,14 @@ function buildBootstrapDocument(projectName, options = {}) {
   lines.push('It is not authoritative for current task focus, claims, review state, or next work; use the `Operational Task State` section above and the Tasks API for that.\n');
   lines.push(projectDocument);
 
+  // T-296: include the rules manifest (pointer + action→section mapping) so
+  // an agent learns the /rules endpoint exists and which section to consult
+  // for which action. The full sections are still embedded below as an escape
+  // hatch for agents that cannot make on-demand /rules calls (see
+  // docs/concepts/lazy-loading.md; ADR-0005 amendment).
+  lines.push(`\n---\n`);
+  lines.push(buildRulesManifest());
+
   // Embed all rule sections directly into the bootstrap document
   for (const { name, label } of SECTIONS) {
     const content = readRuleSection(name);
@@ -279,6 +315,7 @@ module.exports = {
   readProjectDocument,
   buildOperationalTaskStateMarkdown,
   buildRulesManifest,
+  buildRulesPointer,
   getBootstrapReadiness,
   buildBootstrapDocument,
 };

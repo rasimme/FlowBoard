@@ -139,6 +139,23 @@ section('buildRulesManifest()');
 
   assert(manifest.includes('GET /api/projects'), 'manifest documents endpoint usage');
   assert(manifest.includes('PROJECT-RULES.md'), 'manifest includes legacy pointer');
+
+  // T-296: action→section mapping so agents know what to load before acting.
+  assert(manifest.includes('When to load what'), 'manifest carries the action→section mapping');
+  assert(/POST \/api\/projects\/\{project\}\/specs\/\{taskId\}/.test(manifest),
+    'manifest states the canonical spec-creation endpoint (never write spec files by hand)');
+}
+
+section('buildRulesPointer() — status activation pointer (T-296)');
+{
+  const pointer = rulesApi.buildRulesPointer('flowboard');
+  assert(pointer && typeof pointer === 'object', 'returns an object');
+  assert(pointer.manifestUrl === '/api/projects/flowboard/rules', 'manifestUrl points at the rules endpoint');
+  assert(pointer.sectionUrlTemplate.includes('/rules/{section}'), 'sectionUrlTemplate carries the section template');
+  // Same-registry derivation so the pointer can never drift from the manifest.
+  assertEqual(JSON.stringify(pointer.sections), JSON.stringify(rulesApi.listRuleSections()),
+    'pointer.sections deep-equals listRuleSections()');
+  assert(pointer.directive.includes('specs/{taskId}'), 'directive names the canonical spec endpoint');
 }
 
 
@@ -178,6 +195,9 @@ section('buildBootstrapDocument() — non-empty context contract');
   assert(doc.includes('## Operational Task State'), 'includes live operational task section');
   assert(doc.includes('- T-202: Bootstrap live task summary'), 'includes task supplied by Tasks API');
   assert(doc.includes('## Project Knowledge: flowboard'), 'includes task-neutral PROJECT.md section');
+  // T-296: bootstrap must carry the manifest so an agent learns /rules exists.
+  assert(doc.includes('## Project Rules (lazy-load)'), 'bootstrap embeds the rules manifest header');
+  assert(doc.includes('When to load what'), 'bootstrap manifest carries the action→section mapping');
   assert(doc.indexOf('## Operational Task State') < doc.indexOf('## Project Knowledge: flowboard'), 'task state appears before project knowledge');
   assert(doc.includes('not authoritative for current task focus'), 'marks PROJECT.md as non-authoritative for task state');
   assert(doc.includes('FlowBoard'), 'includes project document content');

@@ -266,7 +266,8 @@ async function runTests() {
   try {
     const res = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks/${taskId}/handoff`);
     ok(res.body.includes('1. Activate/check this project for your own agent id.'), 'Step 1 present');
-    ok(res.body.includes('2. Fetch the FlowBoard bootstrap and lazy-load required rules.'), 'Step 2 present');
+    ok(/2\. Fetch the FlowBoard bootstrap and load the rule sections/.test(res.body)
+      && res.body.includes('specs/:taskId'), 'Step 2 present (hardened: names the canonical spec endpoint, T-296)');
     ok(res.body.includes('3. Claim this exact task.'), 'Step 3 present');
     ok(res.body.includes('4. Write a first checkpoint.'), 'Step 4 present');
     ok(res.body.includes('5. Only then start implementation or review work.'), 'Step 5 present');

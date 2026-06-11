@@ -58,11 +58,14 @@ Context docs are **lazy-loaded** - agents read them when relevant, not on every 
 
 ## Spec Index
 
-`specs/_index.json` maps FlowBoard task IDs to spec file paths:
+Spec files live under `specs/` and are **never written by hand** — create them
+via `POST /api/projects/{project}/specs/{taskId}`, which assigns the canonical
+name `specs/{taskId}-{slug}.md`, links the file to the task, and updates the
+index. `specs/_index.json` maps FlowBoard task IDs to spec file paths:
 ```json
 {
-  "T-042": "context/T-042-auth-flow.md",
-  "T-043": "context/T-043-data-model.md"
+  "T-042": "specs/T-042-auth-flow.md",
+  "T-043": "specs/T-043-data-model.md"
 }
 ```
 

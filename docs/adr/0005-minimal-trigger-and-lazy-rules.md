@@ -1,7 +1,25 @@
 # ADR-0005: Minimal-trigger snippet + lazy rule loading
 
 ## Status
-Accepted
+Accepted — **amended 2026-06-11** (T-296)
+
+> **Amendment (T-296):** the manifest now carries an action→section mapping
+> ("read `api-access` before mutating tasks; `files`+`specify` before touching
+> specs — spec files are never written by hand, use `POST .../specs/:taskId`;
+> `canvas` before promote; `error-handling` on errors"). This keeps the
+> contract minimal (still manifest, never inlined rule content) while making
+> it actionable — a bare external activation previously gave no signal of
+> *which* section mattered, and an agent created a spec file by hand instead
+> of via the API. Two delivery fixes accompany it: (1) `buildBootstrapDocument`
+> now prepends the manifest (it had regressed to embedding sections *without*
+> the manifest, contradicting the "manifest + every section" model in
+> `docs/concepts/lazy-loading.md`); (2) the `PUT`/`GET /api/status` activation
+> responses now include a `rules` pointer (manifest URL, section URL template,
+> sections, directive), because an external agent that activates a project
+> without fetching a per-task handoff otherwise never received the directive —
+> it was only emitted to the OpenClaw wake channel. The minimal-trigger snippet
+> itself is unchanged; the mapping lives in the server-rendered manifest, not
+> the installed snippet.
 
 ## Date
 2026-05-02

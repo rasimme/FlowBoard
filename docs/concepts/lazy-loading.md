@@ -2,7 +2,7 @@
 
 ## What
 
-FlowBoard's project-context system loads operational rules **on demand**, not all at once. The bootstrap document an agent receives at session start contains a *manifest* of available rule sections — names, one-line labels, and a URL template — but not the section content itself. An agent fetches a section only when it actually needs it.
+FlowBoard's project-context system loads operational rules **on demand**, not all at once. There are two delivery paths. The OpenClaw-managed **hook** injects only the *manifest* of available rule sections — names, one-line labels, a URL template, and (since T-296) an action→section mapping — so the agent fetches a section only when it needs it. The external **bootstrap endpoint** (`GET /api/projects/:name/bootstrap`) returns the manifest **plus** every section embedded, as an eager-load escape hatch for agents that cannot make per-section follow-up calls. Either way, the manifest is what teaches the agent that `/rules/<section>` exists and which section to read before which action.
 
 Concrete example: an agent that wants to claim a task fetches the `api-access` section. An agent that never touches the canvas never fetches `canvas`. The rules for sections the agent doesn't use never enter its run context.
 

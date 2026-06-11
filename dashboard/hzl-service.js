@@ -2392,7 +2392,7 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
   lines.push('Use a local-capable tool for the FlowBoard localhost API, such as shell/curl/node. Do not use external web-fetch/browser tools for `127.0.0.1` or `localhost` calls.');
   lines.push('');
   lines.push('1. Activate/check this project for your own agent id.');
-  lines.push('2. Fetch the FlowBoard bootstrap and lazy-load required rules.');
+  lines.push('2. Fetch the FlowBoard bootstrap and load the rule sections the manifest\'s "When to load what" block names for your actions — at minimum `api-access` before any task mutation, and `files` + `specify` before touching specs (spec files are never written by hand — use `POST /api/projects/:name/specs/:taskId`).');
   lines.push('3. Claim this exact task.');
   lines.push('4. Write a first checkpoint.');
   lines.push('5. Only then start implementation or review work.');
