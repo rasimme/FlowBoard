@@ -51,6 +51,15 @@ Task UI state has one intended mutation path. Read [Frontend Runtime](docs/conce
 - Treat polling as reconciliation only, not as the visible update path for local actions.
 - Keep Canvas vanilla until ADR-0012 is superseded, but use the runtime foundation for future Canvas task-state work.
 
+## Design tokens & styling
+
+CSS custom properties in `styles/dashboard.css` are the single source of truth for colors, shadows, radii and durations; `tailwind.config.js` only maps them to utility classes.
+
+- **Tailwind preflight is disabled** (it would conflict with legacy `dashboard.css`). Raw HTML elements keep browser defaults — every `<button>`, `<input>` etc. in React components must set its background, border and margin classes explicitly.
+- Reference tokens, don't hardcode values. New colors/shadows start as a `--token` in `dashboard.css`, then get a mapping in `tailwind.config.js` if needed.
+- A `var(--token)` without a fallback must be defined in `styles/*.css` — `test-design-tokens-drift.js` (part of `npm test`) fails otherwise. Runtime-injected variables must always carry a fallback value.
+- Tailwind opacity modifiers (`bg-accent/50`) don't work with CSS-variable colors; use explicit `-subtle`/`-hover` token variants.
+
 ## Development workflow
 
 ```bash

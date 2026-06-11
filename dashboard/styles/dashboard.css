@@ -30,6 +30,7 @@
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, .2);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, .25), 0 0 0 1px rgba(255, 255, 255, .03);
       --shadow-lg: 0 8px 24px rgba(0, 0, 0, .4), 0 0 0 1px rgba(255, 255, 255, .03);
+      --shadow-card: 0 12px 28px rgba(0, 0, 0, .35);
       --radius-sm: 6px;
       --radius-md: 8px;
       --radius-lg: 12px;
@@ -1332,7 +1333,7 @@
     .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
     .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
     .modal-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .modal-checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); cursor: pointer; user-select: none; }
+    .modal-checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none; }
     .modal-checkbox input[type="checkbox"] { display: none; }
     .modal-checkbox .check-box {
       width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--border-strong);
@@ -1643,7 +1644,7 @@
       flex: 0 0 auto;
       padding: 7px 10px;
       border-bottom: 1px solid var(--border);
-      background: var(--panel);
+      background: var(--bg-elevated);
     }
     .markdown-editor-tool {
       display: inline-flex; align-items: center; justify-content: center;
@@ -1653,7 +1654,7 @@
       color: var(--muted);
       background: transparent;
       cursor: pointer;
-      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+      transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
     }
     .markdown-editor-tool:hover {
       color: var(--text);

@@ -59,8 +59,9 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Space Grotesk', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        // Keep in sync with the body font stack in styles/dashboard.css
+        sans: ['Space Grotesk', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       borderRadius: {
         sm: 'var(--radius-sm)',
@@ -72,7 +73,7 @@ export default {
         sm: 'var(--shadow-sm)',
         md: 'var(--shadow-md)',
         lg: 'var(--shadow-lg)',
-        card: '0 12px 28px rgba(0, 0, 0, 0.35)',
+        card: 'var(--shadow-card)',
         'focus-accent': '0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent)',
         'focus-danger': '0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent)',
         'card-inset': 'var(--shadow-sm), inset 0 1px 0 var(--card-highlight)',
