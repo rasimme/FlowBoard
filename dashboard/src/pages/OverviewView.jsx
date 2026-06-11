@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
 import { Pencil, Plus, X } from 'lucide-react';
 import Button from '../components/Button.jsx';
@@ -34,21 +34,21 @@ export default function OverviewView() {
   const [saving, setSaving] = useState(false);
 
   // Own width tracking: a ResizeObserver on the scroll container keeps the
-  // edit grid in lockstep with the window/sidebar — the edit layout scales
-  // exactly like the fluid view grid.
-  const containerRef = useRef(null);
+  // edit grid in lockstep with the window/sidebar. A callback ref (state)
+  // is required — the container mounts AFTER the data loads, so a plain
+  // useRef + mount effect would observe nothing and the grid stayed empty.
+  const [containerEl, setContainerEl] = useState(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+    if (!containerEl) return;
     const ro = new ResizeObserver(entries => {
       const w = Math.floor(entries[0]?.contentRect?.width || 0);
       if (w) setWidth(w);
     });
-    ro.observe(el);
-    setWidth(Math.floor(el.clientWidth));
+    ro.observe(containerEl);
+    setWidth(Math.floor(containerEl.clientWidth));
     return () => ro.disconnect();
-  }, []);
+  }, [containerEl]);
   const mounted = width > 0;
 
   useEffect(() => {
@@ -184,7 +184,7 @@ export default function OverviewView() {
         )}
       </div>
 
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto">
+      <div ref={setContainerEl} className="flex-1 min-h-0 overflow-y-auto">
         {/* View mode: fluid CSS grid — widgets track the container width
             seamlessly (container queries do the rest) and stack on narrow
             viewports. Edit mode: react-grid-layout for drag/resize; the

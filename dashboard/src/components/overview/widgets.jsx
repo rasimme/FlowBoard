@@ -46,9 +46,14 @@ function useProjectFile(project, filename) {
   return content;
 }
 
-function goTab(tab) {
-  window._reactDispatch?.({ currentTab: tab });
-  if (tab === 'ideas') window._switchTab?.('ideas');
+// Navigate like the TabBar does: dispatch the shared tab state, and hand
+// off to the legacy DOM switcher only for legacy-owned views.
+function useGoTab() {
+  const { dispatch } = useAppState();
+  return (tab) => {
+    dispatch({ currentTab: tab });
+    if (tab === 'ideas') window._switchTab?.('ideas');
+  };
 }
 
 /* ---------- active-agents ---------- */
@@ -61,6 +66,7 @@ function leaseState(task) {
 }
 
 export function ActiveAgentsWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const tasks = useProjectTasks();
   const { state } = useAppState();
   const maxRows = widget?.props?.maxRows || 6;
@@ -226,6 +232,7 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
 const PRIO_RANK = { high: 0, medium: 1, low: 2 };
 
 export function NextUpWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const tasks = useProjectTasks();
   const limit = widget?.props?.limit || 5;
   // "next" = claimable first: open ranks above backlog, then priority,
@@ -284,6 +291,7 @@ function parseDecisions(md) {
 
 /* ---------- recent-decisions ---------- */
 export function RecentDecisionsWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'DECISIONS.md');
   const count = widget?.props?.count || 3;
@@ -323,6 +331,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
 
 /* ---------- project-goals ---------- */
 export function ProjectGoalsWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'PROJECT.md');
 
@@ -353,6 +362,7 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
 
 /* ---------- quick-links ---------- */
 export function QuickLinksWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const tiles = Boolean(widget?.props?.tiles);
   return (
     <OvWidget title={widget?.title || 'Quick Links'}>
@@ -368,6 +378,7 @@ export function QuickLinksWidget({ widget, editing, onRemove }) {
 
 /* ---------- kanban-mini ---------- */
 export function KanbanMiniWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const tasks = useProjectTasks().filter(t => !t.parentId && t.status !== 'archived');
   const cols = STATUS_ORDER.map(s => {
     const inCol = tasks.filter(t => t.status === s);
