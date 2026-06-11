@@ -293,12 +293,16 @@ export default function OverviewView() {
                 const colW = (width - 12 * 11) / 12;
                 containerEl.style.setProperty('--ov-snap-w', Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px');
                 containerEl.style.setProperty('--ov-snap-h', (88 * newItem.h + 12 * (newItem.h - 1)) + 'px');
+                // the size label inside RGL's memoized subtree lags React
+                // state mid-interaction — drive the live label via CSS too
+                containerEl.style.setProperty('--ov-snap-label', JSON.stringify(newItem.w + ' \u00d7 ' + newItem.h));
               }
             }}
             onResizeStop={() => {
               setResizing(null);
               containerEl?.style.removeProperty('--ov-snap-w');
               containerEl?.style.removeProperty('--ov-snap-h');
+              containerEl?.style.removeProperty('--ov-snap-label');
               containerEl?.classList.remove('ov-anchor-right');
               if (liveLayout.current) applyLayout(liveLayout.current);
             }}
@@ -319,9 +323,7 @@ export default function OverviewView() {
                   >
                     <X size={11} />
                   </button>
-                  <span className="ov-fin-size">
-                    {(resizing?.id === w.id ? resizing.w : w.grid.w)} × {(resizing?.id === w.id ? resizing.h : w.grid.h)}
-                  </span>
+                  <span className="ov-fin-size">{w.grid.w} × {w.grid.h}</span>
                 </div>
               );
             })}

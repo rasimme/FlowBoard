@@ -33,7 +33,7 @@
   box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-highlight);
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0; overflow: hidden;
-  container-type: inline-size;
+  container-type: size;
   container-name: widget;
 }
 .ov-whead {
@@ -64,6 +64,14 @@
   cursor: pointer; flex-shrink: 0;
 }
 .ov-wfoot:hover { color: var(--text); }
+
+/* lists scroll inside their card instead of clipping rows mid-line */
+.ov-agents, .ov-tasks, .ov-decs {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.ov-agent-row, .ov-task-row, .ov-dec { flex-shrink: 0; }
 
 /* ---------- active-agents ---------- */
 .ov-agents { display: flex; flex-direction: column; gap: 4px; min-height: 0; }
@@ -331,6 +339,13 @@
   .ov-links span { display: none; }
   .ov-links { gap: 6px; }
   .ov-link { min-height: 34px; }
+}
+/* low cards (h=1): buttons switch from stacked icon+label to a slim row */
+@container widget (max-height: 120px) {
+  .ov-link { flex-direction: row; gap: 6px; padding: 4px 6px; min-height: 0; }
+  .ov-link svg { width: 13px; height: 13px; }
+  .ov-link span { font-size: 10.5px; }
+  .ov-links.tiles { display: flex; }
   .ov-agent-row { padding: 6px 8px; gap: 8px; }
   .ov-agent-task .ttl { display: none; }       /* keep T-id, drop title */
   .ov-kpis { gap: 12px; flex-wrap: wrap; }
@@ -387,7 +402,7 @@
   margin-bottom: -1px;
   user-select: none;
 }
-.ov-rgl.editing .ov-wbody { padding-top: 2px; }
+.ov-rgl.editing .ov-wbody { padding-top: 2px; pointer-events: none; user-select: none; }
 .ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-whead { cursor: grabbing; }
 .ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-widget {
   box-shadow: var(--shadow-lg);
@@ -412,8 +427,16 @@
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 1px 6px; pointer-events: none; white-space: nowrap;
 }
-.ov-rgl .react-grid-item.resizing .ov-fin-size {
-  color: var(--text); border-color: var(--accent); background: var(--bg-elevated);
+/* during resize the static label hides and a CSS-driven live label
+   (immune to RGL render memoization) takes its place */
+.ov-rgl .react-grid-item.resizing .ov-fin-size { display: none; }
+.ov-rgl .react-grid-item.resizing::after {
+  content: var(--ov-snap-label, "");
+  position: absolute; top: -7px; right: 20px; z-index: 6;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px;
+  color: var(--text); background: var(--bg-elevated);
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  padding: 1px 6px; pointer-events: none; white-space: nowrap;
 }
 .ov-rgl .react-grid-item.resizing .ov-widget { border-color: var(--accent); }
 
