@@ -925,8 +925,22 @@
       opacity: 0; color: var(--muted); background: transparent;
       border: 1px solid transparent;
       transition: all var(--duration-fast);
+      /* Invisible must mean non-interactive — revealed on card hover,
+         keyboard focus, and permanently on touch devices (T-292). */
+      pointer-events: none;
     }
-    .task-card:hover .card-hover-btn { opacity: 0.5; border-color: var(--border); }
+    .task-card:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .task-card:focus-within .card-hover-btn,
+    .task-card:hover .card-hover-btn,
+    .card-hover-btn:focus-visible {
+      opacity: 0.5; border-color: var(--border); pointer-events: auto;
+    }
+    @media (hover: none) {
+      .card-hover-btn { opacity: 0.5; border-color: var(--border); pointer-events: auto; }
+    }
     .task-card:hover .card-hover-btn:hover {
       opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong);
     }

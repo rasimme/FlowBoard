@@ -369,6 +369,15 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
           onClick={!removing ? handleClick : undefined}
+          onKeyDown={!removing ? (e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+              e.preventDefault();
+              handleClick(e);
+            }
+          } : undefined}
+          role="button"
+          tabIndex={removing ? -1 : 0}
+          aria-label={`${task.id}: ${task.title}`}
           onAnimationEnd={handleAnimationEnd}
           data-react-tasks
         >
@@ -651,6 +660,15 @@ function ArchivedTaskCard({ task, project, onTaskUpdated, onTaskTrashed }) {
           className="task-card is-archived"
           data-task-id={task.id}
           onClick={handleClick}
+          onKeyDown={(e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
+              e.preventDefault();
+              handleClick(e);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label={`${task.id}: ${task.title} (archived)`}
         >
           <div className="flex items-start justify-between gap-2 mb-1">
             <span className="task-id mono">{task.id}</span>

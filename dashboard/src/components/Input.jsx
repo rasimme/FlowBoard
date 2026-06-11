@@ -20,7 +20,7 @@ const Input = forwardRef(function Input({
     <input
       ref={ref}
       className={[
-        'w-full',
+        'w-full font-sans',
         sizes[size] || sizes.md,
         'bg-bg text-text border border-solid border-border appearance-none',
         'placeholder:text-muted',
