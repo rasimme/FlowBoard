@@ -131,3 +131,26 @@ Section names are public API; the underlying filenames in `docs/project-mode/` a
 - [Lazy Loading concept](../../concepts/lazy-loading.md)
 - [ADR-0001](../../adr/0001-live-inject-bootstrap.md)
 - [ADR-0005](../../adr/0005-minimal-trigger-and-lazy-rules.md)
+
+## Overview (T-305)
+
+Per-project modular landing page (Server-Driven UI). The layout lives in
+`overview.json` in the project directory and is validated against a trusted
+widget registry — agents and the edit-mode UI write the same schema.
+
+### GET /api/overview/widgets
+Widget catalog (type, label, description, defaultSize, props) plus the named
+presets (`agent`, `status`, `context`) and the grid contract
+(12 columns, 88px row unit, 12px gutter).
+
+### GET /api/projects/:name/overview
+**200** `{ ok, overview }` — the stored config (`source: "file"`), or the
+default `agent` preset (`source: "default"`) when no file exists or the
+stored file no longer validates.
+
+### PUT /api/projects/:name/overview
+Body is either `{ preset: "agent" | "status" | "context" }` (materializes the
+preset) or a full config:
+`{ version: 1, layout: "grid", widgets: [{ id, type, title?, props?, grid: {x,y,w,h} }] }`.
+**200** `{ ok, overview }` — **400** `{ error, errors[] }` on validation
+failure (unknown type, grid overflow, duplicate id, …).

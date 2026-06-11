@@ -492,6 +492,27 @@
       "auth": "user",
       "group": "tasks",
       "doc": "api/tasks.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/overview/widgets",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/overview",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/overview",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
     }
   ],
   "auth_modes": {

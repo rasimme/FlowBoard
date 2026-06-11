@@ -55,6 +55,7 @@ const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
+const overview = require('./overview.js');
 
 // Gateway webhook config (for project-switch wake events).
 // Resolution contract (docs/reference/env-vars.md): OPENCLAW_-prefixed vars
@@ -2760,6 +2761,42 @@ app.post('/api/projects/:name/tasks/:id/parent', (req, res) => {
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
+  }
+});
+
+// --- Overview (T-305): per-project modular landing page, SDUI ---
+
+// GET /api/overview/widgets — trusted widget registry + presets (for agents and the picker)
+app.get('/api/overview/widgets', (req, res) => {
+  res.json({ ok: true, ...overview.widgetManifest() });
+});
+
+// GET /api/projects/:name/overview — layout config (default preset when no file exists)
+app.get('/api/projects/:name/overview', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  res.json({ ok: true, overview: overview.readOverview(PROJECTS_DIR, req.params.name) });
+});
+
+// PUT /api/projects/:name/overview — body: { preset } to materialize a named
+// preset, or a full { version, layout, widgets } config (validated against
+// the registry). Agents and the edit-mode UI write the same schema.
+app.put('/api/projects/:name/overview', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    let config;
+    if (req.body && typeof req.body.preset === 'string' && !req.body.widgets) {
+      config = overview.presetConfig(req.body.preset);
+      if (!config) return res.status(400).json({ error: `Unknown preset "${req.body.preset}"`, presets: Object.keys(overview.PRESETS) });
+    } else {
+      const result = overview.validateOverview(req.body);
+      if (!result.ok) return res.status(400).json({ error: 'Invalid overview config', errors: result.errors });
+      config = result.config;
+    }
+    overview.writeOverview(PROJECTS_DIR, req.params.name, config);
+    res.json({ ok: true, overview: { source: 'file', ...config } });
+  } catch (err) {
+    console.error('[overview]', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
