@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ReactGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
-import { Pencil, Plus } from 'lucide-react';
+import { GripVertical, Pencil, Plus, X } from 'lucide-react';
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -169,14 +169,23 @@ export default function OverviewView() {
       </div>
 
       <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto">
-        {/* One renderer for view AND edit mode — guaranteed visual parity.
-            Narrow viewports get a read-only single-column stack instead. */}
-        {mounted && width < 720 ? (
+        {/* View mode: fluid CSS grid — widgets track the container width
+            seamlessly (container queries do the rest) and stack on narrow
+            viewports. Edit mode: react-grid-layout for drag/resize; the
+            edit chrome overlays the cell so cards render identically. */}
+        {!editing ? (
           <div className="ov-grid">
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
               return (
-                <div key={w.id} className="ov-cell">
+                <div
+                  key={w.id}
+                  className="ov-cell"
+                  style={{
+                    gridColumn: `${w.grid.x + 1} / span ${w.grid.w}`,
+                    gridRow: `${w.grid.y + 1} / span ${w.grid.h}`,
+                  }}
+                >
                   <Widget widget={w} />
                 </div>
               );
@@ -185,21 +194,37 @@ export default function OverviewView() {
         ) : mounted ? (
           <ReactGridLayout
             width={width}
-            layout={sorted.map(w => ({ i: w.id, x: w.grid.x, y: w.grid.y, w: w.grid.w, h: w.grid.h, minW: 2, minH: 1 }))}
+            layout={sorted.map(w => {
+              const min = (manifest?.widgets || []).find(m => m.type === w.type)?.minSize || { w: 2, h: 1 };
+              return { i: w.id, x: w.grid.x, y: w.grid.y, w: w.grid.w, h: w.grid.h, minW: min.w, minH: min.h };
+            })}
             gridConfig={{ cols: 12, rowHeight: 88, margin: [12, 12], containerPadding: [0, 0] }}
-            dragConfig={{ enabled: editing, handle: '.ov-whead' }}
-            resizeConfig={{ enabled: editing, handles: ['se', 'sw', 'ne', 'nw'] }}
+            dragConfig={{ enabled: true, handle: '.ov-whead' }}
+            resizeConfig={{ enabled: true, handles: ['se', 'sw', 'ne', 'nw'] }}
             compactor={verticalCompactor}
-            onLayoutChange={editing ? applyLayout : undefined}
+            onLayoutChange={applyLayout}
             onResize={(layout, oldItem, newItem) => setResizing({ id: newItem.i, w: newItem.w, h: newItem.h })}
             onResizeStop={() => setResizing(null)}
-            className={'ov-rgl' + (editing ? ' editing' : '')}
+            className="ov-rgl editing"
           >
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
               return (
                 <div key={w.id} className="ov-cell">
-                  <Widget widget={w} editing={editing} onRemove={() => removeWidget(w.id)} />
+                  <Widget widget={w} editing />
+                  {/* edit chrome — overlays the card, never shifts its layout */}
+                  <span className="ov-edit-grip" title="Drag by the header to move">
+                    <GripVertical size={11} />
+                  </span>
+                  <button
+                    type="button"
+                    className="ov-edit-x"
+                    title="Remove widget"
+                    aria-label={`Remove ${w.type} widget`}
+                    onClick={() => removeWidget(w.id)}
+                  >
+                    <X size={11} />
+                  </button>
                   {resizing?.id === w.id && (
                     <span className="ov-sizechip" style={{ zIndex: 10 }}>{`w ${resizing.w} · h ${resizing.h}`}</span>
                   )}

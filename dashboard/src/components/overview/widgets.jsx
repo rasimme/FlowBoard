@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { GripVertical, X, Clock, Plus, Kanban, Lightbulb, Folder, FileText } from 'lucide-react';
+import { Clock, Plus, Kanban, Lightbulb, Folder, FileText } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
@@ -11,18 +11,15 @@ import { useAppState } from '../../context/AppStateContext.jsx';
  */
 
 /* ---------- widget shell ---------- */
-export function OvWidget({ title, meta, editing, onRemove, children }) {
+// Edit chrome (drag affordance, remove button) lives OUTSIDE the card as a
+// cell overlay (see OverviewView) so the widget renders identically in view
+// and edit mode.
+export function OvWidget({ title, meta, children }) {
   return (
     <section className="ov-widget">
       <div className="ov-whead">
-        {editing && <span className="ov-grip" title="Drag to move"><GripVertical size={11} /></span>}
         <span className="ov-wtitle">{title}</span>
         {meta && <span className="ov-wmeta">{meta}</span>}
-        {editing && (
-          <button type="button" className="ov-wx" title="Remove widget" aria-label="Remove widget" onClick={onRemove} style={{ marginLeft: meta ? 6 : 'auto' }}>
-            <X size={11} />
-          </button>
-        )}
       </div>
       <div className="ov-wbody">{children}</div>
     </section>
@@ -294,7 +291,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
   const decisions = parseDecisions(md).slice(-count).reverse();
 
   return (
-    <OvWidget title={widget?.title || 'Recent Decisions'} meta={decisions.length ? 'DECISIONS.md' : null} editing={editing} onRemove={onRemove}>
+    <OvWidget title={widget?.title || 'Recent Decisions'} meta={decisions.length ? 'DECISIONS.md' : null}>
       {decisions.length === 0 ? (
         <div className="ov-empty">
           <FileText size={22} />
@@ -337,7 +334,7 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
   }
 
   return (
-    <OvWidget title={widget?.title || 'Project Goal'} meta={md ? 'PROJECT.md' : null} editing={editing} onRemove={onRemove}>
+    <OvWidget title={widget?.title || 'Project Goal'} meta={md ? 'PROJECT.md' : null}>
       {!goal ? (
         <div className="ov-empty">
           <FileText size={22} />
@@ -358,7 +355,7 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
 export function QuickLinksWidget({ widget, editing, onRemove }) {
   const tiles = Boolean(widget?.props?.tiles);
   return (
-    <OvWidget title={widget?.title || 'Quick Links'} editing={editing} onRemove={onRemove}>
+    <OvWidget title={widget?.title || 'Quick Links'}>
       <div className={'ov-links' + (tiles ? ' tiles' : '')}>
         <button type="button" className="ov-link" onClick={() => goTab('ideas')}><Lightbulb size={15} /><span>Ideas Canvas</span></button>
         <button type="button" className="ov-link" onClick={() => goTab('tasks')}><Kanban size={15} /><span>Kanban</span></button>

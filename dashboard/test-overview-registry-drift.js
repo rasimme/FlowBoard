@@ -40,11 +40,24 @@ for (const [name] of Object.entries(overview.PRESETS)) {
   ok(unknown.length === 0, `preset "${name}" references only registered types`);
 }
 
-// Default sizes stay within the grid contract
+// Default and minimum sizes stay within the grid contract
 for (const [type, def] of Object.entries(overview.WIDGET_TYPES)) {
   const s = def.defaultSize || {};
   ok(Number.isInteger(s.w) && s.w >= 1 && s.w <= 12 && Number.isInteger(s.h) && s.h >= 1,
     `defaultSize of "${type}" fits the grid (${s.w}x${s.h})`);
+  const m = def.minSize || {};
+  ok(Number.isInteger(m.w) && m.w >= 1 && m.w <= s.w && Number.isInteger(m.h) && m.h >= 1 && m.h <= s.h,
+    `minSize of "${type}" is set and <= defaultSize (${m.w}x${m.h})`);
+}
+
+// Presets respect each widget's minimum size
+for (const [name] of Object.entries(overview.PRESETS)) {
+  const config = overview.presetConfig(name);
+  const tooSmall = config.widgets.filter(w => {
+    const m = overview.WIDGET_TYPES[w.type]?.minSize || { w: 1, h: 1 };
+    return w.grid.w < m.w || w.grid.h < m.h;
+  });
+  ok(tooSmall.length === 0, `preset "${name}" respects widget minSizes${tooSmall.length ? ' (' + tooSmall.map(w => w.id).join(',') + ')' : ''}`);
 }
 
 // Agent rule section documents every type
