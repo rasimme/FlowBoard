@@ -1,8 +1,9 @@
 /**
- * Spinner — Animated SVG loading indicator in three sizes.
- * @param {'sm'|'md'|'lg'} [size='md'] - Spinner diameter (16/20/24px)
+ * Spinner — Animated SVG loading indicator.
+ * @param {'sm'|'md'|'lg'|number} [size='md'] - Preset (16/20/24px) or explicit pixel size
  * @param {string} [className] - Extra classes
  * @example <Spinner size="sm" />
+ * @example <Spinner size={16} />
  */
 const sizes = {
   sm: 'w-4 h-4',
@@ -11,13 +12,18 @@ const sizes = {
 };
 
 export default function Spinner({ size = 'md', className = '' }) {
+  const numeric = typeof size === 'number';
+  if (!numeric && !sizes[size] && import.meta.env?.DEV) {
+    console.warn(`[Spinner] unknown size "${size}" — falling back to md`);
+  }
   return (
     <svg
       className={[
         'animate-spin text-muted',
-        sizes[size],
+        numeric ? '' : (sizes[size] || sizes.md),
         className,
       ].join(' ')}
+      style={numeric ? { width: size, height: size } : undefined}
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"

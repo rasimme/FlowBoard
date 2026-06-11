@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import OptionList from './OptionList.jsx';
 import { ChevronRight, ChevronDown, AlertCircle, RotateCcw, FastForward, CheckCircle2 } from 'lucide-react';
 import { Modal, Button, Textarea, Spinner, Checkbox } from './index.js';
 import MarkdownPreview from './MarkdownPreview.jsx';
@@ -268,43 +269,12 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
 
             <h4 className="text-base font-semibold text-text-strong m-0">{currentQ.question}</h4>
 
-            {(currentQ.options || []).length > 0 && (
-              <div className="space-y-2" role="radiogroup">
-                {currentQ.options.map(opt => {
-                  const isSelected = selectedOption === opt.key && !hasFreeText;
-                  const isRecommended = currentQ.recommended === opt.key;
-                  return (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      role="radio"
-                      aria-checked={isSelected}
-                      onClick={() => { setSelectedOption(opt.key); setAnswerText(''); }}
-                      className={`w-full text-left p-3 rounded-md border cursor-pointer transition-colors ${
-                        isSelected
-                          ? 'bg-bg-elevated border-accent'
-                          : 'bg-transparent border-border hover:border-border-strong hover:bg-bg-accent'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full border shrink-0 ${
-                          isSelected ? 'border-accent' : 'border-border-strong'
-                        }`}>
-                          {isSelected && <span className="w-2 h-2 rounded-full bg-accent" />}
-                        </span>
-                        <span className={`text-sm font-medium ${isSelected ? 'text-text-strong' : 'text-text'}`}>
-                          {opt.key}: {opt.label}
-                          {isRecommended && <span className="ml-2 text-xs font-normal text-accent-2">recommended</span>}
-                        </span>
-                      </div>
-                      {opt.rationale && (
-                        <p className="text-xs text-muted m-0 mt-1 ml-6">{opt.rationale}</p>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <OptionList
+              options={currentQ.options || []}
+              value={hasFreeText ? null : selectedOption}
+              onChange={(key) => { setSelectedOption(key); setAnswerText(''); }}
+              recommendedKey={currentQ.recommended}
+            />
 
             <Textarea
               value={answerText}

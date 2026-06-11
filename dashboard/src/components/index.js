@@ -5,6 +5,7 @@ export { default as Input } from './Input.jsx';
 export { default as Modal } from './Modal.jsx';
 export { default as Label } from './Label.jsx';
 export { default as Spinner } from './Spinner.jsx';
+export { default as OptionList } from './OptionList.jsx';
 export { default as Tag } from './Tag.jsx';
 export { default as Textarea } from './Textarea.jsx';
 export { default as Tooltip } from './Tooltip.jsx';
