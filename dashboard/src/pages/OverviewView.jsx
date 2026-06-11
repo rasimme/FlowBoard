@@ -268,23 +268,28 @@ export default function OverviewView() {
             resizeConfig={{ enabled: true, handles: ['n', 'e', 's', 'w'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
-            onResize={(layout, oldItem, newItem) => setResizing({ id: newItem.i, w: newItem.w, h: newItem.h })}
-            onResizeStop={() => setResizing(null)}
+            onResize={(layout, oldItem, newItem) => {
+              setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
+              // Snap path that survives RGL's render memoization: the
+              // snapped size lands as CSS variables on the (non-RGL)
+              // container; a CSS rule pins the resizing item's cell to it.
+              if (containerEl) {
+                const colW = (width - 12 * 11) / 12;
+                containerEl.style.setProperty('--ov-snap-w', Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px');
+                containerEl.style.setProperty('--ov-snap-h', (88 * newItem.h + 12 * (newItem.h - 1)) + 'px');
+              }
+            }}
+            onResizeStop={() => {
+              setResizing(null);
+              containerEl?.style.removeProperty('--ov-snap-w');
+              containerEl?.style.removeProperty('--ov-snap-h');
+            }}
             className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
-              // While resizing, the cell renders the SNAPPED size from state
-              // (RGL scales its item box continuously with the cursor —
-              // visually the card steps through the grid, no style fights).
-              const isRz = resizing?.id === w.id;
-              const colW = (width - 12 * 11) / 12;
-              const cellStyle = isRz ? {
-                width: Math.round(colW * resizing.w + 12 * (resizing.w - 1)),
-                height: 88 * resizing.h + 12 * (resizing.h - 1),
-              } : undefined;
               return (
-                <div key={w.id} className="ov-cell" style={cellStyle}>
+                <div key={w.id} className="ov-cell">
                   <Widget widget={w} editing />
                   {/* edit chrome — overlays the card, never shifts its layout */}
                   <button
