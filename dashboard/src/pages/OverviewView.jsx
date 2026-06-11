@@ -14,10 +14,11 @@ import '../../styles/overview.css';
  * preset); the renderer instantiates only trusted-registry types on the
  * 12-column grid (88px rows, 12px gutter).
  *
- * View mode renders a plain CSS grid (stacks on narrow viewports); edit
- * mode swaps in react-grid-layout for drag (grip handle) and resize
- * (corner handle, w×h chip) with dynamic vertical compaction. Save writes
- * the same overview.json schema agents use via PUT.
+ * One react-grid-layout renderer serves view AND edit mode (visual
+ * parity); editing enables header-drag and corner-resize (w×h chip) with
+ * dynamic vertical compaction. Narrow viewports render a read-only
+ * single-column stack. Save writes the same overview.json schema agents
+ * use via PUT.
  */
 export default function OverviewView() {
   const { state } = useAppState();
@@ -144,7 +145,7 @@ export default function OverviewView() {
       <div className="ov-toolbar">
         <span className="ov-toolbar-note">
           {editing
-            ? 'Editing layout — drag widgets by the grip, pull the corner to resize'
+            ? 'Editing layout — drag widgets by their header, pull a corner to resize'
             : overview.source === 'default'
               ? 'Default layout — your agent can compose this page via the overview API'
               : overview.preset
@@ -168,24 +169,37 @@ export default function OverviewView() {
       </div>
 
       <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto">
-        {editing && mounted ? (
+        {/* One renderer for view AND edit mode — guaranteed visual parity.
+            Narrow viewports get a read-only single-column stack instead. */}
+        {mounted && width < 720 ? (
+          <div className="ov-grid">
+            {sorted.map(w => {
+              const Widget = WIDGET_REGISTRY[w.type];
+              return (
+                <div key={w.id} className="ov-cell">
+                  <Widget widget={w} />
+                </div>
+              );
+            })}
+          </div>
+        ) : mounted ? (
           <ReactGridLayout
             width={width}
             layout={sorted.map(w => ({ i: w.id, x: w.grid.x, y: w.grid.y, w: w.grid.w, h: w.grid.h, minW: 2, minH: 1 }))}
             gridConfig={{ cols: 12, rowHeight: 88, margin: [12, 12], containerPadding: [0, 0] }}
-            dragConfig={{ enabled: true, handle: '.ov-grip' }}
-            resizeConfig={{ enabled: true, handles: ['se'] }}
+            dragConfig={{ enabled: editing, handle: '.ov-whead' }}
+            resizeConfig={{ enabled: editing, handles: ['se', 'sw', 'ne', 'nw'] }}
             compactor={verticalCompactor}
-            onLayoutChange={applyLayout}
+            onLayoutChange={editing ? applyLayout : undefined}
             onResize={(layout, oldItem, newItem) => setResizing({ id: newItem.i, w: newItem.w, h: newItem.h })}
             onResizeStop={() => setResizing(null)}
-            className="ov-rgl"
+            className={'ov-rgl' + (editing ? ' editing' : '')}
           >
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
               return (
                 <div key={w.id} className="ov-cell">
-                  <Widget widget={w} editing onRemove={() => removeWidget(w.id)} />
+                  <Widget widget={w} editing={editing} onRemove={() => removeWidget(w.id)} />
                   {resizing?.id === w.id && (
                     <span className="ov-sizechip" style={{ zIndex: 10 }}>{`w ${resizing.w} · h ${resizing.h}`}</span>
                   )}
@@ -193,25 +207,7 @@ export default function OverviewView() {
               );
             })}
           </ReactGridLayout>
-        ) : (
-          <div className="ov-grid">
-            {sorted.map(w => {
-              const Widget = WIDGET_REGISTRY[w.type];
-              return (
-                <div
-                  key={w.id}
-                  className="ov-cell"
-                  style={{
-                    gridColumn: `${w.grid.x + 1} / span ${w.grid.w}`,
-                    gridRow: `${w.grid.y + 1} / span ${w.grid.h}`,
-                  }}
-                >
-                  <Widget widget={w} />
-                </div>
-              );
-            })}
-          </div>
-        )}
+        ) : null}
       </div>
 
       <Modal

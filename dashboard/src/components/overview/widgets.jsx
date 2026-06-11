@@ -63,7 +63,7 @@ function leaseState(task) {
   return { label: `lease ${min}m`, cls: min <= 5 ? ' expiring' : '' };
 }
 
-export function ActiveAgentsWidget({ widget }) {
+export function ActiveAgentsWidget({ widget, editing, onRemove }) {
   const tasks = useProjectTasks();
   const { state } = useAppState();
   const maxRows = widget?.props?.maxRows || 6;
@@ -103,7 +103,13 @@ export function ActiveAgentsWidget({ widget }) {
           const lease = leaseState(task);
           const fresh = task.lastCheckpointAt && (Date.now() - new Date(task.lastCheckpointAt).getTime()) < 10 * 60 * 1000;
           return (
-            <div key={agent + task.id} className="ov-agent-row">
+            <div
+              key={agent + task.id}
+              className="ov-agent-row"
+              style={{ cursor: editing ? undefined : 'pointer' }}
+              onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = task.id; }}
+              title={editing ? undefined : `Open ${task.id} on the board`}
+            >
               <span className="ov-agent-id"><AgentChip name={agent} size="md" /></span>
               <span className="ov-agent-main">
                 <span className="ov-agent-handle">@{agent}</span>
@@ -133,7 +139,7 @@ const STATUS_COLORS = {
 const STATUS_ORDER = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = { backlog: 'Backlog', open: 'Open', 'in-progress': 'In Progress', review: 'Review', done: 'Done' };
 
-export function TaskStatsWidget({ widget }) {
+export function TaskStatsWidget({ widget, editing, onRemove }) {
   const tasks = useProjectTasks().filter(t => t.status !== 'archived');
   const { state } = useAppState();
   const [stuck, setStuck] = useState(0);
@@ -222,12 +228,19 @@ export function TaskStatsWidget({ widget }) {
 /* ---------- next-up ---------- */
 const PRIO_RANK = { high: 0, medium: 1, low: 2 };
 
-export function NextUpWidget({ widget }) {
+export function NextUpWidget({ widget, editing, onRemove }) {
   const tasks = useProjectTasks();
   const limit = widget?.props?.limit || 5;
+  // "next" = claimable first: open ranks above backlog, then priority,
+  // then age. Statuses are configurable via props.statuses.
+  const statuses = widget?.props?.statuses || ['open', 'backlog'];
+  const statusRank = Object.fromEntries(statuses.map((s, i) => [s, i]));
   const next = tasks
-    .filter(t => (t.status === 'open' || t.status === 'backlog') && !t.parentId)
-    .sort((a, b) => (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3) || (a.status === 'open' ? -1 : 1))
+    .filter(t => statusRank[t.status] !== undefined && !t.parentId)
+    .sort((a, b) =>
+      statusRank[a.status] - statusRank[b.status]
+      || (PRIO_RANK[a.priority] ?? 3) - (PRIO_RANK[b.priority] ?? 3)
+      || String(a.created || '').localeCompare(String(b.created || '')))
     .slice(0, limit);
 
   return (
@@ -255,7 +268,7 @@ export function NextUpWidget({ widget }) {
 function parseDecisions(md) {
   if (!md) return [];
   const entries = [];
-  const sections = md.split(/^##\s+/m).slice(1);
+  const sections = md.split(/^#{2,3}\s+/m).slice(1);
   for (const sec of sections) {
     const lines = sec.split('\n');
     const heading = (lines[0] || '').trim();
@@ -273,14 +286,15 @@ function parseDecisions(md) {
 }
 
 /* ---------- recent-decisions ---------- */
-export function RecentDecisionsWidget({ widget }) {
+export function RecentDecisionsWidget({ widget, editing, onRemove }) {
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'DECISIONS.md');
   const count = widget?.props?.count || 3;
-  const decisions = parseDecisions(md).slice(0, count);
+  // the file is chronological (newest appended) — show the latest first
+  const decisions = parseDecisions(md).slice(-count).reverse();
 
   return (
-    <OvWidget title={widget?.title || 'Recent Decisions'} meta={decisions.length ? 'DECISIONS.md' : null}>
+    <OvWidget title={widget?.title || 'Recent Decisions'} meta={decisions.length ? 'DECISIONS.md' : null} editing={editing} onRemove={onRemove}>
       {decisions.length === 0 ? (
         <div className="ov-empty">
           <FileText size={22} />
@@ -311,7 +325,7 @@ export function RecentDecisionsWidget({ widget }) {
 }
 
 /* ---------- project-goals ---------- */
-export function ProjectGoalsWidget({ widget }) {
+export function ProjectGoalsWidget({ widget, editing, onRemove }) {
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'PROJECT.md');
 
@@ -323,7 +337,7 @@ export function ProjectGoalsWidget({ widget }) {
   }
 
   return (
-    <OvWidget title={widget?.title || 'Project Goal'} meta={md ? 'PROJECT.md' : null}>
+    <OvWidget title={widget?.title || 'Project Goal'} meta={md ? 'PROJECT.md' : null} editing={editing} onRemove={onRemove}>
       {!goal ? (
         <div className="ov-empty">
           <FileText size={22} />
@@ -341,10 +355,10 @@ export function ProjectGoalsWidget({ widget }) {
 }
 
 /* ---------- quick-links ---------- */
-export function QuickLinksWidget({ widget }) {
+export function QuickLinksWidget({ widget, editing, onRemove }) {
   const tiles = Boolean(widget?.props?.tiles);
   return (
-    <OvWidget title={widget?.title || 'Quick Links'}>
+    <OvWidget title={widget?.title || 'Quick Links'} editing={editing} onRemove={onRemove}>
       <div className={'ov-links' + (tiles ? ' tiles' : '')}>
         <button type="button" className="ov-link" onClick={() => goTab('ideas')}><Lightbulb size={15} /><span>Ideas Canvas</span></button>
         <button type="button" className="ov-link" onClick={() => goTab('tasks')}><Kanban size={15} /><span>Kanban</span></button>
@@ -356,7 +370,7 @@ export function QuickLinksWidget({ widget }) {
 }
 
 /* ---------- kanban-mini ---------- */
-export function KanbanMiniWidget({ widget }) {
+export function KanbanMiniWidget({ widget, editing, onRemove }) {
   const tasks = useProjectTasks().filter(t => !t.parentId && t.status !== 'archived');
   const cols = STATUS_ORDER.map(s => {
     const inCol = tasks.filter(t => t.status === s);

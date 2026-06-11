@@ -322,6 +322,10 @@
 }
 @container widget (max-width: 400px) {
   .hide-narrow { display: none !important; }
+  .ov-links:not(.tiles) {
+    display: grid; grid-template-columns: 1fr 1fr;
+    grid-auto-rows: minmax(40px, 1fr); gap: 6px;
+  }
   .ov-agent-row { padding: 6px 8px; gap: 8px; }
   .ov-agent-task .ttl { display: none; }       /* keep T-id, drop title */
   .ov-kpis { gap: 12px; flex-wrap: wrap; }
@@ -358,13 +362,41 @@
   border-color: var(--border-strong);
 }
 .ov-rgl .react-resizable-handle {
-  position: absolute; right: 5px; bottom: 5px;
+  position: absolute;
   width: 13px; height: 13px;
   background: none; padding: 0;
+}
+.ov-rgl .react-resizable-handle::after { display: none; }
+.ov-rgl .react-resizable-handle:hover { border-color: var(--accent); }
+.ov-rgl .react-resizable-handle-se {
+  right: 5px; bottom: 5px;
   border-right: 2px solid var(--border-strong);
   border-bottom: 2px solid var(--border-strong);
   border-bottom-right-radius: 4px;
   cursor: nwse-resize;
 }
-.ov-rgl .react-resizable-handle::after { display: none; }
-.ov-rgl .react-resizable-handle:hover { border-color: var(--accent); }
+.ov-rgl .react-resizable-handle-sw {
+  left: 5px; bottom: 5px;
+  border-left: 2px solid var(--border-strong);
+  border-bottom: 2px solid var(--border-strong);
+  border-bottom-left-radius: 4px;
+  cursor: nesw-resize;
+}
+.ov-rgl .react-resizable-handle-ne {
+  right: 5px; top: 5px;
+  border-right: 2px solid var(--border-strong);
+  border-top: 2px solid var(--border-strong);
+  border-top-right-radius: 4px;
+  cursor: nesw-resize;
+}
+.ov-rgl .react-resizable-handle-nw {
+  left: 5px; top: 5px;
+  border-left: 2px solid var(--border-strong);
+  border-top: 2px solid var(--border-strong);
+  border-top-left-radius: 4px;
+  cursor: nwse-resize;
+}
+
+/* whole widget header is the drag handle while editing */
+.ov-rgl.editing .ov-whead { cursor: grab; user-select: none; }
+.ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-whead { cursor: grabbing; }
