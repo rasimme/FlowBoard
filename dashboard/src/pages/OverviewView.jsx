@@ -154,15 +154,30 @@ export default function OverviewView() {
     setDraft(prev => prev.filter(w => w.id !== id));
   }
 
+  // first free slot scanning top-to-bottom, left-to-right — completes a
+  // half-filled row on the right before starting a new one
+  function findFreeSlot(widgets, w, h) {
+    const collides = (x, y) => widgets.some(it =>
+      x < it.grid.x + it.grid.w && x + w > it.grid.x &&
+      y < it.grid.y + it.grid.h && y + h > it.grid.y);
+    const maxY = widgets.reduce((m, it) => Math.max(m, it.grid.y + it.grid.h), 0);
+    for (let y = 0; y <= maxY; y++) {
+      for (let x = 0; x + w <= 12; x++) {
+        if (!collides(x, y)) return { x, y };
+      }
+    }
+    return { x: 0, y: maxY };
+  }
+
   function addWidget(type) {
     const def = (manifest?.widgets || []).find(w => w.type === type);
     const size = def?.defaultSize || { w: 4, h: 2 };
     setDraft(prev => {
-      const maxY = prev.reduce((m, w) => Math.max(m, w.grid.y + w.grid.h), 0);
+      const slot = findFreeSlot(prev, size.w, size.h);
       let id = `w-${type}`;
       let n = 2;
       while (prev.some(w => w.id === id)) id = `w-${type}-${n++}`;
-      return [...prev, { id, type, grid: { x: 0, y: maxY, w: size.w, h: size.h } }];
+      return [...prev, { id, type, grid: { x: slot.x, y: slot.y, w: size.w, h: size.h } }];
     });
     setPickerOpen(false);
   }
