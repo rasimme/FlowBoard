@@ -25,7 +25,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `description` | string? | Max 16KB |
 | `tags` | string[] | Filterable, max 100 |
 | `links` | string[] | URLs, references |
-| `depends_on` | string[] | Task dependency edges |
+| `depends_on` | string[] | Task dependency edges (HZL-level; not yet settable or enforced through the FlowBoard API — see T-154-4) |
 | `due_at` | ISO timestamp? | Optional deadline |
 | `metadata` | object? | Max 64KB, arbitrary JSON |
 | `progress` | 0–100? | Set via checkpoints |
@@ -133,7 +133,6 @@ Rules:
 - Only the claiming agent can checkpoint/complete/release (unless `force: true`)
 - Expired leases allow steal by other agents
 - Completing a subtask triggers parent status recalculation
-- Task dependencies block claiming until all deps are `done`
 
 ## Project & Agent State
 
