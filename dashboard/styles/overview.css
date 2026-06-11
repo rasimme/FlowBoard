@@ -176,7 +176,8 @@
 .ov-task-row:hover { background: var(--bg-hover); }
 .ov-task-id {
   font-family: "JetBrains Mono", monospace;
-  font-size: 10.5px; color: var(--muted); flex-shrink: 0; width: 34px;
+  font-size: 10.5px; color: var(--muted); flex-shrink: 0;
+  min-width: 34px; white-space: nowrap;
 }
 .ov-task-title {
   flex: 1; min-width: 0; font-size: 12.5px; color: var(--text);
@@ -340,12 +341,14 @@
   .ov-links { gap: 6px; }
   .ov-link { min-height: 34px; }
 }
-/* low cards (h=1): buttons switch from stacked icon+label to a slim row */
+/* low cards (h=1): one single row of four — overrides the 2x2 grid forms */
 @container widget (max-height: 120px) {
+  .ov-links, .ov-links.tiles, .ov-links:not(.tiles) {
+    display: flex; flex-direction: row; gap: 6px;
+  }
   .ov-link { flex-direction: row; gap: 6px; padding: 4px 6px; min-height: 0; }
   .ov-link svg { width: 13px; height: 13px; }
   .ov-link span { font-size: 10.5px; }
-  .ov-links.tiles { display: flex; }
   .ov-agent-row { padding: 6px 8px; gap: 8px; }
   .ov-agent-task .ttl { display: none; }       /* keep T-id, drop title */
   .ov-kpis { gap: 12px; flex-wrap: wrap; }

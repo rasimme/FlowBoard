@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
 import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity } from 'lucide-react';
 
@@ -48,7 +48,6 @@ export default function OverviewView() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
-  const liveLayout = useRef(null); // latest RGL layout, committed only on drag/resize stop
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
   // suppress RGL's mount animation — items would visibly fly to their
@@ -273,8 +272,7 @@ export default function OverviewView() {
             dragConfig={{ enabled: true, handle: '.ov-whead' }}
             resizeConfig={{ enabled: true, handles: ['e', 's', 'w'] }}
             compactor={verticalCompactor}
-            onLayoutChange={(l) => { liveLayout.current = l; }}
-            onDragStop={() => { if (liveLayout.current) applyLayout(liveLayout.current); }}
+            onDragStop={(layout) => applyLayout(layout)}
             onResizeStart={(layout, oldItem, newItem, placeholder, e) => {
               // anchor side is fixed for the WHOLE interaction, derived from
               // the grabbed handle — deriving it per tick from the snapped x
@@ -298,13 +296,13 @@ export default function OverviewView() {
                 containerEl.style.setProperty('--ov-snap-label', JSON.stringify(newItem.w + ' \u00d7 ' + newItem.h));
               }
             }}
-            onResizeStop={() => {
+            onResizeStop={(layout) => {
+              applyLayout(layout);
               setResizing(null);
               containerEl?.style.removeProperty('--ov-snap-w');
               containerEl?.style.removeProperty('--ov-snap-h');
               containerEl?.style.removeProperty('--ov-snap-label');
               containerEl?.classList.remove('ov-anchor-right');
-              if (liveLayout.current) applyLayout(liveLayout.current);
             }}
             className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >
