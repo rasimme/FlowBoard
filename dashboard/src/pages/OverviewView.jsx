@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
-import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity } from 'lucide-react';
+import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity, Flag, GanttChartSquare, Pin, Upload, StickyNote, ExternalLink, Coffee } from 'lucide-react';
 
 // thumbnail metadata: icon, short label and cluster tint per widget type
 const THUMB = {
@@ -15,8 +15,23 @@ const THUMB = {
   'task-stats': { icon: BarChart3, short: 'Stats' },
   'recent-decisions': { icon: FileText, short: 'Decisions' },
   'kanban-mini': { icon: Kanban, short: 'Board' },
-  'quick-links': { icon: Link2, short: 'Links' },
+  'quick-links': { icon: Link2, short: 'Quick actions' },
+  'milestones': { icon: Flag, short: 'Milestones' },
+  'timeline': { icon: GanttChartSquare, short: 'Timeline' },
+  'context-index': { icon: Pin, short: 'Context' },
+  'quick-drop': { icon: Upload, short: 'Drop' },
+  'notes': { icon: StickyNote, short: 'Notes' },
+  'links': { icon: ExternalLink, short: 'Links' },
+  'stall-detection': { icon: Coffee, short: 'Momentum' },
 };
+
+// add-widget picker: catalog grouped by concept cluster
+const PICKER_CLUSTERS = [
+  { label: 'Needs you', types: ['blocked', 'approvals', 'since-last-visit'] },
+  { label: 'Live', types: ['current-focus', 'active-agents', 'activity-stream', 'timeline', 'stall-detection'] },
+  { label: 'Direction', types: ['next-up', 'project-goals', 'task-stats', 'milestones', 'kanban-mini'] },
+  { label: 'Knowledge & actions', types: ['recent-decisions', 'context-index', 'quick-drop', 'notes', 'links', 'quick-links'] },
+];
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -425,22 +440,46 @@ export default function OverviewView() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         title="Add widget"
-        size="md"
+        size="lg"
         showClose
       >
-        <div className="flex flex-col gap-1">
-          {(manifest?.widgets || []).map(w => (
-            <button
-              key={w.type}
-              type="button"
-              onClick={() => addWidget(w.type)}
-              className="flex flex-col gap-0.5 w-full px-3 py-2 text-left rounded-md border border-transparent bg-transparent cursor-pointer hover:bg-bg-hover hover:border-border"
-            >
-              <span className="text-sm font-medium text-text-strong">{w.label}</span>
-              <span className="text-[11px] text-muted">{w.description}</span>
-            </button>
-          ))}
-          {!manifest && <span className="text-sm text-muted px-3 py-2">Loading widget catalog…</span>}
+        <div className="max-h-[60vh] overflow-y-auto pr-1 flex flex-col gap-4">
+          {manifest ? PICKER_CLUSTERS.map(cluster => {
+            const entries = cluster.types
+              .map(t => (manifest.widgets || []).find(w => w.type === t))
+              .filter(Boolean);
+            if (entries.length === 0) return null;
+            return (
+              <div key={cluster.label}>
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-muted mb-1.5">{cluster.label}</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {entries.map(w => {
+                    const t = THUMB[w.type] || {};
+                    const Icon = t.icon;
+                    const onBoard = (draft || []).some(d => d.type === w.type);
+                    return (
+                      <button
+                        key={w.type}
+                        type="button"
+                        onClick={() => addWidget(w.type)}
+                        title={w.description}
+                        className="flex items-start gap-2.5 px-3 py-2 text-left rounded-md border border-border bg-bg-accent cursor-pointer hover:border-accent"
+                      >
+                        {Icon && <Icon size={15} className="text-muted shrink-0 mt-0.5" />}
+                        <span className="flex flex-col gap-0.5 min-w-0">
+                          <span className="text-[12.5px] font-medium text-text-strong leading-tight">
+                            {w.label}
+                            {onBoard && <span className="ml-1.5 text-[9px] uppercase tracking-wide text-accent-2">on board</span>}
+                          </span>
+                          <span className="text-[10.5px] text-muted leading-snug overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{w.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }) : <span className="text-sm text-muted px-3 py-2">Loading widget catalog…</span>}
         </div>
       </Modal>
     </div>
