@@ -268,21 +268,28 @@ export default function OverviewView() {
             resizeConfig={{ enabled: true, handles: ['n', 'e', 's', 'w'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
-            onResize={(layout, oldItem, newItem) => {
+            onResize={(layout, oldItem, newItem, placeholder, e, handleEl) => {
               setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
-              // Snap path that survives RGL's render memoization: the
-              // snapped size lands as CSS variables on the (non-RGL)
-              // container; a CSS rule pins the resizing item's cell to it.
-              if (containerEl) {
+              // Pin the CARD to the snapped grid step while RGL's item box
+              // follows the cursor. We write directly to our own cell div
+              // (neither React nor RGL touch it mid-interaction), located
+              // deterministically from the resize handle in the event.
+              const cell = (handleEl?.closest ? handleEl : e?.target)?.closest?.('.react-grid-item')?.querySelector?.(':scope > .ov-cell');
+              if (cell) {
                 const colW = (width - 12 * 11) / 12;
-                containerEl.style.setProperty('--ov-snap-w', Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px');
-                containerEl.style.setProperty('--ov-snap-h', (88 * newItem.h + 12 * (newItem.h - 1)) + 'px');
+                cell.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
+                cell.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
+                cell.dataset.ovSnapped = '1';
               }
             }}
             onResizeStop={() => {
               setResizing(null);
-              containerEl?.style.removeProperty('--ov-snap-w');
-              containerEl?.style.removeProperty('--ov-snap-h');
+              // release all pinned cells back to layout-driven sizing
+              containerEl?.querySelectorAll('[data-ov-snapped]').forEach(cell => {
+                cell.style.width = '';
+                cell.style.height = '';
+                delete cell.dataset.ovSnapped;
+              });
             }}
             className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >

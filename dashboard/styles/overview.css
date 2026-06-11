@@ -455,10 +455,6 @@
 /* suppress RGL transitions on edit-mode mount (anti-flicker) */
 .ov-no-anim .react-grid-item { transition: none !important; }
 
-/* snapped resize: the container carries --ov-snap-w/h (set per resize tick
-   outside React), the resizing item's cell is pinned to the grid step while
-   RGL's item box follows the cursor invisibly */
-.ov-rgl .react-grid-item.resizing .ov-cell {
-  width: var(--ov-snap-w, 100%);
-  height: var(--ov-snap-h, 100%);
-}
+/* while a cell is pinned to its snapped size (data-ov-snapped, set in
+   onResize), keep the widget clipped to it */
+.ov-rgl .ov-cell[data-ov-snapped] { overflow: visible; }
