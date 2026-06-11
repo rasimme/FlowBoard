@@ -269,7 +269,7 @@ export default function DesignTest() {
             <DataList items={[
               { label: 'Status', value: 'In Progress' },
               { label: 'Priority', value: 'High' },
-              { label: 'Assignee', value: 'Simeon' },
+              { label: 'Assignee', value: 'Alex' },
               { label: 'Due Date', value: '2026-04-20' },
               { label: 'Tags', value: '' },
             ]} />

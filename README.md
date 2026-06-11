@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/rasimme/FlowBoard/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="https://github.com/rasimme/FlowBoard/releases"><img src="https://img.shields.io/badge/version-v4.0.1-orange.svg" alt="Version"></a>
+  <a href="https://github.com/rasimme/FlowBoard/releases"><img src="https://img.shields.io/badge/version-v5.0.0-orange.svg" alt="Version"></a>
   <a href="https://github.com/rasimme/FlowBoard"><img src="https://img.shields.io/github/stars/rasimme/FlowBoard?style=social" alt="Stars"></a>
 </p>
 
@@ -84,6 +84,7 @@ Access FlowBoard remotely from Telegram. Secure authentication via HMAC-SHA256, 
 git clone https://github.com/rasimme/FlowBoard.git
 cd FlowBoard/dashboard
 npm install
+npm run build   # builds the dashboard UI into dist/ (served by the server)
 ```
 
 ### 2. Register the hook with OpenClaw
@@ -182,7 +183,14 @@ FlowBoard metadata/HZL, and uses the Tasks API for operational task state.
 
 ## Canvas → Task Promote
 
-The Idea Canvas promote feature requires OpenClaw webhooks:
+Since v5, promoting canvas notes to tasks works out of the box: selecting
+notes and clicking **Create Task** opens the Specify stepper in the dashboard
+— clarification questions, proposal review, and task creation all happen in
+the browser, with no webhook or agent configuration required.
+
+OpenClaw webhooks are only needed for the **chat-agent path** (scripted
+callers passing an explicit `agentId`, so a chat-bound agent runs the
+clarification conversation instead of the dashboard stepper):
 
 **1. Enable webhooks** in `~/.openclaw/openclaw.json`:
 ```json5
@@ -203,7 +211,7 @@ OPENCLAW_DELIVER_CHANNEL=telegram        # or: discord, slack, etc.
 OPENCLAW_DELIVER_TO=your-chat-id         # optional
 ```
 
-Without these, everything works except canvas promote.
+Without these, everything works — including canvas promote via the dashboard stepper; only the chat-agent promote path is unavailable.
 
 ---
 

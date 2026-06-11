@@ -335,8 +335,30 @@ app.use((req, res, next) => {
   next();
 });
 
+// Warn loud when the frontend was never built — a fresh clone has no dist/
+// (gitignored) and would otherwise 500 on every page without a hint (T-288-4).
+// The API stays up (CI and headless/agent installs need it), only the UI
+// route explains what is missing.
+const DIST_BUILT = fs.existsSync(path.join(__dirname, 'dist', 'index.html'));
+if (!DIST_BUILT) {
+  console.error(
+    '[startup] ⚠️  dashboard/dist/index.html not found — the frontend is not built.\n' +
+    '[startup] ⚠️  Run "npm run build" in the dashboard/ directory to serve the UI.'
+  );
+}
+
 // Serve index.html with injected config (from dist/ — never serve raw source)
 app.get('/', (req, res) => {
+  if (!DIST_BUILT && !fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
+    res.status(503).type('html').send(
+      '<!doctype html><title>FlowBoard — build required</title>' +
+      '<body style="font-family:system-ui;background:#12141a;color:#e4e4e7;display:grid;place-items:center;height:100vh;margin:0">' +
+      '<div><h1>Frontend not built yet</h1>' +
+      '<p>Run <code style="background:#262a35;padding:2px 6px;border-radius:4px">npm run build</code> in the <code>dashboard/</code> directory, then restart the server.</p>' +
+      '<p style="color:#71717a">The FlowBoard API is running normally on this port.</p></div></body>'
+    );
+    return;
+  }
   let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   const nonce = res.locals.cspNonce;
@@ -657,19 +679,20 @@ app.put('/api/status', async (req, res) => {
     // /api/projects/:name/bootstrap.
     fbMeta.setAgentActiveProject(agentId, effectiveProject);
 
-    // Send wake event to notify agent of project switch
+    // Send wake event to notify agent of project switch (English — this
+    // ships to third-party installs; T-288-8)
     if (effectiveProject) {
       const apiHints =
-        `Prüfe deinen Status: GET /api/status?agentId=${agentId}. ` +
-        `Wenn activeProject=${effectiveProject}: lade Kontext via GET /api/projects/${effectiveProject}/bootstrap ` +
-        `und Rules on-demand via GET /api/projects/${effectiveProject}/rules/<section>. ` +
-        `Tasks führst du über die API — siehe GET /api/projects/${effectiveProject}/rules/api-access.`;
+        `Check your status: GET /api/status?agentId=${agentId}. ` +
+        `If activeProject=${effectiveProject}: load context via GET /api/projects/${effectiveProject}/bootstrap ` +
+        `and rules on demand via GET /api/projects/${effectiveProject}/rules/<section>. ` +
+        `Manage tasks through the API — see GET /api/projects/${effectiveProject}/rules/api-access.`;
       const wakeText = previousProject && previousProject !== effectiveProject
-        ? `Projekt gewechselt von ${previousProject} auf ${effectiveProject}. ${apiHints}`
-        : `Projekt ${effectiveProject} aktiviert. ${apiHints}`;
+        ? `Project switched from ${previousProject} to ${effectiveProject}. ${apiHints}`
+        : `Project ${effectiveProject} activated. ${apiHints}`;
       sendWakeEvent(wakeText);
     } else if (previousProject) {
-      sendWakeEvent(`Projekt ${previousProject} deaktiviert. Kein aktives Projekt mehr.`);
+      sendWakeEvent(`Project ${previousProject} deactivated. No active project.`);
     }
 
     const readiness = effectiveProject

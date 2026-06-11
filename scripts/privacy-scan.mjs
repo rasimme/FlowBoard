@@ -29,7 +29,10 @@ const BLOCKED_PATTERNS = [
   { name: 'private hostname', pattern: /simme-ns5\.com/i },
   { name: 'telegram user id', pattern: /\b15707748\b/ },
   { name: 'local user path', pattern: /\/Users\/simeon(?:\.ortmueller)?\b/ },
-  { name: 'local username/email fragment', pattern: /\bsimeon\.ortmueller\b/i }
+  { name: 'local username/email fragment', pattern: /\bsimeon\.ortmueller\b/i },
+  // T-288-9: the bare first name slipped into shipped sample data once —
+  // catch it standalone too (case-insensitive, word-bounded).
+  { name: 'operator first name', pattern: /\bsimeons?\b/i }
 ];
 
 function gitFiles() {
@@ -45,6 +48,8 @@ function extensionOf(path) {
 }
 
 function shouldScan(path) {
+  // The scanner itself must hold the blocked patterns as literals.
+  if (path === 'scripts/privacy-scan.mjs') return false;
   if (path.includes('/node_modules/') || path.includes('/dist/')) return false;
   if (path.endsWith('.png') || path.endsWith('.jpg') || path.endsWith('.jpeg') || path.endsWith('.gif') || path.endsWith('.ico') || path.endsWith('.svg')) return path.endsWith('.svg');
   if (path.endsWith('package-lock.json') || path.endsWith('pnpm-lock.yaml')) return false;
@@ -85,6 +90,32 @@ for (const file of gitFiles().filter(shouldScan)) {
       findings.push(`${file}:${lineNumber(content, match.index)} non-placeholder secret value`);
     }
   }
+}
+
+// T-288-1: the npm `files` allowlist overrides .gitignore, so the published
+// tarball can ship files git never tracked (local plans, test residue,
+// SQLite WAL). Dry-run the pack and reject forbidden paths.
+const FORBIDDEN_PACK_PATHS = [
+  /^docs\/plans\//,
+  /^docs\/reviews\//,
+  /^dashboard\/projects\//,
+  /^dashboard\/test-workspace/,
+  /^dashboard\/test-/,
+  /^SECURITY-REVIEW\.md$/,
+  /\.db(-wal|-shm)?$/,
+  /\/\.hzl\//
+];
+
+try {
+  const packJson = execFileSync('npm', ['pack', '--dry-run', '--json'], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+  const packed = JSON.parse(packJson)[0]?.files || [];
+  for (const entry of packed) {
+    if (FORBIDDEN_PACK_PATHS.some(p => p.test(entry.path))) {
+      findings.push(`npm-pack would ship forbidden path: ${entry.path}`);
+    }
+  }
+} catch (err) {
+  findings.push(`npm pack --dry-run failed: ${err.message}`);
 }
 
 if (findings.length > 0) {

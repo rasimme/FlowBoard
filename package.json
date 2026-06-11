@@ -1,6 +1,6 @@
 {
   "name": "flowboard",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "description": "FlowBoard project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "type": "module",
   "license": "MIT",
@@ -44,7 +44,6 @@
     "LICENSE",
     "CHANGELOG.md",
     "SECURITY.md",
-    "SECURITY-REVIEW.md",
     "CONTRIBUTING.md",
     "llms.txt",
     "hooks/**",
@@ -61,6 +60,16 @@
     "!dashboard/.cloudflared/**",
     "!**/*.db",
     "!**/*.sqlite",
-    "!**/*.log"
+    "!**/*.log",
+    "!docs/plans/**",
+    "!docs/reviews/**",
+    "!dashboard/projects/**",
+    "!dashboard/test-workspace*/**",
+    "!dashboard/test-*.js",
+    "!dashboard/test-*.mjs",
+    "!dashboard/test-fixtures/**",
+    "!**/*.db-wal",
+    "!**/*.db-shm",
+    "!**/.hzl/**"
   ]
 }

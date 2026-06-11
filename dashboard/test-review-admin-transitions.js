@@ -121,14 +121,14 @@ function throws(fn, codeOrPattern, msg) {
   ok(typeof hzl.approveTask === 'function', 'hzl.approveTask is exported');
 
   // tA is already in review (completed above) — approve it
-  const approved = hzl.approveTask(PROJECT, tA.id, { actor: 'simeon', reason: 'looks good' });
+  const approved = hzl.approveTask(PROJECT, tA.id, { actor: 'operator', reason: 'looks good' });
   eq(approved.status, 'done', 'approveTask returns task in done');
   ok(approved.completed, 'approveTask sets completed date');
 
   // Approve from a non-review status should fail
   const tB = hzl.createTask(PROJECT, { title: 'Open task', priority: 'medium', status: 'open' });
   throws(
-    () => hzl.approveTask(PROJECT, tB.id, { actor: 'simeon' }),
+    () => hzl.approveTask(PROJECT, tB.id, { actor: 'operator' }),
     /not in review|review/i,
     'approveTask rejects task not in review'
   );
@@ -137,7 +137,7 @@ function throws(fn, codeOrPattern, msg) {
   const eventsA = hzl.getComments(PROJECT, tA.id);
   const approvalComment = eventsA.find(c => /approve|approved/i.test(c.message || ''));
   ok(approvalComment, 'approveTask records an audit comment containing "approved"');
-  ok(approvalComment && /simeon/.test(approvalComment.message || ''),
+  ok(approvalComment && /operator/.test(approvalComment.message || ''),
     'audit comment includes the actor');
 
   // -------------------------------------------------------------------------
@@ -152,18 +152,18 @@ function throws(fn, codeOrPattern, msg) {
 
   // Reason is required
   throws(
-    () => hzl.rejectTask(PROJECT, tC.id, { actor: 'simeon' }),
+    () => hzl.rejectTask(PROJECT, tC.id, { actor: 'operator' }),
     /reason/i,
     'rejectTask requires a reason'
   );
   throws(
-    () => hzl.rejectTask(PROJECT, tC.id, { actor: 'simeon', reason: '   ' }),
+    () => hzl.rejectTask(PROJECT, tC.id, { actor: 'operator', reason: '   ' }),
     /reason/i,
     'rejectTask rejects whitespace-only reason'
   );
 
   const rejected = hzl.rejectTask(PROJECT, tC.id, {
-    actor: 'simeon',
+    actor: 'operator',
     reason: 'tests are missing',
   });
   eq(rejected.status, 'in-progress', 'rejectTask sends task back to in-progress by default');
@@ -173,7 +173,7 @@ function throws(fn, codeOrPattern, msg) {
   ok(rejectComment, 'rejectTask records a comment');
   ok(rejectComment && /tests are missing/.test(rejectComment.message || ''),
     'rejection comment contains the reason text');
-  ok(rejectComment && /simeon/.test(rejectComment.message || ''),
+  ok(rejectComment && /operator/.test(rejectComment.message || ''),
     'rejection comment names the actor');
 
   // Reject to blocked target
@@ -181,7 +181,7 @@ function throws(fn, codeOrPattern, msg) {
   hzl.claimTask(PROJECT, tD.id, { agent: 'dev-botti', lease: 30 });
   hzl.completeTask(PROJECT, tD.id, { agent: 'dev-botti' });
   const rejD = hzl.rejectTask(PROJECT, tD.id, {
-    actor: 'simeon',
+    actor: 'operator',
     reason: 'spec changed',
     target: 'blocked',
   });
@@ -191,7 +191,7 @@ function throws(fn, codeOrPattern, msg) {
   // Rejecting a non-review task fails
   const tE = hzl.createTask(PROJECT, { title: 'Open already', priority: 'medium', status: 'open' });
   throws(
-    () => hzl.rejectTask(PROJECT, tE.id, { actor: 'simeon', reason: 'no' }),
+    () => hzl.rejectTask(PROJECT, tE.id, { actor: 'operator', reason: 'no' }),
     /review/i,
     'rejectTask rejects task not in review'
   );

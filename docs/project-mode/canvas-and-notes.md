@@ -74,7 +74,7 @@ Body:
 }
 ```
 
-Promote requires an explicit, chat-bound `agentId`. It creates a Specify session and returns success after the OpenClaw gateway accepts the agent webhook. If `agentId` is missing, invalid, dispatch fails, or dispatch times out, the session is not left active and the endpoint returns an error. Do not broadcast canvas promote to arbitrary project-active agents; Specify clarification must happen in a user-visible agent chat.
+Promote supports two paths. **Dashboard path (default, no `agentId`):** creates a Specify session for the `human` agent and the dashboard opens the Specify Stepper — clarification, proposal review, and confirmation happen in the browser, with no webhook configuration required. **Chat-agent path (explicit `agentId`):** the session is routed to that specific chat-bound agent via the gateway webhook (`OPENCLAW_HOOKS_TOKEN` required); if the `agentId` is invalid or dispatch fails, the session is not left active and the endpoint returns an error. Do not broadcast canvas promote to arbitrary project-active agents; chat-based Specify clarification must happen in a user-visible agent chat.
 
 ## Behavior Notes
 

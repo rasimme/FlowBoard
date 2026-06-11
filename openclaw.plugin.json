@@ -1,7 +1,7 @@
 {
   "id": "flowboard",
   "name": "FlowBoard",
-  "version": "4.0.1",
+  "version": "5.0.0",
   "description": "Project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "enabledByDefault": false,
   "activation": {
