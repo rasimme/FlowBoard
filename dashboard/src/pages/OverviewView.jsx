@@ -4,18 +4,18 @@ import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckC
 
 // thumbnail metadata: icon, short label and cluster tint per widget type
 const THUMB = {
-  'blocked': { icon: OctagonAlert, short: 'Blocked', tint: 'var(--warn-subtle)' },
-  'approvals': { icon: CheckCheck, short: 'Approvals', tint: 'var(--warn-subtle)' },
-  'since-last-visit': { icon: History, short: 'Since visit', tint: 'var(--warn-subtle)' },
-  'current-focus': { icon: Crosshair, short: 'Focus', tint: 'var(--accent-2-subtle)' },
-  'active-agents': { icon: Users, short: 'Agents', tint: 'var(--accent-2-subtle)' },
-  'activity-stream': { icon: Activity, short: 'Activity', tint: 'var(--accent-2-subtle)' },
-  'next-up': { icon: ListTodo, short: 'Next up', tint: 'var(--info-subtle)' },
-  'project-goals': { icon: Target, short: 'Goal', tint: 'var(--info-subtle)' },
-  'task-stats': { icon: BarChart3, short: 'Stats', tint: 'var(--info-subtle)' },
-  'recent-decisions': { icon: FileText, short: 'Decisions', tint: 'var(--card-highlight)' },
-  'kanban-mini': { icon: Kanban, short: 'Board', tint: 'var(--card-highlight)' },
-  'quick-links': { icon: Link2, short: 'Links', tint: 'var(--card-highlight)' },
+  'blocked': { icon: OctagonAlert, short: 'Blocked' },
+  'approvals': { icon: CheckCheck, short: 'Approvals' },
+  'since-last-visit': { icon: History, short: 'Since visit' },
+  'current-focus': { icon: Crosshair, short: 'Focus' },
+  'active-agents': { icon: Users, short: 'Agents' },
+  'activity-stream': { icon: Activity, short: 'Activity' },
+  'next-up': { icon: ListTodo, short: 'Next up' },
+  'project-goals': { icon: Target, short: 'Goal' },
+  'task-stats': { icon: BarChart3, short: 'Stats' },
+  'recent-decisions': { icon: FileText, short: 'Decisions' },
+  'kanban-mini': { icon: Kanban, short: 'Board' },
+  'quick-links': { icon: Link2, short: 'Links' },
 };
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
@@ -350,7 +350,7 @@ export default function OverviewView() {
                           width: `calc(${(w.grid.w / 12) * 100}% - 3px)`,
                           height: `calc(${(w.grid.h / rows) * 100}% - 3px)`,
                           margin: '1.5px',
-                          background: t.tint || 'var(--bg-elevated)',
+                          background: 'var(--bg-elevated)',
                         }}
                         title={t.short || w.type}
                       >
