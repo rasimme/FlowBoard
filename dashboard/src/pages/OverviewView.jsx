@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
-import { Pencil, Plus, X } from 'lucide-react';
+import { LayoutTemplate, Pencil, Plus, X } from 'lucide-react';
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -30,6 +30,8 @@ export default function OverviewView() {
   const [draft, setDraft] = useState(null); // widgets array while editing
   const [manifest, setManifest] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [presetsOpen, setPresetsOpen] = useState(false);
+  const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
 
@@ -72,6 +74,7 @@ export default function OverviewView() {
 
   function enterEdit() {
     setDraft(knownWidgets.map(w => ({ ...w, grid: { ...w.grid }, ...(w.props ? { props: { ...w.props } } : {}) })));
+    setDraftPreset(overview?.preset || null);
     setEditing(true);
     if (!manifest) {
       fetch('/api/overview/widgets', { credentials: 'include' })
@@ -88,13 +91,23 @@ export default function OverviewView() {
   }
 
   function applyLayout(layout) {
-    setDraft(prev => prev?.map(w => {
-      const item = layout.find(l => l.i === w.id);
-      return item ? { ...w, grid: { x: item.x, y: item.y, w: item.w, h: item.h } } : w;
-    }) || prev);
+    setDraft(prev => {
+      if (!prev) return prev;
+      let changed = false;
+      const next = prev.map(w => {
+        const item = layout.find(l => l.i === w.id);
+        if (!item) return w;
+        const g = w.grid;
+        if (g.x !== item.x || g.y !== item.y || g.w !== item.w || g.h !== item.h) changed = true;
+        return { ...w, grid: { x: item.x, y: item.y, w: item.w, h: item.h } };
+      });
+      if (changed) setDraftPreset(null);
+      return next;
+    });
   }
 
   function removeWidget(id) {
+    setDraftPreset(null);
     setDraft(prev => prev.filter(w => w.id !== id));
   }
 
@@ -111,6 +124,15 @@ export default function OverviewView() {
     setPickerOpen(false);
   }
 
+  function applyPreset(preset) {
+    // replaces the draft only — the edit grid itself becomes the live
+    // preview; Save persists, Cancel restores the previous layout
+    setDraft(preset.widgets.map(w => ({ ...w, grid: { ...w.grid }, ...(w.props ? { props: { ...w.props } } : {}) })));
+    setDraftPreset(preset.name);
+    setPresetsOpen(false);
+    window.showToast?.(`Preview: ${preset.label} — Save to keep it`, 'info');
+  }
+
   async function saveLayout() {
     setSaving(true);
     try {
@@ -118,7 +140,7 @@ export default function OverviewView() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ version: 1, layout: 'grid', widgets: draft }),
+        body: JSON.stringify({ version: 1, layout: 'grid', ...(draftPreset ? { preset: draftPreset, widgets: draft } : { widgets: draft }) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -171,6 +193,9 @@ export default function OverviewView() {
         </span>
         {editing ? (
           <>
+            <Button variant="ghost" size="sm" onClick={() => setPresetsOpen(true)}>
+              <LayoutTemplate size={13} /> Presets
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setPickerOpen(true)}>
               <Plus size={13} /> Add widget
             </Button>
@@ -257,6 +282,58 @@ export default function OverviewView() {
           </ReactGridLayout>
         ) : null}
       </div>
+
+      <Modal
+        open={presetsOpen}
+        onClose={() => setPresetsOpen(false)}
+        title="Layout presets"
+        size="lg"
+        showClose
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {(manifest?.presets || []).map(p => {
+            const rows = Math.max(...p.widgets.map(w => w.grid.y + w.grid.h), 1);
+            const isActive = overview?.preset === p.name;
+            return (
+              <button
+                key={p.name}
+                type="button"
+                onClick={() => applyPreset(p)}
+                className={`flex flex-col gap-2 p-3 text-left rounded-lg border cursor-pointer bg-bg-accent hover:border-accent ${
+                  isActive ? 'border-accent' : 'border-border'
+                }`}
+              >
+                {/* schematic thumbnail generated from the preset's grid coords */}
+                <div
+                  className="relative w-full rounded-md bg-bg overflow-hidden"
+                  style={{ aspectRatio: `12 / ${rows}`, minHeight: 64 }}
+                  aria-hidden="true"
+                >
+                  {p.widgets.map(w => (
+                    <span
+                      key={w.id}
+                      className="absolute rounded-[3px] border border-border-strong bg-bg-elevated"
+                      style={{
+                        left: `${(w.grid.x / 12) * 100}%`,
+                        top: `${(w.grid.y / rows) * 100}%`,
+                        width: `calc(${(w.grid.w / 12) * 100}% - 3px)`,
+                        height: `calc(${(w.grid.h / rows) * 100}% - 3px)`,
+                        margin: '1.5px',
+                      }}
+                    />
+                  ))}
+                </div>
+                <span className="text-sm font-medium text-text-strong">
+                  {p.label}
+                  {isActive && <span className="ml-2 text-[10px] text-accent uppercase tracking-wide">active</span>}
+                </span>
+                <span className="text-[11px] text-muted leading-snug">{p.description}</span>
+              </button>
+            );
+          })}
+          {!manifest && <span className="text-sm text-muted px-3 py-2 col-span-2">Loading presets…</span>}
+        </div>
+      </Modal>
 
       <Modal
         open={pickerOpen}

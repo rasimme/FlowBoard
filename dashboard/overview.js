@@ -264,7 +264,7 @@ function widgetManifest() {
     rowHeight: 88,
     gutter: 12,
     widgets: Object.entries(WIDGET_TYPES).map(([type, def]) => ({ type, ...def })),
-    presets: Object.entries(PRESETS).map(([name, p]) => ({ name, label: p.label, description: p.description })),
+    presets: Object.entries(PRESETS).map(([name, p]) => ({ name, label: p.label, description: p.description, widgets: presetConfig(name).widgets })),
   };
 }
 
