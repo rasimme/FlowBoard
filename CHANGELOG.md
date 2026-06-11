@@ -2,6 +2,14 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Modular project overview (T-305).** Every project now opens on a
+  widget dashboard instead of the Kanban: active agents (claims, lease
+  countdown), task stats, next-up, decisions/goals from markdown, quick
+  links and a board preview — arranged by `overview.json` on a 12-column
+  grid. Agents compose the page through `PUT /api/projects/:name/overview`
+  (trusted registry, named presets `agent`/`status`/`context`); humans get
+  a drag+resize editor (react-grid-layout) writing the same schema.
+
 - **Parent aggregation honors the review gate.** One aggregation rule
   remains (`recalcParentStatus`): while any subtask still has work left the
   parent stays In Progress; once every subtask is Review or Done the parent

@@ -29,6 +29,7 @@ const SECTIONS = [
   { name: 'agent-bridge',    file: 'agent-bridge.md',     label: 'Agent bridge — claim/checkpoint/complete, handoff, multi-agent' },
   { name: 'error-handling',  file: 'error-handling.md',   label: 'Error handling — missing files, corrupt state, migration leftovers' },
   { name: 'key-principles',  file: 'key-principles.md',   label: 'Key principles — API-first, DB-canonical, context-loading semantics' },
+  { name: 'overview',        file: 'overview.md',         label: 'Overview — modular landing page, widget catalog, layout API' },
 ];
 
 const BY_NAME = new Map(SECTIONS.map(s => [s.name, s]));
@@ -95,6 +96,7 @@ function buildRulesManifest() {
   // assumptions (e.g. writing a spec file by hand instead of via the API).
   lines.push('When to load what — read the section BEFORE the action:');
   lines.push('- Before creating, claiming, or transitioning tasks → `api-access`.');
+  lines.push('- Before composing or editing a project overview layout → `overview`.');
   lines.push('- Before creating or editing specs, or writing ANY file under the project dir → `files` and `specify`. **Spec files are never written by hand — always use `POST /api/projects/{project}/specs/{taskId}`.**');
   lines.push('- Before canvas / promote operations → `canvas`.');
   lines.push('- On any API error or when blocked → `error-handling`.');
