@@ -343,3 +343,28 @@
   .ov-cell { min-height: 180px; flex-shrink: 0; }
   .ov-grid-guides { display: none; }
 }
+
+/* ---------- react-grid-layout chrome (edit mode, T-305-5) ---------- */
+.ov-rgl .ov-cell { display: flex; position: relative; height: 100%; }
+.ov-rgl .ov-cell > .ov-widget { flex: 1; }
+.ov-rgl .react-grid-placeholder {
+  background: var(--accent-subtle) !important;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  opacity: 1 !important;
+}
+.ov-rgl .react-grid-item.react-draggable-dragging .ov-widget {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
+}
+.ov-rgl .react-resizable-handle {
+  position: absolute; right: 5px; bottom: 5px;
+  width: 13px; height: 13px;
+  background: none; padding: 0;
+  border-right: 2px solid var(--border-strong);
+  border-bottom: 2px solid var(--border-strong);
+  border-bottom-right-radius: 4px;
+  cursor: nwse-resize;
+}
+.ov-rgl .react-resizable-handle::after { display: none; }
+.ov-rgl .react-resizable-handle:hover { border-color: var(--accent); }

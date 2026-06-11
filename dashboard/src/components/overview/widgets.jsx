@@ -11,7 +11,7 @@ import { useAppState } from '../../context/AppStateContext.jsx';
  */
 
 /* ---------- widget shell ---------- */
-export function OvWidget({ title, meta, editing, sizeChip, onRemove, children }) {
+export function OvWidget({ title, meta, editing, onRemove, children }) {
   return (
     <section className="ov-widget">
       <div className="ov-whead">
@@ -25,8 +25,6 @@ export function OvWidget({ title, meta, editing, sizeChip, onRemove, children })
         )}
       </div>
       <div className="ov-wbody">{children}</div>
-      {editing && <span className="ov-resize" title="Resize"></span>}
-      {editing && sizeChip && <span className="ov-sizechip">{sizeChip}</span>}
     </section>
   );
 }
