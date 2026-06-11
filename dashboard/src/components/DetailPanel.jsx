@@ -167,7 +167,7 @@ function showToast(msg, type = 'info') {
 // --- Main Component ---
 
 export default function DetailPanel() {
-  const { state } = useAppState();
+  const { state, version } = useAppState();
   const taskActions = useTaskActions();
   const [taskId, setTaskId] = useState(null);
   const [task, setTask] = useState(null);
@@ -270,6 +270,28 @@ export default function DetailPanel() {
     load();
     return () => { cancelled = true; };
   }, [taskId, project]);
+
+  // T-295: keep the open panel in sync with live task state. The panel held
+  // task as a one-shot snapshot, so an external/poll update (e.g. another
+  // agent moving the task to review) moved the kanban card but left the panel
+  // stale. Re-select from the live store by id on every appstate change.
+  // `version` ticks on appstate:change; skip while an inline edit is in
+  // progress so we never clobber what the user is typing.
+  useEffect(() => {
+    if (!taskId || isEditingTitle || isEditingDescription) return;
+    const live = getTasks().find(t => t.id === taskId);
+    if (!live) return;
+    setTask(prev => {
+      if (!prev) return prev; // initial load owns the first set
+      // Cheap change check on the fields the panel renders.
+      const same = prev.status === live.status && prev.priority === live.priority
+        && prev.blocked === live.blocked && prev.agent === live.agent
+        && prev.routedAgent === live.routedAgent && prev.title === live.title
+        && prev.specFile === live.specFile && prev.completed === live.completed
+        && (prev.subtaskIds || []).join(',') === (live.subtaskIds || []).join(',');
+      return same ? prev : { ...prev, ...live };
+    });
+  }, [version, taskId, isEditingTitle, isEditingDescription]);
 
   // --- Load activity feed ---
   const loadActivity = useCallback(async () => {

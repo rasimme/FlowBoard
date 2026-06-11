@@ -232,6 +232,20 @@ function _resyncCachedTask(ulid) {
   const specsIdx = _specsIndex.get(project) || {};
   fbTask.specFile = specsIdx[fbId] || null;
 
+  // T-295: _toFbTask hardcodes subtaskIds: []. Re-derive children here so a
+  // single-task resync (every PUT goes through this) returns the real list
+  // instead of an empty one. Without this the PUT response wipes the parent's
+  // subtaskIds on the client (flicker), the priority cascade never runs, and
+  // recalcParentStatus reads an empty list and bails.
+  fbTask.subtaskIds = [..._cache.values()]
+    .filter(t => t._project === project && t.parentId === fbId)
+    .map(t => t.id)
+    .sort((a, b) => {
+      const na = parseInt(a.split('-').pop(), 10);
+      const nb = parseInt(b.split('-').pop(), 10);
+      return na - nb;
+    });
+
   _cache.set(mapKey, fbTask);
   return fbTask;
 }

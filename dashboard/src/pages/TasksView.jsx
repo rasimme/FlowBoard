@@ -218,7 +218,10 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   const [popover, setPopover] = useState({ type: null, open: false, rect: null });
   const haptic = useHaptic();
 
-  const hasSubtasks = task.subtaskIds && task.subtaskIds.length > 0;
+  // T-295: derive from the live task list, not task.subtaskIds — a PUT
+  // response can momentarily carry an empty subtaskIds and unmount the
+  // subtask UI (flicker). allTasks is always the source of truth here.
+  const hasSubtasks = allTasks.some(t => t.parentId === task.id && t.status !== 'archived');
   const hasUsableSpec = task.specFile && task.specExists !== false;
   const activeSubtaskClaims = getActiveSubtaskClaims(task, allTasks);
   const hasDerivedSubtaskActivity = !isActivelyClaimed(task) && activeSubtaskClaims.length > 0;
