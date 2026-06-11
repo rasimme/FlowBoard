@@ -121,9 +121,9 @@ async function run() {
   assertEqual(t1reopen.status, 'open', 'Status reopened to open');
   assertEqual(t1reopen.completed, null, 'Completed cleared on reopen');
 
-  // blocked
-  hzl.updateTask(PROJECT, 'T-002', { status: 'blocked' });
-  assertEqual(hzl.getTask(PROJECT, 'T-002').status, 'blocked', 'Blocked status works');
+  // blocked is a flag, not a status (ADR-0009)
+  hzl.updateTask(PROJECT, 'T-002', { blocked: true });
+  assertEqual(hzl.getTask(PROJECT, 'T-002').blocked, true, 'Blocked flag works');
 
   // Set various tasks to known states for restart test
   hzl.updateTask(PROJECT, 'T-001', { status: 'in-progress' });
@@ -247,13 +247,13 @@ async function run() {
   hzl.updateTask(PROJECT, 'T-003', { status: 'in-progress' });
   hzl.updateTask(PROJECT, 'T-003', { status: 'review' });
   hzl.updateTask(PROJECT, 'T-003', { status: 'done' });
+  hzl.updateTask(PROJECT, 'T-003', { status: 'backlog' });
   hzl.updateTask(PROJECT, 'T-003', { status: 'open' });
-  hzl.updateTask(PROJECT, 'T-003', { status: 'blocked' });
-  assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'blocked', 'Rapid status cycling lands on last status');
+  assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'open', 'Rapid status cycling lands on last status');
 
   // Status cycling survives restart
   await hzl.init(DB_PATH);
-  assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'blocked', 'Rapid-cycled status survives restart');
+  assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'open', 'Rapid-cycled status survives restart');
 
   // ============================================================
   console.log('\n═══ PHASE 8: Subtask Delete Modes ═══');
@@ -339,8 +339,8 @@ async function run() {
   hzl.recalcParentStatus(PROJECT, 'T-001');
   assertEqual(hzl.getTask(PROJECT, 'T-001').status, 'in-progress', 'Subtask reopened → parent in-progress');
 
-  // One blocked, one open → parent stays in-progress (some activity)
-  hzl.updateTask(PROJECT, 'T-001-1', { status: 'blocked' });
+  // One blocked (flag), one open → parent stays in-progress (some activity)
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'in-progress', blocked: true });
   hzl.updateTask(PROJECT, 'T-001-2', { status: 'open' });
   hzl.recalcParentStatus(PROJECT, 'T-001');
   const parentBlocked = hzl.getTask(PROJECT, 'T-001');
@@ -372,11 +372,11 @@ async function run() {
   const finalT1 = hzl.getTask(PROJECT, 'T-001');
   assertEqual(finalT1.status, 'in-progress', 'T-001 status correct after double restart');
   const finalT001_1 = hzl.getTask(PROJECT, 'T-001-1');
-  assertEqual(finalT001_1.status, 'blocked', 'T-001-1 blocked status correct after double restart');
+  assertEqual(finalT001_1.blocked, true, 'T-001-1 blocked flag correct after double restart');
   const finalT001_2 = hzl.getTask(PROJECT, 'T-001-2');
   assertEqual(finalT001_2.status, 'open', 'T-001-2 open status correct after double restart');
-  assertEqual(hzl.getTask(PROJECT, 'T-002').status, 'blocked', 'T-002 blocked survives double restart');
-  assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'blocked', 'T-003 blocked survives double restart');
+  assertEqual(hzl.getTask(PROJECT, 'T-002').blocked, true, 'T-002 blocked flag survives double restart');
+  assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'open', 'T-003 status survives double restart');
 
   // Archived/deleted tasks still not reused
   const tAfterDouble = hzl.createTask(PROJECT, { title: 'After double restart' });
@@ -473,7 +473,7 @@ async function run() {
   hzl.updateTask(PROJECT, 'T-001-1', { status: 'done' });
   hzl.updateTask(PROJECT, 'T-001-2', { status: 'done' });
   hzl.updateTask(PROJECT, 'T-002', { status: 'open' });
-  hzl.updateTask(PROJECT, 'T-003', { status: 'blocked' });
+  hzl.updateTask(PROJECT, 'T-003', { blocked: true });
 
   const exactCounts = hzl.getTaskCounts(PROJECT);
   console.log('  Exact counts:', JSON.stringify(exactCounts));
@@ -571,7 +571,7 @@ async function run() {
   // ============================================================
 
   // All valid statuses must work
-  for (const st of ['open', 'in-progress', 'backlog', 'blocked']) {
+  for (const st of ['open', 'in-progress', 'backlog', 'review']) {
     let threw = false;
     let created;
     try { created = hzl.createTask(PROJECT, { title: `Valid status ${st}`, status: st }); } catch (e) { threw = true; }
@@ -583,7 +583,7 @@ async function run() {
   }
 
   // Invalid statuses must throw
-  for (const bad of ['yolo', 'OPEN', 'pending', '']) {
+  for (const bad of ['yolo', 'OPEN', 'pending', 'blocked', '']) {
     let threw = false;
     try { hzl.createTask(PROJECT, { title: 'Invalid', status: bad }); } catch { threw = true; }
     assert(threw, `createTask with invalid status "${bad}" throws`);
