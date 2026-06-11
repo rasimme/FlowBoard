@@ -463,3 +463,13 @@
   width: var(--ov-snap-w, 100%);
   height: var(--ov-snap-h, 100%);
 }
+
+/* resize from the left edge: the snapped card hugs the fixed right edge */
+.ov-anchor-right .react-grid-item.resizing > .ov-widget { margin-left: auto; }
+
+/* 1) the dashed placeholder is a DRAG preview only — during resize the
+   card itself snaps, the placeholder would just duplicate it */
+.ov-rgl .react-grid-placeholder.placeholder-resizing { display: none; }
+
+/* 2) pressed handle reads as active */
+.ov-rgl .react-resizable-handle:active { background: var(--accent); }

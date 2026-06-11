@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
 import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity } from 'lucide-react';
 
@@ -48,6 +48,8 @@ export default function OverviewView() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
+  const liveLayout = useRef(null); // latest RGL layout, committed only on drag/resize stop
+  const resizeStart = useRef(null); // {x,y} of the item when a resize begins
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
   // suppress RGL's mount animation — items would visibly fly to their
@@ -97,7 +99,10 @@ export default function OverviewView() {
   );
 
   function enterEdit() {
-    setDraft(knownWidgets.map(w => ({ ...w, grid: { ...w.grid }, ...(w.props ? { props: { ...w.props } } : {}) })));
+    // stable child order for the whole edit session — re-sorting mid-
+    // interaction made every card jump (feedback round)
+    const ordered = knownWidgets.slice().sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
+    setDraft(ordered.map(w => ({ ...w, grid: { ...w.grid }, ...(w.props ? { props: { ...w.props } } : {}) })));
     setDraftPreset(overview?.preset || null);
     setEditing(true);
     if (!manifest) {
@@ -199,8 +204,10 @@ export default function OverviewView() {
   if (!overview) return null;
 
   const skipped = (overview.widgets || []).length - knownWidgets.length;
-  const widgets = editing ? draft : knownWidgets;
-  const sorted = widgets.slice().sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
+  // view mode sorts for the CSS grid; edit mode keeps the draft's stable order
+  const sorted = editing
+    ? draft
+    : knownWidgets.slice().sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
 
   return (
     <div className="flex flex-col h-full min-h-0 px-1">
@@ -265,9 +272,13 @@ export default function OverviewView() {
             })}
             gridConfig={{ cols: 12, rowHeight: 88, margin: [12, 12], containerPadding: [0, 0] }}
             dragConfig={{ enabled: true, handle: '.ov-whead' }}
-            resizeConfig={{ enabled: true, handles: ['n', 'e', 's', 'w'] }}
+            resizeConfig={{ enabled: true, handles: ['e', 's', 'w'] }}
             compactor={verticalCompactor}
-            onLayoutChange={applyLayout}
+            onLayoutChange={(l) => { liveLayout.current = l; }}
+            onDragStop={() => { if (liveLayout.current) applyLayout(liveLayout.current); }}
+            onResizeStart={(layout, oldItem) => {
+              resizeStart.current = oldItem ? { x: oldItem.x, y: oldItem.y } : null;
+            }}
             onResize={(layout, oldItem, newItem) => {
               setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
               // RGL v2 merges our cell INTO the grid item (verified via
@@ -278,12 +289,20 @@ export default function OverviewView() {
                 const colW = (width - 12 * 11) / 12;
                 containerEl.style.setProperty('--ov-snap-w', Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px');
                 containerEl.style.setProperty('--ov-snap-h', (88 * newItem.h + 12 * (newItem.h - 1)) + 'px');
+                // resizing from the left edge moves the item's x — anchor
+                // the snapped card to the RIGHT edge so the fixed side
+                // stays put and the left edge steps through the grid
+                const fromLeft = resizeStart.current && newItem.x !== resizeStart.current.x;
+                containerEl.classList.toggle('ov-anchor-right', Boolean(fromLeft));
               }
             }}
             onResizeStop={() => {
               setResizing(null);
+              resizeStart.current = null;
               containerEl?.style.removeProperty('--ov-snap-w');
               containerEl?.style.removeProperty('--ov-snap-h');
+              containerEl?.classList.remove('ov-anchor-right');
+              if (liveLayout.current) applyLayout(liveLayout.current);
             }}
             className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >
