@@ -3007,7 +3007,9 @@ async function startServer() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({
-          text: msg,
+          message: msg,
+          name: 'FlowBoard',
+          wakeMode: 'now',
           agentId: agent || undefined,
           sessionKey: agent ? `agent:${agent}:main` : undefined,
         }),
@@ -3078,7 +3080,11 @@ async function startServer() {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
               body: JSON.stringify({
-                text: msg,
+                // Gateway /hooks/agent contract: `message` carries the text
+                // (the old `text` field was silently rejected with 400, T-304)
+                message: msg,
+                name: 'FlowBoard Stuck-Check',
+                wakeMode: 'now',
                 stuck: tasks,
                 agentId: agent,
                 sessionKey: `agent:${agent}:main`,
