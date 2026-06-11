@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
-import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Save } from 'lucide-react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
+
+const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
 
 /**
  * Overview widget catalog v2 (T-308) — milestones, timeline, context-index,
@@ -158,7 +160,6 @@ export function TimelineWidget({ widget, editing }) {
 
 /* ---------- context-index: context/ files, pins via props ---------- */
 export function ContextIndexWidget({ widget, editing }) {
-  const goTab = useGoTab();
   const { state } = useAppState();
   const project = state?.viewedProject;
   const [files, setFiles] = useState(null);
@@ -169,7 +170,7 @@ export function ContextIndexWidget({ widget, editing }) {
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (!alive) return;
-        const ctx = (d?.tree || []).find(e => e.name === 'context' && e.type === 'dir');
+        const ctx = (d?.tree || []).find(e => e.name === 'context' && e.type === 'directory');
         setFiles((ctx?.children || []).filter(e => e.type === 'file').map(e => e.name));
       })
       .catch(() => { if (alive) setFiles([]); });
@@ -188,7 +189,7 @@ export function ContextIndexWidget({ widget, editing }) {
         <div className="ci-list">
           {sorted.slice(0, widget?.props?.limit || 8).map(f => (
             <div key={f} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => goTab('files')}>
+              onClick={editing ? undefined : () => window._openSpec?.(`context/${f}`)}>
               <FileText size={13} className="text-muted shrink-0" />
               <span className="nm">{pins.includes(f) && <span className="pin">★ </span>}{f}</span>
             </div>
@@ -307,13 +308,16 @@ export function NotesWidget({ editing }) {
 
   return (
     <OvWidget title="Notes" meta="context/NOTES.md">
-      <textarea
-        className="nt-area"
-        value={text ?? ''}
-        placeholder="Jot anything — agents can read and append to NOTES.md too."
-        onChange={e => { setText(e.target.value); setDirty(true); }}
-        disabled={editing || text === null}
-      />
+      <div className="nt-md-wrap">
+        <Suspense fallback={<div className="nt-loading">Loading editor…</div>}>
+          <MarkdownEditor
+            className="nt-md"
+            value={text ?? ''}
+            onChange={v => { setText(v); setDirty(true); }}
+            onSave={save}
+          />
+        </Suspense>
+      </div>
       <div className="nt-foot">
         <span className="nt-state">{dirty ? 'unsaved' : 'saved'}</span>
         <button type="button" className="nt-save" onClick={save} disabled={!dirty || saving || editing}>
@@ -326,12 +330,57 @@ export function NotesWidget({ editing }) {
 
 /* ---------- links: pinned externals from props ---------- */
 export function LinksWidget({ widget, editing }) {
-  const links = widget?.props?.links || [];
+  const { state } = useAppState();
+  const project = state?.viewedProject;
+  // local copy so a link added through the widget shows up without a
+  // full overview reload — props win again on the next mount
+  const [links, setLinks] = useState(widget?.props?.links || []);
+  useEffect(() => { setLinks(widget?.props?.links || []); }, [widget]);
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState('');
+  const [url, setUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function addLink() {
+    const cleanUrl = url.trim();
+    if (!project || !widget?.id || !cleanUrl || saving) return;
+    setSaving(true);
+    try {
+      const cur = await fetch(`/api/projects/${project}/overview`, { credentials: 'include' })
+        .then(r => (r.ok ? r.json() : null));
+      const ov = cur?.overview;
+      const target = (ov?.widgets || []).find(w => w.id === widget.id);
+      if (!target) {
+        window.showToast?.('Save the layout first, then add links', 'warn');
+        return;
+      }
+      const next = [...(target.props?.links || []), { label: label.trim() || cleanUrl, url: cleanUrl }];
+      target.props = { ...(target.props || {}), links: next };
+      delete ov.source;
+      const res = await fetch(`/api/projects/${project}/overview`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(ov),
+      });
+      if (res.ok) {
+        setLinks(next);
+        setLabel(''); setUrl(''); setAdding(false);
+        window.showToast?.('Link pinned', 'success');
+      } else {
+        const d = await res.json().catch(() => ({}));
+        window.showToast?.(d.error || 'Adding link failed', 'error');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <OvWidget title={widget?.title || 'Links'} meta={links.length ? `${links.length} pinned` : null}>
-      {links.length === 0 ? (
+      {links.length === 0 && !adding ? (
         <Empty icon={ExternalLink} title="No links yet"
-          hint={<>Add <span className="w-mono">props.links</span> — e.g. ask your agent: "pin the deploy and the docs to the overview".</>} />
+          hint="Pin deploys, docs or dashboards — via the button below or by asking your agent." />
       ) : (
         <div className="lk-list">
           {links.slice(0, widget?.props?.limit || 6).map(l => (
@@ -344,6 +393,23 @@ export function LinksWidget({ widget, editing }) {
           ))}
         </div>
       )}
+      {!editing && (adding ? (
+        <div className="lk-add">
+          <input className="lk-in" placeholder="Label" value={label} autoFocus
+            onChange={e => setLabel(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setAdding(false); }} />
+          <input className="lk-in" placeholder="https://…" value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addLink(); if (e.key === 'Escape') setAdding(false); }} />
+          <button type="button" className="lk-btn" onClick={addLink} disabled={saving || !url.trim()}>
+            {saving ? '…' : 'Pin'}
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="lk-addtoggle" onClick={() => setAdding(true)}>
+          <Plus size={11} /> Add link
+        </button>
+      ))}
     </OvWidget>
   );
 }

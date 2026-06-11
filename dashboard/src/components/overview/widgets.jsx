@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, Plus, Kanban, Lightbulb, Folder, FileText } from 'lucide-react';
+import { Clock, Plus, Kanban, Lightbulb, Folder, FileText, FilePlus, StickyNote } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
@@ -295,7 +295,7 @@ function parseDecisions(md) {
       date = d.toLocaleDateString('en', { month: 'short', day: 'numeric' });
     }
     const title = heading.replace(/\d{4}-\d{2}-\d{2}\s*[—–-]?\s*/, '').trim() || heading;
-    entries.push({ date, title, text: body.slice(0, 200) });
+    entries.push({ date, iso: dateMatch ? dateMatch[1] : '', title, text: body.slice(0, 200) });
   }
   return entries;
 }
@@ -306,8 +306,12 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'DECISIONS.md');
   const count = widget?.props?.count || 3;
-  // the file is chronological (newest appended) — show the latest first
-  const decisions = parseDecisions(md).slice(-count).reverse();
+  // entry order in the file varies (some projects prepend, some append) —
+  // sort by the date in the heading, newest first; undated keep file order
+  const decisions = parseDecisions(md)
+    .map((e, i) => ({ ...e, i }))
+    .sort((a, b) => (b.iso || '').localeCompare(a.iso || '') || a.i - b.i)
+    .slice(0, count);
 
   return (
     <OvWidget title={widget?.title || 'Recent Decisions'} meta={decisions.length ? 'DECISIONS.md' : null}>
@@ -333,7 +337,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
               </div>
             ))}
           </div>
-          <div className="ov-wfoot" onClick={() => goTab('files')}>DECISIONS.md →</div>
+          <div className="ov-wfoot" onClick={() => window._openSpec?.('DECISIONS.md')}>DECISIONS.md →</div>
         </>
       )}
     </OvWidget>
@@ -364,7 +368,7 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
       ) : (
         <>
           <div className="ov-goal-text">{goal}</div>
-          <div className="ov-wfoot" onClick={() => goTab('files')}>PROJECT.md →</div>
+          <div className="ov-wfoot" onClick={() => window._openSpec?.('PROJECT.md')}>PROJECT.md →</div>
         </>
       )}
     </OvWidget>
@@ -377,11 +381,13 @@ export function QuickLinksWidget({ widget, editing, onRemove }) {
   const tiles = Boolean(widget?.props?.tiles);
   return (
     <OvWidget title={widget?.title || 'Quick Links'}>
-      <div className={'ov-links' + (tiles ? ' tiles' : '')}>
+      <div className={'ov-links six' + (tiles ? ' tiles' : '')}>
         <button type="button" className="ov-link" title="Ideas Canvas" onClick={() => goTab('ideas')}><Lightbulb size={15} /><span>Ideas Canvas</span></button>
         <button type="button" className="ov-link" title="Kanban" onClick={() => goTab('tasks')}><Kanban size={15} /><span>Kanban</span></button>
         <button type="button" className="ov-link" title="Files" onClick={() => goTab('files')}><Folder size={15} /><span>Files</span></button>
-        <button type="button" className="ov-link primary" title="New Task" onClick={() => { goTab('tasks'); window._openNewTask?.(); }}><Plus size={15} /><span>New Task</span></button>
+        <button type="button" className="ov-link primary" title="New Task" onClick={() => { window._pendingNewTask = true; goTab('tasks'); }}><Plus size={15} /><span>New Task</span></button>
+        <button type="button" className="ov-link" title="New Note" onClick={() => { window._pendingNewNote = true; goTab('ideas'); }}><StickyNote size={15} /><span>New Note</span></button>
+        <button type="button" className="ov-link" title="New File" onClick={() => { window._pendingNewFile = true; goTab('files'); }}><FilePlus size={15} /><span>New File</span></button>
       </div>
     </OvWidget>
   );
@@ -413,7 +419,10 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
             </div>
             <div className="ov-kbars">
               {c.bars.map(t => (
-                <span key={t.id} className="ov-kbar" title={`${t.id} ${t.title}`}>
+                <span key={t.id} className="ov-kbar" title={`${t.id} ${t.title}`}
+                  onClick={e => { e.stopPropagation(); goTab('tasks'); window._scrollToTaskId = t.id; }}>
+                  <span className="tid">{t.id}</span>
+                  <span className="ttl">{t.title}</span>
                   {t.agent && <AgentChip name={t.agent} size="xs" />}
                 </span>
               ))}

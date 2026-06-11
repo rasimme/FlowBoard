@@ -606,6 +606,14 @@
     .column-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0; opacity: 0.5; }
 
     /* Task Cards */
+    /* flash target card after navigating in from search/overview/spec-back */
+    .task-card.highlighted-from-back {
+      animation: cardFlash 2s ease-out;
+    }
+    @keyframes cardFlash {
+      0%, 55% { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+      100% { box-shadow: 0 0 0 2px transparent; }
+    }
     .task-card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: var(--radius-md); padding: 12px; position: relative;

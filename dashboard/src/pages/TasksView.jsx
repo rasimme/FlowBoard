@@ -777,6 +777,14 @@ function AddTaskForm({ project, onCreated }) {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  // overview quick action "New Task" — consumed like window._scrollToTaskId
+  useEffect(() => {
+    if (window._pendingNewTask) {
+      delete window._pendingNewTask;
+      handleOpen();
+    }
+  });
+
   const reset = () => {
     setTitle('');
     setPriority('medium');

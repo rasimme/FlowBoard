@@ -441,6 +441,13 @@ export default function FilesView() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  // overview quick action "New File" — consumed like window._scrollToTaskId
+  useEffect(() => {
+    if (window._pendingNewFile) {
+      delete window._pendingNewFile;
+      setCreateOpen(true);
+    }
+  });
   const [newFileTitle, setNewFileTitle] = useState('');
   const [creatingFile, setCreatingFile] = useState(false);
   const abortRef = useRef(null);

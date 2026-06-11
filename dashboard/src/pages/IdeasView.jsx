@@ -110,6 +110,13 @@ export default function IdeasView() {
 
   // Create modal
   const [showCreate, setShowCreate] = useState(false);
+  // overview quick action "New Note" — consumed like window._scrollToTaskId
+  useEffect(() => {
+    if (window._pendingNewNote) {
+      delete window._pendingNewNote;
+      setShowCreate(true);
+    }
+  });
   const [newText, setNewText] = useState('');
   const [newColor, setNewColor] = useState('yellow');
   const [saving, setSaving] = useState(false);

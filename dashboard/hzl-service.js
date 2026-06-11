@@ -1929,36 +1929,54 @@ function getComments(project, flowboardId) {
 function getProjectActivity(project, opts = {}) {
   const { since = null, limit = 50 } = opts;
   const cap = Math.max(1, Math.min(Number(limit) || 50, 200));
-  // over-fetch, then filter down to this project's tasks
-  const rows = since
-    ? _eventsDb.prepare('SELECT * FROM events WHERE timestamp > ? ORDER BY id DESC LIMIT ?').all(String(since), cap * 6)
-    : _eventsDb.prepare('SELECT * FROM events ORDER BY id DESC LIMIT ?').all(cap * 6);
+  // The ULID↔FB maps fill lazily via listTasks — after a server restart a
+  // cold overview request would otherwise see an empty feed.
+  let warm = false;
+  for (const key of _fbToUlid.keys()) {
+    if (key.startsWith(project + ':')) { warm = true; break; }
+  }
+  if (!warm) listTasks(project);
+  // Page backwards through the global stream until the cap is met — a
+  // fixed over-fetch used to return nothing for small limits whenever
+  // busier projects dominated the recent events.
   const out = [];
-  for (const ev of rows) {
-    const mapKey = _ulidToFb.get(ev.task_id);
-    if (!mapKey || !mapKey.startsWith(project + ':')) continue;
-    const fbId = mapKey.slice(project.length + 1);
-    const cached = _cache.get(mapKey);
-    if (cached?.trashedAt) continue;
-    const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
-    let message;
-    if (ev.type === 'comment_added') {
-      message = 'commented' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
-    } else if (ev.type === 'checkpoint_recorded') {
-      message = 'checkpoint' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
-    } else {
-      message = renderStatusEventMessage(ev.type, data);
+  const BATCH = 500;
+  const MAX_SCAN = 20000; // bound for projects with little/no event history
+  let beforeId = Number.MAX_SAFE_INTEGER;
+  let scanned = 0;
+  while (out.length < cap && scanned < MAX_SCAN) {
+    const rows = since
+      ? _eventsDb.prepare('SELECT * FROM events WHERE id < ? AND timestamp > ? ORDER BY id DESC LIMIT ?').all(beforeId, String(since), BATCH)
+      : _eventsDb.prepare('SELECT * FROM events WHERE id < ? ORDER BY id DESC LIMIT ?').all(beforeId, BATCH);
+    if (rows.length === 0) break;
+    scanned += rows.length;
+    beforeId = rows[rows.length - 1].id;
+    for (const ev of rows) {
+      const mapKey = _ulidToFb.get(ev.task_id);
+      if (!mapKey || !mapKey.startsWith(project + ':')) continue;
+      const fbId = mapKey.slice(project.length + 1);
+      const cached = _cache.get(mapKey);
+      if (cached?.trashedAt) continue;
+      const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
+      let message;
+      if (ev.type === 'comment_added') {
+        message = 'commented' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
+      } else if (ev.type === 'checkpoint_recorded') {
+        message = 'checkpoint' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
+      } else {
+        message = renderStatusEventMessage(ev.type, data);
+      }
+      if (!message) continue;
+      out.push({
+        taskId: fbId,
+        title: cached?.title || null,
+        agent: data.agent || data.author || ev.agent_id || null,
+        event: ev.type,
+        message,
+        timestamp: ev.timestamp,
+      });
+      if (out.length >= cap) break;
     }
-    if (!message) continue;
-    out.push({
-      taskId: fbId,
-      title: cached?.title || null,
-      agent: data.agent || data.author || ev.agent_id || null,
-      event: ev.type,
-      message,
-      timestamp: ev.timestamp,
-    });
-    if (out.length >= cap) break;
   }
   return out;
 }

@@ -35,6 +35,8 @@ Historical log of work sessions. Each entry records:
 
 Append-only. Old entries are not edited. `SESSIONS.md` may mention tasks historically, but it must not be used as the current task source of truth.
 
+**When to write:** append one short entry when a working session ends — on project deactivation, or when you hand off after a substantial block of work. One entry per session, not per task.
+
 ### DECISIONS.md
 
 Durable reasoning records. Each entry answers:
@@ -43,6 +45,8 @@ Durable reasoning records. Each entry answers:
 - When
 
 Decisions persist across sessions. They're the "institutional memory" of the project.
+
+**When to write:** append an entry immediately when a durable architecture, design or scope decision is made — don't batch them for session end. Use a dated heading (`### YYYY-MM-DD — <title>`) with `**Decision:**` / `**Reasoning:**` / `**Alternatives:**` lines. Routine implementation choices that are obvious from the code don't belong here.
 
 ## Context Directory
 
