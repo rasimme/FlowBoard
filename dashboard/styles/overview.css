@@ -326,6 +326,11 @@
     display: grid; grid-template-columns: 1fr 1fr;
     grid-auto-rows: minmax(40px, 1fr); gap: 6px;
   }
+}
+@container widget (max-width: 250px) {
+  .ov-links span { display: none; }
+  .ov-links { gap: 6px; }
+  .ov-link { min-height: 34px; }
   .ov-agent-row { padding: 6px 8px; gap: 8px; }
   .ov-agent-task .ttl { display: none; }       /* keep T-id, drop title */
   .ov-kpis { gap: 12px; flex-wrap: wrap; }
@@ -361,33 +366,39 @@
   box-shadow: var(--shadow-lg);
   border-color: var(--border-strong);
 }
-/* while resizing, the snapped placeholder is the preview — the live
-   element steps back so the grid steps read clearly */
-.ov-rgl .react-grid-item.resizing .ov-widget { opacity: .35; }
+/* while resizing the element snaps in grid steps (see onResize) — the
+   placeholder shows the target cell underneath */
 .ov-rgl .react-grid-item.resizing .ov-edit-x { opacity: 0; }
 .ov-rgl .react-resizable-handle {
-  position: absolute;
-  width: 13px; height: 13px;
-  background: none; padding: 0;
-}
-.ov-rgl .react-resizable-handle::after { display: none; }
-.ov-rgl .react-resizable-handle:hover { border-color: var(--accent); }
-.ov-rgl .react-resizable-handle-se {
+  position: absolute; z-index: 6;
+  width: 20px; height: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
   transform: none;
-  right: 5px; bottom: 5px;
-  border-right: 2px solid var(--border-strong);
-  border-bottom: 2px solid var(--border-strong);
-  border-bottom-right-radius: 4px;
-  cursor: nwse-resize;
+  padding: 0;
+}
+.ov-rgl .react-resizable-handle::after {
+  content: '';
+  width: 7px; height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  border-bottom-right-radius: 2px;
+  display: block;
+}
+.ov-rgl .react-resizable-handle:hover { border-color: var(--accent); }
+.ov-rgl .react-resizable-handle:hover::after { border-color: var(--accent); }
+.ov-rgl .react-resizable-handle-se {
+  right: 6px; bottom: 6px; cursor: nwse-resize;
 }
 .ov-rgl .react-resizable-handle-sw {
-  transform: none;
-  left: 5px; bottom: 5px;
-  border-left: 2px solid var(--border-strong);
-  border-bottom: 2px solid var(--border-strong);
-  border-bottom-left-radius: 4px;
-  cursor: nesw-resize;
+  left: 6px; bottom: 6px; cursor: nesw-resize;
 }
+/* the chevron points outward per corner — rotate the glyph, not the badge */
+.ov-rgl .react-resizable-handle-se::after { transform: rotate(0deg) translate(-1px, -1px); }
+.ov-rgl .react-resizable-handle-sw::after { transform: rotate(90deg) translate(-1px, -1px); }
 
 /* whole widget header is the drag handle while editing; the hovered card
    lifts visibly so it reads as "grabbable" without extra chrome */
@@ -401,7 +412,7 @@
 
 /* ---------- edit chrome overlays (T-305 feedback round 2) ---------- */
 .ov-edit-x {
-  position: absolute; z-index: 5;
+  position: absolute; z-index: 6;
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px;
   border-radius: var(--radius-full);
@@ -409,6 +420,15 @@
   border: 1px solid var(--border-strong);
   color: var(--muted);
   box-shadow: var(--shadow-sm);
+  top: 6px; right: 6px; cursor: pointer; padding: 0;
+  opacity: 1;
 }
-.ov-edit-x { top: -8px; right: -8px; cursor: pointer; padding: 0; }
+/* the widget meta sits under the X in edit mode — give it room */
+.ov-rgl.editing .ov-wmeta { margin-right: 22px; }
+/* hovered/dragged item always stacks above its neighbours, so no badge is
+   ever clipped or shines through half-covered */
+.ov-rgl .react-grid-item { z-index: 1; }
+.ov-rgl .react-grid-item:hover,
+.ov-rgl .react-grid-item.react-draggable-dragging,
+.ov-rgl .react-grid-item.resizing { z-index: 4; }
 .ov-edit-x:hover { color: var(--danger); border-color: rgba(239,68,68,.45); background: var(--danger-subtle); }

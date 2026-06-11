@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ReactGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
 import { Pencil, Plus, X } from 'lucide-react';
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
@@ -33,7 +33,23 @@ export default function OverviewView() {
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
 
-  const { width, containerRef, mounted } = useContainerWidth();
+  // Own width tracking: a ResizeObserver on the scroll container keeps the
+  // edit grid in lockstep with the window/sidebar — the edit layout scales
+  // exactly like the fluid view grid.
+  const containerRef = useRef(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const w = Math.floor(entries[0]?.contentRect?.width || 0);
+      if (w) setWidth(w);
+    });
+    ro.observe(el);
+    setWidth(Math.floor(el.clientWidth));
+    return () => ro.disconnect();
+  }, []);
+  const mounted = width > 0;
 
   useEffect(() => {
     if (!project) return;
@@ -203,7 +219,17 @@ export default function OverviewView() {
             resizeConfig={{ enabled: true, handles: ['se', 'sw'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
-            onResize={(layout, oldItem, newItem) => setResizing({ id: newItem.i, w: newItem.w, h: newItem.h })}
+            onResize={(layout, oldItem, newItem, placeholder, e, element) => {
+              setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
+              // snap the live element to the grid step (RGL itself scales
+              // continuously); RGL rewrites the style every tick, so this
+              // override after each tick keeps content and preview in step
+              if (element) {
+                const colW = (width - 12 * 11) / 12;
+                element.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
+                element.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
+              }
+            }}
             onResizeStop={() => setResizing(null)}
             className="ov-rgl editing"
           >

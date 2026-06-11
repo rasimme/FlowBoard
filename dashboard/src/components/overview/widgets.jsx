@@ -357,10 +357,10 @@ export function QuickLinksWidget({ widget, editing, onRemove }) {
   return (
     <OvWidget title={widget?.title || 'Quick Links'}>
       <div className={'ov-links' + (tiles ? ' tiles' : '')}>
-        <button type="button" className="ov-link" onClick={() => goTab('ideas')}><Lightbulb size={15} /><span>Ideas Canvas</span></button>
-        <button type="button" className="ov-link" onClick={() => goTab('tasks')}><Kanban size={15} /><span>Kanban</span></button>
-        <button type="button" className="ov-link" onClick={() => goTab('files')}><Folder size={15} /><span>Files</span></button>
-        <button type="button" className="ov-link primary" onClick={() => { goTab('tasks'); window._openNewTask?.(); }}><Plus size={15} /><span>New Task</span></button>
+        <button type="button" className="ov-link" title="Ideas Canvas" onClick={() => goTab('ideas')}><Lightbulb size={15} /><span>Ideas Canvas</span></button>
+        <button type="button" className="ov-link" title="Kanban" onClick={() => goTab('tasks')}><Kanban size={15} /><span>Kanban</span></button>
+        <button type="button" className="ov-link" title="Files" onClick={() => goTab('files')}><Folder size={15} /><span>Files</span></button>
+        <button type="button" className="ov-link primary" title="New Task" onClick={() => { goTab('tasks'); window._openNewTask?.(); }}><Plus size={15} /><span>New Task</span></button>
       </div>
     </OvWidget>
   );
