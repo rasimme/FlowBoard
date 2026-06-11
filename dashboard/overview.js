@@ -121,7 +121,7 @@ const PRESETS = {
     ],
   },
   agent: {
-    label: 'Agent-zentriert',
+    label: 'Agent-centric',
     description: 'Daily work with running agents: active-agents hero, quick actions and priorities on the right, stats + decisions below.',
     widgets: [
       { id: 'w-agents', type: 'active-agents', grid: { x: 0, y: 0, w: 8, h: 3 } },
@@ -132,7 +132,7 @@ const PRESETS = {
     ],
   },
   status: {
-    label: 'Status-zentriert',
+    label: 'Status-centric',
     description: 'Reviews and stand-ups: stats first, full-width board preview, operations as three columns.',
     widgets: [
       { id: 'w-stats', type: 'task-stats', grid: { x: 0, y: 0, w: 8, h: 2 } },
@@ -144,7 +144,7 @@ const PRESETS = {
     ],
   },
   context: {
-    label: 'Kontext-zentriert',
+    label: 'Context-centric',
     description: 'Documentation-heavy projects and re-entry after a break: PROJECT.md and DECISIONS.md dominant.',
     widgets: [
       { id: 'w-goals', type: 'project-goals', grid: { x: 0, y: 0, w: 8, h: 2 } },
