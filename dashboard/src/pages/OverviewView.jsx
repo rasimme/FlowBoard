@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ReactGridLayout, useContainerWidth, verticalCompactor } from 'react-grid-layout';
-import { GripVertical, Pencil, Plus, X } from 'lucide-react';
+import { Pencil, Plus, X } from 'lucide-react';
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -200,7 +200,7 @@ export default function OverviewView() {
             })}
             gridConfig={{ cols: 12, rowHeight: 88, margin: [12, 12], containerPadding: [0, 0] }}
             dragConfig={{ enabled: true, handle: '.ov-whead' }}
-            resizeConfig={{ enabled: true, handles: ['se', 'sw', 'ne', 'nw'] }}
+            resizeConfig={{ enabled: true, handles: ['se', 'sw'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
             onResize={(layout, oldItem, newItem) => setResizing({ id: newItem.i, w: newItem.w, h: newItem.h })}
@@ -213,9 +213,6 @@ export default function OverviewView() {
                 <div key={w.id} className="ov-cell">
                   <Widget widget={w} editing />
                   {/* edit chrome — overlays the card, never shifts its layout */}
-                  <span className="ov-edit-grip" title="Drag by the header to move">
-                    <GripVertical size={11} />
-                  </span>
                   <button
                     type="button"
                     className="ov-edit-x"

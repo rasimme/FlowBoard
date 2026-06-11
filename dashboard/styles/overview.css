@@ -364,7 +364,6 @@
 /* while resizing, the snapped placeholder is the preview — the live
    element steps back so the grid steps read clearly */
 .ov-rgl .react-grid-item.resizing .ov-widget { opacity: .35; }
-.ov-rgl .react-grid-item.resizing .ov-edit-grip,
 .ov-rgl .react-grid-item.resizing .ov-edit-x { opacity: 0; }
 .ov-rgl .react-resizable-handle {
   position: absolute;
@@ -389,30 +388,19 @@
   border-bottom-left-radius: 4px;
   cursor: nesw-resize;
 }
-.ov-rgl .react-resizable-handle-ne {
-  transform: none;
-  right: 5px; top: 5px;
-  border-right: 2px solid var(--border-strong);
-  border-top: 2px solid var(--border-strong);
-  border-top-right-radius: 4px;
-  cursor: nesw-resize;
-}
-.ov-rgl .react-resizable-handle-nw {
-  transform: none;
-  left: 5px; top: 5px;
-  border-left: 2px solid var(--border-strong);
-  border-top: 2px solid var(--border-strong);
-  border-top-left-radius: 4px;
-  cursor: nwse-resize;
-}
 
-/* whole widget header is the drag handle while editing */
+/* whole widget header is the drag handle while editing; the hovered card
+   lifts visibly so it reads as "grabbable" without extra chrome */
+.ov-rgl.editing .react-grid-item:hover .ov-widget {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-subtle), var(--shadow-md);
+}
 .ov-rgl.editing .ov-whead { cursor: grab; user-select: none; }
 .ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-whead { cursor: grabbing; }
 
 
 /* ---------- edit chrome overlays (T-305 feedback round 2) ---------- */
-.ov-edit-grip, .ov-edit-x {
+.ov-edit-x {
   position: absolute; z-index: 5;
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px;
@@ -422,6 +410,5 @@
   color: var(--muted);
   box-shadow: var(--shadow-sm);
 }
-.ov-edit-grip { top: -8px; left: -8px; cursor: grab; pointer-events: none; }
 .ov-edit-x { top: -8px; right: -8px; cursor: pointer; padding: 0; }
 .ov-edit-x:hover { color: var(--danger); border-color: rgba(239,68,68,.45); background: var(--danger-subtle); }
