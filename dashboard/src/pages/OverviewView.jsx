@@ -233,7 +233,7 @@ export default function OverviewView() {
         )}
       </div>
 
-      <div ref={setContainerEl} className="flex-1 min-h-0 overflow-y-auto">
+      <div ref={setContainerEl} className="flex-1 min-h-0 overflow-y-auto pt-[9px] pr-[9px] pb-[10px] pl-[4px]">
         {/* View mode: fluid CSS grid — widgets track the container width
             seamlessly (container queries do the rest) and stack on narrow
             viewports. Edit mode: react-grid-layout for drag/resize; the
@@ -268,27 +268,23 @@ export default function OverviewView() {
             resizeConfig={{ enabled: true, handles: ['n', 'e', 's', 'w'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
-            onResize={(layout, oldItem, newItem) => {
-              setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
-              // Snap the live item to the grid step — RGL itself scales it
-              // continuously with the cursor. The callback's element param
-              // is react-resizable's handle node, so we grab the actual
-              // grid item via RGL's `resizing` marker class and override
-              // its size after every tick.
-              const itemEl = containerEl?.querySelector('.react-grid-item.resizing');
-              if (itemEl) {
-                const colW = (width - 12 * 11) / 12;
-                itemEl.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
-                itemEl.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
-              }
-            }}
+            onResize={(layout, oldItem, newItem) => setResizing({ id: newItem.i, w: newItem.w, h: newItem.h })}
             onResizeStop={() => setResizing(null)}
             className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
+              // While resizing, the cell renders the SNAPPED size from state
+              // (RGL scales its item box continuously with the cursor —
+              // visually the card steps through the grid, no style fights).
+              const isRz = resizing?.id === w.id;
+              const colW = (width - 12 * 11) / 12;
+              const cellStyle = isRz ? {
+                width: Math.round(colW * resizing.w + 12 * (resizing.w - 1)),
+                height: 88 * resizing.h + 12 * (resizing.h - 1),
+              } : undefined;
               return (
-                <div key={w.id} className="ov-cell">
+                <div key={w.id} className="ov-cell" style={cellStyle}>
                   <Widget widget={w} editing />
                   {/* edit chrome — overlays the card, never shifts its layout */}
                   <button
