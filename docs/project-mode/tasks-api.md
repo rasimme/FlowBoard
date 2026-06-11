@@ -30,6 +30,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `metadata` | object? | Max 64KB, arbitrary JSON |
 | `progress` | 0–100? | Set via checkpoints |
 | `lease_until` | ISO timestamp? | Claim expiry |
+| `staleAfterMinutes` | int? | Per-task stale threshold for stuck detection; overrides the global `STALE_THRESHOLD_MINUTES` (T-300) |
 
 ### FlowBoard ID Mapping
 
@@ -63,6 +64,7 @@ POST /projects/:name/tasks
 | `description` | string | no | Max 16KB |
 | `tags` | string[] | no | Filterable tags, max 100 |
 | `forceId` | string | no | Migration mode: use exact ID instead of auto-generated. Throws on duplicate. |
+| `staleAfterMinutes` | int | no | Per-task stale threshold (minutes) for stuck detection; also updatable via `PUT`. `null` clears the override. |
 
 **Subtask behavior:**
 - Setting `parentId` creates a subtask. The ID is auto-generated as `{parentId}-{N}` (e.g. `T-042-1`, `T-042-2`).

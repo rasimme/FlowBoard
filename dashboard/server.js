@@ -1379,12 +1379,19 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     if (parent) effectivePriority = normalizePriority(parent.priority) || 'medium';
   }
 
+  // T-300: optional per-task stale threshold (minutes)
+  const staleAfterMinutes = req.body.staleAfterMinutes ?? null;
+  if (staleAfterMinutes !== null && (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes <= 0)) {
+    return res.status(400).json({ error: 'staleAfterMinutes must be a positive integer or null' });
+  }
+
   try {
     const task = hzlService.createTask(req.params.name, {
       title,
       priority: effectivePriority,
       parentId: parentId || null,
       status: req.body.status || 'backlog',
+      staleAfterMinutes,
     });
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
     try {
@@ -1441,7 +1448,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     updates.completed = null;
   }
 
-  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent'];
+  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes'];
   const hzlUpdates = {};
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {

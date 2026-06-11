@@ -116,6 +116,7 @@ function _toFbTask(hzlTask, project) {
     leaseUntil: hzlTask.lease_until || null,
     // Checkpoint tracking
     lastCheckpointAt: fb.lastCheckpointAt || null,
+    staleAfterMinutes: fb.staleAfterMinutes ?? null,
     checkpointCount: fb.checkpointCount || 0,
     // Agent routing (explicit pre-assignment, separate from claim ownership)
     routedAgent: fb.routedAgent || null,
@@ -697,7 +698,10 @@ function workflowDelegate(project, opts = {}) {
  * Returns FlowBoard-format task.
  */
 function createTask(project, opts) {
-  const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null } = opts;
+  const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null, staleAfterMinutes = null } = opts;
+  if (staleAfterMinutes !== null && (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes <= 0)) {
+    throw new Error('staleAfterMinutes must be a positive integer or null');
+  }
   if (!VALID_STATUSES.has(status)) throw new Error(`Invalid status: "${status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
 
   // Validate parent if provided
@@ -739,6 +743,7 @@ function createTask(project, opts) {
         created,
         completed: null,
         parentId: parentId || null,
+        ...(staleAfterMinutes !== null ? { staleAfterMinutes } : {}),
       }
     },
     priority: _priorityToInt(priority),
@@ -883,6 +888,15 @@ function updateTask(project, flowboardId, updates) {
     metaUpdates.flowboard.trashedAt = updates.trashedAt || null;
   }
 
+  // T-300: per-task stale threshold override (minutes); null clears it
+  if (Object.prototype.hasOwnProperty.call(updates, 'staleAfterMinutes')) {
+    const v = updates.staleAfterMinutes;
+    if (v !== null && (!Number.isInteger(v) || v <= 0)) {
+      throw new Error('staleAfterMinutes must be a positive integer or null');
+    }
+    metaUpdates.flowboard.staleAfterMinutes = v;
+  }
+
   // Write scalar updates (title, priority, etc.) via updateTask — metadata handled separately
   if (Object.keys(hzlUpdates).length > 0) {
     _taskService.updateTask(ulid, hzlUpdates);
@@ -937,7 +951,7 @@ function updateTask(project, flowboardId, updates) {
   // in `updates`). After this loop, `cached` holds the dashboard's view of
   // truth — including any null-clears applied by the auto-release block
   // above (when transitioning to review/done).
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       if (key === 'blocked') cached[key] = updates[key] === true;
@@ -1952,11 +1966,13 @@ function getStuckTasks(opts = {}) {
     // Only check stale/expired for in-progress tasks
     if (task.status !== 'in-progress') continue;
 
-    // Check stale (no checkpoint for > threshold minutes)
+    // Check stale (no checkpoint for > threshold minutes).
+    // A per-task override (staleAfterMinutes, T-300) beats the global threshold.
+    const taskThreshold = task.staleAfterMinutes ?? staleThreshold;
     if (task.lastCheckpointAt) {
       const lastCp = new Date(task.lastCheckpointAt).getTime();
       const staleMs = now - lastCp;
-      if (staleMs > staleThreshold * 60 * 1000) {
+      if (staleMs > taskThreshold * 60 * 1000) {
         const staleEntry = {
           ...entry,
           reason: 'stale',

@@ -75,6 +75,21 @@ async function run() {
   ok(!stuckIds(c2.stale).includes(claimed.id), 'consumed stale task stays quiet within the window');
   ok(!stuckIds(c2.routedUnclaimed).includes(routedOpen.id), 'consumed routed-unclaimed stays quiet within the window (window guard, T-304)');
 
+  // --- per-task stale threshold override (T-300) ---
+  const patient = hzlService.createTask(PROJECT, { title: 'Patient long-runner', status: 'open', staleAfterMinutes: 9999 });
+  hzlService.claimTask(PROJECT, patient.id, { agent: 'agent-e', lease: 60 });
+  await new Promise(r => setTimeout(r, 25));
+  stuck = hzlService.getStuckTasks({ staleThreshold: 0 });
+  ok(!stuckIds(stuck.stale).includes(patient.id), 'per-task staleAfterMinutes overrides the global threshold (T-300)');
+  hzlService.updateTask(PROJECT, patient.id, { staleAfterMinutes: null });
+  await new Promise(r => setTimeout(r, 25));
+  stuck = hzlService.getStuckTasks({ staleThreshold: 0 });
+  ok(stuckIds(stuck.stale).includes(patient.id), 'clearing staleAfterMinutes falls back to the global threshold');
+  ok(hzlService.getTask(PROJECT, patient.id).staleAfterMinutes === null, 'staleAfterMinutes exposed on the public task');
+  let threw = false;
+  try { hzlService.updateTask(PROJECT, patient.id, { staleAfterMinutes: -5 }); } catch { threw = true; }
+  ok(threw, 'invalid staleAfterMinutes is rejected');
+
   // raw stuck list is unaffected by consumption (monitoring keeps full view)
   stuck = hzlService.getStuckTasks({ staleThreshold: 0 });
   ok(stuckIds(stuck.stale).includes(claimed.id), 'GET /tasks/stuck view is unaffected by notification consumption');
