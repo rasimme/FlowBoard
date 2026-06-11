@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { ChevronDown, Folder, FolderPlus, X } from 'lucide-react';
+import { ChevronDown, Folder, FolderPlus } from 'lucide-react';
+import Modal from './Modal.jsx';
+import Button from './Button.jsx';
+import Input from './Input.jsx';
+import FormGroup from './FormGroup.jsx';
 
 function slugify(s) {
   return (s || '')
@@ -11,10 +14,12 @@ function slugify(s) {
     .slice(0, 63);
 }
 
+const dropdownItemClass = 'flex items-center gap-2 w-full px-2.5 py-1.5 text-[12px] text-left rounded-md border-0 bg-transparent text-text cursor-pointer hover:bg-bg-hover';
+
 /**
- * New-project modal per design handoff (.np-* classes).
- * Fields: Name (with live slug-path hint) + Folder dropdown (existing folders +
- * "New folder…" inline input). Posts to POST /api/projects with { name, displayName, group }.
+ * New-project modal. Fields: Name (with live slug-path hint) + Folder dropdown
+ * (existing folders + "New folder…" inline input). Posts to POST /api/projects
+ * with { name, displayName, group }.
  */
 export default function CreateProjectModal({
   open,
@@ -32,7 +37,6 @@ export default function CreateProjectModal({
   const [error, setError] = useState(null);
 
   const nameInputRef = useRef(null);
-  const modalRef = useRef(null);
   const newFolderRef = useRef(null);
 
   useEffect(() => {
@@ -46,13 +50,6 @@ export default function CreateProjectModal({
     setError(null);
     setTimeout(() => nameInputRef.current?.focus(), 0);
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
 
   useEffect(() => {
     if (newFolderMode) setTimeout(() => newFolderRef.current?.focus(), 0);
@@ -115,84 +112,68 @@ export default function CreateProjectModal({
     setNewFolderInput('');
   }
 
-  const modal = (
-    <div
-      className="modal-overlay"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
-      }}
-      onClick={() => { if (!submitting) onClose?.(); }}
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New project"
+      size="sm"
+      showClose
+      dismissible={!submitting}
+      actions={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleCreate} disabled={!canCreate}>
+            {submitting ? 'Creating…' : 'Create project'}
+          </Button>
+        </>
+      }
     >
-      <div
-        ref={modalRef}
-        className="np-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="np-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="np-header">
-          <div className="np-title" id="np-title">New project</div>
-          <button
-            type="button"
-            className="np-close"
-            onClick={onClose}
-            aria-label="Close"
+      <div className="flex flex-col gap-3.5">
+        <FormGroup
+          label="Project name"
+          htmlFor="np-name"
+          error={slugClash ? `A project with slug "${slug}" already exists.` : null}
+          hint={null}
+        >
+          <Input
+            ref={nameInputRef}
+            id="np-name"
+            placeholder="new-service"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && canCreate) handleCreate(); }}
             disabled={submitting}
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="np-body">
-          <div className="np-field">
-            <label className="np-label" htmlFor="np-name">Project name</label>
-            <input
-              ref={nameInputRef}
-              id="np-name"
-              className="np-input"
-              placeholder="new-service"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && canCreate) handleCreate(); }}
-              disabled={submitting}
-            />
-            <div className="np-hint">
-              Lowercase, dashes allowed · will live at{' '}
-              <span className="mono">~/projects/{slug}</span>
-            </div>
-            {slugClash && (
-              <div className="np-hint" style={{ color: 'var(--danger, #ef4444)' }}>
-                A project with slug <span className="mono">{slug}</span> already exists.
-              </div>
-            )}
+          />
+          <div className="text-[11px] text-muted">
+            Lowercase, dashes allowed · will live at{' '}
+            <span className="mono">~/projects/{slug}</span>
           </div>
+        </FormGroup>
 
-          <div className="np-field">
-            <label className="np-label">Folder</label>
+        <FormGroup label="Folder">
+          <div className="relative">
             <button
               type="button"
-              className="np-select"
               onClick={() => { setDdOpen((o) => !o); setNewFolderMode(false); }}
               disabled={submitting}
+              className="flex items-center justify-between w-full px-3 py-2 text-sm rounded-lg bg-bg border border-solid border-border cursor-pointer focus:border-accent outline-none"
             >
-              <span style={{ color: folder ? 'var(--text-strong)' : 'var(--muted)' }}>
+              <span className={folder ? 'text-text-strong' : 'text-muted'}>
                 {dropdownLabel}
               </span>
-              <span className="chev"><ChevronDown size={11} /></span>
+              <ChevronDown size={11} className="opacity-70" />
             </button>
 
             {ddOpen && (
-              <div className="np-dropdown">
+              <div className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-border bg-bg-elevated shadow-card p-1">
                 {newFolderMode ? (
-                  <div style={{ padding: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <input
+                  <div className="flex flex-col gap-2 p-1">
+                    <Input
                       ref={newFolderRef}
-                      className="np-input"
+                      size="sm"
                       placeholder="Folder name"
                       value={newFolderInput}
                       onChange={(e) => setNewFolderInput(e.target.value)}
@@ -202,52 +183,43 @@ export default function CreateProjectModal({
                       }}
                       maxLength={60}
                     />
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setNewFolderMode(false)}
-                      >
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="xs" onClick={() => setNewFolderMode(false)}>
                         Cancel
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={!newFolderInput.trim()}
-                        onClick={commitNewFolder}
-                      >
+                      </Button>
+                      <Button size="xs" disabled={!newFolderInput.trim()} onClick={commitNewFolder}>
                         Use
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : (
                   <>
                     <button
                       type="button"
-                      className={`np-dropdown-item${folder === null ? ' active' : ''}`}
+                      className={`${dropdownItemClass} ${folder === null ? 'bg-accent-subtle text-accent' : ''}`}
                       onClick={() => pickFolder(null)}
                     >
-                      <Folder size={13} />
+                      <Folder size={13} className="opacity-70 shrink-0" />
                       <span>— Root —</span>
                     </button>
                     {folders.map((f) => (
                       <button
                         key={f}
                         type="button"
-                        className={`np-dropdown-item${folder === f ? ' active' : ''}`}
+                        className={`${dropdownItemClass} ${folder === f ? 'bg-accent-subtle text-accent' : ''}`}
                         onClick={() => pickFolder(f)}
                       >
-                        <Folder size={13} />
+                        <Folder size={13} className="opacity-70 shrink-0" />
                         <span>{f}</span>
                       </button>
                     ))}
-                    <div className="np-dropdown-divider" />
+                    <div className="h-px bg-border my-1" />
                     <button
                       type="button"
-                      className="np-dropdown-item new-folder"
+                      className={`${dropdownItemClass} text-accent`}
                       onClick={() => setNewFolderMode(true)}
                     >
-                      <FolderPlus size={13} />
+                      <FolderPlus size={13} className="opacity-70 shrink-0" />
                       <span>New folder…</span>
                     </button>
                   </>
@@ -255,35 +227,12 @@ export default function CreateProjectModal({
               </div>
             )}
           </div>
+        </FormGroup>
 
-          {error && (
-            <div className="np-hint" style={{ color: 'var(--danger, #ef4444)' }}>
-              {error}
-            </div>
-          )}
-        </div>
-
-        <div className="np-footer">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onClose}
-            disabled={submitting}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={!canCreate}
-            onClick={handleCreate}
-          >
-            {submitting ? 'Creating…' : 'Create project'}
-          </button>
-        </div>
+        {error && (
+          <div className="text-[11px] text-danger">{error}</div>
+        )}
       </div>
-    </div>
+    </Modal>
   );
-
-  return createPortal(modal, document.getElementById('modalRoot') || document.body);
 }

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Archive, ArchiveRestore, Folder, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import Popover from './Popover.jsx';
+import Input from './Input.jsx';
 
 async function putProject(name, patch) {
   const res = await fetch(`/api/projects/${encodeURIComponent(name)}`, {
@@ -125,7 +126,7 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
                 {project.archived ? 'Restore' : 'Archive'}
               </span>
             </Popover.Option>
-            <div className="np-dropdown-divider" />
+            <div className="h-px bg-border my-1" />
             <Popover.Option onClick={handleDelete} className="text-danger">
               <span className="inline-flex items-center gap-2">
                 <Trash2 size={13} /> Delete…
@@ -139,7 +140,7 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
             <Popover.Option onClick={(e) => { e.stopPropagation(); setView('root'); }}>
               <span className="inline-flex items-center gap-2 opacity-70">‹ Back</span>
             </Popover.Option>
-            <div className="np-dropdown-divider" />
+            <div className="h-px bg-border my-1" />
             <Popover.Option
               onClick={handlePickFolder(null)}
               className={!project.group ? 'text-accent' : ''}
@@ -157,7 +158,7 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
                 </span>
               </Popover.Option>
             ))}
-            <div className="np-dropdown-divider" />
+            <div className="h-px bg-border my-1" />
             <Popover.Option onClick={(e) => { e.stopPropagation(); setView('newFolder'); }}>
               <span className="inline-flex items-center gap-2 text-accent">
                 <FolderPlus size={13} /> New folder…
@@ -168,9 +169,9 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
 
         {view === 'newFolder' && (
           <div className="p-2 flex flex-col gap-2 w-48" onClick={(e) => e.stopPropagation()}>
-            <input
+            <Input
               autoFocus
-              className="np-input"
+              size="sm"
               placeholder="Folder name"
               value={newFolder}
               onChange={(e) => setNewFolder(e.target.value)}

@@ -4,6 +4,10 @@ import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus } from 'lu
 import { useAppState } from '../context/AppStateContext.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 import CreateProjectModal from './CreateProjectModal.jsx';
+import Modal from './Modal.jsx';
+import Button from './Button.jsx';
+import Input from './Input.jsx';
+import FormGroup from './FormGroup.jsx';
 import DeleteProjectModal from './DeleteProjectModal.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';
 import Popover from './Popover.jsx';
@@ -780,65 +784,40 @@ function NewFolderModal({ open, initial = '', existing = [], onClose, onCreate }
   const clash = existing.includes(trimmed);
   const canCreate = trimmed.length > 0 && trimmed.length <= 60 && !clash;
 
-  return createPortal(
-    <div
-      className="modal-overlay"
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="np-modal"
-        role="dialog"
-        aria-modal="true"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 360 }}
-      >
-        <div className="np-header">
-          <div className="np-title">New folder</div>
-        </div>
-        <div className="np-body">
-          <div className="np-field">
-            <label className="np-label" htmlFor="nf-name">Folder name</label>
-            <input
-              ref={inputRef}
-              id="nf-name"
-              className="np-input"
-              placeholder="e.g. Client Work"
-              maxLength={60}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && canCreate) onCreate(trimmed);
-                else if (e.key === 'Escape') onClose();
-              }}
-            />
-            <div className="np-hint">
-              Empty folders are visible in this browser only until you move a project into them.
-            </div>
-            {clash && (
-              <div className="np-hint" style={{ color: 'var(--danger, #ef4444)' }}>
-                A folder named <span className="mono">{trimmed}</span> already exists.
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="np-footer">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={!canCreate}
-            onClick={() => onCreate(trimmed)}
-          >
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="New folder"
+      size="sm"
+      actions={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" disabled={!canCreate} onClick={() => onCreate(trimmed)}>
             Create folder
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.getElementById('modalRoot') || document.body
+          </Button>
+        </>
+      }
+    >
+      <FormGroup
+        label="Folder name"
+        htmlFor="nf-name"
+        error={clash ? `A folder named "${trimmed}" already exists.` : null}
+        hint="Empty folders are visible in this browser only until you move a project into them."
+      >
+        <Input
+          ref={inputRef}
+          id="nf-name"
+          placeholder="e.g. Client Work"
+          maxLength={60}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && canCreate) onCreate(trimmed);
+            else if (e.key === 'Escape') onClose();
+          }}
+        />
+      </FormGroup>
+    </Modal>
   );
 }
