@@ -650,7 +650,7 @@ export default function DetailPanel() {
         const doneRes = (t.status === 'review')
           ? await apiFetch(`/projects/${project}/tasks/${t.id}/approve`, {
               method: 'POST',
-              body: { actor: window.appState?.agentId || 'dashboard' },
+              body: { actor: window.appState?.agentId || 'human' },
             })
           : await apiFetch(`/projects/${project}/tasks/${t.id}`, {
               method: 'PUT',

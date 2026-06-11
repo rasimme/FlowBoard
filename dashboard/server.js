@@ -1013,11 +1013,31 @@ function getSubtaskProgress(tasks, parentId) {
   };
 }
 
+// T-293: single error -> HTTP status mapping for service-layer errors.
+// err.code wins; the "not found" message check is the fallback for
+// hzl-service errors that don't carry a code yet.
+const ERROR_CODE_STATUS = {
+  NOT_FOUND: 404,
+  NOT_OWNER: 403,
+  AGENT_REQUIRED: 403,
+  ROUTING_MISMATCH: 403,
+  NOT_IN_REVIEW: 409,
+  PARENT_NOT_CLAIMABLE: 409,
+  ALREADY_CLAIMED: 409,
+  REASON_REQUIRED: 400,
+};
+function httpStatusForError(err, fallback = 400) {
+  if (err && err.code && ERROR_CODE_STATUS[err.code]) return ERROR_CODE_STATUS[err.code];
+  if (err && err.message && /not found/i.test(err.message)) return 404;
+  return fallback;
+}
+
 function projectExists(projectName) {
   try {
-    // Ensure project is loaded into HZL before checking
+    // Same definition of existence as GET /api/projects: the canonical
+    // flowboard_projects registry merged with the HZL project list (T-293).
     hzlService.ensureProject(projectName);
-    return hzlService.listHzlProjects().some(p => p.name === projectName);
+    return fbMeta.listProjects(hzlService.listHzlProjects()).some(p => p.name === projectName);
   } catch {
     return false;
   }
@@ -1757,8 +1777,8 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
 // markdown-only upload path. The body parser is scoped to 5 MB just for this
 // route — global express.json() stays at its default 100 KB limit.
 app.post('/api/projects/:name/files/context', express.json({ limit: '5mb' }), (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
 
   const { filename, content } = req.body || {};
   if (!filename || typeof filename !== 'string') {
@@ -1848,8 +1868,8 @@ app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
 
 // POST /api/projects/:name/specs/:taskId — scaffold a new spec file
 app.post('/api/projects/:name/specs/:taskId', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
 
   const taskId = req.params.taskId;
 
@@ -1906,15 +1926,15 @@ function writeSpecFileForTask(projectName, task, content) {
 
 // GET /api/projects/:name/canvas
 app.get('/api/projects/:name/canvas', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
   res.json(readCanvasFile(req.params.name));
 });
 
 // POST /api/projects/:name/canvas/notes
 app.post('/api/projects/:name/canvas/notes', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  if (!fs.existsSync(projectDir)) return res.status(404).json({ error: 'Project not found' });
   const data = readCanvasFile(req.params.name);
   const { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = req.body;
   if (typeof text === 'string' && Buffer.byteLength(text, 'utf8') > 50 * 1024) {
@@ -2061,7 +2081,7 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
   }
   // Verify project exists
   const projectName = req.params.name;
-  if (!fs.existsSync(path.join(PROJECTS_DIR, projectName))) return res.status(404).json({ error: 'Project not found' });
+  if (!projectExists(projectName)) return res.status(404).json({ error: 'Project not found' });
 
   // Format structured message for agent
   const noteLines = notes
@@ -2189,7 +2209,7 @@ app.post('/api/specify/sessions', (req, res) => {
     // Path-traversal guard + existence check (review finding): the project
     // name becomes a filesystem path segment during persistence. Same
     // fs-based check as the canvas promote path.
-    if (/[/\\]|\.\./.test(project) || !fs.existsSync(path.join(PROJECTS_DIR, project))) {
+    if (/[/\\]|\.\./.test(project) || !projectExists(project)) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
@@ -2554,10 +2574,7 @@ app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
     const task = hzlService.claimTask(req.params.name, req.params.id, { agent: identity.id, lease });
     res.json({ ok: true, task, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
-    const status = err.code === 'PARENT_NOT_CLAIMABLE' ? 409
-                 : err.code === 'ROUTING_MISMATCH' ? 403
-                 : err.code === 'ALREADY_CLAIMED' ? 409
-                 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2571,7 +2588,7 @@ app.post('/api/projects/:name/tasks/:id/release', (req, res) => {
     const result = hzlService.releaseTask(req.params.name, req.params.id, { agent: identity.id, force });
     res.json(result);
   } catch (err) {
-    const status = err.code === 'NOT_OWNER' ? 403 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2590,9 +2607,7 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
     }
     res.json({ ok: true, task });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404
-                 : err.code === 'AGENT_REQUIRED' || err.code === 'NOT_OWNER' ? 403
-                 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2612,9 +2627,7 @@ app.post('/api/projects/:name/tasks/:id/approve', (req, res) => {
     }
     res.json({ ok: true, task });
   } catch (err) {
-    const status = err.message && err.message.includes('not found') ? 404
-                 : err.code === 'NOT_IN_REVIEW' ? 409
-                 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2631,10 +2644,7 @@ app.post('/api/projects/:name/tasks/:id/reject', (req, res) => {
     const task = hzlService.rejectTask(req.params.name, req.params.id, { actor, reason, target });
     res.json({ ok: true, task });
   } catch (err) {
-    const status = err.message && err.message.includes('not found') ? 404
-                 : err.code === 'NOT_IN_REVIEW' ? 409
-                 : err.code === 'REASON_REQUIRED' ? 400
-                 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2648,7 +2658,7 @@ app.post('/api/projects/:name/tasks/:id/checkpoint', (req, res) => {
     const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent: identity.id, progress });
     res.json({ ok: true, checkpoint, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2659,7 +2669,7 @@ app.get('/api/projects/:name/tasks/:id/checkpoints', (req, res) => {
     const checkpoints = hzlService.getCheckpoints(req.params.name, req.params.id);
     res.json({ ok: true, checkpoints });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2675,7 +2685,7 @@ app.post('/api/projects/:name/tasks/:id/comment', (req, res) => {
     const comment = hzlService.addComment(req.params.name, req.params.id, { message, author: resolved.author });
     res.json({ ok: true, comment });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2699,7 +2709,7 @@ app.get('/api/projects/:name/tasks/:id/events', (req, res) => {
     const events = hzlService.getStatusEvents(req.params.name, req.params.id);
     res.json({ ok: true, events });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2745,7 +2755,7 @@ app.post('/api/workflows/start', (req, res) => {
     });
     res.json({ ok: true, ...result, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2771,7 +2781,7 @@ app.post('/api/workflows/handoff', (req, res) => {
     });
     res.json({ ok: true, ...result });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });
@@ -2798,7 +2808,7 @@ app.post('/api/workflows/delegate', (req, res) => {
     });
     res.json({ ok: true, ...result });
   } catch (err) {
-    const status = err.message.includes('not found') ? 404 : err.code === 'NOT_OWNER' ? 403 : 400;
+    const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
   }
 });

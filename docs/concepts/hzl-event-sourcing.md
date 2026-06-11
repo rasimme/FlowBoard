@@ -82,6 +82,8 @@ client receives 200 response with updated task
 - **One-writer constraint is load-bearing.** Anything that writes to the HZL DB outside of `hzl-service.js` will eventually corrupt invariants — id-map inconsistency, cache divergence, missed status side-effects. Don't add a second writer; route through the service.
 - **Performance is sub-millisecond per write.** SQLite local + prepared statements + RAM cache for reads gives single-digit-millisecond latency on the hot path. The dashboard's 5-second polling is bounded by network and JSON serialization, not DB.
 - **Migrations need projection rebuilds.** Adding a new projector means rebuilding its projection from the existing event log. The mechanism exists (each projector implements `applyEvent`); the operational discipline is to drop and rebuild the projection table on schema changes, not to write a separate migration.
+
+- **Known exception to event-only writes (T-293 finding, tracked in T-176).** `_alignProjectionToCache()` in `hzl-service.js` patches `claimed_at`/`lease_until` in the projection via direct SQL because HZL's event vocabulary has no "clear claim metadata without changing status" primitive. A projection rebuilt purely from the event log will not reproduce these patches. The planned fix is the derive-on-read cache refactor (T-176), which removes the write-through path entirely.
 - **`metadata.flowboard.id` values never get reused.** When a task is deleted, its T-NNN id is retired from the active map but stays in archived events. The next created task gets `MAX(existing) + 1`, not "the deleted one's slot." This is intentional — reusing ids would silently confuse historical references in commits, comments, and specs.
 
 ## Code

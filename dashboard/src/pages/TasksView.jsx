@@ -1120,7 +1120,7 @@ export default function TasksView() {
         ? await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}/approve`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ actor: window.appState?.agentId || 'dashboard' }),
+            body: JSON.stringify({ actor: window.appState?.agentId || 'human' }),
           })
         : await apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
             method: 'PUT',
@@ -1158,7 +1158,7 @@ export default function TasksView() {
       ? apiFetch(`/api/projects/${viewedProject}/tasks/${id}/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actor: window.appState?.agentId || 'dashboard' }),
+          body: JSON.stringify({ actor: window.appState?.agentId || 'human' }),
         })
       : apiFetch(`/api/projects/${viewedProject}/tasks/${id}`, {
           method: 'PUT',
