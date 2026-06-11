@@ -23,6 +23,12 @@ If this repository's git context is active (your agent is working within FlowBoa
    GET http://127.0.0.1:18790/api/projects/flowboard/rules/<section>
    ```
 
+## Commit conventions
+
+Commits are attributed to the repository owner only. Do **not** add AI
+co-author trailers (`Co-Authored-By: Claude ...` or similar) to commit
+messages.
+
 ## Delegation (for parent agents)
 
 When you spawn a child agent for FlowBoard work, do not write a custom prompt from memory. Use `buildSpawnPrompt()` in `dashboard/hzl-service.js`:
