@@ -1923,7 +1923,7 @@ function getStuckTasks(opts = {}) {
   const combined = []; // For legacy/API compatibility
 
   for (const [key, task] of _cache) {
-    if (task.status === 'archived') continue;
+    if (task.status === 'archived' || task.trashedAt) continue;
 
     const entry = {
       project: task._project,
@@ -1934,8 +1934,11 @@ function getStuckTasks(opts = {}) {
       status: task.status,
     };
 
-    // Check routed-unclaimed: agent is assigned but not yet claimed (T-263-4)
-    if (task.routedAgent && !task.claimedAt) {
+    // Check routed-unclaimed: agent is assigned but not yet claimed (T-263-4).
+    // Only actionable statuses count — review/done tasks were handled despite
+    // the open routing and must not report as stuck forever (T-304).
+    const actionable = task.status === 'backlog' || task.status === 'open' || task.status === 'in-progress';
+    if (actionable && task.routedAgent && !task.claimedAt) {
       const routedEntry = {
         ...entry,
         reason: 'routed-unclaimed',
@@ -1996,15 +1999,22 @@ function getStuckTasks(opts = {}) {
  * Call this from the scheduler; getStuckTasks() from the API endpoint.
  */
 function getNotifiableStuckTasks(opts = {}) {
-  const { staleThreshold, notificationWindow = 60 } = opts;
+  // consume=false keeps the call side-effect free (monitoring/GET). Only the
+  // notification scheduler passes consume=true, which records each returned
+  // task so it stays quiet for the next notificationWindow minutes (T-304).
+  const { staleThreshold, notificationWindow = 60, consume = false } = opts;
   const allStuck = getStuckTasks(opts);
   const notifiableStale = [];
   const notifiableExpired = [];
   const notifiableRoutedUnclaimed = [];
 
-  // Routed-unclaimed is a critical compliance violation: notify immediately (T-263-4)
+  // Routed-unclaimed is a compliance violation (T-263-4) — window-guarded
+  // like the other classes so it doesn't re-fire every scheduler tick.
   for (const routedTask of (allStuck.routedUnclaimed || [])) {
-    notifiableRoutedUnclaimed.push(routedTask);
+    const task = _cache.get(`${routedTask.project}:${routedTask.taskId}`);
+    if (task && _shouldNotifyStuckTask(task, 'routed-unclaimed', notificationWindow)) {
+      notifiableRoutedUnclaimed.push(routedTask);
+    }
   }
 
   // Check stale tasks
@@ -2024,6 +2034,14 @@ function getNotifiableStuckTasks(opts = {}) {
   }
 
   // Record notifications for notifiable tasks so they won't trigger again within window
+  if (!consume) {
+    return {
+      stale: notifiableStale,
+      expired: notifiableExpired,
+      routedUnclaimed: notifiableRoutedUnclaimed,
+      combined: [...notifiableRoutedUnclaimed, ...notifiableStale, ...notifiableExpired],
+    };
+  }
   for (const t of notifiableRoutedUnclaimed) {
     const task = _cache.get(`${t.project}:${t.taskId}`);
     if (task) _recordStuckNotification(task, 'routed-unclaimed');

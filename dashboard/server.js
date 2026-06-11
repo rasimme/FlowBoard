@@ -3003,39 +3003,49 @@ async function startServer() {
         const staleMinutes = parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30;
         const notificationWindowMinutes = parseInt(process.env.NOTIFICATION_WINDOW_MINUTES) || 60;
 
-        // Get only tasks that should trigger a notification (avoids duplicates)
+        // Get only tasks that should trigger a notification (avoids duplicates).
+        // consume: true — the scheduler is the only consumer of the window
+        // guard; API reads stay side-effect free (T-304).
         const notifiable = hzlService.getNotifiableStuckTasks({
           staleThreshold: staleMinutes,
           notificationWindow: notificationWindowMinutes,
+          consume: true,
         });
 
         const staleList   = (notifiable && Array.isArray(notifiable.stale))   ? notifiable.stale   : [];
         const expiredList = (notifiable && Array.isArray(notifiable.expired)) ? notifiable.expired : [];
+        const routedList  = (notifiable && Array.isArray(notifiable.routedUnclaimed)) ? notifiable.routedUnclaimed : [];
 
-        if (staleList.length > 0 || expiredList.length > 0) {
+        if (staleList.length > 0 || expiredList.length > 0 || routedList.length > 0) {
+          // Tasks without a responsible agent go to the operator fallback
+          // channel instead of being dropped silently (T-304).
+          const fallbackAgent = process.env.STUCK_FALLBACK_AGENT || 'main';
           // Group stuck tasks by agent for targeted notification
           const byAgent = {};
           for (const t of staleList) {
-            const a = t.agent || 'unassigned';
+            const a = t.agent || fallbackAgent;
             if (!byAgent[a]) byAgent[a] = [];
-            byAgent[a].push({ type: 'stale', id: t.id, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
+            byAgent[a].push({ type: 'stale', id: t.id, project: t.project, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
           }
           for (const t of expiredList) {
-            const a = t.agent || 'unassigned';
+            const a = t.agent || fallbackAgent;
             if (!byAgent[a]) byAgent[a] = [];
-            byAgent[a].push({ type: 'lease_expired', id: t.id, title: t.title });
+            byAgent[a].push({ type: 'lease_expired', id: t.id, project: t.project, title: t.title });
+          }
+          for (const t of routedList) {
+            const a = t.routedAgent || fallbackAgent;
+            if (!byAgent[a]) byAgent[a] = [];
+            byAgent[a].push({ type: 'routed_unclaimed', id: t.id, project: t.project, title: t.title });
           }
 
           // Send one structured notification per affected agent
           const gatewayUrl = GATEWAY_URL;
           const token = HOOKS_TOKEN;
           for (const [agent, tasks] of Object.entries(byAgent)) {
-            // Skip unassigned — no agent to route to
-            if (agent === 'unassigned') continue;
             const parts = tasks.map(t =>
-              t.type === 'stale'
-                ? `⚠️ ${t.id} "${t.title}" — ${t.staleSinceMinutes}min ohne Checkpoint`
-                : `🔴 ${t.id} "${t.title}" — Lease abgelaufen`
+              t.type === 'stale' ? `⚠️ ${t.id} "${t.title}" — ${t.staleSinceMinutes}min without checkpoint`
+              : t.type === 'lease_expired' ? `🔴 ${t.id} "${t.title}" — lease expired`
+              : `📨 ${t.id} "${t.title}" — routed to you, never claimed`
             );
             const msg = `🔍 Stuck-Check (${agent}):\n${parts.join('\n')}`;
             fetch(`${gatewayUrl}/hooks/agent`, {
@@ -3047,6 +3057,8 @@ async function startServer() {
                 agentId: agent,
                 sessionKey: `agent:${agent}:main`,
               }),
+            }).then(r => {
+              console.log(`[stale-check] notified ${agent}: ${tasks.length} task(s) (gateway ${r.status})`);
             }).catch(e => console.warn(`[stale-check] Gateway unreachable (${agent}):`, e.message));
           }
         }

@@ -76,6 +76,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_KNOWN_AGENT_IDS` | empty | Comma-separated extra stable agent ids to classify as known without near-collision protection. Prefer `FLOWBOARD_MANAGED_AGENT_IDS` for OpenClaw-managed local agents. |
 | `STALE_THRESHOLD_MINUTES` | `30` | Minutes of idle before a claimed task is considered stale by the cron sweeper. |
 | `NOTIFICATION_WINDOW_MINUTES` | `60` | Minimum minutes between repeat stuck-task notifications for the same task in the cron sweeper. |
+| `STUCK_FALLBACK_AGENT` | `main` | Agent that receives stuck-task notifications when the affected task has no responsible agent (unassigned stale/expired, unroutable). |
 | `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |
 | `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback. |
 
