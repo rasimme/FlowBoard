@@ -12,6 +12,15 @@ import {
   QuickLinksWidget,
   KanbanMiniWidget,
 } from './widgets.jsx';
+import {
+  MilestonesWidget,
+  TimelineWidget,
+  ContextIndexWidget,
+  QuickDropWidget,
+  NotesWidget,
+  LinksWidget,
+  StallDetectionWidget,
+} from './widgets2.jsx';
 
 /**
  * Trusted widget registry (T-305) — the renderer instantiates ONLY types
@@ -32,4 +41,11 @@ export const WIDGET_REGISTRY = {
   'project-goals': ProjectGoalsWidget,
   'quick-links': QuickLinksWidget,
   'kanban-mini': KanbanMiniWidget,
+  'milestones': MilestonesWidget,
+  'timeline': TimelineWidget,
+  'context-index': ContextIndexWidget,
+  'quick-drop': QuickDropWidget,
+  'notes': NotesWidget,
+  'links': LinksWidget,
+  'stall-detection': StallDetectionWidget,
 };

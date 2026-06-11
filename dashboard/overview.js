@@ -101,6 +101,55 @@ const WIDGET_TYPES = {
     minSize: { w: 3, h: 2 },
     props: { limit: 'number (optional, default 12)' },
   },
+  'milestones': {
+    label: 'Milestones',
+    description: 'Progress per milestone — tag tasks with milestone:<name>.',
+    defaultSize: { w: 6, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: {},
+  },
+  'timeline': {
+    label: 'Timeline',
+    description: 'Dated spine over all project activity (tasks, checkpoints, comments).',
+    defaultSize: { w: 4, h: 3 },
+    minSize: { w: 3, h: 2 },
+    props: { limit: 'number (optional, default 25)' },
+  },
+  'context-index': {
+    label: 'Context Index',
+    description: 'Files in context/ — the knowledge agents read first. Pin via props.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: { pins: 'string[] (optional) — filenames starred on top', limit: 'number (optional, default 8)' },
+  },
+  'quick-drop': {
+    label: 'Quick Drop',
+    description: 'Drop markdown/text files — they land in context/.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 1 },
+    props: {},
+  },
+  'notes': {
+    label: 'Notes',
+    description: 'Scratchpad persisted as context/NOTES.md — agents can read and append.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: {},
+  },
+  'links': {
+    label: 'Links',
+    description: 'Pinned external links (deploys, docs, dashboards) from props.links.',
+    defaultSize: { w: 3, h: 2 },
+    minSize: { w: 3, h: 1 },
+    props: { links: 'array of { label, url }', limit: 'number (optional, default 6)' },
+  },
+  'stall-detection': {
+    label: 'Momentum',
+    description: 'Friendly stall check — last activity, 14-day strip.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: {},
+  },
 };
 
 // --- Named presets (the three Claude Design variants). The agent picks one

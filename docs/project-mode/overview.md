@@ -41,9 +41,12 @@ with `defaultSize` and accepted `props` per widget. Do not invent types.
 Current catalog — needs-me cluster: `blocked` (blocked tasks waiting for a
 human), `approvals` (the review lane as your inbox), `since-last-visit`
 (what moved while you were away); live: `current-focus` (claimed tasks,
-prominent), `active-agents`, `activity-stream`; direction & context:
-`next-up`, `project-goals`, `task-stats`, `recent-decisions`,
-`kanban-mini`, `quick-links`.
+prominent), `active-agents`, `activity-stream`, `timeline` (dated spine),
+`stall-detection` (momentum check); direction: `next-up`, `project-goals`,
+`task-stats`, `milestones` (tag tasks `milestone:<name>`), `kanban-mini`;
+knowledge & actions: `recent-decisions`, `context-index` (pin via
+`props.pins`), `quick-drop`, `notes` (context/NOTES.md), `links`
+(`props.links`), `quick-links`.
 
 ## Presets
 
