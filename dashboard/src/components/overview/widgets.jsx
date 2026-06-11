@@ -32,17 +32,28 @@ function useProjectTasks() {
   return (state?.tasks || []).filter(t => !t.trashedAt);
 }
 
+// Module-level caches: widgets remount when the view/edit renderer swaps —
+// serving the last known data immediately avoids the empty-state flash.
+const _fileCache = new Map();
+const _activityCache = new Map();
+
 function useProjectFile(project, filename) {
-  const [content, setContent] = useState(null);
+  const key = `${project}:${filename}`;
+  const [content, setContent] = useState(() => _fileCache.get(key) ?? null);
   useEffect(() => {
     if (!project) return;
     let alive = true;
+    if (_fileCache.has(key)) setContent(_fileCache.get(key));
     fetch(`/api/projects/${project}/files/${filename}`, { credentials: 'include' })
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (alive) setContent(d?.content ?? null); })
-      .catch(() => { if (alive) setContent(null); });
+      .then(d => {
+        const c = d?.content ?? null;
+        _fileCache.set(key, c);
+        if (alive) setContent(c);
+      })
+      .catch(() => { if (alive && !_fileCache.has(key)) setContent(null); });
     return () => { alive = false; };
-  }, [project, filename]);
+  }, [project, filename, key]);
   return content;
 }
 
@@ -524,19 +535,25 @@ export function ApprovalsWidget({ widget, editing }) {
 
 /* ---------- shared activity fetch ---------- */
 function useActivity(project, since, limit) {
-  const [items, setItems] = useState(null);
+  const key = `${project}:${since || ''}:${limit || 30}`;
+  const [items, setItems] = useState(() => _activityCache.get(key) ?? null);
   useEffect(() => {
     if (!project) return;
     let alive = true;
+    if (_activityCache.has(key)) setItems(_activityCache.get(key));
     const qs = new URLSearchParams();
     if (since) qs.set('since', since);
     qs.set('limit', String(limit || 30));
     fetch(`/api/projects/${project}/activity?${qs}`, { credentials: 'include' })
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (alive) setItems(d?.activity || []); })
-      .catch(() => { if (alive) setItems([]); });
+      .then(d => {
+        const a = d?.activity || [];
+        _activityCache.set(key, a);
+        if (alive) setItems(a);
+      })
+      .catch(() => { if (alive && !_activityCache.has(key)) setItems([]); });
     return () => { alive = false; };
-  }, [project, since, limit]);
+  }, [project, since, limit, key]);
   return items;
 }
 

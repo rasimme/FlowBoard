@@ -1,6 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
-import { LayoutTemplate, Pencil, Plus, X } from 'lucide-react';
+import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity } from 'lucide-react';
+
+// thumbnail metadata: icon, short label and cluster tint per widget type
+const THUMB = {
+  'blocked': { icon: OctagonAlert, short: 'Blocked', tint: 'var(--warn-subtle)' },
+  'approvals': { icon: CheckCheck, short: 'Approvals', tint: 'var(--warn-subtle)' },
+  'since-last-visit': { icon: History, short: 'Since visit', tint: 'var(--warn-subtle)' },
+  'current-focus': { icon: Crosshair, short: 'Focus', tint: 'var(--accent-2-subtle)' },
+  'active-agents': { icon: Users, short: 'Agents', tint: 'var(--accent-2-subtle)' },
+  'activity-stream': { icon: Activity, short: 'Activity', tint: 'var(--accent-2-subtle)' },
+  'next-up': { icon: ListTodo, short: 'Next up', tint: 'var(--info-subtle)' },
+  'project-goals': { icon: Target, short: 'Goal', tint: 'var(--info-subtle)' },
+  'task-stats': { icon: BarChart3, short: 'Stats', tint: 'var(--info-subtle)' },
+  'recent-decisions': { icon: FileText, short: 'Decisions', tint: 'var(--card-highlight)' },
+  'kanban-mini': { icon: Kanban, short: 'Board', tint: 'var(--card-highlight)' },
+  'quick-links': { icon: Link2, short: 'Links', tint: 'var(--card-highlight)' },
+};
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -34,6 +50,14 @@ export default function OverviewView() {
   const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
+  // suppress RGL's mount animation — items would visibly fly to their
+  // position when edit mode opens
+  const [animReady, setAnimReady] = useState(false);
+  useEffect(() => {
+    if (!editing) { setAnimReady(false); return; }
+    const t = setTimeout(() => setAnimReady(true), 150);
+    return () => clearTimeout(t);
+  }, [editing]);
 
   // Own width tracking: a ResizeObserver on the scroll container keeps the
   // edit grid in lockstep with the window/sidebar. A callback ref (state)
@@ -256,7 +280,7 @@ export default function OverviewView() {
               }
             }}
             onResizeStop={() => setResizing(null)}
-            className="ov-rgl editing"
+            className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
@@ -309,19 +333,33 @@ export default function OverviewView() {
                   style={{ aspectRatio: `12 / ${rows}`, minHeight: 64 }}
                   aria-hidden="true"
                 >
-                  {p.widgets.map(w => (
-                    <span
-                      key={w.id}
-                      className="absolute rounded-[3px] border border-border-strong bg-bg-elevated"
-                      style={{
-                        left: `${(w.grid.x / 12) * 100}%`,
-                        top: `${(w.grid.y / rows) * 100}%`,
-                        width: `calc(${(w.grid.w / 12) * 100}% - 3px)`,
-                        height: `calc(${(w.grid.h / rows) * 100}% - 3px)`,
-                        margin: '1.5px',
-                      }}
-                    />
-                  ))}
+                  {p.widgets.map(w => {
+                    const t = THUMB[w.type] || {};
+                    const Icon = t.icon;
+                    const showLabel = w.grid.w >= 4;
+                    return (
+                      <span
+                        key={w.id}
+                        className="absolute rounded-[3px] border border-border-strong flex items-center justify-center gap-1 overflow-hidden"
+                        style={{
+                          left: `${(w.grid.x / 12) * 100}%`,
+                          top: `${(w.grid.y / rows) * 100}%`,
+                          width: `calc(${(w.grid.w / 12) * 100}% - 3px)`,
+                          height: `calc(${(w.grid.h / rows) * 100}% - 3px)`,
+                          margin: '1.5px',
+                          background: t.tint || 'var(--bg-elevated)',
+                        }}
+                        title={t.short || w.type}
+                      >
+                        {Icon && <Icon size={10} className="text-muted shrink-0" />}
+                        {showLabel && (
+                          <span className="text-[8.5px] leading-none text-muted whitespace-nowrap overflow-hidden text-ellipsis">
+                            {t.short || w.type}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
                 </div>
                 <span className="text-sm font-medium text-text-strong">
                   {p.label}
