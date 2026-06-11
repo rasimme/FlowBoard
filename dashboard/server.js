@@ -2731,6 +2731,25 @@ app.get('/api/projects/:name/tasks/:id/events', (req, res) => {
   }
 });
 
+// GET /api/search — cross-project full-text task search (T-301)
+app.get('/api/search', (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q) return res.status(400).json({ error: 'q required' });
+    const limit = req.query.limit !== undefined ? Math.max(1, Math.min(50, parseInt(req.query.limit) || 20)) : 20;
+    const offset = req.query.offset !== undefined ? Math.max(0, parseInt(req.query.offset) || 0) : 0;
+    const result = hzlService.searchTasks(q, {
+      project: req.query.project || undefined,
+      limit,
+      offset,
+    });
+    res.json({ ok: true, query: q, ...result });
+  } catch (err) {
+    console.error('[search]', err);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
 // GET /api/tasks/stuck — cross-project stuck tasks (stale + expired)
 app.get('/api/tasks/stuck', (req, res) => {
   try {

@@ -208,3 +208,14 @@ Error codes are surfaced as HTTP status:
 
 - [Multi-Agent Model concept](../../concepts/multi-agent-model.md)
 - [ADR-0003](../../adr/0003-dashboard-has-no-agent-identity.md)
+
+## GET /api/search
+
+Cross-project full-text search over task title, description and tags (FTS5,
+prefix matching, T-301). Trashed and archived tasks are excluded.
+
+Query params: `q` (required), `project?`, `limit?` (default 20, max 50),
+`offset?`.
+
+**200** `{ ok, query, tasks: [task & { project, rank }], total }`
+**400** `q` missing.

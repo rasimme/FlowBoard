@@ -471,6 +471,13 @@
       "auth": "token",
       "group": "hooks",
       "doc": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/search",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
     }
   ],
   "auth_modes": {

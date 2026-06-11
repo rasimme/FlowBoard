@@ -46,6 +46,7 @@ let _projectService = null;
 let _eventStore = null;
 let _projectionEngine = null;
 let _hookDrainService = null;
+let _searchService = null;
 let _EventType = null; // EventType enum from hzl-core (loaded dynamically)
 let _cacheDb = null; // better-sqlite3 handle to the HZL cache DB (shared with task/project services)
 let _eventsDb = null; // better-sqlite3 handle to the HZL events DB (used by integrity checks)
@@ -343,6 +344,8 @@ async function init(dbPath) {
   const { TagsProjector }          = await import('hzl-core/projections/tags.js');
   const { ProjectsProjector }      = await import('hzl-core/projections/projects.js');
   const { CommentsCheckpointsProjector } = await import('hzl-core/projections/comments-checkpoints.js');
+  const { SearchProjector }        = await import('hzl-core/projections/search.js');
+  const { SearchService }  = await import('hzl-core/services/search-service.js');
   const { TaskService }    = await import('hzl-core/services/task-service.js');
   const { ProjectService } = await import('hzl-core/services/project-service.js');
   const { HookDrainService } = await import('hzl-core');
@@ -363,6 +366,7 @@ async function init(dbPath) {
   _projectionEngine = new ProjectionEngine(datastore.cacheDb, datastore.eventsDb);
   _projectionEngine.register(new TasksCurrentProjector());
   _projectionEngine.register(new DependenciesProjector());
+  _projectionEngine.register(new SearchProjector());
   _projectionEngine.register(new TagsProjector());
   _projectionEngine.register(new ProjectsProjector());
   _projectionEngine.register(new CommentsCheckpointsProjector());
@@ -381,6 +385,21 @@ async function init(dbPath) {
   _eventsDb       = datastore.eventsDb;
   _projectService = new ProjectService(datastore.cacheDb, _eventStore, _projectionEngine);
   _taskService    = new TaskService(datastore.cacheDb, _eventStore, _projectionEngine, _projectService, datastore.eventsDb, { onDone: onDoneHook });
+
+  // T-301: full-text search over title/description/tags. The projector keeps
+  // task_search current from here on; a one-time backfill covers tasks that
+  // predate its registration (no full projection replay — see ADR-0022 env).
+  _searchService = new SearchService(datastore.cacheDb);
+  try {
+    const cnt = datastore.cacheDb.prepare('SELECT COUNT(*) AS c FROM task_search').get().c;
+    if (cnt === 0) {
+      const inserted = datastore.cacheDb.prepare(
+        `INSERT INTO task_search (task_id, title, description, tags)
+         SELECT task_id, title, COALESCE(description, ''), COALESCE(tags, '') FROM tasks_current`
+      ).run();
+      console.log(`[hzl-service] task_search backfilled (${inserted.changes} rows)`);
+    }
+  } catch (e) { console.warn('[hzl-service] task_search backfill failed:', e.message); }
 
   // Initialize HookDrainService for outbox processing
   _hookDrainService = new HookDrainService(datastore.cacheDb, {
@@ -1282,6 +1301,37 @@ function recalcParentStatus(project, parentId) {
     return { id: parentId, status: newStatus };
   }
   return null;
+}
+
+/**
+ * T-301: full-text search across projects (title, description, tags).
+ * Returns public FlowBoard tasks (trashed excluded) ranked by FTS relevance.
+ */
+function searchTasks(query, opts = {}) {
+  if (!_searchService) throw new Error('[hzl-service] Not initialized — call init() first');
+  const raw = String(query || '').trim();
+  if (!raw) return { tasks: [], total: 0 };
+  // Build a safe FTS5 prefix query: strip everything but word characters
+  // per token (kills quotes, parens, stars — no user-supplied operators),
+  // drop empty tokens, quote + prefix-match the rest.
+  // Lowercase neutralizes FTS5 keyword operators (AND/OR/NOT/NEAR are only
+  // recognized uppercase) while matching stays case-insensitive.
+  const fts = raw.toLowerCase().split(/\s+/).slice(0, 8)
+    .map(t => t.replace(/[^\p{L}\p{N}_-]/gu, ''))
+    .filter(Boolean)
+    .map(t => '"' + t + '"*').join(' ');
+  if (!fts) return { tasks: [], total: 0 };
+  const { project, limit = 20, offset = 0 } = opts;
+  const result = _searchService.search(fts, { project, limit: Math.min(limit, 50), offset });
+  const tasks = [];
+  for (const row of result.tasks) {
+    const fbKey = _ulidToFb.get(row.task_id);
+    if (!fbKey) continue;
+    const cached = _cache.get(fbKey);
+    if (!cached || cached.trashedAt || cached.status === 'archived') continue;
+    tasks.push({ ...(_publicTask(cached)), project: cached._project, rank: row.rank });
+  }
+  return { tasks, total: result.total };
 }
 
 /**
@@ -2677,6 +2727,7 @@ function listTasksClaimedBy(agentId) {
 module.exports = {
   init,
   rebuildCache,
+  searchTasks,
   listTasks,
   getTask,
   createTask,
