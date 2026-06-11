@@ -166,10 +166,10 @@
 .ov-spark .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
 
 /* ---------- next-up ---------- */
-.ov-tasks { display: flex; flex-direction: column; gap: 3px; min-height: 0; }
+.ov-tasks { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
 .ov-task-row {
   display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; min-width: 0;
+  padding: 4px 8px; min-width: 0;
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
@@ -349,6 +349,10 @@
   .ov-link { flex-direction: row; gap: 6px; padding: 4px 6px; min-height: 0; }
   .ov-link svg { width: 13px; height: 13px; }
   .ov-link span { font-size: 10.5px; }
+}
+/* low AND narrow: icons only — clipped labels are worse than none */
+@container widget (max-height: 120px) and (max-width: 460px) {
+  .ov-link span { display: none; }
   .ov-agent-row { padding: 6px 8px; gap: 8px; }
   .ov-agent-task .ttl { display: none; }       /* keep T-id, drop title */
   .ov-kpis { gap: 12px; flex-wrap: wrap; }
@@ -481,21 +485,7 @@
 /* suppress RGL transitions on edit-mode mount (anti-flicker) */
 .ov-no-anim .react-grid-item { transition: none !important; }
 
-/* stepped resize: RGL merges our cell into the grid item and sizes it
-   continuously — the CARD is pinned to the snapped step instead (variables
-   set on the non-RGL container per resize tick) */
-.ov-rgl .react-grid-item.resizing > .ov-widget {
-  flex: none;
-  width: var(--ov-snap-w, 100%);
-  height: var(--ov-snap-h, 100%);
-}
 
-/* resize from the left edge: the snapped card pins absolutely to the fixed
-   right edge — any transient overflow goes toward the cursor, the right
-   edge never twitches */
-.ov-anchor-right .react-grid-item.resizing > .ov-widget {
-  position: absolute; right: 0; top: 0;
-}
 
 /* 1) the dashed placeholder is a DRAG preview only — during resize the
    card itself snaps, the placeholder would just duplicate it */
@@ -503,3 +493,6 @@
 
 /* 2) pressed handle reads as active */
 .ov-rgl .react-resizable-handle:active { background: var(--accent); }
+
+/* post-release settle: no transitions while the committed layout lands */
+.ov-settle .react-grid-item { transition: none !important; }

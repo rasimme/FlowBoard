@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
 import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity } from 'lucide-react';
 
@@ -48,6 +48,7 @@ export default function OverviewView() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
+  const pinnedCard = useRef(null); // card pinned via inline styles during a resize
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
   // suppress RGL's mount animation — items would visibly fly to their
@@ -274,12 +275,22 @@ export default function OverviewView() {
             compactor={verticalCompactor}
             onDragStop={(layout) => applyLayout(layout)}
             onResizeStart={(layout, oldItem, newItem, placeholder, e) => {
-              // anchor side is fixed for the WHOLE interaction, derived from
-              // the grabbed handle — deriving it per tick from the snapped x
-              // made the card alternate between following the mouse and
-              // jumping (left-edge flicker)
-              const west = Boolean(e?.target?.closest?.('.react-resizable-handle-w'));
-              containerEl?.classList.toggle('ov-anchor-right', west);
+              // pin the card via inline styles for the whole interaction —
+              // inline survives RGL's class churn at mouse-up, so the card
+              // never flashes to the cursor size before the commit renders.
+              const item = e?.target?.closest?.('.react-grid-item');
+              const card = item?.querySelector?.('.ov-widget');
+              if (card) {
+                pinnedCard.current = card;
+                card.style.flex = 'none';
+                // anchor side is fixed from the grabbed handle: west resizes
+                // keep the right edge put
+                if (e?.target?.closest?.('.react-resizable-handle-w')) {
+                  card.style.position = 'absolute';
+                  card.style.right = '0';
+                  card.style.top = '0';
+                }
+              }
             }}
             onResize={(layout, oldItem, newItem) => {
               setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
@@ -287,22 +298,37 @@ export default function OverviewView() {
               // browser probe) and writes the continuous size onto it.
               // We pin the CARD (.ov-widget) to the snapped step instead,
               // via variables on the non-RGL container.
-              if (containerEl) {
-                const colW = (width - 12 * 11) / 12;
-                containerEl.style.setProperty('--ov-snap-w', Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px');
-                containerEl.style.setProperty('--ov-snap-h', (88 * newItem.h + 12 * (newItem.h - 1)) + 'px');
-                // the size label inside RGL's memoized subtree lags React
-                // state mid-interaction — drive the live label via CSS too
-                containerEl.style.setProperty('--ov-snap-label', JSON.stringify(newItem.w + ' \u00d7 ' + newItem.h));
+              const colW = (width - 12 * 11) / 12;
+              if (pinnedCard.current) {
+                pinnedCard.current.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
+                pinnedCard.current.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
               }
+              // the size label inside RGL's memoized subtree lags React
+              // state mid-interaction — a CSS-driven live label replaces it
+              containerEl?.style.setProperty('--ov-snap-label', JSON.stringify(newItem.w + ' \u00d7 ' + newItem.h));
             }}
             onResizeStop={(layout) => {
               applyLayout(layout);
               setResizing(null);
-              containerEl?.style.removeProperty('--ov-snap-w');
-              containerEl?.style.removeProperty('--ov-snap-h');
               containerEl?.style.removeProperty('--ov-snap-label');
-              containerEl?.classList.remove('ov-anchor-right');
+              // suppress RGL's 200ms width/height transition while settling —
+              // otherwise the item animates from the cursor size to the
+              // committed size and the card visibly wanders after release
+              containerEl?.classList.add('ov-settle');
+              setTimeout(() => containerEl?.classList.remove('ov-settle'), 300);
+              // release the inline pin only AFTER the committed layout has
+              // rendered — otherwise the card flashes to the cursor size
+              const card = pinnedCard.current;
+              pinnedCard.current = null;
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                if (!card) return;
+                card.style.width = '';
+                card.style.height = '';
+                card.style.flex = '';
+                card.style.position = '';
+                card.style.right = '';
+                card.style.top = '';
+              }));
             }}
             className={'ov-rgl editing' + (animReady ? '' : ' ov-no-anim')}
           >
