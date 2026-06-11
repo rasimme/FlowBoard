@@ -25,9 +25,8 @@ If this repository's git context is active (your agent is working within FlowBoa
 
 ## Commit conventions
 
-Commits are attributed to the repository owner only. Do **not** add AI
-co-author trailers (`Co-Authored-By: Claude ...` or similar) to commit
-messages.
+Do **not** add AI co-author trailers (`Co-Authored-By: Claude ...` or
+similar) to commit messages in this repository.
 
 ## Delegation (for parent agents)
 
