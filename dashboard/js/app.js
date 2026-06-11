@@ -14,7 +14,7 @@ window.appState = {
   tasks: [],
   canvasNotes: [],
   canvasConnections: [],
-  currentTab: 'tasks',
+  currentTab: 'overview',
   agents: [],
   agentId: null,
   agentIdSource: null,

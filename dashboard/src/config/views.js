@@ -2,6 +2,7 @@ import { lazy } from 'react';
 
 const DesignTest = lazy(() => import('../pages/DesignTest.jsx'));
 const TasksView = lazy(() => import('../pages/TasksView.jsx'));
+const OverviewView = lazy(() => import('../pages/OverviewView.jsx'));
 const FilesView = lazy(() => import('../pages/FilesView.jsx'));
 
 /**
@@ -14,6 +15,7 @@ const FilesView = lazy(() => import('../pages/FilesView.jsx'));
  * To migrate a view: set owner to 'react' and add a `component` field.
  */
 export const VIEWS = [
+  { id: 'overview', label: 'Overview', owner: 'react', component: OverviewView },
   { id: 'ideas', label: 'Ideas', owner: 'legacy' },
   { id: 'tasks', label: 'Tasks', owner: 'react', component: TasksView },
   { id: 'files', label: 'Files', owner: 'react', component: FilesView },

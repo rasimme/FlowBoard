@@ -35,7 +35,7 @@ export default function ViewShell() {
     return undefined;
   }, [applyTelegramTheme]);
 
-  const currentTab = state?.currentTab || 'tasks';
+  const currentTab = state?.currentTab || 'overview';
   const view = getView(currentTab);
   const isReactOwned = view?.owner === 'react';
 

@@ -27,7 +27,7 @@ export default function TabBar() {
 
   if (!container || !state) return null;
 
-  const currentTab = state.currentTab || 'tasks';
+  const currentTab = state.currentTab || 'overview';
 
   function handleTabClick(viewId) {
     if (viewId === currentTab) return;
