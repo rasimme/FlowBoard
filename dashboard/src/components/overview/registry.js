@@ -1,5 +1,10 @@
 import {
   ActiveAgentsWidget,
+  CurrentFocusWidget,
+  BlockedWidget,
+  ApprovalsWidget,
+  SinceLastVisitWidget,
+  ActivityStreamWidget,
   TaskStatsWidget,
   NextUpWidget,
   RecentDecisionsWidget,
@@ -16,6 +21,11 @@ import {
  */
 export const WIDGET_REGISTRY = {
   'active-agents': ActiveAgentsWidget,
+  'current-focus': CurrentFocusWidget,
+  'blocked': BlockedWidget,
+  'approvals': ApprovalsWidget,
+  'since-last-visit': SinceLastVisitWidget,
+  'activity-stream': ActivityStreamWidget,
   'task-stats': TaskStatsWidget,
   'next-up': NextUpWidget,
   'recent-decisions': RecentDecisionsWidget,

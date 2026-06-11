@@ -38,21 +38,28 @@ Only registered widget `type`s render; `PUT` rejects unknown types with an
 error list (400). Fetch `GET /api/overview/widgets` for the current catalog
 with `defaultSize` and accepted `props` per widget. Do not invent types.
 
-Current catalog: `active-agents`, `task-stats`, `next-up`,
-`recent-decisions`, `project-goals`, `quick-links`, `kanban-mini`.
+Current catalog — needs-me cluster: `blocked` (blocked tasks waiting for a
+human), `approvals` (the review lane as your inbox), `since-last-visit`
+(what moved while you were away); live: `current-focus` (claimed tasks,
+prominent), `active-agents`, `activity-stream`; direction & context:
+`next-up`, `project-goals`, `task-stats`, `recent-decisions`,
+`kanban-mini`, `quick-links`.
 
 ## Presets
 
-`PUT { "preset": "agent" | "status" | "context" }` materializes a named
-layout:
+`PUT { "preset": "default" | "agent" | "status" | "context" }` materializes
+a named layout:
 
-- **agent** — daily work with running agents (active-agents hero). Default.
+- **default** — re-orientation after autonomous work: what needs you first
+  (blocked, approvals, since-last-visit), then current focus, next-up,
+  agents, goal and quick actions.
+- **agent** — daily work with running agents (active-agents hero).
 - **status** — reviews/stand-ups (stats + board preview first).
 - **context** — documentation-heavy projects (PROJECT.md/DECISIONS.md dominant).
 
 When creating a new project, pick the preset that fits it — or compose a
 custom layout from the catalog. Projects without a stored file serve the
-`agent` preset automatically; you only need to write when deviating.
+`default` preset automatically; you only need to write when deviating.
 
 ## Editing rules for agents
 

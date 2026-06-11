@@ -2800,6 +2800,23 @@ app.put('/api/projects/:name/overview', (req, res) => {
   }
 });
 
+// GET /api/projects/:name/activity — project-wide activity feed (T-306)
+app.get('/api/projects/:name/activity', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    const since = req.query.since ? String(req.query.since) : null;
+    if (since && Number.isNaN(new Date(since).getTime())) {
+      return res.status(400).json({ error: 'since must be an ISO timestamp' });
+    }
+    const limit = req.query.limit !== undefined ? parseInt(req.query.limit) || 50 : 50;
+    const activity = hzlService.getProjectActivity(req.params.name, { since, limit });
+    res.json({ ok: true, activity });
+  } catch (err) {
+    console.error('[activity]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/search — cross-project full-text task search (T-301)
 app.get('/api/search', (req, res) => {
   try {

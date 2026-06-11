@@ -414,3 +414,210 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
     </OvWidget>
   );
 }
+
+/* =====================================================================
+   T-306 — needs-me cluster + re-orientation widgets (concept update 2)
+   ===================================================================== */
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const min = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000));
+  if (min < 60) return `${min}m`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
+}
+
+/* ---------- current-focus: the prominent "who is on what, since when" ---------- */
+export function CurrentFocusWidget({ widget, editing }) {
+  const goTab = useGoTab();
+  const tasks = useProjectTasks();
+  const claims = tasks
+    .filter(t => t.agent && t.claimedAt)
+    .sort((a, b) => String(b.lastCheckpointAt || b.claimedAt).localeCompare(String(a.lastCheckpointAt || a.claimedAt)))
+    .slice(0, widget?.props?.maxRows || 4);
+
+  return (
+    <OvWidget title={widget?.title || 'Current Focus'} meta={claims.length ? `${claims.length} in flight` : null}>
+      <div className="ov-agents">
+        {claims.length === 0 && (
+          <div className="ov-empty">
+            <span className="ov-empty-title">Nothing claimed right now</span>
+            <span className="ov-empty-hint">As soon as an agent claims a task, it shows up here with its lease.</span>
+          </div>
+        )}
+        {claims.map(t => {
+          const lease = leaseState(t);
+          const fresh = t.lastCheckpointAt && (Date.now() - new Date(t.lastCheckpointAt).getTime()) < 10 * 60 * 1000;
+          return (
+            <div
+              key={t.id}
+              className="ov-agent-row"
+              style={{ cursor: editing ? undefined : 'pointer' }}
+              onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}
+            >
+              <span className="ov-agent-id"><AgentChip name={t.agent} size="md" /></span>
+              <span className="ov-agent-main">
+                <span className="ov-agent-handle">{t.id} · {t.title}</span>
+                <span className="ov-agent-task hide-narrow">@{t.agent} · seit {timeAgo(t.claimedAt)}</span>
+              </span>
+              <span className={'ov-lease' + lease.cls}><Clock size={10} /> {lease.label}</span>
+              {fresh && <span className="ov-pulse" title="Active — checkpointing"></span>}
+            </div>
+          );
+        })}
+      </div>
+    </OvWidget>
+  );
+}
+
+/* ---------- blocked: needs-me — what is stuck on a human ---------- */
+export function BlockedWidget({ widget, editing }) {
+  const goTab = useGoTab();
+  const tasks = useProjectTasks().filter(t => t.blocked && t.status !== 'archived' && t.status !== 'done');
+  return (
+    <OvWidget title={widget?.title || 'Blocked'} meta={tasks.length ? `${tasks.length} waiting` : null}>
+      <div className="ov-tasks">
+        {tasks.length === 0 && (
+          <div className="ov-empty">
+            <span className="ov-empty-title">Nothing blocked</span>
+            <span className="ov-empty-hint">Tasks flagged as blocked appear here — they wait for you.</span>
+          </div>
+        )}
+        {tasks.slice(0, widget?.props?.limit || 6).map(t => (
+          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+            <span className="ov-task-id">{t.id}</span>
+            <span className="ov-task-title">{t.title}</span>
+            <span className="ov-pill high">blocked</span>
+          </div>
+        ))}
+      </div>
+    </OvWidget>
+  );
+}
+
+/* ---------- approvals: needs-me — the review lane is your inbox ---------- */
+export function ApprovalsWidget({ widget, editing }) {
+  const goTab = useGoTab();
+  const tasks = useProjectTasks()
+    .filter(t => t.status === 'review')
+    .sort((a, b) => String(a.created || '').localeCompare(String(b.created || '')));
+  return (
+    <OvWidget title={widget?.title || 'Approvals'} meta={tasks.length ? `${tasks.length} in review` : null}>
+      <div className="ov-tasks">
+        {tasks.length === 0 && (
+          <div className="ov-empty">
+            <span className="ov-empty-title">Nothing to approve</span>
+            <span className="ov-empty-hint">Tasks an agent moved to review land here, waiting for your sign-off.</span>
+          </div>
+        )}
+        {tasks.slice(0, widget?.props?.limit || 6).map(t => (
+          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+            <span className="ov-task-id">{t.id}</span>
+            <span className="ov-task-title">{t.title}</span>
+            {t.agent && <AgentChip name={t.agent} size="xs" />}
+          </div>
+        ))}
+      </div>
+    </OvWidget>
+  );
+}
+
+/* ---------- shared activity fetch ---------- */
+function useActivity(project, since, limit) {
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    const qs = new URLSearchParams();
+    if (since) qs.set('since', since);
+    qs.set('limit', String(limit || 30));
+    fetch(`/api/projects/${project}/activity?${qs}`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive) setItems(d?.activity || []); })
+      .catch(() => { if (alive) setItems([]); });
+    return () => { alive = false; };
+  }, [project, since, limit]);
+  return items;
+}
+
+function ActivityRows({ items, editing, goTab, emptyTitle, emptyHint }) {
+  if (!items) return null;
+  if (items.length === 0) {
+    return (
+      <div className="ov-empty">
+        <span className="ov-empty-title">{emptyTitle}</span>
+        <span className="ov-empty-hint">{emptyHint}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="ov-decs">
+      {items.map((a, i) => (
+        <div
+          key={i}
+          className="ov-dec"
+          style={{ cursor: editing ? undefined : 'pointer' }}
+          onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = a.taskId; }}
+        >
+          <span className="ov-dec-date">{timeAgo(a.timestamp)}</span>
+          <span className="ov-dec-body">
+            <span className="ov-dec-title">{a.taskId}{a.agent ? ` · @${a.agent}` : ''}</span>
+            <span className="ov-dec-text">{a.message}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- since-last-visit: what moved while you were away ---------- */
+export function SinceLastVisitWidget({ widget, editing }) {
+  const goTab = useGoTab();
+  const { state } = useAppState();
+  const project = state?.viewedProject;
+  // capture the previous visit ONCE; bump it when the user actually leaves
+  const [sinceTs] = useState(() => {
+    const stored = project ? localStorage.getItem(`ov-visit:${project}`) : null;
+    return stored || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  });
+  useEffect(() => {
+    if (!project) return;
+    const bump = () => localStorage.setItem(`ov-visit:${project}`, new Date().toISOString());
+    window.addEventListener('beforeunload', bump);
+    return () => {
+      window.removeEventListener('beforeunload', bump);
+      bump();
+    };
+  }, [project]);
+
+  const items = useActivity(project, sinceTs, widget?.props?.limit || 8);
+  return (
+    <OvWidget title={widget?.title || 'Since your last visit'} meta={items?.length ? `${items.length} updates` : null}>
+      <ActivityRows
+        items={items}
+        editing={editing}
+        goTab={goTab}
+        emptyTitle="All quiet since your last visit"
+        emptyHint="Status changes, checkpoints and comments land here while you are away."
+      />
+    </OvWidget>
+  );
+}
+
+/* ---------- activity-stream: plain recent activity ---------- */
+export function ActivityStreamWidget({ widget, editing }) {
+  const goTab = useGoTab();
+  const { state } = useAppState();
+  const items = useActivity(state?.viewedProject, null, widget?.props?.limit || 12);
+  return (
+    <OvWidget title={widget?.title || 'Activity'} meta="latest events">
+      <ActivityRows
+        items={items}
+        editing={editing}
+        goTab={goTab}
+        emptyTitle="No activity yet"
+        emptyHint="Task events show up here as agents and humans work."
+      />
+    </OvWidget>
+  );
+}

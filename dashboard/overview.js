@@ -66,11 +66,60 @@ const WIDGET_TYPES = {
     minSize: { w: 6, h: 2 },
     props: {},
   },
+  'current-focus': {
+    label: 'Current Focus',
+    description: 'The claimed tasks, prominent: who is on what, since when, lease state.',
+    defaultSize: { w: 7, h: 2 },
+    minSize: { w: 4, h: 2 },
+    props: { maxRows: 'number (optional, default 4)' },
+  },
+  'blocked': {
+    label: 'Blocked',
+    description: 'Needs you: tasks flagged as blocked, waiting for a human decision.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: { limit: 'number (optional, default 6)' },
+  },
+  'approvals': {
+    label: 'Approvals',
+    description: 'Needs you: tasks in review, waiting for your sign-off.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: { limit: 'number (optional, default 6)' },
+  },
+  'since-last-visit': {
+    label: 'Since your last visit',
+    description: 'What moved while you were away — status changes, checkpoints, comments.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: { limit: 'number (optional, default 8)' },
+  },
+  'activity-stream': {
+    label: 'Activity',
+    description: 'Latest task events across the project.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 2 },
+    props: { limit: 'number (optional, default 12)' },
+  },
 };
 
 // --- Named presets (the three Claude Design variants). The agent picks one
 // at project setup — or composes a fully custom layout from the catalog. ---
 const PRESETS = {
+  default: {
+    label: 'Re-Orientierung (Default)',
+    description: 'Concept decision E: what needs you first (blocked, approvals, since-last-visit), then current focus and next-up, then agents, goal and quick actions.',
+    widgets: [
+      { id: 'w-blocked', type: 'blocked', grid: { x: 0, y: 0, w: 4, h: 2 } },
+      { id: 'w-approvals', type: 'approvals', grid: { x: 4, y: 0, w: 4, h: 2 } },
+      { id: 'w-since', type: 'since-last-visit', grid: { x: 8, y: 0, w: 4, h: 2 } },
+      { id: 'w-focus', type: 'current-focus', grid: { x: 0, y: 2, w: 7, h: 2 } },
+      { id: 'w-nextup', type: 'next-up', grid: { x: 7, y: 2, w: 5, h: 2 } },
+      { id: 'w-agents', type: 'active-agents', grid: { x: 0, y: 4, w: 8, h: 2 } },
+      { id: 'w-goals', type: 'project-goals', grid: { x: 8, y: 4, w: 4, h: 2 } },
+      { id: 'w-links', type: 'quick-links', grid: { x: 8, y: 6, w: 4, h: 1 } },
+    ],
+  },
   agent: {
     label: 'Agent-zentriert',
     description: 'Daily work with running agents: active-agents hero, quick actions and priorities on the right, stats + decisions below.',
@@ -107,7 +156,7 @@ const PRESETS = {
   },
 };
 
-const DEFAULT_PRESET = 'agent';
+const DEFAULT_PRESET = 'default';
 const MAX_WIDGETS = 24;
 const MAX_PROPS_BYTES = 2048;
 

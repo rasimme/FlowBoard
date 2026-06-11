@@ -154,3 +154,10 @@ preset) or a full config:
 `{ version: 1, layout: "grid", widgets: [{ id, type, title?, props?, grid: {x,y,w,h} }] }`.
 **200** `{ ok, overview }` — **400** `{ error, errors[] }` on validation
 failure (unknown type, grid overflow, duplicate id, …).
+
+### GET /api/projects/:name/activity
+
+Project-wide activity feed from the HZL event store (newest first) — feeds
+the `since-last-visit` and `activity-stream` widgets.
+Query: `since?` (ISO timestamp), `limit?` (default 50, max 200).
+**200** `{ ok, activity: [{ taskId, title, agent, event, message, timestamp }] }`

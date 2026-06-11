@@ -70,13 +70,13 @@ async function run() {
     // registry manifest
     let r = await api('GET', '/overview/widgets');
     ok(r.status === 200 && Array.isArray(r.body?.widgets) && r.body.widgets.length >= 7, 'manifest lists the widget catalog');
-    ok((r.body?.presets || []).map(p => p.name).sort().join(',') === 'agent,context,status', 'manifest lists the three presets');
+    ok((r.body?.presets || []).map(p => p.name).sort().join(',') === 'agent,context,default,status', 'manifest lists the four presets');
     ok(r.body?.gridColumns === 12 && r.body?.rowHeight === 88, 'manifest carries the grid contract');
 
     // default when no file exists
     r = await api('GET', '/projects/ov/overview');
     ok(r.status === 200 && r.body?.overview?.source === 'default', 'missing file serves the default');
-    ok(r.body?.overview?.preset === 'agent' && r.body.overview.widgets.length === 5, 'default is the agent preset');
+    ok(r.body?.overview?.preset === 'default' && r.body.overview.widgets.length === 8, 'default is the re-orientation preset (decision E)');
 
     // materialize a preset
     r = await api('PUT', '/projects/ov/overview', { preset: 'context' });

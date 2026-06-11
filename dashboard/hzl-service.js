@@ -1922,6 +1922,47 @@ function getComments(project, flowboardId) {
  * event types it falls back to the raw type name, which keeps the
  * feed usable even if hzl-core adds new events we haven't mapped yet.
  */
+/**
+ * T-306: project-wide activity feed from the event store — feeds the
+ * since-last-visit and activity-stream widgets. Newest first.
+ */
+function getProjectActivity(project, opts = {}) {
+  const { since = null, limit = 50 } = opts;
+  const cap = Math.max(1, Math.min(Number(limit) || 50, 200));
+  // over-fetch, then filter down to this project's tasks
+  const rows = since
+    ? _eventsDb.prepare('SELECT * FROM events WHERE timestamp > ? ORDER BY id DESC LIMIT ?').all(String(since), cap * 6)
+    : _eventsDb.prepare('SELECT * FROM events ORDER BY id DESC LIMIT ?').all(cap * 6);
+  const out = [];
+  for (const ev of rows) {
+    const mapKey = _ulidToFb.get(ev.task_id);
+    if (!mapKey || !mapKey.startsWith(project + ':')) continue;
+    const fbId = mapKey.slice(project.length + 1);
+    const cached = _cache.get(mapKey);
+    if (cached?.trashedAt) continue;
+    const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
+    let message;
+    if (ev.type === 'comment_added') {
+      message = 'commented' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
+    } else if (ev.type === 'checkpoint_recorded') {
+      message = 'checkpoint' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
+    } else {
+      message = renderStatusEventMessage(ev.type, data);
+    }
+    if (!message) continue;
+    out.push({
+      taskId: fbId,
+      title: cached?.title || null,
+      agent: data.agent || data.author || ev.agent_id || null,
+      event: ev.type,
+      message,
+      timestamp: ev.timestamp,
+    });
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 function getStatusEvents(project, flowboardId) {
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
@@ -2850,6 +2891,7 @@ module.exports = {
   init,
   rebuildCache,
   searchTasks,
+  getProjectActivity,
   moveTaskToProject,
   setTaskParent,
   listTasks,
