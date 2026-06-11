@@ -369,69 +369,79 @@
 /* while resizing the element snaps in grid steps (see onResize) — the
    placeholder shows the target cell underneath */
 .ov-rgl .react-grid-item.resizing .ov-edit-x { opacity: 0; }
-.ov-rgl .react-resizable-handle {
-  position: absolute; z-index: 6;
-  width: 20px; height: 20px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-full);
-  box-shadow: var(--shadow-sm);
-  transform: none;
-  padding: 0;
-}
-.ov-rgl .react-resizable-handle::after {
-  content: '';
-  width: 7px; height: 7px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  border-bottom-right-radius: 2px;
-  display: block;
-}
-.ov-rgl .react-resizable-handle:hover { border-color: var(--accent); }
-.ov-rgl .react-resizable-handle:hover::after { border-color: var(--accent); }
-.ov-rgl .react-resizable-handle-se {
-  right: 6px; bottom: 6px; cursor: nwse-resize;
-}
-.ov-rgl .react-resizable-handle-sw {
-  left: 6px; bottom: 6px; cursor: nesw-resize;
-}
-/* the chevron points outward per corner — rotate the glyph, not the badge */
-.ov-rgl .react-resizable-handle-se::after { transform: rotate(0deg) translate(-1px, -1px); }
-.ov-rgl .react-resizable-handle-sw::after { transform: rotate(90deg) translate(-1px, -1px); }
+/* =====================================================================
+   Final edit mode (Claude Design N2 base, context/claude-design-t305)
+   Cards stay pixel-identical to view mode. The only in-card signal is
+   the hatched, draggable title row. Delete + size live OUTSIDE the card;
+   resizing uses slim edge grab-bars.
+   ===================================================================== */
 
-/* whole widget header is the drag handle while editing; the hovered card
-   lifts visibly so it reads as "grabbable" without extra chrome */
-.ov-rgl.editing .react-grid-item:hover .ov-widget {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-subtle), var(--shadow-md);
+/* clearance for the outside badges/labels */
+.ov-rgl.editing { padding-top: 9px; }
+
+/* hatched, draggable title row — 1px dashed border is compensated so the
+   card's outer size does not change */
+.ov-rgl.editing .ov-whead {
+  background: repeating-linear-gradient(135deg,
+    rgba(255,255,255,.045) 0 1px, transparent 1px 6px);
+  border-bottom: 1px dashed var(--border-strong);
+  cursor: grab;
+  padding-bottom: 8px;
+  margin-bottom: -1px;
+  user-select: none;
 }
-.ov-rgl.editing .ov-whead { cursor: grab; user-select: none; }
+.ov-rgl.editing .ov-wbody { padding-top: 2px; }
 .ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-whead { cursor: grabbing; }
-
-
-/* ---------- edit chrome overlays (T-305 feedback round 2) ---------- */
-.ov-edit-x {
-  position: absolute; z-index: 6;
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px;
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-strong);
-  color: var(--muted);
-  box-shadow: var(--shadow-sm);
-  top: 6px; right: 6px; cursor: pointer; padding: 0;
-  opacity: 1;
+.ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-widget {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent);
 }
-/* the widget meta sits under the X in edit mode — give it room */
-.ov-rgl.editing .ov-wmeta { margin-right: 22px; }
-/* hovered/dragged item always stacks above its neighbours, so no badge is
-   ever clipped or shines through half-covered */
+
+/* delete: round badge outside the top-right corner */
+.ov-edit-x {
+  position: absolute; top: -8px; right: -8px; z-index: 6;
+  width: 22px; height: 22px; border-radius: 50%; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  color: var(--text); cursor: pointer; box-shadow: var(--shadow-md);
+}
+.ov-edit-x:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+
+/* size label: outside, bottom-right, subtle; accent while resizing */
+.ov-fin-size {
+  position: absolute; right: -2px; bottom: -10px; z-index: 5;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px;
+  color: var(--muted); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 1px 6px; pointer-events: none; white-space: nowrap;
+}
+.ov-rgl .react-grid-item.resizing .ov-fin-size {
+  color: var(--text); border-color: var(--accent); background: var(--bg-elevated);
+}
+.ov-rgl .react-grid-item.resizing .ov-widget { border-color: var(--accent); }
+
+/* slim edge grab-bars (N2) — RGL's n/e/s/w handles restyled */
+.ov-rgl .react-resizable-handle {
+  position: absolute; z-index: 5;
+  background: var(--border-strong);
+  border: none; padding: 0;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 3px var(--bg);
+  transform: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.ov-rgl .react-resizable-handle::after { display: none; }
+.ov-rgl .react-resizable-handle:hover { background: var(--accent); }
+.ov-rgl .react-resizable-handle-e { right: -3.5px; top: 50%; transform: translateY(-50%); width: 6px; height: 40px; cursor: ew-resize; }
+.ov-rgl .react-resizable-handle-w { left: -3.5px; top: 50%; transform: translateY(-50%); width: 6px; height: 40px; cursor: ew-resize; }
+.ov-rgl .react-resizable-handle-s { bottom: -3.5px; left: 50%; transform: translateX(-50%); height: 6px; width: 40px; cursor: ns-resize; }
+.ov-rgl .react-resizable-handle-n { top: -3.5px; left: 50%; transform: translateX(-50%); height: 6px; width: 40px; cursor: ns-resize; }
+
+/* stacking: the touched item always above its neighbours */
 .ov-rgl .react-grid-item { z-index: 1; }
 .ov-rgl .react-grid-item:hover,
 .ov-rgl .react-grid-item.react-draggable-dragging,
 .ov-rgl .react-grid-item.resizing { z-index: 4; }
-.ov-edit-x:hover { color: var(--danger); border-color: rgba(239,68,68,.45); background: var(--danger-subtle); }
 
 /* suppress RGL transitions on edit-mode mount (anti-flicker) */
 .ov-no-anim .react-grid-item { transition: none !important; }

@@ -207,7 +207,7 @@ export default function OverviewView() {
       <div className="ov-toolbar">
         <span className="ov-toolbar-note">
           {editing
-            ? 'Editing layout — drag widgets by their header, pull a corner to resize'
+            ? 'Editing layout — drag a card by its hatched title row, pull an edge bar to resize'
             : overview.source === 'default'
               ? 'Default layout — your agent can compose this page via the overview API'
               : overview.preset
@@ -265,7 +265,7 @@ export default function OverviewView() {
             })}
             gridConfig={{ cols: 12, rowHeight: 88, margin: [12, 12], containerPadding: [0, 0] }}
             dragConfig={{ enabled: true, handle: '.ov-whead' }}
-            resizeConfig={{ enabled: true, handles: ['se', 'sw'] }}
+            resizeConfig={{ enabled: true, handles: ['n', 'e', 's', 'w'] }}
             compactor={verticalCompactor}
             onLayoutChange={applyLayout}
             onResize={(layout, oldItem, newItem) => {
@@ -300,9 +300,9 @@ export default function OverviewView() {
                   >
                     <X size={11} />
                   </button>
-                  {resizing?.id === w.id && (
-                    <span className="ov-sizechip" style={{ zIndex: 10 }}>{`w ${resizing.w} · h ${resizing.h}`}</span>
-                  )}
+                  <span className="ov-fin-size">
+                    {(resizing?.id === w.id ? resizing.w : w.grid.w)} × {(resizing?.id === w.id ? resizing.h : w.grid.h)}
+                  </span>
                 </div>
               );
             })}
