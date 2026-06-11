@@ -107,7 +107,7 @@ const WIDGET_TYPES = {
 // at project setup — or composes a fully custom layout from the catalog. ---
 const PRESETS = {
   default: {
-    label: 'Re-Orientierung (Default)',
+    label: 'Re-orientation (default)',
     description: 'Concept decision E: what needs you first (blocked, approvals, since-last-visit), then current focus and next-up, then agents, goal and quick actions.',
     widgets: [
       { id: 'w-blocked', type: 'blocked', grid: { x: 0, y: 0, w: 4, h: 2 } },

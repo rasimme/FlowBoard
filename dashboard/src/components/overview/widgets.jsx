@@ -469,7 +469,7 @@ export function CurrentFocusWidget({ widget, editing }) {
               <span className="ov-agent-id"><AgentChip name={t.agent} size="md" /></span>
               <span className="ov-agent-main">
                 <span className="ov-agent-handle">{t.id} · {t.title}</span>
-                <span className="ov-agent-task hide-narrow">@{t.agent} · seit {timeAgo(t.claimedAt)}</span>
+                <span className="ov-agent-task hide-narrow">@{t.agent} · for {timeAgo(t.claimedAt)}</span>
               </span>
               <span className={'ov-lease' + lease.cls}><Clock size={10} /> {lease.label}</span>
               {fresh && <span className="ov-pulse" title="Active — checkpointing"></span>}

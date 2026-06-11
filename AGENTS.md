@@ -23,6 +23,12 @@ If this repository's git context is active (your agent is working within FlowBoa
    GET http://127.0.0.1:18790/api/projects/flowboard/rules/<section>
    ```
 
+## UI language
+
+All user-facing interface text (labels, buttons, empty states, toasts,
+preset names, notifications) is **English** — no German strings in shipped
+UI or agent-facing API messages.
+
 ## Commit conventions
 
 Do **not** add AI co-author trailers (`Co-Authored-By: Claude ...` or
