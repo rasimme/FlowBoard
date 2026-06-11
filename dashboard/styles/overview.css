@@ -464,8 +464,12 @@
   height: var(--ov-snap-h, 100%);
 }
 
-/* resize from the left edge: the snapped card hugs the fixed right edge */
-.ov-anchor-right .react-grid-item.resizing > .ov-widget { margin-left: auto; }
+/* resize from the left edge: the snapped card pins absolutely to the fixed
+   right edge — any transient overflow goes toward the cursor, the right
+   edge never twitches */
+.ov-anchor-right .react-grid-item.resizing > .ov-widget {
+  position: absolute; right: 0; top: 0;
+}
 
 /* 1) the dashed placeholder is a DRAG preview only — during resize the
    card itself snaps, the placeholder would just duplicate it */

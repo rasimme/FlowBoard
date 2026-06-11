@@ -49,7 +49,6 @@ export default function OverviewView() {
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
   const liveLayout = useRef(null); // latest RGL layout, committed only on drag/resize stop
-  const resizeStart = useRef(null); // {x,y} of the item when a resize begins
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
   // suppress RGL's mount animation — items would visibly fly to their
@@ -276,8 +275,13 @@ export default function OverviewView() {
             compactor={verticalCompactor}
             onLayoutChange={(l) => { liveLayout.current = l; }}
             onDragStop={() => { if (liveLayout.current) applyLayout(liveLayout.current); }}
-            onResizeStart={(layout, oldItem) => {
-              resizeStart.current = oldItem ? { x: oldItem.x, y: oldItem.y } : null;
+            onResizeStart={(layout, oldItem, newItem, placeholder, e) => {
+              // anchor side is fixed for the WHOLE interaction, derived from
+              // the grabbed handle — deriving it per tick from the snapped x
+              // made the card alternate between following the mouse and
+              // jumping (left-edge flicker)
+              const west = Boolean(e?.target?.closest?.('.react-resizable-handle-w'));
+              containerEl?.classList.toggle('ov-anchor-right', west);
             }}
             onResize={(layout, oldItem, newItem) => {
               setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
@@ -289,16 +293,10 @@ export default function OverviewView() {
                 const colW = (width - 12 * 11) / 12;
                 containerEl.style.setProperty('--ov-snap-w', Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px');
                 containerEl.style.setProperty('--ov-snap-h', (88 * newItem.h + 12 * (newItem.h - 1)) + 'px');
-                // resizing from the left edge moves the item's x — anchor
-                // the snapped card to the RIGHT edge so the fixed side
-                // stays put and the left edge steps through the grid
-                const fromLeft = resizeStart.current && newItem.x !== resizeStart.current.x;
-                containerEl.classList.toggle('ov-anchor-right', Boolean(fromLeft));
               }
             }}
             onResizeStop={() => {
               setResizing(null);
-              resizeStart.current = null;
               containerEl?.style.removeProperty('--ov-snap-w');
               containerEl?.style.removeProperty('--ov-snap-h');
               containerEl?.classList.remove('ov-anchor-right');
