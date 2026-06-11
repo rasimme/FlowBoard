@@ -65,7 +65,7 @@ async function run() {
   // Create tasks
   const t1 = hzl.createTask(PROJECT, { title: 'Build API', priority: 'high' });
   assertEqual(t1.id, 'T-001', 'First task ID is T-001');
-  assertEqual(t1.status, 'open', 'Default status is open');
+  assertEqual(t1.status, 'backlog', 'Default status is backlog');
   assertEqual(t1.priority, 'high', 'Priority set correctly');
   assertEqual(t1.completed, null, 'Completed is null');
 
@@ -137,7 +137,7 @@ async function run() {
 
   // Priority update
   hzl.updateTask(PROJECT, 'T-003', { title: 'Deploy to prod', priority: 'critical' });
-  assertEqual(hzl.getTask(PROJECT, 'T-003').priority, 'critical', 'Priority update works');
+  assertEqual(hzl.getTask(PROJECT, 'T-003').priority, 'high', 'Priority update works (critical normalizes to high, T-246-8)');
 
   // ============================================================
   console.log('\n═══ PHASE 3: Delete + Archive ═══');
@@ -229,9 +229,10 @@ async function run() {
   assertEqual(projBTasks.length, 1, 'Project B has exactly 1 task');
 
   // Status update in one project doesn't affect other
+  const projAT001Before = hzl.getTask(PROJECT, 'T-001').status;
   hzl.updateTask(PROJ_B, 'T-001', { status: 'done' });
   const projAT001 = hzl.getTask(PROJECT, 'T-001');
-  assertEqual(projAT001.status, 'in-progress', 'Project A T-001 still in-progress after Project B T-001 done');
+  assertEqual(projAT001.status, projAT001Before, 'Project A T-001 unchanged after Project B T-001 done');
 
   // ============================================================
   console.log('\n═══ PHASE 7: Edge Cases ═══');
@@ -424,11 +425,11 @@ async function run() {
   // ============================================================
 
   // Update title and priority, restart, verify
-  hzl.updateTask(PROJECT, 'T-002', { title: 'Renamed after restart test', priority: 'critical' });
+  hzl.updateTask(PROJECT, 'T-002', { title: 'Renamed after restart test', priority: 'high' });
   await hzl.init(DB_PATH);
   const renamedT2 = hzl.getTask(PROJECT, 'T-002');
   assertEqual(renamedT2.title, 'Renamed after restart test', 'Title change survives restart');
-  assertEqual(renamedT2.priority, 'critical', 'Priority change survives restart');
+  assertEqual(renamedT2.priority, 'high', 'Priority change survives restart');
 
   // ============================================================
   console.log('\n═══ PHASE 15: Subtask ID Continuity ═══');

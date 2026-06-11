@@ -48,6 +48,7 @@
 - [ADR-0019](docs/adr/0019-frontend-runtime-foundation.md) — Frontend runtime foundation owns task UI state convergence
 - [ADR-0020](docs/adr/0020-agent-idle-auto-deactivation.md) — Agents auto-deactivate their active project after idle timeout
 - [ADR-0021](docs/adr/0021-specify-worker-openclaw-cli.md) — Specify worker runs as synchronous OpenClaw CLI one-shots
+- [ADR-0022](docs/adr/0022-parent-status-aggregation-review-gate.md) — Parent status aggregation: one review-gated rule, parents never auto-complete
 
 ## Reference
 

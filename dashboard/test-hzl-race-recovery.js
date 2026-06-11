@@ -138,25 +138,28 @@ async function run() {
   let parentCheck = hzl.getTask(PROJECT, parent.id);
   assertEqual(parentCheck.status, 'open', 'Parent initially open');
 
-  // Move child1 to review
+  // T-299 rule: parent is review-ready only when every child is review/done;
+  // parent never auto-completes (review -> done is the approve action, T-186).
+
+  // Move child1 to review — child2 still open, so work remains
   hzl.updateTask(PROJECT, child1.id, { status: 'review' });
   parentCheck = hzl.getTask(PROJECT, parent.id);
-  assertEqual(parentCheck.status, 'review', 'Parent moves to review when child enters review (T-250)');
+  assertEqual(parentCheck.status, 'in-progress', 'Parent in-progress while a child still has work (T-299)');
 
-  // Move child2 to review (already in review)
+  // Move child2 to review — now every child is settled
   hzl.updateTask(PROJECT, child2.id, { status: 'review' });
   parentCheck = hzl.getTask(PROJECT, parent.id);
-  assertEqual(parentCheck.status, 'review', 'Parent stays in review with multiple review children');
+  assertEqual(parentCheck.status, 'review', 'Parent review once all children are review/done (T-299)');
 
   // Mark child1 as done
   hzl.updateTask(PROJECT, child1.id, { status: 'done' });
   parentCheck = hzl.getTask(PROJECT, parent.id);
   assert(parentCheck.status !== 'done', 'Parent not done when only some children done');
 
-  // Mark child2 as done (all children done)
+  // Mark child2 as done (all children done) — parent stays at the review gate
   hzl.updateTask(PROJECT, child2.id, { status: 'done' });
   parentCheck = hzl.getTask(PROJECT, parent.id);
-  assertEqual(parentCheck.status, 'done', 'Parent moves to done when all children done (T-250)');
+  assertEqual(parentCheck.status, 'review', 'Parent stays in review when all children done — done is the approve action (T-299)');
 
   // ============================================================
   console.log('\n═══ RACE TEST 5: Force Release Conflict ═══');

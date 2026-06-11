@@ -958,41 +958,13 @@ function updateTask(project, flowboardId, updates) {
   // derive children from the cache. `parent.subtaskIds` is a public/read-model
   // convenience and can be stale during direct mutation tests.
   if (cached.parentId && updates.status !== undefined) {
-    const parent = _cache.get(`${project}:${cached.parentId}`);
-    if (parent) {
-      const children = [..._cache.values()].filter(t => (
-        t._project === project &&
-        t.parentId === parent.id &&
-        t.status !== 'archived' &&
-        !t.trashedAt
-      ));
-
-      if (children.length > 0) {
-        // Count child statuses to determine parent target
-        let allDone = true;
-        let anyReview = false;
-        for (const child of children) {
-          if (child.status !== 'done') allDone = false;
-          if (child.status === 'review') anyReview = true;
-        }
-
-        // Determine target parent status based on children:
-        // Priority: done > review > (current parent status if lower)
-        let targetParentStatus = null;
-        if (allDone && parent.status !== 'done' && parent.status !== 'archived') {
-          targetParentStatus = 'done';
-        } else if (anyReview && parent.status !== 'done' && parent.status !== 'review') {
-          targetParentStatus = 'review';
-        }
-
-        if (targetParentStatus && targetParentStatus !== parent.status) {
-          try {
-            updateTask(project, parent.id, { status: targetParentStatus });
-          } catch (e) {
-            console.warn('[hzl-service] parent status aggregation failed:', e.message);
-          }
-        }
-      }
+    // One aggregation rule only (T-299): recalcParentStatus owns the
+    // review gate — all subtasks done promotes the parent to review,
+    // never straight to done (review -> done is the approve action, T-186).
+    try {
+      recalcParentStatus(project, cached.parentId);
+    } catch (e) {
+      console.warn('[hzl-service] parent status aggregation failed:', e.message);
     }
   }
 
@@ -1260,28 +1232,35 @@ function recalcParentStatus(project, parentId) {
   const parent = _cache.get(`${project}:${parentId}`);
   if (!parent || parent.status === 'done') return null;
 
-  const subtasks = parent.subtaskIds
-    .map(id => _cache.get(`${project}:${id}`))
-    .filter(Boolean)
-    .filter(t => t.status !== 'archived'); // archived subtasks excluded
+  // Derive children from the cache (T-250): parent.subtaskIds is a
+  // public/read-model convenience and can be stale during direct mutations.
+  const subtasks = [..._cache.values()].filter(t => (
+    t._project === project &&
+    t.parentId === parent.id &&
+    t.status !== 'archived' &&
+    !t.trashedAt
+  ));
 
   if (subtasks.length === 0) return null;
 
-  const allDone    = subtasks.every(t => t.status === 'done');
+  // T-299 rule: the parent is review-ready only when no child has work
+  // left (every child is review or done). The parent never auto-completes —
+  // review -> done is the human approve action (T-186).
+  const allSettled = subtasks.every(t => t.status === 'review' || t.status === 'done');
   const anyStarted = subtasks.some(t => t.status !== 'open' && t.status !== 'backlog');
 
   let newStatus = parent.status;
-  if (allDone) {
+  if (allSettled) {
     newStatus = 'review';
-  } else if (anyStarted && (parent.status === 'open' || parent.status === 'backlog')) {
+  } else if (!anyStarted) {
+    // Nothing started: demote an active/review parent back to open/backlog
+    if (parent.status === 'in-progress' || parent.status === 'review') {
+      const allSubtasksBacklog = subtasks.every(t => t.status === 'backlog');
+      newStatus = allSubtasksBacklog ? 'backlog' : 'open';
+    }
+  } else if (parent.status === 'open' || parent.status === 'backlog' || parent.status === 'review') {
+    // Work in flight: promote idle parents, pull review parents back
     newStatus = 'in-progress';
-  } else if (!allDone && parent.status === 'review') {
-    newStatus = 'in-progress';
-  } else if (!anyStarted && (parent.status === 'in-progress' || parent.status === 'review')) {
-    // Demotion: all subtasks back to open/backlog
-    // If all subtasks are backlog (none open), parent reverts to backlog; otherwise open
-    const allSubtasksBacklog = subtasks.every(t => t.status === 'backlog');
-    newStatus = allSubtasksBacklog ? 'backlog' : 'open';
   }
 
   if (newStatus !== parent.status) {

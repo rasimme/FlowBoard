@@ -2,6 +2,14 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Parent aggregation honors the review gate.** One aggregation rule
+  remains (`recalcParentStatus`): while any subtask still has work left the
+  parent stays In Progress; once every subtask is Review or Done the parent
+  moves to Review. Parents never auto-complete — Review → Done is the
+  approve action. Previously two competing rules could push a parent
+  straight to Done, bypassing approval. The subtask-update response now
+  reports the parent transition. (T-299)
+
 - **Packaging no longer leaks private data.** The npm `files` allowlist gained
   negations for local plan docs, test residue (project dirs, test-workspaces,
   test files, fixtures) and SQLite WAL/SHM; the privacy scanner now also

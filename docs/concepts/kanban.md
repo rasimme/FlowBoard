@@ -35,7 +35,7 @@ The board's state model has four orthogonal axes plus a soft-delete pointer.
 
 **Subtasks (one level only).** A task with `parentId` set is a subtask. The server rejects creating a subtask under a subtask — the depth is hard-capped at one. The motivation: the natural graph for FlowBoard work is *epic → tasks*, not arbitrary trees. Three levels deep means no one knows where to look.
 
-Subtask IDs follow the parent: `T-128-1`, `T-128-2`, etc. Subtask numbering is per-parent; numbering gaps from deletions are not reused. Parent's status is *recalculated* when a subtask completes — if all subtasks are `done`, the parent transitions to `review` automatically.
+Subtask IDs follow the parent: `T-128-1`, `T-128-2`, etc. Subtask numbering is per-parent; numbering gaps from deletions are not reused. Parent's status is *recalculated* on every subtask status change (T-299): while any subtask still has work left (`open`/`backlog`/`in-progress`), the parent is `in-progress` (promoted from `open`/`backlog` as soon as one subtask starts); once **every** subtask is `review` or `done`, the parent transitions to `review`. The parent never auto-completes — `review` → `done` is the human approve action.
 
 **Soft-delete (`trashedAt`).** Deleting a task sets `trashedAt` to an ISO timestamp; the task disappears from the board but the row stays in the DB. A separate `DELETE /api/projects/:name/tasks/trash` empties the trash permanently. This is the only destructive operation that requires no confirmation prompt — the soft-delete step *is* the confirmation.
 

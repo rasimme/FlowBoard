@@ -1430,6 +1430,9 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   }
 
   const prevStatus = task.status;
+  const prevParentStatus = task.parentId
+    ? (hzlService.getTask(req.params.name, task.parentId)?.status ?? null)
+    : null;
 
   if (updates.status === 'done' && task.status !== 'done') {
     updates.completed = new Date().toISOString().slice(0, 10);
@@ -1515,7 +1518,14 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     let parentUpdated = null;
     if (updatedTask.parentId && updates.status && updates.status !== prevStatus) {
       try {
+        // Aggregation already ran inside updateTask (T-299) — compare the
+        // parent's status against its pre-update state so the response
+        // reports the change even when the recalc below is a no-op.
+        const parentAfter = hzlService.getTask(req.params.name, updatedTask.parentId);
         parentUpdated = hzlService.recalcParentStatus(req.params.name, updatedTask.parentId);
+        if (!parentUpdated && parentAfter && prevParentStatus !== null && parentAfter.status !== prevParentStatus) {
+          parentUpdated = { id: parentAfter.id, status: parentAfter.status };
+        }
         if (parentUpdated) {
           const allTasks = hzlService.listTasks(req.params.name);
           parentUpdated.progress = getSubtaskProgress(allTasks, updatedTask.parentId);
