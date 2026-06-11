@@ -47,7 +47,7 @@ Activate a project and the agent gets the context it needs — goal, scope, arch
 
 Your agent operates the board through the same REST API as the dashboard. It creates tasks, sets priorities, writes specs with acceptance criteria, claims work with leases, checkpoints progress, and hands completed work to review.
 
-- Tasks with workflow: `open → in-progress → review → done`
+- Tasks with workflow: `backlog → open → in-progress → review → done`
 - Parent tasks with subtasks, progress tracking, and automatic parent status updates
 - Spec files with acceptance criteria and logs
 - Multi-agent visibility: active agents, claimed cards, checkpoints, comments, and review approvals
@@ -232,7 +232,7 @@ The agent also handles these autonomously while working:
 |--------|-------------|
 | Create task | Agent calls API, sets priority, optionally writes spec |
 | Create subtasks | Agent breaks a task into subtasks with a parent |
-| Update status | Agent moves tasks through `open → in-progress → review → done` |
+| Update status | Agent moves tasks through `backlog → open → in-progress → review → done` |
 | Write spec | Agent creates `specs/T-xxx-slug.md` with acceptance criteria |
 | Canvas promote | Agent receives cluster notes, decides task structure |
 

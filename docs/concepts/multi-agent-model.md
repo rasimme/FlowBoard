@@ -40,7 +40,7 @@ The model has three components: agent registration (lazy), active-project tracki
 
 ## Code
 
-- `dashboard/fb-meta.js` — `flowboard_agents` table CRUD: `setAgentActiveProject`, `listAgents`, `getAgentRow`, `deleteAgentRow`.
+- `dashboard/flowboard-metadata.js` — `flowboard_agents` table CRUD: `setAgentActiveProject`, `listAgents`, `getAgentRow`, `deleteAgentRow`.
 - `dashboard/hzl-service.js` — task claim/release/complete, lease semantics, `listTasksClaimedBy(agentId)`.
 - `dashboard/server.js` — `/api/agents` (list), `/api/status` (per-agent active-project), `DELETE /api/agents/:id` (with `?force=`), the per-task endpoints under `/api/projects/<name>/tasks/<id>/{claim,release,complete,checkpoint,comment}`.
 - `dashboard/migrations.js` — the `flowboard_agents` schema and the `m003` one-shot backfill from the legacy `ACTIVE-PROJECT.md`.

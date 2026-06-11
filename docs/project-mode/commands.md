@@ -136,7 +136,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 | `in-progress` | Assigned + actively worked |
 | `review` | Done by agent, waits for user review |
 | `done` | Reviewed and accepted |
-| `backlog` | Deprioritized / archived, but still visible |
+| `backlog` | Planned, not yet ready to start (default for new tasks) |
 | `archived` | Hidden from default lists |
 
 ### Status transitions via PUT
@@ -170,7 +170,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 
 ### Archive vs Trash vs Delete
 - **Archive** (`status: archived`): task ist sauber wegsortiert, taucht nicht in default queries auf. Nur möglich wenn alle Subtasks done/archived sind. Subtasks werden automatisch mitarchiviert.
-- **Backlog** (`status: backlog`): deprioritize, aber noch sichtbar. Leichter als Archiv.
+- **Backlog** (`status: backlog`): planned but not ready to start; also used to deprioritize without archiving. Lighter than archive, stays visible.
 - **Trash** (`trashedAt` set): soft delete, hidden, aber restorable. Behält original status.
 - **Delete** (DELETE endpoint): permanent, unrecoverable. Nur bei expliziter Bestätigung.
 

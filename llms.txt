@@ -46,6 +46,8 @@
 - [ADR-0017](docs/adr/0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path
 - [ADR-0018](docs/adr/0018-hzl-filesystem-rollback-detection.md) — HZL filesystem-level rollback detection via boot watermark
 - [ADR-0019](docs/adr/0019-frontend-runtime-foundation.md) — Frontend runtime foundation owns task UI state convergence
+- [ADR-0020](docs/adr/0020-agent-idle-auto-deactivation.md) — Agents auto-deactivate their active project after idle timeout
+- [ADR-0021](docs/adr/0021-specify-worker-openclaw-cli.md) — Specify worker runs as synchronous OpenClaw CLI one-shots
 
 ## Reference
 

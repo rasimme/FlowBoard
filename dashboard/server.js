@@ -56,9 +56,12 @@ const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 
-// Gateway webhook config (for project-switch wake events)
-const GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || 18789;
-const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || '';
+// Gateway webhook config (for project-switch wake events).
+// Resolution contract (docs/reference/env-vars.md): OPENCLAW_-prefixed vars
+// take precedence over their bare aliases; URL form wins over port-only form.
+const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || process.env.GATEWAY_URL
+  || `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || process.env.GATEWAY_PORT || 18789}`;
+const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || process.env.HOOKS_TOKEN || '';
 if (!HOOKS_TOKEN) {
   console.warn('⚠️  OPENCLAW_HOOKS_TOKEN not set — /api/hooks/task-complete endpoint will reject all calls');
 }
@@ -593,7 +596,7 @@ async function sendWakeEvent(text) {
     return;
   }
   try {
-    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/hooks/wake`, {
+    const res = await fetch(`${GATEWAY_URL}/hooks/wake`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${HOOKS_TOKEN}`,
@@ -2069,7 +2072,7 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
     .join(', ') || 'none';
 
   // Fire-and-forget: respond immediately, webhook runs async
-  const gatewayUrl = process.env.OPENCLAW_GATEWAY_URL || 'http://127.0.0.1:18789';
+  const gatewayUrl = GATEWAY_URL;
   const hooksToken = process.env.OPENCLAW_HOOKS_TOKEN;
 
   const sourceNoteIds = notes.map(n => n.id);
@@ -2951,8 +2954,8 @@ async function startServer() {
     // T-177-3: route to the agent that completed the task (from event payload),
     // not to a static service-default agent.
     hzlService.setOnComplete(({ project, taskId, title, agent }) => {
-      const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
-      const token = process.env.HOOKS_TOKEN || '';
+      const gatewayUrl = GATEWAY_URL;
+      const token = HOOKS_TOKEN;
       const msg = `✅ Task ${taskId} "${title}" completed by ${agent || 'unknown'} (${project})`;
       fetch(`${gatewayUrl}/hooks/agent`, {
         method: 'POST',
@@ -3004,8 +3007,8 @@ async function startServer() {
           }
 
           // Send one structured notification per affected agent
-          const gatewayUrl = process.env.GATEWAY_URL || `http://127.0.0.1:${process.env.GATEWAY_PORT || 18789}`;
-          const token = process.env.HOOKS_TOKEN || '';
+          const gatewayUrl = GATEWAY_URL;
+          const token = HOOKS_TOKEN;
           for (const [agent, tasks] of Object.entries(byAgent)) {
             // Skip unassigned — no agent to route to
             if (agent === 'unassigned') continue;

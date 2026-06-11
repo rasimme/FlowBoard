@@ -72,8 +72,10 @@ When an agent is routed (soft-assigned) to a task but fails to claim it, the tas
 
 **Detection:**
 ```
-GET /api/projects/flowboard/tasks/stuck
+GET /api/tasks/stuck
 ```
+
+The endpoint is cross-project; filter by `project` in the response if needed.
 
 ### Checkpoint Health
 
@@ -86,7 +88,7 @@ Tasks with infrequent checkpoints indicate potential stalling or agent disconnec
 
 **Monitoring:**
 ```bash
-curl -s http://127.0.0.1:18790/api/projects/flowboard/tasks/stuck | jq '.stale, .stuck, .expiredLease'
+curl -s http://127.0.0.1:18790/api/tasks/stuck | jq '.stuck'
 ```
 
 ## Compliance Reporting

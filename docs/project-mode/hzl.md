@@ -76,7 +76,7 @@ If you find code treating these as derivable from HZL events, that is a bug.
 ## Operational pointers
 
 - **Migrations**: `dashboard/migrations.js` holds idempotent migrations m001–m005 (tasks.json → HZL, `_index.md` → `flowboard_projects`, `ACTIVE-PROJECT.md` → `flowboard_agents`, project-path move, session-log consolidation). Run via `node dashboard/migrate-tasks.js` or auto-run on server startup.
-- **Env flags**: `HZL_ENABLED=true` must be set for DB-canonical behavior; `HZL_DB_PATH` overrides the default path.
+- **Env flags**: HZL is always enabled (the `HZL_ENABLED` flag was removed in T-129-1); `HZL_DB_PATH` overrides the default database path.
 - **Cache rebuild**: deleting `flowboard-cache.db*` forces the server to rebuild projections from the event store on next start.
 
 ## Related

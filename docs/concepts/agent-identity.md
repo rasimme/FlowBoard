@@ -60,7 +60,7 @@ The `GET /api/info` endpoint documents the convention and serves the external-tr
 - `hooks/project-context/handler.js` — `deriveAgentIdFromWorkspace()`, `buildIdentitySection()`.
 - `dashboard/agent-identity.js` — API-ingress validation and classification for known, test, and external agent ids.
 - `dashboard/server.js` — `/api/status` (per-agent), `/api/agents` (list), `DELETE /api/agents/:id` (with `?force=`), `/api/info` (external onboarding).
-- `dashboard/fb-meta.js` — `flowboard_agents` table CRUD (`getAgentRow`, `setAgentActiveProject`, `listAgents`, `deleteAgentRow`).
+- `dashboard/flowboard-metadata.js` — `flowboard_agents` table CRUD (`getAgentRow`, `setAgentActiveProject`, `listAgents`, `deleteAgentRow`).
 - `dashboard/hzl-service.js` — `listTasksClaimedBy(agentId)`, the conflict check for `DELETE /api/agents/:id`.
 
 ## See also
