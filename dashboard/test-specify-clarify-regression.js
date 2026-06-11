@@ -29,7 +29,7 @@ const TEST_PROJECT = 'clarify-regression-proj';
 if (fs.existsSync(HZL_DB_PATH)) {
   try { fs.unlinkSync(HZL_DB_PATH); } catch {}
 }
-fs.mkdirSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
 
 function makeRequest(method, reqPath, body) {
   return new Promise((resolve, reject) => {
@@ -104,6 +104,10 @@ async function runTests() {
   });
 
   await waitForServer(server);
+  // Register the project canonically — session-create validates project
+  // existence against the registry (T-293); a bare directory is not enough.
+  fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
+  await makeRequest('POST', '/api/projects', { name: TEST_PROJECT });
 
   try {
     // -----------------------------------------------------------------------

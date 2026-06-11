@@ -22,7 +22,7 @@ const WORKSPACE = path.join(__dirname, 'test-workspace');
 if (fs.existsSync(HZL_DB_PATH)) {
   try { fs.unlinkSync(HZL_DB_PATH); } catch {}
 }
-fs.mkdirSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
 
 async function waitForServer(child) {
   const deadline = Date.now() + 5000;
@@ -90,6 +90,10 @@ async function runTests() {
   });
 
   await waitForServer(server);
+  // Register the project canonically — session-create validates project
+  // existence against the registry (T-293); a bare directory is not enough.
+  fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
+  await makeRequest('POST', '/api/projects', { name: TEST_PROJECT });
 
   try {
     section('E2E: Complex Canvas Flow (2+ Clarifications)');

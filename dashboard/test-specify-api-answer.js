@@ -4,6 +4,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const os = require('os');
 
 let pass = 0, fail = 0, failures = [];
 
@@ -15,11 +16,12 @@ function ok(cond, msg) {
 function section(title) { console.log(`\n## ${title}\n`); }
 
 const PORT = 18794;
-const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-t262-answer.db');
-
-if (fs.existsSync(HZL_DB_PATH)) {
-  try { fs.unlinkSync(HZL_DB_PATH); } catch {}
-}
+// Hermetic per-run workspace — shared test-workspace state leaks across
+// tests via the m004 projects-dir import (T-291 finding).
+const WORKDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-specify-answer-'));
+const PROJECTS_DIR = path.join(WORKDIR, 'projects');
+fs.mkdirSync(PROJECTS_DIR, { recursive: true });
+const HZL_DB_PATH = path.join(WORKDIR, 'flowboard.db');
 
 function makeRequest(method, path, body = null) {
   return new Promise((resolve, reject) => {
@@ -56,8 +58,6 @@ function makeRequest(method, path, body = null) {
 }
 
 async function runTests() {
-  // Session-create now validates project existence (path-traversal guard)
-  fs.mkdirSync(path.join(__dirname, 'test-workspace', 'projects', 'test-proj'), { recursive: true });
 
   const server = spawn('node', ['server.js'], {
     cwd: __dirname,
@@ -66,7 +66,7 @@ async function runTests() {
       HZL_DB_PATH,
       FLOWBOARD_PORT: PORT,
       // Isolate from host/CI env (see m004 migration)
-      FLOWBOARD_PROJECTS_DIR: path.join(__dirname, 'test-workspace', 'projects'),
+      FLOWBOARD_PROJECTS_DIR: PROJECTS_DIR,
       NODE_ENV: 'test',
     },
     stdio: 'pipe',
@@ -75,6 +75,11 @@ async function runTests() {
   await new Promise(r => setTimeout(r, 1000));
 
   try {
+    // Session-create validates project existence against the canonical
+    // registry (T-293) — a bare directory is not enough.
+    const projRes = await makeRequest('POST', '/api/projects', { name: 'test-proj' });
+    ok(projRes.statusCode === 201, `test project registered (got ${projRes.statusCode})`);
+
     section('POST /api/specify/sessions/:id/answer Tests');
 
     // Create the session via HTTP — the spawned server owns the session

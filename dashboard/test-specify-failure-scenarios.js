@@ -21,7 +21,7 @@ const TEST_PROJECT = 'failure-test-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
 
 fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
-fs.mkdirSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true });
+fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
 try { fs.unlinkSync(HZL_DB_PATH); } catch {}
 
 function makeRequest(method, requestPath, body = null) {
@@ -93,6 +93,10 @@ async function runTests() {
 
   try {
     await waitForServer(server);
+  // Register the project canonically — session-create validates project
+  // existence against the registry (T-293); a bare directory is not enough.
+  fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
+  await makeRequest('POST', '/api/projects', { name: TEST_PROJECT });
     section('Worker Error Handling Tests');
 
     const sessionId = await createSession('fail-agent-1');
