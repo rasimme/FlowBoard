@@ -219,3 +219,23 @@ Query params: `q` (required), `project?`, `limit?` (default 20, max 50),
 
 **200** `{ ok, query, tasks: [task & { project, rank }], total }`
 **400** `q` missing.
+
+## POST /api/projects/:name/tasks/:id/move
+
+Move a top-level task and its subtasks to another project (T-302). FlowBoard
+ids are project-scoped — the task and its subtasks receive fresh ids; the old
+reference is kept in `metadata.flowboard.movedFrom` and as an audit comment.
+The spec file is not moved.
+
+Body: `{ toProject }`.
+**200** `{ ok, task }` — **400** subtask/invalid target — **404** task or target project not found.
+
+## POST /api/projects/:name/tasks/:id/parent
+
+Re-parent a task within its project (T-302): make it a subtask (`parentId`)
+or promote it to top-level (`parentId: null`). Max nesting depth stays 1;
+the task receives a fresh id matching its new position, old and new parent
+statuses are recalculated (ADR-0022).
+
+Body: `{ parentId: string | null }`.
+**200** `{ ok, task }` — **404** task or parent not found — **409** `HAS_SUBTASKS`.

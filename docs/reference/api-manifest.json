@@ -478,6 +478,20 @@
       "auth": "user",
       "group": "tasks",
       "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/move",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/parent",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
     }
   ],
   "auth_modes": {

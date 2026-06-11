@@ -1304,6 +1304,128 @@ function recalcParentStatus(project, parentId) {
 }
 
 /**
+ * T-302: move a top-level task (with its subtasks) to another project.
+ * FlowBoard ids are project-scoped, so the task and its subtasks receive
+ * fresh ids in the target project; the old reference is kept in metadata
+ * (movedFrom) and as an audit comment. The spec file is NOT moved — it
+ * lives in the source project's workspace.
+ */
+function moveTaskToProject(project, flowboardId, toProject) {
+  const key = `${project}:${flowboardId}`;
+  const ulid = _fbToUlid.get(key);
+  const cached = _cache.get(key);
+  if (!ulid || !cached) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { code: 'NOT_FOUND' });
+  if (cached.trashedAt) throw new Error('Cannot move a trashed task');
+  if (cached.parentId) throw Object.assign(new Error('Subtasks move with their parent — move the parent task instead'), { code: 'IS_SUBTASK' });
+  if (!toProject || toProject === project) throw new Error('Target project must differ from the current project');
+
+  ensureProject(toProject);
+  try { _projectService.requireProject(toProject); }
+  catch { try { _projectService.createProject(toProject); } catch (e) { console.warn('[move] createProject:', e.message); } }
+
+  const subUlids = (cached.subtaskIds || [])
+    .map(id => ({ id, ulid: _fbToUlid.get(`${project}:${id}`) }))
+    .filter(x => x.ulid);
+
+  _taskService.moveWithSubtasks(ulid, toProject);
+
+  const newId = _nextTaskId(toProject);
+  const hzlParent = _taskService.getTaskById(ulid);
+  _updateMetadata(ulid, { flowboard: {
+    ...(hzlParent.metadata?.flowboard || {}),
+    id: newId,
+    parentId: null,
+    movedFrom: `${project}:${flowboardId}`,
+  } });
+  _cache.delete(key);
+  _fbToUlid.delete(key);
+  _fbToUlid.set(`${toProject}:${newId}`, ulid);
+  _ulidToFb.set(ulid, `${toProject}:${newId}`);
+
+  let n = 1;
+  for (const sub of subUlids) {
+    const oldSubKey = `${project}:${sub.id}`;
+    const subNewId = `${newId}-${n++}`;
+    const hzlSub = _taskService.getTaskById(sub.ulid);
+    _updateMetadata(sub.ulid, { flowboard: {
+      ...(hzlSub.metadata?.flowboard || {}),
+      id: subNewId,
+      parentId: newId,
+      movedFrom: oldSubKey,
+    } });
+    _cache.delete(oldSubKey);
+    _fbToUlid.delete(oldSubKey);
+    _fbToUlid.set(`${toProject}:${subNewId}`, sub.ulid);
+    _ulidToFb.set(sub.ulid, `${toProject}:${subNewId}`);
+    _resyncCachedTask(sub.ulid);
+  }
+  _resyncCachedTask(ulid);
+
+  try {
+    addComment(toProject, newId, { message: `Moved from project "${project}" (was ${flowboardId})`, author: 'system' });
+  } catch (e) { console.warn('[move] audit comment failed:', e.message); }
+
+  return _publicTask(_cache.get(`${toProject}:${newId}`));
+}
+
+/**
+ * T-302: re-parent a task within its project (task <-> subtask, max depth 1).
+ * The task receives a fresh id matching its new position; old and new parent
+ * statuses are recalculated (ADR-0022).
+ */
+function setTaskParent(project, flowboardId, newParentId) {
+  const key = `${project}:${flowboardId}`;
+  const ulid = _fbToUlid.get(key);
+  const cached = _cache.get(key);
+  if (!ulid || !cached) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { code: 'NOT_FOUND' });
+  if (cached.trashedAt) throw new Error('Cannot re-parent a trashed task');
+  const target = newParentId || null;
+  if (target === flowboardId) throw new Error('A task cannot be its own parent');
+  if ((cached.parentId || null) === target) return _publicTask(cached);
+  if (target && (cached.subtaskIds || []).length > 0) {
+    throw Object.assign(new Error('Task has subtasks and cannot become a subtask (max 1 nesting level)'), { code: 'HAS_SUBTASKS' });
+  }
+
+  let parentUlid = null;
+  if (target) {
+    parentUlid = _fbToUlid.get(`${project}:${target}`);
+    const parentCached = _cache.get(`${project}:${target}`);
+    if (!parentUlid || !parentCached) throw Object.assign(new Error(`Parent task not found: ${target}`), { code: 'NOT_FOUND' });
+    if (parentCached.parentId) throw new Error(`Cannot create subtask of subtask (max 1 nesting level): ${target} is already a subtask`);
+  }
+
+  const oldParentId = cached.parentId || null;
+  _taskService.setParent(ulid, parentUlid);
+
+  const newId = target ? _nextSubtaskId(project, target) : _nextTaskId(project);
+  const hzlTask = _taskService.getTaskById(ulid);
+  _updateMetadata(ulid, { flowboard: {
+    ...(hzlTask.metadata?.flowboard || {}),
+    id: newId,
+    parentId: target,
+  } });
+  _cache.delete(key);
+  _fbToUlid.delete(key);
+  _fbToUlid.set(`${project}:${newId}`, ulid);
+  _ulidToFb.set(ulid, `${project}:${newId}`);
+  _resyncCachedTask(ulid);
+
+  for (const pid of [oldParentId, target]) {
+    if (pid) { try { recalcParentStatus(project, pid); } catch (e) { console.warn('[reparent] recalc:', e.message); } }
+  }
+  try {
+    addComment(project, newId, {
+      message: target
+        ? `Re-parented under ${target} (was ${flowboardId})`
+        : `Promoted to top-level task (was ${flowboardId})`,
+      author: 'system',
+    });
+  } catch (e) { console.warn('[reparent] audit comment failed:', e.message); }
+
+  return _publicTask(_cache.get(`${project}:${newId}`));
+}
+
+/**
  * T-301: full-text search across projects (title, description, tags).
  * Returns public FlowBoard tasks (trashed excluded) ranked by FTS relevance.
  */
@@ -2728,6 +2850,8 @@ module.exports = {
   init,
   rebuildCache,
   searchTasks,
+  moveTaskToProject,
+  setTaskParent,
   listTasks,
   getTask,
   createTask,

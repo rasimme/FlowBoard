@@ -1025,6 +1025,8 @@ const ERROR_CODE_STATUS = {
   PARENT_NOT_CLAIMABLE: 409,
   ALREADY_CLAIMED: 409,
   REASON_REQUIRED: 400,
+  IS_SUBTASK: 400,
+  HAS_SUBTASKS: 409,
 };
 function httpStatusForError(err, fallback = 400) {
   if (err && err.code && ERROR_CODE_STATUS[err.code]) return ERROR_CODE_STATUS[err.code];
@@ -2725,6 +2727,36 @@ app.get('/api/projects/:name/tasks/:id/events', (req, res) => {
   try {
     const events = hzlService.getStatusEvents(req.params.name, req.params.id);
     res.json({ ok: true, events });
+  } catch (err) {
+    const status = httpStatusForError(err);
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/move — move task (+subtasks) to another project (T-302)
+app.post('/api/projects/:name/tasks/:id/move', (req, res) => {
+  try {
+    const toProject = String(req.body?.toProject || '').trim();
+    if (!toProject) return res.status(400).json({ error: 'toProject required' });
+    if (/[/\\]|\.\./.test(toProject)) return res.status(400).json({ error: 'Invalid project name' });
+    if (!projectExists(toProject)) return res.status(404).json({ error: 'Target project not found' });
+    const task = hzlService.moveTaskToProject(req.params.name, req.params.id, toProject);
+    res.json({ ok: true, task });
+  } catch (err) {
+    const status = httpStatusForError(err);
+    res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/parent — re-parent within the project (T-302)
+app.post('/api/projects/:name/tasks/:id/parent', (req, res) => {
+  try {
+    const parentId = req.body?.parentId ?? null;
+    if (parentId !== null && typeof parentId !== 'string') {
+      return res.status(400).json({ error: 'parentId must be a task id string or null' });
+    }
+    const task = hzlService.setTaskParent(req.params.name, req.params.id, parentId);
+    res.json({ ok: true, task });
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });

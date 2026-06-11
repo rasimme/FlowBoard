@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw } from 'lucide-react';
+import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw, FolderInput } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
@@ -8,6 +8,7 @@ import Input from './Input.jsx';
 import Textarea from './Textarea.jsx';
 import Popover from './Popover.jsx';
 import PriorityPill from './PriorityPill.jsx';
+import MoveTaskModal from './MoveTaskModal.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
@@ -187,6 +188,7 @@ export default function DetailPanel() {
   const [blockReasonOpen, setBlockReasonOpen] = useState(false);
   const [blockReasonText, setBlockReasonText] = useState('');
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
   // T-161-4 Zone 3: description inline-edit
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescription, setEditDescription] = useState('');
@@ -1112,6 +1114,17 @@ export default function DetailPanel() {
                   </button>
                 </Tooltip>
               )}
+              {/* Move / re-parent (T-302) */}
+              <Tooltip content="Move / change parent">
+                <button
+                  type="button"
+                  onClick={() => setMoveModalOpen(true)}
+                  className={`${ICON_BTN_BASE} border-transparent bg-transparent text-muted hover:text-text hover:bg-bg-hover`}
+                  aria-label="Move task or change parent"
+                >
+                  <FolderInput size={14} />
+                </button>
+              </Tooltip>
               {/* Delete — soft to Trash */}
               <Tooltip content="Move to Trash">
                 <button
@@ -1126,6 +1139,21 @@ export default function DetailPanel() {
             </div>
           </div>
         )}
+
+        <MoveTaskModal
+          open={moveModalOpen}
+          onClose={() => setMoveModalOpen(false)}
+          task={task}
+          project={project}
+          projects={state?.projects || []}
+          onDone={({ type, task: result, toProject }) => {
+            close();
+            if (type === 'move' && toProject) {
+              window._viewProject?.(toProject);
+            }
+            window._scrollToTaskId = result.id;
+          }}
+        />
 
         {/* Route popover — lives here (outside the header) so it anchors
             to the Route button in Zone 2. */}
