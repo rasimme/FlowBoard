@@ -189,14 +189,18 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
     .slice(-30);
   const avgCycle = cycles.length ? (cycles.reduce((a, b) => a + b, 0) / cycles.length) : null;
 
+  // calendar-day buckets with labels — bars show "tasks completed that
+  // day" (the momentum widget counts ALL events, hence many more bars)
   const spark = Array.from({ length: 7 }, (_, i) => {
-    const dayStart = now - (6 - i) * day;
-    return doneDated.filter(t => {
+    const d0 = new Date(now - (6 - i) * day);
+    d0.setHours(0, 0, 0, 0);
+    const n = doneDated.filter(t => {
       const ts = new Date(t.completed).getTime();
-      return ts >= dayStart - day / 2 && ts < dayStart + day / 2;
+      return ts >= d0.getTime() && ts < d0.getTime() + day;
     }).length;
+    return { n, label: d0.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' }) };
   });
-  const max = Math.max(...spark, 1);
+    const max = Math.max(...spark.map(x => x.n), 1);
 
   return (
     <OvWidget title={widget?.title || 'Task Stats'} meta={`${tasks.length} tasks`}>
@@ -232,7 +236,9 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
         <div className="ov-spark" style={{ flexShrink: 0, alignSelf: 'flex-end' }}>
           <div className="bars">
             {spark.map((v, i) => (
-              <i key={i} className={i === spark.length - 1 ? 'hi' : ''} style={{ height: Math.round(v / max * 100) + '%' }}></i>
+              <i key={i} className={i === spark.length - 1 ? 'hi' : ''}
+                title={`${v.label} — ${v.n} done`}
+                style={{ height: v.n ? Math.max(12, Math.round(v.n / max * 100)) + '%' : '6%' }}></i>
             ))}
           </div>
           <div className="lbl">Done · last 7d</div>

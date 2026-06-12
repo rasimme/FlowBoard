@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest, KeyRound } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
+import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { refreshTasks } from '../../state/appStateBridge.mjs';
 
@@ -232,7 +233,7 @@ function MsTaskPicker({ tasks, excludeIds, busy, confirmLabel, onConfirm, onCanc
 
 function MsChecklist({ items, editing, goTab, busy, onRemove }) {
   return (
-    <div className="ms-check">
+    <ScrollArea className="flex-1 min-h-0" innerClassName="ms-check">
       {items.length === 0 && <span className="gh-none">Empty milestone — it disappears once nothing carries the tag.</span>}
       {items.map(t => (
         <div key={t.id} className={'ms-check-row' + (t.status === 'done' ? ' done' : '')}>
@@ -250,7 +251,7 @@ function MsChecklist({ items, editing, goTab, busy, onRemove }) {
           )}
         </div>
       ))}
-    </div>
+    </ScrollArea>
   );
 }
 
@@ -324,9 +325,16 @@ export function MilestonesWidget({ widget, editing }) {
     }
   }
 
-  const meta = view.mode === 'detail' || view.mode === 'add'
-    ? null
-    : all.length ? `${active.length} active${completed.length ? ` · ${completed.length} done` : ''}` : null;
+  const metaText = all.length ? `${active.length} active${completed.length ? ` · ${completed.length} done` : ''}` : null;
+  const meta = view.mode === 'detail' || view.mode === 'add' ? null : (
+    <>
+      {metaText}
+      {!editing && (
+        <button type="button" className="ms-add-head" title="New milestone"
+          onClick={() => setView({ mode: 'create' })}>+</button>
+      )}
+    </>
+  );
 
   // ---------- create flow ----------
   if (view.mode === 'create') {
@@ -378,9 +386,21 @@ export function MilestonesWidget({ widget, editing }) {
               <MsChecklist items={items} editing={editing} goTab={goTab} busy={busy}
                 onRemove={id => applyTag([id], view.name, false)} />
               {!editing && (
-                <button type="button" className="lk-addtoggle" onClick={() => setView({ mode: 'add', name: view.name })}>
-                  <Plus size={11} /> Add tasks
-                </button>
+                <div className="ms-detail-actions">
+                  <button type="button" className="lk-addtoggle" onClick={() => setView({ mode: 'add', name: view.name })}>
+                    <Plus size={11} /> Add tasks
+                  </button>
+                  {items.length > 0 && (
+                    <button type="button" className="lk-addtoggle danger" disabled={busy}
+                      onClick={async () => {
+                        if (!window.confirm(`Remove milestone "${view.name}"? The ${items.length} task${items.length === 1 ? '' : 's'} stay — only the tag goes away.`)) return;
+                        await applyTag(items.map(t => t.id), view.name, false);
+                        setView({ mode: 'list' });
+                      }}>
+                      Remove milestone
+                    </button>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -696,8 +716,9 @@ export function NotesWidget({ editing }) {
           </Suspense>
         </div>
       ) : (
-        <div className="nt-view" onClick={editing ? undefined : () => setOpen(true)}
-          style={{ cursor: editing ? undefined : 'text' }} title="Click to edit">
+        <ScrollArea className="flex-1 min-h-0" innerClassName="nt-view" title="Click to edit"
+          onClick={editing ? undefined : () => setOpen(true)}
+          innerStyle={{ cursor: editing ? undefined : 'text' }}>
           {text ? (
             <Suspense fallback={<div className="nt-loading">…</div>}>
               <MarkdownPreview content={text} breaks />
@@ -705,7 +726,7 @@ export function NotesWidget({ editing }) {
           ) : (
             <span className="nt-placeholder">Click to jot anything — agents can read and append to NOTES.md too.</span>
           )}
-        </div>
+        </ScrollArea>
       )}
       <div className="nt-foot">
         <span className="nt-state">{saving ? 'saving…' : dirty ? 'unsaved' : 'saved'}</span>
@@ -970,6 +991,7 @@ export function RepoStatusWidget({ widget, editing }) {
         <div className="gh-body">
           <div className="gh-sec hide-narrow">
             <div className="gh-sec-h"><GitPullRequest size={11} /> Open PRs · {data.pulls.length}{data.pulls.length === 5 ? '+' : ''}</div>
+            <ScrollArea className="flex-1 min-h-0" innerClassName="gh-rows">
             {data.pulls.length === 0 ? (
               <span className="gh-none">No open pull requests</span>
             ) : data.pulls.slice(0, 6).map(p => (
@@ -979,9 +1001,11 @@ export function RepoStatusWidget({ widget, editing }) {
                 <span className="msg">{p.draft ? '[draft] ' : ''}{p.title}</span>
               </a>
             ))}
+            </ScrollArea>
           </div>
           <div className="gh-sec">
             <div className="gh-sec-h">Latest commits</div>
+            <ScrollArea className="flex-1 min-h-0" innerClassName="gh-rows">
             {data.commits.slice(0, 6).map(c => (
               <a key={c.sha} className="gh-row" href={editing ? undefined : `https://github.com/${repo}/commit/${c.sha}`}
                 target="_blank" rel="noreferrer" onClick={e => { if (editing) e.preventDefault(); }}>
@@ -990,6 +1014,7 @@ export function RepoStatusWidget({ widget, editing }) {
                 <span className="when">{ago(c.date)}</span>
               </a>
             ))}
+            </ScrollArea>
           </div>
         </div>
       )}
@@ -1073,13 +1098,14 @@ export function FileViewerWidget({ widget, editing }) {
       ) : content === null ? (
         <div className="nt-loading">Loading…</div>
       ) : (
-        <div className="fv-body" style={{ cursor: editing ? undefined : 'pointer' }}
+        <ScrollArea className="flex-1 min-h-0" innerClassName="fv-body"
+          innerStyle={{ cursor: editing ? undefined : 'pointer' }}
           title={editing ? undefined : `Open ${name} in Files`}
           onClick={editing ? undefined : e => { if (!e.target.closest('a')) window._openSpec?.(path); }}>
           <Suspense fallback={<div className="nt-loading">…</div>}>
             <MarkdownPreview content={content} />
           </Suspense>
-        </div>
+        </ScrollArea>
       )}
     </OvWidget>
   );

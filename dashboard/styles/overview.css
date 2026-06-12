@@ -892,8 +892,10 @@
 /* ===== T-328: scroll + small-size polish round =====
    Shared scroll feel inside widgets: reserve no layout space (overlay-like
    thumb via webkit styling), show the thumb while hovering the area. */
-.ov-wbody ::-webkit-scrollbar { width: 7px; height: 7px; }
-.ov-wbody ::-webkit-scrollbar-track { background: transparent; }
+/* the app hides ALL native scrollbars globally (gateway heritage, with
+   !important) — widget bodies opt back in with a hover-revealed thumb */
+.ov-wbody ::-webkit-scrollbar { display: block !important; width: 7px !important; height: 7px !important; }
+.ov-wbody ::-webkit-scrollbar-track { background: transparent !important; }
 .ov-wbody ::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
 .ov-wbody :hover::-webkit-scrollbar-thumb,
 .ov-wbody :focus-within::-webkit-scrollbar-thumb { background: var(--border-strong); }
@@ -935,3 +937,45 @@
 /* (5) resize at the minimum: live chip flips to accent */
 .ov-min-reached .react-grid-item.resizing ~ * .ov-fin-size,
 .ov-min-reached .ov-fin-size { border-color: var(--accent); color: var(--accent); }
+
+/* (2) milestones: header add + drilldown actions */
+.ms-add-head {
+  width: 16px; height: 16px; margin-left: 6px; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 12px; line-height: 1; vertical-align: -2px;
+}
+.ms-add-head:hover { color: var(--accent-2); border-color: var(--accent-2); }
+.ms-detail-actions { display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
+.lk-addtoggle.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* (1) consistent fade on every widget scroll area where rows can get cut */
+.ov-agents, .ov-tasks, .ov-decs, .gh-rows, .ci-list, .lk-list, .tl-spine,
+.ov-kbars, .msp-list, .ms-roadmap, .nt-view, .fv-body {
+  mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
+}
+
+/* (3) Chromium ignores ::-webkit-scrollbar styling while scrollbar-width is
+   set — the hover thumb never showed. Reset it inside widget bodies. */
+.ov-wbody, .ov-wbody * { scrollbar-width: auto !important; }
+
+/* (4) quick drop: the ring must never be squeezed; narrow cards compact */
+.qd-ring { flex-shrink: 0; }
+@container widget (max-width: 250px) {
+  .qd-zone { gap: 4px; padding: 6px; }
+  .qd-ring { width: 22px; height: 22px; }
+  .qd-ring svg { width: 11px; height: 11px; }
+  .qd-title { font-size: 10px; text-align: center; }
+  .qd-hint { display: none; }
+}
+
+/* (5) at the resize limit the card itself shows it */
+.ov-min-reached .react-grid-item.resizing .ov-widget {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* widget scroll areas use the app's ScrollArea — track tightened to the
+   card and revealed on hover (11) */
+.ov-widget .cscroll-track { top: 2px; bottom: 2px; right: 1px; opacity: 0; transition: opacity .15s; }
+.ov-widget:hover .cscroll-track { opacity: 1; }
