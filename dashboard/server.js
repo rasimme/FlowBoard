@@ -56,6 +56,7 @@ const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const overview = require('./overview.js');
+const github = require('./github.js');
 
 // Gateway webhook config (for project-switch wake events).
 // Resolution contract (docs/reference/env-vars.md): OPENCLAW_-prefixed vars
@@ -2767,6 +2768,21 @@ app.post('/api/projects/:name/tasks/:id/parent', (req, res) => {
 // --- Overview (T-305): per-project modular landing page, SDUI ---
 
 // GET /api/overview/widgets — trusted widget registry + presets (for agents and the picker)
+// GET /api/github/repo-status?repo=owner/name — feeds the repo-status
+// widget (T-310). Server-side fetch so the GitHub token stays here.
+app.get('/api/github/repo-status', async (req, res) => {
+  const repo = String(req.query.repo || '');
+  if (!github.validRepo(repo)) {
+    return res.status(400).json({ error: 'repo must be "owner/name"' });
+  }
+  try {
+    res.json({ ok: true, status: await github.fetchRepoStatus(repo) });
+  } catch (err) {
+    const status = err.status === 404 ? 404 : 502;
+    res.status(status).json({ error: `GitHub fetch failed: ${err.message}` });
+  }
+});
+
 app.get('/api/overview/widgets', (req, res) => {
   res.json({ ok: true, ...overview.widgetManifest() });
 });

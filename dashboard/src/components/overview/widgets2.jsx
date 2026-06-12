@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save } from 'lucide-react';
+import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
@@ -28,6 +28,25 @@ function Empty({ icon: Icon, title, hint }) {
       <span className="ov-empty-hint">{hint}</span>
     </div>
   );
+}
+
+// persist a widget's props into overview.json — the same write path
+// agents use; local widget state keeps the UI fresh until the next mount
+async function persistWidgetProps(project, widgetId, mutate) {
+  const cur = await fetch(`/api/projects/${project}/overview`, { credentials: 'include' })
+    .then(r => (r.ok ? r.json() : null));
+  const ov = cur?.overview;
+  const target = (ov?.widgets || []).find(w => w.id === widgetId);
+  if (!target) return null;
+  target.props = mutate(target.props || {});
+  delete ov.source;
+  const res = await fetch(`/api/projects/${project}/overview`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(ov),
+  });
+  return res.ok ? target.props : null;
 }
 
 function useActivityFeed(project, limit) {
@@ -379,30 +398,16 @@ export function LinksWidget({ widget, editing }) {
     if (!project || !widget?.id || !cleanUrl || saving) return;
     setSaving(true);
     try {
-      const cur = await fetch(`/api/projects/${project}/overview`, { credentials: 'include' })
-        .then(r => (r.ok ? r.json() : null));
-      const ov = cur?.overview;
-      const target = (ov?.widgets || []).find(w => w.id === widget.id);
-      if (!target) {
-        window.showToast?.('Save the layout first, then add links', 'warn');
-        return;
-      }
-      const next = [...(target.props?.links || []), { label: label.trim() || cleanUrl, url: cleanUrl }];
-      target.props = { ...(target.props || {}), links: next };
-      delete ov.source;
-      const res = await fetch(`/api/projects/${project}/overview`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(ov),
-      });
-      if (res.ok) {
-        setLinks(next);
+      const next = await persistWidgetProps(project, widget.id, props => ({
+        ...props,
+        links: [...(props.links || []), { label: label.trim() || cleanUrl, url: cleanUrl }],
+      }));
+      if (next) {
+        setLinks(next.links);
         setLabel(''); setUrl(''); setAdding(false);
         window.showToast?.('Link pinned', 'success');
       } else {
-        const d = await res.json().catch(() => ({}));
-        window.showToast?.(d.error || 'Adding link failed', 'error');
+        window.showToast?.('Adding link failed — save the layout first?', 'error');
       }
     } finally {
       setSaving(false);
@@ -489,6 +494,120 @@ export function StallDetectionWidget({ widget }) {
           <div className="sd-strip-lbl">Activity · last 14 days</div>
         </div>
       </div>
+    </OvWidget>
+  );
+}
+
+/* ---------- repo-status: GitHub at a glance (opt-in via props.repo) ---------- */
+function ago(ts) {
+  if (!ts) return '';
+  const min = Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 60000));
+  if (min < 60) return `${min}m`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
+}
+
+const CI_LABEL = { passing: 'CI passing', failing: 'CI failing', pending: 'CI running', none: 'no CI' };
+
+export function RepoStatusWidget({ widget, editing }) {
+  const { state } = useAppState();
+  const project = state?.viewedProject;
+  const [repo, setRepo] = useState(widget?.props?.repo || '');
+  useEffect(() => { setRepo(widget?.props?.repo || ''); }, [widget]);
+  const [draft, setDraftRepo] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!repo) return;
+    let alive = true;
+    setData(null); setError(null);
+    fetch(`/api/github/repo-status?repo=${encodeURIComponent(repo)}`, { credentials: 'include' })
+      .then(async r => {
+        const d = await r.json().catch(() => ({}));
+        if (!alive) return;
+        if (r.ok) setData(d.status);
+        else setError(d.error || 'GitHub fetch failed');
+      })
+      .catch(() => { if (alive) setError('GitHub unreachable'); });
+    return () => { alive = false; };
+  }, [repo]);
+
+  async function connect() {
+    const clean = draft.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
+    if (!project || !widget?.id || !/^[\w.-]+\/[\w.-]+$/.test(clean) || saving) return;
+    setSaving(true);
+    try {
+      const next = await persistWidgetProps(project, widget.id, props => ({ ...props, repo: clean }));
+      if (next) { setRepo(clean); window.showToast?.(`Connected ${clean}`, 'success'); }
+      else window.showToast?.('Connecting failed — save the layout first?', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!repo) {
+    return (
+      <OvWidget title={widget?.title || 'Repo Status'} meta="GitHub">
+        <div className="gh-setup">
+          <span className="gh-setup-hint">Connect a GitHub repository — CI, open PRs and latest commits show up here.</span>
+          <div className="lk-add">
+            <input className="lk-in" placeholder="owner/name" value={draft}
+              onChange={e => setDraftRepo(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') connect(); }}
+              disabled={editing} />
+            <button type="button" className="lk-btn" onClick={connect} disabled={editing || saving || !draft.trim()}>
+              {saving ? '…' : 'Connect'}
+            </button>
+          </div>
+        </div>
+      </OvWidget>
+    );
+  }
+
+  return (
+    <OvWidget title={widget?.title || 'Repo Status'} meta={data ? `updated ${ago(data.fetchedAt)} ago` : 'GitHub'}>
+      <div className="gh-head">
+        <a className="gh-repo" href={editing ? undefined : `https://github.com/${repo}`} target="_blank" rel="noreferrer"
+          onClick={e => { if (editing) e.preventDefault(); }}>
+          <GitBranch size={13} />
+          <span className="nm">{repo}</span>
+          {data?.branch && <span className="br">{data.branch}</span>}
+        </a>
+        {data && <span className={'gh-ci ' + data.ci}>{CI_LABEL[data.ci] || data.ci}</span>}
+      </div>
+      {error ? (
+        <div className="gh-error">{error}</div>
+      ) : !data ? (
+        <div className="nt-loading">Loading…</div>
+      ) : (
+        <div className="gh-body">
+          <div className="gh-sec hide-narrow">
+            <div className="gh-sec-h"><GitPullRequest size={11} /> Open PRs · {data.pulls.length}{data.pulls.length === 5 ? '+' : ''}</div>
+            {data.pulls.length === 0 ? (
+              <span className="gh-none">No open pull requests</span>
+            ) : data.pulls.slice(0, 3).map(p => (
+              <a key={p.number} className="gh-row" href={editing ? undefined : `https://github.com/${repo}/pull/${p.number}`}
+                target="_blank" rel="noreferrer" onClick={e => { if (editing) e.preventDefault(); }}>
+                <span className="num">#{p.number}</span>
+                <span className="msg">{p.draft ? '[draft] ' : ''}{p.title}</span>
+              </a>
+            ))}
+          </div>
+          <div className="gh-sec">
+            <div className="gh-sec-h">Latest commits</div>
+            {data.commits.slice(0, 3).map(c => (
+              <a key={c.sha} className="gh-row" href={editing ? undefined : `https://github.com/${repo}/commit/${c.sha}`}
+                target="_blank" rel="noreferrer" onClick={e => { if (editing) e.preventDefault(); }}>
+                <span className="num">{c.sha}</span>
+                <span className="msg">{c.message}</span>
+                <span className="when">{ago(c.date)}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </OvWidget>
   );
 }

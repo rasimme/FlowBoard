@@ -73,6 +73,12 @@ async function run() {
     ok((r.body?.presets || []).map(p => p.name).sort().join(',') === 'agent,context,default,status', 'manifest lists the four presets');
     ok(r.body?.gridColumns === 12 && r.body?.rowHeight === 88, 'manifest carries the grid contract');
 
+    // repo-status endpoint validates input without touching the network
+    r = await api('GET', '/github/repo-status');
+    ok(r.status === 400, 'repo-status without repo is rejected');
+    r = await api('GET', '/github/repo-status?repo=' + encodeURIComponent('../etc/passwd'));
+    ok(r.status === 400, 'repo-status rejects non owner/name input');
+
     // default when no file exists
     r = await api('GET', '/projects/ov/overview');
     ok(r.status === 200 && r.body?.overview?.source === 'default', 'missing file serves the default');

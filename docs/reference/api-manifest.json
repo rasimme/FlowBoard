@@ -5,32 +5,10 @@
   "note": "Authoritative list of HTTP endpoints exposed by dashboard/server.js. T-197-8 will add a mechanical drift test asserting every app.<verb>(...) call in server.js has a matching entry here.",
   "endpoints": [
     {
-      "method": "GET",
-      "path": "/api/health",
-      "auth": "none",
-      "group": "discovery",
-      "doc": "api/discovery.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/health/integrity",
-      "auth": "none",
-      "group": "discovery",
-      "doc": "api/discovery.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/info",
-      "auth": "none",
-      "group": "discovery",
-      "doc": "api/discovery.md"
-    },
-    {
       "method": "POST",
-      "path": "/api/auth",
-      "auth": "none",
-      "group": "auth",
-      "doc": null
+      "path": "/api/projects/:name/files/context",
+      "description": "Upload a .md file to context/ folder (T-222). Accepts JSON { filename, content }. Max 5MB.",
+      "section": "files"
     },
     {
       "method": "GET",
@@ -61,6 +39,139 @@
       "doc": "api/agents.md"
     },
     {
+      "method": "POST",
+      "path": "/api/auth",
+      "auth": "none",
+      "group": "auth",
+      "doc": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/canvas",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:name/canvas/connections",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/canvas/connections",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/canvas/notes",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:name/canvas/notes/:id",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/canvas/notes/:id",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:name/canvas/notes/batch",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/canvas/promote",
+      "auth": "user",
+      "group": "canvas",
+      "doc": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "auth": "none",
+      "group": "discovery",
+      "doc": "api/discovery.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health/integrity",
+      "auth": "none",
+      "group": "discovery",
+      "doc": "api/discovery.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/info",
+      "auth": "none",
+      "group": "discovery",
+      "doc": "api/discovery.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/files",
+      "auth": "user",
+      "group": "files",
+      "doc": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:name/files/{*filePath}",
+      "auth": "user",
+      "group": "files",
+      "doc": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/files/{*filePath}",
+      "auth": "user",
+      "group": "files",
+      "doc": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/files/{*filePath}",
+      "auth": "user",
+      "group": "files",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/hooks/task-complete",
+      "auth": "token",
+      "group": "hooks",
+      "doc": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/github/repo-status",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/overview/widgets",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
       "method": "GET",
       "path": "/api/projects",
       "auth": "user",
@@ -75,8 +186,8 @@
       "doc": "api/projects.md"
     },
     {
-      "method": "GET",
-      "path": "/api/projects/drift",
+      "method": "DELETE",
+      "path": "/api/projects/:name",
       "auth": "user",
       "group": "projects",
       "doc": "api/projects.md"
@@ -89,8 +200,15 @@
       "doc": "api/projects.md"
     },
     {
-      "method": "DELETE",
-      "path": "/api/projects/:name",
+      "method": "GET",
+      "path": "/api/projects/:name/activity",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/bootstrap",
       "auth": "user",
       "group": "projects",
       "doc": "api/projects.md"
@@ -104,7 +222,14 @@
     },
     {
       "method": "GET",
-      "path": "/api/projects/:name/bootstrap",
+      "path": "/api/projects/:name/overview",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/overview",
       "auth": "user",
       "group": "projects",
       "doc": "api/projects.md"
@@ -125,253 +250,23 @@
     },
     {
       "method": "GET",
-      "path": "/api/projects/:name/tasks",
+      "path": "/api/projects/drift",
       "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
+      "group": "projects",
+      "doc": "api/projects.md"
     },
     {
       "method": "POST",
-      "path": "/api/projects/:name/tasks",
+      "path": "/api/snippets/apply",
       "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/projects/:name/tasks/:id",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/projects/:name/tasks/:id",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/projects/:name/tasks/trash",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/claim",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/release",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/complete",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/approve",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/reject",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/checkpoint",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/:name/tasks/:id/checkpoints",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/comment",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/:name/tasks/:id/comments",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/:name/tasks/:id/events",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tasks/stuck",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tasks/notifiable-stuck",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/workflows/start",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/workflows/handoff",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/workflows/delegate",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/:name/tasks/:id/handoff",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/route",
-      "auth": "user",
-      "group": "tasks",
-      "doc": "api/tasks.md"
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/:name/files",
-      "auth": "user",
-      "group": "files",
+      "group": "snippets",
       "doc": null
     },
     {
       "method": "GET",
-      "path": "/api/projects/:name/files/{*filePath}",
+      "path": "/api/snippets/status",
       "auth": "user",
-      "group": "files",
-      "doc": null
-    },
-    {
-      "method": "PUT",
-      "path": "/api/projects/:name/files/{*filePath}",
-      "auth": "user",
-      "group": "files",
-      "doc": null
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/files/context",
-      "description": "Upload a .md file to context/ folder (T-222). Accepts JSON { filename, content }. Max 5MB.",
-      "section": "files"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/projects/:name/files/{*filePath}",
-      "auth": "user",
-      "group": "files",
-      "doc": null
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/specs/:taskId",
-      "auth": "user",
-      "group": "specs",
-      "doc": null
-    },
-    {
-      "method": "GET",
-      "path": "/api/projects/:name/canvas",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/canvas/notes",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "PUT",
-      "path": "/api/projects/:name/canvas/notes/:id",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/projects/:name/canvas/notes/batch",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/projects/:name/canvas/notes/:id",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/canvas/connections",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/projects/:name/canvas/connections",
-      "auth": "user",
-      "group": "canvas",
-      "doc": null
-    },
-    {
-      "method": "POST",
-      "path": "/api/projects/:name/canvas/promote",
-      "auth": "user",
-      "group": "canvas",
+      "group": "snippets",
       "doc": null
     },
     {
@@ -404,6 +299,13 @@
     },
     {
       "method": "POST",
+      "path": "/api/specify/sessions/:id/answer",
+      "auth": "user",
+      "group": "specify",
+      "doc": null
+    },
+    {
+      "method": "POST",
       "path": "/api/specify/sessions/:id/complete",
       "auth": "user",
       "group": "specify",
@@ -411,14 +313,14 @@
     },
     {
       "method": "POST",
-      "path": "/api/specify/sessions/:id/next",
+      "path": "/api/specify/sessions/:id/confirm",
       "auth": "user",
       "group": "specify",
       "doc": null
     },
     {
       "method": "POST",
-      "path": "/api/specify/sessions/:id/skip",
+      "path": "/api/specify/sessions/:id/next",
       "auth": "user",
       "group": "specify",
       "doc": null
@@ -439,42 +341,105 @@
     },
     {
       "method": "POST",
-      "path": "/api/specify/sessions/:id/answer",
+      "path": "/api/specify/sessions/:id/skip",
       "auth": "user",
       "group": "specify",
       "doc": null
     },
     {
       "method": "POST",
-      "path": "/api/specify/sessions/:id/confirm",
+      "path": "/api/projects/:name/specs/:taskId",
       "auth": "user",
-      "group": "specify",
+      "group": "specs",
       "doc": null
     },
     {
       "method": "GET",
-      "path": "/api/snippets/status",
+      "path": "/api/projects/:name/tasks",
       "auth": "user",
-      "group": "snippets",
-      "doc": null
+      "group": "tasks",
+      "doc": "api/tasks.md"
     },
     {
       "method": "POST",
-      "path": "/api/snippets/apply",
+      "path": "/api/projects/:name/tasks",
       "auth": "user",
-      "group": "snippets",
-      "doc": null
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:name/tasks/:id",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/tasks/:id",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
     },
     {
       "method": "POST",
-      "path": "/api/hooks/task-complete",
-      "auth": "token",
-      "group": "hooks",
-      "doc": null
+      "path": "/api/projects/:name/tasks/:id/approve",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/checkpoint",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
     },
     {
       "method": "GET",
-      "path": "/api/search",
+      "path": "/api/projects/:name/tasks/:id/checkpoints",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/claim",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/comment",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/tasks/:id/comments",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/complete",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/tasks/:id/events",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/tasks/:id/handoff",
       "auth": "user",
       "group": "tasks",
       "doc": "api/tasks.md"
@@ -494,32 +459,74 @@
       "doc": "api/tasks.md"
     },
     {
-      "method": "GET",
-      "path": "/api/overview/widgets",
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/reject",
       "auth": "user",
-      "group": "projects",
-      "doc": "api/projects.md"
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/release",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/route",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:name/tasks/trash",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
     },
     {
       "method": "GET",
-      "path": "/api/projects/:name/overview",
+      "path": "/api/search",
       "auth": "user",
-      "group": "projects",
-      "doc": "api/projects.md"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/projects/:name/overview",
-      "auth": "user",
-      "group": "projects",
-      "doc": "api/projects.md"
+      "group": "tasks",
+      "doc": "api/tasks.md"
     },
     {
       "method": "GET",
-      "path": "/api/projects/:name/activity",
+      "path": "/api/tasks/notifiable-stuck",
       "auth": "user",
-      "group": "projects",
-      "doc": "api/projects.md"
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/stuck",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflows/delegate",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflows/handoff",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflows/start",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
     }
   ],
   "auth_modes": {

@@ -155,6 +155,14 @@ preset) or a full config:
 **200** `{ ok, overview }` — **400** `{ error, errors[] }` on validation
 failure (unknown type, grid overflow, duplicate id, …).
 
+### GET /api/github/repo-status
+Query: `repo=owner/name` (required). Feeds the `repo-status` overview
+widget — default branch, CI state (`passing|failing|pending|none` from
+check-runs), up to 5 open PRs and the 5 latest commits. Fetched
+server-side (a `FLOWBOARD_GITHUB_TOKEN`/`GITHUB_TOKEN` env token never
+reaches the client) and cached ~90s per repo.
+**200** `{ ok, status }` — **400** invalid repo — **404/502** GitHub errors.
+
 ### GET /api/projects/:name/activity
 
 Project-wide activity feed from the HZL event store (newest first) — feeds

@@ -143,6 +143,13 @@ const WIDGET_TYPES = {
     minSize: { w: 3, h: 1 },
     props: { links: 'array of { label, url }', limit: 'number (optional, default 6)' },
   },
+  'repo-status': {
+    label: 'Repo Status',
+    description: 'GitHub at a glance — default branch, CI state, open PRs, latest commits. Opt-in via props.repo.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 1 },
+    props: { repo: "string 'owner/name' (required)" },
+  },
   'stall-detection': {
     label: 'Momentum',
     description: 'Friendly stall check — last activity, 14-day strip.',

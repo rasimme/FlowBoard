@@ -20,6 +20,7 @@ import {
   NotesWidget,
   LinksWidget,
   StallDetectionWidget,
+  RepoStatusWidget,
 } from './widgets2.jsx';
 
 /**
@@ -48,4 +49,5 @@ export const WIDGET_REGISTRY = {
   'notes': NotesWidget,
   'links': LinksWidget,
   'stall-detection': StallDetectionWidget,
+  'repo-status': RepoStatusWidget,
 };

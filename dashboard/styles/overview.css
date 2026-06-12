@@ -642,3 +642,27 @@
 .sd-strip i.a2 { background: var(--muted); }
 .sd-strip i.a3 { background: var(--accent-2); opacity: .8; }
 .sd-strip-lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+
+/* repo-status */
+.gh-setup { display: flex; flex-direction: column; gap: 8px; justify-content: center; flex: 1; min-height: 0; }
+.gh-setup-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.gh-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding-bottom: 7px; }
+.gh-repo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-strong); text-decoration: none; }
+.gh-repo svg { color: var(--muted); flex-shrink: 0; }
+.gh-repo .nm { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gh-repo:hover .nm { color: var(--accent); }
+.gh-repo .br { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); background: var(--secondary); border-radius: var(--radius-full); padding: 1px 7px; flex-shrink: 0; }
+.gh-ci { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: var(--radius-full); padding: 2px 8px; flex-shrink: 0; border: 1px solid var(--border-strong); color: var(--muted); }
+.gh-ci.passing { color: var(--accent-2); border-color: var(--accent-2); }
+.gh-ci.failing { color: var(--danger); border-color: var(--danger); }
+.gh-ci.pending { color: var(--warn, #f59e0b); border-color: rgba(245,158,11,.4); }
+.gh-body { display: flex; gap: 14px; flex: 1; min-height: 0; }
+.gh-sec { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+.gh-sec-h { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; color: var(--muted); padding-bottom: 2px; }
+.gh-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: var(--radius-sm); min-width: 0; color: var(--text); text-decoration: none; }
+.gh-row:hover { background: var(--bg-hover); }
+.gh-row .num { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.gh-row .msg { font-size: 11px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gh-row .when { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
+.gh-none { font-size: 11px; color: var(--muted); padding: 3px 5px; }
+.gh-error { font-size: 11px; color: var(--muted); padding: 6px 0; }
