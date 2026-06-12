@@ -22,6 +22,12 @@ import {
   StallDetectionWidget,
   RepoStatusWidget,
 } from './widgets2.jsx';
+import {
+  GhPullsWidget,
+  GhCiWidget,
+  GhReleasesWidget,
+  GhIssuesWidget,
+} from './widgets3.jsx';
 
 /**
  * Trusted widget registry (T-305) — the renderer instantiates ONLY types
@@ -50,4 +56,8 @@ export const WIDGET_REGISTRY = {
   'links': LinksWidget,
   'stall-detection': StallDetectionWidget,
   'repo-status': RepoStatusWidget,
+  'gh-pulls': GhPullsWidget,
+  'gh-ci': GhCiWidget,
+  'gh-releases': GhReleasesWidget,
+  'gh-issues': GhIssuesWidget,
 };

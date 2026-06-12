@@ -159,6 +159,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/github/insight",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
       "path": "/api/github/repo-status",
       "auth": "user",
       "group": "projects",

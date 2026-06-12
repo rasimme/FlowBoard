@@ -32,7 +32,7 @@ function Empty({ icon: Icon, title, hint }) {
 
 // persist a widget's props into overview.json — the same write path
 // agents use; local widget state keeps the UI fresh until the next mount
-async function persistWidgetProps(project, widgetId, mutate) {
+export async function persistWidgetProps(project, widgetId, mutate) {
   const cur = await fetch(`/api/projects/${project}/overview`, { credentials: 'include' })
     .then(r => (r.ok ? r.json() : null));
   const ov = cur?.overview;

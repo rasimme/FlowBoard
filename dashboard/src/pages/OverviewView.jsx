@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactGridLayout, verticalCompactor } from 'react-grid-layout';
-import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity, Flag, GanttChartSquare, Pin, Upload, StickyNote, ExternalLink, Coffee, GitBranch } from 'lucide-react';
+import { LayoutTemplate, Pencil, Plus, X, Users, Crosshair, OctagonAlert, CheckCheck, History, ListTodo, Target, BarChart3, FileText, Link2, Kanban, Activity, Flag, GanttChartSquare, Pin, Upload, StickyNote, ExternalLink, Coffee, GitBranch, GitPullRequest, Workflow, Rocket, CircleDot } from 'lucide-react';
 
 // thumbnail metadata: icon, short label and cluster tint per widget type
 const THUMB = {
@@ -24,13 +24,18 @@ const THUMB = {
   'links': { icon: ExternalLink, short: 'Links' },
   'stall-detection': { icon: Coffee, short: 'Momentum' },
   'repo-status': { icon: GitBranch, short: 'Repo' },
+  'gh-pulls': { icon: GitPullRequest, short: 'PRs' },
+  'gh-ci': { icon: Workflow, short: 'CI' },
+  'gh-releases': { icon: Rocket, short: 'Releases' },
+  'gh-issues': { icon: CircleDot, short: 'Issues' },
 };
 
 // add-widget picker: catalog grouped by concept cluster
 const PICKER_CLUSTERS = [
   { label: 'Needs you', types: ['blocked', 'approvals', 'since-last-visit'] },
-  { label: 'Live', types: ['current-focus', 'active-agents', 'activity-stream', 'timeline', 'stall-detection', 'repo-status'] },
+  { label: 'Live', types: ['current-focus', 'active-agents', 'activity-stream', 'timeline', 'stall-detection'] },
   { label: 'Direction', types: ['next-up', 'project-goals', 'task-stats', 'milestones', 'kanban-mini'] },
+  { label: 'GitHub', types: ['repo-status', 'gh-pulls', 'gh-ci', 'gh-releases', 'gh-issues'] },
   { label: 'Knowledge & actions', types: ['recent-decisions', 'context-index', 'quick-drop', 'notes', 'links', 'quick-links'] },
 ];
 import Button from '../components/Button.jsx';

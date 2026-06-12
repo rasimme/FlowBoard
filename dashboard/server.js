@@ -64,6 +64,7 @@ const github = require('./github.js');
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || process.env.GATEWAY_URL
   || `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || process.env.GATEWAY_PORT || 18789}`;
 const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || process.env.HOOKS_TOKEN || '';
+const STUCK_NOTIFICATION_CHANNEL = process.env.STUCK_NOTIFICATION_CHANNEL || 'telegram';
 if (!HOOKS_TOKEN) {
   console.warn('⚠️  OPENCLAW_HOOKS_TOKEN not set — /api/hooks/task-complete endpoint will reject all calls');
 }
@@ -2796,6 +2797,29 @@ app.get('/api/github/repo-status', async (req, res) => {
   }
 });
 
+// GET /api/github/insight?repo=owner/name&view=pulls|ci|releases|issues[&branch=]
+// — feeds the gh-* overview widgets (T-316..T-319)
+app.get('/api/github/insight', async (req, res) => {
+  const repo = String(req.query.repo || '');
+  const view = String(req.query.view || '');
+  if (!github.validRepo(repo)) {
+    return res.status(400).json({ error: 'repo must be "owner/name"' });
+  }
+  if (!github.INSIGHT_VIEWS.has(view)) {
+    return res.status(400).json({ error: `view must be one of: ${[...github.INSIGHT_VIEWS].join(', ')}` });
+  }
+  const branch = req.query.branch ? String(req.query.branch) : null;
+  if (branch && !github.validBranch(branch)) {
+    return res.status(400).json({ error: 'invalid branch name' });
+  }
+  try {
+    res.json({ ok: true, insight: await github.fetchInsight(repo, view, branch) });
+  } catch (err) {
+    const status = err.status === 404 ? 404 : err.status === 400 ? 400 : 502;
+    res.status(status).json({ error: `GitHub fetch failed: ${err.message}` });
+  }
+});
+
 app.get('/api/overview/widgets', (req, res) => {
   res.json({ ok: true, ...overview.widgetManifest() });
 });
@@ -3199,6 +3223,7 @@ async function startServer() {
                 // (the old `text` field was silently rejected with 400, T-304)
                 message: msg,
                 name: 'FlowBoard Stuck-Check',
+                channel: STUCK_NOTIFICATION_CHANNEL,
                 wakeMode: 'now',
                 stuck: tasks,
                 agentId: agent,
