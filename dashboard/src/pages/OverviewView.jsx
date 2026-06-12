@@ -23,6 +23,7 @@ const THUMB = {
   'notes': { icon: StickyNote, short: 'Notes' },
   'links': { icon: ExternalLink, short: 'Links' },
   'stall-detection': { icon: Coffee, short: 'Momentum' },
+  'file-viewer': { icon: FileText, short: 'File' },
   'repo-status': { icon: GitBranch, short: 'Repo' },
   'gh-pulls': { icon: GitPullRequest, short: 'PRs' },
   'gh-ci': { icon: Workflow, short: 'CI' },
@@ -36,7 +37,7 @@ const PICKER_CLUSTERS = [
   { label: 'Live', types: ['current-focus', 'active-agents', 'activity-stream', 'timeline', 'stall-detection'] },
   { label: 'Direction', types: ['next-up', 'project-goals', 'task-stats', 'milestones', 'kanban-mini'] },
   { label: 'GitHub', types: ['repo-status', 'gh-pulls', 'gh-ci', 'gh-releases', 'gh-issues'] },
-  { label: 'Knowledge & actions', types: ['recent-decisions', 'context-index', 'quick-drop', 'notes', 'links', 'quick-links'] },
+  { label: 'Knowledge & actions', types: ['recent-decisions', 'context-index', 'file-viewer', 'quick-drop', 'notes', 'links', 'quick-links'] },
 ];
 import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';

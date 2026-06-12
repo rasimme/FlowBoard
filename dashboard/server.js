@@ -87,7 +87,22 @@ const TELEGRAM_AGENT_IDS = (process.env.FLOWBOARD_TELEGRAM_AGENT_IDS || '')
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+const FLOWBOARD_NOTIFICATION_TARGET = process.env.FLOWBOARD_NOTIFICATION_TARGET
+  || process.env.FLOWBOARD_NOTIFICATION_TO
+  || (FLOWBOARD_NOTIFICATION_CHANNEL === 'telegram' && ALLOWED_USER_IDS.length === 1
+    ? String(ALLOWED_USER_IDS[0])
+    : '');
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
+
+function flowboardNotificationDelivery() {
+  return {
+    channel: FLOWBOARD_NOTIFICATION_CHANNEL,
+    ...(FLOWBOARD_NOTIFICATION_TARGET ? {
+      target: FLOWBOARD_NOTIFICATION_TARGET,
+      to: FLOWBOARD_NOTIFICATION_TARGET,
+    } : {}),
+  };
+}
 const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
 const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
 
@@ -607,7 +622,7 @@ async function sendWakeEvent(text) {
         'Authorization': `Bearer ${HOOKS_TOKEN}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ text, mode: 'now' })
+      body: JSON.stringify({ text, mode: 'now', ...flowboardNotificationDelivery() })
     });
     if (res.ok) {
       console.log(`[wake] Sent wake event: ${text.slice(0, 80)}...`);
@@ -2202,6 +2217,7 @@ When fully done: Call POST /api/specify/sessions/${session.id}/complete`;
         body: JSON.stringify({
           message,
           name: 'Canvas Specify',
+          ...flowboardNotificationDelivery(),
           agentId: triggerAgentId,
           sessionKey: `agent:${triggerAgentId}:main`,
           wakeMode: 'now',
@@ -2879,6 +2895,17 @@ app.put('/api/projects/:name/overview', (req, res) => {
   }
 });
 
+// GET /api/projects/:name/activity/daily?days=14 — per-day counts (T-323)
+app.get('/api/projects/:name/activity/daily', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    res.json({ ok: true, ...hzlService.getProjectActivityDaily(req.params.name, req.query.days) });
+  } catch (err) {
+    console.error('[activity-daily]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/projects/:name/activity — project-wide activity feed (T-306)
 app.get('/api/projects/:name/activity', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
@@ -3111,6 +3138,7 @@ async function startServer() {
           const body = hzlIntegrity.buildWebhookBody(
             regression, current, stored, process.env.LOCAL_HOSTNAME || null
           );
+          Object.assign(body, flowboardNotificationDelivery());
           notifyPromise = fetch(INTEGRITY_WEBHOOK_URL, {
             method: 'POST',
             headers: {
@@ -3175,7 +3203,7 @@ async function startServer() {
         body: JSON.stringify({
           message: msg,
           name: 'FlowBoard',
-          channel: FLOWBOARD_NOTIFICATION_CHANNEL,
+          ...flowboardNotificationDelivery(),
           wakeMode: 'now',
           agentId: agent || undefined,
           sessionKey: agent ? `agent:${agent}:main` : undefined,
@@ -3251,7 +3279,7 @@ async function startServer() {
                 // (the old `text` field was silently rejected with 400, T-304)
                 message: msg,
                 name: 'FlowBoard Stuck-Check',
-                channel: FLOWBOARD_NOTIFICATION_CHANNEL,
+                ...flowboardNotificationDelivery(),
                 wakeMode: 'now',
                 stuck: tasks,
                 agentId: agent,

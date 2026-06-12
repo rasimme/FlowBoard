@@ -48,8 +48,9 @@ prominent), `active-agents`, `activity-stream`, `timeline` (dated spine),
 (latest release + unreleased commits), `gh-issues` (triage); direction: `next-up`, `project-goals`,
 `task-stats`, `milestones` (tag tasks `milestone:<name>`), `kanban-mini`;
 knowledge & actions: `recent-decisions`, `context-index` (pin via
-`props.pins`), `quick-drop`, `notes` (context/NOTES.md), `links`
-(`props.links`), `quick-links`.
+`props.pins`), `file-viewer` (renders one file, `props.path`),
+`quick-drop`, `notes` (context/NOTES.md), `links` (`props.links`),
+`quick-links`.
 
 ## Presets
 

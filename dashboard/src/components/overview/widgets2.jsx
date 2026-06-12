@@ -205,7 +205,22 @@ export function MilestonesWidget({ widget, editing }) {
     }
   }
   const pct = arr => Math.round((arr.filter(t => t.status === 'done').length / arr.length) * 100);
-  const list = [...groups.entries()].sort((a, b) => pct(b[1]) - pct(a[1]));
+  const all = [...groups.entries()].sort((a, b) => pct(b[1]) - pct(a[1]));
+  // completed milestones step aside — they stay reachable but stop
+  // occupying the focus slot and the roadmap
+  const active = all.filter(([, items]) => pct(items) < 100);
+  const completed = all.filter(([, items]) => pct(items) === 100);
+  // the focus is pinnable (props.focus); default: furthest-along active one
+  const focusName = widget?.props?.focus && groups.has(widget.props.focus) && pct(groups.get(widget.props.focus)) < 100
+    ? widget.props.focus
+    : (active[0]?.[0] ?? null);
+  const list = active; // roadmap source
+
+  async function pinFocus(name) {
+    if (!project || !widget?.id) return;
+    await persistWidgetProps(project, widget.id, props => ({ ...props, focus: name }));
+    window.showToast?.(`${name} is now the focus milestone`, 'success');
+  }
 
   const [view, setView] = useState({ mode: 'list' }); // | {mode:'detail',name} | {mode:'create'} | {mode:'add',name}
   const [draftName, setDraftName] = useState('');
@@ -234,7 +249,7 @@ export function MilestonesWidget({ widget, editing }) {
 
   const meta = view.mode === 'detail' || view.mode === 'add'
     ? null
-    : list.length ? `${list.length} tracked` : null;
+    : all.length ? `${active.length} active${completed.length ? ` · ${completed.length} done` : ''}` : null;
 
   // ---------- create flow ----------
   if (view.mode === 'create') {
@@ -292,6 +307,8 @@ export function MilestonesWidget({ widget, editing }) {
                       onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
                       <span className="num">{t.id}</span>
                       <span className="msg">{t.title}</span>
+                      <span className={'ms-st only-wide st-' + t.status}>{t.status}</span>
+                      {t.agent && <span className="ms-agent only-wide">@{t.agent}</span>}
                     </span>
                     {!editing && (
                       <button type="button" className="rm" title={`Remove ${t.id} from this milestone`}
@@ -315,7 +332,7 @@ export function MilestonesWidget({ widget, editing }) {
   // ---------- list (default) ----------
   return (
     <OvWidget title={widget?.title || 'Milestones'} meta={meta}>
-      {list.length === 0 ? (
+      {all.length === 0 ? (
         <div className="ov-empty">
           <Flag size={22} />
           <span className="ov-empty-title">No milestones yet</span>
@@ -328,31 +345,48 @@ export function MilestonesWidget({ widget, editing }) {
         </div>
       ) : (
         <div className="ms-wrap">
-          {list.slice(0, 1).map(([name, items]) => {
+          {focusName && (() => {
+            const items = groups.get(focusName);
             const p100 = pct(items);
             return (
-              <div key={name} className="ms-focus" style={{ cursor: 'pointer' }} title="Open checklist"
-                onClick={() => setView({ mode: 'detail', name })}>
+              <div className="ms-focus" style={{ cursor: 'pointer' }} title="Open checklist"
+                onClick={() => setView({ mode: 'detail', name: focusName })}>
                 <div className="ms-ring-row">
                   <Ring pct={p100} />
                   <span className="ms-head">
-                    <span className="ms-name">{name}</span>
+                    <span className="ms-name">{focusName}</span>
                     <span className="ms-meta"><span className="w-mono">{items.filter(t => t.status === 'done').length}/{items.length}</span> tasks done</span>
                   </span>
                 </div>
                 <div className="ms-bar"><span style={{ width: p100 + '%' }}></span></div>
               </div>
             );
-          })}
-          <div className="ms-roadmap only-wide">
-            {list.slice(1, 4).map(([name, items]) => (
-              <div key={name} className="ms-up" style={{ cursor: 'pointer' }} title="Open checklist"
-                onClick={() => setView({ mode: 'detail', name })}>
-                <span className="nm">{name} <span className="v">{pct(items)}%</span></span>
-                <span className="mini"><span style={{ width: pct(items) + '%' }}></span></span>
-              </div>
-            ))}
-          </div>
+          })()}
+          {list.filter(([name]) => name !== focusName).length > 0 && (
+            <div className="ms-roadmap">
+              {list.filter(([name]) => name !== focusName).map(([name, items]) => (
+                <div key={name} className="ms-up" style={{ cursor: 'pointer' }} title="Open checklist"
+                  onClick={() => setView({ mode: 'detail', name })}>
+                  <span className="nm">
+                    {name} <span className="v">{pct(items)}%</span>
+                    {!editing && (
+                      <button type="button" className="ms-pin" title="Set as focus milestone"
+                        onClick={e => { e.stopPropagation(); pinFocus(name); }}>☆</button>
+                    )}
+                  </span>
+                  <span className="mini"><span style={{ width: pct(items) + '%' }}></span></span>
+                </div>
+              ))}
+            </div>
+          )}
+          {completed.length > 0 && (
+            <div className="ms-done-row">
+              {completed.map(([name]) => (
+                <button key={name} type="button" className="ms-done-chip" title="Open checklist"
+                  onClick={() => setView({ mode: 'detail', name })}>✓ {name}</button>
+              ))}
+            </div>
+          )}
           {!editing && (
             <button type="button" className="lk-addtoggle" onClick={() => setView({ mode: 'create' })}>
               <Plus size={11} /> New milestone
@@ -687,38 +721,33 @@ export function LinksWidget({ widget, editing }) {
 /* ---------- stall-detection: friendly momentum check ---------- */
 export function StallDetectionWidget({ widget }) {
   const { state } = useAppState();
-  const items = useActivityFeed(state?.viewedProject, 200);
-  if (!items) return <OvWidget title={widget?.title || 'Momentum'} meta="stall check"><div /></OvWidget>;
+  const project = state?.viewedProject;
+  const [agg, setAgg] = useState(null);
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    fetch(`/api/projects/${project}/activity/daily?days=14`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive) setAgg(d); })
+      .catch(() => { if (alive) setAgg({ days: [], latest: null, total: 0 }); });
+    return () => { alive = false; };
+  }, [project]);
+  if (!agg) return <OvWidget title={widget?.title || 'Momentum'} meta="stall check"><div /></OvWidget>;
 
   const now = Date.now();
   const day = 86400000;
-  const last = items[0] ? new Date(items[0].timestamp).getTime() : 0;
+  const last = agg.latest ? new Date(agg.latest.timestamp).getTime() : 0;
   const idleDays = last ? Math.floor((now - last) / day) : 99;
   const cfg = idleDays < 1
-    ? { Icon: Sun, cls: 'active', head: 'Active today', sub: items[0] ? `Last touched ${items[0].taskId} · ${items[0].message.slice(0, 60)}` : '' }
+    ? { Icon: Sun, cls: 'active', head: 'Active today', sub: agg.latest ? `Last touched ${agg.latest.taskId} · ${agg.latest.message.slice(0, 60)}` : '' }
     : idleDays < 5
       ? { Icon: Coffee, cls: 'slow', head: `Quiet for ${idleDays} day${idleDays > 1 ? 's' : ''}`, sub: 'Nothing urgent — just a nudge.' }
       : { Icon: Moon, cls: 'dormant', head: `Resting — ${idleDays > 30 ? '30+' : idleDays} days`, sub: 'Pick it back up whenever you are ready.' };
 
-  const perDay = Array.from({ length: 14 }, (_, i) => {
-    const dayStart = new Date(now - (13 - i) * day).setHours(0, 0, 0, 0);
-    return items.filter(it => {
-      const t = new Date(it.timestamp).getTime();
-      return t >= dayStart && t < dayStart + day;
-    }).length;
-  });
-  const strip = perDay.map(n => Math.min(3, n > 6 ? 3 : n > 2 ? 2 : n > 0 ? 1 : 0));
-  // the feed is capped at 200 events — on busy projects that window can be
-  // shorter than 14 days, so scope the stats to the days actually covered
-  const capped = items.length >= 200;
-  const oldest = items.length ? new Date(items[items.length - 1].timestamp).getTime() : now;
-  const daysCovered = capped ? Math.max(1, Math.min(14, Math.ceil((now - oldest) / day))) : 14;
-  const total14 = perDay.reduce((a, b) => a + b, 0);
+  const perDay = (agg.days || []).map(d => d.count);
+  const max = Math.max(...perDay, 1);
   const activeDays = perDay.filter(n => n > 0).length;
-  const busiestIdx = perDay.indexOf(Math.max(...perDay));
-  const busiestLabel = perDay[busiestIdx] > 0
-    ? new Date(now - (13 - busiestIdx) * day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })
-    : null;
+  const busiest = (agg.days || []).reduce((m, d) => (d.count > (m?.count || 0) ? d : m), null);
 
   return (
     <OvWidget title={widget?.title || 'Momentum'} meta="stall check">
@@ -732,21 +761,20 @@ export function StallDetectionWidget({ widget }) {
         </div>
         <div className="sd-strip-block">
           <div className="sd-strip">
-            {perDay.map((n, i) => {
-              const v = strip[i];
-              const max = Math.max(...perDay, 1);
-              const label = new Date(now - (13 - i) * day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
-              return <i key={i} className={v ? 'a' + v : ''}
-                title={`${label} — ${n} event${n === 1 ? '' : 's'}`}
-                style={{ height: (n ? 18 + (n / max) * 78 : 8) + '%' }}></i>;
+            {(agg.days || []).map(d => {
+              const label = new Date(d.day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+              const lvl = d.count > max * 0.6 ? 3 : d.count > max * 0.25 ? 2 : d.count > 0 ? 1 : 0;
+              return <i key={d.day} className={lvl ? 'a' + lvl : ''}
+                title={`${label} — ${d.count} event${d.count === 1 ? '' : 's'}`}
+                style={{ height: (d.count ? 18 + (d.count / max) * 78 : 8) + '%' }}></i>;
             })}
           </div>
           <div className="sd-strip-lbl">Activity · last 14 days</div>
         </div>
         <div className="sd-stats">
-          <span><b>{total14}{capped ? '+' : ''}</b> events · {daysCovered}d</span>
-          <span><b>{activeDays}</b>/{daysCovered} active days</span>
-          {busiestLabel && <span>busiest <b>{busiestLabel}</b></span>}
+          <span><b>{agg.total}</b> events · 14d</span>
+          <span><b>{activeDays}</b>/14 active days</span>
+          {busiest?.count > 0 && <span>busiest <b>{new Date(busiest.day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })}</b></span>}
         </div>
       </div>
     </OvWidget>
@@ -875,7 +903,7 @@ export function RepoStatusWidget({ widget, editing }) {
             <div className="gh-sec-h"><GitPullRequest size={11} /> Open PRs · {data.pulls.length}{data.pulls.length === 5 ? '+' : ''}</div>
             {data.pulls.length === 0 ? (
               <span className="gh-none">No open pull requests</span>
-            ) : data.pulls.slice(0, 3).map(p => (
+            ) : data.pulls.slice(0, 6).map(p => (
               <a key={p.number} className="gh-row" href={editing ? undefined : `https://github.com/${repo}/pull/${p.number}`}
                 target="_blank" rel="noreferrer" onClick={e => { if (editing) e.preventDefault(); }}>
                 <span className="num">#{p.number}</span>
@@ -885,7 +913,7 @@ export function RepoStatusWidget({ widget, editing }) {
           </div>
           <div className="gh-sec">
             <div className="gh-sec-h">Latest commits</div>
-            {data.commits.slice(0, 3).map(c => (
+            {data.commits.slice(0, 6).map(c => (
               <a key={c.sha} className="gh-row" href={editing ? undefined : `https://github.com/${repo}/commit/${c.sha}`}
                 target="_blank" rel="noreferrer" onClick={e => { if (editing) e.preventDefault(); }}>
                 <span className="num">{c.sha}</span>
@@ -894,6 +922,85 @@ export function RepoStatusWidget({ widget, editing }) {
               </a>
             ))}
           </div>
+        </div>
+      )}
+      {!editing && <TokenAffordance editing={editing} onSaved={reload} />}
+    </OvWidget>
+  );
+}
+
+/* ---------- file-viewer: one rendered file on the overview (T-322) ---------- */
+export function FileViewerWidget({ widget, editing }) {
+  const { state } = useAppState();
+  const project = state?.viewedProject;
+  const path = widget?.props?.path || '';
+  const [files, setFiles] = useState([]);
+  const [content, setContent] = useState(null);
+  const [error, setError] = useState(null);
+
+  // candidates: root markdown files + everything in context/
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    fetch(`/api/projects/${project}/files`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!alive || !d) return;
+        const out = [];
+        for (const e of d.tree || []) {
+          if (e.type === 'file' && /\.md$/i.test(e.name)) out.push(e.path);
+          if (e.type === 'directory' && e.name === 'context') {
+            for (const c of e.children || []) if (c.type === 'file') out.push(c.path);
+          }
+        }
+        setFiles(out);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [project]);
+
+  useEffect(() => {
+    if (!project || !path) return;
+    let alive = true;
+    setContent(null); setError(null);
+    fetch(`/api/projects/${project}/files/${path}`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(d => { if (alive) setContent(d?.content ?? ''); })
+      .catch(e => { if (alive) setError(`Could not read ${path}: ${e.message}`); });
+    return () => { alive = false; };
+  }, [project, path]);
+
+  function pickFile(next) {
+    if (!project || !widget?.id || !next) return;
+    persistWidgetProps(project, widget.id, props => ({ ...props, path: next })).catch(() => {});
+  }
+
+  const name = path.split('/').pop();
+  return (
+    <OvWidget
+      title={widget?.title || 'File Viewer'}
+      meta={files.length > 0 ? (
+        <select className="fv-pick" value={path} disabled={editing}
+          onClick={e => e.stopPropagation()} onChange={e => pickFile(e.target.value)}>
+          {!path && <option value="">choose a file…</option>}
+          {files.map(f => <option key={f} value={f}>{f}</option>)}
+        </select>
+      ) : 'file'}
+    >
+      {!path ? (
+        <Empty icon={FileText} title="No file selected"
+          hint="Pick a markdown file in the header — it renders right here and grows with the widget." />
+      ) : error ? (
+        <div className="gh-error">{error}</div>
+      ) : content === null ? (
+        <div className="nt-loading">Loading…</div>
+      ) : (
+        <div className="fv-body" style={{ cursor: editing ? undefined : 'pointer' }}
+          title={editing ? undefined : `Open ${name} in Files`}
+          onClick={editing ? undefined : e => { if (!e.target.closest('a')) window._openSpec?.(path); }}>
+          <Suspense fallback={<div className="nt-loading">…</div>}>
+            <MarkdownPreview content={content} />
+          </Suspense>
         </div>
       )}
     </OvWidget>

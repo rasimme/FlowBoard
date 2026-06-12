@@ -786,3 +786,52 @@
 .ms-check-row .rm { width: 16px; height: 16px; border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0; border-radius: 50%; flex-shrink: 0; opacity: 0; }
 .ms-check-row:hover .rm { opacity: 1; }
 .ms-check-row .rm:hover { color: var(--danger); }
+
+/* milestones v2.1: pinnable focus, completed chips, richer drilldown */
+.ms-roadmap { overflow-y: auto; scrollbar-width: thin; min-height: 0; }
+.ms-pin { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; opacity: 0; }
+.ms-up:hover .ms-pin { opacity: 1; }
+.ms-pin:hover { color: var(--accent-2); }
+.ms-done-row { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
+.ms-done-chip {
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  background: transparent; color: var(--muted); font-size: 10px;
+  padding: 1px 8px; cursor: pointer;
+}
+.ms-done-chip:hover { color: var(--accent-2); border-color: var(--accent-2); }
+.ms-st { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 6px; flex-shrink: 0; }
+.ms-st.st-in-progress { color: var(--status-in-progress); border-color: var(--status-in-progress); }
+.ms-st.st-review { color: var(--status-review); border-color: var(--status-review); }
+.ms-agent { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
+
+/* create flow at small sizes: keep the action row reachable */
+.ms-create .lk-in { flex-shrink: 0; }
+.msp-foot { padding-top: 2px; }
+@container widget (max-height: 220px) {
+  .msp-list { min-height: 24px; }
+  .msp-row { padding: 1px 5px; }
+}
+
+/* gh-ci at h=1: drop the latest-run row, keep the bars breathing */
+@container widget (max-height: 120px) {
+  .ghc-latest { display: none; }
+  .ghc-wrap { gap: 4px; }
+  .ghp-kpis { gap: 10px; }
+  .ghi-age { display: none; }
+}
+
+/* file-viewer (T-322) */
+.fv-pick {
+  font-family: "JetBrains Mono", monospace; font-size: 9.5px;
+  color: var(--muted); background: var(--secondary);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  padding: 1px 6px; max-width: 200px; cursor: pointer; outline: none;
+}
+.fv-pick:hover { color: var(--text); border-color: var(--border-strong); }
+.fv-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: var(--radius-md); padding: 2px 6px 2px 2px; }
+.fv-body:hover { background: var(--bg-accent); }
+.fv-body .md-content { font-size: 12px; line-height: 1.55; }
+.fv-body .md-content h1 { font-size: 14px; margin: 10px 0 5px; }
+.fv-body .md-content h2, .fv-body .md-content h3 { font-size: 12.5px; margin: 9px 0 4px; }
+.fv-body .md-content p, .fv-body .md-content ul, .fv-body .md-content ol { margin: 4px 0; }
+.fv-body .md-content pre { font-size: 10.5px; padding: 6px 8px; border-radius: var(--radius-sm); }

@@ -21,6 +21,7 @@ import {
   LinksWidget,
   StallDetectionWidget,
   RepoStatusWidget,
+  FileViewerWidget,
 } from './widgets2.jsx';
 import {
   GhPullsWidget,
@@ -56,6 +57,7 @@ export const WIDGET_REGISTRY = {
   'links': LinksWidget,
   'stall-detection': StallDetectionWidget,
   'repo-status': RepoStatusWidget,
+  'file-viewer': FileViewerWidget,
   'gh-pulls': GhPullsWidget,
   'gh-ci': GhCiWidget,
   'gh-releases': GhReleasesWidget,

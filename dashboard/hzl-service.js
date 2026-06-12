@@ -1997,6 +1997,38 @@ function getProjectActivity(project, opts = {}) {
   return out;
 }
 
+/**
+ * T-323: per-day activity counts for the momentum widget — the row feed
+ * caps at 200 events, which busy days outgrow within hours.
+ */
+function getProjectActivityDaily(project, days = 14) {
+  let warm = false;
+  for (const key of _fbToUlid.keys()) {
+    if (key.startsWith(project + ':')) { warm = true; break; }
+  }
+  if (!warm) listTasks(project);
+  const span = Math.max(1, Math.min(Number(days) || 14, 90));
+  const cutoff = new Date(Date.now() - span * 86400000).toISOString();
+  const rows = _eventsDb.prepare(
+    'SELECT substr(timestamp, 1, 10) AS day, task_id FROM events WHERE timestamp > ? ORDER BY id DESC'
+  ).all(cutoff);
+  const counts = new Map();
+  for (const r of rows) {
+    const mapKey = _ulidToFb.get(r.task_id);
+    if (!mapKey || !mapKey.startsWith(project + ':')) continue;
+    counts.set(r.day, (counts.get(r.day) || 0) + 1);
+  }
+  // latest event independent of the window — idle detection needs it even
+  // when the project slept longer than the aggregation span
+  const [latest = null] = getProjectActivity(project, { limit: 1 });
+  const out = [];
+  for (let i = span - 1; i >= 0; i--) {
+    const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    out.push({ day, count: counts.get(day) || 0 });
+  }
+  return { days: out, latest, total: out.reduce((a, b) => a + b.count, 0) };
+}
+
 function getStatusEvents(project, flowboardId) {
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
@@ -2926,6 +2958,7 @@ module.exports = {
   rebuildCache,
   searchTasks,
   getProjectActivity,
+  getProjectActivityDaily,
   moveTaskToProject,
   setTaskParent,
   listTasks,

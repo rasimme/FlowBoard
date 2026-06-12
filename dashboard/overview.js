@@ -103,10 +103,17 @@ const WIDGET_TYPES = {
   },
   'milestones': {
     label: 'Milestones',
-    description: 'Progress per milestone — tag tasks with milestone:<name>.',
+    description: 'Milestones as definition-of-done checklists — create and manage them in the widget (milestone:<name> tags).',
     defaultSize: { w: 6, h: 2 },
     minSize: { w: 3, h: 2 },
-    props: {},
+    props: { focus: 'string (optional) — pinned focus milestone' },
+  },
+  'file-viewer': {
+    label: 'File Viewer',
+    description: 'Renders one project file (markdown) right on the overview — pick it in the widget (props.path).',
+    defaultSize: { w: 4, h: 3 },
+    minSize: { w: 3, h: 2 },
+    props: { path: "string (optional) — project-relative file, e.g. 'context/NOTES.md'" },
   },
   'timeline': {
     label: 'Timeline',
