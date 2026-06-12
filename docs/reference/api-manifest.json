@@ -263,6 +263,27 @@
       "doc": "api/projects.md"
     },
     {
+      "method": "DELETE",
+      "path": "/api/settings/github-token",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/settings/github-token",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/settings/github-token",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
       "method": "POST",
       "path": "/api/snippets/apply",
       "auth": "user",

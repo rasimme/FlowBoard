@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest } from 'lucide-react';
+import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest, KeyRound } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
+import { refreshTasks } from '../../state/appStateBridge.mjs';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
 const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
@@ -49,6 +50,67 @@ export async function persistWidgetProps(project, widgetId, mutate) {
   return res.ok ? target.props : null;
 }
 
+/**
+ * T-320 — inline GitHub token entry. The token is stored server-side
+ * (write-only; GET only reports whether one exists) and applies to every
+ * gh-* widget at once. Hidden as soon as a token is configured.
+ */
+export function TokenAffordance({ editing, onSaved }) {
+  const [state, setState] = useState(null); // { set, source }
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/settings/github-token', { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive) setState(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!state || state.set) return null;
+
+  async function save() {
+    if (!val.trim() || saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/settings/github-token', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ token: val.trim() }),
+      });
+      if (res.ok) {
+        setState({ set: true });
+        setVal(''); setOpen(false);
+        window.showToast?.('GitHub token saved — applies to all GitHub widgets', 'success');
+        onSaved?.();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        window.showToast?.(d.error || 'Saving token failed', 'error');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return open ? (
+    <div className="lk-add">
+      <input className="lk-in" type="password" placeholder="GitHub token (read-only PAT)" value={val} autoFocus
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setOpen(false); }}
+        disabled={editing} />
+      <button type="button" className="lk-btn" onClick={save} disabled={editing || saving || !val.trim()}>
+        {saving ? '…' : 'Save'}
+      </button>
+    </div>
+  ) : (
+    <button type="button" className="gh-token-toggle" onClick={() => setOpen(true)} disabled={editing}>
+      <KeyRound size={11} /> Add a GitHub token — private repos &amp; higher rate limit
+    </button>
+  );
+}
+
 function useActivityFeed(project, limit) {
   const [items, setItems] = useState(null);
   useEffect(() => {
@@ -79,53 +141,223 @@ function Ring({ pct, size = 54 }) {
   );
 }
 
-export function MilestonesWidget({ widget }) {
+// T-315: milestones are tasks tagged milestone:<name> — the widget can
+// create and manage them directly. Drilldown = definition-of-done
+// checklist (checkmarks come from task status, tasks ARE the items).
+async function putTaskTags(project, taskId, tags) {
+  const res = await fetch(`/api/projects/${project}/tasks/${taskId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ tags }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `PUT ${taskId} failed`);
+}
+
+function MsTaskPicker({ tasks, excludeIds, busy, confirmLabel, onConfirm, onCancel }) {
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState(() => new Set());
+  const candidates = tasks
+    .filter(t => !excludeIds.has(t.id))
+    .filter(t => !q || `${t.id} ${t.title}`.toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 50);
+  return (
+    <div className="msp">
+      <input className="lk-in" placeholder="Filter tasks…" value={q} onChange={e => setQ(e.target.value)} />
+      <div className="msp-list">
+        {candidates.length === 0 && <span className="gh-none">No matching tasks.</span>}
+        {candidates.map(t => (
+          <label key={t.id} className="msp-row">
+            <input type="checkbox" checked={sel.has(t.id)}
+              onChange={e => setSel(prev => {
+                const next = new Set(prev);
+                if (e.target.checked) next.add(t.id); else next.delete(t.id);
+                return next;
+              })} />
+            <span className="num">{t.id}</span>
+            <span className="msg">{t.title}</span>
+          </label>
+        ))}
+      </div>
+      <div className="msp-foot">
+        <button type="button" className="lk-btn ghosty" onClick={onCancel}>Cancel</button>
+        <button type="button" className="lk-btn" disabled={busy || sel.size === 0} onClick={() => onConfirm([...sel])}>
+          {busy ? '…' : `${confirmLabel} (${sel.size})`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function MilestonesWidget({ widget, editing }) {
   const { state } = useAppState();
+  const project = state?.viewedProject;
+  const goTab = useGoTab();
   const tasks = (state?.tasks || []).filter(t => !t.trashedAt && t.status !== 'archived');
-  const groups = new Map();
+  const groups = new Map(); // name → task[]
   for (const t of tasks) {
     for (const tag of t.tags || []) {
       if (tag.startsWith('milestone:')) {
         const name = tag.slice('milestone:'.length);
-        if (!groups.has(name)) groups.set(name, { total: 0, done: 0 });
-        const g = groups.get(name);
-        g.total++;
-        if (t.status === 'done') g.done++;
+        if (!groups.has(name)) groups.set(name, []);
+        groups.get(name).push(t);
       }
     }
   }
-  const list = [...groups.entries()].sort((a, b) => (b[1].done / b[1].total) - (a[1].done / a[1].total));
+  const pct = arr => Math.round((arr.filter(t => t.status === 'done').length / arr.length) * 100);
+  const list = [...groups.entries()].sort((a, b) => pct(b[1]) - pct(a[1]));
 
+  const [view, setView] = useState({ mode: 'list' }); // | {mode:'detail',name} | {mode:'create'} | {mode:'add',name}
+  const [draftName, setDraftName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function applyTag(ids, name, add) {
+    if (!project || busy) return;
+    setBusy(true);
+    const tag = `milestone:${name}`;
+    try {
+      for (const id of ids) {
+        const t = tasks.find(x => x.id === id);
+        if (!t) continue;
+        const cur = t.tags || [];
+        const next = add ? [...new Set([...cur, tag])] : cur.filter(x => x !== tag);
+        if (next.length !== cur.length || add !== cur.includes(tag)) await putTaskTags(project, id, next);
+      }
+      await refreshTasks();
+      window.showToast?.(add ? `Tagged ${ids.length} task${ids.length === 1 ? '' : 's'} with ${tag}` : 'Task removed from milestone', 'success');
+    } catch (e) {
+      window.showToast?.(e.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const meta = view.mode === 'detail' || view.mode === 'add'
+    ? null
+    : list.length ? `${list.length} tracked` : null;
+
+  // ---------- create flow ----------
+  if (view.mode === 'create') {
+    const clean = draftName.trim().replace(/\s+/g, '-');
+    return (
+      <OvWidget title={widget?.title || 'Milestones'} meta="new milestone">
+        <div className="ms-create">
+          <input className="lk-in" placeholder="Milestone name — e.g. v5.1 or launch" value={draftName}
+            autoFocus onChange={e => setDraftName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Escape') setView({ mode: 'list' }); }} />
+          {clean ? (
+            <MsTaskPicker tasks={tasks} excludeIds={new Set()} busy={busy} confirmLabel="Create"
+              onCancel={() => { setView({ mode: 'list' }); setDraftName(''); }}
+              onConfirm={async ids => {
+                await applyTag(ids, clean, true);
+                setDraftName('');
+                setView({ mode: 'detail', name: clean });
+              }} />
+          ) : (
+            <span className="gh-none">Pick a name, then choose the tasks that define "done".</span>
+          )}
+        </div>
+      </OvWidget>
+    );
+  }
+
+  // ---------- detail / add-tasks flow ----------
+  if (view.mode === 'detail' || view.mode === 'add') {
+    const items = groups.get(view.name) || [];
+    const ids = new Set(items.map(t => t.id));
+    return (
+      <OvWidget title={widget?.title || 'Milestones'} meta={`milestone:${view.name}`}>
+        <div className="ms-detail">
+          <div className="ms-detail-head">
+            <button type="button" className="ms-back" onClick={() => setView({ mode: 'list' })}>←</button>
+            <span className="ms-name">{view.name}</span>
+            {items.length > 0 && <span className="ms-meta"><span className="w-mono">{items.filter(t => t.status === 'done').length}/{items.length}</span> done</span>}
+          </div>
+          {items.length > 0 && <div className="ms-bar"><span style={{ width: pct(items) + '%' }}></span></div>}
+          {view.mode === 'add' ? (
+            <MsTaskPicker tasks={tasks} excludeIds={ids} busy={busy} confirmLabel="Add"
+              onCancel={() => setView({ mode: 'detail', name: view.name })}
+              onConfirm={async sel => {
+                await applyTag(sel, view.name, true);
+                setView({ mode: 'detail', name: view.name });
+              }} />
+          ) : (
+            <>
+              <div className="ms-check">
+                {items.length === 0 && <span className="gh-none">Empty milestone — it disappears once nothing carries the tag.</span>}
+                {items.map(t => (
+                  <div key={t.id} className={'ms-check-row' + (t.status === 'done' ? ' done' : '')}>
+                    <span className="box" aria-hidden="true">{t.status === 'done' ? '✓' : ''}</span>
+                    <span className="body" style={{ cursor: editing ? undefined : 'pointer' }}
+                      onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+                      <span className="num">{t.id}</span>
+                      <span className="msg">{t.title}</span>
+                    </span>
+                    {!editing && (
+                      <button type="button" className="rm" title={`Remove ${t.id} from this milestone`}
+                        disabled={busy} onClick={() => applyTag([t.id], view.name, false)}>×</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {!editing && (
+                <button type="button" className="lk-addtoggle" onClick={() => setView({ mode: 'add', name: view.name })}>
+                  <Plus size={11} /> Add tasks
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </OvWidget>
+    );
+  }
+
+  // ---------- list (default) ----------
   return (
-    <OvWidget title={widget?.title || 'Milestones'} meta={list.length ? `${list.length} tracked` : null}>
+    <OvWidget title={widget?.title || 'Milestones'} meta={meta}>
       {list.length === 0 ? (
-        <Empty icon={Flag} title="No milestones yet"
-          hint={<>Add a <span className="w-mono">milestone:&lt;name&gt;</span> tag to tasks — via the Tags section in any task panel, or ask your agent. Progress per milestone shows up here.</>} />
+        <div className="ov-empty">
+          <Flag size={22} />
+          <span className="ov-empty-title">No milestones yet</span>
+          <span className="ov-empty-hint">A milestone is a set of tasks tagged <span className="w-mono">milestone:&lt;name&gt;</span> — its checklist is done when they are.</span>
+          {!editing && (
+            <button type="button" className="lk-btn ms-cta" onClick={() => setView({ mode: 'create' })}>
+              Create your first milestone
+            </button>
+          )}
+        </div>
       ) : (
         <div className="ms-wrap">
-          {list.slice(0, 1).map(([name, g]) => {
-            const pct = Math.round((g.done / g.total) * 100);
+          {list.slice(0, 1).map(([name, items]) => {
+            const p100 = pct(items);
             return (
-              <div key={name} className="ms-focus">
+              <div key={name} className="ms-focus" style={{ cursor: 'pointer' }} title="Open checklist"
+                onClick={() => setView({ mode: 'detail', name })}>
                 <div className="ms-ring-row">
-                  <Ring pct={pct} />
+                  <Ring pct={p100} />
                   <span className="ms-head">
                     <span className="ms-name">{name}</span>
-                    <span className="ms-meta"><span className="w-mono">{g.done}/{g.total}</span> tasks done</span>
+                    <span className="ms-meta"><span className="w-mono">{items.filter(t => t.status === 'done').length}/{items.length}</span> tasks done</span>
                   </span>
                 </div>
-                <div className="ms-bar"><span style={{ width: pct + '%' }}></span></div>
+                <div className="ms-bar"><span style={{ width: p100 + '%' }}></span></div>
               </div>
             );
           })}
           <div className="ms-roadmap only-wide">
-            {list.slice(1, 4).map(([name, g]) => (
-              <div key={name} className="ms-up">
-                <span className="nm">{name} <span className="v">{Math.round((g.done / g.total) * 100)}%</span></span>
-                <span className="mini"><span style={{ width: Math.round((g.done / g.total) * 100) + '%' }}></span></span>
+            {list.slice(1, 4).map(([name, items]) => (
+              <div key={name} className="ms-up" style={{ cursor: 'pointer' }} title="Open checklist"
+                onClick={() => setView({ mode: 'detail', name })}>
+                <span className="nm">{name} <span className="v">{pct(items)}%</span></span>
+                <span className="mini"><span style={{ width: pct(items) + '%' }}></span></span>
               </div>
             ))}
           </div>
+          {!editing && (
+            <button type="button" className="lk-addtoggle" onClick={() => setView({ mode: 'create' })}>
+              <Plus size={11} /> New milestone
+            </button>
+          )}
         </div>
       )}
     </OvWidget>
@@ -542,6 +774,8 @@ export function RepoStatusWidget({ widget, editing }) {
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [tick, setTick] = useState(0);
+  const reload = () => setTick(t => t + 1);
 
   useEffect(() => {
     if (!repo) return;
@@ -557,7 +791,7 @@ export function RepoStatusWidget({ widget, editing }) {
       })
       .catch(() => { if (alive) setError('GitHub unreachable'); });
     return () => { alive = false; };
-  }, [repo, branch]);
+  }, [repo, branch, tick]);
 
   function pickBranch(next) {
     setBranch(next === data?.defaultBranch ? '' : next);
@@ -598,6 +832,7 @@ export function RepoStatusWidget({ widget, editing }) {
               {saving ? '…' : 'Connect'}
             </button>
           </div>
+          <TokenAffordance editing={editing} />
         </div>
       </OvWidget>
     );
@@ -628,7 +863,10 @@ export function RepoStatusWidget({ widget, editing }) {
         {data && <span className={'gh-ci ' + data.ci}>{CI_LABEL[data.ci] || data.ci}</span>}
       </div>
       {error ? (
-        <div className="gh-error">{error}</div>
+        <div className="gh-errwrap">
+          <div className="gh-error">{error}</div>
+          <TokenAffordance editing={editing} onSaved={reload} />
+        </div>
       ) : !data ? (
         <div className="nt-loading">Loading…</div>
       ) : (

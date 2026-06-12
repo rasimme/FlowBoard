@@ -6,7 +6,14 @@
 // never reaches the client. Public repos work unauthenticated within
 // GitHub's 60 req/h limit — responses are cached to stay well below it.
 
-const TOKEN = process.env.FLOWBOARD_GITHUB_TOKEN || process.env.GITHUB_TOKEN || '';
+const ENV_TOKEN = process.env.FLOWBOARD_GITHUB_TOKEN || process.env.GITHUB_TOKEN || '';
+// optional fallback: a token stored via the settings API (T-320) — env wins
+let _tokenProvider = null;
+function setTokenProvider(fn) { _tokenProvider = fn; }
+function resolveToken() {
+  if (ENV_TOKEN) return ENV_TOKEN;
+  try { return _tokenProvider ? (_tokenProvider() || '') : ''; } catch { return ''; }
+}
 const API = 'https://api.github.com';
 const TTL_OK = 150 * 1000;
 const TTL_ERR = 30 * 1000;
@@ -17,11 +24,12 @@ function validRepo(repo) {
 }
 
 async function gh(path) {
+  const token = resolveToken();
   const res = await fetch(`${API}${path}`, {
     headers: {
       'Accept': 'application/vnd.github+json',
       'User-Agent': 'flowboard-dashboard',
-      ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
   if (!res.ok) {
@@ -211,4 +219,7 @@ function validBranch(branch) {
   return /^[\w./-]{1,120}$/.test(branch || '');
 }
 
-module.exports = { fetchRepoStatus, fetchInsight, INSIGHT_VIEWS, validRepo, validBranch, hasToken: Boolean(TOKEN) };
+function hasToken() { return Boolean(resolveToken()); }
+function clearCache() { _cache.clear(); }
+
+module.exports = { fetchRepoStatus, fetchInsight, INSIGHT_VIEWS, validRepo, validBranch, setTokenProvider, hasToken, clearCache };

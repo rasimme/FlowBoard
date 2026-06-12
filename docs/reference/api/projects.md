@@ -171,6 +171,13 @@ commits, issue triage. Same server-side token and ~90s cache as
 repo-status.
 **200** `{ ok, insight }` — **400** invalid input — **404/502** GitHub errors.
 
+### GET | PUT | DELETE /api/settings/github-token
+Server-side GitHub token for the gh-* widgets, stored write-only in the
+meta DB: `GET` returns only `{ set, source }` (never the value), `PUT`
+`{ token }` stores it (a `FLOWBOARD_GITHUB_TOKEN`/`GITHUB_TOKEN` env var
+takes precedence), `DELETE` removes it. Saving clears the GitHub cache so
+the token applies immediately.
+
 ### GET /api/projects/:name/activity
 
 Project-wide activity feed from the HZL event store (newest first) — feeds

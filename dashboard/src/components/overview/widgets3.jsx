@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
-import { persistWidgetProps } from './widgets2.jsx';
+import { persistWidgetProps, TokenAffordance } from './widgets2.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
 /**
@@ -22,6 +22,7 @@ function ago(ts) {
 function useInsight(repo, view, branch) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!repo) return;
     let alive = true;
@@ -36,8 +37,17 @@ function useInsight(repo, view, branch) {
       })
       .catch(() => { if (alive) setError('GitHub unreachable'); });
     return () => { alive = false; };
-  }, [repo, view, branch]);
-  return { data, error };
+  }, [repo, view, branch, tick]);
+  return { data, error, reload: () => setTick(t => t + 1) };
+}
+
+function GhError({ error, editing, onRetry }) {
+  return (
+    <div className="gh-errwrap">
+      <div className="gh-error">{error}</div>
+      <TokenAffordance editing={editing} onSaved={onRetry} />
+    </div>
+  );
 }
 
 // shared repo plumbing: props.repo + inline connect form
@@ -78,6 +88,7 @@ function GhSetup({ hint, editing, onConnect }) {
           {saving ? '…' : 'Connect'}
         </button>
       </div>
+      <TokenAffordance editing={editing} />
     </div>
   );
 }
@@ -94,7 +105,7 @@ function GhLink({ href, editing, className, children, title }) {
 /* ---------- gh-pulls: PR inbox ---------- */
 export function GhPullsWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
-  const { data, error } = useInsight(repo, 'pulls');
+  const { data, error, reload } = useInsight(repo, 'pulls');
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'Pull Requests'} meta="GitHub">
@@ -110,7 +121,7 @@ export function GhPullsWidget({ widget, editing }) {
 
   return (
     <OvWidget title={widget?.title || 'Pull Requests'} meta={data ? repo : 'GitHub'}>
-      {error ? <div className="gh-error">{error}</div> : !data ? <div className="nt-loading">Loading…</div> : (
+      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : (
         <div className="ghp-wrap">
           <div className="ghp-kpis">
             <span className="ghp-kpi"><b>{ready.length}</b> ready</span>
@@ -151,7 +162,7 @@ const RUN_COLOR = { success: 'ok', failure: 'fail', cancelled: 'mute', timed_out
 export function GhCiWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
   const branch = widget?.props?.branch || '';
-  const { data, error } = useInsight(repo, 'ci', branch);
+  const { data, error, reload } = useInsight(repo, 'ci', branch);
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'CI Runs'} meta="GitHub">
@@ -170,7 +181,7 @@ export function GhCiWidget({ widget, editing }) {
   return (
     <OvWidget title={widget?.title || 'CI Runs'}
       meta={data ? `${data.branch}${passRate !== null ? ` · ${passRate}% pass` : ''}` : 'GitHub'}>
-      {error ? <div className="gh-error">{error}</div> : !data ? <div className="nt-loading">Loading…</div> : runs.length === 0 ? (
+      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : runs.length === 0 ? (
         <span className="gh-none">No workflow runs on {data.branch} yet.</span>
       ) : (
         <div className="ghc-wrap">
@@ -203,7 +214,7 @@ export function GhCiWidget({ widget, editing }) {
 /* ---------- gh-releases: latest release + unreleased work ---------- */
 export function GhReleasesWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
-  const { data, error } = useInsight(repo, 'releases');
+  const { data, error, reload } = useInsight(repo, 'releases');
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'Releases'} meta="GitHub">
@@ -214,7 +225,7 @@ export function GhReleasesWidget({ widget, editing }) {
   }
   return (
     <OvWidget title={widget?.title || 'Releases'} meta={data ? repo : 'GitHub'}>
-      {error ? <div className="gh-error">{error}</div> : !data ? <div className="nt-loading">Loading…</div> : !data.latest ? (
+      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : !data.latest ? (
         <span className="gh-none">No releases yet — tag one and it shows up here.</span>
       ) : (
         <div className="ghr-wrap">
@@ -253,7 +264,7 @@ export function GhReleasesWidget({ widget, editing }) {
 /* ---------- gh-issues: triage view ---------- */
 export function GhIssuesWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
-  const { data, error } = useInsight(repo, 'issues');
+  const { data, error, reload } = useInsight(repo, 'issues');
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'Issues'} meta="GitHub">
@@ -277,7 +288,7 @@ export function GhIssuesWidget({ widget, editing }) {
 
   return (
     <OvWidget title={widget?.title || 'Issues'} meta={data ? repo : 'GitHub'}>
-      {error ? <div className="gh-error">{error}</div> : !data ? <div className="nt-loading">Loading…</div> : issues.length === 0 ? (
+      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : issues.length === 0 ? (
         <span className="gh-none">No open issues — inbox zero.</span>
       ) : (
         <div className="ghi-wrap">

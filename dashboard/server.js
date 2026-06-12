@@ -64,7 +64,9 @@ const github = require('./github.js');
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || process.env.GATEWAY_URL
   || `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || process.env.GATEWAY_PORT || 18789}`;
 const HOOKS_TOKEN = process.env.OPENCLAW_HOOKS_TOKEN || process.env.HOOKS_TOKEN || '';
-const STUCK_NOTIFICATION_CHANNEL = process.env.STUCK_NOTIFICATION_CHANNEL || 'telegram';
+const FLOWBOARD_NOTIFICATION_CHANNEL = process.env.FLOWBOARD_NOTIFICATION_CHANNEL
+  || process.env.STUCK_NOTIFICATION_CHANNEL
+  || 'telegram';
 if (!HOOKS_TOKEN) {
   console.warn('⚠️  OPENCLAW_HOOKS_TOKEN not set — /api/hooks/task-complete endpoint will reject all calls');
 }
@@ -2797,6 +2799,30 @@ app.get('/api/github/repo-status', async (req, res) => {
   }
 });
 
+// T-320 — GitHub token, stored server-side and write-only: GET only says
+// whether one is configured, the value is never echoed back to a client.
+// An env token (FLOWBOARD_GITHUB_TOKEN/GITHUB_TOKEN) takes precedence.
+app.get('/api/settings/github-token', (req, res) => {
+  const envSet = Boolean(process.env.FLOWBOARD_GITHUB_TOKEN || process.env.GITHUB_TOKEN);
+  res.json({ ok: true, set: github.hasToken(), source: envSet ? 'env' : (fbMeta.getSetting('github_token') ? 'settings' : null) });
+});
+
+app.put('/api/settings/github-token', (req, res) => {
+  const token = req.body?.token;
+  if (typeof token !== 'string' || !/^[\w.-]{20,255}$/.test(token.trim())) {
+    return res.status(400).json({ error: 'token must be a GitHub personal access token' });
+  }
+  fbMeta.setSetting('github_token', token.trim());
+  github.clearCache(); // drop rate-limited/stale entries so the token applies now
+  res.json({ ok: true });
+});
+
+app.delete('/api/settings/github-token', (req, res) => {
+  fbMeta.setSetting('github_token', null);
+  github.clearCache();
+  res.json({ ok: true });
+});
+
 // GET /api/github/insight?repo=owner/name&view=pulls|ci|releases|issues[&branch=]
 // — feeds the gh-* overview widgets (T-316..T-319)
 app.get('/api/github/insight', async (req, res) => {
@@ -3116,6 +3142,7 @@ async function startServer() {
 
     // Init FlowBoard metadata tables (creates flowboard_projects, flowboard_agents, flowboard_migrations)
     fbMeta.init(hzlService.getCacheDb());
+    github.setTokenProvider(() => fbMeta.getSetting('github_token'));
 
     // Run all pending migrations via the registry. agentId is read directly
     // from OPENCLAW_AGENT_ID env (legacy operator hint, only used by the
@@ -3148,6 +3175,7 @@ async function startServer() {
         body: JSON.stringify({
           message: msg,
           name: 'FlowBoard',
+          channel: FLOWBOARD_NOTIFICATION_CHANNEL,
           wakeMode: 'now',
           agentId: agent || undefined,
           sessionKey: agent ? `agent:${agent}:main` : undefined,
@@ -3223,7 +3251,7 @@ async function startServer() {
                 // (the old `text` field was silently rejected with 400, T-304)
                 message: msg,
                 name: 'FlowBoard Stuck-Check',
-                channel: STUCK_NOTIFICATION_CHANNEL,
+                channel: FLOWBOARD_NOTIFICATION_CHANNEL,
                 wakeMode: 'now',
                 stuck: tasks,
                 agentId: agent,

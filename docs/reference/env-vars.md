@@ -10,6 +10,8 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `PORT` | `18790` | hzl-service | **Legacy fallback** in `hzl-service.js` for the on-complete hook callback URL. `FLOWBOARD_PORT` takes precedence. Kept for backwards compatibility with environments that pre-date the rename; new deployments should set `FLOWBOARD_PORT` only. |
 | `FLOWBOARD_HOST` | `127.0.0.1` | server | Bind address. Loopback-only by default. |
 | `FLOWBOARD_API` | `http://localhost:18790` | install-trigger, tests | Base URL consumers use to reach the dashboard. |
+| `FLOWBOARD_GITHUB_TOKEN` | empty | github | GitHub token for the gh-* overview widgets (private repos, higher rate limit). Takes precedence over `GITHUB_TOKEN` and over a token stored via `PUT /api/settings/github-token`. |
+| `GITHUB_TOKEN` | empty | github | Fallback GitHub token (same purpose, conventional name). |
 | `OPENCLAW_GATEWAY_PORT` (alias `GATEWAY_PORT`) | `18789` | server | Port of the OpenClaw gateway used for outbound wake events. |
 | `OPENCLAW_GATEWAY_URL` (alias `GATEWAY_URL`) | `http://127.0.0.1:18789` | server | Full gateway URL; takes precedence over the port-only form. |
 
@@ -77,6 +79,8 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `STALE_THRESHOLD_MINUTES` | `30` | Minutes of idle before a claimed task is considered stale by the cron sweeper. |
 | `NOTIFICATION_WINDOW_MINUTES` | `60` | Minimum minutes between repeat stuck-task notifications for the same task in the cron sweeper. |
 | `STUCK_FALLBACK_AGENT` | `main` | Agent that receives stuck-task notifications when the affected task has no responsible agent (unassigned stale/expired, unroutable). |
+| `FLOWBOARD_NOTIFICATION_CHANNEL` | `telegram` | OpenClaw delivery channel used by FlowBoard agent notifications when posting to `/hooks/agent`. Required when multiple gateway channels are configured. |
+| `STUCK_NOTIFICATION_CHANNEL` | `telegram` | Legacy alias for `FLOWBOARD_NOTIFICATION_CHANNEL`, kept for existing stuck-task notification deployments. |
 | `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |
 | `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback. |
 

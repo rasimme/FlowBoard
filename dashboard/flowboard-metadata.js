@@ -52,6 +52,16 @@ const CREATE_DELETED_PROJECTS_TABLE_SQL = `
   )
 `;
 
+// T-320: small server-side key-value settings (e.g. the GitHub token).
+// Values are write-only through the API layer — never echoed back.
+const CREATE_SETTINGS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )
+`;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -62,7 +72,24 @@ function init(db) {
   _db.prepare(CREATE_AGENTS_TABLE_SQL).run();
   _db.prepare(CREATE_MIGRATIONS_TABLE_SQL).run();
   _db.prepare(CREATE_DELETED_PROJECTS_TABLE_SQL).run();
-  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations, flowboard_deleted_projects');
+  _db.prepare(CREATE_SETTINGS_TABLE_SQL).run();
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations, flowboard_deleted_projects, flowboard_settings');
+}
+
+function getSetting(key) {
+  const row = _db.prepare('SELECT value FROM flowboard_settings WHERE key = ?').get(key);
+  return row ? row.value : null;
+}
+
+function setSetting(key, value) {
+  if (value === null || value === undefined || value === '') {
+    _db.prepare('DELETE FROM flowboard_settings WHERE key = ?').run(key);
+    return;
+  }
+  _db.prepare(`
+    INSERT INTO flowboard_settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(key, String(value), new Date().toISOString());
 }
 
 function countProjects() {
@@ -465,5 +492,7 @@ module.exports = {
   countLiveClaims,
   touchAgentLastSeen,
   clearAgentActiveProject,
+  getSetting,
+  setSetting,
   AGENT_IDLE_TTL_HOURS,
 };
