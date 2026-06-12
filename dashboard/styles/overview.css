@@ -789,10 +789,21 @@
 
 /* milestones v2.1: pinnable focus, completed chips, richer drilldown */
 .ms-roadmap { overflow-y: auto; scrollbar-width: thin; min-height: 0; }
-.ms-pin { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; opacity: 0; }
+.ms-pin { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; opacity: .5; }
 .ms-up:hover .ms-pin { opacity: 1; }
 .ms-pin:hover { color: var(--accent-2); }
+.ms-pin.head { font-size: 12px; vertical-align: 1px; margin-left: 4px; opacity: .55; }
+.ms-pin.head.on { color: var(--accent-2); opacity: 1; }
+.ms-focus:hover .ms-pin.head { opacity: 1; }
+/* inline checklist under the focus ring — only when the card is tall
+   enough; small cards keep the click-to-drilldown flow */
+.ms-inline { display: none; flex: 1; min-height: 0; }
+.ms-inline .ms-check { max-height: none; }
+@container widget (min-height: 240px) {
+  .ms-inline { display: flex; flex-direction: column; }
+}
 .ms-done-row { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
+.ms-roadmap { flex-shrink: 1; }
 .ms-done-chip {
   border: 1px solid var(--border); border-radius: var(--radius-full);
   background: transparent; color: var(--muted); font-size: 10px;

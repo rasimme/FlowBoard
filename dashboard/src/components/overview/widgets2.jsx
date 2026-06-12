@@ -189,6 +189,30 @@ function MsTaskPicker({ tasks, excludeIds, busy, confirmLabel, onConfirm, onCanc
   );
 }
 
+function MsChecklist({ items, editing, goTab, busy, onRemove }) {
+  return (
+    <div className="ms-check">
+      {items.length === 0 && <span className="gh-none">Empty milestone — it disappears once nothing carries the tag.</span>}
+      {items.map(t => (
+        <div key={t.id} className={'ms-check-row' + (t.status === 'done' ? ' done' : '')}>
+          <span className="box" aria-hidden="true">{t.status === 'done' ? '✓' : ''}</span>
+          <span className="body" style={{ cursor: editing ? undefined : 'pointer' }}
+            onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+            <span className="num">{t.id}</span>
+            <span className="msg">{t.title}</span>
+            <span className={'ms-st only-wide st-' + t.status}>{t.status}</span>
+            {t.agent && <span className="ms-agent only-wide">@{t.agent}</span>}
+          </span>
+          {!editing && onRemove && (
+            <button type="button" className="rm" title={`Remove ${t.id} from this milestone`}
+              disabled={busy} onClick={() => onRemove(t.id)}>×</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function MilestonesWidget({ widget, editing }) {
   const { state } = useAppState();
   const project = state?.viewedProject;
@@ -216,10 +240,16 @@ export function MilestonesWidget({ widget, editing }) {
     : (active[0]?.[0] ?? null);
   const list = active; // roadmap source
 
+  const pinned = Boolean(widget?.props?.focus) && widget.props.focus === focusName;
+
   async function pinFocus(name) {
     if (!project || !widget?.id) return;
-    await persistWidgetProps(project, widget.id, props => ({ ...props, focus: name }));
-    window.showToast?.(`${name} is now the focus milestone`, 'success');
+    await persistWidgetProps(project, widget.id, props => {
+      const next = { ...props };
+      if (name) next.focus = name; else delete next.focus;
+      return next;
+    });
+    window.showToast?.(name ? `${name} is now the focus milestone` : 'Focus follows progress again', 'success');
   }
 
   const [view, setView] = useState({ mode: 'list' }); // | {mode:'detail',name} | {mode:'create'} | {mode:'add',name}
@@ -298,25 +328,8 @@ export function MilestonesWidget({ widget, editing }) {
               }} />
           ) : (
             <>
-              <div className="ms-check">
-                {items.length === 0 && <span className="gh-none">Empty milestone — it disappears once nothing carries the tag.</span>}
-                {items.map(t => (
-                  <div key={t.id} className={'ms-check-row' + (t.status === 'done' ? ' done' : '')}>
-                    <span className="box" aria-hidden="true">{t.status === 'done' ? '✓' : ''}</span>
-                    <span className="body" style={{ cursor: editing ? undefined : 'pointer' }}
-                      onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
-                      <span className="num">{t.id}</span>
-                      <span className="msg">{t.title}</span>
-                      <span className={'ms-st only-wide st-' + t.status}>{t.status}</span>
-                      {t.agent && <span className="ms-agent only-wide">@{t.agent}</span>}
-                    </span>
-                    {!editing && (
-                      <button type="button" className="rm" title={`Remove ${t.id} from this milestone`}
-                        disabled={busy} onClick={() => applyTag([t.id], view.name, false)}>×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <MsChecklist items={items} editing={editing} goTab={goTab} busy={busy}
+                onRemove={id => applyTag([id], view.name, false)} />
               {!editing && (
                 <button type="button" className="lk-addtoggle" onClick={() => setView({ mode: 'add', name: view.name })}>
                   <Plus size={11} /> Add tasks
@@ -354,7 +367,16 @@ export function MilestonesWidget({ widget, editing }) {
                 <div className="ms-ring-row">
                   <Ring pct={p100} />
                   <span className="ms-head">
-                    <span className="ms-name">{focusName}</span>
+                    <span className="ms-name">
+                      {focusName}
+                      {!editing && (
+                        <button type="button" className={'ms-pin head' + (pinned ? ' on' : '')}
+                          title={pinned ? 'Pinned as focus — click to follow progress again' : 'Pin as focus milestone'}
+                          onClick={e => { e.stopPropagation(); pinFocus(pinned ? null : focusName); }}>
+                          {pinned ? '★' : '☆'}
+                        </button>
+                      )}
+                    </span>
                     <span className="ms-meta"><span className="w-mono">{items.filter(t => t.status === 'done').length}/{items.length}</span> tasks done</span>
                   </span>
                 </div>
@@ -362,6 +384,12 @@ export function MilestonesWidget({ widget, editing }) {
               </div>
             );
           })()}
+          {focusName && (
+            <div className="ms-inline">
+              <MsChecklist items={groups.get(focusName)} editing={editing} goTab={goTab} busy={busy}
+                onRemove={id => applyTag([id], focusName, false)} />
+            </div>
+          )}
           {list.filter(([name]) => name !== focusName).length > 0 && (
             <div className="ms-roadmap">
               {list.filter(([name]) => name !== focusName).map(([name, items]) => (
