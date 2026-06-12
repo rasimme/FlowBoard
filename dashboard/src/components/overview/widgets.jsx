@@ -80,7 +80,7 @@ export function ActiveAgentsWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
   const tasks = useProjectTasks();
   const { state } = useAppState();
-  const maxRows = widget?.props?.maxRows || 6;
+  const maxRows = widget?.props?.maxRows || 14;
 
   const claims = tasks
     .filter(t => t.agent && t.claimedAt)
@@ -245,7 +245,7 @@ const PRIO_RANK = { high: 0, medium: 1, low: 2 };
 export function NextUpWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
   const tasks = useProjectTasks();
-  const limit = widget?.props?.limit || 5;
+  const limit = widget?.props?.limit || 12;
   // "next" = claimable first: open ranks above backlog, then priority,
   // then age. Statuses are configurable via props.statuses.
   const statuses = widget?.props?.statuses || ['open', 'backlog'];
@@ -459,7 +459,7 @@ export function CurrentFocusWidget({ widget, editing }) {
   const claims = tasks
     .filter(t => t.agent && t.claimedAt)
     .sort((a, b) => String(b.lastCheckpointAt || b.claimedAt).localeCompare(String(a.lastCheckpointAt || a.claimedAt)))
-    .slice(0, widget?.props?.maxRows || 4);
+    .slice(0, widget?.props?.maxRows || 10);
 
   return (
     <OvWidget title={widget?.title || 'Current Focus'} meta={claims.length ? `${claims.length} in flight` : null}>
@@ -508,7 +508,7 @@ export function BlockedWidget({ widget, editing }) {
             <span className="ov-empty-hint">Tasks flagged as blocked appear here — they wait for you.</span>
           </div>
         )}
-        {tasks.slice(0, widget?.props?.limit || 6).map(t => (
+        {tasks.slice(0, widget?.props?.limit || 14).map(t => (
           <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
             <span className="ov-task-id">{t.id}</span>
             <span className="ov-task-title">{t.title}</span>
@@ -535,7 +535,7 @@ export function ApprovalsWidget({ widget, editing }) {
             <span className="ov-empty-hint">Tasks an agent moved to review land here, waiting for your sign-off.</span>
           </div>
         )}
-        {tasks.slice(0, widget?.props?.limit || 6).map(t => (
+        {tasks.slice(0, widget?.props?.limit || 14).map(t => (
           <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
             <span className="ov-task-id">{t.id}</span>
             <span className="ov-task-title">{t.title}</span>
@@ -621,7 +621,7 @@ export function SinceLastVisitWidget({ widget, editing }) {
     };
   }, [project]);
 
-  const items = useActivity(project, sinceTs, widget?.props?.limit || 8);
+  const items = useActivity(project, sinceTs, widget?.props?.limit || 20);
   return (
     <OvWidget title={widget?.title || 'Since your last visit'} meta={items?.length ? `${items.length} updates` : null}>
       <ActivityRows

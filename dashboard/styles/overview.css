@@ -67,6 +67,8 @@
 
 /* lists scroll inside their card instead of clipping rows mid-line */
 .ov-agents, .ov-tasks, .ov-decs {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
@@ -694,6 +696,7 @@
 .gh-row .msg { font-size: 11px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gh-row .when { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
 .gh-none { font-size: 11px; color: var(--muted); padding: 3px 5px; }
+.ghp-wrap > .gh-none, .ghi-wrap > .gh-none, .ghc-wrap > .gh-none { margin-block: auto; text-align: center; }
 .gh-error { font-size: 11px; color: var(--muted); padding: 6px 0; }
 
 /* gh widget family (T-316..T-319) */
@@ -846,6 +849,8 @@
   .ghc-wrap { gap: 4px; }
   .ghp-kpis { gap: 10px; }
   .ghi-age { display: none; }
+  .gh-body { display: none; }  /* repo-status: head row only */
+  .gh-head { padding-bottom: 0; margin-block: auto; }
 }
 
 /* file-viewer (T-322) */
@@ -863,3 +868,23 @@
 .fv-body .md-content h2, .fv-body .md-content h3 { font-size: 12.5px; margin: 9px 0 4px; }
 .fv-body .md-content p, .fv-body .md-content ul, .fv-body .md-content ol { margin: 4px 0; }
 .fv-body .md-content pre { font-size: 10.5px; padding: 6px 8px; border-radius: var(--radius-sm); }
+
+/* emphasis (T-326): props.emphasis lifts a card out of the equal-weight
+   grid — stronger frame, accent title tick, deeper shadow. Restrained:
+   no fills, one accent element. */
+.ov-emph > .ov-widget {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md), inset 0 1px 0 var(--card-highlight);
+}
+.ov-emph > .ov-widget > .ov-whead { position: relative; }
+.ov-emph > .ov-widget > .ov-whead::before {
+  content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 14px; border-radius: var(--radius-full);
+  background: var(--accent-2);
+}
+.ov-emph > .ov-widget > .ov-whead .ov-wtitle { padding-left: 9px; color: var(--text-strong); }
+
+/* file-viewer picker on tiny cards */
+@container widget (max-width: 250px) {
+  .fv-pick { max-width: 80px; }
+}

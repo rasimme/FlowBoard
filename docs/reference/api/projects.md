@@ -140,7 +140,7 @@ widget registry — agents and the edit-mode UI write the same schema.
 
 ### GET /api/overview/widgets
 Widget catalog (type, label, description, defaultSize, props) plus the named
-presets (`agent`, `status`, `context`) and the grid contract
+presets (`coding`, `knowledge`, `mission`) and the grid contract
 (12 columns, 88px row unit, 12px gutter).
 
 ### GET /api/projects/:name/overview
@@ -149,7 +149,7 @@ default `agent` preset (`source: "default"`) when no file exists or the
 stored file no longer validates.
 
 ### PUT /api/projects/:name/overview
-Body is either `{ preset: "agent" | "status" | "context" }` (materializes the
+Body is either `{ preset: "default" | "coding" | "knowledge" | "mission" }` (materializes the
 preset) or a full config:
 `{ version: 1, layout: "grid", widgets: [{ id, type, title?, props?, grid: {x,y,w,h} }] }`.
 **200** `{ ok, overview }` — **400** `{ error, errors[] }` on validation

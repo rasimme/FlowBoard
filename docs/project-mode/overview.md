@@ -52,17 +52,23 @@ knowledge & actions: `recent-decisions`, `context-index` (pin via
 `quick-drop`, `notes` (context/NOTES.md), `links` (`props.links`),
 `quick-links`.
 
+Universal widget props: `title` overrides the display name; `emphasis`
+(boolean) visually lifts a card out of the equal-weight grid (stronger
+frame, accent tick) — use it to mark what needs the human first.
+
 ## Presets
 
-`PUT { "preset": "default" | "agent" | "status" | "context" }` materializes
-a named layout:
+`PUT { "preset": "default" | "coding" | "knowledge" | "mission" }`
+materializes a named layout:
 
-- **default** — re-orientation after autonomous work: what needs you first
-  (blocked, approvals, since-last-visit), then current focus, next-up,
-  agents, goal and quick actions.
-- **agent** — daily work with running agents (active-agents hero).
-- **status** — reviews/stand-ups (stats + board preview first).
-- **context** — documentation-heavy projects (PROJECT.md/DECISIONS.md dominant).
+- **default** — standard daily driver: momentum + timeline on top,
+  knowledge (context, notes, quick-drop) at hand, stats and board below.
+- **coding** — repo-first: `repo-status`, `gh-ci`, `gh-pulls` on top,
+  focus/blocked/approvals, releases & issues, board preview.
+- **knowledge** — document-first: large `file-viewer`, context index,
+  notes, decisions — for projects that are mostly thinking, not tasks.
+- **mission** — review desk: blocked + approvals emphasized, focus,
+  milestones, stats, agents — for steering many parallel agents.
 
 When creating a new project, pick the preset that fits it — or compose a
 custom layout from the catalog. Projects without a stored file serve the

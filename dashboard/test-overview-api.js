@@ -70,7 +70,7 @@ async function run() {
     // registry manifest
     let r = await api('GET', '/overview/widgets');
     ok(r.status === 200 && Array.isArray(r.body?.widgets) && r.body.widgets.length >= 7, 'manifest lists the widget catalog');
-    ok((r.body?.presets || []).map(p => p.name).sort().join(',') === 'agent,context,default,status', 'manifest lists the four presets');
+    ok((r.body?.presets || []).map(p => p.name).sort().join(',') === 'coding,default,knowledge,mission', 'manifest lists the four presets');
     ok(r.body?.gridColumns === 12 && r.body?.rowHeight === 88, 'manifest carries the grid contract');
 
     // repo-status endpoint validates input without touching the network
@@ -82,13 +82,13 @@ async function run() {
     // default when no file exists
     r = await api('GET', '/projects/ov/overview');
     ok(r.status === 200 && r.body?.overview?.source === 'default', 'missing file serves the default');
-    ok(r.body?.overview?.preset === 'default' && r.body.overview.widgets.length === 8, 'default is the re-orientation preset (decision E)');
+    ok(r.body?.overview?.preset === 'default' && r.body.overview.widgets.length === 11, 'default is the standard preset (T-327)');
 
     // materialize a preset
-    r = await api('PUT', '/projects/ov/overview', { preset: 'context' });
-    ok(r.status === 200 && r.body?.overview?.preset === 'context', 'PUT preset materializes it');
+    r = await api('PUT', '/projects/ov/overview', { preset: 'knowledge' });
+    ok(r.status === 200 && r.body?.overview?.preset === 'knowledge', 'PUT preset materializes it');
     r = await api('GET', '/projects/ov/overview');
-    ok(r.body?.overview?.source === 'file' && r.body.overview.preset === 'context', 'persisted preset is served from file');
+    ok(r.body?.overview?.source === 'file' && r.body.overview.preset === 'knowledge', 'persisted preset is served from file');
 
     // custom config (the agent path)
     r = await api('PUT', '/projects/ov/overview', {
@@ -109,7 +109,7 @@ async function run() {
     r = await api('PUT', '/projects/ov/overview', { version: 2, widgets: [] });
     ok(r.status === 400, 'wrong version is rejected');
     r = await api('PUT', '/projects/ov/overview', { preset: 'nope' });
-    ok(r.status === 400 && (r.body?.presets || []).includes('agent'), 'unknown preset is rejected with the preset list');
+    ok(r.status === 400 && (r.body?.presets || []).includes('coding'), 'unknown preset is rejected with the preset list');
 
     // corrupt file degrades gracefully to the default
     fs.writeFileSync(path.join(tmp, 'projects', 'ov', 'overview.json'), '{not json');

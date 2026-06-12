@@ -303,7 +303,7 @@ export default function OverviewView() {
               return (
                 <div
                   key={w.id}
-                  className="ov-cell"
+                  className={'ov-cell' + (w.props?.emphasis ? ' ov-emph' : '')}
                   style={{
                     gridColumn: `${w.grid.x + 1} / span ${w.grid.w}`,
                     gridRow: `${w.grid.y + 1} / span ${w.grid.h}`,
@@ -388,7 +388,7 @@ export default function OverviewView() {
             {sorted.map(w => {
               const Widget = WIDGET_REGISTRY[w.type];
               return (
-                <div key={w.id} className="ov-cell">
+                <div key={w.id} className={'ov-cell' + (w.props?.emphasis ? ' ov-emph' : '')}>
                   <Widget widget={w} editing />
                   {/* edit chrome — overlays the card, never shifts its layout */}
                   <button
