@@ -2731,7 +2731,16 @@ app.post('/api/projects/:name/tasks/:id/comment', (req, res) => {
     // author source; fall back to the free-form `author` the UI sends for humans.
     const resolved = agentIdentity.resolveActivityAuthor(req.body);
     if (!resolved.ok) return res.status(400).json({ error: resolved.error });
-    const comment = hzlService.addComment(req.params.name, req.params.id, { message, author: resolved.author });
+    // T-307: typed comments — questions from agents, answers that resolve them
+    const kind = req.body.kind ?? null;
+    if (kind !== null && !['question', 'answer'].includes(kind)) {
+      return res.status(400).json({ error: "kind must be 'question' or 'answer'" });
+    }
+    const questionId = req.body.questionId ?? null;
+    if (kind === 'answer' && (questionId === null || questionId === undefined || !Number.isInteger(Number(questionId)))) {
+      return res.status(400).json({ error: 'answers need the questionId they resolve' });
+    }
+    const comment = hzlService.addComment(req.params.name, req.params.id, { message, author: resolved.author, kind, questionId });
     res.json({ ok: true, comment });
   } catch (err) {
     const status = httpStatusForError(err);
@@ -2915,6 +2924,17 @@ app.put('/api/projects/:name/overview', (req, res) => {
     res.json({ ok: true, overview: { source: 'file', ...config } });
   } catch (err) {
     console.error('[overview]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/:name/questions — open agent questions (T-307)
+app.get('/api/projects/:name/questions', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    res.json({ ok: true, questions: hzlService.getOpenQuestions(req.params.name, req.query.limit) });
+  } catch (err) {
+    console.error('[questions]', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

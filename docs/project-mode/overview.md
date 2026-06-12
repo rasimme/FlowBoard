@@ -39,7 +39,8 @@ error list (400). Fetch `GET /api/overview/widgets` for the current catalog
 with `defaultSize` and accepted `props` per widget. Do not invent types.
 
 Current catalog — needs-me cluster: `blocked` (blocked tasks waiting for a
-human), `approvals` (the review lane as your inbox), `since-last-visit`
+human), `approvals` (the review lane as your inbox), `agent-questions`
+(open `kind: "question"` comments, answerable inline), `since-last-visit`
 (what moved while you were away); live: `current-focus` (claimed tasks,
 prominent), `active-agents`, `activity-stream`, `timeline` (dated spine),
 `stall-detection` (momentum check); github (all opt-in via `props.repo`):

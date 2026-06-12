@@ -4,6 +4,22 @@
 
 How agents interact with FlowBoard tasks at runtime - the workflow-first execution protocol, claim/lease semantics, and handoff behavior for multi-agent and ACP-spawned work.
 
+## Asking the human (T-307)
+
+When you need a decision or information only the human has, post a typed
+comment on the task instead of stalling or guessing:
+
+```
+POST /api/projects/:name/tasks/:id/comment
+{ "agent": "<you>", "message": "<the question>", "kind": "question" }
+```
+
+Open questions surface on the project overview (agent-questions widget)
+and are answered with `{ kind: "answer", questionId: <comment id> }` —
+the answer lands on the task's activity feed; poll the comments or just
+continue when your next session picks the task back up. Don't re-ask:
+one open question per decision.
+
 ## Task Execution Protocol
 
 The protocol is **soft and global** - it is a convention enforced by the API, not a hard scheduler.

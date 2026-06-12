@@ -157,6 +157,13 @@ const WIDGET_TYPES = {
     minSize: { w: 3, h: 1 },
     props: { repo: "string 'owner/name' (required)" },
   },
+  'agent-questions': {
+    label: 'Agent Questions',
+    description: 'Open questions from agents, answerable inline — comments with kind "question", an answer resolves them.',
+    defaultSize: { w: 4, h: 2 },
+    minSize: { w: 3, h: 1 },
+    props: { limit: 'number (optional, default 20)' },
+  },
   'gh-pulls': {
     label: 'Pull Requests',
     description: 'PR inbox — ready vs draft, requested reviews first. Opt-in via props.repo.',

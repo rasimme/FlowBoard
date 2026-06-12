@@ -264,6 +264,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/projects/:name/questions",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
       "path": "/api/projects/:name/rules",
       "auth": "user",
       "group": "projects",

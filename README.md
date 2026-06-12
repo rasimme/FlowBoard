@@ -43,6 +43,23 @@ Activate a project and the agent gets the context it needs — goal, scope, arch
 - Lazy loading — zero overhead when no project is active
 - Session handoff — pick up exactly where you left off
 
+### 🧩 Modular Project Overview
+
+Every project gets a composable landing page: a widget grid both you and
+your agents can shape. 25 widgets across five clusters — what needs you
+(blocked, approvals, open agent questions), live activity and momentum,
+direction (milestones as definition-of-done checklists, stats, board
+preview), a full GitHub family (repo status, CI history, PRs, releases,
+issues — one repo binding per project, token optional for private
+repos), and knowledge (file viewer, context index, notes, quick links).
+Drag-and-drop editing with presets, or let the agent compose it via the
+same REST API:
+
+```
+PUT /api/projects/:name/overview   { version: 1, layout: "grid", widgets: [...] }
+PUT /api/projects/:name/overview   { "preset": "coding" }
+```
+
 ### 📋 Agent-Native Kanban
 
 Your agent operates the board through the same REST API as the dashboard. It creates tasks, sets priorities, writes specs with acceptance criteria, claims work with leases, checkpoints progress, and hands completed work to review.

@@ -73,6 +73,22 @@ async function run() {
     ok((r.body?.presets || []).map(p => p.name).sort().join(',') === 'coding,default,knowledge,mission', 'manifest lists the four presets');
     ok(r.body?.gridColumns === 12 && r.body?.rowHeight === 88, 'manifest carries the grid contract');
 
+    // T-307: question/answer comments drive the questions feed
+    r = await api('POST', '/projects/ov/tasks', { title: 'question host' });
+    const qTask = r.body?.task?.id;
+    ok(r.status === 200 && qTask, 'task for question flow created');
+    r = await api('POST', `/projects/ov/tasks/${qTask}/comment`, { author: 'a1', message: 'q?', kind: 'question' });
+    const qid = r.body?.comment?.id;
+    ok(r.status === 200 && Number.isInteger(qid), 'question comment returns its event id');
+    r = await api('GET', '/projects/ov/questions');
+    ok(r.status === 200 && r.body?.questions?.length === 1 && r.body.questions[0].id === qid, 'open question surfaces in the feed');
+    r = await api('POST', `/projects/ov/tasks/${qTask}/comment`, { author: 'human', message: 'a.', kind: 'answer', questionId: qid });
+    ok(r.status === 200, 'answer accepted');
+    r = await api('GET', '/projects/ov/questions');
+    ok(r.status === 200 && r.body?.questions?.length === 0, 'answer resolves the question');
+    r = await api('POST', `/projects/ov/tasks/${qTask}/comment`, { author: 'human', message: 'x', kind: 'answer' });
+    ok(r.status === 400, 'answer without questionId is rejected');
+
     // repo-status endpoint validates input without touching the network
     r = await api('GET', '/github/repo-status');
     ok(r.status === 400, 'repo-status without repo is rejected');

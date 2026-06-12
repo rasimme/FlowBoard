@@ -28,6 +28,7 @@ import {
   GhCiWidget,
   GhReleasesWidget,
   GhIssuesWidget,
+  AgentQuestionsWidget,
 } from './widgets3.jsx';
 
 /**
@@ -62,4 +63,5 @@ export const WIDGET_REGISTRY = {
   'gh-ci': GhCiWidget,
   'gh-releases': GhReleasesWidget,
   'gh-issues': GhIssuesWidget,
+  'agent-questions': AgentQuestionsWidget,
 };

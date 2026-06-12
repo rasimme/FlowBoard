@@ -185,6 +185,13 @@ meta DB: `GET` returns only `{ set, source }` (never the value), `PUT`
 takes precedence), `DELETE` removes it. Saving clears the GitHub cache so
 the token applies immediately.
 
+### GET /api/projects/:name/questions
+Query: `limit` (default 20). Open agent questions — comment events with
+`kind: "question"` that no `kind: "answer"` comment references via
+`questionId`. Answering through the comment endpoint resolves a question;
+everything stays append-only on the task's activity feed.
+**200** `{ ok, questions: [{ id, taskId, title, author, message, timestamp }] }`
+
 ### GET /api/projects/:name/activity/daily
 Query: `days` (default 14, max 90). Per-day event counts for the project
 plus the latest event — feeds the momentum widget; the row feed caps at

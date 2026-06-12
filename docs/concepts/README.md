@@ -21,6 +21,7 @@ Each concept doc answers five questions:
 - [Idea Canvas](idea-canvas.md) — visual brainstorm, notes/connections/clusters, promote pipeline via Specify session
 - [HZL Event Sourcing](hzl-event-sourcing.md) — event log + projections, brain/muscle split, `tasks_current` materialization, single-writer constraint
 - [Specify Workflow](specify-workflow.md) — 6-step agent process for unstructured-to-structured work, session lifecycle, RAM-only sessions
+- [Modular Project Overview](overview-widgets.md) — server-driven widget grid, trusted registry, presets, GitHub binding, milestones/questions as task conventions
 - [Auth Model](auth-model.md) — middleware decision tree, Telegram init-data + JWT cookie, loopback / tunnel / LAN bypasses, fail-closed in production
 
 ## Coverage Matrix

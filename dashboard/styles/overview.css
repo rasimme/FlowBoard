@@ -716,8 +716,8 @@
 
 /* gh-ci */
 .ghc-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
-.ghc-bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: end; gap: 3px; flex: 1; min-height: 30px; }
-.ghc-bar { height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.ghc-bars { display: flex; align-items: flex-end; gap: 3px; flex: 1; min-height: 30px; }
+.ghc-bar { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
 .ghc-bar i { display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--secondary); }
 .ghc-bar.ok i { background: color-mix(in srgb, var(--accent-2) 55%, var(--secondary)); }
 .ghc-bar.ok:hover i { background: var(--accent-2); }
@@ -892,13 +892,9 @@
 /* ===== T-328: scroll + small-size polish round =====
    Shared scroll feel inside widgets: reserve no layout space (overlay-like
    thumb via webkit styling), show the thumb while hovering the area. */
-/* the app hides ALL native scrollbars globally (gateway heritage, with
-   !important) — widget bodies opt back in with a hover-revealed thumb */
-.ov-wbody ::-webkit-scrollbar { display: block !important; width: 7px !important; height: 7px !important; }
-.ov-wbody ::-webkit-scrollbar-track { background: transparent !important; }
-.ov-wbody ::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
-.ov-wbody :hover::-webkit-scrollbar-thumb,
-.ov-wbody :focus-within::-webkit-scrollbar-thumb { background: var(--border-strong); }
+/* native scrollbars stay globally hidden — every widget scroll region
+   goes through ScrollArea (custom thumb), so re-enabling them here only
+   produced doubled, fat bars. */
 
 /* (3) file viewer: trackpads emit diagonal deltas — horizontal pans of the
    whole body felt like a "shift". Only code blocks scroll sideways. */
@@ -957,7 +953,7 @@
 
 /* (3) Chromium ignores ::-webkit-scrollbar styling while scrollbar-width is
    set — the hover thumb never showed. Reset it inside widget bodies. */
-.ov-wbody, .ov-wbody * { scrollbar-width: auto !important; }
+
 
 /* (4) quick drop: the ring must never be squeezed; narrow cards compact */
 .qd-ring { flex-shrink: 0; }
@@ -979,3 +975,14 @@
    card and revealed on hover (11) */
 .ov-widget .cscroll-track { top: 2px; bottom: 2px; right: 1px; opacity: 0; transition: opacity .15s; }
 .ov-widget:hover .cscroll-track { opacity: 1; }
+
+/* agent-questions (T-307) */
+.aq-list { display: flex; flex-direction: column; gap: 8px; }
+.aq-item { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-accent); flex-shrink: 0; }
+.aq-head { display: flex; align-items: center; gap: 7px; }
+.aq-task { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); background: var(--secondary); border: none; border-radius: var(--radius-full); padding: 1px 7px; cursor: pointer; }
+.aq-task:hover { color: var(--accent); }
+.aq-author { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--accent-2); }
+.aq-when { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); margin-left: auto; }
+.aq-msg { font-size: 12px; color: var(--text); line-height: 1.45; }
+.aq-count { color: var(--accent-2); }

@@ -1885,22 +1885,45 @@ function getCheckpoints(project, flowboardId) {
  * Uses hzl-core native addComment().
  */
 function addComment(project, flowboardId, opts) {
-  const { message, author } = opts;
+  const { message, author, kind = null, questionId = null } = opts;
   if (!message) throw new Error('Comment message is required');
 
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
 
-  const result = _taskService.addComment(ulid, message, {
-    author: author || null,
-  });
+  let id;
+  let timestamp;
+  if (kind) {
+    // T-307: typed comments (question/answer) carry extra fields hzl-core's
+    // addComment would drop — append the same event type directly
+    const event = _eventStore.append({
+      task_id: ulid,
+      type: 'comment_added',
+      data: {
+        text: message,
+        kind,
+        ...(questionId ? { questionId: Number(questionId) } : {}),
+        ...(author ? { author } : {}),
+      },
+      author: author || null,
+    });
+    _projectionEngine.applyEvent(event);
+    id = event.rowid ?? null;
+    timestamp = event.timestamp;
+  } else {
+    const result = _taskService.addComment(ulid, message, { author: author || null });
+    id = result.event_rowid;
+    timestamp = result.timestamp;
+  }
 
   return {
-    id: result.event_rowid,
+    id,
     taskId: flowboardId,
     message,
     author: author || null,
-    timestamp: result.timestamp,
+    ...(kind ? { kind } : {}),
+    ...(questionId ? { questionId: Number(questionId) } : {}),
+    timestamp,
   };
 }
 
@@ -1918,6 +1941,8 @@ function getComments(project, flowboardId) {
     taskId: flowboardId,
     message: r.text,
     author: r.author || r.agent_id || null,
+    ...(r.kind ? { kind: r.kind } : {}),
+    ...(r.questionId ? { questionId: r.questionId } : {}),
     timestamp: r.timestamp,
   }));
 }
@@ -2027,6 +2052,43 @@ function getProjectActivityDaily(project, days = 14) {
     out.push({ day, count: counts.get(day) || 0 });
   }
   return { days: out, latest, total: out.reduce((a, b) => a + b.count, 0) };
+}
+
+/**
+ * T-307: open agent questions across a project. A question is a comment
+ * event with data.kind === 'question'; posting a comment with
+ * kind === 'answer' and questionId resolves it. Append-only — no flags
+ * to mutate, the pairing IS the resolution.
+ */
+function getOpenQuestions(project, limit = 20) {
+  let warm = false;
+  for (const key of _fbToUlid.keys()) {
+    if (key.startsWith(project + ':')) { warm = true; break; }
+  }
+  if (!warm) listTasks(project);
+  const rows = _eventsDb.prepare(
+    "SELECT id, task_id, timestamp, agent_id, data FROM events WHERE type = 'comment_added' ORDER BY id ASC"
+  ).all();
+  const answered = new Set();
+  const questions = [];
+  for (const r of rows) {
+    const data = (typeof r.data === 'string') ? safeJson(r.data) : (r.data || {});
+    if (data.kind === 'answer' && data.questionId) answered.add(Number(data.questionId));
+    if (data.kind !== 'question') continue;
+    const mapKey = _ulidToFb.get(r.task_id);
+    if (!mapKey || !mapKey.startsWith(project + ':')) continue;
+    const cached = _cache.get(mapKey);
+    if (cached?.trashedAt) continue;
+    questions.push({
+      id: r.id,
+      taskId: mapKey.slice(project.length + 1),
+      title: cached?.title || null,
+      author: data.author || r.agent_id || null,
+      message: String(data.text || ''),
+      timestamp: r.timestamp,
+    });
+  }
+  return questions.filter(q => !answered.has(Number(q.id))).slice(-Math.max(1, Math.min(limit, 100))).reverse();
 }
 
 function getStatusEvents(project, flowboardId) {
@@ -2959,6 +3021,7 @@ module.exports = {
   searchTasks,
   getProjectActivity,
   getProjectActivityDaily,
+  getOpenQuestions,
   moveTaskToProject,
   setTaskParent,
   listTasks,

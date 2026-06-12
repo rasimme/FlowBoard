@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import { TokenAffordance, useProjectGithub } from './widgets2.jsx';
@@ -95,9 +95,9 @@ function GhSetup({ hint, editing, onConnect }) {
   );
 }
 
-function GhLink({ href, editing, className, children, title }) {
+function GhLink({ href, editing, className, children, title, style }) {
   return (
-    <a className={className} href={editing ? undefined : href} target="_blank" rel="noreferrer"
+    <a className={className} style={style} href={editing ? undefined : href} target="_blank" rel="noreferrer"
       title={title} onClick={e => { if (editing) e.preventDefault(); }}>
       {children}
     </a>
@@ -164,6 +164,21 @@ const RUN_COLOR = { success: 'ok', failure: 'fail', cancelled: 'mute', timed_out
 export function GhCiWidget({ widget, editing }) {
   const { repo, branch, connect } = useRepoProp(widget);
   const { data, error, reload } = useInsight(repo, 'ci', branch);
+  const runCount = (data?.runs || []).length;
+  // integer bar widths — fractional flex/grid tracks render with visibly
+  // uneven gaps on some zoom levels. Hooks live ABOVE the early return:
+  // conditional hook counts crash React (#310).
+  const barsRef = useRef(null);
+  const [barW, setBarW] = useState(null);
+  useEffect(() => {
+    const el = barsRef.current;
+    if (!el || runCount === 0) return;
+    const measure = () => setBarW(Math.max(3, Math.floor((el.clientWidth - (runCount - 1) * 3) / runCount)));
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [runCount]);
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'CI Runs'} meta="GitHub">
@@ -186,13 +201,14 @@ export function GhCiWidget({ widget, editing }) {
         <span className="gh-none">No workflow runs on {data.branch} yet.</span>
       ) : (
         <div className="ghc-wrap">
-          <div className="ghc-bars">
+          <div className="ghc-bars" ref={barsRef}>
             {runs.map((r, i) => {
               const dur = durations[i];
               const cls = r.status !== 'completed' ? 'live' : (RUN_COLOR[r.conclusion] || 'mute');
               const mins = dur >= 90 ? `${Math.round(dur / 60)}min` : `${Math.round(dur)}s`;
               return (
                 <GhLink key={r.id} editing={editing} href={r.url} className={'ghc-bar ' + cls}
+                  style={barW ? { width: barW + 'px', flex: 'none' } : undefined}
                   title={`${r.name} #${r.number} — ${r.status === 'completed' ? r.conclusion : r.status} · ${mins} · ${ago(r.startedAt)} ago`}>
                   <i style={{ height: (15 + (dur / maxDur) * 85) + '%' }}></i>
                 </GhLink>
@@ -320,6 +336,99 @@ export function GhIssuesWidget({ widget, editing }) {
             ))}
           </ScrollArea>
         </div>
+      )}
+    </OvWidget>
+  );
+}
+
+/* ---------- agent-questions: open questions from agents (T-307) ---------- */
+export function AgentQuestionsWidget({ widget, editing }) {
+  const { state } = useAppState();
+  const project = state?.viewedProject;
+  const [questions, setQuestions] = useState(null);
+  const [tick, setTick] = useState(0);
+  const [answering, setAnswering] = useState(null); // question id
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    fetch(`/api/projects/${project}/questions?limit=${widget?.props?.limit || 20}`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (alive) setQuestions(d?.questions || []); })
+      .catch(() => { if (alive) setQuestions([]); });
+    return () => { alive = false; };
+  }, [project, tick, widget?.props?.limit]);
+
+  async function sendAnswer(q) {
+    const text = reply.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/projects/${project}/tasks/${q.taskId}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ author: 'human', message: text, kind: 'answer', questionId: q.id }),
+      });
+      if (res.ok) {
+        setReply(''); setAnswering(null); setTick(t => t + 1);
+        window.showToast?.(`Answered ${q.author ? '@' + q.author : 'the question'} on ${q.taskId}`, 'success');
+      } else {
+        const d = await res.json().catch(() => ({}));
+        window.showToast?.(d.error || 'Answer failed', 'error');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const goTask = (taskId) => {
+    window._switchTab ? window._switchTab('tasks') : null;
+    window._scrollToTaskId = taskId;
+  };
+
+  return (
+    <OvWidget title={widget?.title || 'Agent Questions'}
+      meta={questions?.length ? <span className="aq-count">{questions.length} open</span> : null}>
+      {questions === null ? (
+        <div className="nt-loading">Loading…</div>
+      ) : questions.length === 0 ? (
+        <div className="ov-empty">
+          <span className="ov-empty-title">No open questions</span>
+          <span className="ov-empty-hint">Agents ask by commenting with <span className="w-mono">kind: "question"</span> — answer right here, the answer lands on the task.</span>
+        </div>
+      ) : (
+        <ScrollArea className="flex-1 min-h-0" innerClassName="aq-list">
+          {questions.map(q => (
+            <div key={q.id} className="aq-item">
+              <div className="aq-head">
+                <button type="button" className="aq-task" disabled={editing} onClick={() => goTask(q.taskId)}>{q.taskId}</button>
+                {q.author && <span className="aq-author">@{q.author}</span>}
+                <span className="aq-when">{ago(q.timestamp)}</span>
+              </div>
+              <div className="aq-msg">{q.message}</div>
+              {answering === q.id ? (
+                <div className="lk-add">
+                  <input className="lk-in" autoFocus placeholder="Your answer…" value={reply}
+                    onChange={e => setReply(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') sendAnswer(q); if (e.key === 'Escape') { setAnswering(null); setReply(''); } }}
+                    disabled={editing || busy} />
+                  <button type="button" className="lk-btn" onClick={() => sendAnswer(q)} disabled={editing || busy || !reply.trim()}>
+                    {busy ? '…' : 'Send'}
+                  </button>
+                </div>
+              ) : (
+                !editing && (
+                  <button type="button" className="lk-addtoggle" onClick={() => { setAnswering(q.id); setReply(''); }}>
+                    Answer
+                  </button>
+                )
+              )}
+            </div>
+          ))}
+        </ScrollArea>
       )}
     </OvWidget>
   );
