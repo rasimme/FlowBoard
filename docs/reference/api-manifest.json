@@ -215,6 +215,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/projects/:name/activity/daily",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
       "path": "/api/projects/:name/bootstrap",
       "auth": "user",
       "group": "projects",

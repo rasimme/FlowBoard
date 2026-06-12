@@ -358,6 +358,7 @@ export function MilestonesWidget({ widget, editing }) {
         </div>
       ) : (
         <div className="ms-wrap">
+          <div className="ms-top">
           {focusName && (() => {
             const items = groups.get(focusName);
             const p100 = pct(items);
@@ -384,19 +385,14 @@ export function MilestonesWidget({ widget, editing }) {
               </div>
             );
           })()}
-          {focusName && (
-            <div className="ms-inline">
-              <MsChecklist items={groups.get(focusName)} editing={editing} goTab={goTab} busy={busy}
-                onRemove={id => applyTag([id], focusName, false)} />
-            </div>
-          )}
           {list.filter(([name]) => name !== focusName).length > 0 && (
             <div className="ms-roadmap">
               {list.filter(([name]) => name !== focusName).map(([name, items]) => (
                 <div key={name} className="ms-up" style={{ cursor: 'pointer' }} title="Open checklist"
                   onClick={() => setView({ mode: 'detail', name })}>
                   <span className="nm">
-                    {name} <span className="v">{pct(items)}%</span>
+                    <span className="t">{name}</span>
+                    <span className="v">{pct(items)}%</span>
                     {!editing && (
                       <button type="button" className="ms-pin" title="Set as focus milestone"
                         onClick={e => { e.stopPropagation(); pinFocus(name); }}>☆</button>
@@ -405,6 +401,13 @@ export function MilestonesWidget({ widget, editing }) {
                   <span className="mini"><span style={{ width: pct(items) + '%' }}></span></span>
                 </div>
               ))}
+            </div>
+          )}
+          </div>
+          {focusName && (
+            <div className="ms-inline">
+              <MsChecklist items={groups.get(focusName)} editing={editing} goTab={goTab} busy={busy}
+                onRemove={id => applyTag([id], focusName, false)} />
             </div>
           )}
           {completed.length > 0 && (

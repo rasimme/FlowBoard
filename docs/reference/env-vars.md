@@ -80,6 +80,10 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `NOTIFICATION_WINDOW_MINUTES` | `60` | Minimum minutes between repeat stuck-task notifications for the same task in the cron sweeper. |
 | `STUCK_FALLBACK_AGENT` | `main` | Agent that receives stuck-task notifications when the affected task has no responsible agent (unassigned stale/expired, unroutable). |
 | `FLOWBOARD_NOTIFICATION_CHANNEL` | `telegram` | OpenClaw delivery channel used by FlowBoard agent notifications when posting to `/hooks/agent`. Required when multiple gateway channels are configured. |
+| `FLOWBOARD_NOTIFICATION_TARGET` | empty | Optional delivery target for FlowBoard agent notifications, e.g. a Telegram chat id. If unset and exactly one `ALLOWED_USER_IDS` entry exists with `FLOWBOARD_NOTIFICATION_CHANNEL=telegram`, that id is used. |
+| `FLOWBOARD_NOTIFICATION_TO` | empty | Legacy alias for `FLOWBOARD_NOTIFICATION_TARGET`. |
+| `FLOWBOARD_NOTIFICATION_TARGET` | empty | Target session key for stuck-task notifications (gateway routing). |
+| `FLOWBOARD_NOTIFICATION_TO` | empty | Recipient override for stuck-task notifications. |
 | `STUCK_NOTIFICATION_CHANNEL` | `telegram` | Legacy alias for `FLOWBOARD_NOTIFICATION_CHANNEL`, kept for existing stuck-task notification deployments. |
 | `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |
 | `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback. |

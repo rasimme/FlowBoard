@@ -178,6 +178,12 @@ meta DB: `GET` returns only `{ set, source }` (never the value), `PUT`
 takes precedence), `DELETE` removes it. Saving clears the GitHub cache so
 the token applies immediately.
 
+### GET /api/projects/:name/activity/daily
+Query: `days` (default 14, max 90). Per-day event counts for the project
+plus the latest event — feeds the momentum widget; the row feed caps at
+200 events, which busy days outgrow.
+**200** `{ ok, days: [{ day, count }], latest, total }`
+
 ### GET /api/projects/:name/activity
 
 Project-wide activity feed from the HZL event store (newest first) — feeds

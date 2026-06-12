@@ -522,7 +522,8 @@
 .w-mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.92em; color: var(--text); }
 
 /* milestones */
-.ms-wrap { display: flex; gap: 18px; flex: 1; min-height: 0; }
+.ms-wrap { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.ms-top { display: flex; gap: 18px; flex-shrink: 0; align-items: flex-start; }
 .ms-focus { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .ms-ring-row { display: flex; align-items: center; gap: 12px; }
 .ms-ring { position: relative; flex-shrink: 0; display: inline-flex; }
@@ -536,9 +537,16 @@
 .ms-meta { font-size: 11px; color: var(--muted); }
 .ms-bar { height: 6px; border-radius: var(--radius-full); background: var(--secondary); overflow: hidden; }
 .ms-bar > span { display: block; height: 100%; background: var(--accent-2); border-radius: var(--radius-full); }
-.ms-roadmap { width: 38%; flex-shrink: 0; display: none; flex-direction: column; gap: 8px; }
+.ms-roadmap { width: 38%; flex-shrink: 0; display: none; flex-direction: column; gap: 8px; max-height: 110px; overflow-y: auto; scrollbar-width: thin; }
 @container widget (min-width: 560px) { .ms-roadmap { display: flex; } }
-.ms-up .nm { display: flex; justify-content: space-between; font-size: 11px; color: var(--text); }
+/* narrow cards: roadmap as one compact wrapping chip row under the focus */
+@container widget (max-width: 559.9px) {
+  .ms-roadmap { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; width: auto; max-height: 52px; }
+  .ms-roadmap .ms-up { flex: 0 1 auto; min-width: 100px; }
+  .ms-top { flex-direction: column; gap: 8px; }
+}
+.ms-up .nm { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text); min-width: 0; }
+.ms-up .nm .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ms-up .v { font-family: "JetBrains Mono", monospace; color: var(--muted); }
 .ms-up .mini { display: block; height: 4px; margin-top: 3px; border-radius: var(--radius-full); background: var(--secondary); overflow: hidden; }
 .ms-up .mini > span { display: block; height: 100%; background: var(--border-strong); }
@@ -788,22 +796,31 @@
 .ms-check-row .rm:hover { color: var(--danger); }
 
 /* milestones v2.1: pinnable focus, completed chips, richer drilldown */
-.ms-roadmap { overflow-y: auto; scrollbar-width: thin; min-height: 0; }
 .ms-pin { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; opacity: .5; }
 .ms-up:hover .ms-pin { opacity: 1; }
 .ms-pin:hover { color: var(--accent-2); }
 .ms-pin.head { font-size: 12px; vertical-align: 1px; margin-left: 4px; opacity: .55; }
 .ms-pin.head.on { color: var(--accent-2); opacity: 1; }
 .ms-focus:hover .ms-pin.head { opacity: 1; }
-/* inline checklist under the focus ring — only when the card is tall
-   enough; small cards keep the click-to-drilldown flow */
-.ms-inline { display: none; flex: 1; min-height: 0; }
-.ms-inline .ms-check { max-height: none; }
-@container widget (min-height: 240px) {
-  .ms-inline { display: flex; flex-direction: column; }
+/* inline checklist under the focus ring — fills whatever space the card
+   has (a couple of rows even on small cards); h=1 keeps just the ring */
+.ms-inline { display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--border); padding-top: 6px; }
+.ms-inline .ms-check { flex: 1; min-height: 0; }
+@container widget (max-height: 120px) { .ms-inline { display: none; } }
+/* low cards: compact ring + drop secondary rows so 2-3 checks still fit */
+@container widget (max-height: 230px) {
+  .ms-wrap { gap: 6px; }
+  .ms-focus { gap: 5px; }
+  .ms-ring { width: 38px !important; height: 38px !important; }
+  .ms-ring .pct { font-size: 9px; }
+  .ms-name { font-size: 12px; }
+  .ms-meta { font-size: 10px; }
+  .ms-done-row { display: none; }
+  .ms-roadmap { display: none !important; }
+  .ms-inline { padding-top: 4px; }
+  .ms-wrap > .lk-addtoggle { display: none; }
 }
 .ms-done-row { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
-.ms-roadmap { flex-shrink: 1; }
 .ms-done-chip {
   border: 1px solid var(--border); border-radius: var(--radius-full);
   background: transparent; color: var(--muted); font-size: 10px;
