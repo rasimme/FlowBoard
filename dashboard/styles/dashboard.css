@@ -576,7 +576,9 @@
     }
 
     /* Kanban */
-    .kanban { display: grid; grid-template-columns: repeat(5, minmax(240px, 1fr)); gap: 12px; overflow-x: auto; }
+    /* columns gain from width up to a point — past 340px cards stretch into
+   unreadable slabs on ultrawides, so the tracks cap and the board centers */
+    .kanban { display: grid; grid-template-columns: repeat(5, minmax(240px, 340px)); gap: 12px; overflow-x: auto; justify-content: center; }
 
     .column {
       background: var(--bg-accent); border: 1px solid var(--border);
@@ -1328,6 +1330,10 @@
       gap: 0;
       height: 100%;
       min-height: 0;
+      /* reading surface: don't stretch across ultrawide monitors */
+      max-width: 1500px;
+      margin-inline: auto;
+      width: 100%;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);

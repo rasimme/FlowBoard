@@ -255,7 +255,7 @@ export default function OverviewView() {
     : knownWidgets.slice().sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
 
   return (
-    <div className="flex flex-col h-full min-h-0 px-1">
+    <div className="flex flex-col h-full min-h-0 px-1 max-w-[1500px] mx-auto w-full">
       <div className="ov-toolbar">
         <span className="ov-toolbar-note">
           {editing
