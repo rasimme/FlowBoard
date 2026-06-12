@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import { TokenAffordance, useProjectGithub } from './widgets2.jsx';
+import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
 /**
@@ -139,7 +140,7 @@ export function GhPullsWidget({ widget, editing }) {
           {pulls.length === 0 ? (
             <span className="gh-none">No open pull requests — clean slate.</span>
           ) : (
-            <div className="gh-rows">
+            <ScrollArea className="flex-1 min-h-0" innerClassName="gh-rows">
               {[...needReview, ...ready.filter(p => p.reviewers === 0), ...drafts].slice(0, 5).map(p => (
                 <GhLink key={p.number} className={'gh-row' + (p.draft ? ' dim' : '')} editing={editing}
                   href={`https://github.com/${repo}/pull/${p.number}`}>
@@ -149,7 +150,7 @@ export function GhPullsWidget({ widget, editing }) {
                   <span className="when">{ago(p.updatedAt)}</span>
                 </GhLink>
               ))}
-            </div>
+            </ScrollArea>
           )}
         </div>
       )}
@@ -306,7 +307,7 @@ export function GhIssuesWidget({ widget, editing }) {
               </div>
             ))}
           </div>
-          <div className="gh-rows">
+          <ScrollArea className="flex-1 min-h-0" innerClassName="gh-rows">
             {[...unanswered, ...issues.filter(i => i.comments > 0)].slice(0, 3).map(i => (
               <GhLink key={i.number} className="gh-row" editing={editing} href={`https://github.com/${repo}/issues/${i.number}`}>
                 <span className="num">#{i.number}</span>
@@ -317,7 +318,7 @@ export function GhIssuesWidget({ widget, editing }) {
                 <span className="when">{ago(i.createdAt)}</span>
               </GhLink>
             ))}
-          </div>
+          </ScrollArea>
         </div>
       )}
     </OvWidget>

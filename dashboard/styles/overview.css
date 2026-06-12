@@ -716,8 +716,8 @@
 
 /* gh-ci */
 .ghc-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
-.ghc-bars { display: flex; align-items: flex-end; gap: 3px; flex: 1; min-height: 30px; }
-.ghc-bar { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.ghc-bars { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: end; gap: 3px; flex: 1; min-height: 30px; }
+.ghc-bar { height: 100%; display: flex; align-items: flex-end; min-width: 0; }
 .ghc-bar i { display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--secondary); }
 .ghc-bar.ok i { background: color-mix(in srgb, var(--accent-2) 55%, var(--secondary)); }
 .ghc-bar.ok:hover i { background: var(--accent-2); }

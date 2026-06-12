@@ -206,7 +206,7 @@ function MsTaskPicker({ tasks, excludeIds, busy, confirmLabel, onConfirm, onCanc
   return (
     <div className="msp">
       <input className="lk-in" placeholder="Filter tasks…" value={q} onChange={e => setQ(e.target.value)} />
-      <div className="msp-list">
+      <ScrollArea className="flex-1 min-h-0" innerClassName="msp-list">
         {candidates.length === 0 && <span className="gh-none">No matching tasks.</span>}
         {candidates.map(t => (
           <label key={t.id} className="msp-row">
@@ -220,7 +220,7 @@ function MsTaskPicker({ tasks, excludeIds, busy, confirmLabel, onConfirm, onCanc
             <span className="msg">{t.title}</span>
           </label>
         ))}
-      </div>
+      </ScrollArea>
       <div className="msp-foot">
         <button type="button" className="lk-btn ghosty" onClick={onCancel}>Cancel</button>
         <button type="button" className="lk-btn" disabled={busy || sel.size === 0} onClick={() => onConfirm([...sel])}>
@@ -523,7 +523,7 @@ export function TimelineWidget({ widget, editing }) {
         <Empty icon={Flag} title="Nothing logged yet"
           hint="One dated spine across tasks, checkpoints and comments — it fills automatically as you and agents work." />
       ) : (
-        <div className="tl-spine">
+        <ScrollArea className="flex-1 min-h-0" innerClassName="tl-spine">
           {groups.map(grp => (
             <div key={grp.label} className="tl-group">
               <div className="tl-day">{grp.label}</div>
@@ -536,7 +536,7 @@ export function TimelineWidget({ widget, editing }) {
               ))}
             </div>
           ))}
-        </div>
+        </ScrollArea>
       )}
     </OvWidget>
   );
@@ -570,7 +570,7 @@ export function ContextIndexWidget({ widget, editing }) {
         <Empty icon={Pin} title="No context files yet"
           hint={<>Files in <span className="w-mono">context/</span> are what agents read first — drop knowledge here.</>} />
       ) : (
-        <div className="ci-list">
+        <ScrollArea className="flex-1 min-h-0" innerClassName="ci-list">
           {sorted.slice(0, widget?.props?.limit || 100).map(f => (
             <div key={f} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
               onClick={editing ? undefined : () => window._openSpec?.(`context/${f}`)}>
@@ -578,7 +578,7 @@ export function ContextIndexWidget({ widget, editing }) {
               <span className="nm">{pins.includes(f) && <span className="pin">★ </span>}{f}</span>
             </div>
           ))}
-        </div>
+        </ScrollArea>
       )}
     </OvWidget>
   );
@@ -785,7 +785,7 @@ export function LinksWidget({ widget, editing }) {
         <Empty icon={ExternalLink} title="No links yet"
           hint="Pin deploys, docs or dashboards — via the button below or by asking your agent." />
       ) : (
-        <div className="lk-list">
+        <ScrollArea className="flex-1 min-h-0" innerClassName="lk-list">
           {links.slice(0, widget?.props?.limit || 6).map(l => (
             <a key={l.url} className="lk-row" href={editing ? undefined : absoluteUrl(l.url)} target="_blank" rel="noreferrer"
               onClick={e => { if (editing) e.preventDefault(); }}>
@@ -794,7 +794,7 @@ export function LinksWidget({ widget, editing }) {
               <ExternalLink size={11} className="text-muted shrink-0" />
             </a>
           ))}
-        </div>
+        </ScrollArea>
       )}
       {!editing && (adding ? (
         <div className="lk-add">

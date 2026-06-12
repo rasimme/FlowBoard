@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Clock, Plus, Lightbulb, FileText, FilePlus } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
+import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
 /**
@@ -94,7 +95,7 @@ export function ActiveAgentsWidget({ widget, editing, onRemove }) {
 
   return (
     <OvWidget title={widget?.title || 'Active Agents'} meta={`${claims.length} claiming`}>
-      <div className="ov-agents">
+      <ScrollArea className="flex-1 min-h-0" innerClassName="ov-agents">
         {rows.length === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">No agents on this project</span>
@@ -137,7 +138,7 @@ export function ActiveAgentsWidget({ widget, editing, onRemove }) {
             </div>
           );
         })}
-      </div>
+      </ScrollArea>
     </OvWidget>
   );
 }
@@ -269,7 +270,7 @@ export function NextUpWidget({ widget, editing, onRemove }) {
 
   return (
     <OvWidget title={widget?.title || 'Next Up'} meta={`top ${limit} by priority`}>
-      <div className="ov-tasks">
+      <ScrollArea className="flex-1 min-h-0" innerClassName="ov-tasks">
         {next.length === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">Nothing queued</span>
@@ -283,7 +284,7 @@ export function NextUpWidget({ widget, editing, onRemove }) {
             <span className={'ov-pill ' + (t.priority || 'medium')}>{t.priority || 'medium'}</span>
           </div>
         ))}
-      </div>
+      </ScrollArea>
     </OvWidget>
   );
 }
@@ -335,7 +336,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
         </div>
       ) : (
         <>
-          <div className="ov-decs">
+          <ScrollArea className="flex-1 min-h-0" innerClassName="ov-decs">
             {decisions.map((d, i) => (
               <div key={i} className="ov-dec">
                 <span className="ov-dec-date">{d.date}</span>
@@ -345,7 +346,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
                 </span>
               </div>
             ))}
-          </div>
+          </ScrollArea>
           <div className="ov-wfoot" onClick={() => window._openSpec?.('DECISIONS.md')}>DECISIONS.md →</div>
         </>
       )}
@@ -431,7 +432,7 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
               <span className="ov-kcol-title">{c.label}</span>
               <span className="ov-kcol-count">{c.n}</span>
             </div>
-            <div className="ov-kbars">
+            <ScrollArea className="flex-1 min-h-0" innerClassName="ov-kbars">
               {c.bars.map(t => (
                 <span key={t.id} className="ov-kbar" title={`${t.id} ${t.title}`}
                   onClick={e => { e.stopPropagation(); goTab('tasks'); window._scrollToTaskId = t.id; }}>
@@ -441,7 +442,7 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
                 </span>
               ))}
               {c.more > 0 && <span className="ov-kmore">+{c.more} more</span>}
-            </div>
+            </ScrollArea>
           </div>
         ))}
       </div>
@@ -472,7 +473,7 @@ export function CurrentFocusWidget({ widget, editing }) {
 
   return (
     <OvWidget title={widget?.title || 'Current Focus'} meta={claims.length ? `${claims.length} in flight` : null}>
-      <div className="ov-agents">
+      <ScrollArea className="flex-1 min-h-0" innerClassName="ov-agents">
         {claims.length === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">Nothing claimed right now</span>
@@ -499,7 +500,7 @@ export function CurrentFocusWidget({ widget, editing }) {
             </div>
           );
         })}
-      </div>
+      </ScrollArea>
     </OvWidget>
   );
 }
@@ -510,7 +511,7 @@ export function BlockedWidget({ widget, editing }) {
   const tasks = useProjectTasks().filter(t => t.blocked && t.status !== 'archived' && t.status !== 'done');
   return (
     <OvWidget title={widget?.title || 'Blocked'} meta={tasks.length ? `${tasks.length} waiting` : null}>
-      <div className="ov-tasks">
+      <ScrollArea className="flex-1 min-h-0" innerClassName="ov-tasks">
         {tasks.length === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">Nothing blocked</span>
@@ -524,7 +525,7 @@ export function BlockedWidget({ widget, editing }) {
             <span className="ov-pill high">blocked</span>
           </div>
         ))}
-      </div>
+      </ScrollArea>
     </OvWidget>
   );
 }
@@ -537,7 +538,7 @@ export function ApprovalsWidget({ widget, editing }) {
     .sort((a, b) => String(a.created || '').localeCompare(String(b.created || '')));
   return (
     <OvWidget title={widget?.title || 'Approvals'} meta={tasks.length ? `${tasks.length} in review` : null}>
-      <div className="ov-tasks">
+      <ScrollArea className="flex-1 min-h-0" innerClassName="ov-tasks">
         {tasks.length === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">Nothing to approve</span>
@@ -551,7 +552,7 @@ export function ApprovalsWidget({ widget, editing }) {
             {t.agent && <AgentChip name={t.agent} size="xs" />}
           </div>
         ))}
-      </div>
+      </ScrollArea>
     </OvWidget>
   );
 }
@@ -591,7 +592,7 @@ function ActivityRows({ items, editing, goTab, emptyTitle, emptyHint }) {
     );
   }
   return (
-    <div className="ov-decs">
+    <ScrollArea className="flex-1 min-h-0" innerClassName="ov-decs">
       {items.map((a, i) => (
         <div
           key={i}
@@ -606,7 +607,7 @@ function ActivityRows({ items, editing, goTab, emptyTitle, emptyHint }) {
           </span>
         </div>
       ))}
-    </div>
+    </ScrollArea>
   );
 }
 
