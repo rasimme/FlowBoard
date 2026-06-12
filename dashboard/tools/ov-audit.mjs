@@ -27,7 +27,7 @@ for (const t of types) {
       ...(t.startsWith('gh-') || t === 'repo-status' ? { repo: 'rasimme/FlowBoard' } : {}),
       ...(t === 'gh-ci' ? { branch: 'dev' } : {}),
       ...(t === 'file-viewer' ? { path: 'PROJECT.md' } : {}),
-      ...(t === 'links' ? { links: [{ label: 'Repo', url: 'https://github.com/rasimme/FlowBoard' }, { label: 'Board', url: 'https://board.simme-ns5.com' }] } : {}),
+      ...(t === 'links' ? { links: [{ label: 'Repo', url: 'https://github.com/example/repo' }, { label: 'Docs', url: 'https://example.com/docs' }] } : {}),
     },
     grid: { x, y, w, h },
   });
