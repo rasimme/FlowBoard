@@ -1389,6 +1389,10 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     return res.status(400).json({ error: 'staleAfterMinutes must be a positive integer or null' });
   }
 
+  if (req.body.tags !== undefined && (!Array.isArray(req.body.tags) || req.body.tags.some(t => typeof t !== 'string'))) {
+    return res.status(400).json({ error: 'tags must be an array of strings' });
+  }
+
   try {
     const task = hzlService.createTask(req.params.name, {
       title,
@@ -1396,6 +1400,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       parentId: parentId || null,
       status: req.body.status || 'backlog',
       staleAfterMinutes,
+      ...(req.body.tags !== undefined ? { tags: req.body.tags } : {}),
     });
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
     try {
@@ -1452,12 +1457,16 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     updates.completed = null;
   }
 
-  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes'];
+  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags'];
   const hzlUpdates = {};
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       hzlUpdates[key] = updates[key];
     }
+  }
+
+  if (hzlUpdates.tags !== undefined && (!Array.isArray(hzlUpdates.tags) || hzlUpdates.tags.some(t => typeof t !== 'string'))) {
+    return res.status(400).json({ error: 'tags must be an array of strings' });
   }
   // blocked + trashedAt are handled separately below (not in ALLOWED to keep whitelist clean)
 

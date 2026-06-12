@@ -192,6 +192,9 @@ export default function DetailPanel() {
   // T-161-4 Zone 3: description inline-edit
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescription, setEditDescription] = useState('');
+  // T-311: tag editor
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [newTag, setNewTag] = useState('');
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
@@ -860,6 +863,39 @@ export default function DetailPanel() {
     setEditDescription('');
   }
 
+  // T-311: tag editor — same optimistic PUT pattern as the description.
+  // milestone:<name> tags drive the overview milestones widget.
+  async function saveTags(nextTags) {
+    const t = taskRef.current;
+    if (!t) return;
+    const oldTags = t.tags || [];
+    syncPanelTask({ ...t, tags: nextTags });
+    try {
+      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
+        method: 'PUT',
+        body: { tags: nextTags },
+      });
+      if (res?.error) throw new Error(res.error);
+      mergeTaskResponse(res, taskRef.current);
+    } catch (err) {
+      syncPanelTask({ ...t, tags: oldTags });
+      showToast('Saving tags failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+  function addTag() {
+    const tag = newTag.trim();
+    setNewTag('');
+    setIsAddingTag(false);
+    if (!tag) return;
+    const current = taskRef.current?.tags || [];
+    if (current.includes(tag)) return;
+    saveTags([...current, tag]);
+  }
+  function removeTag(tag) {
+    const current = taskRef.current?.tags || [];
+    saveTags(current.filter(x => x !== tag));
+  }
+
   // Navigate the panel to another task (used by Back-to-Parent and
   // the Subtasks list). Reuses the existing window.openTaskDetail bridge
   // so the panel transitions cleanly.
@@ -1275,6 +1311,58 @@ export default function DetailPanel() {
                     : <span className="text-muted italic">Add description</span>}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* T-311 Tags — chips with inline add/remove; milestone:<name>
+              feeds the overview milestones widget */}
+          {task && (
+            <div className="px-4 py-4 border-b border-border">
+              <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Tags</div>
+              <div className="flex flex-wrap gap-1.5 items-center">
+                {(task.tags || []).map(tag => (
+                  <span
+                    key={tag}
+                    className={`inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full border text-[11px] font-mono ${
+                      tag.startsWith('milestone:')
+                        ? 'border-accent-2 text-accent-2'
+                        : 'border-border text-text bg-bg-accent'
+                    }`}
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      aria-label={`Remove tag ${tag}`}
+                      className="inline-flex items-center justify-center w-4 h-4 rounded-full border-0 bg-transparent text-muted cursor-pointer hover:text-danger"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+                {isAddingTag ? (
+                  <input
+                    autoFocus
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); addTag(); }
+                      if (e.key === 'Escape') { setIsAddingTag(false); setNewTag(''); }
+                    }}
+                    onBlur={addTag}
+                    placeholder="tag or milestone:v5"
+                    className="px-2 py-0.5 text-[11px] font-mono bg-bg border border-border rounded-full outline-none focus:border-accent w-40"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingTag(true)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-dashed border-border bg-transparent text-[11px] text-muted cursor-pointer hover:text-text hover:border-border-strong"
+                  >
+                    + Add tag
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

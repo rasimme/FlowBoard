@@ -91,7 +91,7 @@ export default function Modal({
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60"
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60"
     >
       <div
         ref={panelRef}

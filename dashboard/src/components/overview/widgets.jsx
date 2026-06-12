@@ -381,7 +381,7 @@ export function QuickLinksWidget({ widget, editing, onRemove }) {
   return (
     <OvWidget title={widget?.title || 'Quick Actions'}>
       <div className="ov-links">
-        <button type="button" className="ov-link" title="Create a task in the Kanban backlog"
+        <button type="button" className="ov-link main" title="Create a task in the Kanban backlog"
           onClick={() => { window._pendingNewTask = true; goTab('tasks'); }}>
           <Plus size={15} /><span>New Task</span><span className="sub">Kanban</span>
         </button>

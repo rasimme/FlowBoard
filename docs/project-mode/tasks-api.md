@@ -87,6 +87,7 @@ PUT /projects/:name/tasks/:id
 | `completed` | string | ISO date, auto-set on `done` |
 | `specFile` | string | Link a spec file to the task |
 | `blocked` | boolean | Set/clear blocked flag |
+| `tags` | string[] | Replaces the full tag list (max 100). `milestone:<name>` tags feed the overview milestones widget. |
 
 Note: `parentId` cannot be changed via PUT after creation.
 

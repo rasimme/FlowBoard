@@ -606,13 +606,17 @@
     .column-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0; opacity: 0.5; }
 
     /* Task Cards */
-    /* flash target card after navigating in from search/overview/spec-back */
-    .task-card.highlighted-from-back {
+    /* flash target card after navigating in from search/overview/spec-back.
+       Uses outline (offset outside the card) so it stacks cleanly above the
+       claim pulse, which animates border-color on the same edge. */
+    .task-card.highlighted-from-back,
+    .subtask-card.highlighted-from-back {
       animation: cardFlash 2s ease-out;
+      outline-offset: 3px;
     }
     @keyframes cardFlash {
-      0%, 45% { box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(255,92,92,.18); }
-      100% { box-shadow: 0 0 0 1px transparent, 0 0 14px transparent; }
+      0%, 45% { outline: 2px solid var(--accent); }
+      100% { outline: 2px solid transparent; }
     }
     .task-card {
       background: var(--card); border: 1px solid var(--border);

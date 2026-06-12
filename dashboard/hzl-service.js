@@ -119,6 +119,9 @@ function _toFbTask(hzlTask, project) {
     lastCheckpointAt: fb.lastCheckpointAt || null,
     staleAfterMinutes: fb.staleAfterMinutes ?? null,
     checkpointCount: fb.checkpointCount || 0,
+    // Filterable tags (HZL native column) — milestone:<name> drives the
+    // overview milestones widget
+    tags: hzlTask.tags || [],
     // Agent routing (explicit pre-assignment, separate from claim ownership)
     routedAgent: fb.routedAgent || null,
     // T-161-4: soft-delete pointer into Trash. Null = live task; ISO string =
@@ -127,6 +130,15 @@ function _toFbTask(hzlTask, project) {
     _ulid: hzlTask.task_id,
     _project: project,
   };
+}
+
+function _cleanTags(tags) {
+  if (!Array.isArray(tags) || tags.some(t => typeof t !== 'string')) {
+    throw new Error('tags must be an array of strings');
+  }
+  const out = [...new Set(tags.map(t => t.trim()).filter(Boolean))];
+  if (out.length > 100) throw new Error('too many tags (max 100)');
+  return out;
 }
 
 // HZL uses int priority (0=low,1=medium,2=high,3=critical) — map to string
@@ -718,6 +730,7 @@ function workflowDelegate(project, opts = {}) {
  */
 function createTask(project, opts) {
   const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null, staleAfterMinutes = null } = opts;
+  const tags = opts.tags !== undefined ? _cleanTags(opts.tags) : [];
   if (staleAfterMinutes !== null && (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes <= 0)) {
     throw new Error('staleAfterMinutes must be a positive integer or null');
   }
@@ -768,7 +781,7 @@ function createTask(project, opts) {
     priority: _priorityToInt(priority),
     ...(parentId && _fbToUlid.get(`${project}:${parentId}`) ? { parent_id: _fbToUlid.get(`${project}:${parentId}`) } : {}),
     initial_status: hzlStatus,
-    tags: [],
+    tags,
   });
 
   // If HZL created with a different status, force it — throw on failure to avoid inconsistent state
@@ -783,6 +796,7 @@ function createTask(project, opts) {
     status,
     blocked: false,
     priority,
+    tags,
     parentId,
     subtaskIds: [],
     specFile: null,
@@ -829,6 +843,7 @@ function updateTask(project, flowboardId, updates) {
 
   if (updates.title !== undefined) hzlUpdates.title = updates.title;
   if (updates.priority !== undefined) hzlUpdates.priority = _priorityToInt(updates.priority);
+  if (updates.tags !== undefined) hzlUpdates.tags = _cleanTags(updates.tags);
 
   if (updates.status !== undefined) {
     if (!VALID_STATUSES.has(updates.status)) throw new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
@@ -970,10 +985,11 @@ function updateTask(project, flowboardId, updates) {
   // in `updates`). After this loop, `cached` holds the dashboard's view of
   // truth — including any null-clears applied by the auto-release block
   // above (when transitioning to review/done).
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       if (key === 'blocked') cached[key] = updates[key] === true;
+      else if (key === 'tags') cached[key] = _cleanTags(updates[key]);
       else if (key === 'trashedAt') cached[key] = updates[key] || null;
       else cached[key] = updates[key];
     }
