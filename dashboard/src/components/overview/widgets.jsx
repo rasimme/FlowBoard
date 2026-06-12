@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, Plus, Kanban, Lightbulb, Folder, FileText, FilePlus, StickyNote } from 'lucide-react';
+import { Clock, Plus, Lightbulb, FileText, FilePlus } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
@@ -305,7 +305,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'DECISIONS.md');
-  const count = widget?.props?.count || 3;
+  const count = widget?.props?.count || 12;
   // entry order in the file varies (some projects prepend, some append) —
   // sort by the date in the heading, newest first; undated keep file order
   const decisions = parseDecisions(md)
@@ -378,16 +378,21 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
 /* ---------- quick-links ---------- */
 export function QuickLinksWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
-  const tiles = Boolean(widget?.props?.tiles);
   return (
-    <OvWidget title={widget?.title || 'Quick Links'}>
-      <div className={'ov-links six' + (tiles ? ' tiles' : '')}>
-        <button type="button" className="ov-link" title="Ideas Canvas" onClick={() => goTab('ideas')}><Lightbulb size={15} /><span>Ideas Canvas</span></button>
-        <button type="button" className="ov-link" title="Kanban" onClick={() => goTab('tasks')}><Kanban size={15} /><span>Kanban</span></button>
-        <button type="button" className="ov-link" title="Files" onClick={() => goTab('files')}><Folder size={15} /><span>Files</span></button>
-        <button type="button" className="ov-link primary" title="New Task" onClick={() => { window._pendingNewTask = true; goTab('tasks'); }}><Plus size={15} /><span>New Task</span></button>
-        <button type="button" className="ov-link" title="New Note" onClick={() => { window._pendingNewNote = true; goTab('ideas'); }}><StickyNote size={15} /><span>New Note</span></button>
-        <button type="button" className="ov-link" title="New File" onClick={() => { window._pendingNewFile = true; goTab('files'); }}><FilePlus size={15} /><span>New File</span></button>
+    <OvWidget title={widget?.title || 'Quick Actions'}>
+      <div className="ov-links">
+        <button type="button" className="ov-link" title="Create a task in the Kanban backlog"
+          onClick={() => { window._pendingNewTask = true; goTab('tasks'); }}>
+          <Plus size={15} /><span>New Task</span><span className="sub">Kanban</span>
+        </button>
+        <button type="button" className="ov-link" title="Create an idea note on the Ideas canvas"
+          onClick={() => { window._pendingNewNote = true; goTab('ideas'); }}>
+          <Lightbulb size={15} /><span>New Idea</span><span className="sub">Ideas canvas</span>
+        </button>
+        <button type="button" className="ov-link" title="Create a markdown file in context/"
+          onClick={() => { window._pendingNewFile = true; goTab('files'); }}>
+          <FilePlus size={15} /><span>New File</span><span className="sub">context/</span>
+        </button>
       </div>
     </OvWidget>
   );

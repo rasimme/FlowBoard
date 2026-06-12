@@ -192,7 +192,7 @@
 .ov-pill.low { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
 
 /* ---------- recent-decisions / markdown widgets ---------- */
-.ov-decs { display: flex; flex-direction: column; gap: 9px; min-height: 0; overflow: hidden; }
+.ov-decs { display: flex; flex-direction: column; gap: 9px; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
 .ov-dec { display: flex; gap: 10px; min-width: 0; }
 .ov-dec-date {
   font-family: "JetBrains Mono", monospace; font-size: 10px;
@@ -239,8 +239,7 @@
 .ov-link:hover { background: var(--bg-hover); border-color: var(--border-strong); }
 .ov-link svg { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
 .ov-link span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.ov-link.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ov-link.primary svg { color: #fff; }
+.ov-link .sub { font-size: 9px; color: var(--muted); margin-top: -2px; }
 .ov-links.tiles { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 
 /* ---------- kanban-mini ---------- */
@@ -344,7 +343,7 @@
   .ov-links { gap: 6px; }
   .ov-link { min-height: 34px; }
 }
-/* low cards (h=1): one single row of four — overrides the 2x2 grid forms */
+/* low cards (h=1): one single row — overrides the 2x2 grid forms */
 @container widget (max-height: 120px) {
   .ov-links, .ov-links.tiles, .ov-links:not(.tiles) {
     display: flex; flex-direction: row; gap: 6px;
@@ -352,10 +351,10 @@
   .ov-link { flex-direction: row; gap: 6px; padding: 4px 6px; min-height: 0; }
   .ov-link svg { width: 13px; height: 13px; }
   .ov-link span { font-size: 10.5px; }
+  .ov-link .sub { display: none; }
 }
-/* six actions: labels need more width before they fit in one row */
-@container widget (max-height: 120px) and (max-width: 640px) {
-  .ov-links.six span { display: none; }
+@container widget (max-width: 340px) {
+  .ov-link .sub { display: none; }
 }
 /* low AND narrow: icons only — clipped labels are worse than none */
 @container widget (max-height: 120px) and (max-width: 460px) {
@@ -565,6 +564,12 @@
 .qd-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-full); font-size: 10.5px; color: var(--text); }
 
 /* notes */
+.nt-view { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: var(--radius-md); padding: 2px 4px; }
+.nt-view:hover { background: var(--bg-accent); }
+.nt-view .md-content { font-size: 12px; line-height: 1.55; }
+.nt-view .md-content h1, .nt-view .md-content h2, .nt-view .md-content h3 { font-size: 12.5px; margin: 8px 0 4px; }
+.nt-view .md-content p, .nt-view .md-content ul, .nt-view .md-content ol { margin: 4px 0; }
+.nt-placeholder { font-size: 12px; color: var(--muted); }
 .nt-md-wrap { flex: 1; min-height: 0; display: flex; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
 .nt-md-wrap .markdown-editor { background: transparent; }
 .nt-md-wrap .markdown-editor-toolbar { padding: 3px 6px; gap: 2px; background: var(--bg-accent); }
@@ -629,6 +634,8 @@
 .sd-headline { font-size: 12.5px; font-weight: 600; color: var(--text-strong); }
 .sd-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sd-sub .tid { font-family: "JetBrains Mono", monospace; color: var(--text); }
+.sd-strip-block { display: block; }
+@container widget (max-height: 120px) { .sd-strip-block { display: none; } }
 .sd-strip { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
 .sd-strip i { flex: 1; border-radius: 2px 2px 0 0; background: var(--secondary); display: block; }
 .sd-strip i.a1 { background: var(--border-strong); }

@@ -611,8 +611,8 @@
       animation: cardFlash 2s ease-out;
     }
     @keyframes cardFlash {
-      0%, 55% { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
-      100% { box-shadow: 0 0 0 2px transparent; }
+      0%, 45% { box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(255,92,92,.18); }
+      100% { box-shadow: 0 0 0 1px transparent, 0 0 14px transparent; }
     }
     .task-card {
       background: var(--card); border: 1px solid var(--border);
@@ -1256,7 +1256,7 @@
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
       display: flex; align-items: center; justify-content: center;
-      z-index: 1000; backdrop-filter: blur(4px);
+      z-index: 2000; backdrop-filter: blur(4px); /* above DetailPanel (z-1600) */
       animation: fadeIn 0.15s ease-out;
     }
     .modal {

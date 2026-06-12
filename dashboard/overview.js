@@ -53,8 +53,8 @@ const WIDGET_TYPES = {
     props: {},
   },
   'quick-links': {
-    label: 'Quick Links',
-    description: 'Jump to Ideas Canvas, Kanban, Files and create a task.',
+    label: 'Quick Actions',
+    description: 'Create a task, an idea note or a context file in one click.',
     defaultSize: { w: 4, h: 1 },
     minSize: { w: 3, h: 1 },
     props: { tiles: 'boolean (optional) — 2x2 tile form for h>=2' },

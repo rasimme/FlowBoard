@@ -4,6 +4,7 @@ import { OvWidget } from './widgets.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
+const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
 
 /**
  * Overview widget catalog v2 (T-308) — milestones, timeline, context-index,
@@ -187,7 +188,7 @@ export function ContextIndexWidget({ widget, editing }) {
           hint={<>Files in <span className="w-mono">context/</span> are what agents read first — drop knowledge here.</>} />
       ) : (
         <div className="ci-list">
-          {sorted.slice(0, widget?.props?.limit || 8).map(f => (
+          {sorted.slice(0, widget?.props?.limit || 100).map(f => (
             <div key={f} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
               onClick={editing ? undefined : () => window._openSpec?.(`context/${f}`)}>
               <FileText size={13} className="text-muted shrink-0" />
@@ -306,29 +307,61 @@ export function NotesWidget({ editing }) {
     }
   }
 
+  // the editor only shows while actually writing — clicking out
+  // autosaves and returns to the rendered note
+  const [open, setOpen] = useState(false);
+
+  function finishEdit() {
+    if (dirty) save();
+    setOpen(false);
+  }
+
   return (
     <OvWidget title="Notes" meta="context/NOTES.md">
-      <div className="nt-md-wrap">
-        <Suspense fallback={<div className="nt-loading">Loading editor…</div>}>
-          <MarkdownEditor
-            className="nt-md"
-            value={text ?? ''}
-            onChange={v => { setText(v); setDirty(true); }}
-            onSave={save}
-          />
-        </Suspense>
-      </div>
+      {open ? (
+        <div
+          className="nt-md-wrap"
+          onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) finishEdit(); }}
+        >
+          <Suspense fallback={<div className="nt-loading">Loading editor…</div>}>
+            <MarkdownEditor
+              className="nt-md"
+              value={text ?? ''}
+              onChange={v => { setText(v); setDirty(true); }}
+              onSave={finishEdit}
+            />
+          </Suspense>
+        </div>
+      ) : (
+        <div className="nt-view" onClick={editing ? undefined : () => setOpen(true)}
+          style={{ cursor: editing ? undefined : 'text' }} title="Click to edit">
+          {text ? (
+            <Suspense fallback={<div className="nt-loading">…</div>}>
+              <MarkdownPreview content={text} />
+            </Suspense>
+          ) : (
+            <span className="nt-placeholder">Click to jot anything — agents can read and append to NOTES.md too.</span>
+          )}
+        </div>
+      )}
       <div className="nt-foot">
-        <span className="nt-state">{dirty ? 'unsaved' : 'saved'}</span>
-        <button type="button" className="nt-save" onClick={save} disabled={!dirty || saving || editing}>
-          <Save size={11} /> {saving ? 'Saving…' : 'Save'}
-        </button>
+        <span className="nt-state">{saving ? 'saving…' : dirty ? 'unsaved' : 'saved'}</span>
+        {open && (
+          <button type="button" className="nt-save" onMouseDown={e => e.preventDefault()} onClick={finishEdit} disabled={saving}>
+            <Save size={11} /> Done
+          </button>
+        )}
       </div>
     </OvWidget>
   );
 }
 
 /* ---------- links: pinned externals from props ---------- */
+// a bare "example.com" would resolve relative to the dashboard origin
+function absoluteUrl(url) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(url || '') ? url : `https://${url}`;
+}
+
 export function LinksWidget({ widget, editing }) {
   const { state } = useAppState();
   const project = state?.viewedProject;
@@ -342,7 +375,7 @@ export function LinksWidget({ widget, editing }) {
   const [saving, setSaving] = useState(false);
 
   async function addLink() {
-    const cleanUrl = url.trim();
+    const cleanUrl = url.trim() ? absoluteUrl(url.trim()) : '';
     if (!project || !widget?.id || !cleanUrl || saving) return;
     setSaving(true);
     try {
@@ -384,7 +417,7 @@ export function LinksWidget({ widget, editing }) {
       ) : (
         <div className="lk-list">
           {links.slice(0, widget?.props?.limit || 6).map(l => (
-            <a key={l.url} className="lk-row" href={editing ? undefined : l.url} target="_blank" rel="noreferrer"
+            <a key={l.url} className="lk-row" href={editing ? undefined : absoluteUrl(l.url)} target="_blank" rel="noreferrer"
               onClick={e => { if (editing) e.preventDefault(); }}>
               <span className="lk-fav">{(l.label || l.url).slice(0, 1).toUpperCase()}</span>
               <span className="nm">{l.label || l.url}</span>
@@ -449,7 +482,7 @@ export function StallDetectionWidget({ widget }) {
             <span className="sd-sub">{cfg.sub}</span>
           </span>
         </div>
-        <div className="only-wide" style={{ display: 'block' }}>
+        <div className="sd-strip-block">
           <div className="sd-strip">
             {strip.map((v, i) => <i key={i} className={v ? 'a' + v : ''} style={{ height: (20 + v * 26) + '%' }}></i>)}
           </div>
