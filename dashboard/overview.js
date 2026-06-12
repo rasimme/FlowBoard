@@ -211,7 +211,6 @@ const PRESETS = {
       { id: 'w-notes', type: 'notes', grid: { x: 5, y: 5, w: 4, h: 2 } },
       { id: 'w-links', type: 'links', grid: { x: 9, y: 5, w: 3, h: 2 } },
       { id: 'w-stats', type: 'task-stats', grid: { x: 0, y: 7, w: 12, h: 2 } },
-      { id: 'w-board', type: 'kanban-mini', grid: { x: 0, y: 9, w: 12, h: 2 } },
     ],
   },
   coding: {

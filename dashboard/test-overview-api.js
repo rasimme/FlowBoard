@@ -82,7 +82,7 @@ async function run() {
     // default when no file exists
     r = await api('GET', '/projects/ov/overview');
     ok(r.status === 200 && r.body?.overview?.source === 'default', 'missing file serves the default');
-    ok(r.body?.overview?.preset === 'default' && r.body.overview.widgets.length === 11, 'default is the standard preset (T-327)');
+    ok(r.body?.overview?.preset === 'default' && r.body.overview.widgets.length === 10, 'default is the standard preset (T-327)');
 
     // materialize a preset
     r = await api('PUT', '/projects/ov/overview', { preset: 'knowledge' });

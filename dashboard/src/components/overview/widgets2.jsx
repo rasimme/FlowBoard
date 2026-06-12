@@ -964,7 +964,11 @@ export function RepoStatusWidget({ widget, editing }) {
 export function FileViewerWidget({ widget, editing }) {
   const { state } = useAppState();
   const project = state?.viewedProject;
-  const path = widget?.props?.path || '';
+  // local path state: the pick must render immediately — the stored
+  // overview only refreshes on reload, and in an unsaved edit draft the
+  // persist has nothing to write to yet
+  const [path, setPath] = useState(widget?.props?.path || '');
+  useEffect(() => { setPath(widget?.props?.path || ''); }, [widget]);
   const [files, setFiles] = useState([]);
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
@@ -1002,8 +1006,13 @@ export function FileViewerWidget({ widget, editing }) {
   }, [project, path]);
 
   function pickFile(next) {
-    if (!project || !widget?.id || !next) return;
-    persistWidgetProps(project, widget.id, props => ({ ...props, path: next })).catch(() => {});
+    if (!next) return;
+    setPath(next);
+    if (project && widget?.id) {
+      persistWidgetProps(project, widget.id, props => ({ ...props, path: next }))
+        .then(ok => { if (!ok) window.showToast?.('Shown for now — save the layout to keep this file', 'info'); })
+        .catch(() => {});
+    }
   }
 
   const name = path.split('/').pop();
