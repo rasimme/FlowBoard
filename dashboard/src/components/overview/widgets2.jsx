@@ -100,7 +100,7 @@ export function MilestonesWidget({ widget }) {
     <OvWidget title={widget?.title || 'Milestones'} meta={list.length ? `${list.length} tracked` : null}>
       {list.length === 0 ? (
         <Empty icon={Flag} title="No milestones yet"
-          hint={<>Tag tasks with <span className="w-mono">milestone:&lt;name&gt;</span> — progress toward each milestone shows up here.</>} />
+          hint={<>Add a <span className="w-mono">milestone:&lt;name&gt;</span> tag to tasks — via the Tags section in any task panel, or ask your agent. Progress per milestone shows up here.</>} />
       ) : (
         <div className="ms-wrap">
           {list.slice(0, 1).map(([name, g]) => {
@@ -468,14 +468,25 @@ export function StallDetectionWidget({ widget }) {
       ? { Icon: Coffee, cls: 'slow', head: `Quiet for ${idleDays} day${idleDays > 1 ? 's' : ''}`, sub: 'Nothing urgent — just a nudge.' }
       : { Icon: Moon, cls: 'dormant', head: `Resting — ${idleDays > 30 ? '30+' : idleDays} days`, sub: 'Pick it back up whenever you are ready.' };
 
-  const strip = Array.from({ length: 14 }, (_, i) => {
+  const perDay = Array.from({ length: 14 }, (_, i) => {
     const dayStart = new Date(now - (13 - i) * day).setHours(0, 0, 0, 0);
-    const n = items.filter(it => {
+    return items.filter(it => {
       const t = new Date(it.timestamp).getTime();
       return t >= dayStart && t < dayStart + day;
     }).length;
-    return Math.min(3, n > 6 ? 3 : n > 2 ? 2 : n > 0 ? 1 : 0);
   });
+  const strip = perDay.map(n => Math.min(3, n > 6 ? 3 : n > 2 ? 2 : n > 0 ? 1 : 0));
+  // the feed is capped at 200 events — on busy projects that window can be
+  // shorter than 14 days, so scope the stats to the days actually covered
+  const capped = items.length >= 200;
+  const oldest = items.length ? new Date(items[items.length - 1].timestamp).getTime() : now;
+  const daysCovered = capped ? Math.max(1, Math.min(14, Math.ceil((now - oldest) / day))) : 14;
+  const total14 = perDay.reduce((a, b) => a + b, 0);
+  const activeDays = perDay.filter(n => n > 0).length;
+  const busiestIdx = perDay.indexOf(Math.max(...perDay));
+  const busiestLabel = perDay[busiestIdx] > 0
+    ? new Date(now - (13 - busiestIdx) * day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' })
+    : null;
 
   return (
     <OvWidget title={widget?.title || 'Momentum'} meta="stall check">
@@ -492,6 +503,11 @@ export function StallDetectionWidget({ widget }) {
             {strip.map((v, i) => <i key={i} className={v ? 'a' + v : ''} style={{ height: (20 + v * 26) + '%' }}></i>)}
           </div>
           <div className="sd-strip-lbl">Activity · last 14 days</div>
+        </div>
+        <div className="sd-stats">
+          <span><b>{total14}{capped ? '+' : ''}</b> events · {daysCovered}d</span>
+          <span><b>{activeDays}</b>/{daysCovered} active days</span>
+          {busiestLabel && <span>busiest <b>{busiestLabel}</b></span>}
         </div>
       </div>
     </OvWidget>
@@ -513,7 +529,8 @@ export function RepoStatusWidget({ widget, editing }) {
   const { state } = useAppState();
   const project = state?.viewedProject;
   const [repo, setRepo] = useState(widget?.props?.repo || '');
-  useEffect(() => { setRepo(widget?.props?.repo || ''); }, [widget]);
+  const [branch, setBranch] = useState(widget?.props?.branch || '');
+  useEffect(() => { setRepo(widget?.props?.repo || ''); setBranch(widget?.props?.branch || ''); }, [widget]);
   const [draft, setDraftRepo] = useState('');
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState(null);
@@ -523,7 +540,8 @@ export function RepoStatusWidget({ widget, editing }) {
     if (!repo) return;
     let alive = true;
     setData(null); setError(null);
-    fetch(`/api/github/repo-status?repo=${encodeURIComponent(repo)}`, { credentials: 'include' })
+    const q = branch ? `&branch=${encodeURIComponent(branch)}` : '';
+    fetch(`/api/github/repo-status?repo=${encodeURIComponent(repo)}${q}`, { credentials: 'include' })
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!alive) return;
@@ -532,7 +550,19 @@ export function RepoStatusWidget({ widget, editing }) {
       })
       .catch(() => { if (alive) setError('GitHub unreachable'); });
     return () => { alive = false; };
-  }, [repo]);
+  }, [repo, branch]);
+
+  function pickBranch(next) {
+    setBranch(next === data?.defaultBranch ? '' : next);
+    if (project && widget?.id) {
+      persistWidgetProps(project, widget.id, props => {
+        const p = { ...props };
+        if (next === data?.defaultBranch) delete p.branch;
+        else p.branch = next;
+        return p;
+      }).catch(() => {});
+    }
+  }
 
   async function connect() {
     const clean = draft.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
@@ -573,8 +603,21 @@ export function RepoStatusWidget({ widget, editing }) {
           onClick={e => { if (editing) e.preventDefault(); }}>
           <GitBranch size={13} />
           <span className="nm">{repo}</span>
-          {data?.branch && <span className="br">{data.branch}</span>}
         </a>
+        {data?.branches?.length > 0 ? (
+          <select
+            className="gh-branch"
+            value={data.branch}
+            disabled={editing}
+            onClick={e => e.stopPropagation()}
+            onChange={e => pickBranch(e.target.value)}
+            title="Branch — commits and CI follow this selection"
+          >
+            {data.branches.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        ) : data?.branch ? (
+          <span className="br">{data.branch}</span>
+        ) : null}
         {data && <span className={'gh-ci ' + data.ci}>{CI_LABEL[data.ci] || data.ci}</span>}
       </div>
       {error ? (

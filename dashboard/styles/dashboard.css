@@ -607,16 +607,15 @@
 
     /* Task Cards */
     /* flash target card after navigating in from search/overview/spec-back.
-       Uses outline (offset outside the card) so it stacks cleanly above the
-       claim pulse, which animates border-color on the same edge. */
+       Inset ring: kanban columns clip overflowing outlines left/right, and
+       the claim pulse animates border-color — an inner ring avoids both. */
     .task-card.highlighted-from-back,
     .subtask-card.highlighted-from-back {
       animation: cardFlash 2s ease-out;
-      outline-offset: 3px;
     }
     @keyframes cardFlash {
-      0%, 45% { outline: 2px solid var(--accent); }
-      100% { outline: 2px solid transparent; }
+      0%, 45% { box-shadow: inset 0 0 0 2px var(--accent); }
+      100% { box-shadow: inset 0 0 0 2px transparent; }
     }
     .task-card {
       background: var(--card); border: 1px solid var(--border);

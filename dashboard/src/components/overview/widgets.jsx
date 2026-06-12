@@ -408,8 +408,8 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
       key: s,
       label: STATUS_LABELS[s],
       n: inCol.length,
-      bars: inCol.slice(0, 3),
-      more: Math.max(0, inCol.length - 3),
+      bars: inCol.slice(0, 15),
+      more: Math.max(0, inCol.length - 15),
     };
   });
 

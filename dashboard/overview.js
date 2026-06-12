@@ -97,8 +97,8 @@ const WIDGET_TYPES = {
   'activity-stream': {
     label: 'Activity',
     description: 'Latest task events across the project.',
-    defaultSize: { w: 4, h: 2 },
-    minSize: { w: 3, h: 2 },
+    defaultSize: { w: 3, h: 3 },
+    minSize: { w: 2, h: 2 },
     props: { limit: 'number (optional, default 12)' },
   },
   'milestones': {
@@ -154,7 +154,7 @@ const WIDGET_TYPES = {
     label: 'Momentum',
     description: 'Friendly stall check — last activity, 14-day strip.',
     defaultSize: { w: 4, h: 2 },
-    minSize: { w: 3, h: 2 },
+    minSize: { w: 3, h: 1 },
     props: {},
   },
 };

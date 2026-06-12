@@ -99,7 +99,7 @@ export default function Modal({
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         tabIndex={-1}
-        className={`bg-card border border-border rounded-lg shadow-lg w-full ${widths[size] || widths.md} mx-4 overflow-hidden animate-scale-in outline-none`}
+        className={`bg-card border border-border rounded-lg shadow-lg w-full ${widths[size] || widths.md} mx-4 overflow-visible animate-scale-in outline-none`}
       >
         {(title || showClose) && (
           <div className="flex items-start justify-between px-5 pt-5 pb-0">

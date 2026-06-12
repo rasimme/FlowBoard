@@ -32,8 +32,9 @@ async function gh(path) {
   return res.json();
 }
 
-async function fetchRepoStatus(repo) {
-  const cached = _cache.get(repo);
+async function fetchRepoStatus(repo, branchOverride = null) {
+  const cacheKey = `${repo}@${branchOverride || ''}`;
+  const cached = _cache.get(cacheKey);
   if (cached && Date.now() - cached.at < cached.ttl) {
     if (cached.error) {
       const err = new Error(cached.error.message);
@@ -44,12 +45,13 @@ async function fetchRepoStatus(repo) {
   }
   try {
     const meta = await gh(`/repos/${repo}`);
-    const branch = meta.default_branch;
-    const [pulls, commits, checks] = await Promise.all([
+    const branch = branchOverride || meta.default_branch;
+    const [pulls, commits, checks, branchList] = await Promise.all([
       gh(`/repos/${repo}/pulls?state=open&per_page=5`),
       gh(`/repos/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=5`),
       // check-runs need no extra scope; repos without Actions just 404/empty
       gh(`/repos/${repo}/commits/${encodeURIComponent(branch)}/check-runs?per_page=30`).catch(() => null),
+      gh(`/repos/${repo}/branches?per_page=50`).catch(() => null),
     ]);
     const runs = checks?.check_runs || [];
     let ci = 'none';
@@ -61,6 +63,8 @@ async function fetchRepoStatus(repo) {
     const data = {
       repo,
       branch,
+      defaultBranch: meta.default_branch,
+      branches: (branchList || []).map(b => b.name),
       ci,
       pulls: (pulls || []).map(p => ({
         number: p.number,
@@ -77,13 +81,17 @@ async function fetchRepoStatus(repo) {
       })),
       fetchedAt: new Date().toISOString(),
     };
-    _cache.set(repo, { at: Date.now(), ttl: TTL_OK, data });
+    _cache.set(cacheKey, { at: Date.now(), ttl: TTL_OK, data });
     return data;
   } catch (err) {
     console.warn('[github]', repo, err.message, err.cause?.code || err.cause?.message || '');
-    _cache.set(repo, { at: Date.now(), ttl: TTL_ERR, error: { message: err.message, status: err.status || 502 } });
+    _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, error: { message: err.message, status: err.status || 502 } });
     throw err;
   }
 }
 
-module.exports = { fetchRepoStatus, validRepo, hasToken: Boolean(TOKEN) };
+function validBranch(branch) {
+  return /^[\w./-]{1,120}$/.test(branch || '');
+}
+
+module.exports = { fetchRepoStatus, validRepo, validBranch, hasToken: Boolean(TOKEN) };

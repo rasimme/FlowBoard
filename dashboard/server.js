@@ -2784,8 +2784,12 @@ app.get('/api/github/repo-status', async (req, res) => {
   if (!github.validRepo(repo)) {
     return res.status(400).json({ error: 'repo must be "owner/name"' });
   }
+  const branch = req.query.branch ? String(req.query.branch) : null;
+  if (branch && !github.validBranch(branch)) {
+    return res.status(400).json({ error: 'invalid branch name' });
+  }
   try {
-    res.json({ ok: true, status: await github.fetchRepoStatus(repo) });
+    res.json({ ok: true, status: await github.fetchRepoStatus(repo, branch) });
   } catch (err) {
     const status = err.status === 404 ? 404 : 502;
     res.status(status).json({ error: `GitHub fetch failed: ${err.message}` });

@@ -65,6 +65,10 @@ export default function OverviewView() {
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [draftPreset, setDraftPreset] = useState(null); // preset name while the draft is untouched
   const pinnedCard = useRef(null); // card pinned via inline styles during a resize
+  // RGL's latest compacted layout — the on-screen truth. The draft only
+  // updates on drag/resize stop, so compaction that happened without an
+  // explicit interaction (e.g. after a remove) was lost on save.
+  const liveLayout = useRef(null);
   const [resizing, setResizing] = useState(null); // { id, w, h } during resize
   const [saving, setSaving] = useState(false);
   // suppress RGL's mount animation — items would visibly fly to their
@@ -119,6 +123,7 @@ export default function OverviewView() {
     const ordered = knownWidgets.slice().sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
     setDraft(ordered.map(w => ({ ...w, grid: { ...w.grid }, ...(w.props ? { props: { ...w.props } } : {}) })));
     setDraftPreset(overview?.preset || null);
+    liveLayout.current = null;
     setEditing(true);
     if (!manifest) {
       fetch('/api/overview/widgets', { credentials: 'include' })
@@ -132,6 +137,7 @@ export default function OverviewView() {
     setEditing(false);
     setDraft(null);
     setResizing(null);
+    liveLayout.current = null;
   }
 
   function applyLayout(layout) {
@@ -194,12 +200,21 @@ export default function OverviewView() {
 
   async function saveLayout() {
     setSaving(true);
+    // persist what the user SEES: merge RGL's compacted positions into the
+    // draft — otherwise gaps closed by compaction reappeared after save
+    let widgets = draft;
+    if (liveLayout.current) {
+      widgets = draft.map(w => {
+        const item = liveLayout.current.find(l => l.i === w.id);
+        return item ? { ...w, grid: { x: item.x, y: item.y, w: item.w, h: item.h } } : w;
+      });
+    }
     try {
       const res = await fetch(`/api/projects/${project}/overview`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ version: 1, layout: 'grid', ...(draftPreset ? { preset: draftPreset, widgets: draft } : { widgets: draft }) }),
+        body: JSON.stringify({ version: 1, layout: 'grid', ...(draftPreset ? { preset: draftPreset, widgets } : { widgets }) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -304,6 +319,7 @@ export default function OverviewView() {
             dragConfig={{ enabled: true, handle: '.ov-whead' }}
             resizeConfig={{ enabled: true, handles: ['e', 's', 'w'] }}
             compactor={verticalCompactor}
+            onLayoutChange={(layout) => { liveLayout.current = layout; }}
             onDragStop={(layout) => applyLayout(layout)}
             onResizeStart={(layout, oldItem, newItem, placeholder, e) => {
               // pin the card via inline styles for the whole interaction —

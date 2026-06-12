@@ -358,9 +358,17 @@ export default function Sidebar() {
       setDropTarget({ kind, itemName: project.name, section });
     }
   }
+  // dragleave fires AFTER the neighbour's dragenter when moving between
+  // rows — clearing on every row-leave made the drop indicator flicker.
+  // Only clear when the pointer actually leaves the sidebar scroll area;
+  // within it, the next dragover overwrites the target seamlessly.
+  function leavesSidebar(e) {
+    const next = e.relatedTarget;
+    return !next || !(next instanceof Node) || !next.closest?.('.sidebar-scroll');
+  }
+
   function onDragLeaveItem(e, project) {
-    // Only clear if we're leaving cleanly (not onto a child)
-    if (dropTarget?.itemName === project.name && !e.currentTarget.contains(e.relatedTarget)) {
+    if (dropTarget?.itemName === project.name && leavesSidebar(e)) {
       setDropTarget(null);
     }
   }
@@ -379,8 +387,7 @@ export default function Sidebar() {
   }
   function onDragLeaveSection(section) {
     return (e) => {
-      if (dropTarget?.section === section && dropTarget?.kind === 'into' &&
-          !e.currentTarget.contains(e.relatedTarget)) {
+      if (dropTarget?.section === section && dropTarget?.kind === 'into' && leavesSidebar(e)) {
         setDropTarget(null);
       }
     };
@@ -478,7 +485,7 @@ export default function Sidebar() {
     }
   }
   function onFolderDragLeave(e, folderName) {
-    if (folderDropTarget?.folder === folderName && !e.currentTarget.contains(e.relatedTarget)) {
+    if (folderDropTarget?.folder === folderName && leavesSidebar(e)) {
       setFolderDropTarget(null);
     }
   }

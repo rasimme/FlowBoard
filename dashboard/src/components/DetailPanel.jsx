@@ -1350,7 +1350,7 @@ export default function DetailPanel() {
                       if (e.key === 'Escape') { setIsAddingTag(false); setNewTag(''); }
                     }}
                     onBlur={addTag}
-                    placeholder="tag or milestone:v5"
+                    placeholder="tag or milestone:<name>"
                     className="px-2 py-0.5 text-[11px] font-mono bg-bg border border-border rounded-full outline-none focus:border-accent w-40"
                   />
                 ) : (
