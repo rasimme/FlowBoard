@@ -2,6 +2,17 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Canvas is React now — no vanilla runtime left (T-340).** The Idea Canvas
+  was ported 1:1 from vanilla ES modules to React: the tuned routing/cluster/
+  markdown logic moved verbatim into pure, unit-tested modules
+  (`src/utils/canvas*.mjs`), rendering/state/events live in `CanvasView.jsx` +
+  `src/components/canvas/`. Behavior, server API and `canvas.json` persistence
+  are unchanged; promote opens the Specify stepper via context instead of a
+  window bridge. `dashboard/js/` (canvas modules, `utils.js`, `app.js`
+  bootstrap) is gone — the bootstrap is now `src/bootstrap.js`, first import of
+  the bundle. Covered by ~160 new unit assertions plus a headless browser
+  smoke (`test-canvas-browser-smoke.js`). ADR-0024 supersedes ADR-0012.
+
 - **Modular project overview (T-305).** Every project now opens on a
   widget dashboard instead of the Kanban: active agents (claims, lease
   countdown), task stats, next-up, decisions/goals from markdown, quick

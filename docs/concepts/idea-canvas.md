@@ -12,7 +12,7 @@ The motivating use case is the *fuzzy front end* of project work — "I have a b
 
 Promote bridges the unstructured-to-structured gap by handing the cluster to an agent rather than asking the user to do the structuring. The agent applies the Specify workflow (analyze → clarify → generate → confirm → persist) and produces task records that match the rest of FlowBoard's conventions. The user stays in brainstorm mode; the agent produces structure.
 
-This is also the rationale for keeping the canvas implementation in *vanilla JS* while the rest of the dashboard migrates to React. The interaction model — drag, draw, snap, connection-routing — is ergonomically heavy and was already working well in vanilla. CLAUDE.md (the local instruction set) explicitly marks canvas as do-not-convert. ADR-0005 / ADR-0006 already documented hardening decisions; the *do not migrate* decision is implicit in code comments and would be a useful explicit ADR.
+The canvas stayed *vanilla JS* long after the rest of the dashboard moved to React (deferral recorded in ADR-0012) because the interaction model — drag, draw, snap, connection-routing — is ergonomically heavy and was already working well. With T-340 it was ported to React as a logic-preserving migration (ADR-0024): the tuned geometry/graph/markdown logic moved verbatim into pure, unit-tested modules; React owns rendering, state and events.
 
 ## How
 
@@ -83,7 +83,7 @@ and spec files automatically — canvas notes are only ever deleted last
 
 - **Canvas state is divorced from task state.** Until promote happens, canvas notes are not tasks. Searching the Kanban does not find canvas content. This is intentional — pre-task ideas don't pollute the work board — but it means brainstorming work is invisible to anyone who isn't looking at the canvas tab.
 - **Promote is opinionated but revisable.** The worker proposes the structure; the user reviews the proposal (with spec preview) in the stepper or chat, can request changes, and confirms before anything is written. Users who want fully manual control should create tasks via the Kanban, not promote from canvas.
-- **Vanilla canvas, React rest.** The canvas runs as ES module vanilla JS (`dashboard/js/canvas/`) with module-level state, event delegation via `data-action` attributes, and circular imports across `notes.js` / `connections.js` / `clusters.js`. The rest of the dashboard is React. The boundary is clean: the React shell loads the canvas as an iframe-equivalent, the canvas does its own thing inside.
+- **One rendering stack since T-340.** The canvas is a React view (`CanvasView.jsx`) like every other dashboard surface. Its note/connection state is deliberately view-local (reducer in `canvasStore.mjs`, not the task appStateBridge), and interaction transients (pan, drag, connect) bypass React state via refs to keep the tuned gesture feel (ADR-0024).
 - **Connections are undirected in the data model, directed in the rendering.** The store dedupes `A→B` and `B→A`, but the renderer can distinguish source-port and target-port for visual purposes. This bites at API time — clients should not assume `from` and `to` survive a round-trip in the order they sent.
 - **Self-loops and duplicate edges are silently swallowed.** Posting a connection that already exists returns `duplicate: true` with no creation; posting `A→A` returns 400. Neither produces a duplicate row to clean up later. This is desirable for ergonomic drag-to-connect interaction (the user might connect twice by accident) but means clients cannot rely on the response status to learn how many edges they created.
 - **Webhooks are optional.** Since v5 the dashboard promote path (Specify Stepper) needs no `OPENCLAW_HOOKS_TOKEN` — a fresh install can promote out of the box. Only the chat-agent path (explicit `agentId`) requires webhook configuration; without it, that path returns 503 while the dashboard path keeps working (SC-001).
@@ -91,13 +91,12 @@ and spec files automatically — canvas notes are only ever deleted last
 
 ## Code
 
-- `dashboard/js/canvas/index.js` — canvas bootstrap and lifecycle.
-- `dashboard/js/canvas/notes.js` — note CRUD, drag, edit.
-- `dashboard/js/canvas/connections.js` — connection drawing, port routing, Manhattan-with-rounded-corners path generation.
-- `dashboard/js/canvas/clusters.js` — connected-component derivation.
-- `dashboard/js/canvas/state.js` — module-level state container.
-- `dashboard/js/canvas/toolbar.js`, `events.js` — toolbar UI and event delegation.
-- `dashboard/styles/canvas.css` — canvas-specific styles (kept separate from `dashboard.css`).
+- `dashboard/src/pages/CanvasView.jsx` — canvas view: lifecycle, gestures (pan/zoom/drag/connect/lasso), keyboard.
+- `dashboard/src/components/canvas/` — NoteCard (render, inline edit), ConnectionLayer (SVG paths + cluster frames), CanvasToolbar, NoteSidebar.
+- `dashboard/src/state/canvasStore.mjs` — view-local reducer + viewport math; `canvasMutations.mjs` — API writes.
+- `dashboard/src/utils/canvasGeometry.mjs` — port routing, Manhattan-with-rounded-corners path generation, port stacking.
+- `dashboard/src/utils/canvasGraph.mjs` — connected-component derivation; `canvasMarkdown.mjs` — note markdown subset; `canvasTextFormat.mjs` — editor formatting commands.
+- `dashboard/styles/canvas.css` — canvas-specific styles (token-based; kept separate from `dashboard.css`).
 - `dashboard/server.js` — endpoints under `/api/projects/:name/canvas/...` and the promote handler.
 - `dashboard/specify-session.js` — Specify session bookkeeping (create, complete, abort, query).
 - `~/.openclaw/projects/<name>/canvas.json` — per-project canvas state.
