@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 
-const selection = await import('./js/project-selection.mjs')
+const selection = await import('./src/utils/projectSelection.mjs')
 
 assert.equal(selection.normalizeAgentId('dev-botti'), 'dev-botti')
 assert.equal(selection.normalizeAgentId('Dev-Botti'), 'dev-botti')

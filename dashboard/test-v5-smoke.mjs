@@ -207,15 +207,11 @@ ok(
 
 section('Canvas Create Task release gate');
 
-const canvasToolbarSource = readFileSync('./js/canvas/toolbar.js', 'utf8');
-const sendPromoteBody = canvasToolbarSource.slice(
-  canvasToolbarSource.indexOf('export async function sendPromote'),
-  canvasToolbarSource.indexOf('// Collect connections within the selected set')
-);
+const canvasMutationsSource = readFileSync('./src/state/canvasMutations.mjs', 'utf8');
 ok(
-  !canvasToolbarSource.includes("toast('Open FlowBoard from an agent chat to create tasks from canvas', 'warn')") &&
-    !canvasToolbarSource.includes('agentId: targetAgentId') &&
-    canvasToolbarSource.includes('window.__showSpecifyStepper(res.sessionId)'),
+  !canvasMutationsSource.includes("toast('Open FlowBoard from an agent chat to create tasks from canvas', 'warn')") &&
+    !canvasMutationsSource.includes('agentId: targetAgentId') &&
+    canvasMutationsSource.includes('showStepper(res.sessionId)'),
   'Canvas Create Task starts Dashboard Specify Stepper without chat-bound agentId'
 );
 

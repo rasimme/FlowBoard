@@ -1,4 +1,4 @@
-import { useLayoutEffect, useEffect, useState, useRef, Suspense } from 'react';
+import { useLayoutEffect, useEffect, useState, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
@@ -8,7 +8,6 @@ export default function ViewShell() {
   const { state } = useAppState();
   const { applyTelegramTheme } = useDashboard();
   const [container, setContainer] = useState(null);
-  const prevOwnerRef = useRef(null);
 
   useLayoutEffect(() => {
     const el = document.getElementById('content');
@@ -37,7 +36,6 @@ export default function ViewShell() {
 
   const currentTab = state?.currentTab || 'overview';
   const view = getView(currentTab);
-  const isReactOwned = view?.owner === 'react';
 
   // Mirror the active tab onto the .app element so CSS can scope per-view styles.
   useEffect(() => {
@@ -45,45 +43,9 @@ export default function ViewShell() {
     if (app) app.setAttribute('data-view', currentTab);
   }, [currentTab]);
 
-  useLayoutEffect(() => {
-    if (!container) return;
-    const wasLegacy = prevOwnerRef.current === 'legacy';
-    if (wasLegacy && isReactOwned) {
-      const legacyChildren = container.querySelectorAll('.canvas-wrap');
-      legacyChildren.forEach(el => el.remove());
-    }
-    if (prevOwnerRef.current === 'react' && !isReactOwned) {
-      container.innerHTML = '';
-    }
-    prevOwnerRef.current = isReactOwned ? 'react' : 'legacy';
-  }, [currentTab, isReactOwned, container]);
+  if (!container || !state) return null;
 
-  // Legacy ideas tab: lazy-load and render the canvas into #content.
-  // Lives here (not in DashboardContext) so the import only fires on demand.
-  useEffect(() => {
-    if (!container) return;
-    if (currentTab !== 'ideas') return;
-    let cancelled = false;
-    const id = setTimeout(async () => {
-      if (cancelled) return;
-      if (container.querySelector('.canvas-wrap')) return;
-      try {
-        const mod = await import('../../js/canvas/index.js');
-        if (cancelled) return;
-        mod.renderIdeaCanvas?.(window.appState);
-      } catch (err) {
-        console.warn('[ideas-canvas]', err);
-      }
-    }, 50);
-    return () => {
-      cancelled = true;
-      clearTimeout(id);
-    };
-  }, [currentTab, container, state?.viewedProject]);
-
-  if (!container || !state || !isReactOwned) return null;
-
-  const ViewComponent = view.component;
+  const ViewComponent = view?.component;
   if (!ViewComponent) return null;
 
   return createPortal(

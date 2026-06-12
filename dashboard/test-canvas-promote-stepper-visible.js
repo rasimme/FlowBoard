@@ -132,13 +132,13 @@ async function run() {
     ok(stepperContent.includes('setIsOpen(false)') || stepperContent.includes('setIsOpen = false'),
       'SpecifyStepper manages isOpen state');
 
-    // Test 6: Code inspection: toolbar.js handles duplicate sessions
-    const toolbarPath = path.join(__dirname, 'js', 'canvas', 'toolbar.js');
-    const toolbarContent = fs.readFileSync(toolbarPath, 'utf8');
-    ok(toolbarContent.includes('active Specify session'),
-      'toolbar.js checks for active session error');
-    ok(toolbarContent.includes('window.__showSpecifyStepper(match[1])'),
-      'toolbar.js extracts and shows existing session ID on duplicate');
+    // Test 6: Code inspection: the canvas promote mutation handles duplicate sessions
+    const mutationsPath = path.join(__dirname, 'src', 'state', 'canvasMutations.mjs');
+    const mutationsContent = fs.readFileSync(mutationsPath, 'utf8');
+    ok(mutationsContent.includes('active Specify session'),
+      'canvasMutations checks for active session error');
+    ok(mutationsContent.includes('showStepper(match[1])'),
+      'canvasMutations extracts and shows existing session ID on duplicate');
 
   } catch (err) {
     if (logs) console.error('Dashboard logs:', logs);

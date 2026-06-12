@@ -22,31 +22,25 @@ function ok(condition, message) {
 async function run() {
   console.log('# Specify Stepper visibility regression test (code inspection)');
 
-  // Read the App.jsx file to verify the fix
+  // Since T-340 the stepper opens directly via SpecifyContext (useSpecify),
+  // not through a window.__showSpecifyStepper bridge.
   const appPath = path.join(__dirname, 'src', 'App.jsx');
   const appContent = fs.readFileSync(appPath, 'utf8');
+  ok(!appContent.includes('__showSpecifyStepper'),
+    'App.jsx no longer installs a window.__showSpecifyStepper bridge');
 
-  // Check that window.__showSpecifyStepper is set in a useEffect hook
-  ok(appContent.includes('useEffect'), 'App.jsx imports useEffect');
-  ok(appContent.includes('window.__showSpecifyStepper = (sessionId) => specify.show(sessionId);'),
-    'App.jsx sets window.__showSpecifyStepper function');
-  ok(appContent.includes('useEffect(() => {'), 'window.__showSpecifyStepper is set in useEffect hook');
+  const canvasViewPath = path.join(__dirname, 'src', 'pages', 'CanvasView.jsx');
+  const canvasViewContent = fs.readFileSync(canvasViewPath, 'utf8');
+  ok(canvasViewContent.includes('useSpecify()'),
+    'CanvasView opens the stepper via SpecifyContext');
+  ok(canvasViewContent.includes('specify.show'),
+    'CanvasView passes specify.show into the promote flow');
 
-  // Check that it's not set during render (checking for the old pattern)
-  const hasOldPattern = appContent.includes('if (typeof window !== \'undefined\') {\n    window.__showSpecifyStepper');
-  ok(!hasOldPattern, 'window.__showSpecifyStepper is not set during render');
-
-  // Read the toolbar.js file to verify it uses the window function
-  const toolbarPath = path.join(__dirname, 'js', 'canvas', 'toolbar.js');
-  const toolbarContent = fs.readFileSync(toolbarPath, 'utf8');
-
-  ok(toolbarContent.includes('window.__showSpecifyStepper'),
-    'toolbar.js calls window.__showSpecifyStepper on canvas promote');
-  ok(
-    toolbarContent.includes('window.__showSpecifyStepper(res.sessionId)') &&
-      toolbarContent.includes('Specify stepper not available'),
-    'toolbar.js checks if window.__showSpecifyStepper exists before calling'
-  );
+  const mutationsPath = path.join(__dirname, 'src', 'state', 'canvasMutations.mjs');
+  const mutationsContent = fs.readFileSync(mutationsPath, 'utf8');
+  ok(mutationsContent.includes('showStepper(res.sessionId)') &&
+      mutationsContent.includes('Specify stepper not available'),
+    'promote mutation guards the stepper callback before calling');
 
   // Read the SpecifyContext.jsx to verify it implements the show function
   const contextPath = path.join(__dirname, 'src', 'context', 'SpecifyContext.jsx');

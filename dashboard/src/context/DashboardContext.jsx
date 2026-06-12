@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { useAppState } from './AppStateContext.jsx';
-import { selectViewedProject } from '../../js/project-selection.mjs';
+import { selectViewedProject } from '../utils/projectSelection.mjs';
 import * as bridge from '../state/appStateBridge.mjs';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { apiJson } from '../utils/apiFetch.js';
@@ -63,7 +63,6 @@ export function DashboardProvider({ children }) {
   const prevProjectsRef = useRef('');
   const prevAgentsRef = useRef('');
   const prevActiveRef = useRef(null);
-  const prevCanvasRef = useRef('');
 
   const fetchTasksForProject = useCallback(async (project) => {
     if (!project) return [];
@@ -110,12 +109,9 @@ export function DashboardProvider({ children }) {
     if (!name) return;
     const tasks = await fetchTasksForProject(name);
     prevTasksRef.current = JSON.stringify(tasks);
-    prevCanvasRef.current = '';
     dispatch({
       viewedProject: name,
       tasks,
-      canvasNotes: [],
-      canvasConnections: [],
     });
   }, [dispatch, fetchTasksForProject]);
 
@@ -217,7 +213,7 @@ export function DashboardProvider({ children }) {
 
     (async () => {
       try {
-        // Wait for js/app.js to finish Telegram auth + agentId resolution so the
+        // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
         // very first /projects + /status calls see a populated agentId.
         if (window.__flowboardBootstrap) await window.__flowboardBootstrap;
         const data = await apiJson('/projects');

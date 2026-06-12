@@ -1,7 +1,7 @@
 # ADR-0012: Canvas migration deferred — vanilla retained pending scope review
 
 ## Status
-Accepted
+Superseded by [ADR-0024](0024-canvas-react-migration.md)
 
 ## Date
 2026-05-03

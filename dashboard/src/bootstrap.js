@@ -1,19 +1,18 @@
 // Bootstrap-only: initialise window.appState shape and run Telegram WebApp
-// auth + agentId resolution. The React tree (src/main.jsx) owns all UI and
-// data fetching via DashboardContext.
+// auth + agentId resolution. Imported FIRST by src/main.jsx so the shape
+// exists before any React code runs; the React tree owns all UI and data
+// fetching via DashboardContext.
 //
 // window.__flowboardBootstrap is a Promise the React shell awaits before its
 // first /api/* fetch so agentId is populated when the session is Telegram-backed.
 
-import { resolveDashboardAgentIdentity } from './project-selection.mjs';
+import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
 
 window.appState = {
   projects: [],
   activeProject: null,
   viewedProject: null,
   tasks: [],
-  canvasNotes: [],
-  canvasConnections: [],
   currentTab: 'overview',
   agents: [],
   agentId: null,

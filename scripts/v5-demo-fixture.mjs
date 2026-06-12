@@ -323,6 +323,7 @@ async function seed() {
 
 async function cleanup() {
   await clearAgents();
+  await clearProjectTasks(PROJECT);
   for (const [name] of SUPPORT_PROJECTS) {
     await request(`/api/projects/${name}`, {
       method: 'PUT',

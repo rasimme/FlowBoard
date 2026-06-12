@@ -6,7 +6,7 @@ The frontend runtime is the client-side contract for keeping FlowBoard's task UI
 
 It sits between React views, the legacy `window.appState` shell bridge, and the Express/HZL API. Its job is not to own canonical task truth. Its job is to make local UI state converge quickly and predictably with canonical server responses.
 
-The current implementation is still in transition, but the ownership boundary is now explicit. `dashboard/js/app.js` is bootstrap-only: it creates the initial `window.appState` shape and resolves Telegram auth/agent identity. React's `DashboardContext` owns shell refresh, project actions, tab switching, and the remaining compatibility bridge. Task-list reads and writes go through `appStateBridge`, and mutation wrappers live under `src/state/`.
+The ownership boundary is explicit. `dashboard/src/bootstrap.js` is bootstrap-only: it creates the initial `window.appState` shape and resolves Telegram auth/agent identity. React's `DashboardContext` owns shell refresh, project actions, tab switching, and the remaining compatibility bridge. Task-list reads and writes go through `appStateBridge`, and mutation wrappers live under `src/state/`.
 
 ## Why
 
@@ -62,15 +62,17 @@ React owns interactive dashboard UI state:
 - receive canonical server response merges
 - display rollback/error feedback
 
-### Legacy Vanilla JS
+### Bootstrap Module
 
-Legacy JS remains compatibility infrastructure while migration is incomplete:
+Since the canvas migration (T-340, ADR-0024) no vanilla runtime remains. The
+former `js/app.js` bootstrap lives on as `src/bootstrap.js` — the first import
+of `main.jsx`. It still owns:
 
-- bootstrap shell state
-- host the vanilla Idea Canvas runtime
-- expose bridge entry points for React
+- the initial `window.appState` shape
+- Telegram WebApp auth + agentId resolution
+- the `window.__flowboardBootstrap` promise the shell awaits before its first API call
 
-Legacy JS should not gain new task mutation semantics.
+The bootstrap module should not gain task mutation semantics.
 
 ## Runtime Contract
 
@@ -148,22 +150,21 @@ T-215 splits the foundation into small steps:
 5. migrate `DetailPanel`
 6. add guardrails and smoke tests
 
-This order is intentional. It lets FlowBoard improve convergence without a large rewrite and without blocking the deferred Canvas migration.
+This order is intentional. It lets FlowBoard improve convergence without a large rewrite.
 
 ## Consequences
 
 - Local actions should feel immediate even though the server remains canonical.
 - Kanban cards, DetailPanel, active-agent surfaces, and counters should converge through one task list.
 - Future React views get one documented state path instead of copying old global writes.
-- Canvas can remain vanilla for now, but future task-facing Canvas work must use the same runtime foundation.
+- The Canvas is React since T-340 (ADR-0024); its note/connection state is view-local by design, while task-facing Canvas work uses the same runtime foundation.
 - WebSocket/SSE and larger state libraries remain later options, not prerequisites.
 
 ## Code
 
 Current relevant files:
 
-- `dashboard/js/app.js` - bootstrap-only state shape, Telegram auth, agent id resolution
-- `dashboard/js/utils.js` - legacy Idea Canvas helpers only; not a React task runtime surface
+- `dashboard/src/bootstrap.js` - bootstrap-only state shape, Telegram auth, agent id resolution
 - `dashboard/src/context/AppStateContext.jsx` - React bridge over global app state
 - `dashboard/src/context/DashboardContext.jsx` - React-owned shell runtime and compatibility bridge
 - `dashboard/src/pages/TasksView.jsx` - Kanban task UI
