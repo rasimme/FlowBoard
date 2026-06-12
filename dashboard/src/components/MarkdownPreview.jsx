@@ -1,12 +1,15 @@
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 
-export default function MarkdownPreview({ content }) {
+// `breaks` renders single newlines as line breaks (scratchpad semantics,
+// used by the overview notes widget) — file previews keep strict markdown.
+export default function MarkdownPreview({ content, breaks = false }) {
   return (
     <div className="md-content">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={breaks ? [remarkGfm, remarkBreaks] : [remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
         components={{
           a({ href, children, ...props }) {

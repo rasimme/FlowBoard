@@ -412,7 +412,8 @@ export default function OverviewView() {
         <div className="grid grid-cols-2 gap-2">
           {(manifest?.presets || []).map(p => {
             const rows = Math.max(...p.widgets.map(w => w.grid.y + w.grid.h), 1);
-            const isActive = overview?.preset === p.name;
+            // while editing, the applied-but-unsaved choice is the active one
+            const isActive = (editing ? draftPreset : overview?.preset) === p.name;
             return (
               <button
                 key={p.name}
@@ -495,7 +496,7 @@ export default function OverviewView() {
                         type="button"
                         onClick={() => addWidget(w.type)}
                         title={w.description}
-                        className="flex items-start gap-2.5 px-3 py-2 text-left rounded-md border border-border bg-bg-accent cursor-pointer hover:border-accent"
+                        className="flex items-start gap-2.5 px-3 py-2 min-h-[62px] text-left rounded-md border border-border bg-bg-accent cursor-pointer hover:border-accent"
                       >
                         {Icon && <Icon size={15} className="text-muted shrink-0 mt-0.5" />}
                         <span className="flex flex-col gap-0.5 min-w-0">

@@ -356,7 +356,7 @@ export function NotesWidget({ editing }) {
           style={{ cursor: editing ? undefined : 'text' }} title="Click to edit">
           {text ? (
             <Suspense fallback={<div className="nt-loading">…</div>}>
-              <MarkdownPreview content={text} />
+              <MarkdownPreview content={text} breaks />
             </Suspense>
           ) : (
             <span className="nt-placeholder">Click to jot anything — agents can read and append to NOTES.md too.</span>
@@ -500,7 +500,14 @@ export function StallDetectionWidget({ widget }) {
         </div>
         <div className="sd-strip-block">
           <div className="sd-strip">
-            {strip.map((v, i) => <i key={i} className={v ? 'a' + v : ''} style={{ height: (20 + v * 26) + '%' }}></i>)}
+            {perDay.map((n, i) => {
+              const v = strip[i];
+              const max = Math.max(...perDay, 1);
+              const label = new Date(now - (13 - i) * day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
+              return <i key={i} className={v ? 'a' + v : ''}
+                title={`${label} — ${n} event${n === 1 ? '' : 's'}`}
+                style={{ height: (n ? 18 + (n / max) * 78 : 8) + '%' }}></i>;
+            })}
           </div>
           <div className="sd-strip-lbl">Activity · last 14 days</div>
         </div>
