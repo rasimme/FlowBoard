@@ -888,3 +888,50 @@
 @container widget (max-width: 250px) {
   .fv-pick { max-width: 80px; }
 }
+
+/* ===== T-328: scroll + small-size polish round =====
+   Shared scroll feel inside widgets: reserve no layout space (overlay-like
+   thumb via webkit styling), show the thumb while hovering the area. */
+.ov-wbody ::-webkit-scrollbar { width: 7px; height: 7px; }
+.ov-wbody ::-webkit-scrollbar-track { background: transparent; }
+.ov-wbody ::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; }
+.ov-wbody :hover::-webkit-scrollbar-thumb,
+.ov-wbody :focus-within::-webkit-scrollbar-thumb { background: var(--border-strong); }
+
+/* (3) file viewer: trackpads emit diagonal deltas — horizontal pans of the
+   whole body felt like a "shift". Only code blocks scroll sideways. */
+.fv-body { overflow-x: hidden; }
+.fv-body .md-content pre { overflow-x: auto; }
+
+/* (11) notes view scrolls with the same hover thumb */
+.nt-view { overflow-x: hidden; }
+
+/* (12) repo-status: commit/PR lists scroll within their section */
+.gh-sec { min-height: 0; }
+.gh-sec .gh-rows { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+
+/* (2) checklist: fade the cut edge instead of a hard half-row */
+.ms-check {
+  mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
+}
+.ms-check::after { content: ''; flex-shrink: 0; height: 4px; }
+
+/* (4) quick drop at h=1: row layout, small ring */
+@container widget (max-height: 120px) {
+  .qd-zone { flex-direction: row; gap: 8px; padding: 4px 10px; }
+  .qd-ring { width: 22px; height: 22px; }
+  .qd-ring svg { width: 11px; height: 11px; }
+  .qd-title { font-size: 11px; }
+  .qd-recent { display: none; }
+}
+
+/* (6) links at h=1: vertically centered rows, no add-toggle */
+@container widget (max-height: 120px) {
+  .lk-list { justify-content: center; }
+  .lk-list .lk-row { padding-block: 2px; }
+  .lk-addtoggle { display: none; }
+}
+
+/* (5) resize at the minimum: live chip flips to accent */
+.ov-min-reached .react-grid-item.resizing ~ * .ov-fin-size,
+.ov-min-reached .ov-fin-size { border-color: var(--accent); color: var(--accent); }

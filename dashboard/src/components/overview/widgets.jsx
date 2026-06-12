@@ -154,7 +154,8 @@ const STATUS_ORDER = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = { backlog: 'Backlog', open: 'Open', 'in-progress': 'In Progress', review: 'Review', done: 'Done' };
 
 export function TaskStatsWidget({ widget, editing, onRemove }) {
-  const tasks = useProjectTasks().filter(t => t.status !== 'archived');
+  const allTasks = useProjectTasks();
+  const tasks = allTasks.filter(t => t.status !== 'archived');
   const { state } = useAppState();
   const [stuck, setStuck] = useState(0);
 
@@ -177,7 +178,9 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
 
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
-  const doneDated = tasks.filter(t => t.status === 'done' && t.completed);
+  // throughput counts finished work even after it gets archived — the
+  // archive sweep was silently shrinking "done · 7d"
+  const doneDated = allTasks.filter(t => (t.status === 'done' || t.status === 'archived') && t.completed);
   const throughput = doneDated.filter(t => now - new Date(t.completed).getTime() < 7 * day).length;
   const cycles = doneDated
     .filter(t => t.created)

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
-import { persistWidgetProps, TokenAffordance } from './widgets2.jsx';
+import { TokenAffordance, useProjectGithub } from './widgets2.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 
 /**
@@ -50,22 +50,23 @@ function GhError({ error, editing, onRetry }) {
   );
 }
 
-// shared repo plumbing: props.repo + inline connect form
+// shared repo plumbing: the project-level binding (one repo per project,
+// set once in any gh widget) with widget props as per-widget override
 function useRepoProp(widget) {
   const { state } = useAppState();
   const project = state?.viewedProject;
-  const [repo, setRepo] = useState(widget?.props?.repo || '');
-  useEffect(() => { setRepo(widget?.props?.repo || ''); }, [widget]);
+  const { binding, saveBinding } = useProjectGithub(project);
+  const repo = widget?.props?.repo || binding?.repo || '';
+  const branch = widget?.props?.branch || binding?.branch || '';
 
   async function connect(raw) {
     const clean = raw.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
-    if (!project || !widget?.id || !/^[\w.-]+\/[\w.-]+$/.test(clean)) return false;
-    const next = await persistWidgetProps(project, widget.id, props => ({ ...props, repo: clean }));
-    if (next) { setRepo(clean); window.showToast?.(`Connected ${clean}`, 'success'); return true; }
-    window.showToast?.('Connecting failed — save the layout first?', 'error');
-    return false;
+    if (!project || !/^[\w.-]+\/[\w.-]+$/.test(clean)) return false;
+    const ok = await saveBinding(clean, null);
+    if (ok) window.showToast?.(`Connected ${clean} for this project`, 'success');
+    return ok;
   }
-  return { repo, connect };
+  return { repo, branch, connect };
 }
 
 function GhSetup({ hint, editing, onConnect }) {
@@ -160,8 +161,7 @@ export function GhPullsWidget({ widget, editing }) {
 const RUN_COLOR = { success: 'ok', failure: 'fail', cancelled: 'mute', timed_out: 'fail' };
 
 export function GhCiWidget({ widget, editing }) {
-  const { repo, connect } = useRepoProp(widget);
-  const branch = widget?.props?.branch || '';
+  const { repo, branch, connect } = useRepoProp(widget);
   const { data, error, reload } = useInsight(repo, 'ci', branch);
   if (!repo) {
     return (

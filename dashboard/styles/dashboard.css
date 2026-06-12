@@ -580,7 +580,7 @@
    unreadable slabs on ultrawides, so the tracks cap and the board centers
    via max-width. NOT justify-content: center — on an overflowing scroll
    container that puts the left edge out of reach (backlog column clipped). */
-    .kanban { display: grid; grid-template-columns: repeat(5, minmax(240px, 340px)); gap: 12px; overflow-x: auto; max-width: calc(5 * 340px + 4 * 12px); margin-inline: auto; }
+    .kanban { display: grid; grid-template-columns: repeat(5, minmax(240px, 340px)); gap: 12px; overflow-x: auto; width: 100%; min-width: 0; max-width: calc(5 * 340px + 4 * 12px); margin-inline: auto; }
 
     .column {
       background: var(--bg-accent); border: 1px solid var(--border);

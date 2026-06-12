@@ -163,6 +163,13 @@ server-side (a `FLOWBOARD_GITHUB_TOKEN`/`GITHUB_TOKEN` env token never
 reaches the client) and cached ~90s per repo.
 **200** `{ ok, status }` — **400** invalid repo — **404/502** GitHub errors.
 
+### GET | PUT /api/projects/:name/github
+Project-level GitHub binding `{ repo, branch? }` — the one repository all
+gh-* widgets on the project's overview share. Connecting a repo or
+picking a branch in any GitHub widget writes it here; widget
+`props.repo`/`props.branch` remain per-widget overrides. `PUT` with
+`{ repo: null }` clears the binding.
+
 ### GET /api/github/insight
 Query: `repo=owner/name` and `view=pulls|ci|releases|issues` (+ optional
 `branch` for `ci`). Feeds the `gh-*` overview widgets — open PRs with

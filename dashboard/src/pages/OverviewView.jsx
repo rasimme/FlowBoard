@@ -261,8 +261,8 @@ export default function OverviewView() {
     : knownWidgets.slice().sort((a, b) => a.grid.y - b.grid.y || a.grid.x - b.grid.x);
 
   return (
-    <div className="flex flex-col h-full min-h-0 px-1 max-w-[1500px] mx-auto w-full">
-      <div className="ov-toolbar">
+    <div className="flex flex-col h-full min-h-0 px-1">
+      <div className="ov-toolbar max-w-[1500px] mx-auto w-full">
         <span className="ov-toolbar-note">
           {editing
             ? 'Editing layout — drag a card by its hatched title row, pull an edge bar to resize'
@@ -291,7 +291,10 @@ export default function OverviewView() {
         )}
       </div>
 
-      <div ref={setContainerEl} className="flex-1 min-h-0 overflow-y-auto pt-[9px] pr-[9px] pb-[10px] pl-[4px]">
+      {/* the scroll surface spans the full window width so the wheel works
+          in the side gutters too; the content itself stays capped */}
+      <div className="flex-1 min-h-0 overflow-y-auto pt-[9px] pr-[9px] pb-[10px] pl-[4px]">
+        <div ref={setContainerEl} className="max-w-[1500px] mx-auto w-full">
         {/* View mode: fluid CSS grid — widgets track the container width
             seamlessly (container queries do the rest) and stack on narrow
             viewports. Edit mode: react-grid-layout for drag/resize; the
@@ -346,21 +349,31 @@ export default function OverviewView() {
               }
             }}
             onResize={(layout, oldItem, newItem) => {
-              setResizing({ id: newItem.i, w: newItem.w, h: newItem.h });
+              // clamp to the type's minimum — RGL can report transient
+              // sub-minimum values that pinned the card to a zero box
+              const type = draft?.find(d => d.id === newItem.i)?.type;
+              const min = (manifest?.widgets || []).find(m => m.type === type)?.minSize || { w: 1, h: 1 };
+              const w = Math.max(newItem.w, min.w);
+              const h = Math.max(newItem.h, min.h);
+              const atMin = newItem.w <= min.w || newItem.h <= min.h;
+              setResizing({ id: newItem.i, w, h });
               // RGL v2 merges our cell INTO the grid item (verified via
               // browser probe) and writes the continuous size onto it.
               // We pin the CARD (.ov-widget) to the snapped step instead,
               // via variables on the non-RGL container.
               const colW = (width - 12 * 11) / 12;
               if (pinnedCard.current) {
-                pinnedCard.current.style.width = Math.round(colW * newItem.w + 12 * (newItem.w - 1)) + 'px';
-                pinnedCard.current.style.height = (88 * newItem.h + 12 * (newItem.h - 1)) + 'px';
+                pinnedCard.current.style.width = Math.round(colW * w + 12 * (w - 1)) + 'px';
+                pinnedCard.current.style.height = (88 * h + 12 * (h - 1)) + 'px';
               }
               // the size label inside RGL's memoized subtree lags React
-              // state mid-interaction — a CSS-driven live label replaces it
-              containerEl?.style.setProperty('--ov-snap-label', JSON.stringify(newItem.w + ' \u00d7 ' + newItem.h));
+              // state mid-interaction — a CSS-driven live label replaces it;
+              // at the minimum it flips to "w × h · min" and tints accent
+              containerEl?.style.setProperty('--ov-snap-label', JSON.stringify(w + ' \u00d7 ' + h + (atMin ? ' \u00b7 min' : '')));
+              containerEl?.classList.toggle('ov-min-reached', atMin);
             }}
             onResizeStop={(layout) => {
+              containerEl?.classList.remove('ov-min-reached');
               applyLayout(layout);
               setResizing(null);
               containerEl?.style.removeProperty('--ov-snap-label');
@@ -406,6 +419,7 @@ export default function OverviewView() {
             })}
           </ReactGridLayout>
         ) : null}
+        </div>
       </div>
 
       <Modal

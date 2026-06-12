@@ -2815,6 +2815,30 @@ app.get('/api/github/repo-status', async (req, res) => {
   }
 });
 
+// T-328 — project-level GitHub binding: one repo/branch every gh-* widget
+// on the project's overview shares. Widget props.repo stays as override.
+app.get('/api/projects/:name/github', (req, res) => {
+  const meta = fbMeta.getProject(req.params.name);
+  if (!meta) return res.status(404).json({ error: 'Project not found' });
+  const config = (() => { try { return JSON.parse(meta.config || '{}'); } catch { return {}; } })();
+  res.json({ ok: true, github: config.github || null });
+});
+
+app.put('/api/projects/:name/github', (req, res) => {
+  const body = req.body || {};
+  if (body.github === null || body.repo === null) {
+    fbMeta.updateProjectMeta(req.params.name, { github: null });
+    return res.json({ ok: true, github: null });
+  }
+  const repo = String(body.repo || '');
+  if (!github.validRepo(repo)) return res.status(400).json({ error: 'repo must be "owner/name"' });
+  const branch = body.branch ? String(body.branch) : null;
+  if (branch && !github.validBranch(branch)) return res.status(400).json({ error: 'invalid branch name' });
+  const meta = fbMeta.updateProjectMeta(req.params.name, { github: { repo, ...(branch ? { branch } : {}) } });
+  if (!meta) return res.status(404).json({ error: 'Project not found' });
+  res.json({ ok: true, github: { repo, ...(branch ? { branch } : {}) } });
+});
+
 // T-320 — GitHub token, stored server-side and write-only: GET only says
 // whether one is configured, the value is never echoed back to a client.
 // An env token (FLOWBOARD_GITHUB_TOKEN/GITHUB_TOKEN) takes precedence.

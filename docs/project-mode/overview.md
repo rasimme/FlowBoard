@@ -52,6 +52,11 @@ knowledge & actions: `recent-decisions`, `context-index` (pin via
 `quick-drop`, `notes` (context/NOTES.md), `links` (`props.links`),
 `quick-links`.
 
+GitHub widgets resolve their repository from the project-level binding
+(`GET/PUT /api/projects/:name/github`, one repo + branch per project) —
+set it once in any gh widget and all of them follow; `props.repo` /
+`props.branch` stay as per-widget overrides.
+
 Universal widget props: `title` overrides the display name; `emphasis`
 (boolean) visually lifts a card out of the equal-weight grid (stronger
 frame, accent tick) — use it to mark what needs the human first.

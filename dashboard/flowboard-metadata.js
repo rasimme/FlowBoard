@@ -210,6 +210,7 @@ function listProjects(hzlProjects) {
         status,
         archived: status === 'archived',
         group: typeof config.group === 'string' ? config.group : null,
+        github: config.github || null,
         order: typeof config.order === 'number' ? config.order : null,
         assignedAgents: meta ? _parseJson(meta.assigned_agents, []) : [],
         description: p.description || '',
@@ -250,6 +251,11 @@ function updateProjectMeta(name, patch) {
       const n = Number(patch.order);
       if (Number.isFinite(n)) config.order = n;
     }
+  }
+  // T-328: project-level GitHub binding — one repo/branch all gh-* widgets share
+  if (patch.github !== undefined) {
+    if (patch.github === null) delete config.github;
+    else config.github = { repo: String(patch.github.repo || ''), ...(patch.github.branch ? { branch: String(patch.github.branch) } : {}) };
   }
 
   _db.prepare(`

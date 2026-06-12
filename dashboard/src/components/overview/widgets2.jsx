@@ -111,6 +111,47 @@ export function TokenAffordance({ editing, onSaved }) {
   );
 }
 
+/**
+ * T-328 — project-level GitHub binding shared by every gh-* widget.
+ * Connecting/changing it in ONE widget updates all of them (window event);
+ * widget props.repo/props.branch remain as per-widget overrides.
+ */
+const _ghBinding = new Map(); // project → { repo, branch } | null
+export function useProjectGithub(project) {
+  const [binding, setBinding] = useState(() => _ghBinding.get(project) ?? null);
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    if (_ghBinding.has(project)) setBinding(_ghBinding.get(project));
+    fetch(`/api/projects/${project}/github`, { credentials: 'include' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!d) return; _ghBinding.set(project, d.github); if (alive) setBinding(d.github); })
+      .catch(() => {});
+    const onChange = e => { if (e.detail?.project === project) setBinding(e.detail.github); };
+    window.addEventListener('fb:github-binding', onChange);
+    return () => { alive = false; window.removeEventListener('fb:github-binding', onChange); };
+  }, [project]);
+
+  async function saveBinding(repo, branch) {
+    const res = await fetch(`/api/projects/${project}/github`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ repo, ...(branch ? { branch } : {}) }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      window.showToast?.(d.error || 'Saving GitHub binding failed', 'error');
+      return false;
+    }
+    const d = await res.json();
+    _ghBinding.set(project, d.github);
+    window.dispatchEvent(new CustomEvent('fb:github-binding', { detail: { project, github: d.github } }));
+    return true;
+  }
+  return { binding, saveBinding };
+}
+
 function useActivityFeed(project, limit) {
   const [items, setItems] = useState(null);
   useEffect(() => {
@@ -235,15 +276,21 @@ export function MilestonesWidget({ widget, editing }) {
   const active = all.filter(([, items]) => pct(items) < 100);
   const completed = all.filter(([, items]) => pct(items) === 100);
   // the focus is pinnable (props.focus); default: furthest-along active one
-  const focusName = widget?.props?.focus && groups.has(widget.props.focus) && pct(groups.get(widget.props.focus)) < 100
-    ? widget.props.focus
+  // local override so the pin shows immediately — the stored overview only
+  // refreshes on reload
+  const [localFocus, setLocalFocus] = useState(undefined);
+  useEffect(() => { setLocalFocus(undefined); }, [widget]);
+  const _pinWanted = localFocus !== undefined ? localFocus : widget?.props?.focus;
+  const focusName = _pinWanted && groups.has(_pinWanted) && pct(groups.get(_pinWanted)) < 100
+    ? _pinWanted
     : (active[0]?.[0] ?? null);
   const list = active; // roadmap source
 
-  const pinned = Boolean(widget?.props?.focus) && widget.props.focus === focusName;
+  const pinned = Boolean(_pinWanted) && _pinWanted === focusName;
 
   async function pinFocus(name) {
     if (!project || !widget?.id) return;
+    setLocalFocus(name);
     await persistWidgetProps(project, widget.id, props => {
       const next = { ...props };
       if (name) next.focus = name; else delete next.focus;
@@ -826,9 +873,9 @@ const CI_LABEL = { passing: 'CI passing', failing: 'CI failing', pending: 'CI ru
 export function RepoStatusWidget({ widget, editing }) {
   const { state } = useAppState();
   const project = state?.viewedProject;
-  const [repo, setRepo] = useState(widget?.props?.repo || '');
-  const [branch, setBranch] = useState(widget?.props?.branch || '');
-  useEffect(() => { setRepo(widget?.props?.repo || ''); setBranch(widget?.props?.branch || ''); }, [widget]);
+  const { binding, saveBinding } = useProjectGithub(project);
+  const repo = widget?.props?.repo || binding?.repo || '';
+  const branch = widget?.props?.branch || binding?.branch || '';
   const [draft, setDraftRepo] = useState('');
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState(null);
@@ -853,25 +900,16 @@ export function RepoStatusWidget({ widget, editing }) {
   }, [repo, branch, tick]);
 
   function pickBranch(next) {
-    setBranch(next === data?.defaultBranch ? '' : next);
-    if (project && widget?.id) {
-      persistWidgetProps(project, widget.id, props => {
-        const p = { ...props };
-        if (next === data?.defaultBranch) delete p.branch;
-        else p.branch = next;
-        return p;
-      }).catch(() => {});
-    }
+    // branch is part of the shared project binding — gh-ci etc. follow
+    saveBinding(repo, next === data?.defaultBranch ? null : next);
   }
 
   async function connect() {
     const clean = draft.trim().replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
-    if (!project || !widget?.id || !/^[\w.-]+\/[\w.-]+$/.test(clean) || saving) return;
+    if (!project || !/^[\w.-]+\/[\w.-]+$/.test(clean) || saving) return;
     setSaving(true);
     try {
-      const next = await persistWidgetProps(project, widget.id, props => ({ ...props, repo: clean }));
-      if (next) { setRepo(clean); window.showToast?.(`Connected ${clean}`, 'success'); }
-      else window.showToast?.('Connecting failed — save the layout first?', 'error');
+      if (await saveBinding(clean, null)) window.showToast?.(`Connected ${clean} for this project`, 'success');
     } finally {
       setSaving(false);
     }
