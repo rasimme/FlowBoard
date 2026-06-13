@@ -50,7 +50,7 @@ export default function UndoToast({ message, onUndo, onDismiss, duration = 8000 
       aria-live="polite"
       onMouseEnter={pause}
       onMouseLeave={resume}
-      className="fixed bottom-6 right-6 z-[1700] flex items-center gap-3 px-4 py-2.5 rounded-lg bg-card-highlight border border-border-strong shadow-lg text-sm text-text animate-slide-in-right"
+      className="fixed bottom-6 right-6 z-[1700] flex items-center gap-3 px-4 py-2.5 rounded-lg bg-card border border-border-strong shadow-lg text-sm text-text animate-slide-in-right"
       style={{ minWidth: 260 }}
     >
       <span className="flex-1">{message}</span>
