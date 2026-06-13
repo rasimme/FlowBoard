@@ -18,7 +18,7 @@ The canvas stayed *vanilla JS* long after the rest of the dashboard moved to Rea
 
 The canvas data model is intentionally simple — three primitives.
 
-**Notes.** Each note has an id, a position (`x`, `y`), a color, and free text. Notes are stored in `canvas.json` per project — *not* in HZL, *not* in `flowboard_agents`. The canvas is an unstructured scratchpad; persisting it as an event log would be over-engineering for the use case. A flat JSON file with full-replace writes is sufficient.
+**Notes.** Each note has an id, a position (`x`, `y`), a color, and free text. Notes are stored in relational DB tables (`canvas_notes`, `canvas_connections`, `canvas_meta` in the events DB file, ADR-0025) — *not* event-sourced, *not* in `flowboard_agents`. The canvas is an unstructured scratchpad; persisting it as an event log would be over-engineering for the use case (the original ADR-0014 argument, carried forward). Plain rows with last-write-wins updates behind the single-writer canvas store are sufficient. Historically the store was one `canvas.json` file per project (ADR-0014); legacy projects keep working off that file until the operator runs the gated migration, after which the file survives only as a `canvas.json.pre-db.bak` backup.
 
 **Connections.** Each connection links two notes by id (`from`, `to`) and optionally specifies which port on each note (`fromPort`, `toPort`) so the connection routes naturally regardless of layout. Connections are undirected at the model level — `from→to` and `to→from` are deduplicated server-side; the API returns `duplicate: true` rather than creating a second edge. A note cannot connect to itself.
 
@@ -82,6 +82,8 @@ and spec files automatically — canvas notes are only ever deleted last
 ## Consequences
 
 - **Canvas state is divorced from task state.** Until promote happens, canvas notes are not tasks. Searching the Kanban does not find canvas content. This is intentional — pre-task ideas don't pollute the work board — but it means brainstorming work is invisible to anyone who isn't looking at the canvas tab.
+- **Recovery is DB recovery.** For migrated projects, canvas state is part of the events DB file's backup/restore and rollback-watermark story (ADR-0018) — there is no per-project file to copy back. The `canvas.json.pre-db.bak` left behind by the migration is a one-time pre-migration snapshot, not a live backup.
+- **A re-appearing `canvas.json` is a conflict, not a data source.** If a workspace restore puts a literal `canvas.json` back next to a DB-migrated project, the DB stays authoritative and the file is ignored; `GET /api/migrations/canvas/status` lists it under `conflicts` and a migration run for it refuses. Resolution is an operator decision — inspect the file, then delete it or deliberately re-import. Never auto-merged (ADR-0025).
 - **Promote is opinionated but revisable.** The worker proposes the structure; the user reviews the proposal (with spec preview) in the stepper or chat, can request changes, and confirms before anything is written. Users who want fully manual control should create tasks via the Kanban, not promote from canvas.
 - **One rendering stack since T-340.** The canvas is a React view (`CanvasView.jsx`) like every other dashboard surface. Its note/connection state is deliberately view-local (reducer in `canvasStore.mjs`, not the task appStateBridge), and interaction transients (pan, drag, connect) bypass React state via refs to keep the tuned gesture feel (ADR-0024).
 - **Connections are undirected in the data model, directed in the rendering.** The store dedupes `A→B` and `B→A`, but the renderer can distinguish source-port and target-port for visual purposes. This bites at API time — clients should not assume `from` and `to` survive a round-trip in the order they sent.
@@ -99,7 +101,8 @@ and spec files automatically — canvas notes are only ever deleted last
 - `dashboard/styles/canvas.css` — canvas-specific styles (token-based; kept separate from `dashboard.css`).
 - `dashboard/server.js` — endpoints under `/api/projects/:name/canvas/...` and the promote handler.
 - `dashboard/specify-session.js` — Specify session bookkeeping (create, complete, abort, query).
-- `~/.openclaw/projects/<name>/canvas.json` — per-project canvas state.
+- `dashboard/hzl-service.js` — the canvas store: `canvas_notes` / `canvas_connections` / `canvas_meta` tables in the events DB file (ADR-0025); `dashboard/server.js` `canvasBackend()` — the per-project dual-read switch (DB for migrated projects, legacy `canvas.json` until then).
+- `dashboard/src/components/CanvasMigrationBanner.jsx` + `dashboard/scripts/migrate-canvas-to-db.mjs` — the gated `canvas.json` → DB migration (UI window and headless runner).
 - `context/specify-prompt.md` (in the active project) — the workflow the agent runs after promote.
 
 ## See also

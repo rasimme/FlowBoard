@@ -13,6 +13,7 @@ Factual lookups: what every endpoint takes and returns, what every config knob d
   - [Agents & Status](api/agents.md) — `/api/agents`, `/api/status`
   - [Projects](api/projects.md) — projects CRUD, `/bootstrap`, `/rules`
   - [Tasks](api/tasks.md) — task CRUD + lifecycle (claim, release, complete, checkpoint, comment, route, handoff)
+  - [Migrations](api/migrations.md) — gated canvas `canvas.json` → DB migration (`/api/migrations/canvas/status|run`)
 
 The remaining endpoint groups (`auth`, `files`, `specs`, `canvas`, `specify`, `snippets`, `hooks`) are listed in the [API manifest](api-manifest.json) but do not yet have prose docs. Prose is added on demand as concrete questions surface.
 

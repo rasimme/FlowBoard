@@ -69,13 +69,14 @@ HZL owns coordination state. The following remain filesystem artifacts:
 
 - `PROJECT.md`, `SESSIONS.md`, `DECISIONS.md` — human-readable project docs
 - `context/*.md`, `specs/*.md` — capability docs and specs
-- `canvas.json` — idea-canvas state (may move to HZL in a future migration)
 
-If you find code treating these as derivable from HZL events, that is a bug.
+Idea-canvas state is a special case: since T-344 it lives as plain relational tables (`canvas_notes`, `canvas_connections`, `canvas_meta`) in the events DB *file*, but it is **not** event-sourced and **not** derivable from events (ADR-0025). Legacy `canvas.json` files only persist in unmigrated projects and as `.pre-db.bak` backups.
+
+If you find code treating any of these as derivable from HZL events, that is a bug.
 
 ## Operational pointers
 
-- **Migrations**: `dashboard/migrations.js` holds idempotent migrations m001–m005 (tasks.json → HZL, `_index.md` → `flowboard_projects`, `ACTIVE-PROJECT.md` → `flowboard_agents`, project-path move, session-log consolidation). Run via `node dashboard/migrate-tasks.js` or auto-run on server startup.
+- **Migrations**: `dashboard/migrations.js` holds idempotent migrations m001–m008 (tasks.json → HZL, `_index.md` → `flowboard_projects`, `ACTIVE-PROJECT.md` → `flowboard_agents`, project-path move, session-log consolidation, …, m008 canvas schema). Run via `node dashboard/migrate-tasks.js` or auto-run on server startup. The canvas *data* import is separate and user-gated — see `GET/POST /api/migrations/canvas/status|run`.
 - **Env flags**: HZL is always enabled (the `HZL_ENABLED` flag was removed in T-129-1); `HZL_DB_PATH` overrides the default database path.
 - **Cache rebuild**: deleting `flowboard-cache.db*` forces the server to rebuild projections from the event store on next start.
 

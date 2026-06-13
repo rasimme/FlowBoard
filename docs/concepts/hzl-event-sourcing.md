@@ -85,6 +85,7 @@ client receives 200 response with updated task
 
 - **Known exception to event-only writes (T-293 finding, tracked in T-176).** `_alignProjectionToCache()` in `hzl-service.js` patches `claimed_at`/`lease_until` in the projection via direct SQL because HZL's event vocabulary has no "clear claim metadata without changing status" primitive. A projection rebuilt purely from the event log will not reproduce these patches. The planned fix is the derive-on-read cache refactor (T-176), which removes the write-through path entirely.
 - **`metadata.flowboard.id` values never get reused.** When a task is deleted, its T-NNN id is retired from the active map but stays in archived events. The next created task gets `MAX(existing) + 1`, not "the deleted one's slot." This is intentional — reusing ids would silently confuse historical references in commits, comments, and specs.
+- **Not everything in the events DB file is event-sourced.** Since T-344 the canvas tables (`canvas_notes`, `canvas_connections`, `canvas_meta`) live as plain relational tables in the same `flowboard.db` file — last-write-wins rows, no event log, no projection (ADR-0025). They share the file for its operational guarantees (canonical, watermark-protected per ADR-0018, single writer per ADR-0008), not for the event-sourcing model: the append-only triggers guard only the `events` table, and canvas state is deliberately *not* derivable from events. Event-sourcing is the model for task and coordination state, not a blanket rule for the file.
 
 ## Code
 

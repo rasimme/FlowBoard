@@ -11,7 +11,7 @@ Defines the standard file structure and conventions for FlowBoard projects. Each
 | `PROJECT.md` | Stable project map: goal, scope, background, repo/files, durable constraints | Slim, task-neutral |
 | `SESSIONS.md` | Historical session log | Append-only timeline; not current truth |
 | `DECISIONS.md` | Durable architecture and design reasoning | Why-records, rarely deleted |
-| `canvas.json` | Spatial idea workspace | API-managed (see canvas-and-notes.md) |
+| `canvas.json` | Legacy spatial-idea store — canvas state is DB-backed since T-344 (ADR-0025); file exists only in unmigrated projects or as `.pre-db.bak` backup | API-managed, never hand-edited (see canvas-and-notes.md) |
 
 ### PROJECT.md
 

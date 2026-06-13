@@ -38,7 +38,7 @@ Your agent loses context every session. What was I building? What decisions did 
 
 Activate a project and the agent gets the context it needs — goal, scope, architecture, decisions, current task state, specs. Everything is loaded on demand: the agent pulls in what it needs, when it needs it, keeping token usage low. Switch between projects without losing track.
 
-- Structured project files: `PROJECT.md` → `DECISIONS.md` → `canvas.json` → `specs/`
+- Structured project files: `PROJECT.md` → `DECISIONS.md` → `specs/` (canvas lives in the database since ADR-0025)
 - HZL-backed task runtime with claims, leases, checkpoints, comments, and review gates
 - Lazy loading — zero overhead when no project is active
 - Session handoff — pick up exactly where you left off
@@ -382,7 +382,6 @@ systemctl --user restart dashboard
     ├── PROJECT.md                # Stable project map, not current task truth
     ├── SESSIONS.md               # Chronological session log
     ├── DECISIONS.md              # Architecture + design rationale
-    ├── canvas.json               # Idea canvas state
     ├── context/                  # External reference docs
     └── specs/                    # Task specs
 

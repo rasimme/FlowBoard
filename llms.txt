@@ -40,7 +40,7 @@
 - [ADR-0011](docs/adr/0011-external-agent-discovery.md) — External-agent discovery via `/api/info` and self-onboarding snippet
 - [ADR-0012](docs/adr/0012-canvas-migration-deferred.md) — Canvas migration deferred (superseded by ADR-0024)
 - [ADR-0013](docs/adr/0013-x-openclaw-agent-id-header-dual-acceptance.md) — `x-openclaw-agent-id` header accepted as alternative to `?agentId=` on `/api/status`
-- [ADR-0014](docs/adr/0014-canvas-state-as-json-not-event-sourced.md) — Canvas state in `canvas.json` per project, not HZL event-sourced
+- [ADR-0014](docs/adr/0014-canvas-state-as-json-not-event-sourced.md) — Canvas state in `canvas.json` per project, not HZL event-sourced (superseded by ADR-0025)
 - [ADR-0015](docs/adr/0015-specify-sessions-ram-only.md) — Specify sessions are RAM-only — no DB persistence
 - [ADR-0016](docs/adr/0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract
 - [ADR-0017](docs/adr/0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path
@@ -51,6 +51,7 @@
 - [ADR-0022](docs/adr/0022-parent-status-aggregation-review-gate.md) — Parent status aggregation: one review-gated rule, parents never auto-complete
 - [ADR-0023](docs/adr/0023-overview-sdui-trusted-registry.md) — Overview landing page: server-driven UI, trusted widget registry, flat agent-editable layout schema
 - [ADR-0024](docs/adr/0024-canvas-react-migration.md) — Canvas migrated to React — logic-preserving port, no vanilla runtime left
+- [ADR-0025](docs/adr/0025-canvas-state-in-db.md) — Canvas state in relational DB tables — gated migration off `canvas.json`, still not event-sourced
 
 ## Reference
 
@@ -62,6 +63,7 @@
 - [API endpoint docs (Agents)](docs/reference/api/agents.md) — `/api/agents`, `/api/status`
 - [API endpoint docs (Projects)](docs/reference/api/projects.md) — projects CRUD, bootstrap, rules
 - [API endpoint docs (Tasks)](docs/reference/api/tasks.md) — task CRUD + lifecycle, including workflow and stuck-task endpoints
+- [API endpoint docs (Migrations)](docs/reference/api/migrations.md) — gated canvas `canvas.json` → DB migration (`/api/migrations/canvas/status|run`)
 
 ## How to
 

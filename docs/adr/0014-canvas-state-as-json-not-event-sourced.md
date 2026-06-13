@@ -1,7 +1,7 @@
 # ADR-0014: Canvas state in `canvas.json` per project, not HZL event-sourced
 
 ## Status
-Accepted
+Superseded by [ADR-0025](0025-canvas-state-in-db.md)
 
 ## Date
 2026-04-01

@@ -2,6 +2,26 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Canvas state moved into the DB — `canvas.json` deprecated (T-344).** Canvas
+  notes/connections now live as plain relational tables (`canvas_notes`,
+  `canvas_connections`, `canvas_meta`) in the events DB file — last-write-wins,
+  deliberately still not event-sourced. ADR-0025 supersedes ADR-0014. The data
+  import is user-gated: a dashboard update window (banner → modal → run →
+  result, "Later" per browser session) or `GET/POST
+  /api/migrations/canvas/status|run` / `scripts/migrate-canvas-to-db.mjs`
+  migrates per project (transactional import, count verification), then renames
+  `canvas.json` to `canvas.json.pre-db.bak` — the file is never deleted.
+  Unmigrated projects keep working unchanged via a per-project dual-read
+  switch; new projects are DB-native (no `canvas.json` scaffold). Note IDs now
+  come from a monotonic sequence — deleted IDs are no longer reused.
+  **Operator notes:** if a `canvas.json` re-appears next to a migrated project
+  (e.g. restored from a pre-migration backup), the DB stays authoritative, the
+  status endpoint reports a conflict, and a run refuses — inspect the file,
+  then delete it or re-import deliberately; never auto-merged. Check your
+  backup excludes: jobs skipping `*.db-wal`/`*.db-shm` need a
+  `wal_checkpoint` on the events DB before backup (canvas writes now sit in
+  that WAL), and `*.bak*` excludes will skip the `.pre-db.bak` safety copies.
+
 - **Canvas is React now — no vanilla runtime left (T-340).** The Idea Canvas
   was ported 1:1 from vanilla ES modules to React: the tuned routing/cluster/
   markdown logic moved verbatim into pure, unit-tested modules

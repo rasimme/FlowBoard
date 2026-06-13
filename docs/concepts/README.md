@@ -38,7 +38,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | ✅ ADR-0007 | — |
 | Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | ✅ ADR-0007 | — |
 | Frontend Runtime | React task-state convergence; optimistic mutation contract; `appStateBridge`, `taskState`, `taskMutations`, `useTaskActions` | ✅ [frontend-runtime.md](frontend-runtime.md) | ✅ ADR-0019 | T-129 (Phase 6) |
-| Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | ✅ ADR-0012, ADR-0014 | — |
+| Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | ✅ ADR-0024, ADR-0025 (superseding ADR-0012, ADR-0014) | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | ✅ ADR-0007 | — |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | ✅ ADR-0015, ADR-0016 | — |
 | Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | 🔲 likely needed | — |
@@ -72,7 +72,7 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | Kanban | `blocked` is a boolean flag, not a status | [kanban.md](kanban.md) | `tasked` → T-199-5 |
 | Kanban | Subtask depth hard-capped at 1 level | [kanban.md](kanban.md) | `tasked` → T-199-6 |
 | Idea Canvas | Canvas migration deferred — vanilla retained pending scope review | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-7 → ADR-0012 |
-| Idea Canvas | Canvas state in `canvas.json` per project — not HZL event-sourced | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-8 |
+| Idea Canvas | Canvas state in `canvas.json` per project — not HZL event-sourced | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-8 → ADR-0014 (superseded by ADR-0025 — DB tables, still not event-sourced) |
 | Idea Canvas | Connections undirected in storage, directed in rendering | [idea-canvas.md](idea-canvas.md) | `dropped` — too small for own ADR; documented in concept doc |
 | Idea Canvas | Specify-session concurrency: max 1 active per `agentId` | [idea-canvas.md](idea-canvas.md) | `merged` → T-199-10 (covered by RAM-only-sessions ADR) |
 | HZL Event Sourcing | Brain/muscle split: FlowBoard owns specs/canvas/UI, HZL owns tasks/events | [hzl-event-sourcing.md](hzl-event-sourcing.md) | `merged` → T-199-1 (umbrella headline) |

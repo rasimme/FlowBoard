@@ -103,6 +103,20 @@
     },
     {
       "method": "GET",
+      "path": "/api/migrations/canvas/status",
+      "auth": "user",
+      "group": "migrations",
+      "doc": "api/migrations.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/migrations/canvas/run",
+      "auth": "user",
+      "group": "migrations",
+      "doc": "api/migrations.md"
+    },
+    {
+      "method": "GET",
       "path": "/api/health",
       "auth": "none",
       "group": "discovery",

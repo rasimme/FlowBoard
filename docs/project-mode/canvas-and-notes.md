@@ -6,7 +6,7 @@ Reference for the FlowBoard canvas — a per-project spatial workspace for ideas
 
 ## Data Model
 
-Each project has a `canvas.json` file at `~/.openclaw/projects/<project>/canvas.json`.
+Canvas state is stored in DB tables (`canvas_notes`, `canvas_connections`, `canvas_meta` in the events DB file — relational, last-write-wins, not event-sourced; ADR-0025). Always read and write it through the API below, never through files or SQL. The API shape is unchanged from the legacy file era:
 
 ```json
 {
@@ -25,6 +25,8 @@ Each project has a `canvas.json` file at `~/.openclaw/projects/<project>/canvas.
   ]
 }
 ```
+
+Legacy projects that still have a `~/.openclaw/projects/<project>/canvas.json` keep working off that file (per-project dual-read) until the operator runs the gated migration (`GET/POST /api/migrations/canvas/status|run`); the migration renames the file to `canvas.json.pre-db.bak`. New projects are DB-native — no `canvas.json` is created anymore. A literal `canvas.json` re-appearing next to a migrated project is a conflict: the DB stays authoritative, the file is ignored, and resolution is an operator decision (never auto-merge).
 
 ### Note Properties
 
@@ -82,4 +84,5 @@ Promote supports two paths. **Dashboard path (default, no `agentId`):** creates 
 - Batch delete cleans connections for all removed notes
 - Self-connections are rejected
 - Duplicate connections are idempotent (returns `duplicate: true`)
-- Canvas file is created on first write if absent
+- An empty canvas reads as `{ "notes": [], "connections": [] }` — no setup call needed
+- Note IDs come from a monotonic per-project sequence; deleted IDs are never reused

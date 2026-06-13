@@ -154,6 +154,6 @@ Agent ids are validated at API ingress. Known OpenClaw ids and stable external i
 ### Project creation semantics
 - Project creation is API-first: use `POST /api/projects`
 - Project creation and project activation are separate actions
-- New projects are scaffolded directly in the post-m005 structure: `PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, plus default `context/`, `specs/`, `canvas.json`
+- New projects are scaffolded directly in the post-m005 structure: `PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, plus default `context/` and `specs/`. Canvas state is DB-native from creation — no `canvas.json` is scaffolded (ADR-0025)
 - Chat flows and future dashboard UI should call this API rather than manually creating directories/files
 - Planned UI direction: modal/form-first create flow; richer conversational setup remains future work
