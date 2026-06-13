@@ -94,6 +94,53 @@ async function run() {
     ok(r.status === 400, 'repo-status without repo is rejected');
     r = await api('GET', '/github/repo-status?repo=' + encodeURIComponent('../etc/passwd'));
     ok(r.status === 400, 'repo-status rejects non owner/name input');
+    // path-traversal hardening: a `..` segment must never reach the GitHub API with the token
+    r = await api('GET', '/github/repo-status?repo=' + encodeURIComponent('owner/..'));
+    ok(r.status === 400, 'repo-status rejects a ".." path segment');
+
+    // insight endpoint validation (all reject BEFORE any network call)
+    r = await api('GET', '/github/insight?repo=rasimme/FlowBoard');
+    ok(r.status === 400, 'insight without view is rejected');
+    r = await api('GET', '/github/insight?repo=rasimme/FlowBoard&view=bogus');
+    ok(r.status === 400, 'insight rejects an unknown view');
+    r = await api('GET', '/github/insight?repo=owner/..&view=pulls');
+    ok(r.status === 400, 'insight rejects a traversal repo');
+    r = await api('GET', '/github/insight?repo=rasimme/FlowBoard&view=ci&branch=' + encodeURIComponent('../x'));
+    ok(r.status === 400, 'insight rejects a traversal branch');
+
+    // GitHub token store — WRITE-ONLY: the value must never be echoed back
+    r = await api('GET', '/settings/github-token');
+    ok(r.status === 200 && r.body?.set === false, 'token store starts empty');
+    r = await api('PUT', '/settings/github-token', { token: 'short' });
+    ok(r.status === 400, 'token store rejects a malformed token');
+    const secret = 'ghp_' + 'x'.repeat(36);
+    r = await api('PUT', '/settings/github-token', { token: secret });
+    ok(r.status === 200, 'token store accepts a valid PAT');
+    r = await api('GET', '/settings/github-token');
+    ok(r.status === 200 && r.body?.set === true && r.body?.source === 'settings', 'token store reports set without the value');
+    ok(JSON.stringify(r.body).indexOf(secret) === -1, 'token value is NEVER returned by GET');
+    r = await api('DELETE', '/settings/github-token');
+    ok(r.status === 200, 'token store clears on DELETE');
+    r = await api('GET', '/settings/github-token');
+    ok(r.body?.set === false, 'token store is empty after DELETE');
+
+    // project-level GitHub binding (T-328)
+    r = await api('GET', '/projects/ov/github');
+    ok(r.status === 200 && r.body?.github === null, 'project github binding starts null');
+    r = await api('PUT', '/projects/ov/github', { repo: 'owner/..' });
+    ok(r.status === 400, 'binding rejects a traversal repo');
+    r = await api('PUT', '/projects/ov/github', { repo: 'rasimme/FlowBoard', branch: 'dev' });
+    ok(r.status === 200 && r.body?.github?.repo === 'rasimme/FlowBoard' && r.body?.github?.branch === 'dev', 'binding persists repo + branch');
+    r = await api('GET', '/projects/ov/github');
+    ok(r.body?.github?.repo === 'rasimme/FlowBoard', 'binding is read back');
+    r = await api('PUT', '/projects/ov/github', { repo: null });
+    ok(r.status === 200 && r.body?.github === null, 'binding clears with {repo:null}');
+    r = await api('PUT', '/projects/nope/github', { repo: 'a/b' });
+    ok(r.status === 404, 'binding on a missing project is 404');
+
+    // an answer may not resolve a question that does not exist in this project
+    r = await api('POST', `/projects/ov/tasks/${qTask}/comment`, { author: 'human', message: 'x', kind: 'answer', questionId: 999999 });
+    ok(r.status === 400, 'answer with a bogus questionId is rejected');
 
     // default when no file exists
     r = await api('GET', '/projects/ov/overview');

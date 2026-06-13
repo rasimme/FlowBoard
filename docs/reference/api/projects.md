@@ -140,12 +140,12 @@ widget registry — agents and the edit-mode UI write the same schema.
 
 ### GET /api/overview/widgets
 Widget catalog (type, label, description, defaultSize, props) plus the named
-presets (`coding`, `knowledge`, `mission`) and the grid contract
+presets (`default`, `coding`, `knowledge`, `mission`) and the grid contract
 (12 columns, 88px row unit, 12px gutter).
 
 ### GET /api/projects/:name/overview
 **200** `{ ok, overview }` — the stored config (`source: "file"`), or the
-default `agent` preset (`source: "default"`) when no file exists or the
+`default` preset (`source: "default"`) when no file exists or the
 stored file no longer validates.
 
 ### PUT /api/projects/:name/overview
@@ -160,7 +160,7 @@ Query: `repo=owner/name` (required). Feeds the `repo-status` overview
 widget — default branch, CI state (`passing|failing|pending|none` from
 check-runs), up to 5 open PRs and the 5 latest commits. Fetched
 server-side (a `FLOWBOARD_GITHUB_TOKEN`/`GITHUB_TOKEN` env token never
-reaches the client) and cached ~90s per repo.
+reaches the client) and cached ~150s per repo.
 **200** `{ ok, status }` — **400** invalid repo — **404/502** GitHub errors.
 
 ### GET | PUT /api/projects/:name/github
@@ -174,7 +174,7 @@ picking a branch in any GitHub widget writes it here; widget
 Query: `repo=owner/name` and `view=pulls|ci|releases|issues` (+ optional
 `branch` for `ci`). Feeds the `gh-*` overview widgets — open PRs with
 requested reviews, workflow run history, latest release vs unreleased
-commits, issue triage. Same server-side token and ~90s cache as
+commits, issue triage. Same server-side token and ~150s cache as
 repo-status.
 **200** `{ ok, insight }` — **400** invalid input — **404/502** GitHub errors.
 

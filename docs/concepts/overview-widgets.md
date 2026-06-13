@@ -37,7 +37,7 @@ project's agents can shape.
   "mission" }` materializes a curated layout; the picker previews them
   as generated schematics.
 
-## The catalog (25 types)
+## The catalog (26 types)
 
 Grouped the way the picker groups them:
 

@@ -46,7 +46,7 @@ Activate a project and the agent gets the context it needs — goal, scope, arch
 ### 🧩 Modular Project Overview
 
 Every project gets a composable landing page: a widget grid both you and
-your agents can shape. 25 widgets across five clusters — what needs you
+your agents can shape. 26 widgets across five clusters — what needs you
 (blocked, approvals, open agent questions), live activity and momentum,
 direction (milestones as definition-of-done checklists, stats, board
 preview), a full GitHub family (repo status, CI history, PRs, releases,

@@ -1897,6 +1897,19 @@ function addComment(project, flowboardId, opts) {
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
 
+  // An answer may only resolve a real question that lives in THIS project —
+  // otherwise a guessed/enumerated questionId could silently "resolve"
+  // another project's open question.
+  if (kind === 'answer') {
+    const qid = Number(questionId);
+    const row = _eventsDb.prepare("SELECT task_id, type, data FROM events WHERE id = ?").get(qid);
+    const qData = row && ((typeof row.data === 'string') ? safeJson(row.data) : (row.data || {}));
+    const qMapKey = row && _ulidToFb.get(row.task_id);
+    if (!row || row.type !== 'comment_added' || qData.kind !== 'question' || !qMapKey || !qMapKey.startsWith(project + ':')) {
+      throw Object.assign(new Error('questionId does not reference an open question in this project'), { code: 'BAD_REQUEST' });
+    }
+  }
+
   let id;
   let timestamp;
   if (kind) {
@@ -2007,9 +2020,14 @@ function getProjectActivity(project, opts = {}) {
       const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
       let message;
       if (ev.type === 'comment_added') {
-        message = 'commented' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
+        // comments store their body in data.text (hzl-core) — data.message
+        // was always undefined, so the feed showed a bare "commented"
+        const body = data.text || data.message || '';
+        message = 'commented' + (body ? `: ${String(body).slice(0, 90)}` : '');
       } else if (ev.type === 'checkpoint_recorded') {
-        message = 'checkpoint' + (data.message ? `: ${String(data.message).slice(0, 90)}` : '');
+        // checkpoints store their message as the event name (data.name)
+        const body = data.name || data.message || '';
+        message = 'checkpoint' + (body ? `: ${String(body).slice(0, 90)}` : '');
       } else {
         message = renderStatusEventMessage(ev.type, data);
       }

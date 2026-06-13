@@ -278,7 +278,7 @@ export function NextUpWidget({ widget, editing, onRemove }) {
           </div>
         )}
         {next.map(t => (
-          <div key={t.id} className="ov-task-row" onClick={() => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
             <span className="ov-task-id">{t.id}</span>
             <span className="ov-task-title">{t.title}</span>
             <span className={'ov-pill ' + (t.priority || 'medium')}>{t.priority || 'medium'}</span>
@@ -347,7 +347,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
               </div>
             ))}
           </ScrollArea>
-          <div className="ov-wfoot" onClick={() => window._openSpec?.('DECISIONS.md')}>DECISIONS.md →</div>
+          <div className="ov-wfoot" onClick={editing ? undefined : () => window._openSpec?.('DECISIONS.md')}>DECISIONS.md →</div>
         </>
       )}
     </OvWidget>
@@ -378,7 +378,7 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
       ) : (
         <>
           <div className="ov-goal-text">{goal}</div>
-          <div className="ov-wfoot" onClick={() => window._openSpec?.('PROJECT.md')}>PROJECT.md →</div>
+          <div className="ov-wfoot" onClick={editing ? undefined : () => window._openSpec?.('PROJECT.md')}>PROJECT.md →</div>
         </>
       )}
     </OvWidget>
@@ -425,7 +425,7 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
 
   return (
     <OvWidget title={widget?.title || 'Board Preview'} meta="opens Kanban">
-      <div className="ov-kmini" onClick={() => goTab('tasks')} style={{ cursor: 'pointer' }}>
+      <div className="ov-kmini" onClick={editing ? undefined : () => goTab('tasks')} style={{ cursor: editing ? undefined : 'pointer' }}>
         {cols.map(c => (
           <div key={c.key} className="ov-kcol">
             <div className="ov-kcol-head">
@@ -435,7 +435,7 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
             <ScrollArea className="flex-1 min-h-0" innerClassName="ov-kbars">
               {c.bars.map(t => (
                 <span key={t.id} className="ov-kbar" title={`${t.id} ${t.title}`}
-                  onClick={e => { e.stopPropagation(); goTab('tasks'); window._scrollToTaskId = t.id; }}>
+                  onClick={editing ? undefined : e => { e.stopPropagation(); goTab('tasks'); window._scrollToTaskId = t.id; }}>
                   <span className="tid">{t.id}</span>
                   <span className="ttl">{t.title}</span>
                   {t.agent && <AgentChip name={t.agent} size="xs" />}
@@ -616,13 +616,15 @@ export function SinceLastVisitWidget({ widget, editing }) {
   const goTab = useGoTab();
   const { state } = useAppState();
   const project = state?.viewedProject;
-  // capture the previous visit ONCE; bump it when the user actually leaves
-  const [sinceTs] = useState(() => {
-    const stored = project ? localStorage.getItem(`ov-visit:${project}`) : null;
-    return stored || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  });
+  // re-read the previous visit whenever the project changes — the widget
+  // does NOT remount on a project switch, so a once-captured value kept the
+  // first project's baseline. Read this project's stored timestamp, then
+  // bump it on leave (tab switch unmounts → cleanup; full close → beforeunload).
+  const [sinceTs, setSinceTs] = useState(null);
   useEffect(() => {
     if (!project) return;
+    const stored = localStorage.getItem(`ov-visit:${project}`);
+    setSinceTs(stored || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
     const bump = () => localStorage.setItem(`ov-visit:${project}`, new Date().toISOString());
     window.addEventListener('beforeunload', bump);
     return () => {

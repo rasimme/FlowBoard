@@ -19,8 +19,16 @@ const TTL_OK = 150 * 1000;
 const TTL_ERR = 30 * 1000;
 const _cache = new Map(); // repo → { at, ttl, data?, error? }
 
+// A GitHub owner/name segment: starts and ends alphanumeric, no `.`/`..`
+// segments. Rejecting these matters because `repo` is interpolated into
+// the API path while the server's token rides along — `owner/..` would
+// let a caller steer the credentialed request to arbitrary api.github.com
+// endpoints (path-traversal via URL normalization).
+const GH_SEGMENT = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 function validRepo(repo) {
-  return /^[\w.-]+\/[\w.-]+$/.test(repo || '');
+  const parts = String(repo || '').split('/');
+  if (parts.length !== 2) return false;
+  return parts.every(p => p !== '.' && p !== '..' && GH_SEGMENT.test(p));
 }
 
 async function gh(path) {
@@ -216,7 +224,11 @@ async function fetchInsight(repo, view, branch = null) {
 const INSIGHT_VIEWS = new Set(['pulls', 'ci', 'releases', 'issues']);
 
 function validBranch(branch) {
-  return /^[\w./-]{1,120}$/.test(branch || '');
+  const b = String(branch || '');
+  // no `.`/`..` path segments — defense in depth (branch is also
+  // encodeURIComponent'd before interpolation, but don't rely on that)
+  if (b.split('/').some(seg => seg === '.' || seg === '..')) return false;
+  return /^[\w./-]{1,120}$/.test(b);
 }
 
 function hasToken() { return Boolean(resolveToken()); }
