@@ -10,10 +10,12 @@
 //      registry, GET /api/migrations/canvas/status reports 3 pending with
 //      CLEANED counts.
 //   3. Browser (Edge headless, same pattern as test-canvas-browser-smoke.js):
-//      dashboard loads → migration banner visible → Review opens the modal →
-//      confirm runs the migration through the real UI.
+//      dashboard loads → SnippetUpgrade header chip visible → clicking it opens
+//      the unified update modal → Apply runs the migration through the real UI
+//      (T-344-9: the canvas migration moved from a bottom banner into the
+//      existing SnippetUpgrade header-chip + modal).
 //   4. Verify: 2 projects migrated (counts correct, canvas.json renamed to
-//      .pre-db.bak), corrupt project listed as failed, banner stays for the
+//      .pre-db.bak), corrupt project listed as failed, chip stays for the
 //      remaining pending project.
 //   5. Canvas function probe AFTER migration via API (create/update/connect
 //      in the migrated project → served from the DB, no canvas.json
@@ -126,20 +128,20 @@ function writeFixtureProjects(projectsDir) {
 
 // --- Browser helpers ---------------------------------------------------------
 
-/** Text content of the migration banner alert, or null when absent. */
-async function bannerText(page) {
+/** Text content of the SnippetUpgrade header migration chip, or null when absent. */
+async function chipText(page) {
   return page.evaluate(() => {
-    const el = [...document.querySelectorAll('div[role="alert"]')]
-      .find(e => e.textContent.includes('Update available'));
+    const el = [...document.querySelectorAll('button.migration-chip')]
+      .find(e => /migration required|updates required/i.test(e.textContent));
     return el ? el.textContent : null;
   });
 }
 
-/** Text content of the open migration modal dialog, or null when absent. */
+/** Text content of the open unified update modal, or null when absent. */
 async function dialogText(page) {
   return page.evaluate(() => {
     const el = [...document.querySelectorAll('[role="dialog"]')]
-      .find(e => e.textContent.includes('Canvas Data Migration'));
+      .find(e => e.textContent.includes('Canvas data migration'));
     return el ? el.textContent : null;
   });
 }
@@ -232,38 +234,37 @@ async function run() {
       await page.setViewport({ width: 1280, height: 900 });
       await page.goto(base + '/', { waitUntil: 'networkidle2' });
 
-      const banner = await waitFor(() => bannerText(page), 'migration banner');
-      ok(/Update available/.test(banner), 'migration banner appears after dashboard load');
-      ok(/pending for 3 projects/.test(banner), `banner announces 3 pending projects (got "${banner}")`);
+      const chip = await waitFor(() => chipText(page), 'migration header chip');
+      ok(/Migration required|Updates required/.test(chip),
+        `SnippetUpgrade header chip appears after dashboard load (got "${chip}")`);
 
-      ok(await clickButton(page, /^Review$/), 'banner has a Review button');
-      const modal = await waitFor(() => dialogText(page), 'migration modal');
-      ok(/Canvas Data Migration/.test(modal), 'Review opens the Canvas Data Migration modal');
+      ok(await clickButton(page, /^(Migration required|Updates required.*)$/),
+        'clicking the header chip opens the update modal');
+      const modal = await waitFor(() => dialogText(page), 'update modal');
+      ok(/Canvas data migration/.test(modal), 'modal renders the Canvas data migration group');
       ok(modal.includes(P_NORMAL) && modal.includes(P_EMPTY) && modal.includes(P_CORRUPT),
         'modal lists all 3 pending projects');
       ok(modal.includes('3 notes · 2 connections'), 'modal shows cleaned counts for the normal project');
       ok(modal.includes('canvas.json.pre-db.bak'), 'modal points out the automatic backup');
 
-      ok(await clickButton(page, /^Migrate 3 projects$/), 'modal has the Migrate confirm button');
+      ok(await clickButton(page, /^Apply 3 changes$/), 'modal has the Apply confirm button');
       const resultModal = await waitFor(async () => {
         const t = await dialogText(page);
-        return t && t.includes('Migration finished with errors') ? t : null;
+        // After the run, the corrupt project shows a "Failed" chip + error inline.
+        return t && /Failed/.test(t) && /invalid canvas\.json/i.test(t) ? t : null;
       }, 'migration result phase');
-      ok(/1 of 3 projects failed/.test(resultModal), 'result reports 1 of 3 projects failed');
-      ok(resultModal.includes(`${P_NORMAL} — 3 notes, 2 connections migrated`),
-        'result lists the normal project with correct migrated counts');
-      ok(resultModal.includes(`${P_EMPTY} — 0 notes, 0 connections migrated`),
-        'result lists the empty project as migrated (0/0)');
-      ok(resultModal.includes(P_CORRUPT) && resultModal.includes('invalid canvas.json'),
+      ok(resultModal.includes(P_CORRUPT) && /invalid canvas\.json/i.test(resultModal),
         'result lists the corrupt project as failed with a parse error');
+      ok(/Canvas migration: 1 failed|1 failed/.test(resultModal),
+        'footer reports the failed canvas project');
 
-      ok(await clickButton(page, /^Close$/), 'result modal has a Close button');
-      const bannerAfter = await waitFor(async () => {
-        const t = await bannerText(page);
-        return t && /pending for 1 project\b/.test(t) ? t : null;
-      }, 'banner shrinks to remaining pending project');
-      ok(/pending for 1 project\b/.test(bannerAfter),
-        'banner stays visible for the remaining (corrupt) project');
+      ok(await clickButton(page, /^(Not now|Close)$/), 'modal can be dismissed after the run');
+      const chipAfter = await waitFor(async () => {
+        const t = await chipText(page);
+        return t && /Migration required|Updates required/.test(t) ? t : null;
+      }, 'chip stays for the remaining pending project');
+      ok(/Migration required|Updates required/.test(chipAfter),
+        'header chip stays visible for the remaining (corrupt) project');
     } else {
       console.log('  skip - Microsoft Edge not found; running migration via API instead of the UI');
       res = await fetchJson(base, 'POST', '/api/migrations/canvas/run', {});

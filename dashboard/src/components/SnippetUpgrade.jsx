@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus, ArrowUpCircle } from 'lucide-react';
+import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus, ArrowUpCircle, Database } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import ScrollArea from './ScrollArea.jsx';
+import {
+  fetchCanvasMigrationStatus,
+  runCanvasMigration,
+  applyRunResults,
+  countsLine,
+  projectLabel,
+  pendingProjects,
+  conflictProjects,
+  CANVAS_MIGRATION_BACKUP_FILE,
+} from '../utils/canvasMigration.mjs';
 
 /**
  * SnippetUpgrade — FlowBoard setup / migration header chip + modal.
@@ -20,40 +30,82 @@ import ScrollArea from './ScrollArea.jsx';
  *
  * On Apply: POST /api/snippets/apply with `{ actions: [{id, action}] }`.
  * Every mutation writes a server-side `.bak-<timestamp>` first.
+ *
+ * This is also the single update center for the canvas.json → DB migration
+ * (T-344-9, formerly a separate bottom banner): on mount it additionally
+ * fetches GET /api/migrations/canvas/status (parallel, fail-silent). When
+ * canvas projects are pending, the chip appears even if the server returns no
+ * snippet chip, the modal renders a "Canvas data migration" group, and Apply
+ * additionally POSTs /api/migrations/canvas/run.
  */
 export default function SnippetUpgrade() {
   const [status, setStatus] = useState(null);
+  const [canvasStatus, setCanvasStatus] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   const refresh = async () => {
-    try {
-      const res = await apiFetch('/api/snippets/status');
-      if (!res.ok) return;
-      const data = await res.json();
-      setStatus(data);
-    } catch {
-      // Fail silently — chip simply doesn't appear
-    }
+    // Snippet status and canvas migration status are independent and both
+    // fail-silent: each simply contributes nothing to the chip on error.
+    const snippetReq = (async () => {
+      try {
+        const res = await apiFetch('/api/snippets/status');
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    })();
+    const canvasReq = fetchCanvasMigrationStatus();
+    const [snippetData, canvasData] = await Promise.all([snippetReq, canvasReq]);
+    if (snippetData !== null) setStatus(snippetData);
+    setCanvasStatus(canvasData);
   };
 
   useEffect(() => {
     refresh();
   }, []);
 
-  if (!status || !status.chip) return null;
+  const chip = resolveChip(status?.chip, canvasStatus);
+
+  // Nothing to surface: no snippet chip AND no pending canvas migration.
+  if (!chip) return null;
 
   return (
     <>
-      <SetupChip chip={status.chip} onClick={() => setModalOpen(true)} />
+      <SetupChip chip={chip} onClick={() => setModalOpen(true)} />
       <span className="header-divider" />
       <UpgradeModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        status={status}
+        onClose={() => { setModalOpen(false); refresh(); }}
+        status={status || { files: [] }}
+        canvasStatus={canvasStatus}
         onApplied={refresh}
       />
     </>
   );
+}
+
+/**
+ * Combine the server snippet chip with the canvas migration status into a
+ * single header chip:
+ *   - snippet chip + canvas pending → warn chip with a combined count
+ *   - snippet chip only            → server chip unchanged
+ *   - canvas pending only          → synthetic "Migration required" (warn)
+ *   - neither                      → null (chip hidden)
+ */
+export function resolveChip(snippetChip, canvasStatus) {
+  const canvasCount = pendingProjects(canvasStatus).length;
+  if (!snippetChip && canvasCount === 0) return null;
+  if (snippetChip && canvasCount === 0) return snippetChip;
+  if (!snippetChip && canvasCount > 0) {
+    return { text: 'Migration required', variant: 'warn' };
+  }
+  // Both present: combined warn chip.
+  const word = canvasCount === 1 ? 'canvas project' : 'canvas projects';
+  return {
+    text: `Updates required · ${canvasCount} ${word}`,
+    variant: 'warn',
+  };
 }
 
 function SetupChip({ chip, onClick }) {
@@ -69,10 +121,12 @@ function SetupChip({ chip, onClick }) {
   );
 }
 
-function UpgradeModal({ open, onClose, status, onApplied }) {
-  const identicalFiles = status.files.filter(f => f.state === 'identical');
-  const driftedFiles = status.files.filter(f => f.state === 'drifted');
-  const missingFiles = status.files.filter(f => f.state === 'missing');
+function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
+  const identicalFiles = (status.files || []).filter(f => f.state === 'identical');
+  const driftedFiles = (status.files || []).filter(f => f.state === 'drifted');
+  const missingFiles = (status.files || []).filter(f => f.state === 'missing');
+  const canvasPending = pendingProjects(canvasStatus);
+  const canvasConflicts = conflictProjects(canvasStatus);
   const bootLegacyFiles = status.bootLegacyFiles || [];
   const legacyStateFiles = status.legacyStateFiles || [];
   const configAdvisories = status.configAdvisories || [];
@@ -90,9 +144,14 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const [selectedUpgrade, setSelectedUpgrade] = useState({});
   const [selectedMigrate, setSelectedMigrate] = useState({});
   const [selectedAdd, setSelectedAdd] = useState({});
+  // Canvas group is mandatory like drifted snippets: pre-selected, all pending
+  // projects migrate together (per-project opt-out via the master checkbox).
+  const [canvasSelected, setCanvasSelected] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [applying, setApplying] = useState(false);
   const [result, setResult] = useState(null);
+  // Separate canvas run result so partial failures per area show independently.
+  const [canvasResult, setCanvasResult] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -103,10 +162,12 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     driftedFiles.forEach(f => { initMigrate[f.id] = true; });
     setSelectedMigrate(initMigrate);
     setSelectedAdd({}); // optional; user opts in per workspace
+    setCanvasSelected(canvasPending.length > 0);
     setExpandedId(null);
     setResult(null);
+    setCanvasResult(null);
     setApplying(false);
-  }, [open, status]);
+  }, [open, status, canvasStatus]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,7 +179,9 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
   const upgradeCount = identicalFiles.filter(f => selectedUpgrade[f.id]).length;
   const migrateCount = driftedFiles.filter(f => selectedMigrate[f.id]).length;
   const addCount = missingFiles.filter(f => selectedAdd[f.id]).length;
-  const totalSelected = upgradeCount + migrateCount + addCount;
+  const snippetSelected = upgradeCount + migrateCount + addCount;
+  const canvasCount = canvasSelected && canvasPending.length > 0 ? canvasPending.length : 0;
+  const totalSelected = snippetSelected + canvasCount;
 
   const allUpgradeSelected = identicalFiles.length > 0 && upgradeCount === identicalFiles.length;
   const someUpgradeSelected = upgradeCount > 0 && !allUpgradeSelected;
@@ -148,50 +211,103 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
     if (!allAddSelected) missingFiles.forEach(f => { next[f.id] = true; });
     setSelectedAdd(next);
   };
+  const toggleCanvas = () => setCanvasSelected(prev => !prev);
 
   const handleApply = async () => {
     if (applying || totalSelected === 0) return;
-    const actions = [];
-    identicalFiles.forEach(f => { if (selectedUpgrade[f.id]) actions.push({ id: f.id, action: 'upgrade' }); });
-    driftedFiles.forEach(f => { if (selectedMigrate[f.id]) actions.push({ id: f.id, action: 'migrate' }); });
-    missingFiles.forEach(f => { if (selectedAdd[f.id]) actions.push({ id: f.id, action: 'add' }); });
     setApplying(true);
-    try {
-      const res = await apiFetch('/api/snippets/apply', {
-        method: 'POST',
-        body: JSON.stringify({ actions }),
-      });
-      const data = await res.json();
-      setResult(data);
-      setApplying(false);
-      const appliedCount = data?.applied?.length || 0;
-      const skippedCount = data?.skipped?.length || 0;
-      if (data?.ok && appliedCount > 0 && skippedCount === 0) {
-        setTimeout(() => {
-          onApplied?.();
-          onClose?.();
-        }, 900);
+
+    // Run snippets and canvas independently; collect both outcomes so a
+    // partial failure in one area does not mask success in the other.
+    let snippetData = null;
+    let canvasOutcome = null;
+
+    // --- Snippets ---
+    if (snippetSelected > 0) {
+      const actions = [];
+      identicalFiles.forEach(f => { if (selectedUpgrade[f.id]) actions.push({ id: f.id, action: 'upgrade' }); });
+      driftedFiles.forEach(f => { if (selectedMigrate[f.id]) actions.push({ id: f.id, action: 'migrate' }); });
+      missingFiles.forEach(f => { if (selectedAdd[f.id]) actions.push({ id: f.id, action: 'add' }); });
+      try {
+        const res = await apiFetch('/api/snippets/apply', {
+          method: 'POST',
+          body: JSON.stringify({ actions }),
+        });
+        snippetData = await res.json();
+      } catch {
+        snippetData = { ok: false, error: 'Network error' };
       }
-    } catch {
-      setApplying(false);
-      setResult({ ok: false, error: 'Network error' });
+      setResult(snippetData);
     }
+
+    // --- Canvas migration (all pending) ---
+    if (canvasCount > 0) {
+      try {
+        const response = await runCanvasMigration(canvasPending.map(p => p.project));
+        canvasOutcome = applyRunResults(canvasStatus, response);
+        setCanvasResult(canvasOutcome);
+      } catch (err) {
+        canvasOutcome = { succeeded: [], failed: [], requestError: err?.message || 'Migration request failed' };
+        setCanvasResult(canvasOutcome);
+      }
+    }
+
+    setApplying(false);
+
+    // Reload status (chip recomputed) and close only when everything succeeded.
+    const snippetOk = snippetSelected === 0
+      || (snippetData?.ok && (snippetData?.applied?.length || 0) > 0 && (snippetData?.skipped?.length || 0) === 0);
+    const canvasOk = canvasCount === 0
+      || (!!canvasOutcome && !canvasOutcome.requestError && canvasOutcome.failed.length === 0 && canvasOutcome.succeeded.length > 0);
+
+    if (snippetOk && canvasOk) {
+      setTimeout(() => {
+        onApplied?.();
+        onClose?.();
+      }, 900);
+    }
+    // On partial failure we keep the result phase visible (failed rows + error
+    // footer). The chip/status is refreshed when the modal closes (onClose),
+    // so resolved areas drop off without wiping the visible result.
   };
 
   const appliedCount = result?.applied?.length || 0;
   const skippedCount = result?.skipped?.length || 0;
-  const applied = !!result?.ok && appliedCount > 0 && skippedCount === 0;
-  const applyFailed = !!result && (!result.ok || appliedCount === 0 || skippedCount > 0);
-  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length + bootstrapDocAdvisories.length > 0;
+  const snippetApplied = !!result?.ok && appliedCount > 0 && skippedCount === 0;
+  const snippetFailed = !!result && (!result.ok || appliedCount === 0 || skippedCount > 0);
 
-  // Modal title & subtitle follow the chip variant
-  const title = status.chip?.variant === 'warn'
+  // Canvas outcome flags (separate area; partial failures shown independently).
+  const canvasMigrated = canvasResult?.succeeded?.length || 0;
+  const canvasFailedCount = canvasResult?.failed?.length || 0;
+  const canvasApplied = !!canvasResult && !canvasResult.requestError
+    && canvasFailedCount === 0 && canvasMigrated > 0;
+  const canvasFailed = !!canvasResult
+    && (!!canvasResult.requestError || canvasFailedCount > 0 || (canvasMigrated === 0 && !canvasResult.requestError));
+
+  // Used to mark snippet FileRows as done in the result phase.
+  const applied = snippetApplied;
+
+  // Whole-window state: everything attempted, all succeeded.
+  const attemptedSnippet = snippetSelected > 0;
+  const attemptedCanvas = canvasCount > 0;
+  const fullyApplied = (result !== null || canvasResult !== null)
+    && (!attemptedSnippet || snippetApplied)
+    && (!attemptedCanvas || canvasApplied)
+    && (attemptedSnippet || attemptedCanvas);
+  const anyFailed = snippetFailed || canvasFailed;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length + bootstrapDocAdvisories.length + canvasPending.length + canvasConflicts.length > 0;
+
+  // Modal title & subtitle follow the chip variant. Any pending migration
+  // (snippet drift or canvas) makes this a "Migration" window.
+  const isWarn = status.chip?.variant === 'warn' || canvasPending.length > 0;
+  const title = isWarn
     ? 'FlowBoard · Migration'
     : 'FlowBoard · Setup';
   const subtitle = [
     identicalFiles.length > 0 && `${identicalFiles.length} safe upgrade${identicalFiles.length !== 1 ? 's' : ''}`,
     driftedFiles.length > 0 && `${driftedFiles.length} migration${driftedFiles.length !== 1 ? 's' : ''}`,
     missingFiles.length > 0 && `${missingFiles.length} AGENTS.md file${missingFiles.length !== 1 ? 's' : ''} missing FlowBoard`,
+    canvasPending.length > 0 && `${canvasPending.length} canvas migration${canvasPending.length !== 1 ? 's' : ''}`,
     bootLegacyFiles.length > 0 && `${bootLegacyFiles.length} legacy BOOT.md advisory${bootLegacyFiles.length !== 1 ? 'ies' : ''}`,
     legacyStateFiles.length > 0 && `${legacyStateFiles.length} legacy state file${legacyStateFiles.length !== 1 ? 's' : ''}`,
     configAdvisories.length > 0 && `${configAdvisories.length} OpenClaw config advisory${configAdvisories.length !== 1 ? 'ies' : ''}`,
@@ -286,6 +402,19 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
             />
           )}
 
+          {canvasPending.length > 0 && (
+            <CanvasMigrationSection
+              pending={canvasPending}
+              selected={canvasSelected}
+              onToggle={toggleCanvas}
+              result={canvasResult}
+            />
+          )}
+
+          {canvasConflicts.length > 0 && (
+            <CanvasConflictSection conflicts={canvasConflicts} />
+          )}
+
           {bootLegacyFiles.length > 0 && (
             <BootLegacySection files={bootLegacyFiles} />
           )}
@@ -316,30 +445,34 @@ function UpgradeModal({ open, onClose, status, onApplied }) {
 
         <div className="modal-footer">
           <div className="footer-left">
-            {applied ? (
+            {fullyApplied ? (
               <span className="footer-status ok">
-                <Check size={12} /> Applied {appliedCount} change{appliedCount !== 1 ? 's' : ''}
+                <Check size={12} /> Done
+                {attemptedSnippet && ` · ${appliedCount} change${appliedCount !== 1 ? 's' : ''}`}
+                {attemptedCanvas && ` · ${canvasMigrated} canvas project${canvasMigrated !== 1 ? 's' : ''}`}
               </span>
-            ) : applyFailed ? (
+            ) : anyFailed ? (
               <span className="footer-hint" style={{ color: 'var(--danger)' }}>
-                {result.error || `Apply incomplete — ${appliedCount} applied, ${skippedCount} skipped`}
+                {snippetFailed && (result.error || `Snippets incomplete — ${appliedCount} applied, ${skippedCount} skipped`)}
+                {snippetFailed && canvasFailed && ' · '}
+                {canvasFailed && (canvasResult.requestError || `Canvas migration: ${canvasFailedCount} failed`)}
               </span>
             ) : (
               <span className="footer-hint">
-                Every change writes a .bak-&lt;timestamp&gt; copy first.
+                Every change writes a backup copy first.
               </span>
             )}
           </div>
           <div className="footer-actions">
             <button className="btn btn-secondary btn-sm" onClick={onClose}>
-              {applied ? 'Close' : 'Not now'}
+              {fullyApplied ? 'Close' : 'Not now'}
             </button>
             <button
               className="btn btn-primary btn-sm"
               onClick={handleApply}
-              disabled={totalSelected === 0 || applying || applied}
+              disabled={totalSelected === 0 || applying || fullyApplied}
             >
-              {applied
+              {fullyApplied
                 ? 'Applied'
                 : applying
                   ? 'Applying…'
@@ -423,6 +556,84 @@ function GroupSection({
             applied={applied && !!selected[f.id]}
             actionLabel={actionLabel}
           />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Canvas data migration group (T-344-9). One mandatory group with a master
+// checkbox (all pending projects migrate together) — reuses the existing
+// .group / .group-header-v2 / .group-body / .file-row structure, no new CSS.
+function CanvasMigrationSection({ pending, selected, onToggle, result }) {
+  const succeeded = new Set((result?.succeeded || []).map(r => r.project));
+  const failedMap = new Map((result?.failed || []).map(r => [r.project, r]));
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <CheckboxButton
+          checked={selected}
+          onClick={onToggle}
+          className="group-checkbox"
+          title={selected ? 'Deselect' : 'Select'}
+        />
+        <div className="group-header-icon warn"><Database size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">Canvas data migration</div>
+          <div className="group-sub">
+            {pending.length} project{pending.length !== 1 ? 's' : ''} still store canvas data in a local canvas.json file — import all notes and connections into the database. Each file is preserved as {CANVAS_MIGRATION_BACKUP_FILE} first; nothing is deleted.
+          </div>
+        </div>
+      </div>
+      <div className="group-body">
+        {pending.map(p => {
+          const failure = failedMap.get(p.project);
+          const done = succeeded.has(p.project);
+          return (
+            <div key={p.project} className="file-row">
+              <div className="file-row-main">
+                <div className="file-row-text">
+                  <div className="file-row-path">
+                    <span className="mono" title={p.project}>{projectLabel(p)}</span>
+                    {done && <span className="chip ok"><Check size={10} /> Migrated</span>}
+                    {failure && <span className="chip warn">Failed</span>}
+                  </div>
+                  <div className="file-row-summary">{countsLine(p)}</div>
+                  {failure && <div className="file-row-summary" style={{ color: 'var(--danger)' }}>{failure.error || 'unknown error'}</div>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Canvas migration conflicts (T-344-5) — display-only, cannot be auto-resolved.
+function CanvasConflictSection({ conflicts }) {
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <div className="group-header-icon warn"><AlertTriangle size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">Canvas data conflict — resolve manually</div>
+          <div className="group-sub">Display-only advisory: these projects have canvas data in both the database and a local canvas.json. FlowBoard will not overwrite either side automatically — reconcile them by hand before migrating.</div>
+        </div>
+      </div>
+      <div className="group-body">
+        {conflicts.map(c => (
+          <div key={c.project} className="file-row">
+            <div className="file-row-main">
+              <div className="file-row-text">
+                <div className="file-row-path">
+                  <span className="mono" title={c.project}>{projectLabel(c)}</span>
+                  <span className="chip warn">Conflict</span>
+                </div>
+                <div className="file-row-summary">{countsLine(c)}</div>
+              </div>
+            </div>
+          </div>
         ))}
       </div>
     </div>

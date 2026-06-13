@@ -1,23 +1,27 @@
 /**
- * DOM-less smoke tests for the Canvas migration UI (T-344-4).
+ * DOM-less smoke tests for the Canvas migration UI (T-344-9).
  *
- * Pattern: test-v5-components-smoke.mjs — no browser, no jsdom. The .jsx
- * component is loaded through a sucrase-based node module hook (sucrase ships
- * with the dashboard dependency tree), so the real exports are tested:
+ * The separate bottom banner (CanvasMigrationBanner.jsx) was removed; the
+ * canvas migration now lives in the existing SnippetUpgrade header-chip + modal
+ * as one unified update center. This test was rebuilt accordingly:
  *
- *   1. Banner visibility logic (shouldShowBanner)
- *   2. "Later" session flag (sessionStorage contract, fake storage)
- *   3. Status fetch + run request against a mocked fetch (URL/method/body)
- *   4. Result mapping from a mocked run response (applyRunResults)
- *   5. SSR render of the banner (react-dom/server, no DOM needed)
- *   6. Source assertions (App.jsx mount, library components, English strings)
+ *   1. Helper module exports (src/utils/canvasMigration.mjs)
+ *   2. Status fetch + run request against a mocked fetch (URL/method/body)
+ *   3. Result mapping from a mocked run response (applyRunResults)
+ *   4. formatBytes / countsLine / projectLabel formatting helpers
+ *   5. resolveChip — combined snippet + canvas chip logic (SnippetUpgrade)
+ *   6. Source assertions — banner gone, App.jsx no longer mounts it, the
+ *      SnippetUpgrade modal renders the Canvas group + conflict block and
+ *      Apply additionally calls the canvas run endpoint, English strings.
+ *
+ * Pattern: sucrase-based node module hook (no browser / jsdom), same as before.
  *
  * Run: node test-canvas-migration-ui.mjs
  */
 
 import assert from 'node:assert/strict';
 import { register, createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 let pass = 0;
@@ -68,40 +72,24 @@ register('data:text/javascript;base64,' + Buffer.from(hooksSource).toString('bas
 const requireHere = createRequire(import.meta.url);
 requireHere.resolve('sucrase');
 
-const mod = await import('./src/components/CanvasMigrationBanner.jsx');
+const helpers = await import('./src/utils/canvasMigration.mjs');
 const {
-  default: CanvasMigrationBanner,
-  CANVAS_MIGRATION_DISMISS_KEY,
   CANVAS_MIGRATION_STATUS_PATH,
   CANVAS_MIGRATION_RUN_PATH,
-  isDismissedForSession,
-  dismissForSession,
-  shouldShowBanner,
+  CANVAS_MIGRATION_BACKUP_FILE,
   fetchCanvasMigrationStatus,
   runCanvasMigration,
   applyRunResults,
   formatBytes,
-} = mod;
+  countsLine,
+  projectLabel,
+  pendingProjects,
+  conflictProjects,
+  hasPendingCanvasMigration,
+} = helpers;
 
-// -----------------------------------------------------------------------------
-// Test 1: Exports
-// -----------------------------------------------------------------------------
-
-section('Module exports');
-
-ok(typeof CanvasMigrationBanner === 'function', 'default export is a component function');
-ok(typeof shouldShowBanner === 'function', 'shouldShowBanner is exported');
-ok(typeof isDismissedForSession === 'function', 'isDismissedForSession is exported');
-ok(typeof dismissForSession === 'function', 'dismissForSession is exported');
-ok(typeof fetchCanvasMigrationStatus === 'function', 'fetchCanvasMigrationStatus is exported');
-ok(typeof runCanvasMigration === 'function', 'runCanvasMigration is exported');
-ok(typeof applyRunResults === 'function', 'applyRunResults is exported');
-ok(typeof CANVAS_MIGRATION_DISMISS_KEY === 'string' && CANVAS_MIGRATION_DISMISS_KEY.length > 0,
-  'session dismiss key constant is exported');
-ok(CANVAS_MIGRATION_STATUS_PATH === '/api/migrations/canvas/status',
-  'status path matches the T-344-3 contract');
-ok(CANVAS_MIGRATION_RUN_PATH === '/api/migrations/canvas/run',
-  'run path matches the T-344-3 contract');
+const snippetMod = await import('./src/components/SnippetUpgrade.jsx');
+const { default: SnippetUpgrade, resolveChip } = snippetMod;
 
 // -----------------------------------------------------------------------------
 // Fixtures
@@ -114,61 +102,36 @@ const pendingStatus = {
     { project: 'gamma', displayName: 'Gamma', notes: 7, connections: 2, bytes: 120000 },
   ],
   migrated: [{ project: 'done-project', migratedAt: '2026-06-10T10:00:00Z' }],
-  total: 4,
+  conflicts: [{ project: 'delta', displayName: 'Delta', bytes: 500, migratedAt: '2026-06-09T09:00:00Z' }],
+  total: 5,
 };
 
-function fakeStorage(initial = {}) {
-  const map = new Map(Object.entries(initial));
-  return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => map.set(k, String(v)),
-    _map: map,
-  };
-}
-
 // -----------------------------------------------------------------------------
-// Test 2: Banner visibility logic
+// Test 1: Module exports
 // -----------------------------------------------------------------------------
 
-section('shouldShowBanner — visibility logic');
+section('Helper module exports');
 
-ok(shouldShowBanner(null, false) === false, 'null status (fetch failed / API missing) hides banner');
-ok(shouldShowBanner(undefined, false) === false, 'undefined status hides banner');
-ok(shouldShowBanner({ pending: [], migrated: [], total: 0 }, false) === false, 'empty pending hides banner');
-ok(shouldShowBanner({ total: 3 }, false) === false, 'status without pending array hides banner');
-ok(shouldShowBanner(pendingStatus, false) === true, 'pending > 0 shows banner');
-ok(shouldShowBanner(pendingStatus, true) === false, 'session dismissal wins over pending > 0');
-ok(shouldShowBanner({ pending: [pendingStatus.pending[1]] }, false) === true,
-  'empty-canvas project (notes: 0) still counts as pending');
-
-// -----------------------------------------------------------------------------
-// Test 3: "Later" session flag
-// -----------------------------------------------------------------------------
-
-section('Later — sessionStorage flag');
-
-{
-  const storage = fakeStorage();
-  ok(isDismissedForSession(storage) === false, 'fresh session is not dismissed');
-  dismissForSession(storage);
-  ok(storage._map.get(CANVAS_MIGRATION_DISMISS_KEY) === '1', 'dismiss writes "1" under the exported key');
-  ok(isDismissedForSession(storage) === true, 'dismissed flag is read back');
-}
-
-{
-  ok(isDismissedForSession(null) === false, 'missing storage reads as not dismissed');
-  const throwing = {
-    getItem() { throw new Error('blocked'); },
-    setItem() { throw new Error('blocked'); },
-  };
-  ok(isDismissedForSession(throwing) === false, 'throwing storage reads as not dismissed');
-  let threw = false;
-  try { dismissForSession(throwing); } catch { threw = true; }
-  ok(threw === false, 'dismiss swallows storage errors (private mode)');
-}
+ok(typeof fetchCanvasMigrationStatus === 'function', 'fetchCanvasMigrationStatus is exported');
+ok(typeof runCanvasMigration === 'function', 'runCanvasMigration is exported');
+ok(typeof applyRunResults === 'function', 'applyRunResults is exported');
+ok(typeof formatBytes === 'function', 'formatBytes is exported');
+ok(typeof countsLine === 'function', 'countsLine is exported');
+ok(typeof projectLabel === 'function', 'projectLabel is exported');
+ok(typeof pendingProjects === 'function', 'pendingProjects is exported');
+ok(typeof conflictProjects === 'function', 'conflictProjects is exported');
+ok(typeof hasPendingCanvasMigration === 'function', 'hasPendingCanvasMigration is exported');
+ok(CANVAS_MIGRATION_STATUS_PATH === '/api/migrations/canvas/status',
+  'status path matches the T-344-3 contract');
+ok(CANVAS_MIGRATION_RUN_PATH === '/api/migrations/canvas/run',
+  'run path matches the T-344-3 contract');
+ok(CANVAS_MIGRATION_BACKUP_FILE === 'canvas.json.pre-db.bak',
+  'backup file constant matches the contract');
+ok(typeof SnippetUpgrade === 'function', 'SnippetUpgrade default export is a component');
+ok(typeof resolveChip === 'function', 'resolveChip is exported from SnippetUpgrade');
 
 // -----------------------------------------------------------------------------
-// Test 4: Status fetch with mocked fetch
+// Test 2: Status fetch with mocked fetch
 // -----------------------------------------------------------------------------
 
 section('fetchCanvasMigrationStatus — mocked fetch');
@@ -187,7 +150,7 @@ section('fetchCanvasMigrationStatus — mocked fetch');
 
 {
   const status = await fetchCanvasMigrationStatus({ fetchImpl: async () => ({ ok: false, json: async () => ({}) }) });
-  ok(status === null, 'non-OK response yields null (banner stays hidden)');
+  ok(status === null, 'non-OK response yields null (chip stays hidden)');
 }
 {
   const status = await fetchCanvasMigrationStatus({ fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
@@ -199,7 +162,7 @@ section('fetchCanvasMigrationStatus — mocked fetch');
 }
 
 // -----------------------------------------------------------------------------
-// Test 5: Run request with mocked fetch
+// Test 3: Run request with mocked fetch
 // -----------------------------------------------------------------------------
 
 section('runCanvasMigration — mocked fetch');
@@ -258,7 +221,7 @@ section('runCanvasMigration — mocked fetch');
 }
 
 // -----------------------------------------------------------------------------
-// Test 6: Result mapping (applyRunResults)
+// Test 4: Result mapping (applyRunResults)
 // -----------------------------------------------------------------------------
 
 section('applyRunResults — result mapping');
@@ -277,7 +240,7 @@ section('applyRunResults — result mapping');
   ok(failed.length === 1 && failed[0].project === 'gamma', 'one failure mapped with project name');
   ok(failed[0].error === 'Invalid JSON in canvas.json', 'failure keeps the server error message');
   ok(nextStatus.pending.length === 1 && nextStatus.pending[0].project === 'gamma',
-    'banner keeps only the remaining (failed) project pending');
+    'chip keeps only the remaining (failed) project pending');
   ok(pendingStatus.pending.length === 3, 'input status is not mutated');
 }
 
@@ -292,83 +255,113 @@ section('applyRunResults — result mapping');
   };
   const { nextStatus, succeeded, failed } = applyRunResults(pendingStatus, response);
   ok(failed.length === 0 && succeeded.length === 3, 'full success mapped');
-  ok(nextStatus.pending.length === 0, 'full success empties pending (banner disappears)');
-  ok(shouldShowBanner(nextStatus, false) === false, 'banner logic confirms: no banner after full success');
+  ok(nextStatus.pending.length === 0, 'full success empties pending (chip drops the canvas count)');
+  ok(hasPendingCanvasMigration(nextStatus) === false, 'no pending canvas migration after full success');
 }
 
 {
   const { nextStatus, succeeded, failed } = applyRunResults(pendingStatus, { garbage: true });
   ok(succeeded.length === 0 && failed.length === 0, 'garbage response maps to empty result lists');
-  ok(nextStatus.pending.length === 3, 'garbage response leaves pending unchanged (banner stays)');
+  ok(nextStatus.pending.length === 3, 'garbage response leaves pending unchanged');
 }
 
-section('formatBytes');
+// -----------------------------------------------------------------------------
+// Test 5: Formatting helpers
+// -----------------------------------------------------------------------------
+
+section('formatBytes / countsLine / projectLabel / selectors');
 
 ok(formatBytes(39) === '39 B', 'small sizes render as bytes');
 ok(formatBytes(34567) === '33.8 KB', 'larger sizes render as KB');
 ok(formatBytes(undefined) === null, 'missing bytes render as null (omitted)');
 
-// -----------------------------------------------------------------------------
-// Test 7: SSR render (no DOM)
-// -----------------------------------------------------------------------------
+ok(countsLine({ notes: 1, connections: 1, bytes: 39 }) === '1 note · 1 connection · 39 B',
+  'singular note/connection wording + size');
+ok(countsLine({ notes: 12, connections: 4, bytes: 34567 }) === '12 notes · 4 connections · 33.8 KB',
+  'plural wording + KB size');
+ok(countsLine({ notes: 0, connections: 0 }) === '0 notes · 0 connections',
+  'omits size when bytes missing');
 
-section('SSR render — banner markup');
+ok(projectLabel({ project: 'alpha', displayName: 'Alpha' }) === 'Alpha', 'prefers displayName');
+ok(projectLabel({ project: 'alpha' }) === 'alpha', 'falls back to project name');
 
-const { renderToStaticMarkup } = await import('react-dom/server');
-const { createElement: h } = await import('react');
-
-{
-  const html = renderToStaticMarkup(
-    h(CanvasMigrationBanner, { initialStatus: pendingStatus, storage: fakeStorage() }),
-  );
-  ok(html.includes('Update available'), 'banner renders "Update available" title');
-  ok(html.includes('Canvas data migration pending for 3 projects.'), 'banner renders pending count');
-  ok(html.includes('Review'), 'banner has a Review button');
-  ok(html.includes('Later'), 'banner has a Later button');
-  ok(!html.includes('role="dialog"'), 'modal is closed initially');
-}
-
-{
-  const html = renderToStaticMarkup(
-    h(CanvasMigrationBanner, { initialStatus: { ...pendingStatus, pending: [pendingStatus.pending[0]] }, storage: fakeStorage() }),
-  );
-  ok(html.includes('pending for 1 project.'), 'singular wording for one project');
-}
-
-{
-  const html = renderToStaticMarkup(
-    h(CanvasMigrationBanner, { initialStatus: { pending: [], migrated: [], total: 0 }, storage: fakeStorage() }),
-  );
-  ok(html === '', 'nothing rendered when pending is empty');
-}
-
-{
-  const storage = fakeStorage({ [CANVAS_MIGRATION_DISMISS_KEY]: '1' });
-  const html = renderToStaticMarkup(
-    h(CanvasMigrationBanner, { initialStatus: pendingStatus, storage }),
-  );
-  ok(html === '', 'nothing rendered when session-dismissed, even with pending projects');
-}
+ok(pendingProjects(pendingStatus).length === 3, 'pendingProjects reads the pending array');
+ok(pendingProjects(null).length === 0, 'pendingProjects safe on null');
+ok(conflictProjects(pendingStatus).length === 1, 'conflictProjects reads the conflicts array');
+ok(conflictProjects(null).length === 0, 'conflictProjects safe on null');
+ok(hasPendingCanvasMigration(pendingStatus) === true, 'hasPendingCanvasMigration true with pending');
+ok(hasPendingCanvasMigration({ pending: [] }) === false, 'hasPendingCanvasMigration false with empty pending');
 
 // -----------------------------------------------------------------------------
-// Test 8: Source assertions
+// Test 6: resolveChip — combined snippet + canvas chip logic
+// -----------------------------------------------------------------------------
+
+section('resolveChip — header chip logic');
+
+const snippetChip = { text: 'Migration required', variant: 'warn' };
+
+ok(resolveChip(null, null) === null, 'no snippet chip + no canvas status → no chip');
+ok(resolveChip(null, { pending: [] }) === null, 'no snippet chip + empty canvas pending → no chip');
+
+{
+  const chip = resolveChip(snippetChip, { pending: [] });
+  ok(chip === snippetChip, 'snippet chip only → server chip unchanged');
+}
+{
+  const chip = resolveChip(null, pendingStatus);
+  ok(chip && chip.text === 'Migration required' && chip.variant === 'warn',
+    'canvas pending only → synthetic warn "Migration required" chip');
+}
+{
+  const chip = resolveChip(snippetChip, pendingStatus);
+  ok(chip && chip.variant === 'warn', 'both → warn chip');
+  ok(/3 canvas projects/.test(chip.text), 'both → combined text mentions the pending canvas count');
+}
+{
+  const chip = resolveChip(null, { pending: [pendingStatus.pending[0]] });
+  ok(chip && chip.variant === 'warn', 'single canvas project still yields a warn chip');
+}
+
+// -----------------------------------------------------------------------------
+// Test 7: Source assertions
 // -----------------------------------------------------------------------------
 
 section('Source assertions');
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const componentSrc = readFileSync(`${here}/src/components/CanvasMigrationBanner.jsx`, 'utf8');
 const appSrc = readFileSync(`${here}/src/App.jsx`, 'utf8');
+const snippetSrc = readFileSync(`${here}/src/components/SnippetUpgrade.jsx`, 'utf8');
+const helperSrc = readFileSync(`${here}/src/utils/canvasMigration.mjs`, 'utf8');
 
-ok(appSrc.includes("from './components/CanvasMigrationBanner.jsx'"), 'App.jsx imports the banner');
-ok(appSrc.includes('<CanvasMigrationBanner />'), 'App.jsx mounts the banner inside DashboardProvider');
-for (const lib of ['Modal', 'Button', 'Alert', 'Spinner', 'DataList']) {
-  ok(new RegExp(`import ${lib} from './${lib}\\.jsx'`).test(componentSrc), `uses library component ${lib}`);
-}
-ok(componentSrc.includes('canvas.json.pre-db.bak'), 'modal mentions the automatic backup file');
-ok(componentSrc.includes('window.showToast'), 'success toast goes through window.showToast');
-ok(!/[äöüÄÖÜß]/.test(componentSrc), 'no German umlauts — UI strings are English');
-ok(!/setInterval|setTimeout\s*\(\s*.*fetchCanvasMigrationStatus/s.test(componentSrc), 'no polling of the status endpoint');
+ok(!existsSync(`${here}/src/components/CanvasMigrationBanner.jsx`),
+  'CanvasMigrationBanner.jsx is deleted');
+ok(!/CanvasMigrationBanner/.test(appSrc), 'App.jsx no longer imports or mounts the banner');
+ok(!/fixed bottom-4 right-4/.test(snippetSrc), 'no bottom-anchored banner markup remains');
+
+ok(/from '\.\.\/utils\/canvasMigration\.mjs'/.test(snippetSrc),
+  'SnippetUpgrade imports the canvas migration helper module');
+ok(/fetchCanvasMigrationStatus\(\)/.test(snippetSrc),
+  'SnippetUpgrade fetches the canvas status on mount');
+ok(/Promise\.all/.test(snippetSrc),
+  'snippet + canvas status are fetched in parallel');
+ok(/Canvas data migration/.test(snippetSrc),
+  'modal renders the "Canvas data migration" group');
+ok(/Canvas data conflict — resolve manually/.test(snippetSrc),
+  'modal renders the conflict advisory block');
+ok(/runCanvasMigration\(/.test(snippetSrc),
+  'Apply additionally calls runCanvasMigration (POST run endpoint)');
+ok(/onApplied\?\.\(\)/.test(snippetSrc),
+  'status is reloaded after apply (chip disappears on success)');
+ok(/CANVAS_MIGRATION_BACKUP_FILE/.test(snippetSrc),
+  'modal references the backup file constant');
+ok(/className="group"/.test(snippetSrc),
+  'canvas sections reuse the existing .group structure (no new CSS)');
+
+ok(helperSrc.includes('canvas.json.pre-db.bak'), 'helper exposes the backup file name');
+ok(!/[äöüÄÖÜß]/.test(snippetSrc), 'SnippetUpgrade: UI strings are English (no umlauts)');
+ok(!/[äöüÄÖÜß]/.test(helperSrc), 'helper module: English only (no umlauts)');
+ok(!/setInterval|setTimeout\s*\(\s*.*fetchCanvasMigrationStatus/s.test(snippetSrc),
+  'no polling of the canvas status endpoint');
 
 // -----------------------------------------------------------------------------
 // Results
