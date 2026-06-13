@@ -102,6 +102,16 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
         ) : (
           <div
             className="note-text md-content"
+            // T-345-6: the rendered markdown is display-only on the card —
+            // pointer-events:none so clicks/double-clicks (incl. on links or
+            // formatted spans) always reach the .note/.note-body and route
+            // through CanvasView's mousedown/dblclick. Without this, a
+            // double-click on a link selected the link / its target="_blank"
+            // intercepted the gesture and the edit/sidebar never opened. Links
+            // are followed from the sidebar (the editing/reading surface for
+            // long notes), not from the card. The textarea editor is
+            // unaffected (it is rendered in the other branch, fully interactive).
+            style={{ pointerEvents: 'none' }}
             // eslint-disable-next-line react/no-danger
             dangerouslySetInnerHTML={{ __html: rendered || EMPTY_HINT }}
           />

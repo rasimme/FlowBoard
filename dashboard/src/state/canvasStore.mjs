@@ -193,6 +193,76 @@ export function clampScale(scale) {
 }
 
 /**
+ * Escape precedence (T-345-5). Pure decision helper: given the current
+ * canvas UI state, returns the single action Escape should perform, in the
+ * order most-transient-first → least-transient. The caller (CanvasView) maps
+ * the returned tag to the matching dispatch/setState.
+ *
+ *   1. 'close-connection' — a connection delete overlay is open (most local)
+ *   2. 'close-sidebar'    — the note sidebar is open
+ *   3. 'clear-selection'  — notes are selected
+ *   4. null               — nothing to do (let the event bubble)
+ *
+ * Editing (textarea/CodeMirror) is intentionally NOT handled here: an active
+ * editor owns its own Escape (commit/cancel), so CanvasView short-circuits
+ * before consulting this helper while `editingId` is set. Connecting/pan/drag
+ * transients live in refs and are cancelled on pointerup, not via Escape.
+ */
+export function escapePrecedence({ hasSelectedConnection, sidebarNoteId, selectionCount } = {}) {
+  if (hasSelectedConnection) return 'close-connection';
+  if (sidebarNoteId) return 'close-sidebar';
+  if (selectionCount > 0) return 'clear-selection';
+  return null;
+}
+
+/**
+ * Undo-restore planner (T-345-5). Pure: takes the buffered snapshot of
+ * just-deleted notes + their connections (captured BEFORE the delete) and the
+ * old→new id map produced by re-creating the notes (POST assigns fresh ids —
+ * canvas note ids are a monotonic per-project sequence, never reused). Returns
+ * the connection list to re-create, with every endpoint remapped to its new
+ * id. Connections whose endpoints aren't both in the map are dropped (their
+ * other note still lives — the live edge was already kept, or it can't be
+ * faithfully restored). Bidirectional dedup is the server's job, so we don't
+ * dedup here.
+ */
+export function remapRestoredConnections(connections, idMap) {
+  if (!Array.isArray(connections) || !idMap) return [];
+  const get = (id) => (idMap instanceof Map ? idMap.get(id) : idMap[id]);
+  const out = [];
+  for (const c of connections) {
+    const from = get(c.from);
+    const to = get(c.to);
+    if (!from || !to || from === to) continue;
+    out.push({ from, to, fromPort: c.fromPort || null, toPort: c.toPort || null });
+  }
+  return out;
+}
+
+/**
+ * Build the delete snapshot (T-345-5) for the Undo buffer: the full note
+ * records to re-POST and the connections that touch any deleted note. Pure —
+ * no IDs are assigned here. `ids` is the set/array being deleted.
+ */
+export function buildDeleteSnapshot(notes, connections, ids) {
+  const idSet = ids instanceof Set ? ids : new Set(ids);
+  const snapNotes = notes
+    .filter(n => idSet.has(n.id))
+    .map(n => ({
+      oldId: n.id,
+      text: n.text || '',
+      x: Math.round(n.x),
+      y: Math.round(n.y),
+      color: n.color || 'grey',
+      size: n.size || 'small',
+    }));
+  const snapConns = (connections || [])
+    .filter(c => idSet.has(c.from) || idSet.has(c.to))
+    .map(c => ({ from: c.from, to: c.to, fromPort: c.fromPort || null, toPort: c.toPort || null }));
+  return { notes: snapNotes, connections: snapConns };
+}
+
+/**
  * Cursor-anchored zoom: returns the new {pan, scale} such that the canvas
  * point under (px, py) — coordinates relative to the wrap element — stays
  * fixed. Verbatim math from the vanilla wheel/pinch handlers.

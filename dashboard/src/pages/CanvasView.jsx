@@ -2,14 +2,16 @@ import { useEffect, useLayoutEffect, useReducer, useRef, useCallback, useState }
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useSpecify } from '../context/SpecifyContext.jsx';
 import { Modal, Button, Spinner } from '../components/index.js';
+import UndoToast from '../components/UndoToast.jsx';
 import {
   initialCanvasState, canvasReducer, zoomAt, fitToNotes, addNotePosition,
   viewStorageKey, parseStoredView, clampScale,
+  escapePrecedence, buildDeleteSnapshot,
 } from '../state/canvasStore.mjs';
 import {
   createNoteAt, saveNoteText, saveNotePosition, deleteNote, repositionZeroNote,
   saveConnection, deleteConnection, setNoteColor, setNoteSize, duplicateNotes, pasteNotes,
-  sendPromote,
+  sendPromote, restoreNotes,
 } from '../state/canvasMutations.mjs';
 import { applyFormattingToTextarea } from '../utils/canvasTextFormat.mjs';
 import {
@@ -45,7 +47,10 @@ export default function CanvasView() {
   const viewedProject = state?.viewedProject;
 
   const [canvas, dispatch] = useReducer(canvasReducer, undefined, initialCanvasState);
-  const [deleteTarget, setDeleteTarget] = useState(null); // {ids: [...]}
+  // Delete now happens immediately with an Undo window (T-345-5) instead of a
+  // confirm modal — matches the Kanban delete UX. undoState buffers the full
+  // deleted snapshot so Undo can re-create notes + connections via the API.
+  const [undoState, setUndoState] = useState(null); // {snapshot:{notes,connections}, label}
   const [promoteTarget, setPromoteTarget] = useState(null); // {ids, mode}
   const [selectedConn, setSelectedConn] = useState(null); // {from, to, mid:{x,y}}
   const [connecting, setConnecting] = useState(false);
@@ -344,12 +349,60 @@ export default function CanvasView() {
     if (wasEditing && newIds[0]) dispatch({ type: 'editing', id: newIds[0] });
   }, [viewedProject]);
 
+  // --- Delete notes immediately + offer Undo (T-345-5) ---
+  // Snapshot the notes + their connections BEFORE deleting so Undo can
+  // re-create them; the snapshot is pure (canvasStore.buildDeleteSnapshot).
+  // Delete is server-first per note (vanilla deleteNote also auto-cleans
+  // orphaned connections, mirrored by the note-deleted reducer case).
+  const requestDelete = useCallback(async (ids) => {
+    if (!ids || ids.length === 0) return;
+    const c = canvasRef.current;
+    const snapshot = buildDeleteSnapshot(c.notes, c.connections, ids);
+    if (snapshot.notes.length === 0) return;
+    const label = snapshot.notes.length === 1
+      ? `Note ${snapshot.notes[0].oldId} deleted`
+      : `${snapshot.notes.length} notes deleted`;
+    for (const id of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      await deleteNote(viewedProject, dispatch, id);
+    }
+    setUndoState({ snapshot, label });
+  }, [viewedProject]);
+
+  // Re-create the buffered notes + connections (T-345-5). New ids are assigned
+  // by the server (canvas ids are never reused); restoreNotes remaps the
+  // buffered connections onto them. The restored notes become the selection.
+  const undoDelete = useCallback(async () => {
+    const snapshot = undoState?.snapshot;
+    setUndoState(null);
+    if (!snapshot) return;
+    const idMap = await restoreNotes(viewedProject, dispatch, snapshot);
+    const newIds = [...idMap.values()];
+    if (newIds.length > 0) dispatch({ type: 'selection', ids: newIds });
+  }, [undoState, viewedProject]);
+
   // --- Keyboard: Ctrl+C/V/D, Delete/Backspace (connection before notes) ---
   useEffect(() => {
     const onKeyDown = (e) => {
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (canvasRef.current.editingId) return;
+
+      // Escape precedence (T-345-5): connection overlay > sidebar > selection.
+      // An active editor is already excluded above (it owns its own Escape).
+      if (e.key === 'Escape') {
+        const action = escapePrecedence({
+          hasSelectedConnection: !!selectedConnRef.current,
+          sidebarNoteId: canvasRef.current.sidebarNoteId,
+          selectionCount: canvasRef.current.selectedIds.size,
+        });
+        if (!action) return;
+        e.preventDefault();
+        if (action === 'close-connection') setSelectedConn(null);
+        else if (action === 'close-sidebar') dispatch({ type: 'sidebar', id: null });
+        else if (action === 'clear-selection') dispatch({ type: 'clear-selection' });
+        return;
+      }
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         if (canvasRef.current.selectedIds.size > 0) {
@@ -382,11 +435,11 @@ export default function CanvasView() {
       const ids = [...canvasRef.current.selectedIds];
       if (ids.length === 0) return;
       e.preventDefault();
-      setDeleteTarget({ ids });
+      requestDelete(ids);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [viewedProject, copySelected, pasteClipboard, duplicateSelected]);
+  }, [viewedProject, copySelected, pasteClipboard, duplicateSelected, requestDelete]);
 
   // --- Connection delete button: click outside closes (vanilla overlay) ---
   useEffect(() => {
@@ -629,6 +682,36 @@ export default function CanvasView() {
       if (e.target.closest('.note-textarea')) return;
       const noteId = noteEl.dataset.noteId;
       if (canvasRef.current.editingId === noteId) return;
+
+      // T-345-6 — robust double-click: detect the second mousedown ourselves
+      // (same 300ms window as the touch double-tap) instead of relying solely
+      // on the browser's native `dblclick`. The native event is suppressed
+      // whenever a micro-movement between the two clicks crosses the 5px drag
+      // threshold and the note is repositioned/re-rendered — the exact
+      // reported intermittence. This trigger is independent of the drag
+      // `moved` heuristic, so the edit/sidebar opens regardless of tiny
+      // jitter. We deliberately do NOT start a drag on this second mousedown.
+      const g = gestureRef.current;
+      const now = Date.now();
+      const near = Math.abs(e.clientX - (g.lastMouseDownX || 0)) < 6
+        && Math.abs(e.clientY - (g.lastMouseDownY || 0)) < 6;
+      if (g.lastMouseDownNote === noteId && now - (g.lastMouseDownTime || 0) < 300 && near
+          && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        g.lastMouseDownTime = 0;
+        g.lastMouseDownNote = null;
+        g.drag = null; // cancel the pending drag from the first mousedown
+        if (canvasRef.current.sidebarNoteId) {
+          dispatch({ type: 'sidebar', id: noteId });
+        } else {
+          startEdit(noteId);
+        }
+        return;
+      }
+      g.lastMouseDownTime = now;
+      g.lastMouseDownNote = noteId;
+      g.lastMouseDownX = e.clientX;
+      g.lastMouseDownY = e.clientY;
+
       if (canvasRef.current.sidebarNoteId) dispatch({ type: 'sidebar', id: null });
 
       if (e.ctrlKey || e.metaKey) {
@@ -935,16 +1018,6 @@ export default function CanvasView() {
     dispatch({ type: 'selection', ids });
   }, []);
 
-  // --- Delete notes confirm ---
-  const confirmDelete = useCallback(async () => {
-    const ids = deleteTarget?.ids || [];
-    setDeleteTarget(null);
-    for (const id of ids) {
-      // eslint-disable-next-line no-await-in-loop
-      await deleteNote(viewedProject, dispatch, id);
-    }
-  }, [deleteTarget, viewedProject]);
-
   if (!viewedProject) {
     return (
       <div className="flex items-center justify-center h-full text-muted text-sm" data-react-canvas>
@@ -982,9 +1055,6 @@ export default function CanvasView() {
   };
 
   const sidebarNote = canvas.notes.find(n => n.id === canvas.sidebarNoteId) || null;
-  const deleteSingle = deleteTarget?.ids.length === 1
-    ? canvas.notes.find(n => n.id === deleteTarget.ids[0])
-    : null;
 
   // --- Promote button (vanilla renderPromoteButton): bounding box of the
   // selection, cluster mode when a connection lies inside the selection. ---
@@ -1013,6 +1083,8 @@ export default function CanvasView() {
         <button
           className="canvas-promote-btn"
           style={style}
+          aria-label={`Create task from ${label}`}
+          title={`Create task from ${label}`}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
           onClick={(e) => {
@@ -1042,7 +1114,7 @@ export default function CanvasView() {
       onDoubleClick={onDblClick}
     >
       <div className="canvas-toolbar" data-canvas-ui>
-        <button className="btn btn-primary btn-sm" onClick={onAddNote}>+ Note</button>
+        <button className="btn btn-primary btn-sm" onClick={onAddNote} aria-label="Add note" title="Add note">+ Note</button>
       </div>
 
       {/* Minimap + visible zoom controls (T-345-3). Screen-fixed (outside the
@@ -1082,7 +1154,7 @@ export default function CanvasView() {
           for (const id of canvas.selectedIds) setNoteSize(viewedProject, dispatch, id, size);
         }}
         onDuplicate={duplicateSelected}
-        onDelete={() => setDeleteTarget({ ids: [...canvas.selectedIds] })}
+        onDelete={() => requestDelete([...canvas.selectedIds])}
       />
 
       <div ref={viewportRef} className="canvas-viewport">
@@ -1155,28 +1227,13 @@ export default function CanvasView() {
         onClose={() => dispatch({ type: 'sidebar', id: null })}
       />
 
-      <Modal
-        open={!!deleteTarget}
-        onClose={() => setDeleteTarget(null)}
-        title={deleteTarget?.ids.length === 1 ? 'Delete note?' : 'Delete notes?'}
-        actions={
-          <>
-            <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="danger" onClick={confirmDelete}>Delete</Button>
-          </>
-        }
-      >
-        {deleteSingle ? (
-          <p className="m-0">
-            <strong>{deleteSingle.id}</strong>: {(deleteSingle.text || '(empty)').slice(0, 60)}
-            <br />This action cannot be undone.
-          </p>
-        ) : (
-          <p className="m-0">
-            Delete <strong>{deleteTarget?.ids.length}</strong> selected notes? This cannot be undone.
-          </p>
-        )}
-      </Modal>
+      {undoState && (
+        <UndoToast
+          message={undoState.label}
+          onUndo={undoDelete}
+          onDismiss={() => setUndoState(null)}
+        />
+      )}
 
       <Modal
         open={!!promoteTarget}

@@ -3,6 +3,8 @@
 // the vanilla canvas: create is server-first (the note id comes from the
 // server), text/color/size/position update memory first and persist silently.
 
+import { remapRestoredConnections } from './canvasStore.mjs';
+
 function toast(msg, type) {
   if (window.showToast) window.showToast(msg, type);
 }
@@ -72,6 +74,39 @@ export async function deleteNote(project, dispatch, id) {
     toast('Failed to delete note', 'error');
     return false;
   }
+}
+
+/**
+ * Restore a just-deleted snapshot (T-345-5, Undo). Re-creates each buffered
+ * note via POST (the server assigns a NEW id — canvas ids are monotonic and
+ * never reused, so the old ids cannot return), builds an old→new id map, then
+ * re-creates the buffered connections remapped onto the new ids. Returns the
+ * map so the caller can re-select the restored notes. Note content, position,
+ * color, size and the connection topology all come back; only the opaque id
+ * strings differ — acceptable for undoing an accidental delete, and the only
+ * possible behavior without a server-side soft-delete/restore endpoint.
+ */
+export async function restoreNotes(project, dispatch, snapshot) {
+  if (!project || !snapshot) return new Map();
+  const idMap = new Map();
+  for (const n of snapshot.notes || []) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await api(`/projects/${project}/canvas/notes`, {
+        method: 'POST',
+        body: { text: n.text, x: n.x, y: n.y, color: n.color, size: n.size },
+      });
+      if (res.ok && res.note) {
+        dispatch({ type: 'note-created', note: res.note });
+        idMap.set(n.oldId, res.note.id);
+      }
+    } catch { /* per-note failure: best-effort restore, others still come back */ }
+  }
+  for (const c of remapRestoredConnections(snapshot.connections || [], idMap)) {
+    // eslint-disable-next-line no-await-in-loop
+    await saveConnection(project, dispatch, c.from, c.to, c.fromPort, c.toPort);
+  }
+  return idMap;
 }
 
 export async function setNoteColor(project, dispatch, id, color) {

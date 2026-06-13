@@ -86,6 +86,7 @@ and spec files automatically — canvas notes are only ever deleted last
 - **A re-appearing `canvas.json` is a conflict, not a data source.** If a workspace restore puts a literal `canvas.json` back next to a DB-migrated project, the DB stays authoritative and the file is ignored; `GET /api/migrations/canvas/status` lists it under `conflicts` and a migration run for it refuses. Resolution is an operator decision — inspect the file, then delete it or deliberately re-import. Never auto-merged (ADR-0025).
 - **Promote is opinionated but revisable.** The worker proposes the structure; the user reviews the proposal (with spec preview) in the stepper or chat, can request changes, and confirms before anything is written. Users who want fully manual control should create tasks via the Kanban, not promote from canvas.
 - **One rendering stack since T-340.** The canvas is a React view (`CanvasView.jsx`) like every other dashboard surface. Its note/connection state is deliberately view-local (reducer in `canvasStore.mjs`, not the task appStateBridge), and interaction transients (pan, drag, connect) bypass React state via refs to keep the tuned gesture feel (ADR-0024).
+- **Editing & navigation (T-345).** Short notes edit inline on the card; longer (truncated) notes open the **NoteSidebar**, which is the full-text editor and uses the shared CodeMirror `MarkdownEditor` (syntax-highlighted). The rendered markdown on the card is display-only (`pointer-events:none`) so a double-click always opens the editor — **links are followed from the sidebar, not clicked on the card**. A **minimap + zoom controls** (`CanvasMiniMap`) make pan/zoom discoverable, and the **viewport (pan/zoom) persists per project** for the browser session (sessionStorage), falling back to fit-to-view only when there is no stored view. Deleting notes/connections uses an **undo toast** (no confirm modal); since canvas rows are hard-deleted, undo re-creates them (new ids, same content/position/topology).
 - **Connections are undirected in the data model, directed in the rendering.** The store dedupes `A→B` and `B→A`, but the renderer can distinguish source-port and target-port for visual purposes. This bites at API time — clients should not assume `from` and `to` survive a round-trip in the order they sent.
 - **Self-loops and duplicate edges are silently swallowed.** Posting a connection that already exists returns `duplicate: true` with no creation; posting `A→A` returns 400. Neither produces a duplicate row to clean up later. This is desirable for ergonomic drag-to-connect interaction (the user might connect twice by accident) but means clients cannot rely on the response status to learn how many edges they created.
 - **Webhooks are optional.** Since v5 the dashboard promote path (Specify Stepper) needs no `OPENCLAW_HOOKS_TOKEN` — a fresh install can promote out of the box. Only the chat-agent path (explicit `agentId`) requires webhook configuration; without it, that path returns 503 while the dashboard path keeps working (SC-001).
@@ -93,16 +94,16 @@ and spec files automatically — canvas notes are only ever deleted last
 
 ## Code
 
-- `dashboard/src/pages/CanvasView.jsx` — canvas view: lifecycle, gestures (pan/zoom/drag/connect/lasso), keyboard.
-- `dashboard/src/components/canvas/` — NoteCard (render, inline edit), ConnectionLayer (SVG paths + cluster frames), CanvasToolbar, NoteSidebar.
-- `dashboard/src/state/canvasStore.mjs` — view-local reducer + viewport math; `canvasMutations.mjs` — API writes.
-- `dashboard/src/utils/canvasGeometry.mjs` — port routing, Manhattan-with-rounded-corners path generation, port stacking.
-- `dashboard/src/utils/canvasGraph.mjs` — connected-component derivation; `canvasMarkdown.mjs` — note markdown subset; `canvasTextFormat.mjs` — editor formatting commands.
+- `dashboard/src/pages/CanvasView.jsx` — canvas view: lifecycle, gestures (pan/zoom/drag/connect/lasso), keyboard, per-project viewport persistence (sessionStorage), undo-delete, Escape handling.
+- `dashboard/src/components/canvas/` — NoteCard (render, inline edit), ConnectionLayer (SVG paths + cluster frames), CanvasToolbar, NoteSidebar (full-text editor — uses the CodeMirror `MarkdownEditor`), CanvasMiniMap (overview map + zoom controls).
+- `dashboard/src/state/canvasStore.mjs` — view-local reducer + viewport math (incl. `viewStorageKey`/`parseStoredView`, Escape precedence, undo snapshot helpers); `canvasMutations.mjs` — API writes (incl. `restoreNotes` for undo).
+- `dashboard/src/utils/canvasGeometry.mjs` — port routing, Manhattan-with-rounded-corners path generation, port stacking, minimap scaling.
+- `dashboard/src/utils/canvasGraph.mjs` — connected-component derivation; `canvasMarkdown.mjs` — note markdown subset (card rendering, display-only); `canvasTextFormat.mjs` — inline-card editor formatting commands.
 - `dashboard/styles/canvas.css` — canvas-specific styles (token-based; kept separate from `dashboard.css`).
 - `dashboard/server.js` — endpoints under `/api/projects/:name/canvas/...` and the promote handler.
 - `dashboard/specify-session.js` — Specify session bookkeeping (create, complete, abort, query).
 - `dashboard/hzl-service.js` — the canvas store: `canvas_notes` / `canvas_connections` / `canvas_meta` tables in the events DB file (ADR-0025); `dashboard/server.js` `canvasBackend()` — the per-project dual-read switch (DB for migrated projects, legacy `canvas.json` until then).
-- `dashboard/src/components/CanvasMigrationBanner.jsx` + `dashboard/scripts/migrate-canvas-to-db.mjs` — the gated `canvas.json` → DB migration (UI window and headless runner).
+- `dashboard/src/components/SnippetUpgrade.jsx` + `dashboard/src/utils/canvasMigration.mjs` + `dashboard/scripts/migrate-canvas-to-db.mjs` — the gated `canvas.json` → DB migration: it surfaces inside the existing "Migration required" update window (a "Canvas data migration" group), plus a headless runner.
 - `context/specify-prompt.md` (in the active project) — the workflow the agent runs after promote.
 
 ## See also

@@ -2,6 +2,18 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Canvas v2 — editing & navigation polish (T-345).** The note sidebar is now
+  a real CodeMirror `MarkdownEditor` (syntax-highlighted) instead of a plain
+  textarea; a **minimap + zoom controls** (−/%/+/Fit) make pan/zoom
+  discoverable; the **viewport persists per project** for the browser session
+  (no more starting zoomed-out); deleting uses an **undo toast** instead of a
+  confirm modal; Escape clears the connection overlay → sidebar → selection;
+  and a double-click reliably opens the editor (rendered markdown on the card
+  is display-only, so links/formatted text no longer swallow the gesture —
+  links are followed from the sidebar). The canvas DB migration window was
+  folded into the existing "Migration required" update window (no separate
+  banner).
+
 - **Canvas state moved into the DB — `canvas.json` deprecated (T-344).** Canvas
   notes/connections now live as plain relational tables (`canvas_notes`,
   `canvas_connections`, `canvas_meta`) in the events DB file — last-write-wins,
