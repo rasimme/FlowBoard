@@ -119,6 +119,17 @@ section('viewportFrameRect');
   // Fully-contained viewport: pan 0, scale 1, wrap 100x100 → world 0..100.
   const f2 = viewportFrameRect({ x: 0, y: 0 }, 1, 100, 100, mm, 100, 100);
   ok(approx(f2.x, 0) && approx(f2.w, 25), 'a small viewport yields a small frame');
+
+  // Inset keeps the (square) frame clear of the panel's rounded corners.
+  // A zoomed-out viewport that would span the whole panel is held `inset` in
+  // on every side so its corners stay visible (T-345-3 follow-up fix).
+  const big = viewportFrameRect({ x: 0, y: 0 }, 0.1, 1000, 1000, mm, 100, 100, 6);
+  ok(approx(big.x, 6) && approx(big.y, 6), 'inset frame starts at the inset offset');
+  ok(approx(big.x + big.w, 94) && approx(big.y + big.h, 94),
+    'inset frame ends inset-px before the panel edge (corners clear the rounding)');
+  // Default inset 0 keeps the old flush behavior (back-compat).
+  const flush = viewportFrameRect({ x: 0, y: 0 }, 0.1, 1000, 1000, mm, 100, 100);
+  ok(approx(flush.x, 0) && approx(flush.x + flush.w, 100), 'inset defaults to 0 (flush, unchanged)');
 }
 
 // =============================================================================

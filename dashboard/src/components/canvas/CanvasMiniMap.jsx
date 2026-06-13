@@ -30,6 +30,9 @@ import { COLOR_STROKE, SCALE_MIN, SCALE_MAX } from '../../utils/canvasConstants.
 
 const MAP_W = 180;
 const MAP_H = 120;
+// Keep the viewport frame this far inside the panel so its square corners
+// clear the SVG's rounded corners (--radius-sm = 6px) and stay fully visible.
+const FRAME_INSET = 6;
 
 export default function CanvasMiniMap({
   notes, getView, getDims, wrapSize, scale,
@@ -50,7 +53,7 @@ export default function CanvasMiniMap({
   if (mm && wrapSize && wrapSize.w > 0 && wrapSize.h > 0) {
     const view = getView ? getView() : null;
     if (view) {
-      frame = viewportFrameRect(view.pan, view.scale, wrapSize.w, wrapSize.h, mm, MAP_W, MAP_H);
+      frame = viewportFrameRect(view.pan, view.scale, wrapSize.w, wrapSize.h, mm, MAP_W, MAP_H, FRAME_INSET);
     }
   }
 
@@ -195,6 +198,7 @@ export default function CanvasMiniMap({
             <rect
               data-mini-viewport
               x={frame.x} y={frame.y} width={frame.w} height={frame.h}
+              rx={2}
               fill="var(--accent)"
               fillOpacity={0.12}
               stroke="var(--accent)"

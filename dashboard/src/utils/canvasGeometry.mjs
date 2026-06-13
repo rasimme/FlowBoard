@@ -561,17 +561,21 @@ export function noteMiniRect(note, getDims, mm) {
  *
  * @returns {{x:number, y:number, w:number, h:number}}
  */
-export function viewportFrameRect(pan, scale, wrapW, wrapH, mm, mapW, mapH) {
+export function viewportFrameRect(pan, scale, wrapW, wrapH, mm, mapW, mapH, inset = 0) {
   const wx1 = (0 - pan.x) / scale;
   const wy1 = (0 - pan.y) / scale;
   const wx2 = (wrapW - pan.x) / scale;
   const wy2 = (wrapH - pan.y) / scale;
   const a = mm.project(wx1, wy1);
   const b = mm.project(wx2, wy2);
-  const left = Math.max(0, Math.min(a.x, b.x));
-  const top = Math.max(0, Math.min(a.y, b.y));
-  const right = Math.min(mapW, Math.max(a.x, b.x));
-  const bottom = Math.min(mapH, Math.max(a.y, b.y));
+  // Clamp to the panel minus `inset` on every side so the (square) frame
+  // never reaches the panel's rounded corners — otherwise the corner-radius
+  // clips the frame's corners away (T-345-3 follow-up). With inset >= the
+  // corner radius the frame floats fully inside, all four corners visible.
+  const left = Math.max(inset, Math.min(a.x, b.x));
+  const top = Math.max(inset, Math.min(a.y, b.y));
+  const right = Math.min(mapW - inset, Math.max(a.x, b.x));
+  const bottom = Math.min(mapH - inset, Math.max(a.y, b.y));
   return { x: left, y: top, w: Math.max(0, right - left), h: Math.max(0, bottom - top) };
 }
 
