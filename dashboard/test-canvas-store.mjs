@@ -11,7 +11,7 @@
 import { SCALE_MIN, SCALE_MAX } from './src/utils/canvasConstants.mjs';
 import {
   initialCanvasState, canvasReducer, clampScale, zoomAt, fitToNotes,
-  continueListOnEnter, addNotePosition,
+  continueListOnEnter, addNotePosition, viewStorageKey, parseStoredView,
 } from './src/state/canvasStore.mjs';
 
 let pass = 0;
@@ -229,6 +229,41 @@ section('addNotePosition — toolbar "+ Note" placement (vanilla addNote)');
   ok(p8.x === p0.x && p8.y === p0.y, 'offset cycles after 8 notes');
   const zoomed = addNotePosition(800, 600, { x: 0, y: 0 }, 2, 0);
   ok(zoomed.x === 200 - 80 && zoomed.y === 150 - 40, 'placement respects zoom scale');
+}
+
+// =============================================================================
+section('viewport persistence (T-345-2) — viewStorageKey + parseStoredView');
+
+{
+  ok(viewStorageKey('flowboard') === 'flowboard.canvas.view.flowboard',
+    'viewStorageKey namespaces per project');
+  ok(viewStorageKey('a') !== viewStorageKey('b'), 'distinct projects get distinct keys');
+
+  // valid — accepts both raw JSON strings and parsed objects
+  const validStr = parseStoredView('{"pan":{"x":-12,"y":34},"scale":1.4}');
+  ok(validStr && validStr.pan.x === -12 && validStr.pan.y === 34 && validStr.scale === 1.4,
+    'parses a valid JSON string into pan/scale');
+  const validObj = parseStoredView({ pan: { x: 5, y: 6 }, scale: 0.8 });
+  ok(validObj && validObj.pan.x === 5 && validObj.scale === 0.8,
+    'accepts an already-parsed object');
+
+  // scale clamp (SCALE_MIN 0.3 .. SCALE_MAX 2.5)
+  ok(parseStoredView({ pan: { x: 0, y: 0 }, scale: 99 }).scale === SCALE_MAX,
+    'scale above range clamps to SCALE_MAX');
+  ok(parseStoredView({ pan: { x: 0, y: 0 }, scale: 0.01 }).scale === SCALE_MIN,
+    'scale below range clamps to SCALE_MIN');
+
+  // invalid → null (fall back to fitToNotes)
+  ok(parseStoredView(null) === null, 'null → null');
+  ok(parseStoredView(undefined) === null, 'undefined → null');
+  ok(parseStoredView('not json') === null, 'malformed JSON → null');
+  ok(parseStoredView('{}') === null, 'missing pan → null');
+  ok(parseStoredView({ pan: { x: 1, y: 2 } }) === null, 'missing scale → null');
+  ok(parseStoredView({ pan: { x: 'a', y: 2 }, scale: 1 }) === null, 'non-numeric pan.x → null');
+  ok(parseStoredView({ pan: { x: 1, y: 2 }, scale: 'big' }) === null, 'non-numeric scale → null');
+  ok(parseStoredView({ pan: { x: NaN, y: 2 }, scale: 1 }) === null, 'NaN pan → null');
+  ok(parseStoredView({ pan: { x: 1, y: 2 }, scale: Infinity }) === null, 'Infinity scale → null');
+  ok(parseStoredView('42') === null, 'non-object JSON (number) → null');
 }
 
 // =============================================================================

@@ -209,6 +209,40 @@ export function zoomAt(pan, scale, factor, px, py) {
 }
 
 /**
+ * sessionStorage key for the persisted per-project viewport (T-345-2).
+ * One slot per project so switching projects restores the right view.
+ */
+export function viewStorageKey(project) {
+  return `flowboard.canvas.view.${project}`;
+}
+
+/**
+ * Parse a persisted viewport value (T-345-2). Accepts either the raw JSON
+ * string from sessionStorage or an already-parsed object. Returns a sanitized
+ * `{ pan: {x, y}, scale }` with scale run through clampScale, or null when the
+ * value is missing/corrupt/non-finite — callers then fall back to fitToNotes.
+ */
+export function parseStoredView(raw) {
+  if (raw == null) return null;
+  let obj = raw;
+  if (typeof raw === 'string') {
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== 'object') return null;
+  const { pan, scale } = obj;
+  if (!pan || typeof pan !== 'object') return null;
+  const { x, y } = pan;
+  if (typeof x !== 'number' || !Number.isFinite(x)) return null;
+  if (typeof y !== 'number' || !Number.isFinite(y)) return null;
+  if (typeof scale !== 'number' || !Number.isFinite(scale)) return null;
+  return { pan: { x, y }, scale: clampScale(scale) };
+}
+
+/**
  * Fit-to-view: centers the note bounds in the viewport at a scale that shows
  * everything (capped at 1, clamped to the zoom range). Returns null when
  * there is nothing to fit. getDims(noteId) may return null — vanilla falls

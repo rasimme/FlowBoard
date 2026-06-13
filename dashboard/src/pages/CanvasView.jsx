@@ -4,6 +4,7 @@ import { useSpecify } from '../context/SpecifyContext.jsx';
 import { Modal, Button, Spinner } from '../components/index.js';
 import {
   initialCanvasState, canvasReducer, zoomAt, fitToNotes, addNotePosition,
+  viewStorageKey, parseStoredView, clampScale,
 } from '../state/canvasStore.mjs';
 import {
   createNoteAt, saveNoteText, saveNotePosition, deleteNote, repositionZeroNote,
@@ -19,6 +20,7 @@ import NoteCard from '../components/canvas/NoteCard.jsx';
 import NoteSidebar from '../components/canvas/NoteSidebar.jsx';
 import ConnectionLayer from '../components/canvas/ConnectionLayer.jsx';
 import CanvasToolbar from '../components/canvas/CanvasToolbar.jsx';
+import CanvasMiniMap from '../components/canvas/CanvasMiniMap.jsx';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -49,6 +51,11 @@ export default function CanvasView() {
   const [connecting, setConnecting] = useState(false);
   const [, setDragTick] = useState(0);
   const [, setLayoutTick] = useState(0);
+  // Minimap (T-345-3): re-render the overview/zoom-readout when the committed
+  // viewport changes (it lives in viewRef, outside React); track wrap size for
+  // the viewport-frame math.
+  const [viewTick, setViewTick] = useState(0);
+  const [wrapSize, setWrapSize] = useState({ w: 0, h: 0 });
 
   const wrapRef = useRef(null);
   const viewportRef = useRef(null);
@@ -62,6 +69,7 @@ export default function CanvasView() {
   });
   const dimsRef = useRef(new Map());
   const fittedRef = useRef(null);
+  const persistTimerRef = useRef(null);
   const addNoteCounterRef = useRef(0);
   const canvasRef = useRef(canvas);
   canvasRef.current = canvas;
@@ -75,6 +83,12 @@ export default function CanvasView() {
     requestAnimationFrame(() => { g.rafPending = false; setDragTick(t => t + 1); });
   }, []);
 
+  // Minimap (T-345-3): nudge React after a committed viewport change so the
+  // overview frame + zoom % re-read viewRef. Cheap (the minimap is the only
+  // viewTick consumer); gesture-driven changes call this at gesture end, not
+  // per mousemove, to avoid expensive re-renders while dragging/panning.
+  const bumpView = useCallback(() => setViewTick(t => t + 1), []);
+
   const applyTransform = useCallback(() => {
     const vp = viewportRef.current;
     const { pan, scale } = viewRef.current;
@@ -83,6 +97,21 @@ export default function CanvasView() {
     // calls updateToolbar from every transform change) — rAF-throttled.
     if (canvasRef.current?.selectedIds.size > 0) bumpDragTick();
   }, [bumpDragTick]);
+
+  // Persist the committed viewport per project (T-345-2), debounced so a burst
+  // of wheel/pan/pinch events only writes once the gesture settles. Browser
+  // session scope (sessionStorage) — survives tab switch/reload, not restart.
+  const persistView = useCallback(() => {
+    if (!viewedProject) return;
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      try {
+        const { pan, scale } = viewRef.current;
+        sessionStorage.setItem(viewStorageKey(viewedProject), JSON.stringify({ pan, scale }));
+      } catch { /* storage unavailable/quota — viewport persistence is best-effort */ }
+    }, 250);
+  }, [viewedProject]);
 
   const toCanvas = useCallback((clientX, clientY) => {
     const rect = wrapRef.current.getBoundingClientRect();
@@ -115,6 +144,7 @@ export default function CanvasView() {
 
   // --- Load + reset on project switch ---
   useEffect(() => {
+    if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; }
     dispatch({ type: 'reset' });
     viewRef.current = { pan: { x: 60, y: 60 }, scale: 1.0 };
     fittedRef.current = null;
@@ -189,12 +219,32 @@ export default function CanvasView() {
     if (changed) setLayoutTick(t => t + 1);
   });
 
-  // --- Zero-note scatter, then fit-to-view once per project ---
+  // --- Restore persisted viewport, else zero-note scatter + fit once per project ---
   useLayoutEffect(() => {
     if (canvas.loading || !viewedProject) return;
-    if (canvas.notes.length === 0) return;
     const wrap = wrapRef.current;
     if (!wrap) return;
+
+    // Restore the saved per-project viewport once, before any fit (T-345-2).
+    // A stored view needs no note dimensions, so this also covers empty
+    // canvases — only when there is no valid stored value do we fall back to
+    // fit-to-view (which itself needs notes). fittedRef marks "viewport
+    // decided for this project" for both the restore and the fit path.
+    if (fittedRef.current !== viewedProject) {
+      let stored = null;
+      try {
+        stored = parseStoredView(sessionStorage.getItem(viewStorageKey(viewedProject)));
+      } catch { stored = null; }
+      if (stored) {
+        viewRef.current = stored;
+        applyTransform();
+        fittedRef.current = viewedProject;
+        bumpView();
+        return;
+      }
+    }
+
+    if (canvas.notes.length === 0) return;
 
     const zeros = canvas.notes.filter(n => n.x === 0 && n.y === 0);
     if (zeros.length > 0) {
@@ -212,7 +262,8 @@ export default function CanvasView() {
       applyTransform();
     }
     fittedRef.current = viewedProject;
-  }, [canvas.notes, canvas.loading, viewedProject, applyTransform, getDims]);
+    bumpView();
+  }, [canvas.notes, canvas.loading, viewedProject, applyTransform, getDims, bumpView]);
 
   // --- Wheel: pan / Ctrl+wheel: zoom ---
   useEffect(() => {
@@ -238,11 +289,28 @@ export default function CanvasView() {
         viewRef.current = { ...v, pan: { x: v.pan.x - e.deltaX, y: v.pan.y - e.deltaY } };
       }
       applyTransform();
+      persistView(); // debounced — persists once the wheel burst settles
+      bumpView();    // live zoom % + minimap frame feedback
     };
 
     wrap.addEventListener('wheel', onWheel, { passive: false, capture: true });
     return () => wrap.removeEventListener('wheel', onWheel, { capture: true });
-  }, [applyTransform]);
+  }, [applyTransform, persistView, bumpView]);
+
+  // --- Track wrap pixel size for the minimap viewport-frame math (T-345-3) ---
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return undefined;
+    const measure = () => setWrapSize(prev => {
+      const w = wrap.clientWidth, h = wrap.clientHeight;
+      return (prev.w === w && prev.h === h) ? prev : { w, h };
+    });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [viewedProject]);
 
   // --- Clipboard helpers (vanilla copySelectedToClipboard / paste / duplicate) ---
   const copySelected = useCallback(() => {
@@ -620,8 +688,12 @@ export default function CanvasView() {
     if (endConnect()) return;
     if (endNoteDrag(e.shiftKey)) return;
     if (endLasso()) return;
-    gestureRef.current.panning = null;
-  }, [endConnect, endNoteDrag, endLasso]);
+    if (gestureRef.current.panning) {
+      gestureRef.current.panning = null;
+      persistView(); // pan gesture ended → persist viewport
+      bumpView();    // refresh minimap frame after the pan
+    }
+  }, [endConnect, endNoteDrag, endLasso, persistView, bumpView]);
 
   const onDblClick = useCallback((e) => {
     if (e.target.closest('[data-canvas-ui]')) return;
@@ -776,6 +848,8 @@ export default function CanvasView() {
             dispatch({ type: 'sidebar', id: null });
           }
         }
+        // Pan or pinch ended → persist the viewport (T-345-2).
+        if (g.panning || g.pinchDist > 0) { persistView(); bumpView(); }
         g.panning = null;
         g.pinchDist = 0;
       }
@@ -789,9 +863,14 @@ export default function CanvasView() {
       wrap.removeEventListener('touchmove', onTouchMove);
       wrap.removeEventListener('touchend', onTouchEnd);
     };
-  }, [applyTransform, beginNoteDrag, moveNoteDrag, endNoteDrag, toCanvas, createAndEdit, startEdit, moveConnect, endConnect]);
+  }, [applyTransform, beginNoteDrag, moveNoteDrag, endNoteDrag, toCanvas, createAndEdit, startEdit, moveConnect, endConnect, persistView, bumpView]);
 
   useLayoutEffect(() => { applyTransform(); });
+
+  // Flush any pending viewport write when the canvas unmounts (T-345-2).
+  useEffect(() => () => {
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+  }, []);
 
   // --- Toolbar "+ Note" ---
   const onAddNote = useCallback(() => {
@@ -801,6 +880,45 @@ export default function CanvasView() {
     const pos = addNotePosition(wrap.clientWidth, wrap.clientHeight, pan, scale, addNoteCounterRef.current++);
     createAndEdit(pos.x, pos.y);
   }, [createAndEdit]);
+
+  // --- Minimap + zoom controls (T-345-3) ---
+  // All three reuse the committed viewRef/applyTransform path and the shared
+  // (debounced) persistView — no second persistence timer (T-345-2 contract).
+  // fittedRef is left untouched so these never re-trigger the once-per-project
+  // restore/fit decision.
+
+  // Minimap click/drag → recenter pan on the picked world point.
+  const onMiniNavigate = useCallback((pan) => {
+    const v = viewRef.current;
+    viewRef.current = { ...v, pan };
+    applyTransform();
+    persistView();
+    bumpView();
+  }, [applyTransform, persistView, bumpView]);
+
+  // Zoom −/+ : cursor-anchored on the viewport center (no pointer in play).
+  const onZoomButton = useCallback((factor) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const v = viewRef.current;
+    viewRef.current = zoomAt(v.pan, v.scale, factor, wrap.clientWidth / 2, wrap.clientHeight / 2);
+    applyTransform();
+    persistView();
+    bumpView();
+  }, [applyTransform, persistView, bumpView]);
+
+  // "Fit": fit-to-notes, same path as the initial fit. Does NOT reset fittedRef
+  // (the per-project restore/fit decision stays made — T-345-2 contract).
+  const onFit = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const fit = fitToNotes(canvasRef.current.notes, getDims, wrap.clientWidth, wrap.clientHeight);
+    if (!fit) return;
+    viewRef.current = fit;
+    applyTransform();
+    persistView();
+    bumpView();
+  }, [applyTransform, persistView, bumpView, getDims]);
 
   // --- Connection select → delete button (vanilla showConnectionDeleteBtn) ---
   const onSelectConnection = useCallback((from, to, pathEl) => {
@@ -926,6 +1044,22 @@ export default function CanvasView() {
       <div className="canvas-toolbar" data-canvas-ui>
         <button className="btn btn-primary btn-sm" onClick={onAddNote}>+ Note</button>
       </div>
+
+      {/* Minimap + visible zoom controls (T-345-3). Screen-fixed (outside the
+          transformed .canvas-viewport); reads the committed viewRef. viewTick
+          (bumped at gesture end / zoom / fit) is the key so this subtree
+          re-reads viewRef on every committed viewport change. */}
+      <CanvasMiniMap
+        notes={canvas.notes}
+        getView={() => viewRef.current}
+        getDims={getDims}
+        wrapSize={wrapSize}
+        scale={viewRef.current.scale}
+        viewTick={viewTick}
+        onNavigate={onMiniNavigate}
+        onZoom={onZoomButton}
+        onFit={onFit}
+      />
 
       <div ref={lassoRef} className="canvas-lasso" style={{ display: 'none' }} />
 

@@ -482,3 +482,123 @@ export function screenToCanvas(screenX, screenY, wrapRect, pan, scale) {
     y: (screenY - wrapRect.top  - pan.y) / scale
   };
 }
+
+// --- Minimap geometry (T-345-3) -------------------------------------------
+// Pure, DOM-less helpers for the canvas minimap. The minimap shows the world
+// bounding box of all notes (plus the current viewport rectangle) scaled to
+// fit a small panel. The same bounding-box convention as fitToNotes is used
+// (each note falls back to 160x120 when its rendered size is unknown), so the
+// minimap and fit-to-view agree on "the world".
+
+/**
+ * World bounding box of the notes, padded like fitToNotes (pad px on every
+ * side). getDims(noteId) may return null — falls back to 160x120. Returns
+ * null when there are no notes.
+ *
+ * @returns {{minX:number, minY:number, maxX:number, maxY:number,
+ *            width:number, height:number} | null}
+ */
+export function notesBounds(notes, getDims, pad = 40) {
+  if (!notes || notes.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const note of notes) {
+    const d = getDims ? getDims(note.id) : null;
+    const w = d?.w || 160;
+    const h = d?.h || 120;
+    minX = Math.min(minX, note.x);
+    minY = Math.min(minY, note.y);
+    maxX = Math.max(maxX, note.x + w);
+    maxY = Math.max(maxY, note.y + h);
+  }
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  return { minX, minY, maxX, maxY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) };
+}
+
+/**
+ * Uniform world→minimap mapping that fits `bounds` into a mapW×mapH panel,
+ * centering the (letterboxed) content. Returns the scale factor plus the
+ * centering offsets, and a `project(wx, wy)` closure that maps a world point
+ * into minimap-panel pixels.
+ *
+ * @param {{minX,minY,maxX,maxY,width,height}} bounds  from notesBounds()
+ * @returns {{ scale:number, offsetX:number, offsetY:number,
+ *             project:(wx:number, wy:number)=>{x:number,y:number} }}
+ */
+export function minimapTransform(bounds, mapW, mapH) {
+  const scale = Math.min(mapW / bounds.width, mapH / bounds.height);
+  // Center the scaled world within the panel (letterbox the spare axis).
+  const offsetX = (mapW - bounds.width * scale) / 2;
+  const offsetY = (mapH - bounds.height * scale) / 2;
+  const project = (wx, wy) => ({
+    x: offsetX + (wx - bounds.minX) * scale,
+    y: offsetY + (wy - bounds.minY) * scale,
+  });
+  return { scale, offsetX, offsetY, project };
+}
+
+/**
+ * Rectangle (in minimap-panel pixels) for a single note: its world position
+ * and size projected through `mm` (a minimapTransform result). getDims may
+ * return null → 160x120 fallback (matches notesBounds).
+ *
+ * @returns {{x:number, y:number, w:number, h:number}}
+ */
+export function noteMiniRect(note, getDims, mm) {
+  const d = getDims ? getDims(note.id) : null;
+  const w = d?.w || 160;
+  const h = d?.h || 120;
+  const tl = mm.project(note.x, note.y);
+  return { x: tl.x, y: tl.y, w: Math.max(1, w * mm.scale), h: Math.max(1, h * mm.scale) };
+}
+
+/**
+ * Viewport frame rectangle (in minimap-panel pixels): the slice of the world
+ * currently visible in the canvas wrap, given the committed {pan, scale} and
+ * the wrap pixel size. The world-visible region is the inverse transform of
+ * the wrap's top-left and bottom-right corners; that region is projected
+ * through `mm`. Edges are clamped into the panel so the frame stays visible
+ * even when the viewport extends past the note bounds.
+ *
+ * @returns {{x:number, y:number, w:number, h:number}}
+ */
+export function viewportFrameRect(pan, scale, wrapW, wrapH, mm, mapW, mapH) {
+  const wx1 = (0 - pan.x) / scale;
+  const wy1 = (0 - pan.y) / scale;
+  const wx2 = (wrapW - pan.x) / scale;
+  const wy2 = (wrapH - pan.y) / scale;
+  const a = mm.project(wx1, wy1);
+  const b = mm.project(wx2, wy2);
+  const left = Math.max(0, Math.min(a.x, b.x));
+  const top = Math.max(0, Math.min(a.y, b.y));
+  const right = Math.min(mapW, Math.max(a.x, b.x));
+  const bottom = Math.min(mapH, Math.max(a.y, b.y));
+  return { x: left, y: top, w: Math.max(0, right - left), h: Math.max(0, bottom - top) };
+}
+
+/**
+ * Inverse of minimapTransform: given a click/drag point in minimap-panel
+ * pixels, return the world coordinate it corresponds to. Used to recenter the
+ * canvas viewport on the clicked world point.
+ *
+ * @returns {{x:number, y:number}}
+ */
+export function minimapToWorld(mx, my, bounds, mm) {
+  return {
+    x: bounds.minX + (mx - mm.offsetX) / mm.scale,
+    y: bounds.minY + (my - mm.offsetY) / mm.scale,
+  };
+}
+
+/**
+ * Pan that centers the canvas viewport (wrap pixel size wrapW×wrapH at the
+ * given scale) on a world point — the navigation primitive behind a minimap
+ * click/drag. Pure; the caller writes the result into viewRef + applyTransform.
+ *
+ * @returns {{x:number, y:number}}  new pan
+ */
+export function panToCenterWorld(worldX, worldY, scale, wrapW, wrapH) {
+  return {
+    x: wrapW / 2 - worldX * scale,
+    y: wrapH / 2 - worldY * scale,
+  };
+}
