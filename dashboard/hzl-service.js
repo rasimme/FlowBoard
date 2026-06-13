@@ -419,6 +419,12 @@ async function init(dbPath) {
     maxAttempts: 3,
   });
 
+  // Canvas store schema (T-344-1). Belt-and-braces with migration m008: the
+  // registry row documents the migration, but the schema must also exist on
+  // boot paths that bypass the registry (unit tests, restored events DB with
+  // intact cache DB). Idempotent DDL — see canvasEnsureSchema().
+  canvasEnsureSchema();
+
   await rebuildCache();
 
   console.log('[hzl-service] Initialized. Tasks in cache:', _cache.size);
@@ -3015,6 +3021,353 @@ function listTasksClaimedBy(agentId) {
   return out;
 }
 
+// =============================================================================
+// --- Canvas store (T-344-1) ---
+//
+// Relational, last-write-wins storage for canvas notes/connections, replacing
+// the per-project canvas.json files (ADR-0014 → ADR-0025). The tables live in
+// the EVENTS DB FILE (flowboard.db) as plain tables — NOT in the cache DB,
+// which is documented as disposable (docs/project-mode/hzl.md: deleting
+// flowboard-cache.db* forces a projection rebuild), and NOT as events
+// (ADR-0014's case against event-sourcing canvas data still holds). See the
+// m008 migration in migrations.js for the full decision rationale.
+//
+// Single-writer (ADR-0008): this module is the only writer. The response
+// shapes mirror the legacy file implementation in server.js 1:1 (duplicate/
+// updated flags, direction mapping, error semantics) so the endpoints
+// (T-344-2) can swap the data source without changing any shape. Error cases
+// throw Error objects with a `status` property carrying the HTTP status the
+// legacy endpoints respond with (400/404/413) and the exact same message.
+
+const CANVAS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS canvas_notes (
+  project    TEXT NOT NULL,
+  id         TEXT NOT NULL,
+  text       TEXT NOT NULL DEFAULT '',
+  x          INTEGER NOT NULL DEFAULT 0,
+  y          INTEGER NOT NULL DEFAULT 0,
+  color      TEXT NOT NULL DEFAULT 'yellow',
+  size       TEXT NOT NULL DEFAULT 'small',
+  created    TEXT,
+  updated_at TEXT,
+  PRIMARY KEY (project, id)
+);
+CREATE TABLE IF NOT EXISTS canvas_connections (
+  project   TEXT NOT NULL,
+  from_id   TEXT NOT NULL,
+  to_id     TEXT NOT NULL,
+  from_port TEXT,
+  to_port   TEXT,
+  PRIMARY KEY (project, from_id, to_id)
+);
+CREATE TABLE IF NOT EXISTS canvas_meta (
+  project     TEXT PRIMARY KEY,
+  migrated_at TEXT,
+  note_seq    INTEGER NOT NULL DEFAULT 0
+);
+`;
+
+const NOTE_TEXT_MAX_BYTES = 50 * 1024;
+
+/** Error with HTTP-status semantics matching today's canvas endpoints. */
+function _canvasError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function _canvasDb() {
+  if (!_eventsDb) throw new Error('[hzl-service] Not initialized — call init() first');
+  return _eventsDb;
+}
+
+/** Idempotent DDL — called from init() and from migration m008. */
+function canvasEnsureSchema() {
+  _canvasDb().exec(CANVAS_SCHEMA);
+}
+
+/** Map a canvas_notes row to the exact note shape of the file implementation. */
+function _noteFromRow(row) {
+  const note = { id: row.id, text: row.text, x: row.x, y: row.y, color: row.color, size: row.size };
+  if (row.created !== null && row.created !== undefined) note.created = row.created;
+  return note;
+}
+
+/** Map a canvas_connections row to the file shape (port keys omitted when unset). */
+function _connFromRow(row) {
+  const conn = { from: row.from_id, to: row.to_id };
+  if (row.from_port !== null && row.from_port !== undefined) conn.fromPort = row.from_port;
+  if (row.to_port !== null && row.to_port !== undefined) conn.toPort = row.to_port;
+  return conn;
+}
+
+function _assertNoteTextSize(text) {
+  if (typeof text === 'string' && Buffer.byteLength(text, 'utf8') > NOTE_TEXT_MAX_BYTES) {
+    throw _canvasError(413, 'Note text too large (max 50KB)');
+  }
+}
+
+/**
+ * GET-canvas equivalent of readCanvasFile(): { notes, connections } in
+ * insertion order. Orphaned connections are filtered on read (file parity —
+ * cannot normally occur here because deletes cascade, but kept defensively).
+ */
+function canvasGet(project) {
+  const db = _canvasDb();
+  const notes = db.prepare(
+    'SELECT id, text, x, y, color, size, created FROM canvas_notes WHERE project = ? ORDER BY rowid'
+  ).all(project).map(_noteFromRow);
+  const connections = db.prepare(`
+    SELECT c.from_id, c.to_id, c.from_port, c.to_port
+    FROM canvas_connections c
+    WHERE c.project = ?
+      AND EXISTS (SELECT 1 FROM canvas_notes n WHERE n.project = c.project AND n.id = c.from_id)
+      AND EXISTS (SELECT 1 FROM canvas_notes n WHERE n.project = c.project AND n.id = c.to_id)
+    ORDER BY c.rowid
+  `).all(project).map(_connFromRow);
+  return { notes, connections };
+}
+
+/**
+ * Create a note. Defaults and limits match POST /canvas/notes exactly.
+ * IDs come from canvas_meta.note_seq (monotonic — unlike the legacy
+ * max-scan in server.js nextNoteId(), deleted IDs are never reused; the
+ * format `N-` + zero-padded(3) and continuation from the current max are
+ * identical). Returns { ok: true, note }.
+ */
+function canvasCreateNote(project, { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = {}) {
+  const db = _canvasDb();
+  _assertNoteTextSize(text);
+  const created = new Date().toISOString().slice(0, 10);
+  const updatedAt = new Date().toISOString();
+  const noteExists = db.prepare('SELECT 1 FROM canvas_notes WHERE project = ? AND id = ?');
+  const note = db.transaction(() => {
+    db.prepare('INSERT OR IGNORE INTO canvas_meta (project, note_seq) VALUES (?, 0)').run(project);
+    let seq = db.prepare('SELECT note_seq FROM canvas_meta WHERE project = ?').get(project).note_seq || 0;
+    let id;
+    do {
+      seq += 1;
+      id = `N-${String(seq).padStart(3, '0')}`;
+    } while (noteExists.get(project, id)); // skip over imported/foreign IDs ahead of the sequence
+    db.prepare('UPDATE canvas_meta SET note_seq = ? WHERE project = ?').run(seq, project);
+    db.prepare(
+      'INSERT INTO canvas_notes (project, id, text, x, y, color, size, created, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(project, id, text, x, y, color, size, created, updatedAt);
+    return { id, text, x, y, color, size, created };
+  })();
+  return { ok: true, note };
+}
+
+/**
+ * Update a note. Same allowed fields and limits as PUT /canvas/notes/:id.
+ * Returns { ok: true, note } with the full updated note.
+ */
+function canvasUpdateNote(project, id, fields = {}) {
+  const db = _canvasDb();
+  const row = db.prepare(
+    'SELECT id, text, x, y, color, size, created FROM canvas_notes WHERE project = ? AND id = ?'
+  ).get(project, id);
+  if (!row) throw _canvasError(404, 'Note not found');
+  if (Object.prototype.hasOwnProperty.call(fields, 'text')) _assertNoteTextSize(fields.text);
+  const allowed = ['text', 'x', 'y', 'color', 'size'];
+  for (const k of allowed) {
+    if (Object.prototype.hasOwnProperty.call(fields, k)) row[k] = fields[k];
+  }
+  db.prepare(
+    'UPDATE canvas_notes SET text = ?, x = ?, y = ?, color = ?, size = ?, updated_at = ? WHERE project = ? AND id = ?'
+  ).run(row.text, row.x, row.y, row.color, row.size, new Date().toISOString(), project, id);
+  return { ok: true, note: _noteFromRow(row) };
+}
+
+/**
+ * Delete a note and every connection touching it (DELETE /canvas/notes/:id).
+ * Returns { ok: true }.
+ */
+function canvasDeleteNote(project, id) {
+  const db = _canvasDb();
+  const exists = db.prepare('SELECT 1 FROM canvas_notes WHERE project = ? AND id = ?').get(project, id);
+  if (!exists) throw _canvasError(404, 'Note not found');
+  db.transaction(() => {
+    db.prepare('DELETE FROM canvas_notes WHERE project = ? AND id = ?').run(project, id);
+    db.prepare('DELETE FROM canvas_connections WHERE project = ? AND (from_id = ? OR to_id = ?)').run(project, id, id);
+  })();
+  return { ok: true };
+}
+
+/**
+ * Batch delete (DELETE /canvas/notes/batch). Unknown IDs are ignored
+ * silently — file parity. Returns { ok: true, deleted } (the endpoint
+ * responds 204 without a body and ignores the return value).
+ */
+function canvasDeleteNotesBatch(project, noteIds) {
+  const db = _canvasDb();
+  if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
+    throw _canvasError(400, 'noteIds array required');
+  }
+  const placeholders = noteIds.map(() => '?').join(', ');
+  let deleted = 0;
+  db.transaction(() => {
+    deleted = db.prepare(
+      `DELETE FROM canvas_notes WHERE project = ? AND id IN (${placeholders})`
+    ).run(project, ...noteIds).changes;
+    db.prepare(
+      `DELETE FROM canvas_connections WHERE project = ? AND (from_id IN (${placeholders}) OR to_id IN (${placeholders}))`
+    ).run(project, ...noteIds, ...noteIds);
+  })();
+  return { ok: true, deleted };
+}
+
+/**
+ * Save a connection (POST /canvas/connections) with the exact legacy
+ * semantics: undirected dedupe (A→B == B→A), `{ duplicate: true }` when it
+ * already exists and no ports were sent, `{ updated: true, connection }` for
+ * port re-routing (ports map onto the stored direction when called with the
+ * reverse direction), `{ connection }` for a new edge. Port keys are stored
+ * only when truthy, like the file implementation.
+ */
+function canvasSaveConnection(project, { from, to, fromPort, toPort } = {}) {
+  const db = _canvasDb();
+  if (!from || !to) throw _canvasError(400, 'from and to required');
+  if (from === to) throw _canvasError(400, 'Cannot connect note to itself');
+  const noteExists = db.prepare('SELECT 1 FROM canvas_notes WHERE project = ? AND id = ?');
+  if (!noteExists.get(project, from) || !noteExists.get(project, to)) {
+    throw _canvasError(404, 'Note not found');
+  }
+  const existing = db.prepare(`
+    SELECT from_id, to_id, from_port, to_port FROM canvas_connections
+    WHERE project = ? AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))
+  `).get(project, from, to, to, from);
+
+  if (existing) {
+    if (fromPort || toPort) {
+      // Direction mapping — identical to the legacy handler: when called with
+      // the stored direction, ports apply as sent; when called reversed,
+      // fromPort/toPort swap onto the stored direction. Falsy ports keep the
+      // stored value (`fromPort || existing.fromPort`).
+      let newFromPort;
+      let newToPort;
+      if (existing.from_id === from) {
+        newFromPort = fromPort || existing.from_port;
+        newToPort = toPort || existing.to_port;
+      } else {
+        newFromPort = toPort || existing.from_port;
+        newToPort = fromPort || existing.to_port;
+      }
+      db.prepare(
+        'UPDATE canvas_connections SET from_port = ?, to_port = ? WHERE project = ? AND from_id = ? AND to_id = ?'
+      ).run(newFromPort || null, newToPort || null, project, existing.from_id, existing.to_id);
+      return {
+        ok: true,
+        updated: true,
+        connection: _connFromRow({ ...existing, from_port: newFromPort || null, to_port: newToPort || null }),
+      };
+    }
+    return { ok: true, duplicate: true };
+  }
+
+  db.prepare(
+    'INSERT INTO canvas_connections (project, from_id, to_id, from_port, to_port) VALUES (?, ?, ?, ?, ?)'
+  ).run(project, from, to, fromPort || null, toPort || null);
+  return {
+    ok: true,
+    connection: _connFromRow({ from_id: from, to_id: to, from_port: fromPort || null, to_port: toPort || null }),
+  };
+}
+
+/**
+ * Delete a connection in either direction (DELETE /canvas/connections).
+ * Deleting a non-existent connection still returns { ok: true } — file parity.
+ */
+function canvasDeleteConnection(project, { from, to } = {}) {
+  const db = _canvasDb();
+  if (!from || !to) throw _canvasError(400, 'from and to required');
+  db.prepare(`
+    DELETE FROM canvas_connections
+    WHERE project = ? AND ((from_id = ? AND to_id = ?) OR (from_id = ? AND to_id = ?))
+  `).run(project, from, to, to, from);
+  return { ok: true };
+}
+
+/** True once the project's canvas data has been migrated to the DB (dual-read switch, T-344-2). */
+function canvasIsMigrated(project) {
+  const row = _canvasDb().prepare('SELECT migrated_at FROM canvas_meta WHERE project = ?').get(project);
+  return !!(row && row.migrated_at);
+}
+
+/** Flip the per-project dual-read switch. Idempotent. Returns { ok: true, migratedAt }. */
+function canvasMarkMigrated(project) {
+  const migratedAt = new Date().toISOString();
+  _canvasDb().prepare(`
+    INSERT INTO canvas_meta (project, migrated_at, note_seq) VALUES (?, ?, 0)
+    ON CONFLICT(project) DO UPDATE SET migrated_at = excluded.migrated_at
+  `).run(project, migratedAt);
+  return { ok: true, migratedAt };
+}
+
+/**
+ * Transactional canvas.json import (for the gated migration, T-344-3).
+ * Replaces the project's canvas state with the JSON content, applying the
+ * same garbage collection readCanvasFile() applies on every load (orphaned
+ * connections dropped) plus the store's undirected invariant (reverse
+ * duplicates dropped, first wins). note_seq advances to the highest imported
+ * N-xxx suffix but never decreases (IDs are never reused). Does NOT set the
+ * migrated flag — callers pair this with canvasMarkMigrated() after count
+ * verification. Idempotent: re-importing the same JSON yields the same state.
+ * Returns { ok: true, notes, connections } with imported counts.
+ */
+function canvasImportFromJson(project, data) {
+  const db = _canvasDb();
+  if (!data || !Array.isArray(data.notes) || !Array.isArray(data.connections)) {
+    throw _canvasError(400, 'notes and connections arrays required');
+  }
+  let noteCount = 0;
+  let connCount = 0;
+  db.transaction(() => {
+    db.prepare('DELETE FROM canvas_notes WHERE project = ?').run(project);
+    db.prepare('DELETE FROM canvas_connections WHERE project = ?').run(project);
+
+    const insertNote = db.prepare(
+      'INSERT OR REPLACE INTO canvas_notes (project, id, text, x, y, color, size, created, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    const noteIds = new Set();
+    let maxSuffix = 0;
+    for (const n of data.notes) {
+      if (!n || typeof n.id !== 'string') continue;
+      insertNote.run(
+        project, n.id,
+        typeof n.text === 'string' ? n.text : '',
+        n.x ?? 0, n.y ?? 0,
+        n.color || 'yellow', n.size || 'small',
+        n.created || null, new Date().toISOString()
+      );
+      noteIds.add(n.id);
+      const m = n.id.match(/N-(\d+)/); // same pattern as legacy nextNoteId()
+      if (m) maxSuffix = Math.max(maxSuffix, parseInt(m[1], 10));
+    }
+    noteCount = noteIds.size;
+
+    const insertConn = db.prepare(
+      'INSERT INTO canvas_connections (project, from_id, to_id, from_port, to_port) VALUES (?, ?, ?, ?, ?)'
+    );
+    const seen = new Set();
+    for (const c of data.connections) {
+      if (!c || !c.from || !c.to) continue;
+      if (!noteIds.has(c.from) || !noteIds.has(c.to)) continue; // GC parity with readCanvasFile()
+      if (seen.has(`${c.from}|${c.to}`) || seen.has(`${c.to}|${c.from}`)) continue; // undirected invariant
+      seen.add(`${c.from}|${c.to}`);
+      insertConn.run(project, c.from, c.to, c.fromPort || null, c.toPort || null);
+      connCount += 1;
+    }
+
+    // Monotonic sequence: continue after the imported max, never go backwards.
+    db.prepare(`
+      INSERT INTO canvas_meta (project, note_seq) VALUES (?, ?)
+      ON CONFLICT(project) DO UPDATE SET note_seq = MAX(note_seq, excluded.note_seq)
+    `).run(project, maxSuffix);
+  })();
+  return { ok: true, notes: noteCount, connections: connCount };
+}
+
 module.exports = {
   init,
   rebuildCache,
@@ -3066,4 +3419,16 @@ module.exports = {
   getEventsDb,
   listHzlProjects,
   listTasksClaimedBy,
+  // T-344-1: canvas DB store (replaces canvas.json, see ADR-0025 draft)
+  canvasEnsureSchema,
+  canvasGet,
+  canvasCreateNote,
+  canvasUpdateNote,
+  canvasDeleteNote,
+  canvasDeleteNotesBatch,
+  canvasSaveConnection,
+  canvasDeleteConnection,
+  canvasIsMigrated,
+  canvasMarkMigrated,
+  canvasImportFromJson,
 };

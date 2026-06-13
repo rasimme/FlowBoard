@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar.jsx';
 import TabBar from './components/TabBar.jsx';
 import ViewShell from './components/ViewShell.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
+import CanvasMigrationBanner from './components/CanvasMigrationBanner.jsx';
 
 function AppWithSpecify() {
   return (
@@ -16,6 +17,7 @@ function AppWithSpecify() {
         <TabBar />
         <ViewShell />
         <DetailPanel />
+        <CanvasMigrationBanner />
       </DashboardProvider>
     </AppStateProvider>
   );

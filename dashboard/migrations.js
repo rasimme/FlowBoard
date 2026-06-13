@@ -316,6 +316,37 @@ const migrations = [
       db.prepare('UPDATE flowboard_agents SET last_seen = activated_at WHERE last_seen IS NULL').run();
     },
   },
+
+  {
+    id:   'm008-canvas-schema',
+    name: 'Canvas schema: canvas_notes, canvas_connections, canvas_meta in the events DB file (T-344-1)',
+    run: (_db, { hzlService }) => {
+      // TARGET-DB DECISION (T-344-1 pre-verification, basis for ADR-0025):
+      // The canvas tables live in the EVENTS DB FILE (flowboard.db), NOT in
+      // flowboard-cache.db — as plain relational tables, not as events.
+      //
+      // Why: no code path ever drops the cache DB (hzl-integrity.js only
+      // reads/writes hzl_local_meta watermark keys; hzl-core's
+      // rebuildAllProjections resets projection tables only; datastore.js
+      // never deletes files) — BUT the cache DB is *documented* as disposable:
+      // docs/project-mode/hzl.md ("Cache rebuild: deleting flowboard-cache.db*
+      // forces the server to rebuild projections from the event store on next
+      // start"). Canonical canvas data is NOT derivable from events, so it
+      // must not live in a file whose operational contract is "safe to
+      // delete". flowboard.db is the canonical, watermark-protected file
+      // (ADR-0018) — canonical data belongs there. The append-only triggers
+      // only guard the `events` table; plain tables alongside it (like
+      // hzl_global_meta) are fine. Single-writer (ADR-0008) holds: all canvas
+      // access goes through the canvas store in hzl-service.js.
+      //
+      // Note: `_db` (the migration registry handle) is the cache DB; the DDL
+      // intentionally targets hzlService's events DB handle. The DDL is
+      // idempotent (CREATE TABLE IF NOT EXISTS), so the cross-DB gap to the
+      // registry row is safe — a crash in between simply re-runs it.
+      // Schema only — the data import is user-gated (T-344-3/-4), never here.
+      hzlService.canvasEnsureSchema();
+    },
+  },
 ];
 
 /**
@@ -366,4 +397,6 @@ function runPending(db, context) {
   }
 }
 
-module.exports = { runPending };
+// `migrations` is exported for tests that need to pre-mark earlier migrations
+// as applied (e.g. test-canvas-db-store.js exercises m008 in isolation).
+module.exports = { runPending, migrations };

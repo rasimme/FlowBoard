@@ -556,16 +556,12 @@ function persistSpecifyProposal(session, opts = {}) {
     }
 
     if (cleanupNotes && session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
-      const data = readCanvasFile(session.project);
-      const deleteSet = new Set(session.sourceNoteIds);
-      const before = data.notes.length;
-      data.notes = data.notes.filter(n => !deleteSet.has(n.id));
-      const remainingIds = new Set(data.notes.map(n => n.id));
-      data.connections = (data.connections || []).filter(
-        c => remainingIds.has(c.from) && remainingIds.has(c.to)
-      );
-      if (data.notes.length !== before) {
-        writeCanvasFile(session.project, data);
+      // ADR-0016 "notes deleted last" — runs through the same dual-read
+      // switch as the canvas endpoints (T-344-2), so migrated projects clean
+      // up in the DB and unmigrated ones in canvas.json.
+      const result = canvasBackend(session.project)
+        .canvasDeleteNotesBatch(session.project, session.sourceNoteIds);
+      if (result.deleted > 0) {
         cleanedNoteIds.push(...session.sourceNoteIds);
       }
     }
@@ -604,6 +600,325 @@ function nextNoteId(notes) {
     if (m) max = Math.max(max, parseInt(m[1]));
   }
   return `N-${String(max + 1).padStart(3, '0')}`;
+}
+
+// --- Canvas dual-read switch (T-344-2) ---
+// Per-project backend selection: projects flagged in canvas_meta.migrated_at
+// use the DB store (hzl-service canvas* functions); unmigrated projects keep
+// the legacy canvas.json behavior byte-for-byte. canvasBackend() is the ONLY
+// switch — the 8 canvas endpoints and the Specify PERSIST cleanup all go
+// through it. Both backends share one calling convention: same function
+// names/signatures as the hzl-service store, errors carry `.status`
+// (400/404/413) with the exact legacy messages.
+
+function canvasHttpError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function assertCanvasNoteTextSize(text) {
+  if (typeof text === 'string' && Buffer.byteLength(text, 'utf8') > 50 * 1024) {
+    throw canvasHttpError(413, 'Note text too large (max 50KB)');
+  }
+}
+
+// Legacy file backend — the former endpoint bodies, moved verbatim behind the
+// store interface (readCanvasFile/writeCanvasFile stay the source of truth
+// for unmigrated projects).
+const fileCanvasStore = {
+  canvasGet(project) {
+    return readCanvasFile(project);
+  },
+  canvasCreateNote(project, { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = {}) {
+    assertCanvasNoteTextSize(text);
+    const data = readCanvasFile(project);
+    const note = {
+      id: nextNoteId(data.notes),
+      text,
+      x,
+      y,
+      color,
+      size,
+      created: new Date().toISOString().slice(0, 10),
+    };
+    data.notes.push(note);
+    writeCanvasFile(project, data);
+    return { ok: true, note };
+  },
+  canvasUpdateNote(project, id, fields = {}) {
+    const data = readCanvasFile(project);
+    const note = data.notes.find(n => n.id === id);
+    if (!note) throw canvasHttpError(404, 'Note not found');
+    assertCanvasNoteTextSize(fields.text);
+    const allowed = ['text', 'x', 'y', 'color', 'size'];
+    for (const k of allowed) {
+      if (Object.prototype.hasOwnProperty.call(fields, k)) note[k] = fields[k];
+    }
+    writeCanvasFile(project, data);
+    return { ok: true, note };
+  },
+  canvasDeleteNote(project, id) {
+    const data = readCanvasFile(project);
+    const idx = data.notes.findIndex(n => n.id === id);
+    if (idx === -1) throw canvasHttpError(404, 'Note not found');
+    data.notes.splice(idx, 1);
+    const noteIds = new Set(data.notes.map(n => n.id));
+    data.connections = data.connections.filter(c => noteIds.has(c.from) && noteIds.has(c.to));
+    writeCanvasFile(project, data);
+    return { ok: true };
+  },
+  canvasDeleteNotesBatch(project, noteIds) {
+    if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
+      throw canvasHttpError(400, 'noteIds array required');
+    }
+    const data = readCanvasFile(project);
+    const deleteSet = new Set(noteIds);
+    const before = data.notes.length;
+    data.notes = data.notes.filter(n => !deleteSet.has(n.id));
+    const remainingIds = new Set(data.notes.map(n => n.id));
+    data.connections = data.connections.filter(
+      c => remainingIds.has(c.from) && remainingIds.has(c.to)
+    );
+    writeCanvasFile(project, data);
+    return { ok: true, deleted: before - data.notes.length };
+  },
+  canvasSaveConnection(project, { from, to, fromPort, toPort } = {}) {
+    if (!from || !to) throw canvasHttpError(400, 'from and to required');
+    if (from === to) throw canvasHttpError(400, 'Cannot connect note to itself');
+    const data = readCanvasFile(project);
+    const noteIds = new Set(data.notes.map(n => n.id));
+    if (!noteIds.has(from) || !noteIds.has(to)) throw canvasHttpError(404, 'Note not found');
+    const existing = data.connections.find(
+      c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
+    );
+    if (existing) {
+      // Connection exists — update ports if different (allows re-routing)
+      if (fromPort || toPort) {
+        if (existing.from === from) {
+          existing.fromPort = fromPort || existing.fromPort;
+          existing.toPort = toPort || existing.toPort;
+        } else {
+          existing.fromPort = toPort || existing.fromPort;
+          existing.toPort = fromPort || existing.toPort;
+        }
+        writeCanvasFile(project, data);
+        return { ok: true, updated: true, connection: existing };
+      }
+      return { ok: true, duplicate: true };
+    }
+    const conn = { from, to };
+    if (fromPort) conn.fromPort = fromPort;
+    if (toPort) conn.toPort = toPort;
+    data.connections.push(conn);
+    writeCanvasFile(project, data);
+    return { ok: true, connection: conn };
+  },
+  canvasDeleteConnection(project, { from, to } = {}) {
+    if (!from || !to) throw canvasHttpError(400, 'from and to required');
+    const data = readCanvasFile(project);
+    data.connections = data.connections.filter(
+      c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
+    );
+    writeCanvasFile(project, data);
+    return { ok: true };
+  },
+};
+
+/** The dual-read switch: DB store for migrated projects, file store otherwise. */
+function canvasBackend(project) {
+  return hzlService.canvasIsMigrated(project) ? hzlService : fileCanvasStore;
+}
+
+// --- Canvas migration workflow (T-344-3) ---
+// Detection + gated import of legacy canvas.json files into the DB store.
+// canvasImportFromJson (T-344-1) does the transactional write; the helpers
+// here only orchestrate: validate file -> import -> verify counts -> flip the
+// dual-read switch -> rename the file to canvas.json.pre-db.bak. The file is
+// NEVER deleted, and only renamed AFTER the import has been verified.
+
+/**
+ * Apply the same cleanup the import applies, without writing anything:
+ * notes without a string id dropped, duplicate note ids collapsed, orphaned
+ * connections dropped (readCanvasFile parity), reverse duplicates dropped
+ * (undirected invariant, first wins). Count verification after an import
+ * compares the DB against THESE cleaned counts, not the raw file counts.
+ */
+function cleanCanvasData(data) {
+  const noteIds = new Set();
+  for (const n of data.notes || []) {
+    if (n && typeof n.id === 'string') noteIds.add(n.id);
+  }
+  const seen = new Set();
+  let connections = 0;
+  for (const c of data.connections || []) {
+    if (!c || !c.from || !c.to) continue;
+    if (!noteIds.has(c.from) || !noteIds.has(c.to)) continue;
+    if (seen.has(`${c.from}|${c.to}`) || seen.has(`${c.to}|${c.from}`)) continue;
+    seen.add(`${c.from}|${c.to}`);
+    connections += 1;
+  }
+  return { notes: noteIds.size, connections };
+}
+
+/** Scan PROJECTS_DIR for unmigrated projects that still have a canvas.json. */
+function scanPendingCanvasMigrations() {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const pending = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const name = entry.name;
+    if (!sanitizeProjectName(name)) continue;
+    const file = path.join(PROJECTS_DIR, name, 'canvas.json');
+    if (!fs.existsSync(file)) continue;
+    if (hzlService.canvasIsMigrated(name)) continue;
+    let bytes = 0;
+    try { bytes = fs.statSync(file).size; } catch {}
+    // Tolerant read for display counts: corrupt files show 0/0 here and fail
+    // loudly in the run step (which parses strictly).
+    const cleaned = cleanCanvasData(readCanvasFile(name));
+    pending.push({ project: name, notes: cleaned.notes, connections: cleaned.connections, bytes });
+  }
+  pending.sort((a, b) => a.project.localeCompare(b.project));
+  return pending;
+}
+
+// --- Canvas conflict detection (T-344-5, ADR-0018) ---
+// A workspace restore from a pre-migration backup (or a failed post-import
+// rename, T-344-3) can put a canvas.json back next to a project whose canvas
+// data already lives in the DB. The dual-read switch keeps serving the DB —
+// the file is ignored but may hold edits the DB never saw, so resolution is
+// strictly an operator decision (T-344-8 docs): inspect the file, then delete
+// it or re-import deliberately. NEVER auto-merge, never silently overwrite in
+// either direction. Only the literal `canvas.json` counts — `.pre-db.bak` and
+// `.pre-db.bak.<epoch>` files are legitimate migration leftovers.
+//
+// NOT a conflict: imported rows in the DB while migrated_at is unset (a run
+// that failed count verification). The dual-read switch still serves the
+// file, the project stays `pending`, and a later successful run repairs the
+// state via the transactional re-import. Harmless by design — no alarm.
+
+// Warn once per project per process — the status endpoint is polled by the
+// UI banner and must not flood the log with the same conflict.
+const _warnedCanvasConflicts = new Set();
+
+/** Scan for migrated projects that have a literal canvas.json again. */
+function scanCanvasConflicts() {
+  let rows = [];
+  try {
+    rows = hzlService.getEventsDb()
+      .prepare('SELECT project, migrated_at FROM canvas_meta WHERE migrated_at IS NOT NULL ORDER BY project')
+      .all();
+  } catch {
+    return [];
+  }
+  const conflicts = [];
+  for (const row of rows) {
+    if (!sanitizeProjectName(row.project)) continue;
+    const file = path.join(PROJECTS_DIR, row.project, 'canvas.json');
+    let stat;
+    try { stat = fs.statSync(file); } catch { continue; } // exact name only — .bak variants never match
+    if (!stat.isFile()) continue;
+    conflicts.push({ project: row.project, bytes: stat.size, migratedAt: row.migrated_at });
+    if (!_warnedCanvasConflicts.has(row.project)) {
+      _warnedCanvasConflicts.add(row.project);
+      console.warn(
+        `[canvas-migration] ⚠️ CONFLICT: project "${row.project}" is DB-migrated (${row.migrated_at}) `
+        + `but a canvas.json exists again (${stat.size} bytes) — likely a workspace restore from a `
+        + `pre-migration backup. The DB stays authoritative and the file is ignored. `
+        + `Operator action required: inspect ${file}, then delete it or re-import deliberately. No auto-merge.`
+      );
+    }
+  }
+  return conflicts;
+}
+
+/**
+ * Migrate one project's canvas.json into the DB store. Returns a result row
+ * for the run response: { project, ok, notes, connections, error?, warning?,
+ * skipped?, conflict? }. Never throws for per-project failures — partial
+ * failures must not stop the other projects.
+ */
+function migrateCanvasProject(name) {
+  const file = path.join(PROJECTS_DIR, name, 'canvas.json');
+
+  // Idempotency: a migrated project is a no-op, never re-imported. EXCEPT
+  // when a canvas.json exists again (ADR-0018 restore conflict, T-344-5):
+  // an explicit request must fail loudly instead of silently skipping — and
+  // it must NOT re-import over the DB data without an operator decision.
+  if (hzlService.canvasIsMigrated(name)) {
+    if (fs.existsSync(file)) {
+      return {
+        project: name,
+        ok: false,
+        conflict: true,
+        error: 'conflict: project is already DB-migrated but a canvas.json exists again (likely restored '
+          + 'from a pre-migration backup) — refusing to re-import over the DB data. Inspect the file, '
+          + 'then delete it or resolve manually (see migration docs).',
+      };
+    }
+    const current = hzlService.canvasGet(name);
+    return { project: name, ok: true, skipped: true, notes: current.notes.length, connections: current.connections.length };
+  }
+  if (!fs.existsSync(file)) {
+    return { project: name, ok: false, error: 'no canvas.json found' };
+  }
+
+  // Strict read + validation — corrupt JSON fails here, file untouched.
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    return { project: name, ok: false, error: `invalid canvas.json: ${e.message}` };
+  }
+  if (!data || !Array.isArray(data.notes) || !Array.isArray(data.connections)) {
+    return { project: name, ok: false, error: 'invalid canvas.json: notes and connections arrays required' };
+  }
+
+  const expected = cleanCanvasData(data);
+  try {
+    hzlService.canvasImportFromJson(name, data); // transactional (T-344-1)
+  } catch (e) {
+    return { project: name, ok: false, error: `import failed: ${e.message}` };
+  }
+
+  // Count verification against the cleaned file counts. On mismatch the
+  // migrated flag stays unset, so the dual-read switch keeps serving the file.
+  const inDb = hzlService.canvasGet(name);
+  if (inDb.notes.length !== expected.notes || inDb.connections.length !== expected.connections) {
+    return {
+      project: name,
+      ok: false,
+      error: `count mismatch after import: db has ${inDb.notes.length} notes/${inDb.connections.length} connections, `
+        + `file has ${expected.notes}/${expected.connections} — project left unmigrated`,
+    };
+  }
+
+  hzlService.canvasMarkMigrated(name);
+  const result = { project: name, ok: true, notes: inDb.notes.length, connections: inDb.connections.length };
+
+  // Rename ONLY after the verified import flipped the switch. Rename failure
+  // is a warning, not a failure — the drift check (T-344-5) catches leftovers.
+  try {
+    let bak = `${file}.pre-db.bak`;
+    if (fs.existsSync(bak)) bak = `${bak}.${Date.now()}`; // never overwrite an older backup
+    fs.renameSync(file, bak);
+  } catch (e) {
+    result.warning = `migrated, but renaming canvas.json failed: ${e.message}`;
+  }
+  return result;
+}
+
+/** Map store errors (`.status` = 400/404/413) to the legacy JSON responses. */
+function sendCanvasError(res, err) {
+  if (err && err.status) return res.status(err.status).json({ error: err.message });
+  console.error('[api]', err);
+  return res.status(500).json({ error: 'Internal server error' });
 }
 
 // --- Project Context Helpers ---
@@ -1972,152 +2287,149 @@ function writeSpecFileForTask(projectName, task, content) {
 }
 
 
+// The canvas CRUD endpoints below are thin wrappers around canvasBackend()
+// (dual-read switch, T-344-2). Behavior, response shapes and status codes are
+// unchanged for both backends — the legacy file logic lives in
+// fileCanvasStore, the DB logic in hzl-service.
+
 // GET /api/projects/:name/canvas
 app.get('/api/projects/:name/canvas', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
-  const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  res.json(readCanvasFile(req.params.name));
+  try {
+    res.json(canvasBackend(req.params.name).canvasGet(req.params.name));
+  } catch (err) {
+    sendCanvasError(res, err);
+  }
 });
 
 // POST /api/projects/:name/canvas/notes
 app.post('/api/projects/:name/canvas/notes', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
-  const projectDir = path.join(PROJECTS_DIR, req.params.name);
-  const data = readCanvasFile(req.params.name);
-  const { text = '', x = 0, y = 0, color = 'yellow', size = 'small' } = req.body;
-  if (typeof text === 'string' && Buffer.byteLength(text, 'utf8') > 50 * 1024) {
-    return res.status(413).json({ error: 'Note text too large (max 50KB)' });
-  }
-  const note = {
-    id: nextNoteId(data.notes),
-    text,
-    x,
-    y,
-    color,
-    size,
-    created: new Date().toISOString().slice(0, 10)
-  };
-  data.notes.push(note);
   try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true, note });
+    res.json(canvasBackend(req.params.name).canvasCreateNote(req.params.name, req.body));
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    sendCanvasError(res, err);
   }
 });
 
 // PUT /api/projects/:name/canvas/notes/:id
 app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const note = data.notes.find(n => n.id === req.params.id);
-  if (!note) return res.status(404).json({ error: 'Note not found' });
-  if (typeof req.body.text === 'string' && Buffer.byteLength(req.body.text, 'utf8') > 50 * 1024) {
-    return res.status(413).json({ error: 'Note text too large (max 50KB)' });
-  }
-  const allowed = ['text', 'x', 'y', 'color', 'size'];
-  for (const k of allowed) {
-    if (Object.prototype.hasOwnProperty.call(req.body, k)) note[k] = req.body[k];
-  }
   try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true, note });
+    res.json(canvasBackend(req.params.name).canvasUpdateNote(req.params.name, req.params.id, req.body));
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    sendCanvasError(res, err);
   }
 });
 
 // DELETE /api/projects/:name/canvas/notes/batch (MUST be before :id route)
 app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
-  const { noteIds } = req.body;
-  if (!noteIds || !Array.isArray(noteIds) || noteIds.length === 0) {
-    return res.status(400).json({ error: 'noteIds array required' });
-  }
-  const data = readCanvasFile(req.params.name);
-  const deleteSet = new Set(noteIds);
-  data.notes = data.notes.filter(n => !deleteSet.has(n.id));
-  const remainingIds = new Set(data.notes.map(n => n.id));
-  data.connections = data.connections.filter(
-    c => remainingIds.has(c.from) && remainingIds.has(c.to)
-  );
   try {
-    writeCanvasFile(req.params.name, data);
+    canvasBackend(req.params.name).canvasDeleteNotesBatch(req.params.name, (req.body || {}).noteIds);
     res.status(204).end();
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    sendCanvasError(res, err);
   }
 });
 
 // DELETE /api/projects/:name/canvas/notes/:id
 app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const idx = data.notes.findIndex(n => n.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: 'Note not found' });
-  data.notes.splice(idx, 1);
-  const noteIds = new Set(data.notes.map(n => n.id));
-  data.connections = data.connections.filter(c => noteIds.has(c.from) && noteIds.has(c.to));
   try {
-    writeCanvasFile(req.params.name, data);
+    canvasBackend(req.params.name).canvasDeleteNote(req.params.name, req.params.id);
     res.json({ ok: true });
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    sendCanvasError(res, err);
   }
 });
 
 // POST /api/projects/:name/canvas/connections
 app.post('/api/projects/:name/canvas/connections', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const { from, to, fromPort, toPort } = req.body;
-  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
-  if (from === to) return res.status(400).json({ error: 'Cannot connect note to itself' });
-  const noteIds = new Set(data.notes.map(n => n.id));
-  if (!noteIds.has(from) || !noteIds.has(to)) return res.status(404).json({ error: 'Note not found' });
-  const existing = data.connections.find(
-    c => (c.from === from && c.to === to) || (c.from === to && c.to === from)
-  );
-  if (existing) {
-    // Connection exists — update ports if different (allows re-routing)
-    if (fromPort || toPort) {
-      if (existing.from === from) {
-        existing.fromPort = fromPort || existing.fromPort;
-        existing.toPort = toPort || existing.toPort;
-      } else {
-        existing.fromPort = toPort || existing.fromPort;
-        existing.toPort = fromPort || existing.toPort;
-      }
-      try {
-        writeCanvasFile(req.params.name, data);
-        return res.json({ ok: true, updated: true, connection: existing });
-      } catch (err) {
-        console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
-      }
-    }
-    return res.json({ ok: true, duplicate: true });
-  }
-  const conn = { from, to };
-  if (fromPort) conn.fromPort = fromPort;
-  if (toPort) conn.toPort = toPort;
-  data.connections.push(conn);
   try {
-    writeCanvasFile(req.params.name, data);
-    res.json({ ok: true, connection: conn });
+    res.json(canvasBackend(req.params.name).canvasSaveConnection(req.params.name, req.body));
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    sendCanvasError(res, err);
   }
 });
 
 // DELETE /api/projects/:name/canvas/connections
 app.delete('/api/projects/:name/canvas/connections', (req, res) => {
-  const data = readCanvasFile(req.params.name);
-  const { from, to } = req.body;
-  if (!from || !to) return res.status(400).json({ error: 'from and to required' });
-  data.connections = data.connections.filter(
-    c => !((c.from === from && c.to === to) || (c.from === to && c.to === from))
-  );
   try {
-    writeCanvasFile(req.params.name, data);
+    canvasBackend(req.params.name).canvasDeleteConnection(req.params.name, req.body);
     res.json({ ok: true });
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    sendCanvasError(res, err);
+  }
+});
+
+// --- Canvas migration endpoints (T-344-3) ---
+// Same auth/loopback behavior as every other admin endpoint: the global
+// /api/ auth middleware applies, nothing extra here.
+
+// GET /api/migrations/canvas/status
+// -> { pending: [{ project, displayName, notes, connections, bytes }],
+//      migrated: [{ project, migratedAt }],
+//      conflicts: [{ project, displayName, bytes, migratedAt }], total }
+// Pending = projects with a canvas.json on disk and no canvas_meta.migrated_at.
+// Empty scaffold files count as pending with notes:0 so the state stays
+// unambiguous. Counts are the CLEANED counts (orphans + reverse duplicates
+// dropped) — exactly what a run would import.
+// Conflicts (T-344-5, ADR-0018, additive) = migrated projects with a literal
+// canvas.json on disk again (restore from a pre-migration backup). They also
+// stay in `migrated` (the DB is still authoritative) and `total` keeps its
+// pending+migrated semantics.
+app.get('/api/migrations/canvas/status', (req, res) => {
+  try {
+    const displayNames = new Map();
+    try {
+      for (const p of fbMeta.listProjects(hzlService.listHzlProjects())) {
+        displayNames.set(p.name, p.displayName || p.name);
+      }
+    } catch {} // registry unavailable -> fall back to project names
+    const pending = scanPendingCanvasMigrations().map(p => ({
+      project: p.project,
+      displayName: displayNames.get(p.project) || p.project,
+      notes: p.notes,
+      connections: p.connections,
+      bytes: p.bytes,
+    }));
+    const migrated = hzlService.getEventsDb()
+      .prepare('SELECT project, migrated_at FROM canvas_meta WHERE migrated_at IS NOT NULL ORDER BY project')
+      .all()
+      .map(r => ({ project: r.project, migratedAt: r.migrated_at }));
+    const conflicts = scanCanvasConflicts().map(c => ({
+      project: c.project,
+      displayName: displayNames.get(c.project) || c.project,
+      bytes: c.bytes,
+      migratedAt: c.migratedAt,
+    }));
+    res.json({ pending, migrated, conflicts, total: pending.length + migrated.length });
+  } catch (err) {
+    sendCanvasError(res, err);
+  }
+});
+
+// POST /api/migrations/canvas/run  Body: { projects?: [name] }
+// Without projects: migrate ALL pending. Per project: read+validate ->
+// canvasImportFromJson (transaction) -> count verification -> mark migrated ->
+// rename canvas.json -> canvas.json.pre-db.bak. Partial failures don't stop
+// the other projects; re-runs skip migrated projects (idempotent).
+// -> { results: [{ project, ok, notes, connections, error?, warning?, skipped? }], failed }
+app.post('/api/migrations/canvas/run', (req, res) => {
+  try {
+    const body = req.body || {};
+    let targets;
+    if (body.projects !== undefined) {
+      if (!Array.isArray(body.projects) || body.projects.length === 0
+        || body.projects.some(p => typeof p !== 'string' || !sanitizeProjectName(p))) {
+        return res.status(400).json({ error: 'projects must be a non-empty array of project names' });
+      }
+      targets = [...new Set(body.projects)];
+    } else {
+      targets = scanPendingCanvasMigrations().map(p => p.project);
+    }
+    const results = targets.map(name => migrateCanvasProject(name));
+    res.json({ results, failed: results.filter(r => !r.ok).length });
+  } catch (err) {
+    sendCanvasError(res, err);
   }
 });
 
@@ -3210,6 +3522,20 @@ async function startServer() {
       }
     } catch (e) {
       console.warn('[integrity] boot check failed:', e.message);
+    }
+
+    // Boot-time canvas conflict scan (T-344-5, ADR-0018): a canvas.json that
+    // reappeared next to a DB-migrated project (workspace restore from a
+    // pre-migration backup) is logged here once; GET /api/migrations/canvas/
+    // status reports it as `conflicts` for the UI banner. Read-only — the
+    // operator resolves it (see migration docs).
+    try {
+      const canvasConflicts = scanCanvasConflicts();
+      if (canvasConflicts.length) {
+        console.warn(`[canvas-migration] boot scan: ${canvasConflicts.length} canvas.json conflict(s) — see GET /api/migrations/canvas/status`);
+      }
+    } catch (e) {
+      console.warn('[canvas-migration] boot conflict scan failed:', e.message);
     }
 
     // Init FlowBoard metadata tables (creates flowboard_projects, flowboard_agents, flowboard_migrations)

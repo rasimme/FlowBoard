@@ -46,7 +46,9 @@ function _validateInput({ name, displayName, description, group }) {
 /**
  * Scaffold filesystem project structure under projectsDir/<name>/.
  * Required: project root dir, PROJECT.md, SESSIONS.md, DECISIONS.md.
- * Optional: context/, specs/, canvas.json (failures produce warnings).
+ * Optional: context/, specs/ (failures produce warnings).
+ * No canvas.json is scaffolded anymore — new projects are canvas-DB-native
+ * (T-344-2); createProject() marks them migrated right after scaffolding.
  * Throws if required pieces cannot be created.
  * Returns { warnings: string[] }.
  */
@@ -114,15 +116,6 @@ function _scaffoldFilesystem(projectsDir, name, displayName, description) {
     fs.mkdirSync(path.join(projectDir, 'specs'), { recursive: true });
   } catch (e) {
     warnings.push(`Could not create specs/: ${e.message}`);
-  }
-
-  try {
-    fs.writeFileSync(
-      path.join(projectDir, 'canvas.json'),
-      JSON.stringify({ notes: [], connections: [] }, null, 2)
-    );
-  } catch (e) {
-    warnings.push(`Could not create canvas.json: ${e.message}`);
   }
 
   return { warnings };
@@ -217,6 +210,16 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
       new Error(`Filesystem scaffold failed: ${e.message}`),
       { code: 'SCAFFOLD_ERROR' }
     );
+  }
+
+  // 6. New projects are canvas-DB-native (T-344-2): no canvas.json exists,
+  // and the dual-read switch must route them to the DB store from the start.
+  // Failure degrades gracefully (the file backend lazily creates canvas.json
+  // on first write), so a warning is enough.
+  try {
+    hzlService.canvasMarkMigrated(name);
+  } catch (e) {
+    warnings.push(`Could not mark canvas as DB-native: ${e.message}`);
   }
 
   const project = {
@@ -415,7 +418,10 @@ function deleteProject(name, { hzlService, fbMeta, projectsDir }) {
  * legacy migrations that wrote metadata rows without an event, or ad-hoc
  * filesystem dirs that bypassed the API. It explicitly does NOT scaffold
  * PROJECT.md/SESSIONS.md/DECISIONS.md and does NOT overwrite an existing
- * metadata row's displayName.
+ * metadata row's displayName. It also never touches canvas state (T-344-2):
+ * no canvas.json is scaffolded and the per-project canvas migration flag in
+ * canvas_meta is left exactly as it is — healed legacy projects stay on the
+ * file backend until the gated canvas migration moves them.
  *
  * @param {object} input        - { name, displayName?, description? }
  * @param {object} deps
