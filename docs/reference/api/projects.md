@@ -189,9 +189,9 @@ the token applies immediately.
 Project metrics — the same numbers the `task-stats` overview widget shows,
 for agents to query programmatically. **200** `{ ok, stats: { total,
 counts: { backlog, open, in-progress, review, done }, blocked,
-throughput7d, cycleDays, stuck, generatedAt } }` — counts cover top-level
-non-archived tasks; `throughput7d` = completed in the last 7 days;
-`cycleDays` = mean created→completed over the most recent 30 completed.
+throughput7d, cycleDays, stuck, generatedAt } }` — counts cover non-archived tasks (subtasks included); `throughput7d` =
+completed in the last 7 days (archived-done included); `cycleDays` = mean
+created→completed over the most recent 30. These match the task-stats widget exactly.
 
 ### GET /api/projects/:name/questions
 Query: `limit` (default 20). Open agent questions — comment events with

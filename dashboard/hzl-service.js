@@ -1212,25 +1212,27 @@ function getTaskCounts(project) {
 /**
  * T-303: project metrics for agents — mirrors exactly what the task-stats
  * overview widget computes client-side, so the API and the dashboard agree.
- * Counts cover top-level non-archived tasks per status; throughput is tasks
- * completed in the last 7 days; cycleDays is the mean (completed-created)
- * over the most recent 30 completed tasks.
+ * Like the widget: counts cover non-trashed, non-archived tasks INCLUDING
+ * subtasks; throughput/cycle include archived tasks that carry a completed
+ * date (archiving a done task must not drop it from throughput, T-328).
  */
 function getProjectStats(project) {
   const STATUSES = ['backlog', 'open', 'in-progress', 'review', 'done'];
   const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
   let blocked = 0;
-  const tasks = [];
+  const tasks = [];      // non-trashed, non-archived (incl. subtasks)
+  const doneDated = [];  // done or archived, with a completed date
   for (const [key, t] of _cache) {
     if (!key.startsWith(`${project}:`)) continue;
-    if (t.trashedAt || t.status === 'archived' || t.parentId) continue;
+    if (t.trashedAt) continue;
+    if ((t.status === 'done' || t.status === 'archived') && t.completed) doneDated.push(t);
+    if (t.status === 'archived') continue;
     tasks.push(t);
     if (counts[t.status] !== undefined) counts[t.status]++;
     if (t.blocked) blocked++;
   }
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
-  const doneDated = tasks.filter(t => t.status === 'done' && t.completed);
   const throughput7d = doneDated.filter(t => now - new Date(t.completed).getTime() < 7 * day).length;
   const cycles = doneDated
     .filter(t => t.created)
@@ -1396,10 +1398,12 @@ function moveTaskToProject(project, flowboardId, toProject) {
   // moveWithSubtasks physically moves whatever children the DB holds, so a
   // stale/incomplete subtaskIds read-model would leave a moved child with a
   // dangling old-project map entry (unreachable task). Scanning by parentId
-  // matches what the DB actually moves.
+  // matches what the DB actually moves. NOTE: do NOT filter trashedAt —
+  // trashed subtasks keep their parent_id and move with the parent, so the
+  // FB id-map must follow them too or they orphan.
   const subUlids = [];
   for (const [k, c] of _cache) {
-    if (c._project === project && c.parentId === flowboardId && !c.trashedAt) {
+    if (c._project === project && c.parentId === flowboardId) {
       const u = _fbToUlid.get(k);
       if (u) subUlids.push({ id: c.id, ulid: u });
     }
