@@ -1035,6 +1035,17 @@ export default function TasksView() {
     });
   }, []);
 
+  // ScrollToTask uses this to reveal a subtask whose parent is collapsed
+  const handleExpandParent = useCallback((parentId) => {
+    setExpandedParents(prev => {
+      if (prev.has(parentId)) return prev;
+      const next = new Set(prev);
+      next.add(parentId);
+      try { if (window.kanbanState) { window.kanbanState.expandedParents = next; } } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
   const handleTaskDeleted = useCallback(() => {
     notify();
   }, []);
@@ -1290,7 +1301,7 @@ export default function TasksView() {
       {/* Scroll-to-task effect: consumed when coming back from spec view
           without a detail panel (Kanban-only flow). The flag is set by
           FilesView's onBackToTask when there's no openTaskDetail bridge. */}
-      <ScrollToTask />
+      <ScrollToTask onExpandParent={handleExpandParent} />
       <div className="kanban">
         {STATUS_KEYS.map(status => (
           <Column
@@ -1336,7 +1347,7 @@ export default function TasksView() {
           onDismiss={() => setUndoState(null)}
         />
       )}
-      <ScrollToTask />
+      <ScrollToTask onExpandParent={handleExpandParent} />
     </div>
   );
 }
@@ -1344,21 +1355,31 @@ export default function TasksView() {
 // Scrolls a task card into view when coming back from spec view
 // without an active detail panel. Consumes window._scrollToTaskId
 // set by FilesView's onBackToTask.
-function ScrollToTask() {
+function ScrollToTask({ onExpandParent }) {
   useEffect(() => {
     const taskId = window._scrollToTaskId;
     if (!taskId) return;
     delete window._scrollToTaskId;
-    // Give the kanban DOM a tick to render
-    requestAnimationFrame(() => {
+
+    const reveal = (card) => {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('highlighted-from-back');
+      setTimeout(() => card.classList.remove('highlighted-from-back'), 2000);
+    };
+
+    // A subtask id is `T-<n>-<m>`; its card only renders when the parent is
+    // expanded. If the card isn't there yet, expand the parent and retry a
+    // few frames while the subtask list mounts.
+    const subMatch = /^(T-\d+)-\d+$/.exec(taskId);
+    if (subMatch) onExpandParent?.(subMatch[1]);
+
+    let tries = 0;
+    const tick = () => {
       const card = document.querySelector(`[data-task-id="${taskId}"]`);
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Briefly highlight the card
-        card.classList.add('highlighted-from-back');
-        setTimeout(() => card.classList.remove('highlighted-from-back'), 2000);
-      }
-    });
+      if (card) { reveal(card); return; }
+      if (++tries < 12) requestAnimationFrame(tick); // ~200ms budget for expand→render
+    };
+    requestAnimationFrame(tick);
   });
   return null;
 }
