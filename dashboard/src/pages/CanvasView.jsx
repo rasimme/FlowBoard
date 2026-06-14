@@ -710,7 +710,13 @@ export default function CanvasView() {
           cancelLinkOpen();
           gestureRef.current.linkOpenTimer = setTimeout(() => {
             gestureRef.current.linkOpenTimer = null;
-            window.open(href, '_blank', 'noopener,noreferrer');
+            // H1: window.open returns null when the pop-up was blocked. Surface
+            // a toast so the click isn't a silent no-op; behaviour is otherwise
+            // unchanged (still opens in a new tab with noopener).
+            const win = window.open(href, '_blank', 'noopener,noreferrer');
+            if (!win && window.showToast) {
+              window.showToast('Pop-up blocked — allow pop-ups to open the link', 'warn');
+            }
           }, LINK_OPEN_DELAY);
         }
       }
@@ -866,14 +872,33 @@ export default function CanvasView() {
     // wrap, which grab would override) via the same geometric hit-test used for
     // opening; reset the previously-hinted body when leaving.
     const noteEl = e.target.closest?.('.note');
-    const overLink = noteEl ? !!findLinkHrefAtPoint(noteEl, e.clientX, e.clientY) : false;
+    // M1: only run the expensive geometric hit-test (getClientRects forces a
+    // layout reflow) when the hovered note actually contains a link. A note
+    // with no <a> can never be over a link, so short-circuit to the default
+    // cursor — avoids a reflow on every mouse move over plain notes/empty wrap.
+    const hasLink = noteEl ? noteEl.querySelector('a') != null : false;
+    const overLink = hasLink ? !!findLinkHrefAtPoint(noteEl, e.clientX, e.clientY) : false;
     const bodyEl = overLink ? noteEl.querySelector('[data-note-body]') : null;
     const prev = gestureRef.current.cursorEl;
     if (prev && prev !== bodyEl) { prev.style.cursor = ''; gestureRef.current.cursorEl = null; }
     if (bodyEl) { bodyEl.style.cursor = 'pointer'; gestureRef.current.cursorEl = bodyEl; }
   }, [applyTransform, moveConnect, moveNoteDrag, moveLasso, bumpDragTick]);
 
+  // M2: clear the per-note pointer-cursor hint set by onMouseMove. It is only
+  // reset on the next mousemove today, so it leaks if the note is removed
+  // (delete/promote/reload) or the mouse leaves the wrap. Defensive: the
+  // element may already be detached (style is still safely writable on a
+  // detached node, but guard the ref read).
+  const clearCursorHint = useCallback(() => {
+    const el = gestureRef.current.cursorEl;
+    if (el) {
+      try { el.style.cursor = ''; } catch { /* detached/garbage-collected */ }
+      gestureRef.current.cursorEl = null;
+    }
+  }, []);
+
   const onMouseUp = useCallback((e) => {
+    clearCursorHint(); // M2: don't let the pointer cursor stick past the gesture
     if (endConnect()) return;
     if (endNoteDrag(e.shiftKey, e.clientX, e.clientY)) return;
     if (endLasso()) return;
@@ -882,7 +907,7 @@ export default function CanvasView() {
       persistView(); // pan gesture ended → persist viewport
       bumpView();    // refresh minimap frame after the pan
     }
-  }, [endConnect, endNoteDrag, endLasso, persistView, bumpView]);
+  }, [endConnect, endNoteDrag, endLasso, persistView, bumpView, clearCursorHint]);
 
   const onDblClick = useCallback((e) => {
     if (e.target.closest('[data-canvas-ui]')) return;

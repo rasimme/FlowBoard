@@ -23,6 +23,7 @@ const DASHBOARD_PORT = 18816;
 const P_NORMAL = 'mig-normal';
 const P_EMPTY = 'mig-empty';
 const P_CORRUPT = 'mig-corrupt';
+const P_SKIP = 'mig-skip'; // legacy/foreign canvas.json with a non-string-id note
 const P_DBNATIVE = 'mig-dbnative';
 
 let pass = 0;
@@ -131,6 +132,21 @@ async function run() {
   fs.writeFileSync(path.join(corruptDir, 'PROJECT.md'), `# ${P_CORRUPT}\n`);
   const corruptContent = '{ "notes": [ {"id": "N-001", "text": "broken';
   fs.writeFileSync(path.join(corruptDir, 'canvas.json'), corruptContent);
+
+  // Skip: a foreign/legacy canvas.json with a numeric-id note. The importer
+  // drops it (string-id only); counts still match (same filter), so it migrates
+  // OK but the run result must carry a `warning` so the drop isn't silent.
+  const skipDir = path.join(projectsDir, P_SKIP);
+  fs.mkdirSync(skipDir, { recursive: true });
+  fs.writeFileSync(path.join(skipDir, 'PROJECT.md'), `# ${P_SKIP}\n`);
+  const skipData = {
+    notes: [
+      { id: 1, text: 'legacy numeric id', x: 10, y: 10, color: 'yellow', size: 'small' },
+      { id: 'N-001', text: 'valid note', x: 20, y: 20, color: 'blue', size: 'small' },
+    ],
+    connections: [],
+  };
+  fs.writeFileSync(path.join(skipDir, 'canvas.json'), JSON.stringify(skipData, null, 2));
 
   const base = `http://127.0.0.1:${DASHBOARD_PORT}`;
 
@@ -263,6 +279,14 @@ async function run() {
     const rCorrupt = (res.body?.results || []).find(r => r.project === P_CORRUPT);
     ok(rCorrupt && rCorrupt.ok === false && typeof rCorrupt.error === 'string' && rCorrupt.error.length > 0,
       `run(all): corrupt project failed with error (got ${JSON.stringify(rCorrupt?.error)})`);
+
+    // T-345-11 (DB review M2): the numeric-id note is dropped but migration
+    // still succeeds — the result must warn so the drop isn't silent.
+    const rSkip = (res.body?.results || []).find(r => r.project === P_SKIP);
+    ok(rSkip && rSkip.ok === true && rSkip.notes === 1,
+      `run(all): skip project migrated the 1 valid note (got ${JSON.stringify(rSkip)})`);
+    ok(rSkip && typeof rSkip.warning === 'string' && /skip/i.test(rSkip.warning),
+      `run(all): dropped note is reported via warning (got ${JSON.stringify(rSkip?.warning)})`);
 
     ok(fs.existsSync(path.join(emptyDir, 'canvas.json.pre-db.bak'))
       && !fs.existsSync(path.join(emptyDir, 'canvas.json')),

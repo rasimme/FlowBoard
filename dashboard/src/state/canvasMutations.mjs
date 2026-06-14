@@ -88,23 +88,32 @@ export async function deleteNote(project, dispatch, id) {
  */
 export async function restoreNotes(project, dispatch, snapshot) {
   if (!project || !snapshot) return new Map();
+  const notes = snapshot.notes || [];
+  // M4: the note POSTs are independent (the server assigns fresh ids), so fire
+  // them in parallel instead of awaiting one at a time. Zip the results back
+  // onto the source notes by index so the old→new id map stays correctly
+  // aligned regardless of completion order.
+  const results = await Promise.all(notes.map(n =>
+    api(`/projects/${project}/canvas/notes`, {
+      method: 'POST',
+      body: { text: n.text, x: n.x, y: n.y, color: n.color, size: n.size },
+    }).then(res => res, () => null) // per-note failure: best-effort restore
+  ));
   const idMap = new Map();
-  for (const n of snapshot.notes || []) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const res = await api(`/projects/${project}/canvas/notes`, {
-        method: 'POST',
-        body: { text: n.text, x: n.x, y: n.y, color: n.color, size: n.size },
-      });
-      if (res.ok && res.note) {
-        dispatch({ type: 'note-created', note: res.note });
-        idMap.set(n.oldId, res.note.id);
-      }
-    } catch { /* per-note failure: best-effort restore, others still come back */ }
-  }
+  results.forEach((res, i) => {
+    if (res && res.ok && res.note) {
+      dispatch({ type: 'note-created', note: res.note });
+      idMap.set(notes[i].oldId, res.note.id);
+    }
+  });
+  // Connections depend on the id map; create them after the notes exist. (Kept
+  // sequential — the set is small and saveConnection dedupes A→B/B→A.)
   for (const c of remapRestoredConnections(snapshot.connections || [], idMap)) {
     // eslint-disable-next-line no-await-in-loop
     await saveConnection(project, dispatch, c.from, c.to, c.fromPort, c.toPort);
+  }
+  if (idMap.size < notes.length) {
+    toast('Some notes could not be restored', 'warn');
   }
   return idMap;
 }

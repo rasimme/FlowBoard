@@ -17,7 +17,6 @@
  * Run: node test-canvas-sidebar-editor.mjs
  */
 
-import assert from 'node:assert/strict';
 import { register, createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -136,18 +135,24 @@ ok(typeof NoteSidebar === 'function', 'NoteSidebar default export is a component
   ok(typeof props.onSave === 'function', 'editor gets an onSave handler (Mod-s)');
   ok(typeof props.onCancel === 'function', 'editor gets an onCancel handler (Escape)');
 
-  // onSave (Mod-s in the real editor) persists the current value.
-  props.onSave();
-  ok(saveCalls.length === 1, 'editor onSave triggers a persist');
-  assert.deepEqual(saveCalls[0], ['N-7', '**bold** note body']);
-  ok(saveCalls[0][0] === 'N-7' && saveCalls[0][1] === '**bold** note body',
-    'persist calls onSave(note.id, value)');
+  // M3 dedupe semantics: the editor's onSave (Mod-s) / onCancel (Escape) persist
+  // the *current* value through onSave(note.id, value), but a save is suppressed
+  // when the text is unchanged since it was last persisted for this open note.
+  // That dedupes the close double-PUT (wrapper onBlur + unmount-cleanup both
+  // firing for the same text). In this one-shot SSR harness the value can't be
+  // edited (renderToStaticMarkup never re-renders, so onChange/setValue never
+  // updates valueRef) — the value equals note.text throughout, so every persist
+  // is a legitimate no-op. The real changed-value single-PUT-on-close path is
+  // covered by the browser test test-canvas-sidebar-save.js.
 
-  // onCancel (Escape) persists and closes.
+  // onSave (Mod-s) with unchanged text does not persist (M3 dedupe).
+  props.onSave();
+  ok(saveCalls.length === 0, 'editor onSave does not persist unchanged text (M3 dedupe)');
+
+  // onCancel (Escape) closes the sidebar; unchanged text is still a no-op.
   props.onCancel();
   ok(closed === 1, 'editor onCancel closes the sidebar');
-  ok(saveCalls.length === 2, 'editor onCancel also persists before closing');
-  assert.deepEqual(saveCalls[1], ['N-7', '**bold** note body']);
+  ok(saveCalls.length === 0, 'editor onCancel does not persist unchanged text (M3 dedupe)');
 }
 
 {

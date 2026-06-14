@@ -27,16 +27,34 @@ export default function NoteSidebar({ note, onSave, onClose }) {
   valueRef.current = value;
   const noteRef = useRef(note);
   noteRef.current = note;
+  // M3: closing the sidebar by outside-click fired TWO PUTs for the same text —
+  // the wrapper onBlur → persist() AND the unmount-cleanup → onSave(openId,...).
+  // Track the last value actually persisted (per open note) so a save is only
+  // emitted when the text genuinely changed; this dedupes the close double-PUT
+  // while keeping save-as-you-go on every mid-session blur. Reset when a
+  // (different) note opens.
+  const savedValueRef = useRef(note?.text || '');
 
   // Load the note text when a (different) note opens.
   useEffect(() => {
-    if (open) setValue(note.text || '');
+    if (open) { setValue(note.text || ''); savedValueRef.current = note.text || ''; }
   }, [open, note?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const persist = useCallback(() => {
-    const n = noteRef.current;
-    if (n) onSave(n.id, valueRef.current);
+  // Persist `value` for the given note id, but only if it differs from what was
+  // last persisted for this open note — idempotent, so onBlur and the
+  // unmount-cleanup firing for the same text at close yield a single PUT.
+  const persistId = useCallback((id) => {
+    if (id == null) return;
+    if (valueRef.current === savedValueRef.current) return;
+    savedValueRef.current = valueRef.current;
+    onSave(id, valueRef.current);
   }, [onSave]);
+
+  const persist = useCallback(() => {
+    // On the outside-click close path the `note` prop is nulled before onBlur
+    // fires; the unmount-cleanup (below) holds the captured id for that case.
+    if (noteRef.current) persistId(noteRef.current.id);
+  }, [persistId]);
 
   const handleClose = useCallback(() => {
     persist();
@@ -50,7 +68,7 @@ export default function NoteSidebar({ note, onSave, onClose }) {
   useEffect(() => {
     if (!open || !note) return undefined;
     const openId = note.id;
-    return () => { onSave(openId, valueRef.current); };
+    return () => { persistId(openId); }; // idempotent vs the onBlur save (M3)
   }, [open, note?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

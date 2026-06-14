@@ -84,6 +84,23 @@ async function run() {
     await page.waitForSelector('.canvas-sidebar.open', { timeout: 5000 });
     ok(true, 'double-click opens the sidebar');
 
+    // M3: count note PUTs in the browser so we can assert the close-by-outside
+    // -click path fires exactly ONE persist (was two: onBlur + unmount-cleanup).
+    await page.evaluate(() => {
+      window.__notePuts = [];
+      const orig = window.fetch;
+      window.fetch = (url, opts) => {
+        try {
+          const u = typeof url === 'string' ? url : (url && url.url) || '';
+          const m = (opts && opts.method) || 'GET';
+          if (m === 'PUT' && /\/canvas\/notes\//.test(u)) {
+            window.__notePuts.push({ url: u, body: opts && opts.body });
+          }
+        } catch {}
+        return orig(url, opts);
+      };
+    });
+
     // Replace the whole text with something short.
     await page.click('.canvas-sidebar .cm-content');
     await page.keyboard.down('Meta'); await page.keyboard.press('a'); await page.keyboard.up('Meta');
@@ -98,6 +115,12 @@ async function run() {
       return n && n.text === 'Kurz jetzt' ? n : null;
     }, 'sidebar edit persisted').catch(() => null);
     ok(saved, 'sidebar edit persists after closing via outside click');
+
+    // M3: exactly one PUT carrying the new text — no double-persist.
+    await new Promise(r => setTimeout(r, 300));
+    const puts = await page.evaluate(() => (window.__notePuts || []).slice());
+    const textPuts = puts.filter(p => typeof p.body === 'string' && p.body.includes('Kurz jetzt'));
+    ok(textPuts.length === 1, `outside-click close fires exactly ONE text PUT (got ${textPuts.length})`);
 
     // And the now-short note is no longer truncated.
     await new Promise(r => setTimeout(r, 300));

@@ -321,6 +321,16 @@ ok(resolveChip(null, { pending: [] }) === null, 'no snippet chip + empty canvas 
   const chip = resolveChip(null, { pending: [pendingStatus.pending[0]] });
   ok(chip && chip.variant === 'warn', 'single canvas project still yields a warn chip');
 }
+// T-345-11 (DB review M1): conflict-only — no snippet, nothing pending, but a
+// canvas.json re-appeared for a migrated project → must still surface a chip.
+{
+  const conflictOnly = { pending: [], conflicts: [{ project: 'x', displayName: 'X', bytes: 5, migratedAt: 'z' }] };
+  const chip = resolveChip(null, conflictOnly);
+  ok(chip && chip.variant === 'warn' && /conflict/i.test(chip.text),
+    'conflict-only (no snippet, no pending) → warn "Canvas data conflict" chip');
+  ok(resolveChip(null, { pending: [], conflicts: [] }) === null,
+    'no snippet, no pending, no conflict → still no chip');
+}
 
 // -----------------------------------------------------------------------------
 // Test 7: Source assertions

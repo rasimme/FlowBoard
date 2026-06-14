@@ -33,6 +33,23 @@ function cssFiles() {
     .map(f => path.join(dir, f));
 }
 
+// The hue/identity palette is referenced from JS too (AgentChip AGENT_PALETTE,
+// canvasConstants COLOR_STROKE, inline-style var() in canvas components). A
+// typo there (e.g. var(--hue-9-ring)) resolves to nothing at runtime and the
+// CSS-only scan would miss it — so walk src/ for var() usages as well.
+function srcJsFiles() {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (/\.(js|mjs|jsx)$/.test(e.name)) out.push(full);
+    }
+  };
+  walk(path.join(ROOT, 'src'));
+  return out;
+}
+
 function collectDefinitions(sources) {
   const defined = new Set();
   for (const { text } of sources) {
@@ -64,7 +81,15 @@ function run() {
   }
   const twPath = path.join(ROOT, 'tailwind.config.js');
   usages.push(...collectUsages('tailwind.config.js', fs.readFileSync(twPath, 'utf8')));
-  ok(usages.length > 0, `found ${usages.length} var() usages across styles/ and tailwind.config.js`);
+  // Also scan src/ JS/JSX so palette typos in COLOR_STROKE / AGENT_PALETTE /
+  // inline-style var() are caught, not just CSS-side usages.
+  let srcUsageCount = 0;
+  for (const file of srcJsFiles()) {
+    const u = collectUsages(path.relative(ROOT, file), fs.readFileSync(file, 'utf8'));
+    srcUsageCount += u.length;
+    usages.push(...u);
+  }
+  ok(usages.length > 0, `found ${usages.length} var() usages across styles/, tailwind.config.js and src/ (${srcUsageCount} in JS)`);
 
   const undefinedStrict = usages.filter(u => !u.hasFallback && !defined.has(u.token));
   for (const u of undefinedStrict) {

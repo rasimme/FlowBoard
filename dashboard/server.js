@@ -902,6 +902,13 @@ function migrateCanvasProject(name) {
   hzlService.canvasMarkMigrated(name);
   const result = { project: name, ok: true, notes: inDb.notes.length, connections: inDb.connections.length };
 
+  // Report notes the importer dropped (non-string / duplicate id). Count
+  // verification still passes (cleanCanvasData applies the same filter), so the
+  // drop would otherwise be silent. Not expected for real N-xxx data, but
+  // surface it for foreign/hand-edited canvas.json (T-344-5 review).
+  const skipped = data.notes.length - expected.notes;
+  if (skipped > 0) result.warning = `${skipped} note(s) skipped (invalid or duplicate id)`;
+
   // Rename ONLY after the verified import flipped the switch. Rename failure
   // is a warning, not a failure — the drift check (T-344-5) catches leftovers.
   try {
@@ -909,7 +916,8 @@ function migrateCanvasProject(name) {
     if (fs.existsSync(bak)) bak = `${bak}.${Date.now()}`; // never overwrite an older backup
     fs.renameSync(file, bak);
   } catch (e) {
-    result.warning = `migrated, but renaming canvas.json failed: ${e.message}`;
+    const renameWarn = `migrated, but renaming canvas.json failed: ${e.message}`;
+    result.warning = result.warning ? `${result.warning}; ${renameWarn}` : renameWarn;
   }
   return result;
 }

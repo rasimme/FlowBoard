@@ -110,6 +110,20 @@ async function getOpenCalls(page) {
   return page.evaluate(() => window.__openCalls.slice());
 }
 
+// H1 — capture window.showToast calls so we can assert the pop-up-blocked
+// warning. window.open already returns null in the stub above (headless never
+// opens a tab), which is exactly the "pop-up blocked" signal CanvasView checks.
+async function resetToastStub(page) {
+  await page.evaluate(() => {
+    window.__toastCalls = [];
+    window.showToast = (msg, type) => { window.__toastCalls.push({ msg, type }); };
+  });
+}
+
+async function getToastCalls(page) {
+  return page.evaluate(() => (window.__toastCalls || []).slice());
+}
+
 // CDP-correct double click (two down/up pairs with rising clickCount).
 async function doubleClickAt(page, x, y) {
   await page.mouse.move(x, y);
@@ -286,6 +300,33 @@ async function runPass(page, base, box, label) {
   await new Promise(r => setTimeout(r, GUARD_MS + 220));
   calls = await getOpenCalls(page);
   ok(calls.length === 0, `${label}: double-click on long-card link does NOT open the link`);
+  await closeEditors(page);
+
+  // --- Case 6 (H1): pop-up blocked → window.open returns null → warn toast,
+  //     no crash. The stub returns null (blocked); CanvasView must surface a
+  //     warning toast and keep working (a follow-up click still opens). ---
+  await resetOpenStub(page);
+  await resetToastStub(page);
+  lc = await linkCenter(page, shortId);
+  ok(lc, `${label}: short-card link rect resolved (H1)`);
+  await singleClickAt(page, lc.cx, lc.cy);
+  let toasts = await waitFor(async () => {
+    const t = await getToastCalls(page);
+    return t.length > 0 ? t : null;
+  }, 'case6 popup-blocked toast', 2000).catch(() => []);
+  ok(toasts.some(t => t.type === 'warn' && /pop-?up blocked/i.test(t.msg || '')),
+    `${label}: blocked window.open shows a 'warn' pop-up-blocked toast`);
+  calls = await getOpenCalls(page);
+  ok(calls.length === 1, `${label}: window.open was still attempted once when blocked`);
+  // No crash: the canvas is still interactive (a second click still attempts open).
+  await closeEditors(page);
+  lc = await linkCenter(page, shortId);
+  await singleClickAt(page, lc.cx, lc.cy);
+  calls = await waitFor(async () => {
+    const c = await getOpenCalls(page);
+    return c.length >= 2 ? c : null;
+  }, 'case6 second open after block', 2000).catch(() => []);
+  ok(calls.length >= 2, `${label}: canvas still works after a blocked pop-up (no crash)`);
   await closeEditors(page);
 
   // Cleanup so the next pass starts clean.

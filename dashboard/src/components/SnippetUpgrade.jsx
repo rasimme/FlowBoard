@@ -95,10 +95,17 @@ export default function SnippetUpgrade() {
  */
 export function resolveChip(snippetChip, canvasStatus) {
   const canvasCount = pendingProjects(canvasStatus).length;
-  if (!snippetChip && canvasCount === 0) return null;
-  if (snippetChip && canvasCount === 0) return snippetChip;
+  const conflictCount = conflictProjects(canvasStatus).length;
+  if (!snippetChip && canvasCount === 0 && conflictCount === 0) return null;
+  if (snippetChip && canvasCount === 0) return snippetChip; // snippet chip opens the modal; conflicts render inside it
   if (!snippetChip && canvasCount > 0) {
     return { text: 'Migration required', variant: 'warn' };
+  }
+  // Conflict-only (no snippet, no pending): a canvas.json re-appeared next to a
+  // migrated project (ADR-0018 restore). Surface a chip so the operator reaches
+  // the conflict section — otherwise it lives only in the server log.
+  if (!snippetChip && canvasCount === 0 && conflictCount > 0) {
+    return { text: 'Canvas data conflict', variant: 'warn' };
   }
   // Both present: combined warn chip.
   const word = canvasCount === 1 ? 'canvas project' : 'canvas projects';

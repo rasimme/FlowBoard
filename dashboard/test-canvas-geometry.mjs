@@ -54,8 +54,14 @@ ok(
   JSON.stringify(NOTE_COLORS) === JSON.stringify(['grey', 'yellow', 'blue', 'green', 'red', 'teal']),
   'NOTE_COLORS order matches vanilla'
 );
-ok(COLOR_STROKE.yellow === 'var(--hue-6-ring)' && COLOR_STROKE.grey === 'var(--hue-1-ring)',
-  'COLOR_STROKE maps to hue design tokens');
+ok(JSON.stringify(COLOR_STROKE) === JSON.stringify({
+  grey:   'var(--hue-1-ring)',
+  yellow: 'var(--hue-6-ring)',
+  blue:   'var(--hue-3-ring)',
+  green:  'var(--hue-4-ring)',
+  red:    'var(--hue-5-ring)',
+  teal:   'var(--hue-2-ring)',
+}), 'COLOR_STROKE maps every note color to its hue ring token (grey1/teal2/blue3/green4/red5/yellow6)');
 ok(CORNER_RADIUS === 12 && PORT_SPACING === 18 && MIN_ESCAPE === 28 && MAX_PORTS_PER_SIDE === 5,
   'routing constants match vanilla');
 

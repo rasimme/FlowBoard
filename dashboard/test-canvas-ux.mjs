@@ -167,6 +167,41 @@ section('restoreNotes — re-POST + remapped connections (mocked fetch)');
   delete globalThis.window;
 }
 
+section('restoreNotes — partial failure → warn toast (M4)');
+
+{
+  // One note POST fails (rejects); the other succeeds. restoreNotes must still
+  // restore the survivor (parallel, best-effort) and surface a warn toast that
+  // some notes could not be restored.
+  const toasts = [];
+  globalThis.window = { showToast: (msg, type) => toasts.push({ msg, type }) };
+  let n = 0;
+  globalThis.fetch = async (url, opts) => {
+    if (url.endsWith('/canvas/notes') && opts.method === 'POST') {
+      n += 1;
+      if (n === 1) throw new Error('network'); // first note fails
+      return { ok: true, json: async () => ({ ok: true, note: { id: 'r200' } }) };
+    }
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+
+  const { restoreNotes } = await import('./src/state/canvasMutations.mjs');
+  const snapshot = {
+    notes: [
+      { oldId: 'a', text: 'A', x: 0, y: 0, color: 'red', size: 'small' },
+      { oldId: 'b', text: 'B', x: 0, y: 0, color: 'blue', size: 'small' },
+    ],
+    connections: [],
+  };
+  const idMap = await restoreNotes('proj', () => {}, snapshot);
+  ok(idMap.size === 1, 'survivor note still restored when another POST fails');
+  ok(toasts.some(t => t.type === 'warn' && /could not be restored/i.test(t.msg || '')),
+    'partial restore surfaces a warn toast');
+
+  delete globalThis.fetch;
+  delete globalThis.window;
+}
+
 // =============================================================================
 console.log(`\n${'='.repeat(60)}`);
 console.log(`Canvas UX helpers: ${pass} passed, ${fail} failed`);
