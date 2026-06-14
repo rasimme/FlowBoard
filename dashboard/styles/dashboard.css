@@ -29,49 +29,49 @@
       --hue-1: #5b6b82;
       --hue-1-fg: #e6ecf5;
       --hue-1-soft: color-mix(in srgb, var(--hue-1) 18%, transparent);
-      --hue-1-canvas: color-mix(in srgb, var(--hue-1) 38%, var(--bg));
+      --hue-1-canvas: color-mix(in srgb, var(--hue-1) 35%, #0a0c10);
       --hue-1-ring: #7d8da6;
       --hue-1-ring-soft: color-mix(in srgb, var(--hue-1-ring) 25%, transparent);
       --hue-2: #3e7a78;
       --hue-2-fg: #dff0ee;
       --hue-2-soft: color-mix(in srgb, var(--hue-2) 18%, transparent);
-      --hue-2-canvas: color-mix(in srgb, var(--hue-2) 38%, var(--bg));
+      --hue-2-canvas: color-mix(in srgb, var(--hue-2) 35%, #0a0c10);
       --hue-2-ring: #5a9694;
       --hue-2-ring-soft: color-mix(in srgb, var(--hue-2-ring) 25%, transparent);
       --hue-3: #6b6fa8;
       --hue-3-fg: #e7e8f7;
       --hue-3-soft: color-mix(in srgb, var(--hue-3) 18%, transparent);
-      --hue-3-canvas: color-mix(in srgb, var(--hue-3) 38%, var(--bg));
+      --hue-3-canvas: color-mix(in srgb, var(--hue-3) 35%, #0a0c10);
       --hue-3-ring: #8a8fc5;
       --hue-3-ring-soft: color-mix(in srgb, var(--hue-3-ring) 25%, transparent);
       --hue-4: #607a5c;
       --hue-4-fg: #e2ecde;
       --hue-4-soft: color-mix(in srgb, var(--hue-4) 18%, transparent);
-      --hue-4-canvas: color-mix(in srgb, var(--hue-4) 38%, var(--bg));
+      --hue-4-canvas: color-mix(in srgb, var(--hue-4) 35%, #0a0c10);
       --hue-4-ring: #7f997a;
       --hue-4-ring-soft: color-mix(in srgb, var(--hue-4-ring) 25%, transparent);
       --hue-5: #7e5a7a;
       --hue-5-fg: #efe2ed;
       --hue-5-soft: color-mix(in srgb, var(--hue-5) 18%, transparent);
-      --hue-5-canvas: color-mix(in srgb, var(--hue-5) 38%, var(--bg));
+      --hue-5-canvas: color-mix(in srgb, var(--hue-5) 35%, #0a0c10);
       --hue-5-ring: #9d7899;
       --hue-5-ring-soft: color-mix(in srgb, var(--hue-5-ring) 25%, transparent);
       --hue-6: #8a6a4a;
       --hue-6-fg: #f2e6d6;
       --hue-6-soft: color-mix(in srgb, var(--hue-6) 18%, transparent);
-      --hue-6-canvas: color-mix(in srgb, var(--hue-6) 38%, var(--bg));
+      --hue-6-canvas: color-mix(in srgb, var(--hue-6) 35%, #0a0c10);
       --hue-6-ring: #a88968;
       --hue-6-ring-soft: color-mix(in srgb, var(--hue-6-ring) 25%, transparent);
       --hue-7: #4e6e7a;
       --hue-7-fg: #dfe9ee;
       --hue-7-soft: color-mix(in srgb, var(--hue-7) 18%, transparent);
-      --hue-7-canvas: color-mix(in srgb, var(--hue-7) 38%, var(--bg));
+      --hue-7-canvas: color-mix(in srgb, var(--hue-7) 35%, #0a0c10);
       --hue-7-ring: #6d8b97;
       --hue-7-ring-soft: color-mix(in srgb, var(--hue-7-ring) 25%, transparent);
       --hue-8: #6a5f82;
       --hue-8-fg: #ebe6f2;
       --hue-8-soft: color-mix(in srgb, var(--hue-8) 18%, transparent);
-      --hue-8-canvas: color-mix(in srgb, var(--hue-8) 38%, var(--bg));
+      --hue-8-canvas: color-mix(in srgb, var(--hue-8) 35%, #0a0c10);
       --hue-8-ring: #897ea3;
       --hue-8-ring-soft: color-mix(in srgb, var(--hue-8-ring) 25%, transparent);
       --chart-1: var(--hue-2-ring);
@@ -2019,12 +2019,12 @@
     }
     .color-swatch:hover { transform: scale(1.2); }
     .color-swatch.selected { border-color: var(--text-strong); }
-    .color-swatch-yellow { background: var(--warn); }
-    .color-swatch-blue   { background: var(--info); }
-    .color-swatch-green  { background: var(--ok); }
-    .color-swatch-red    { background: var(--danger); }
-    .color-swatch-teal   { background: var(--accent-2); }
-    .color-swatch-grey   { background: var(--border-strong); }
+    .color-swatch-yellow { background: var(--hue-6-ring); }
+    .color-swatch-blue   { background: var(--hue-3-ring); }
+    .color-swatch-green  { background: var(--hue-4-ring); }
+    .color-swatch-red    { background: var(--hue-5-ring); }
+    .color-swatch-teal   { background: var(--hue-2-ring); }
+    .color-swatch-grey   { background: var(--hue-1-ring); }
 
     /* Lasso selection rectangle */
     .canvas-lasso {
