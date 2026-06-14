@@ -211,13 +211,17 @@ Error codes are surfaced as HTTP status:
 
 ## GET /api/search
 
-Cross-project full-text search over task title, description and tags (FTS5,
-prefix matching, T-301). Trashed and archived tasks are excluded.
+Unified cross-project search (T-301, T-349) over three kinds:
+- **tasks** — FTS5 over title, description and tags (prefix matching);
+  trashed and archived excluded.
+- **notes** — canvas notes matched by text (LIKE), newest-edited first.
+- **projects** — live (non-archived) projects matched by name / display name.
 
-Query params: `q` (required), `project?`, `limit?` (default 20, max 50),
-`offset?`.
+Query params: `q` (required), `project?` (scopes tasks + notes), `limit?`
+(tasks, default 20, max 50), `offset?`.
 
-**200** `{ ok, query, tasks: [task & { project, rank }], total }`
+**200** `{ ok, query, tasks: [task & { project, rank }], total,
+notes: [{ project, id, text, color }], projects: [{ name, displayName }] }`
 **400** `q` missing.
 
 ## POST /api/projects/:name/tasks/:id/move

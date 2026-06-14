@@ -93,6 +93,19 @@ async function run() {
     ok(trash.status === 200, 'task trashed');
     r = await api('GET', '/search?q=login&project=beta');
     ok((r.body?.tasks || []).length === 0, 'trashed tasks are excluded from search');
+
+    // T-349: unified search also covers canvas notes and projects
+    await api('POST', '/projects/alpha/canvas/notes', { text: 'Remember the deployment checklist', color: 'yellow' });
+    await api('POST', '/projects/beta/canvas/notes', { text: 'styling polish ideas', color: 'blue' });
+    r = await api('GET', '/search?q=deployment');
+    ok((r.body?.notes || []).length === 1 && r.body.notes[0].project === 'alpha', 'canvas notes are searchable');
+    ok(r.body?.notes?.[0]?.text?.includes('deployment'), 'note result carries its text');
+    r = await api('GET', '/search?q=deployment&project=beta');
+    ok((r.body?.notes || []).length === 0, 'note search respects the project filter');
+    r = await api('GET', '/search?q=alpha');
+    ok((r.body?.projects || []).some(p => p.name === 'alpha'), 'projects match by name');
+    r = await api('GET', '/search?q=styling');
+    ok((r.body?.notes || []).length === 1 && (r.body?.tasks || []).length === 1, 'a query can return both tasks and notes');
   } catch (err) {
     fail++;
     failures.push(err.message);

@@ -3298,12 +3298,23 @@ app.get('/api/search', (req, res) => {
     if (!q) return res.status(400).json({ error: 'q required' });
     const limit = req.query.limit !== undefined ? Math.max(1, Math.min(50, parseInt(req.query.limit) || 20)) : 20;
     const offset = req.query.offset !== undefined ? Math.max(0, parseInt(req.query.offset) || 0) : 0;
-    const result = hzlService.searchTasks(q, {
-      project: req.query.project || undefined,
-      limit,
-      offset,
-    });
-    res.json({ ok: true, query: q, ...result });
+    const project = req.query.project || undefined;
+    const result = hzlService.searchTasks(q, { project, limit, offset });
+
+    // T-349: unified search also covers canvas notes and project names
+    const { notes } = hzlService.searchNotes(q, { project, limit: 10 });
+    const ql = q.toLowerCase();
+    let projects = [];
+    try {
+      projects = fbMeta.listProjects(hzlService.listHzlProjects())
+        .filter(p => !p.archived)
+        .filter(p => String(p.name || '').toLowerCase().includes(ql)
+          || String(p.displayName || p.display_name || '').toLowerCase().includes(ql))
+        .slice(0, 8)
+        .map(p => ({ name: p.name, displayName: p.displayName || p.display_name || p.name }));
+    } catch (e) { console.warn('[search] project match:', e.message); }
+
+    res.json({ ok: true, query: q, ...result, notes, projects });
   } catch (err) {
     console.error('[search]', err);
     res.status(500).json({ error: 'Search failed' });

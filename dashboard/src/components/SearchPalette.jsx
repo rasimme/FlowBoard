@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Search } from 'lucide-react';
+import { Search, ListTodo, StickyNote, Folder } from 'lucide-react';
 import Input from './Input.jsx';
 import Badge from './Badge.jsx';
 import Spinner from './Spinner.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 
 /**
- * SearchPalette — global cross-project task search (T-301).
+ * SearchPalette — global unified search (T-301, T-349).
  * Opens via the header button or Cmd/Ctrl+K, queries GET /api/search
- * (debounced), keyboard-navigable; selecting a result switches to the
- * task's project and scrolls/highlights the card.
+ * (debounced) across tasks, canvas notes and projects; keyboard-navigable.
+ * Selecting routes to the right surface: a task scrolls/highlights its
+ * card, a note opens its project's Ideas canvas, a project is activated.
  */
 export default function SearchPalette({ open, onClose, projects = [] }) {
   const [query, setQuery] = useState('');
@@ -45,7 +46,13 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
         const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}&limit=15`, { credentials: 'include' });
         const data = await res.json().catch(() => ({}));
         if (seq !== seqRef.current) return; // stale response
-        setResults(res.ok ? (data.tasks || []) : []);
+        // flatten the three kinds into one keyboard-navigable list
+        const flat = res.ok ? [
+          ...(data.tasks || []).map(t => ({ kind: 'task', ...t })),
+          ...(data.notes || []).map(n => ({ kind: 'note', ...n })),
+          ...(data.projects || []).map(p => ({ kind: 'project', ...p })),
+        ] : [];
+        setResults(flat);
         setActive(0);
       } finally {
         if (seq === seqRef.current) setLoading(false);
@@ -54,10 +61,18 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
     return () => clearTimeout(debounceRef.current);
   }, [query, open]);
 
-  const pick = useCallback((task) => {
+  const pick = useCallback((r) => {
     onClose?.();
-    window._viewProject?.(task.project);
-    window._scrollToTaskId = task.id;
+    if (r.kind === 'task') {
+      window._viewProject?.(r.project);
+      window._scrollToTaskId = r.id;
+    } else if (r.kind === 'note') {
+      window._viewProject?.(r.project);
+      window._switchTab?.('ideas');
+      window._scrollToNoteId = r.id; // canvas consumes if it supports it
+    } else if (r.kind === 'project') {
+      window._viewProject?.(r.name);
+    }
   }, [onClose]);
 
   const handleKeyDown = (e) => {
@@ -88,7 +103,7 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search tasks across all projects…"
+            placeholder="Search tasks, notes & projects across all projects…"
             className="border-0 bg-transparent focus:border-0 px-0 py-0"
             aria-label="Search query"
           />
@@ -96,27 +111,47 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
         </div>
         {results.length > 0 && (
           <ul className="max-h-[50vh] overflow-y-auto list-none m-0 p-1" role="listbox">
-            {results.map((t, i) => (
-              <li key={`${t.project}:${t.id}`} role="option" aria-selected={i === active}>
+            {results.map((r, i) => (
+              <li key={`${r.kind}:${r.project || ''}:${r.id || r.name}`} role="option" aria-selected={i === active}>
                 <button
                   type="button"
-                  onClick={() => pick(t)}
+                  onClick={() => pick(r)}
                   onMouseEnter={() => setActive(i)}
                   className={`flex items-center gap-2 w-full px-3 py-2 text-left rounded-md border-0 cursor-pointer ${
                     i === active ? 'bg-bg-hover' : 'bg-transparent'
                   }`}
                 >
-                  <span className="mono text-[11px] text-muted shrink-0">{t.id}</span>
-                  <span className="text-sm text-text truncate flex-1">{t.title}</span>
-                  <Badge>{formatDisplayName(t.project, projects)}</Badge>
-                  <span className="text-[11px] text-muted shrink-0">{t.status}</span>
+                  {r.kind === 'task' && (
+                    <>
+                      <ListTodo size={14} className="text-muted shrink-0" />
+                      <span className="mono text-[11px] text-muted shrink-0">{r.id}</span>
+                      <span className="text-sm text-text truncate flex-1">{r.title}</span>
+                      <Badge>{formatDisplayName(r.project, projects)}</Badge>
+                      <span className="text-[11px] text-muted shrink-0">{r.status}</span>
+                    </>
+                  )}
+                  {r.kind === 'note' && (
+                    <>
+                      <StickyNote size={14} className="text-muted shrink-0" />
+                      <span className="text-sm text-text truncate flex-1">{r.text || '(empty note)'}</span>
+                      <Badge>{formatDisplayName(r.project, projects)}</Badge>
+                      <span className="text-[11px] text-muted shrink-0">note</span>
+                    </>
+                  )}
+                  {r.kind === 'project' && (
+                    <>
+                      <Folder size={14} className="text-muted shrink-0" />
+                      <span className="text-sm text-text truncate flex-1">{r.displayName}</span>
+                      <span className="text-[11px] text-muted shrink-0">project</span>
+                    </>
+                  )}
                 </button>
               </li>
             ))}
           </ul>
         )}
         {!loading && query.trim() && results.length === 0 && (
-          <div className="px-4 py-6 text-sm text-muted text-center">No tasks found</div>
+          <div className="px-4 py-6 text-sm text-muted text-center">No tasks, notes or projects found</div>
         )}
       </div>
     </div>,

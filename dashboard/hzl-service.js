@@ -1535,6 +1535,33 @@ function searchTasks(query, opts = {}) {
 }
 
 /**
+ * T-349: search canvas notes by text (LIKE — no FTS index for notes, the
+ * volume is small). Newest-edited first. Scoped to one project or all.
+ */
+function searchNotes(query, opts = {}) {
+  const raw = String(query || '').trim();
+  if (!raw || !_eventsDb) return { notes: [] };
+  const { project, limit = 10 } = opts;
+  const cap = Math.min(Math.max(1, limit), 50);
+  // escape LIKE wildcards in user input; ESCAPE clause makes \ literal
+  const like = '%' + raw.replace(/[\\%_]/g, m => '\\' + m) + '%';
+  let rows;
+  try {
+    rows = project
+      ? _eventsDb.prepare("SELECT project, id, text, color FROM canvas_notes WHERE project = ? AND text LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT ?").all(project, like, cap)
+      : _eventsDb.prepare("SELECT project, id, text, color FROM canvas_notes WHERE text LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT ?").all(like, cap);
+  } catch { return { notes: [] }; }
+  return {
+    notes: rows.map(r => ({
+      project: r.project,
+      id: r.id,
+      text: String(r.text || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+      color: r.color || 'grey',
+    })),
+  };
+}
+
+/**
  * Ensure a HZL project exists. Called during init if needed.
  */
 function ensureProject(projectName) {
@@ -3446,6 +3473,7 @@ module.exports = {
   init,
   rebuildCache,
   searchTasks,
+  searchNotes,
   getProjectActivity,
   getProjectActivityDaily,
   getOpenQuestions,
