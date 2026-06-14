@@ -185,6 +185,14 @@ meta DB: `GET` returns only `{ set, source }` (never the value), `PUT`
 takes precedence), `DELETE` removes it. Saving clears the GitHub cache so
 the token applies immediately.
 
+### GET /api/projects/:name/stats
+Project metrics — the same numbers the `task-stats` overview widget shows,
+for agents to query programmatically. **200** `{ ok, stats: { total,
+counts: { backlog, open, in-progress, review, done }, blocked,
+throughput7d, cycleDays, stuck, generatedAt } }` — counts cover top-level
+non-archived tasks; `throughput7d` = completed in the last 7 days;
+`cycleDays` = mean created→completed over the most recent 30 completed.
+
 ### GET /api/projects/:name/questions
 Query: `limit` (default 20). Open agent questions — comment events with
 `kind: "question"` that no `kind: "answer"` comment references via

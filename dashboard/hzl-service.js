@@ -1210,6 +1210,53 @@ function getTaskCounts(project) {
 }
 
 /**
+ * T-303: project metrics for agents — mirrors exactly what the task-stats
+ * overview widget computes client-side, so the API and the dashboard agree.
+ * Counts cover top-level non-archived tasks per status; throughput is tasks
+ * completed in the last 7 days; cycleDays is the mean (completed-created)
+ * over the most recent 30 completed tasks.
+ */
+function getProjectStats(project) {
+  const STATUSES = ['backlog', 'open', 'in-progress', 'review', 'done'];
+  const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
+  let blocked = 0;
+  const tasks = [];
+  for (const [key, t] of _cache) {
+    if (!key.startsWith(`${project}:`)) continue;
+    if (t.trashedAt || t.status === 'archived' || t.parentId) continue;
+    tasks.push(t);
+    if (counts[t.status] !== undefined) counts[t.status]++;
+    if (t.blocked) blocked++;
+  }
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const doneDated = tasks.filter(t => t.status === 'done' && t.completed);
+  const throughput7d = doneDated.filter(t => now - new Date(t.completed).getTime() < 7 * day).length;
+  const cycles = doneDated
+    .filter(t => t.created)
+    .map(t => (new Date(t.completed).getTime() - new Date(t.created).getTime()) / day)
+    .filter(d => d >= 0)
+    .slice(-30);
+  const cycleDays = cycles.length ? Number((cycles.reduce((a, b) => a + b, 0) / cycles.length).toFixed(1)) : null;
+
+  let stuck = 0;
+  try {
+    stuck = getStuckTasks().combined.filter(s => s.project === project).length;
+  } catch { /* stuck is best-effort */ }
+
+  return {
+    project,
+    total: tasks.length,
+    counts,
+    blocked,
+    throughput7d,
+    cycleDays,
+    stuck,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Generate next top-level task ID for a project.
  */
 function _nextTaskId(project) {
@@ -3412,6 +3459,7 @@ module.exports = {
   deleteTask,
   getTaskSummary,
   getTaskCounts,
+  getProjectStats,
   setSpecLink,
   getSpecsIndex,
   recalcParentStatus,

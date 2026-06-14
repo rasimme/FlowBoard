@@ -138,6 +138,14 @@ async function run() {
     r = await api('PUT', '/projects/nope/github', { repo: 'a/b' });
     ok(r.status === 404, 'binding on a missing project is 404');
 
+    // project stats endpoint (T-303)
+    r = await api('GET', '/projects/ov/stats');
+    ok(r.status === 200 && r.body?.stats && typeof r.body.stats.total === 'number'
+       && r.body.stats.counts && typeof r.body.stats.throughput7d === 'number',
+       'stats endpoint returns the metric shape');
+    r = await api('GET', '/projects/nope/stats');
+    ok(r.status === 404, 'stats on a missing project is 404');
+
     // an answer may not resolve a question that does not exist in this project
     r = await api('POST', `/projects/ov/tasks/${qTask}/comment`, { author: 'human', message: 'x', kind: 'answer', questionId: 999999 });
     ok(r.status === 400, 'answer with a bogus questionId is rejected');

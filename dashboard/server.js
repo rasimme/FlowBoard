@@ -3240,6 +3240,18 @@ app.put('/api/projects/:name/overview', (req, res) => {
   }
 });
 
+// GET /api/projects/:name/stats — project metrics (T-303), same numbers
+// the task-stats widget shows, for agents to query programmatically
+app.get('/api/projects/:name/stats', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    res.json({ ok: true, stats: hzlService.getProjectStats(req.params.name) });
+  } catch (err) {
+    console.error('[stats]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/projects/:name/questions — open agent questions (T-307)
 app.get('/api/projects/:name/questions', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
