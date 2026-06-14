@@ -54,8 +54,8 @@ ok(
   JSON.stringify(NOTE_COLORS) === JSON.stringify(['grey', 'yellow', 'blue', 'green', 'red', 'teal']),
   'NOTE_COLORS order matches vanilla'
 );
-ok(COLOR_STROKE.yellow === 'var(--warn)' && COLOR_STROKE.grey === 'var(--border-strong)',
-  'COLOR_STROKE maps to design tokens');
+ok(COLOR_STROKE.yellow === 'var(--hue-6-ring)' && COLOR_STROKE.grey === 'var(--hue-1-ring)',
+  'COLOR_STROKE maps to hue design tokens');
 ok(CORNER_RADIUS === 12 && PORT_SPACING === 18 && MIN_ESCAPE === 28 && MAX_PORTS_PER_SIDE === 5,
   'routing constants match vanilla');
 
