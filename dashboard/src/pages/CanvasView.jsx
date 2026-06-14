@@ -40,6 +40,41 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
  */
 const FRAME_PAD = 20; // must match ConnectionLayer cluster frames
 
+// T-345-8 — single-click-opens-link guard window. A clean single click on a
+// note schedules the link open after this delay; if a second click (the
+// T-345-6 double-click → editor/sidebar) arrives inside the window, the timer
+// is cancelled and the link is NOT opened. Kept just above the 300ms
+// double-click detection window's typical human gap but short enough to feel
+// like a direct click.
+const LINK_OPEN_DELAY = 280;
+
+/**
+ * T-345-8 — resolve the link (if any) under a click point inside a note.
+ *
+ * The rendered markdown (.note-text) is intentionally `pointer-events:none`
+ * (T-345-6), so `document.elementFromPoint` / `e.target` never return the
+ * inner <a> — they return the note body. The <a> elements ARE in the DOM
+ * (only not hit-testable), so we geometrically hit-test the click point
+ * against each anchor's getBoundingClientRect within the clicked note. Returns
+ * the absolute href (anchors are normalized to http(s) by canvasMarkdown) or
+ * null. Only http(s) links are accepted.
+ */
+function findLinkHrefAtPoint(noteEl, clientX, clientY) {
+  if (!noteEl) return null;
+  const anchors = noteEl.querySelectorAll('.note-text a[href]');
+  for (const a of anchors) {
+    const rects = a.getClientRects();
+    for (const r of rects) {
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        const href = a.href; // resolved absolute URL
+        if (/^https?:\/\//i.test(href)) return href;
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 export default function CanvasView() {
   const { state } = useAppState();
   const specify = useSpecify();
@@ -70,6 +105,7 @@ export default function CanvasView() {
   const gestureRef = useRef({
     panning: null, pinchDist: 0, drag: null, connecting: null, lasso: null, rafPending: false,
     lastTapTime: 0, lastTapTarget: null, longPressTimer: null, nativeScroll: false,
+    linkOpenTimer: null, // T-345-8: pending single-click link-open timer
   });
   const dimsRef = useRef(new Map());
   // T-345-9: the inline card MarkdownEditor exposes its command API via
@@ -83,6 +119,16 @@ export default function CanvasView() {
   canvasRef.current = canvas;
   const selectedConnRef = useRef(selectedConn);
   selectedConnRef.current = selectedConn;
+
+  // T-345-8: cancel any pending single-click link-open (a second click,
+  // drag, connection, lasso, edit, or project switch invalidates it).
+  const cancelLinkOpen = useCallback(() => {
+    const g = gestureRef.current;
+    if (g.linkOpenTimer) {
+      clearTimeout(g.linkOpenTimer);
+      g.linkOpenTimer = null;
+    }
+  }, []);
 
   const bumpDragTick = useCallback(() => {
     const g = gestureRef.current;
@@ -173,6 +219,7 @@ export default function CanvasView() {
   // --- Load + reset on project switch ---
   useEffect(() => {
     if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; }
+    cancelLinkOpen(); // T-345-8: drop any pending link-open on project switch
     dispatch({ type: 'reset' });
     viewRef.current = { pan: { x: 60, y: 60 }, scale: 1.0 };
     fittedRef.current = null;
@@ -197,7 +244,7 @@ export default function CanvasView() {
       }
     })();
     return () => { cancelled = true; };
-  }, [viewedProject, applyTransform]);
+  }, [viewedProject, applyTransform, cancelLinkOpen]);
 
   // Overview quick action "New Note" — consumed like window._scrollToTaskId.
   useEffect(() => {
@@ -485,6 +532,7 @@ export default function CanvasView() {
   const onPortDown = useCallback((e, noteId, side, port) => {
     e.stopPropagation();
     if (e.preventDefault) e.preventDefault();
+    cancelLinkOpen(); // T-345-8: connection drag invalidates a pending link-open
     const note = canvasRef.current.notes.find(n => n.id === noteId);
     const dims = getDims(noteId);
     if (!note || !dims) return;
@@ -518,7 +566,7 @@ export default function CanvasView() {
       previewEl: prev, srcNoteEl: noteEl, activeDotEl: dotEl, prevSnapNoteEl: null,
     };
     setConnecting(true); // hides toolbar + promote (vanilla updateToolbar)
-  }, [getDims]);
+  }, [getDims, cancelLinkOpen]);
 
   const moveConnect = useCallback((clientX, clientY) => {
     const c = gestureRef.current.connecting;
@@ -636,7 +684,7 @@ export default function CanvasView() {
     bumpDragTick(); // connections follow per rAF
   }, [bumpDragTick]);
 
-  const endNoteDrag = useCallback((shiftKey) => {
+  const endNoteDrag = useCallback((shiftKey, clientX, clientY) => {
     const d = gestureRef.current.drag;
     if (!d) return false;
     gestureRef.current.drag = null;
@@ -650,9 +698,25 @@ export default function CanvasView() {
       dispatch({ type: 'toggle-select', id: d.noteId });
     } else {
       dispatch({ type: 'select-only', id: d.noteId });
+      // T-345-8: clean single click (no drag) on a note. If the click point
+      // sits over a rendered link, open it AFTER the double-click guard window
+      // — a second click (→ editor/sidebar, T-345-6) cancels this via
+      // cancelLinkOpen() on the next mousedown. Coordinates are captured here
+      // because the inner <a> is pointer-events:none and cannot be the target.
+      if (typeof clientX === 'number' && canvasRef.current.editingId !== d.noteId) {
+        const noteEl = wrapRef.current?.querySelector(`[data-note-id="${CSS.escape(d.noteId)}"]`);
+        const href = findLinkHrefAtPoint(noteEl, clientX, clientY);
+        if (href) {
+          cancelLinkOpen();
+          gestureRef.current.linkOpenTimer = setTimeout(() => {
+            gestureRef.current.linkOpenTimer = null;
+            window.open(href, '_blank', 'noopener,noreferrer');
+          }, LINK_OPEN_DELAY);
+        }
+      }
     }
     return true;
-  }, [viewedProject]);
+  }, [viewedProject, cancelLinkOpen]);
 
   // --- Lasso (vanilla shift+drag on empty canvas) ---
   const moveLasso = useCallback((clientX, clientY) => {
@@ -705,6 +769,12 @@ export default function CanvasView() {
       if (e.target.closest('.note-textarea') || e.target.closest('[data-note-editor]')) return;
       const noteId = noteEl.dataset.noteId;
       if (canvasRef.current.editingId === noteId) return;
+      // T-345-8: any new mousedown invalidates a still-pending single-click
+      // link-open. This is what makes the double-click guard exact: the second
+      // mousedown of a double-click cancels the timer here, before the
+      // dblclick branch below opens the editor/sidebar — even if it lands in
+      // the 280–300ms tail of the guard window.
+      cancelLinkOpen();
 
       // T-345-6 — robust double-click: detect the second mousedown ourselves
       // (same 300ms window as the touch double-tap) instead of relying solely
@@ -771,7 +841,7 @@ export default function CanvasView() {
       startX: e.clientX, startY: e.clientY,
       startPanX: viewRef.current.pan.x, startPanY: viewRef.current.pan.y,
     };
-  }, [beginNoteDrag]);
+  }, [beginNoteDrag, cancelLinkOpen]);
 
   const onMouseMove = useCallback((e) => {
     const g = gestureRef.current;
@@ -787,12 +857,24 @@ export default function CanvasView() {
         },
       };
       applyTransform();
+      return;
     }
-  }, [applyTransform, moveConnect, moveNoteDrag]);
+    // Idle hover: a card link is pointer-events:none (so it can't show its own
+    // cursor), and the element actually under the pointer is .note-body, whose
+    // CSS cursor is `grab`. Set the pointer cursor on that body element (not the
+    // wrap, which grab would override) via the same geometric hit-test used for
+    // opening; reset the previously-hinted body when leaving.
+    const noteEl = e.target.closest?.('.note');
+    const overLink = noteEl ? !!findLinkHrefAtPoint(noteEl, e.clientX, e.clientY) : false;
+    const bodyEl = overLink ? noteEl.querySelector('[data-note-body]') : null;
+    const prev = gestureRef.current.cursorEl;
+    if (prev && prev !== bodyEl) { prev.style.cursor = ''; gestureRef.current.cursorEl = null; }
+    if (bodyEl) { bodyEl.style.cursor = 'pointer'; gestureRef.current.cursorEl = bodyEl; }
+  }, [applyTransform, moveConnect, moveNoteDrag, moveLasso]);
 
   const onMouseUp = useCallback((e) => {
     if (endConnect()) return;
-    if (endNoteDrag(e.shiftKey)) return;
+    if (endNoteDrag(e.shiftKey, e.clientX, e.clientY)) return;
     if (endLasso()) return;
     if (gestureRef.current.panning) {
       gestureRef.current.panning = null;
@@ -974,8 +1056,10 @@ export default function CanvasView() {
   useLayoutEffect(() => { applyTransform(); });
 
   // Flush any pending viewport write when the canvas unmounts (T-345-2).
+  // Also drop any pending single-click link-open timer (T-345-8).
   useEffect(() => () => {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    if (gestureRef.current.linkOpenTimer) clearTimeout(gestureRef.current.linkOpenTimer);
   }, []);
 
   // --- Toolbar "+ Note" ---
