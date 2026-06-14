@@ -2145,8 +2145,12 @@ function getProjectActivityDaily(project, days = 14) {
   if (!warm) listTasks(project);
   const span = Math.max(1, Math.min(Number(days) || 14, 90));
   const cutoff = new Date(Date.now() - span * 86400000).toISOString();
+  // Count only meaningful activity — the same event types the activity feed
+  // surfaces. `task_updated` is high-volume metadata churn (claim/lease
+  // recalcs, internal writes) that would otherwise dwarf real work by ~100x
+  // and make the momentum strip read tens-of-thousands on busy dev days.
   const rows = _eventsDb.prepare(
-    'SELECT substr(timestamp, 1, 10) AS day, task_id FROM events WHERE timestamp > ? ORDER BY id DESC'
+    "SELECT substr(timestamp, 1, 10) AS day, task_id FROM events WHERE timestamp > ? AND type != 'task_updated' ORDER BY id DESC"
   ).all(cutoff);
   const counts = new Map();
   for (const r of rows) {
