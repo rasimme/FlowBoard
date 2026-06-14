@@ -338,7 +338,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
         <>
           <ScrollArea className="flex-1 min-h-0" innerClassName="ov-decs">
             {decisions.map((d, i) => (
-              <div key={i} className="ov-dec">
+              <div key={`${d.iso || ''}:${d.title}:${i}`} className="ov-dec">
                 <span className="ov-dec-date">{d.date}</span>
                 <span className="ov-dec-body">
                   <span className="ov-dec-title">{d.title}</span>
@@ -595,7 +595,7 @@ function ActivityRows({ items, editing, goTab, emptyTitle, emptyHint }) {
     <ScrollArea className="flex-1 min-h-0" innerClassName="ov-decs">
       {items.map((a, i) => (
         <div
-          key={i}
+          key={`${a.taskId || ''}:${a.timestamp || ''}:${i}`}
           className="ov-dec"
           style={{ cursor: editing ? undefined : 'pointer' }}
           onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = a.taskId; }}

@@ -951,10 +951,6 @@
   mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
 }
 
-/* (3) Chromium ignores ::-webkit-scrollbar styling while scrollbar-width is
-   set — the hover thumb never showed. Reset it inside widget bodies. */
-
-
 /* (4) quick drop: the ring must never be squeezed; narrow cards compact */
 .qd-ring { flex-shrink: 0; }
 @container widget (max-width: 250px) {

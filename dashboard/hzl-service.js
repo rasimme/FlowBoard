@@ -1345,9 +1345,18 @@ function moveTaskToProject(project, flowboardId, toProject) {
   try { _projectService.requireProject(toProject); }
   catch { try { _projectService.createProject(toProject); } catch (e) { console.warn('[move] createProject:', e.message); } }
 
-  const subUlids = (cached.subtaskIds || [])
-    .map(id => ({ id, ulid: _fbToUlid.get(`${project}:${id}`) }))
-    .filter(x => x.ulid);
+  // Derive children from the cache by parentId rather than cached.subtaskIds:
+  // moveWithSubtasks physically moves whatever children the DB holds, so a
+  // stale/incomplete subtaskIds read-model would leave a moved child with a
+  // dangling old-project map entry (unreachable task). Scanning by parentId
+  // matches what the DB actually moves.
+  const subUlids = [];
+  for (const [k, c] of _cache) {
+    if (c._project === project && c.parentId === flowboardId && !c.trashedAt) {
+      const u = _fbToUlid.get(k);
+      if (u) subUlids.push({ id: c.id, ulid: u });
+    }
+  }
 
   _taskService.moveWithSubtasks(ulid, toProject);
 

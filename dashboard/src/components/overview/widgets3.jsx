@@ -190,7 +190,11 @@ export function GhCiWidget({ widget, editing }) {
   const runs = (data?.runs || []).slice().reverse(); // oldest → newest
   const done = runs.filter(r => r.status === 'completed');
   const passRate = done.length ? Math.round((done.filter(r => r.conclusion === 'success').length / done.length) * 100) : null;
-  const durations = runs.map(r => Math.max(0, (new Date(r.updatedAt) - new Date(r.startedAt)) / 1000));
+  // a still-running run has no updatedAt → guard NaN so the bar height stays finite
+  const durations = runs.map(r => {
+    const d = (new Date(r.updatedAt) - new Date(r.startedAt)) / 1000;
+    return Number.isFinite(d) && d > 0 ? d : 0;
+  });
   const maxDur = Math.max(...durations, 1);
   const latest = runs[runs.length - 1];
 

@@ -528,7 +528,7 @@ export function TimelineWidget({ widget, editing }) {
             <div key={grp.label} className="tl-group">
               <div className="tl-day">{grp.label}</div>
               {grp.items.map((it, i) => (
-                <div key={i} className="tl-node" style={{ cursor: editing ? undefined : 'pointer' }}
+                <div key={`${it.taskId || ''}:${it.timestamp || ''}:${i}`} className="tl-node" style={{ cursor: editing ? undefined : 'pointer' }}
                   onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = it.taskId; }}>
                   <span className={'tl-dot ' + (it.event === 'status_changed' ? 'hot' : '')}></span>
                   <span className="tl-title"><span className="tid">{it.taskId}</span> {it.message}</span>
