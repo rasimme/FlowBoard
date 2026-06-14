@@ -332,6 +332,27 @@ ok(resolveChip(null, { pending: [] }) === null, 'no snippet chip + empty canvas 
     'no snippet, no pending, no conflict → still no chip');
 }
 
+// T-353: app self-update availability folds into the same header chip.
+{
+  const noUpd = { running: '5.0.0', installed: '5.0.0', updateAvailable: false };
+  const upd = { running: '5.0.0', installed: '5.1.0', updateAvailable: true };
+
+  ok(resolveChip(null, null, noUpd) === null, 'no update + nothing else → no chip');
+
+  const updOnly = resolveChip(null, { pending: [] }, upd);
+  ok(updOnly && updOnly.variant === 'info' && /Update available/.test(updOnly.text),
+    'update only → info "Update available" chip');
+  ok(/v5\.0\.0 → v5\.1\.0/.test(updOnly.text), 'update-only chip shows version transition');
+
+  // Migration work is more urgent: keep its warn chip, note the update too.
+  const both = resolveChip(null, pendingStatus, upd);
+  ok(both && both.variant === 'warn' && /update available/.test(both.text),
+    'update + migration → warn chip keeps priority, mentions update');
+
+  // updateStatus omitted (older 2-arg callers) behaves exactly as before.
+  ok(resolveChip(null, { pending: [] }) === null, 'omitted updateStatus → unchanged legacy behavior');
+}
+
 // -----------------------------------------------------------------------------
 // Test 7: Source assertions
 // -----------------------------------------------------------------------------

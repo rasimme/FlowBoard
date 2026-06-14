@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus, ArrowUpCircle, Database } from 'lucide-react';
+import { Sparkles, X, Check, AlertTriangle, ChevronRight, Plus, ArrowUpCircle, Database, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import ScrollArea from './ScrollArea.jsx';
 import {
@@ -13,6 +13,7 @@ import {
   conflictProjects,
   CANVAS_MIGRATION_BACKUP_FILE,
 } from '../utils/canvasMigration.mjs';
+import { fetchUpdateStatus, runUpdate, pollUntilUpdated } from '../utils/appUpdate.mjs';
 
 /**
  * SnippetUpgrade — FlowBoard setup / migration header chip + modal.
@@ -41,11 +42,12 @@ import {
 export default function SnippetUpgrade() {
   const [status, setStatus] = useState(null);
   const [canvasStatus, setCanvasStatus] = useState(null);
+  const [updateStatus, setUpdateStatus] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   const refresh = async () => {
-    // Snippet status and canvas migration status are independent and both
-    // fail-silent: each simply contributes nothing to the chip on error.
+    // Snippet status, canvas migration status and app-update status are all
+    // independent and fail-silent: each simply contributes nothing on error.
     const snippetReq = (async () => {
       try {
         const res = await apiFetch('/api/snippets/status');
@@ -56,16 +58,18 @@ export default function SnippetUpgrade() {
       }
     })();
     const canvasReq = fetchCanvasMigrationStatus();
-    const [snippetData, canvasData] = await Promise.all([snippetReq, canvasReq]);
+    const updateReq = fetchUpdateStatus();
+    const [snippetData, canvasData, updateData] = await Promise.all([snippetReq, canvasReq, updateReq]);
     if (snippetData !== null) setStatus(snippetData);
     setCanvasStatus(canvasData);
+    setUpdateStatus(updateData);
   };
 
   useEffect(() => {
     refresh();
   }, []);
 
-  const chip = resolveChip(status?.chip, canvasStatus);
+  const chip = resolveChip(status?.chip, canvasStatus, updateStatus);
 
   // Nothing to surface: no snippet chip AND no pending canvas migration.
   if (!chip) return null;
@@ -79,6 +83,7 @@ export default function SnippetUpgrade() {
         onClose={() => { setModalOpen(false); refresh(); }}
         status={status || { files: [] }}
         canvasStatus={canvasStatus}
+        updateStatus={updateStatus}
         onApplied={refresh}
       />
     </>
@@ -86,33 +91,48 @@ export default function SnippetUpgrade() {
 }
 
 /**
- * Combine the server snippet chip with the canvas migration status into a
- * single header chip:
+ * Combine the server snippet chip, the canvas migration status and the
+ * app-update status into a single header chip:
  *   - snippet chip + canvas pending → warn chip with a combined count
  *   - snippet chip only            → server chip unchanged
  *   - canvas pending only          → synthetic "Migration required" (warn)
- *   - neither                      → null (chip hidden)
+ *   - app update available         → info chip "Update available · vX → vY"
+ *     (when migration work also exists, the warn chip keeps visual priority and
+ *      gains a "· update available" suffix; the update section lives in the modal)
+ *   - none of the above            → null (chip hidden)
  */
-export function resolveChip(snippetChip, canvasStatus) {
+export function resolveChip(snippetChip, canvasStatus, updateStatus) {
   const canvasCount = pendingProjects(canvasStatus).length;
   const conflictCount = conflictProjects(canvasStatus).length;
-  if (!snippetChip && canvasCount === 0 && conflictCount === 0) return null;
-  if (snippetChip && canvasCount === 0) return snippetChip; // snippet chip opens the modal; conflicts render inside it
-  if (!snippetChip && canvasCount > 0) {
-    return { text: 'Migration required', variant: 'warn' };
+  const updateAvailable = !!updateStatus?.updateAvailable;
+
+  let base = null;
+  if (snippetChip && canvasCount === 0) {
+    base = snippetChip; // snippet chip opens the modal; conflicts render inside it
+  } else if (!snippetChip && canvasCount > 0) {
+    base = { text: 'Migration required', variant: 'warn' };
+  } else if (!snippetChip && canvasCount === 0 && conflictCount > 0) {
+    // Conflict-only: a canvas.json re-appeared next to a migrated project
+    // (ADR-0018 restore). Surface a chip so the operator reaches the section.
+    base = { text: 'Canvas data conflict', variant: 'warn' };
+  } else if (snippetChip && canvasCount > 0) {
+    // Both present: combined warn chip.
+    const word = canvasCount === 1 ? 'canvas project' : 'canvas projects';
+    base = { text: `Updates required · ${canvasCount} ${word}`, variant: 'warn' };
   }
-  // Conflict-only (no snippet, no pending): a canvas.json re-appeared next to a
-  // migrated project (ADR-0018 restore). Surface a chip so the operator reaches
-  // the conflict section — otherwise it lives only in the server log.
-  if (!snippetChip && canvasCount === 0 && conflictCount > 0) {
-    return { text: 'Canvas data conflict', variant: 'warn' };
+
+  if (updateAvailable) {
+    if (!base) {
+      const verLabel = updateStatus.installed
+        ? ` · v${updateStatus.running} → v${updateStatus.installed}`
+        : '';
+      return { text: `Update available${verLabel}`, variant: 'info' };
+    }
+    // Migration work is more urgent → keep its warn chip, note the update too.
+    return { text: `${base.text} · update available`, variant: base.variant };
   }
-  // Both present: combined warn chip.
-  const word = canvasCount === 1 ? 'canvas project' : 'canvas projects';
-  return {
-    text: `Updates required · ${canvasCount} ${word}`,
-    variant: 'warn',
-  };
+
+  return base;
 }
 
 function SetupChip({ chip, onClick }) {
@@ -128,7 +148,7 @@ function SetupChip({ chip, onClick }) {
   );
 }
 
-function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
+function UpgradeModal({ open, onClose, status, canvasStatus, updateStatus, onApplied }) {
   const identicalFiles = (status.files || []).filter(f => f.state === 'identical');
   const driftedFiles = (status.files || []).filter(f => f.state === 'drifted');
   const missingFiles = (status.files || []).filter(f => f.state === 'missing');
@@ -159,6 +179,11 @@ function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
   const [result, setResult] = useState(null);
   // Separate canvas run result so partial failures per area show independently.
   const [canvasResult, setCanvasResult] = useState(null);
+  // App self-update (T-353) is its own lifecycle, independent of the per-file
+  // Apply batch: idle → starting → restarting → done | error.
+  const updateAvailable = !!updateStatus?.updateAvailable;
+  const [updatePhase, setUpdatePhase] = useState('idle');
+  const [updateError, setUpdateError] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -174,6 +199,8 @@ function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
     setResult(null);
     setCanvasResult(null);
     setApplying(false);
+    setUpdatePhase('idle');
+    setUpdateError(null);
   }, [open, status, canvasStatus]);
 
   useEffect(() => {
@@ -219,6 +246,30 @@ function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
     setSelectedAdd(next);
   };
   const toggleCanvas = () => setCanvasSelected(prev => !prev);
+
+  const handleUpdate = async () => {
+    if (updatePhase === 'starting' || updatePhase === 'restarting' || updatePhase === 'done') return;
+    setUpdateError(null);
+    setUpdatePhase('starting');
+    const fromVersion = updateStatus?.running;
+    const started = await runUpdate();
+    if (!started.ok) {
+      setUpdateError(started.error || 'Update failed to start');
+      setUpdatePhase('error');
+      return;
+    }
+    // The server is rebuilding and will restart; wait for the new build to serve.
+    setUpdatePhase('restarting');
+    const newVersion = await pollUntilUpdated({ fromVersion });
+    if (newVersion) {
+      setUpdatePhase('done');
+      // Land the user on the fresh build.
+      setTimeout(() => { try { window.location.reload(); } catch { /* ignore */ } }, 1200);
+    } else {
+      setUpdateError('Timed out waiting for the dashboard to come back. It may still be restarting — reload in a moment.');
+      setUpdatePhase('error');
+    }
+  };
 
   const handleApply = async () => {
     if (applying || totalSelected === 0) return;
@@ -302,7 +353,7 @@ function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
     && (!attemptedCanvas || canvasApplied)
     && (attemptedSnippet || attemptedCanvas);
   const anyFailed = snippetFailed || canvasFailed;
-  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length + bootstrapDocAdvisories.length + canvasPending.length + canvasConflicts.length > 0;
+  const hasAnything = identicalFiles.length + driftedFiles.length + missingFiles.length + bootLegacyFiles.length + legacyStateFiles.length + configAdvisories.length + bootstrapDocAdvisories.length + canvasPending.length + canvasConflicts.length > 0 || updateAvailable;
 
   // Modal title & subtitle follow the chip variant. Any pending migration
   // (snippet drift or canvas) makes this a "Migration" window.
@@ -341,6 +392,15 @@ function UpgradeModal({ open, onClose, status, canvasStatus, onApplied }) {
         </div>
 
         <ScrollArea className="modal-body-wrap" innerClassName="modal-body-v2">
+          {updateAvailable && (
+            <AppUpdateSection
+              updateStatus={updateStatus}
+              phase={updatePhase}
+              error={updateError}
+              onUpdate={handleUpdate}
+            />
+          )}
+
           {missingFiles.length > 0 && (
             <div className="group setup-explainer">
               <div className="group-header">
@@ -564,6 +624,72 @@ function GroupSection({
             actionLabel={actionLabel}
           />
         ))}
+      </div>
+    </div>
+  );
+}
+
+// App self-update group (T-353). A newer plugin version is installed on disk
+// than the running dashboard; offer a rebuild+restart via setup.mjs --update.
+// Its own button + lifecycle, separate from the per-file Apply batch. Reuses the
+// existing .group / .group-header-v2 / .group-body structure — no new CSS.
+function AppUpdateSection({ updateStatus, phase, error, onUpdate }) {
+  const running = updateStatus?.running || '?';
+  const installed = updateStatus?.installed || '?';
+  const busy = phase === 'starting' || phase === 'restarting';
+  const done = phase === 'done';
+
+  let statusLine = null;
+  if (phase === 'starting') statusLine = 'Starting update…';
+  else if (phase === 'restarting') statusLine = 'Rebuilding & restarting — this can take a minute. The page will reload automatically.';
+  else if (phase === 'done') statusLine = 'Updated — reloading…';
+  else if (phase === 'error') statusLine = error || 'Update failed.';
+
+  let btnLabel = 'Update & restart';
+  if (phase === 'starting') btnLabel = 'Starting…';
+  else if (phase === 'restarting') btnLabel = 'Restarting…';
+  else if (phase === 'done') btnLabel = 'Updated';
+  else if (phase === 'error') btnLabel = 'Retry update';
+
+  return (
+    <div className="group">
+      <div className="group-header group-header-v2">
+        <div className="group-header-icon ok"><ArrowUpCircle size={13} /></div>
+        <div className="group-header-text">
+          <div className="group-title">FlowBoard update available</div>
+          <div className="group-sub">
+            A newer plugin version is installed on disk than the running dashboard. Update rebuilds and restarts the dashboard (dependencies + UI build); your <span className="mono">.env</span> and data are left untouched.
+          </div>
+        </div>
+      </div>
+      <div className="group-body">
+        <div className="file-row">
+          <div className="file-row-main">
+            <div className="file-row-text">
+              <div className="file-row-path">
+                <span className="mono">v{running}</span>
+                <ChevronRight size={12} />
+                <span className="mono">v{installed}</span>
+                {done && <span className="chip ok"><Check size={10} /> Updated</span>}
+                {phase === 'error' && <span className="chip warn">Failed</span>}
+              </div>
+              {statusLine && (
+                <div className="file-row-summary" style={phase === 'error' ? { color: 'var(--danger)' } : undefined}>
+                  {statusLine}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={onUpdate}
+              disabled={busy || done}
+            >
+              <RefreshCw size={13} className={busy ? 'spin' : ''} />
+              <span>{btnLabel}</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

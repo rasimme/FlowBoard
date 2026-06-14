@@ -348,6 +348,20 @@
     },
     {
       "method": "GET",
+      "path": "/api/update/status",
+      "auth": "user",
+      "group": "snippets",
+      "doc": null
+    },
+    {
+      "method": "POST",
+      "path": "/api/update/run",
+      "auth": "user",
+      "group": "snippets",
+      "doc": null
+    },
+    {
+      "method": "GET",
       "path": "/api/specify/sessions",
       "auth": "user",
       "group": "specify",

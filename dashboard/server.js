@@ -56,6 +56,7 @@ const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
+const versionCheck = require('./version-check.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 
@@ -1584,6 +1585,60 @@ app.post('/api/snippets/apply', (req, res) => {
   } catch (err) {
     console.error('[snippets/apply]', err);
     res.status(500).json({ error: 'Failed to apply snippet actions', detail: err.message });
+  }
+});
+
+// --- In-dashboard self-update (T-353) -------------------------------------
+// After `openclaw plugins update flowboard`, the on-disk plugin source carries
+// a higher version than the running dashboard (which baked its version at
+// startup). The SnippetUpgrade panel surfaces this and can trigger a rebuild +
+// restart via scripts/setup.mjs --update.
+const REPO_ROOT = path.join(__dirname, '..');
+const SETUP_SCRIPT_REL = path.join('scripts', 'setup.mjs');
+
+// Re-read the on-disk version (NOT require(), which is cached) so we see the
+// version a rebuild would bake in. dashboard/package.json is the file the
+// server reads at startup; the plugin manifest is bumped in lockstep.
+function readInstalledVersion() {
+  for (const rel of ['package.json', path.join('..', 'openclaw.plugin.json')]) {
+    try {
+      const raw = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+      const v = JSON.parse(raw).version;
+      if (typeof v === 'string') return v;
+    } catch { /* try next source */ }
+  }
+  return null;
+}
+
+// GET /api/update/status — { running, installed, updateAvailable }. Fail-silent:
+// a missing/unparseable on-disk version reports updateAvailable:false, never 500.
+app.get('/api/update/status', (req, res) => {
+  const running = _packageVersion;
+  const installed = readInstalledVersion();
+  const updateAvailable = !!installed && versionCheck.isNewer(installed, running);
+  res.json({ ok: true, running, installed, updateAvailable });
+});
+
+// POST /api/update/run — rebuild + restart via setup.mjs --update. Fixed command,
+// no request input. Detached so it survives this process being killed by the
+// restart; responds 202 immediately (the caller then polls /api/health +
+// /api/info for the new version). FLOWBOARD_UPDATE_DRY=1 skips the spawn (tests).
+app.post('/api/update/run', (req, res) => {
+  const command = [process.execPath, SETUP_SCRIPT_REL, '--update'];
+  if (process.env.FLOWBOARD_UPDATE_DRY) {
+    return res.status(202).json({ ok: true, started: false, dryRun: true, command });
+  }
+  try {
+    const child = require('child_process').spawn(
+      process.execPath,
+      [SETUP_SCRIPT_REL, '--update'],
+      { cwd: REPO_ROOT, detached: true, stdio: 'ignore' }
+    );
+    child.unref();
+    res.status(202).json({ ok: true, started: true, command });
+  } catch (err) {
+    console.error('[update/run]', err);
+    res.status(500).json({ error: 'Failed to start update', detail: err.message });
   }
 });
 

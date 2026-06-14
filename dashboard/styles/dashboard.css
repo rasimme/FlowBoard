@@ -1312,6 +1312,8 @@
       animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* Icon spin utility (T-353 update button, reuses the keyframe above). */
+    .spin { animation: spin 0.8s linear infinite; }
 
     /* Modal */
     .modal-overlay {
