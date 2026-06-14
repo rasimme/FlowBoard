@@ -153,7 +153,7 @@ async function run() {
     await page.waitForSelector('.note', { timeout: 8000 });
     ok(true, 'double-click creates a note');
 
-    await page.waitForSelector('.note-textarea', { timeout: 4000 });
+    await page.waitForSelector('.note-editor-inline .cm-editor', { timeout: 4000 }); // T-345-9: inline editor is CodeMirror, not a textarea
     await page.keyboard.type('Erste Idee');
     await page.keyboard.press('Escape');
     await waitFor(async () => {
@@ -165,7 +165,7 @@ async function run() {
     // --- Create note B ---
     await doubleClick(page, box.x + 700, box.y + 320);
     await waitFor(() => page.$$('.note').then(els => els.length === 2), 'second note');
-    await page.waitForSelector('.note-textarea', { timeout: 4000 });
+    await page.waitForSelector('.note-editor-inline .cm-editor', { timeout: 4000 }); // T-345-9: inline editor is CodeMirror, not a textarea
     await page.keyboard.type('Zweite Idee');
     await page.keyboard.press('Escape');
     ok(true, 'second note created');

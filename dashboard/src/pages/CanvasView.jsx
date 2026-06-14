@@ -13,7 +13,6 @@ import {
   saveConnection, deleteConnection, setNoteColor, setNoteSize, duplicateNotes, pasteNotes,
   sendPromote, restoreNotes,
 } from '../state/canvasMutations.mjs';
-import { applyFormattingToTextarea } from '../utils/canvasTextFormat.mjs';
 import {
   screenToCanvas, routePath, stackOffset, portDotCss, buildConnectedPorts,
 } from '../utils/canvasGeometry.mjs';
@@ -73,6 +72,10 @@ export default function CanvasView() {
     lastTapTime: 0, lastTapTarget: null, longPressTimer: null, nativeScroll: false,
   });
   const dimsRef = useRef(new Map());
+  // T-345-9: the inline card MarkdownEditor exposes its command API via
+  // onReady; the floating CanvasToolbar drives formatting through it. Keyed by
+  // note id so a stale editor (after editing switches notes) is never driven.
+  const editorApiRef = useRef({ id: null, api: null });
   const fittedRef = useRef(null);
   const persistTimerRef = useRef(null);
   const addNoteCounterRef = useRef(0);
@@ -134,8 +137,28 @@ export default function CanvasView() {
   }, [viewedProject]);
 
   const onSaveText = useCallback((id, text) => {
+    if (editorApiRef.current.id === id) editorApiRef.current = { id: null, api: null };
     saveNoteText(viewedProject, dispatch, id, text);
   }, [viewedProject]);
+
+  // Registered by the inline NoteCard editor once its CodeMirror view exists.
+  const onEditorReady = useCallback((id, api) => {
+    editorApiRef.current = { id, api };
+  }, []);
+
+  // Floating-toolbar format buttons drive the inline editor (T-345-9). The
+  // toolbar emits bold/italic/bullet/number/link; map them onto the editor's
+  // command API. Buttons keep focus in the editor (onMouseDown preventDefault),
+  // so the selection/caret is preserved.
+  const onApplyFormat = useCallback((fmt) => {
+    const { id, api } = editorApiRef.current;
+    if (!api || id !== canvasRef.current.editingId) return;
+    const fn = {
+      bold: api.bold, italic: api.italic,
+      bullet: api.bulletList, number: api.numberedList, link: api.link,
+    }[fmt];
+    if (fn) fn();
+  }, []);
 
   const startEdit = useCallback((id) => {
     const body = wrapRef.current?.querySelector(`[data-note-id="${CSS.escape(id)}"] [data-note-body]`);
@@ -679,7 +702,7 @@ export default function CanvasView() {
     const noteEl = e.target.closest('.note');
     if (noteEl) {
       e.stopPropagation();
-      if (e.target.closest('.note-textarea')) return;
+      if (e.target.closest('.note-textarea') || e.target.closest('[data-note-editor]')) return;
       const noteId = noteEl.dataset.noteId;
       if (canvasRef.current.editingId === noteId) return;
 
@@ -803,7 +826,7 @@ export default function CanvasView() {
     const onTouchStart = (e) => {
       const t = e.touches[0];
       const target = document.elementFromPoint(t.clientX, t.clientY);
-      if (target?.closest('.note-textarea') || target?.closest('.canvas-sidebar-textarea')) return;
+      if (target?.closest('.note-textarea') || target?.closest('[data-note-editor]') || target?.closest('.canvas-sidebar-textarea')) return;
       if (target?.closest('[data-canvas-ui]')) return;
       if (target?.closest('.conn-dot')) return; // port touch handled by onPortDown
 
@@ -883,7 +906,7 @@ export default function CanvasView() {
       if (g.nativeScroll) return;
       if (canvasRef.current.editingId || canvasRef.current.sidebarNoteId) {
         const target = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
-        if (target?.closest('.note-textarea') || target?.closest('.canvas-sidebar-textarea')) return;
+        if (target?.closest('.note-textarea') || target?.closest('[data-note-editor]') || target?.closest('.canvas-sidebar-textarea')) return;
       }
       e.preventDefault();
       if (e.touches.length === 1) {
@@ -1143,10 +1166,7 @@ export default function CanvasView() {
         view={() => viewRef.current}
         getDims={getDims}
         wrapEl={wrapRef.current}
-        onApplyFormat={(fmt) => {
-          const ta = wrapRef.current?.querySelector('.note-textarea');
-          if (ta) applyFormattingToTextarea(ta, fmt);
-        }}
+        onApplyFormat={onApplyFormat}
         onSetColor={(color) => {
           for (const id of canvas.selectedIds) setNoteColor(viewedProject, dispatch, id, color);
         }}
@@ -1175,6 +1195,7 @@ export default function CanvasView() {
             editing={canvas.editingId === note.id}
             onSaveText={onSaveText}
             onLayoutChange={() => setLayoutTick(t => t + 1)}
+            onEditorReady={onEditorReady}
             ports={portsFor(note)}
             onPortDown={onPortDown}
           />

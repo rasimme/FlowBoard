@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
 import { Bold, Code2, Heading1, Italic, Link, List, ListChecks, Quote, Table2 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
@@ -57,6 +57,31 @@ function prefixSelectedLines(view, prefix) {
   view.focus();
 }
 
+function numberSelectedLines(view) {
+  const { from, to } = view.state.selection.main;
+  const startLine = view.state.doc.lineAt(from);
+  const endLine = view.state.doc.lineAt(to);
+  const selectedBlock = view.state.sliceDoc(startLine.from, endLine.to);
+  let n = 0;
+  const insert = selectedBlock
+    .split('\n')
+    .map((line) => {
+      n += 1;
+      return /^\d+\.\s/.test(line) ? line : `${n}. ${line}`;
+    })
+    .join('\n');
+
+  view.dispatch({
+    changes: { from: startLine.from, to: endLine.to, insert },
+    selection: {
+      anchor: startLine.from,
+      head: startLine.from + insert.length,
+    },
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
 function insertTable(view) {
   const table = [
     '| Column | Value |',
@@ -67,13 +92,36 @@ function insertTable(view) {
   replaceSelection(view, table, 2, 8);
 }
 
-export default function MarkdownEditor({
+/**
+ * MarkdownEditor — CodeMirror-based markdown editor.
+ *
+ * T-345-1: used in the canvas sidebar. T-345-9 added additive props so the
+ * same editor can be used inline on a canvas card WITHOUT its built-in toolbar
+ * (which is too tall for a 160px card); the floating CanvasToolbar drives
+ * formatting through the imperative handle instead.
+ *
+ * Additive props (all default to the prior behaviour):
+ *   - `hideToolbar` (default false): do not render the built-in
+ *     `.markdown-editor-toolbar`. Existing callers (NoteSidebar) keep the bar.
+ *   - `compact` (default false): smaller font/padding for a card-sized editor.
+ *   - `onReady(api)`: called once the CodeMirror view exists, with the same
+ *     command API exposed via ref (see below).
+ *
+ * Imperative handle (via forwardRef): `{ bold, italic, bulletList,
+ * numberedList, link, focus }`. Each runs the same wrapSelection/
+ * prefixSelectedLines commands the built-in toolbar uses, on the live view.
+ */
+const MarkdownEditor = forwardRef(function MarkdownEditor({
   value,
   onChange,
   onSave,
   onCancel,
   className = '',
-}) {
+  hideToolbar = false,
+  compact = false,
+  autoFocus = true,
+  onReady,
+}, ref) {
   const viewRef = useRef(null);
 
   const extensions = useMemo(() => [
@@ -81,17 +129,21 @@ export default function MarkdownEditor({
     EditorView.lineWrapping,
     EditorView.theme({
       '&': {
-        height: '100%',
-        backgroundColor: 'var(--bg)',
+        // Compact (inline card) editor grows with its content so the card keeps
+        // its natural size; the sidebar editor fills its panel (height:100%).
+        height: compact ? 'auto' : '100%',
+        // Inline editor sits inside a coloured card — keep it transparent so the
+        // card colour shows through and the card optic is unchanged.
+        backgroundColor: compact ? 'transparent' : 'var(--bg)',
         color: 'var(--text)',
-        fontSize: '13px',
+        fontSize: compact ? '12px' : '13px',
       },
       '.cm-scroller': {
         fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-        lineHeight: '1.6',
+        lineHeight: compact ? '1.45' : '1.6',
       },
       '.cm-content': {
-        padding: '18px 24px',
+        padding: compact ? '4px 6px' : '18px 24px',
         caretColor: 'var(--accent)',
       },
       '.cm-line': {
@@ -132,13 +184,28 @@ export default function MarkdownEditor({
         },
       },
     ])),
-  ], [onCancel, onSave]);
+  ], [onCancel, onSave, compact]);
 
   const runCommand = (command) => {
     const view = viewRef.current;
     if (!view) return;
     command(view);
   };
+
+  // Command API exposed to outside drivers (T-345-9: the floating
+  // CanvasToolbar). Same primitives as the built-in toolbar buttons; each
+  // focuses the view so a toolbar click (which steals no focus via
+  // preventDefault) keeps editing in the card.
+  const commandApi = useMemo(() => ({
+    bold: () => runCommand((view) => wrapSelection(view, '**')),
+    italic: () => runCommand((view) => wrapSelection(view, '*')),
+    bulletList: () => runCommand((view) => prefixSelectedLines(view, '- ')),
+    numberedList: () => runCommand(numberSelectedLines),
+    link: () => runCommand((view) => wrapSelection(view, '[', '](url)', 'link')),
+    focus: () => viewRef.current?.focus(),
+  }), []);
+
+  useImperativeHandle(ref, () => commandApi, [commandApi]);
 
   const tools = [
     {
@@ -189,33 +256,37 @@ export default function MarkdownEditor({
   ];
 
   return (
-    <div className={`markdown-editor ${className}`.trim()}>
-      <div className="markdown-editor-toolbar" aria-label="Markdown formatting">
-        {tools.map(({ label, icon: Icon, command }) => (
-          <button
-            key={label}
-            type="button"
-            className="markdown-editor-tool"
-            title={label}
-            aria-label={label}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => runCommand(command)}
-          >
-            <Icon size={15} strokeWidth={1.8} />
-          </button>
-        ))}
-      </div>
+    <div className={`markdown-editor${compact ? ' markdown-editor-compact' : ''} ${className}`.trim()}>
+      {!hideToolbar && (
+        <div className="markdown-editor-toolbar" aria-label="Markdown formatting">
+          {tools.map(({ label, icon: Icon, command }) => (
+            <button
+              key={label}
+              type="button"
+              className="markdown-editor-tool"
+              title={label}
+              aria-label={label}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => runCommand(command)}
+            >
+              <Icon size={15} strokeWidth={1.8} />
+            </button>
+          ))}
+        </div>
+      )}
       <div className="markdown-editor-body">
         <CodeMirror
           value={value}
-          height="100%"
+          height={compact ? undefined : '100%'}
+          minHeight={compact ? '40px' : undefined}
           theme="dark"
           extensions={extensions}
           onChange={onChange}
           onCreateEditor={(view) => {
             viewRef.current = view;
+            onReady?.(commandApi);
           }}
-          autoFocus
+          autoFocus={autoFocus}
           basicSetup={{
             lineNumbers: false,
             foldGutter: false,
@@ -232,4 +303,6 @@ export default function MarkdownEditor({
       </div>
     </div>
   );
-}
+});
+
+export default MarkdownEditor;

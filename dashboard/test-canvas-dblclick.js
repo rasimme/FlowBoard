@@ -105,7 +105,9 @@ async function doubleClickAt(page, x, y, jitter = 0) {
 // Editor is "open" when an inline textarea exists OR the sidebar editor is open.
 async function editorState(page) {
   return page.evaluate(() => {
-    const inline = !!document.querySelector('.note-textarea');
+    // T-345-9: the inline card editor is now the CodeMirror MarkdownEditor
+    // (.note-editor-inline > .cm-editor), no longer a <textarea>.
+    const inline = !!document.querySelector('.note-editor-inline .cm-editor');
     // The sidebar (MarkdownEditor) is always mounted; it is "open" only when it
     // carries the .open class (CanvasView dispatches the sidebar action).
     const sidebarOpen = !!document.querySelector('.canvas-sidebar.open');
@@ -117,8 +119,9 @@ async function closeEditors(page) {
   // Blur any inline editor and close the sidebar via its close button (the
   // sidebar swallows Escape internally), then clear selection.
   await page.evaluate(() => {
-    const ta = document.querySelector('.note-textarea');
-    if (ta) ta.blur();
+    // T-345-9: blur the inline CodeMirror editor (commits on blur).
+    const cm = document.querySelector('.note-editor-inline .cm-content');
+    if (cm) cm.blur();
     const close = document.querySelector('.canvas-sidebar.open .canvas-sidebar-close');
     if (close) close.click();
   });
@@ -133,7 +136,7 @@ async function makeNote(page, base, box, x, y, text) {
   const before = await page.$$eval('.note', els => els.length);
   await doubleClickAt(page, box.x + x, box.y + y);
   await waitFor(() => page.$$('.note').then(els => els.length === before + 1), 'note created');
-  await page.waitForSelector('.note-textarea', { timeout: 4000 });
+  await page.waitForSelector('.note-editor-inline .cm-editor', { timeout: 4000 });
   if (text) await page.keyboard.type(text);
   await page.keyboard.press('Escape');
   await waitFor(async () => {

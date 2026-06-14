@@ -1,8 +1,37 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { renderNoteMarkdown } from '../../utils/canvasMarkdown.mjs';
-import { continueListOnEnter } from '../../state/canvasStore.mjs';
+import MarkdownEditor from '../MarkdownEditor.jsx';
 
 const EMPTY_HINT = '<span style="opacity:0.3;font-size:11px">Double-click to add text…</span>';
+
+// T-345-9: scoped overrides for the inline (compact) MarkdownEditor on a card.
+// The global .markdown-editor / .cm-editor rules (styles/dashboard.css) force
+// height:100% + an opaque var(--bg) background, which is wrong for an editor
+// embedded in a coloured, content-sized card. These rules are intentionally
+// kept in the component (not styles/*.css — out of scope for this task) and
+// only target the inline editor inside .note-editor-inline, so the sidebar /
+// file editor usage is untouched.
+const INLINE_EDITOR_STYLE_ID = 'note-inline-editor-style';
+const INLINE_EDITOR_CSS = `
+.note-editor-inline .markdown-editor {
+  height: auto; background: transparent; overflow: visible;
+}
+.note-editor-inline .markdown-editor-body { min-height: 0; }
+.note-editor-inline .markdown-editor-body > div { height: auto; }
+.note-editor-inline .markdown-editor .cm-editor {
+  height: auto; background: transparent;
+}
+.note-editor-inline .cm-scroller { overflow: visible; }
+`;
+
+function ensureInlineEditorStyle() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(INLINE_EDITOR_STYLE_ID)) return;
+  const el = document.createElement('style');
+  el.id = INLINE_EDITOR_STYLE_ID;
+  el.textContent = INLINE_EDITOR_CSS;
+  document.head.appendChild(el);
+}
 
 /**
  * NoteCard (T-340-3) — React port of the vanilla note element
@@ -13,12 +42,28 @@ const EMPTY_HINT = '<span style="opacity:0.3;font-size:11px">Double-click to add
  * handled by CanvasView (document-level, like the vanilla event delegation);
  * this component owns rendering, truncation and the inline editor.
  */
-export default function NoteCard({ note, selected, editing, onSaveText, onLayoutChange, ports, onPortDown }) {
+export default function NoteCard({ note, selected, editing, onSaveText, onLayoutChange, onEditorReady, ports, onPortDown }) {
   const bodyRef = useRef(null);
-  const taRef = useRef(null);
   const [truncated, setTruncated] = useState(false);
-  // Uncontrolled editor: the textarea owns the text while editing (matches
-  // vanilla), commit happens on blur/escape via onSaveText.
+
+  // T-345-9: the inline editor is the CodeMirror-based MarkdownEditor (without
+  // its built-in toolbar — the floating CanvasToolbar drives formatting). The
+  // editor's value is held locally while editing; the commit happens on
+  // blur/Escape via onSaveText(id, value) — same save semantics as the former
+  // <textarea>. A ref keeps the latest value for the blur/Escape handlers.
+  const [editValue, setEditValue] = useState(note.text || '');
+  const valueRef = useRef(editValue);
+  valueRef.current = editValue;
+  const savedRef = useRef(false);
+
+  // Load the note text into the editor each time editing (re)starts.
+  useEffect(() => {
+    if (editing) {
+      ensureInlineEditorStyle();
+      setEditValue(note.text || '');
+      savedRef.current = false;
+    }
+  }, [editing, note.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Truncation check (vanilla checkTruncation): after layout, when text/size
   // change and not while editing.
@@ -29,39 +74,13 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
     setTruncated(body.scrollHeight > body.clientHeight + 2);
   }, [note.text, note.size, editing]);
 
-  // Editor focus + auto-grow on entry (vanilla startNoteEdit).
-  useLayoutEffect(() => {
-    if (!editing) return;
-    const ta = taRef.current;
-    if (!ta) return;
-    ta.focus();
-    ta.setSelectionRange(ta.value.length, ta.value.length);
-    autoGrow(ta);
-  }, [editing]);
-
-  const autoGrow = (ta) => {
-    ta.style.height = '1px';
-    ta.style.height = ta.scrollHeight + 'px';
-    if (onLayoutChange) onLayoutChange();
-  };
-
-  const onKeyDown = (e) => {
-    e.stopPropagation(); // prevent canvas keybindings while typing
-    if (e.key === 'Escape') {
-      e.target.blur();
-      return;
-    }
-    if (e.key === 'Enter') {
-      const ta = e.target;
-      const cont = continueListOnEnter(ta.value, ta.selectionStart);
-      if (cont) {
-        e.preventDefault();
-        ta.value = cont.value;
-        ta.setSelectionRange(cont.selStart, cont.selStart);
-        autoGrow(ta);
-      }
-    }
-  };
+  // Commit the current editor text and close the editor (onSaveText dispatches
+  // editing:null). Guarded so blur + Escape don't double-commit.
+  const commit = useCallback(() => {
+    if (savedRef.current) return;
+    savedRef.current = true;
+    onSaveText(note.id, valueRef.current);
+  }, [onSaveText, note.id]);
 
   const rendered = renderNoteMarkdown(note.text || '');
   const classes = [
@@ -89,16 +108,38 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
       </div>
       <div ref={bodyRef} data-note-body className={`note-body${truncated && !editing ? ' truncated' : ''}`}>
         {editing ? (
-          <textarea
-            ref={taRef}
-            className="note-textarea"
-            defaultValue={note.text || ''}
-            onBlur={(e) => onSaveText(note.id, e.target.value)}
-            onKeyDown={onKeyDown}
-            onInput={(e) => autoGrow(e.target)}
+          // Inline CodeMirror editor (T-345-9). data-note-editor marks the
+          // interactive editing surface so CanvasView's gesture guards (which
+          // used to look for .note-textarea) skip it; the floating toolbar
+          // reaches the editor via the command API handed up through
+          // onEditorReady. Save on blur / Escape mirrors the old textarea.
+          <div
+            className="note-editor-inline"
+            data-note-editor
             onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
-          />
+            onBlur={commit}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <MarkdownEditor
+              hideToolbar
+              compact
+              autoFocus={false}
+              value={editValue}
+              onChange={(v) => { setEditValue(v); if (onLayoutChange) onLayoutChange(); }}
+              onSave={commit}
+              onCancel={commit}
+              onReady={(api) => {
+                if (onEditorReady) onEditorReady(note.id, api);
+                // Focus once on entry (vanilla startNoteEdit). We do NOT use
+                // CodeMirror autoFocus here: it re-grabs focus on every
+                // re-render (e.g. when the floating toolbar mounts/unmounts or
+                // selection clears), which would prevent the editor from ever
+                // blurring — so clicking outside would never commit.
+                api.focus();
+              }}
+            />
+          </div>
         ) : (
           <div
             className="note-text md-content"
