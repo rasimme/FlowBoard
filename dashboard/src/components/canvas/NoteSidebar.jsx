@@ -44,10 +44,13 @@ export default function NoteSidebar({ note, onSave, onClose }) {
   }, [persist, onClose]);
 
   // Persist whatever is in the editor when the sidebar unmounts/closes
-  // (covers the close-on-outside-interaction path in CanvasView).
+  // (covers the close-on-outside-interaction path in CanvasView, where note
+  // becomes null BEFORE this cleanup runs — so noteRef is already null and
+  // persist() would no-op. Capture the open note's id here instead).
   useEffect(() => {
-    if (!open) return undefined;
-    return () => { persist(); };
+    if (!open || !note) return undefined;
+    const openId = note.id;
+    return () => { onSave(openId, valueRef.current); };
   }, [open, note?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
