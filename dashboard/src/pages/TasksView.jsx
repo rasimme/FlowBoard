@@ -149,7 +149,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
   const subtaskStyle = { cursor: 'pointer', ...(claimColors || null) };
 
   return (
-    <div className={subtaskClass} onClick={handleClick} style={subtaskStyle}>
+    <div className={subtaskClass} data-task-id={task.id} onClick={handleClick} style={subtaskStyle}>
       <div className="subtask-card-row">
         <span className="tree-dot" />
         <span className="status-dot-wrap" onClick={handleDotClick}>
