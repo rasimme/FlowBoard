@@ -280,7 +280,7 @@ export function MilestonesWidget({ widget, editing }) {
   // local override so the pin shows immediately — the stored overview only
   // refreshes on reload
   const [localFocus, setLocalFocus] = useState(undefined);
-  useEffect(() => { setLocalFocus(undefined); }, [widget]);
+  useEffect(() => { setLocalFocus(undefined); }, [widget?.id]);
   const _pinWanted = localFocus !== undefined ? localFocus : widget?.props?.focus;
   const focusName = _pinWanted && groups.has(_pinWanted) && pct(groups.get(_pinWanted)) < 100
     ? _pinWanted
@@ -752,7 +752,7 @@ export function LinksWidget({ widget, editing }) {
   // local copy so a link added through the widget shows up without a
   // full overview reload — props win again on the next mount
   const [links, setLinks] = useState(widget?.props?.links || []);
-  useEffect(() => { setLinks(widget?.props?.links || []); }, [widget]);
+  useEffect(() => { setLinks(widget?.props?.links || []); }, [widget?.id, widget?.props?.links]);
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
@@ -1031,7 +1031,7 @@ export function FileViewerWidget({ widget, editing }) {
   // overview only refreshes on reload, and in an unsaved edit draft the
   // persist has nothing to write to yet
   const [path, setPath] = useState(widget?.props?.path || '');
-  useEffect(() => { setPath(widget?.props?.path || ''); }, [widget]);
+  useEffect(() => { setPath(widget?.props?.path || ''); }, [widget?.id, widget?.props?.path]);
   const [files, setFiles] = useState([]);
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
