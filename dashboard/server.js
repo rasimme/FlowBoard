@@ -55,6 +55,7 @@ const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
+const { autoPlaceNote } = require('./canvas-placement.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 
@@ -2314,7 +2315,21 @@ app.get('/api/projects/:name/canvas', (req, res) => {
 app.post('/api/projects/:name/canvas/notes', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   try {
-    res.json(canvasBackend(req.params.name).canvasCreateNote(req.params.name, req.body));
+    const backend = canvasBackend(req.params.name);
+    const body = { ...(req.body || {}) };
+    // T-352: auto-place when NEITHER x nor y was supplied (agent/API convenience:
+    // POST {text} lands collision-free instead of stacking at (0,0)). Explicit
+    // coordinates — including an explicit 0 — are always honored. Optional
+    // `near: <noteId>` anchors the search beside a related note.
+    const hasX = body.x !== undefined && body.x !== null;
+    const hasY = body.y !== undefined && body.y !== null;
+    if (!hasX && !hasY) {
+      const existing = backend.canvasGet(req.params.name).notes || [];
+      const slot = autoPlaceNote(existing, { near: body.near });
+      body.x = slot.x;
+      body.y = slot.y;
+    }
+    res.json(backend.canvasCreateNote(req.params.name, body));
   } catch (err) {
     sendCanvasError(res, err);
   }

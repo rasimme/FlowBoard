@@ -14,7 +14,7 @@ import {
   sendPromote, restoreNotes,
 } from '../state/canvasMutations.mjs';
 import {
-  screenToCanvas, routePath, stackOffset, portDotCss, buildConnectedPorts,
+  screenToCanvas, routePath, stackOffset, portDotCss, buildConnectedPorts, centerViewOnNote,
 } from '../utils/canvasGeometry.mjs';
 import { NOTE_WIDTH, MAX_PORTS_PER_SIDE, COLOR_STROKE } from '../utils/canvasConstants.mjs';
 import NoteCard from '../components/canvas/NoteCard.jsx';
@@ -252,6 +252,41 @@ export default function CanvasView() {
       delete window._pendingNewNote;
       onAddNote();
     }
+  });
+
+  // Search-navigation (T-351): consume window._scrollToNoteId set by the header
+  // search (T-349). Pan/zoom the camera onto the note and flash a 2s highlight —
+  // the canvas analog of the Kanban's ScrollToTask + .highlighted-from-back.
+  // No-deps effect (like _pendingNewNote above): read+delete the flag once, then
+  // a self-contained rAF retries until the note element mounts after load. Runs
+  // after the viewport-restore layout effect, so it overrides the camera only
+  // for this one jump (and marks fittedRef so no re-fit fights it).
+  useEffect(() => {
+    if (canvas.loading || !viewedProject) return;
+    const noteId = window._scrollToNoteId;
+    if (!noteId) return;
+    const note = canvas.notes.find(n => n.id === noteId);
+    if (!note) return; // not in this project (yet) — leave the flag for its canvas
+    delete window._scrollToNoteId;
+
+    let tries = 0;
+    const tick = () => {
+      const wrap = wrapRef.current;
+      if (!wrap) return; // unmounted / project switched away
+      const el = wrap.querySelector(`[data-note-id="${CSS.escape(noteId)}"]`);
+      if (el) {
+        const dims = getDims(noteId) || { w: el.offsetWidth, h: el.offsetHeight };
+        viewRef.current = centerViewOnNote(note, dims, wrap.clientWidth, wrap.clientHeight, viewRef.current.scale);
+        fittedRef.current = viewedProject;
+        applyTransform();
+        bumpView();
+        el.classList.add('canvas-note-highlighted');
+        setTimeout(() => el.classList.remove('canvas-note-highlighted'), 2000);
+        return;
+      }
+      if (++tries < 30) requestAnimationFrame(tick); // ~500ms budget for load→render
+    };
+    requestAnimationFrame(tick);
   });
 
   // --- Reload after a completed Specify session (promoted notes vanish) ---

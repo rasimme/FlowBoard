@@ -7,6 +7,18 @@
   outline-offset: 2px;
 }
 
+/* Search-navigation flash (T-351): after the camera jumps to a note from the
+   header search, pulse a ring for ~2s so the eye lands on it. Canvas notes are
+   not clipped, so an outer glow ring is fine (and more visible than an inset). */
+.note.canvas-note-highlighted {
+  animation: canvasNoteFlash 2s ease-out;
+  z-index: 5;
+}
+@keyframes canvasNoteFlash {
+  0%, 45% { box-shadow: 0 0 0 3px var(--accent), 0 0 16px 4px var(--accent-subtle); }
+  100% { box-shadow: 0 0 0 3px transparent, 0 0 16px 4px transparent; }
+}
+
 /* Dot-pattern background + visible frame */
 .canvas-wrap {
   background-color: var(--bg);

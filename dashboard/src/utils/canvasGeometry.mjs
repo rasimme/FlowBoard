@@ -4,7 +4,7 @@
 // the canvas state arrive as parameters instead of element/getElementById
 // lookups, so everything here is pure and unit-testable.
 
-import { CORNER_RADIUS, PORT_SPACING, MIN_ESCAPE, COLOR_STROKE } from './canvasConstants.mjs';
+import { CORNER_RADIUS, PORT_SPACING, MIN_ESCAPE, COLOR_STROKE, SCALE_MIN, SCALE_MAX } from './canvasConstants.mjs';
 
 /**
  * Convert an array of [x,y] waypoints into a rounded-corner SVG path.
@@ -605,4 +605,23 @@ export function panToCenterWorld(worldX, worldY, scale, wrapW, wrapH) {
     x: wrapW / 2 - worldX * scale,
     y: wrapH / 2 - worldY * scale,
   };
+}
+
+/**
+ * Viewport that centers a single note in the wrap (T-351, search-navigation).
+ * Keeps the current zoom but raises it to a readable floor (minScale) when the
+ * canvas is zoomed far out, so a jumped-to note is never a tiny speck; never
+ * exceeds SCALE_MAX. dims may be null (falls back to the standard 160×120 box).
+ * Pure; the caller writes { pan, scale } into viewRef + applyTransform.
+ *
+ * @returns {{ pan:{x:number,y:number}, scale:number }}
+ */
+export function centerViewOnNote(note, dims, wrapW, wrapH, currentScale, opts = {}) {
+  const minScale = opts.minScale ?? 0.8;
+  const w = dims?.w || 160;
+  const h = dims?.h || 120;
+  const base = Number.isFinite(currentScale) && currentScale > 0 ? currentScale : 1;
+  const scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.max(base, minScale)));
+  const pan = panToCenterWorld(note.x + w / 2, note.y + h / 2, scale, wrapW, wrapH);
+  return { pan, scale };
 }

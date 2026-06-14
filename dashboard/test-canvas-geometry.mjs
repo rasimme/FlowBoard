@@ -22,6 +22,7 @@ import {
   ptsToRoundedPath, routePath, manhattanPath, getBestSides,
   computePortPositions, stackOffset, screenToCanvas,
   portDotCss, stackedDotCanvas, buildConnectedPorts,
+  panToCenterWorld, centerViewOnNote,
 } from './src/utils/canvasGeometry.mjs';
 import { getConnectedComponent, getAllClusters } from './src/utils/canvasGraph.mjs';
 import { escHtml, renderNoteMarkdown } from './src/utils/canvasMarkdown.mjs';
@@ -301,6 +302,37 @@ ok(renderNoteMarkdown('- a\n1. b') === '<ul><li>a</li></ul><ol><li>b</li></ol>',
   'switching list type closes the previous list');
 ok(renderNoteMarkdown('x\n\ny') === 'x<br><br>y', 'blank line renders as <br>');
 ok(renderNoteMarkdown('only') === 'only', 'single plain line has no trailing <br>');
+
+// =============================================================================
+section('centerViewOnNote (T-351 search-navigation)');
+{
+  const vpW = 800, vpH = 600;
+  // A note at (200,100), box 160×120 → center (280,160). At scale 1 the pan must
+  // place that world center at the viewport center (400,300).
+  const dims = { w: 160, h: 120 };
+  const r1 = centerViewOnNote({ x: 200, y: 100 }, dims, vpW, vpH, 1);
+  ok(r1.scale === 1, 'keeps current scale when already readable');
+  ok(r1.pan.x === 400 - 280 && r1.pan.y === 300 - 160, 'pans so the note center hits the viewport center');
+  // Cross-check against the primitive it builds on.
+  const expected = panToCenterWorld(280, 160, 1, vpW, vpH);
+  ok(r1.pan.x === expected.x && r1.pan.y === expected.y, 'matches panToCenterWorld for the note center');
+
+  // Zoomed far out → bump to the readable floor (0.8 default).
+  const r2 = centerViewOnNote({ x: 0, y: 0 }, dims, vpW, vpH, 0.3);
+  ok(r2.scale === 0.8, 'raises a tiny zoom to the readable floor (0.8)');
+
+  // Zoomed in → keep the larger scale, never shrink it.
+  const r3 = centerViewOnNote({ x: 0, y: 0 }, dims, vpW, vpH, 1.8);
+  ok(r3.scale === 1.8, 'keeps a larger current zoom');
+
+  // Never exceeds SCALE_MAX even if asked.
+  const r4 = centerViewOnNote({ x: 0, y: 0 }, dims, vpW, vpH, 99);
+  ok(r4.scale === SCALE_MAX, 'clamps to SCALE_MAX');
+
+  // Null dims → falls back to the standard 160×120 box (same as r1).
+  const r5 = centerViewOnNote({ x: 200, y: 100 }, null, vpW, vpH, 1);
+  ok(r5.pan.x === r1.pan.x && r5.pan.y === r1.pan.y, 'null dims falls back to the 160×120 box');
+}
 
 // =============================================================================
 console.log(`\n${'='.repeat(60)}`);

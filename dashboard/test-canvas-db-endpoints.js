@@ -98,13 +98,22 @@ async function exerciseEndpoints(base, project, label) {
     `${label}: created note has YYYY-MM-DD created stamp`);
   const n1 = res.body.note;
 
-  // POST note with defaults
+  // POST note WITHOUT x/y -> auto-placed collision-free (T-352), not stacked at
+  // (0,0). color/size defaults still apply.
   res = await fetchJson(base, 'POST', `/api/projects/${project}/canvas/notes`, { text: 'second note' });
-  ok(res.status === 200 && res.body?.note?.x === 0 && res.body?.note?.y === 0
+  ok(res.status === 200 && typeof res.body?.note?.x === 'number' && typeof res.body?.note?.y === 'number'
+    && !(res.body.note.x === 0 && res.body.note.y === 0)
     && res.body?.note?.color === 'yellow' && res.body?.note?.size === 'small',
-    `${label}: POST note applies legacy defaults`);
+    `${label}: POST note without x/y auto-places (not 0,0) + keeps color/size defaults`);
   const n2 = res.body.note;
   ok(n2.id !== n1.id, `${label}: note ids are unique (${n1.id}, ${n2.id})`);
+
+  // T-352: explicit coordinates — including an explicit 0 — are always honored,
+  // never auto-placed. Create then delete so it does not skew note counts below.
+  res = await fetchJson(base, 'POST', `/api/projects/${project}/canvas/notes`, { text: 'at origin', x: 0, y: 0 });
+  ok(res.status === 200 && res.body?.note?.x === 0 && res.body?.note?.y === 0,
+    `${label}: POST note with explicit x:0,y:0 is honored (not auto-placed)`);
+  await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/notes/${res.body.note.id}`);
 
   // POST oversized note -> 413
   res = await fetchJson(base, 'POST', `/api/projects/${project}/canvas/notes`, { text: 'x'.repeat(50 * 1024 + 1) });
