@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "screenshots:v5": "sh -c 'node scripts/v5-demo-fixture.mjs seed && node scripts/capture-v5-screenshots.mjs; status=$?; node scripts/v5-demo-fixture.mjs cleanup; exit $status'",
+    "setup": "node scripts/setup.mjs",
     "plugin:lint": "node scripts/plugin-lint.mjs",
     "privacy:scan": "node scripts/privacy-scan.mjs",
     "release:check": "node scripts/release-check.mjs"

@@ -95,7 +95,21 @@ Access FlowBoard remotely from Telegram. Secure authentication via HMAC-SHA256, 
 
 ## Quick Start
 
-### 1. Clone & install
+### Installed as an OpenClaw plugin?
+
+`openclaw plugins install flowboard` wires the project-context hook. To bring
+up the dashboard in one step — install deps, build the UI, register a
+per-user service (launchd/systemd) and verify health:
+
+```bash
+node scripts/setup.mjs          # or: npm run setup
+node scripts/setup.mjs --dry-run   # preview, change nothing
+```
+
+Re-run with `--update` after `openclaw plugins update` to rebuild & restart.
+Prefer the manual path? It's below.
+
+### 1. Clone & install (manual)
 
 ```bash
 git clone https://github.com/rasimme/FlowBoard.git
