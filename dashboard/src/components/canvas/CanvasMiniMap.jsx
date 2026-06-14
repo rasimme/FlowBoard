@@ -36,6 +36,10 @@ const FRAME_INSET = 6;
 
 export default function CanvasMiniMap({
   notes, getView, getDims, wrapSize, scale,
+  // positionOf(id) returns a note's live position while it is being dragged
+  // (before the move is committed to state), so the minimap rects track the
+  // drag in real time — same pattern as ConnectionLayer (T-345-10).
+  positionOf,
   // viewTick changes on every committed viewport change so this subtree
   // re-reads getView() for the frame; it is intentionally not read directly.
   viewTick, // eslint-disable-line no-unused-vars
@@ -46,7 +50,12 @@ export default function CanvasMiniMap({
   const rafRef = useRef(0);
   const pendingRef = useRef(null);
 
-  const bounds = notesBounds(notes, getDims);
+  // Apply any live (uncommitted) drag positions so the map follows the gesture.
+  const liveNotes = positionOf
+    ? notes.map((n) => { const p = positionOf(n.id); return p ? { ...n, x: p.x, y: p.y } : n; })
+    : notes;
+
+  const bounds = notesBounds(liveNotes, getDims);
   const mm = bounds ? minimapTransform(bounds, MAP_W, MAP_H) : null;
 
   let frame = null;
@@ -180,7 +189,7 @@ export default function CanvasMiniMap({
           onTouchMove={(e) => { const t = e.touches[0]; if (t) onPointerMove({ clientX: t.clientX, clientY: t.clientY }); }}
           onTouchEnd={endDrag}
         >
-          {mm && notes.map((note) => {
+          {mm && liveNotes.map((note) => {
             const r = noteMiniRect(note, getDims, mm);
             const col = COLOR_STROKE[note.color] || 'var(--border-strong)';
             return (

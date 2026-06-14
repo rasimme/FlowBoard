@@ -857,6 +857,7 @@ export default function CanvasView() {
         },
       };
       applyTransform();
+      bumpDragTick(); // re-render the minimap frame live during the pan (T-345-10)
       return;
     }
     // Idle hover: a card link is pointer-events:none (so it can't show its own
@@ -870,7 +871,7 @@ export default function CanvasView() {
     const prev = gestureRef.current.cursorEl;
     if (prev && prev !== bodyEl) { prev.style.cursor = ''; gestureRef.current.cursorEl = null; }
     if (bodyEl) { bodyEl.style.cursor = 'pointer'; gestureRef.current.cursorEl = bodyEl; }
-  }, [applyTransform, moveConnect, moveNoteDrag, moveLasso]);
+  }, [applyTransform, moveConnect, moveNoteDrag, moveLasso, bumpDragTick]);
 
   const onMouseUp = useCallback((e) => {
     if (endConnect()) return;
@@ -1007,6 +1008,7 @@ export default function CanvasView() {
             },
           };
           applyTransform();
+          bumpDragTick(); // live minimap frame during touch pan (T-345-10)
         }
       } else if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1019,6 +1021,7 @@ export default function CanvasView() {
           const v = viewRef.current;
           viewRef.current = zoomAt(v.pan, v.scale, newDist / g.pinchDist, mx, my);
           applyTransform();
+          bumpDragTick(); // live minimap frame during pinch-zoom (T-345-10)
         }
         g.pinchDist = newDist;
       }
@@ -1051,7 +1054,7 @@ export default function CanvasView() {
       wrap.removeEventListener('touchmove', onTouchMove);
       wrap.removeEventListener('touchend', onTouchEnd);
     };
-  }, [applyTransform, beginNoteDrag, moveNoteDrag, endNoteDrag, toCanvas, createAndEdit, startEdit, moveConnect, endConnect, persistView, bumpView]);
+  }, [applyTransform, beginNoteDrag, moveNoteDrag, endNoteDrag, toCanvas, createAndEdit, startEdit, moveConnect, endConnect, persistView, bumpView, bumpDragTick]);
 
   useLayoutEffect(() => { applyTransform(); });
 
@@ -1235,6 +1238,7 @@ export default function CanvasView() {
         wrapSize={wrapSize}
         scale={viewRef.current.scale}
         viewTick={viewTick}
+        positionOf={positionOf}
         onNavigate={onMiniNavigate}
         onZoom={onZoomButton}
         onFit={onFit}
