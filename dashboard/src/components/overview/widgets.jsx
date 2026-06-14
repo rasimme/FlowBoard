@@ -155,10 +155,11 @@ const STATUS_ORDER = ['backlog', 'open', 'in-progress', 'review', 'done'];
 const STATUS_LABELS = { backlog: 'Backlog', open: 'Open', 'in-progress': 'In Progress', review: 'Review', done: 'Done' };
 
 export function TaskStatsWidget({ widget, editing, onRemove }) {
+  const goTab = useGoTab();
   const allTasks = useProjectTasks();
   const tasks = allTasks.filter(t => t.status !== 'archived');
   const { state } = useAppState();
-  const [stuck, setStuck] = useState(0);
+  const [stuckTasks, setStuckTasks] = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -166,12 +167,17 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
       .then(r => r.json())
       .then(d => {
         if (!alive) return;
-        const mine = (d?.stuck?.combined || []).filter(t => t.project === state?.viewedProject);
-        setStuck(mine.length);
+        setStuckTasks((d?.stuck?.combined || []).filter(t => t.project === state?.viewedProject));
       })
       .catch(() => {});
     return () => { alive = false; };
   }, [state?.viewedProject]);
+  const stuck = stuckTasks.length;
+
+  // stats as a launchpad: clicking a number jumps to the relevant task on
+  // the board (and highlights it). Inert while editing the layout.
+  const jumpTo = (id) => { if (editing || !id) return; goTab('tasks'); window._scrollToTaskId = id; };
+  const firstOf = (s) => tasks.find(t => t.status === s)?.id;
 
   const counts = Object.fromEntries(STATUS_ORDER.map(s => [s, 0]));
   for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++;
@@ -205,36 +211,43 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
 
   return (
     <OvWidget title={widget?.title || 'Task Stats'} meta={`${tasks.length} tasks`}>
-      <div style={{ display: 'flex', gap: 22, minHeight: 0, flex: 1 }}>
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <div className="ov-statbar">
-            {STATUS_ORDER.map(s => (
-              <span key={s} style={{ width: (counts[s] / total * 100) + '%', background: STATUS_COLORS[s] }}></span>
-            ))}
-          </div>
-          <div className="ov-legend">
-            {STATUS_ORDER.map(s => (
-              <span key={s} className="ov-legend-item">
-                <span className="dot" style={{ background: STATUS_COLORS[s] }}></span>
-                {STATUS_LABELS[s]} <span className="n">{counts[s]}</span>
-              </span>
-            ))}
-          </div>
-          <div className="ov-kpis">
-            <span className="ov-kpi">
-              <span className="num">{throughput}<em>/7d</em></span>
-              <span className="lbl">Throughput</span>
-            </span>
-            {avgCycle !== null && (
-              <span className="ov-kpi">
-                <span className="num">{avgCycle.toFixed(1)}<em>d</em></span>
-                <span className="lbl">Avg cycle</span>
-              </span>
-            )}
-            {stuck > 0 && <span className="ov-stuck">⚠ {stuck} stuck</span>}
-          </div>
+      <div className="ts-wrap">
+        <div className="ov-statbar">
+          {STATUS_ORDER.map(s => (
+            <span key={s} style={{ width: (counts[s] / total * 100) + '%', background: STATUS_COLORS[s] }}></span>
+          ))}
         </div>
-        <div className="ov-spark" style={{ flexShrink: 0, alignSelf: 'flex-end' }}>
+        <div className="ov-legend">
+          {STATUS_ORDER.map(s => (
+            <button key={s} type="button" className="ov-legend-item"
+              disabled={editing || !counts[s]}
+              title={editing || !counts[s] ? undefined : `Open a ${STATUS_LABELS[s]} task on the board`}
+              onClick={editing ? undefined : () => jumpTo(firstOf(s))}>
+              <span className="dot" style={{ background: STATUS_COLORS[s] }}></span>
+              {STATUS_LABELS[s]} <span className="n">{counts[s]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="ov-kpis">
+          <span className="ov-kpi">
+            <span className="num">{throughput}<em>/7d</em></span>
+            <span className="lbl">Throughput</span>
+          </span>
+          {avgCycle !== null && (
+            <span className="ov-kpi">
+              <span className="num">{avgCycle.toFixed(1)}<em>d</em></span>
+              <span className="lbl">Avg cycle</span>
+            </span>
+          )}
+          {stuck > 0 && (
+            <button type="button" className="ov-stuck" disabled={editing}
+              title={editing ? undefined : 'Open the oldest stuck task'}
+              onClick={editing ? undefined : () => jumpTo(stuckTasks[0]?.taskId)}>
+              ⚠ {stuck} stuck{editing ? '' : ' →'}
+            </button>
+          )}
+        </div>
+        <div className="ts-trend">
           <div className="bars">
             {spark.map((v, i) => (
               <i key={i} className={i === spark.length - 1 ? 'hi' : ''}
@@ -242,7 +255,7 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
                 style={{ height: v.n ? Math.max(12, Math.round(v.n / max * 100)) + '%' : '6%' }}></i>
             ))}
           </div>
-          <div className="lbl">Done · last 7d</div>
+          <div className="lbl">Completed · last 7 days</div>
         </div>
       </div>
     </OvWidget>
