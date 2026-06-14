@@ -175,7 +175,7 @@ function Ring({ pct, size = 54 }) {
     <span className="ms-ring" style={{ width: size, height: size }}>
       <svg viewBox={`0 0 ${size} ${size}`}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--secondary)" strokeWidth="5" />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--accent-2)" strokeWidth="5"
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--chart-1)" strokeWidth="5"
           strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} />
       </svg>
       <span className="pct">{pct}</span>

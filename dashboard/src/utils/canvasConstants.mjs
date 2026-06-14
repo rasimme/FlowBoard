@@ -10,12 +10,12 @@ export const CORNER_RADIUS = 12;
 export const PORT_SPACING  = 18;
 
 export const COLOR_STROKE = {
-  grey:   'var(--border-strong)',
-  yellow: 'var(--warn)',
-  blue:   'var(--info)',
-  green:  'var(--ok)',
-  red:    'var(--danger)',
-  teal:   'var(--accent-2)'
+  grey:   'var(--hue-1-ring)',
+  yellow: 'var(--hue-6-ring)',
+  blue:   'var(--hue-3-ring)',
+  green:  'var(--hue-4-ring)',
+  red:    'var(--hue-5-ring)',
+  teal:   'var(--hue-2-ring)'
 };
 
 export const MIN_ESCAPE = 28;

@@ -15,7 +15,7 @@ import { getTasks, replaceTasks, refreshTasks, notify } from '../state/appStateB
 import { patchTask, applyTaskResponse, snapshotTask, rollbackSnapshot } from '../state/taskState.mjs';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
-// animates between -soft (alpha ~25%) and the full ring hex. Returning null
+// animates between the soft ring token and the full ring token. Returning null
 // signals "not actively claimed" so the caller can skip the class+style.
 function activeClaimColors(task) {
   if (!isActivelyClaimed(task)) return null;
@@ -28,7 +28,7 @@ function activeClaimColorsForAgent(agent, claimedAt = null, pulseDelayMs = null)
   const delay = pulseDelayMs ?? getSyncedPulseDelayMs(Date.now(), Date.parse(claimedAt || ''));
   return {
     ['--agent-claim-color']: c.ring,
-    ['--agent-claim-color-soft']: `${c.ring}40`, // hex8: ~25% alpha.
+    ['--agent-claim-color-soft']: c.ringSoft,
     ['--agent-pulse-delay']: `${delay}ms`,
   };
 }

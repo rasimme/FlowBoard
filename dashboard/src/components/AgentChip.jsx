@@ -1,9 +1,9 @@
 /**
  * Agent identity primitives.
  *
- * AGENT_PALETTE: 8 deliberately muted, dark-theme-safe tones. Kept separate
- * from status colors (green/yellow/orange/red/blue) so agent identity never
- * reads as a warning, OK, or danger signal.
+ * AGENT_PALETTE: 8 deliberately muted, dark-theme-safe tones from the shared
+ * --hue-1..8 design tokens. Kept separate from status colors so agent identity
+ * never reads as a warning, OK, or danger signal.
  *
  * agentColor(name): deterministic djb2-style hash → palette index. Same name
  * always resolves to the same tone across sessions, projects, users.
@@ -13,14 +13,14 @@
  */
 
 export const AGENT_PALETTE = [
-  { name: 'slate',      bg: '#5b6b82', fg: '#e6ecf5', soft: 'rgba(91,107,130,0.18)',  ring: '#7d8da6' },
-  { name: 'teal',       bg: '#3e7a78', fg: '#dff0ee', soft: 'rgba(62,122,120,0.18)',  ring: '#5a9694' },
-  { name: 'periwinkle', bg: '#6b6fa8', fg: '#e7e8f7', soft: 'rgba(107,111,168,0.18)', ring: '#8a8fc5' },
-  { name: 'sage',       bg: '#607a5c', fg: '#e2ecde', soft: 'rgba(96,122,92,0.18)',   ring: '#7f997a' },
-  { name: 'plum',       bg: '#7e5a7a', fg: '#efe2ed', soft: 'rgba(126,90,122,0.18)',  ring: '#9d7899' },
-  { name: 'bronze',     bg: '#8a6a4a', fg: '#f2e6d6', soft: 'rgba(138,106,74,0.18)',  ring: '#a88968' },
-  { name: 'steel',      bg: '#4e6e7a', fg: '#dfe9ee', soft: 'rgba(78,110,122,0.18)',  ring: '#6d8b97' },
-  { name: 'dusk',       bg: '#6a5f82', fg: '#ebe6f2', soft: 'rgba(106,95,130,0.18)',  ring: '#897ea3' },
+  { name: 'slate',      bg: 'var(--hue-1)', fg: 'var(--hue-1-fg)', soft: 'var(--hue-1-soft)', ring: 'var(--hue-1-ring)', ringSoft: 'var(--hue-1-ring-soft)' },
+  { name: 'teal',       bg: 'var(--hue-2)', fg: 'var(--hue-2-fg)', soft: 'var(--hue-2-soft)', ring: 'var(--hue-2-ring)', ringSoft: 'var(--hue-2-ring-soft)' },
+  { name: 'periwinkle', bg: 'var(--hue-3)', fg: 'var(--hue-3-fg)', soft: 'var(--hue-3-soft)', ring: 'var(--hue-3-ring)', ringSoft: 'var(--hue-3-ring-soft)' },
+  { name: 'sage',       bg: 'var(--hue-4)', fg: 'var(--hue-4-fg)', soft: 'var(--hue-4-soft)', ring: 'var(--hue-4-ring)', ringSoft: 'var(--hue-4-ring-soft)' },
+  { name: 'plum',       bg: 'var(--hue-5)', fg: 'var(--hue-5-fg)', soft: 'var(--hue-5-soft)', ring: 'var(--hue-5-ring)', ringSoft: 'var(--hue-5-ring-soft)' },
+  { name: 'bronze',     bg: 'var(--hue-6)', fg: 'var(--hue-6-fg)', soft: 'var(--hue-6-soft)', ring: 'var(--hue-6-ring)', ringSoft: 'var(--hue-6-ring-soft)' },
+  { name: 'steel',      bg: 'var(--hue-7)', fg: 'var(--hue-7-fg)', soft: 'var(--hue-7-soft)', ring: 'var(--hue-7-ring)', ringSoft: 'var(--hue-7-ring-soft)' },
+  { name: 'dusk',       bg: 'var(--hue-8)', fg: 'var(--hue-8-fg)', soft: 'var(--hue-8-soft)', ring: 'var(--hue-8-ring)', ringSoft: 'var(--hue-8-ring-soft)' },
 ];
 
 export function agentHash(name) {

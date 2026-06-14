@@ -26,6 +26,60 @@
       --ok-border: rgba(34, 197, 94, .35);
       --info: #3b82f6;
       --info-subtle: rgba(59, 130, 246, .12);
+      --hue-1: #5b6b82;
+      --hue-1-fg: #e6ecf5;
+      --hue-1-soft: color-mix(in srgb, var(--hue-1) 18%, transparent);
+      --hue-1-canvas: color-mix(in srgb, var(--hue-1) 38%, var(--bg));
+      --hue-1-ring: #7d8da6;
+      --hue-1-ring-soft: color-mix(in srgb, var(--hue-1-ring) 25%, transparent);
+      --hue-2: #3e7a78;
+      --hue-2-fg: #dff0ee;
+      --hue-2-soft: color-mix(in srgb, var(--hue-2) 18%, transparent);
+      --hue-2-canvas: color-mix(in srgb, var(--hue-2) 38%, var(--bg));
+      --hue-2-ring: #5a9694;
+      --hue-2-ring-soft: color-mix(in srgb, var(--hue-2-ring) 25%, transparent);
+      --hue-3: #6b6fa8;
+      --hue-3-fg: #e7e8f7;
+      --hue-3-soft: color-mix(in srgb, var(--hue-3) 18%, transparent);
+      --hue-3-canvas: color-mix(in srgb, var(--hue-3) 38%, var(--bg));
+      --hue-3-ring: #8a8fc5;
+      --hue-3-ring-soft: color-mix(in srgb, var(--hue-3-ring) 25%, transparent);
+      --hue-4: #607a5c;
+      --hue-4-fg: #e2ecde;
+      --hue-4-soft: color-mix(in srgb, var(--hue-4) 18%, transparent);
+      --hue-4-canvas: color-mix(in srgb, var(--hue-4) 38%, var(--bg));
+      --hue-4-ring: #7f997a;
+      --hue-4-ring-soft: color-mix(in srgb, var(--hue-4-ring) 25%, transparent);
+      --hue-5: #7e5a7a;
+      --hue-5-fg: #efe2ed;
+      --hue-5-soft: color-mix(in srgb, var(--hue-5) 18%, transparent);
+      --hue-5-canvas: color-mix(in srgb, var(--hue-5) 38%, var(--bg));
+      --hue-5-ring: #9d7899;
+      --hue-5-ring-soft: color-mix(in srgb, var(--hue-5-ring) 25%, transparent);
+      --hue-6: #8a6a4a;
+      --hue-6-fg: #f2e6d6;
+      --hue-6-soft: color-mix(in srgb, var(--hue-6) 18%, transparent);
+      --hue-6-canvas: color-mix(in srgb, var(--hue-6) 38%, var(--bg));
+      --hue-6-ring: #a88968;
+      --hue-6-ring-soft: color-mix(in srgb, var(--hue-6-ring) 25%, transparent);
+      --hue-7: #4e6e7a;
+      --hue-7-fg: #dfe9ee;
+      --hue-7-soft: color-mix(in srgb, var(--hue-7) 18%, transparent);
+      --hue-7-canvas: color-mix(in srgb, var(--hue-7) 38%, var(--bg));
+      --hue-7-ring: #6d8b97;
+      --hue-7-ring-soft: color-mix(in srgb, var(--hue-7-ring) 25%, transparent);
+      --hue-8: #6a5f82;
+      --hue-8-fg: #ebe6f2;
+      --hue-8-soft: color-mix(in srgb, var(--hue-8) 18%, transparent);
+      --hue-8-canvas: color-mix(in srgb, var(--hue-8) 38%, var(--bg));
+      --hue-8-ring: #897ea3;
+      --hue-8-ring-soft: color-mix(in srgb, var(--hue-8-ring) 25%, transparent);
+      --chart-1: var(--hue-2-ring);
+      --chart-1-soft: var(--hue-2-soft);
+      --chart-2: var(--hue-3-ring);
+      --chart-2-soft: var(--hue-3-soft);
+      --chart-3: var(--hue-6-ring);
+      --chart-3-soft: var(--hue-6-soft);
       --card-highlight: rgba(255, 255, 255, .05);
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, .2);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, .25), 0 0 0 1px rgba(255, 255, 255, .03);
@@ -1831,11 +1885,11 @@
     .note.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* Note color variants */
-    .note.color-yellow { background: var(--warn-subtle);  border-left-color: var(--warn); }
-    .note.color-blue   { background: rgba(59,130,246,.12); border-left-color: var(--info); }
-    .note.color-green  { background: var(--ok-subtle);    border-left-color: var(--ok); }
-    .note.color-red    { background: var(--danger-subtle); border-left-color: var(--danger); }
-    .note.color-teal   { background: var(--accent-2-subtle); border-left-color: var(--accent-2); }
+    .note.color-yellow { background: var(--hue-6-canvas); border-left-color: var(--hue-6-ring); }
+    .note.color-blue   { background: var(--hue-3-canvas); border-left-color: var(--hue-3-ring); }
+    .note.color-green  { background: var(--hue-4-canvas); border-left-color: var(--hue-4-ring); }
+    .note.color-red    { background: var(--hue-5-canvas); border-left-color: var(--hue-5-ring); }
+    .note.color-teal   { background: var(--hue-2-canvas); border-left-color: var(--hue-2-ring); }
 
     /* Note header (drag handle) */
     .note-header {
@@ -1852,11 +1906,11 @@
       transition: transform var(--duration-normal);
     }
     .note-color-dot:hover { transform: scale(1.2); }
-    .note.color-yellow .note-color-dot { background: var(--warn); }
-    .note.color-blue   .note-color-dot { background: var(--info); }
-    .note.color-green  .note-color-dot { background: var(--ok); }
-    .note.color-red    .note-color-dot { background: var(--danger); }
-    .note.color-teal   .note-color-dot { background: var(--accent-2); }
+    .note.color-yellow .note-color-dot { background: var(--hue-6-ring); }
+    .note.color-blue   .note-color-dot { background: var(--hue-3-ring); }
+    .note.color-green  .note-color-dot { background: var(--hue-4-ring); }
+    .note.color-red    .note-color-dot { background: var(--hue-5-ring); }
+    .note.color-teal   .note-color-dot { background: var(--hue-2-ring); }
 
     /* Note ID label */
     .note-id {
