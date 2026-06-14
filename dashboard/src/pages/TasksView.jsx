@@ -906,6 +906,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
   return (
     <div
       className="column"
+      data-status={status}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -1302,6 +1303,7 @@ export default function TasksView() {
           without a detail panel (Kanban-only flow). The flag is set by
           FilesView's onBackToTask when there's no openTaskDetail bridge. */}
       <ScrollToTask onExpandParent={handleExpandParent} />
+      <ScrollToColumn />
       <div className="kanban">
         {STATUS_KEYS.map(status => (
           <Column
@@ -1348,6 +1350,7 @@ export default function TasksView() {
         />
       )}
       <ScrollToTask onExpandParent={handleExpandParent} />
+      <ScrollToColumn />
     </div>
   );
 }
@@ -1380,6 +1383,26 @@ function ScrollToTask({ onExpandParent }) {
       if (++tries < 12) requestAnimationFrame(tick); // ~200ms budget for expand→render
     };
     requestAnimationFrame(tick);
+  });
+  return null;
+}
+
+// Scrolls a whole status column into view (horizontal kanban scroll) and
+// briefly highlights it. Consumes window._scrollToColumn — set by the
+// task-stats widget's legend so "Review 7" lands on the Review column
+// rather than one arbitrary task.
+function ScrollToColumn() {
+  useEffect(() => {
+    const status = window._scrollToColumn;
+    if (!status) return;
+    delete window._scrollToColumn;
+    requestAnimationFrame(() => {
+      const col = document.querySelector(`.column[data-status="${status}"]`);
+      if (!col) return;
+      col.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      col.classList.add('column-highlight');
+      setTimeout(() => col.classList.remove('column-highlight'), 1600);
+    });
   });
   return null;
 }

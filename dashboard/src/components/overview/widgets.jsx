@@ -174,10 +174,10 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
   }, [state?.viewedProject]);
   const stuck = stuckTasks.length;
 
-  // stats as a launchpad: clicking a number jumps to the relevant task on
-  // the board (and highlights it). Inert while editing the layout.
+  // stats as a launchpad (inert while editing): a status jumps to that
+  // column on the board, the stuck chip to the oldest stuck task itself.
   const jumpTo = (id) => { if (editing || !id) return; goTab('tasks'); window._scrollToTaskId = id; };
-  const firstOf = (s) => tasks.find(t => t.status === s)?.id;
+  const showColumn = (s) => { if (editing) return; window._scrollToColumn = s; goTab('tasks'); };
 
   const counts = Object.fromEntries(STATUS_ORDER.map(s => [s, 0]));
   for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++;
@@ -220,9 +220,9 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
         <div className="ov-legend">
           {STATUS_ORDER.map(s => (
             <button key={s} type="button" className="ov-legend-item"
-              disabled={editing || !counts[s]}
-              title={editing || !counts[s] ? undefined : `Open a ${STATUS_LABELS[s]} task on the board`}
-              onClick={editing ? undefined : () => jumpTo(firstOf(s))}>
+              disabled={editing}
+              title={editing ? undefined : `Show the ${STATUS_LABELS[s]} column on the board`}
+              onClick={editing ? undefined : () => showColumn(s)}>
               <span className="dot" style={{ background: STATUS_COLORS[s] }}></span>
               {STATUS_LABELS[s]} <span className="n">{counts[s]}</span>
             </button>

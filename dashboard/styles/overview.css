@@ -173,7 +173,14 @@
 .ts-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .ts-trend { display: none; flex: 1; min-height: 0; flex-direction: column; justify-content: flex-end; margin-top: 12px; }
 @container widget (min-height: 150px) { .ts-trend { display: flex; } }
-.ts-trend .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 24px; }
+/* h1 task-stats: only the distribution bar + headline KPIs fit — drop the
+   (wrapping) legend and tighten so nothing clips at the minimum size */
+@container widget (max-height: 120px) {
+  .ov-legend { display: none; }
+  .ov-kpis { margin-top: 8px; gap: 14px; }
+  .ov-kpi .num { font-size: 16px; }
+}
+.ts-trend .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 24px; max-width: 240px; }  /* compact — don't stretch across a wide card */
 .ts-trend .bars i { flex: 1; border-radius: 2px 2px 0 0; background: var(--bg-hover); display: block; min-width: 0; }
 .ts-trend .bars i.hi { background: var(--chart-1); opacity: .85; }
 .ts-trend .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 5px; flex-shrink: 0; }
