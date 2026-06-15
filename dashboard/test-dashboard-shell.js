@@ -264,8 +264,11 @@ async function run() {
       fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
       fire(col, 'dragover', { clientY: cards[0].getBoundingClientRect().top + 1 });
     });
-    const lineUp = await waitFor(() => page.$('.column[data-status="review"] .drop-line'), 'drop indicator appears on dragover', 3000).catch(() => null);
-    ok(lineUp, 'drop indicator line renders during a drag');
+    const lineUp = await waitFor(async () => page.evaluate(() => {
+      const l = document.querySelector('.column[data-status="review"] .drop-line');
+      return l && l.offsetHeight > 0; // must be visibly tall, not just present in the DOM
+    }), 'drop indicator appears on dragover', 3000).catch(() => null);
+    ok(lineUp, 'drop indicator line renders with visible height during a drag');
     // Fire a spurious dragleave with no relatedTarget (the flicker trigger).
     await page.evaluate(() => {
       const col = document.querySelector('.column[data-status="review"]');
@@ -324,6 +327,41 @@ async function run() {
       return ids.length > 1 && ids.every((n, i) => i === 0 || ids[i - 1] >= n);
     }), 'backlog sorted newest-first', 4000).catch(() => false);
     ok(newestOk, 'Newest-first mode sorts by id and ignores manual ranks (T-130 #3)');
+
+    // --- Flow 14 (T-130): indicator stays VISIBLE when the column overflows ---
+    // The real backlog/done bug: .column-body is a flex column that scrolls when
+    // full; without flex-shrink:0 the 2px line collapses to 0 height — present in
+    // the DOM (so existence checks passed) but invisible. Force overflow with a
+    // short viewport + many cards, then assert the line has real height.
+    await page.click('.sort-mode button[aria-haspopup="listbox"]'); // back to Custom so the indicator is active
+    await page.waitForSelector('.sort-mode-menu', { timeout: 3000 });
+    await page.evaluate(() => {
+      const item = Array.from(document.querySelectorAll('.sort-mode-item')).find(b => /Custom/.test(b.textContent || ''));
+      item?.click();
+    });
+    await page.setViewport({ width: 1400, height: 360 }); // short → backlog overflows
+    for (let i = 0; i < 16; i++) await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: `Overflow filler ${i}` });
+    await page.evaluate(() => window.appState?._refreshBoard && window.appState._refreshBoard());
+    await waitFor(() => page.evaluate(() => {
+      const body = document.querySelector('.column[data-status="backlog"] .column-body');
+      return body && body.scrollHeight > body.clientHeight + 10; // actually overflowing
+    }), 'backlog column overflows', 5000).catch(() => null);
+    await page.evaluate(() => {
+      const col = document.querySelector('.column[data-status="backlog"]');
+      const cards = [...col.querySelectorAll('[data-react-tasks]')];
+      window.__dt = new DataTransfer();
+      window.__src = cards[cards.length - 1];
+      const fire = (el, type, extra = {}) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt, ...extra }));
+      fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
+      const tgt = cards[2]; const r = tgt.getBoundingClientRect();
+      fire(tgt, 'dragover', { clientY: r.top + 2 });
+    });
+    const visibleInOverflow = await waitFor(async () => page.evaluate(() => {
+      const l = document.querySelector('.column[data-status="backlog"] .drop-line');
+      return l && l.offsetHeight >= 2; // NOT collapsed by the flex algorithm
+    }), 'indicator visible in overflowing column', 3000).catch(() => false);
+    ok(visibleInOverflow, 'drop indicator keeps visible height in an overflowing column (flex-shrink fix)');
+    await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');
