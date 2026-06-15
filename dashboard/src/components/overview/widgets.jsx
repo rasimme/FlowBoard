@@ -5,6 +5,7 @@ import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
+import { apiFetch } from '../../utils/apiFetch.js';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -47,7 +48,7 @@ function useProjectFile(project, filename) {
     if (!project) return;
     let alive = true;
     if (_fileCache.has(key)) setContent(_fileCache.get(key));
-    fetch(`/api/projects/${project}/files/${filename}`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/files/${filename}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         const c = d?.content ?? null;
@@ -168,7 +169,7 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
 
   useEffect(() => {
     let alive = true;
-    fetch('/api/tasks/stuck', { credentials: 'include' })
+    apiFetch('/api/tasks/stuck')
       .then(r => r.json())
       .then(d => {
         if (!alive) return;
@@ -594,7 +595,7 @@ function useActivity(project, since, limit) {
     const qs = new URLSearchParams();
     if (since) qs.set('since', since);
     qs.set('limit', String(limit || 30));
-    fetch(`/api/projects/${project}/activity?${qs}`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/activity?${qs}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         const a = d?.activity || [];

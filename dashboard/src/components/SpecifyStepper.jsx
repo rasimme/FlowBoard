@@ -5,6 +5,7 @@ import { Modal, Button, Textarea, Spinner, Checkbox } from './index.js';
 import MarkdownPreview from './MarkdownPreview.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
+import { apiFetch } from '../utils/apiFetch.js';
 
 // Mirrors MAX_CLARIFICATIONS in specify-policy.js (server-enforced cap).
 const MAX_QUESTIONS = 4;
@@ -51,7 +52,7 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
 
   async function fetchSession() {
     try {
-      const res = await fetch(`/api/specify/sessions/${sessionId}`);
+      const res = await apiFetch(`/api/specify/sessions/${sessionId}`);
       if (!res.ok) throw new Error('Failed to load session');
       const data = await res.json();
       applySession(data);
@@ -79,7 +80,7 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
 
   async function requestNext(id = sessionId) {
     try {
-      const res = await fetch(`/api/specify/sessions/${id}/next`, { method: 'POST' });
+      const res = await apiFetch(`/api/specify/sessions/${id}/next`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to start analysis');
       const result = await res.json();
       applySession(result.session);
@@ -92,9 +93,8 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/specify/sessions/${sessionId}/${path}`, {
+      const res = await apiFetch(`/api/specify/sessions/${sessionId}/${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       });
       if (!res.ok) {
@@ -176,7 +176,7 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
     try {
       const current = session?.status;
       if (current && !['done', 'error', 'aborted'].includes(current)) {
-        await fetch(`/api/specify/sessions/${sessionId}/abort`, { method: 'POST' });
+        await apiFetch(`/api/specify/sessions/${sessionId}/abort`, { method: 'POST' });
       }
     } catch {}
     setIsOpen(false);

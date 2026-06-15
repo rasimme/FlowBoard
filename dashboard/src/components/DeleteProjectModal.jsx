@@ -4,6 +4,7 @@ import Modal from './Modal.jsx';
 import Button from './Button.jsx';
 import Input from './Input.jsx';
 import Alert from './Alert.jsx';
+import { apiFetch } from '../utils/apiFetch.js';
 
 export default function DeleteProjectModal({ open, onClose, project, onDeleted }) {
   const [stage, setStage] = useState(1); // 1 = intent, 2 = type-to-confirm
@@ -34,9 +35,8 @@ export default function DeleteProjectModal({ open, onClose, project, onDeleted }
       // hardDelete=true is the explicit acknowledgement the server now requires
       // (T-357) — the typed-name confirmation modal above is the deliberate
       // intent; this flag carries it to the API so a bare confirm can't delete.
-      const res = await fetch(`/api/projects/${name}?confirm=${name}&hardDelete=true`, {
+      const res = await apiFetch(`/api/projects/${name}?confirm=${name}&hardDelete=true`, {
         method: 'DELETE',
-        credentials: 'include',
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

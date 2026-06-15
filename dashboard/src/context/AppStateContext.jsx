@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { apiFetch } from '../utils/apiFetch.js';
 
 const AppStateContext = createContext(null);
 const APPSTATE_EVENT = 'appstate:change';
@@ -75,7 +76,7 @@ export function AppStateProvider({ children }) {
         return;
       }
       try {
-        const res = await fetch('/api/agents', { credentials: 'include' });
+        const res = await apiFetch('/api/agents');
         if (!res.ok) return;
         const data = await res.json();
         const agents = Array.isArray(data?.agents) ? data.agents : [];

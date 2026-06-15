@@ -4,6 +4,7 @@ import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus } from 'lu
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
+import { apiFetch } from '../utils/apiFetch.js';
 import CreateProjectModal from './CreateProjectModal.jsx';
 import Modal from './Modal.jsx';
 import Button from './Button.jsx';
@@ -65,10 +66,8 @@ function compareProjects(a, b) {
 }
 
 async function putProject(name, patch) {
-  const res = await fetch(`/api/projects/${encodeURIComponent(name)}`, {
+  const res = await apiFetch(`/api/projects/${encodeURIComponent(name)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify(patch),
   });
   if (!res.ok) {

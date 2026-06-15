@@ -97,4 +97,51 @@ assert.match(detailPanel.text, /from '\.\.\/state\/taskState\.mjs'/, 'DetailPane
 assert.doesNotMatch(detailPanel.text, /refreshKanban/, 'DetailPanel no longer uses legacy refreshKanban')
 console.log('✅ runtime guard: task surfaces use runtime modules')
 
+// --- T-356 architecture invariants (keep the React migration from regressing) ---
+// These fail the gate if future work reintroduces the global anti-patterns the
+// migration removed. See docs/adr/0026-frontend-architecture-invariants.md.
+
+// 1. No reintroduced window._* command/navigation bridges. Cross-view commands
+//    go through DashboardContext (useDashboard) and navigation intents through
+//    NavigationContext (useNavigation). We ban ASSIGNMENT / delete of the old
+//    globals (prose comments that merely mention them are fine).
+const BANNED_GLOBALS = '(?:viewProject|activateProject|deactivateProject|toggleSidebar|switchTab|refreshProjects|openSpec|scrollToTaskId|scrollToNoteId|scrollToColumn|pendingNewTask|pendingNewNote|pendingNewFile)'
+const bridgeReintroPatterns = [
+  new RegExp(`window\\._${BANNED_GLOBALS}\\b\\s*=`),
+  new RegExp(`delete\\s+window\\._${BANNED_GLOBALS}\\b`),
+]
+const bridgeOffenders = sourceFiles.flatMap(file => bridgeReintroPatterns
+  .filter(pattern => pattern.test(withoutLineComments(file.text)))
+  .map(pattern => `${file.path} matches ${pattern}`))
+assert.deepEqual(bridgeOffenders, [], 'no window._* command/navigation bridges — use DashboardContext / NavigationContext')
+console.log('✅ runtime guard: no window._* command/navigation bridges')
+
+// 2. Every /api call goes through apiFetch (auth: cookie + Telegram init-data).
+//    A bare fetch('/api…') 403s under the Telegram/JWT tunnel deployment. Only
+//    bootstrap.js (the pre-React auth bootstrap) may call fetch('/api') directly.
+const rawApiFetch = /(^|[^A-Za-z.])fetch\(\s*['"`]\/api/m
+const fetchOffenders = sourceFiles
+  .filter(file => file.path !== 'src/bootstrap.js')
+  .filter(file => rawApiFetch.test(withoutLineComments(file.text)))
+  .map(file => file.path)
+assert.deepEqual(fetchOffenders, [], 'all /api calls must go through apiFetch (except the bootstrap auth call)')
+console.log('✅ runtime guard: API calls go through apiFetch')
+
+// 3. window.appState is written only by the store (AppStateContext dispatch /
+//    agents fetch) and the pre-React bootstrap — never ad hoc elsewhere.
+const appStateWrite = /(?:Object\.assign\(\s*window\.appState|window\.appState\.[A-Za-z]+\s*=|window\.appState\s*=)/
+const ALLOWED_APPSTATE_WRITERS = new Set(['src/context/AppStateContext.jsx', 'src/bootstrap.js'])
+const appStateWriteOffenders = sourceFiles
+  .filter(file => !ALLOWED_APPSTATE_WRITERS.has(file.path))
+  .filter(file => appStateWrite.test(withoutLineComments(file.text)))
+  .map(file => file.path)
+assert.deepEqual(appStateWriteOffenders, [], 'window.appState is written only by AppStateContext/bootstrap — go through dispatch')
+console.log('✅ runtime guard: window.appState writes confined to the store')
+
+// 4. The 5s fingerprint watchdog stays gone — all updates flow through dispatch.
+const appStateContext = sourceFiles.find(file => file.path === 'src/context/AppStateContext.jsx')
+assert.ok(appStateContext, 'AppStateContext exists')
+assert.doesNotMatch(appStateContext.text, /setInterval/, 'AppStateContext must not reintroduce a polling watchdog')
+console.log('✅ runtime guard: no appState polling watchdog')
+
 console.log('✅ all runtime guardrail tests passed')

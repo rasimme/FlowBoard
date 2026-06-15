@@ -4,6 +4,7 @@ import Modal from './Modal.jsx';
 import Button from './Button.jsx';
 import Input from './Input.jsx';
 import FormGroup from './FormGroup.jsx';
+import { apiFetch } from '../utils/apiFetch.js';
 
 function slugify(s) {
   return (s || '')
@@ -74,10 +75,8 @@ export default function CreateProjectModal({
         displayName: trimmedName,
       };
       if (folder) body.group = folder;
-      const res = await fetch('/api/projects', {
+      const res = await apiFetch('/api/projects', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));

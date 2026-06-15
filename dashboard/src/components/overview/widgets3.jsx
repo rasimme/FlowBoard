@@ -6,6 +6,7 @@ import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
+import { apiFetch } from '../../utils/apiFetch.js';
 
 /**
  * GitHub widget family (T-316..T-319) — gh-pulls, gh-ci, gh-releases,
@@ -31,7 +32,7 @@ function useInsight(repo, view, branch) {
     let alive = true;
     setData(null); setError(null);
     const q = branch ? `&branch=${encodeURIComponent(branch)}` : '';
-    fetch(`/api/github/insight?repo=${encodeURIComponent(repo)}&view=${view}${q}`, { credentials: 'include' })
+    apiFetch(`/api/github/insight?repo=${encodeURIComponent(repo)}&view=${view}${q}`)
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!alive) return;
@@ -362,7 +363,7 @@ export function AgentQuestionsWidget({ widget, editing }) {
   useEffect(() => {
     if (!project) return;
     let alive = true;
-    fetch(`/api/projects/${project}/questions?limit=${widget?.props?.limit || 20}`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/questions?limit=${widget?.props?.limit || 20}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (alive) setQuestions(d?.questions || []); })
       .catch(() => { if (alive) setQuestions([]); });
@@ -374,10 +375,8 @@ export function AgentQuestionsWidget({ widget, editing }) {
     if (!text || busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/projects/${project}/tasks/${q.taskId}/comment`, {
+      const res = await apiFetch(`/api/projects/${project}/tasks/${q.taskId}/comment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ author: 'human', message: text, kind: 'answer', questionId: q.id }),
       });
       if (res.ok) {

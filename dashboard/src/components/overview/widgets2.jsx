@@ -6,6 +6,7 @@ import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
 import { refreshTasks } from '../../state/appStateBridge.mjs';
+import { apiFetch } from '../../utils/apiFetch.js';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
 const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
@@ -38,17 +39,15 @@ function Empty({ icon: Icon, title, hint }) {
 // persist a widget's props into overview.json — the same write path
 // agents use; local widget state keeps the UI fresh until the next mount
 export async function persistWidgetProps(project, widgetId, mutate) {
-  const cur = await fetch(`/api/projects/${project}/overview`, { credentials: 'include' })
+  const cur = await apiFetch(`/api/projects/${project}/overview`)
     .then(r => (r.ok ? r.json() : null));
   const ov = cur?.overview;
   const target = (ov?.widgets || []).find(w => w.id === widgetId);
   if (!target) return null;
   target.props = mutate(target.props || {});
   delete ov.source;
-  const res = await fetch(`/api/projects/${project}/overview`, {
+  const res = await apiFetch(`/api/projects/${project}/overview`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify(ov),
   });
   return res.ok ? target.props : null;
@@ -66,7 +65,7 @@ export function TokenAffordance({ editing, onSaved }) {
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     let alive = true;
-    fetch('/api/settings/github-token', { credentials: 'include' })
+    apiFetch('/api/settings/github-token')
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (alive) setState(d); })
       .catch(() => {});
@@ -78,10 +77,8 @@ export function TokenAffordance({ editing, onSaved }) {
     if (!val.trim() || saving) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/settings/github-token', {
+      const res = await apiFetch('/api/settings/github-token', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ token: val.trim() }),
       });
       if (res.ok) {
@@ -127,7 +124,7 @@ export function useProjectGithub(project) {
     if (!project) return;
     let alive = true;
     if (_ghBinding.has(project)) setBinding(_ghBinding.get(project));
-    fetch(`/api/projects/${project}/github`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/github`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (!d) return; _ghBinding.set(project, d.github); if (alive) setBinding(d.github); })
       .catch(() => {});
@@ -137,10 +134,8 @@ export function useProjectGithub(project) {
   }, [project]);
 
   async function saveBinding(repo, branch) {
-    const res = await fetch(`/api/projects/${project}/github`, {
+    const res = await apiFetch(`/api/projects/${project}/github`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({ repo, ...(branch ? { branch } : {}) }),
     });
     if (!res.ok) {
@@ -161,7 +156,7 @@ function useActivityFeed(project, limit) {
   useEffect(() => {
     if (!project) return;
     let alive = true;
-    fetch(`/api/projects/${project}/activity?limit=${limit}`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/activity?limit=${limit}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (alive) setItems(d?.activity || []); })
       .catch(() => { if (alive) setItems([]); });
@@ -190,10 +185,8 @@ function Ring({ pct, size = 54 }) {
 // create and manage them directly. Drilldown = definition-of-done
 // checklist (checkmarks come from task status, tasks ARE the items).
 async function putTaskTags(project, taskId, tags) {
-  const res = await fetch(`/api/projects/${project}/tasks/${taskId}`, {
+  const res = await apiFetch(`/api/projects/${project}/tasks/${taskId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify({ tags }),
   });
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `PUT ${taskId} failed`);
@@ -556,7 +549,7 @@ export function ContextIndexWidget({ widget, editing }) {
   useEffect(() => {
     if (!project) return;
     let alive = true;
-    fetch(`/api/projects/${project}/files`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/files`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (!alive) return;
@@ -607,10 +600,8 @@ export function QuickDropWidget({ editing }) {
         continue;
       }
       const content = await file.text();
-      const res = await fetch(`/api/projects/${project}/files/context`, {
+      const res = await apiFetch(`/api/projects/${project}/files/context`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ filename: file.name, content }),
       });
       if (res.ok) {
@@ -656,7 +647,7 @@ export function NotesWidget({ editing }) {
   useEffect(() => {
     if (!project) return;
     let alive = true;
-    fetch(`/api/projects/${project}/files/context/NOTES.md`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/files/context/NOTES.md`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (!alive) return;
@@ -672,16 +663,12 @@ export function NotesWidget({ editing }) {
     setSaving(true);
     try {
       const res = existsRef.current
-        ? await fetch(`/api/projects/${project}/files/context/NOTES.md`, {
+        ? await apiFetch(`/api/projects/${project}/files/context/NOTES.md`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ content: text }),
           })
-        : await fetch(`/api/projects/${project}/files/context`, {
+        : await apiFetch(`/api/projects/${project}/files/context`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ filename: 'NOTES.md', content: text }),
           });
       if (res.ok) {
@@ -831,7 +818,7 @@ export function StallDetectionWidget({ widget }) {
   useEffect(() => {
     if (!project) return;
     let alive = true;
-    fetch(`/api/projects/${project}/activity/daily?days=14`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/activity/daily?days=14`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (alive) setAgg(d); })
       .catch(() => { if (alive) setAgg({ days: [], latest: null, total: 0 }); });
@@ -915,7 +902,7 @@ export function RepoStatusWidget({ widget, editing }) {
     let alive = true;
     setData(null); setError(null);
     const q = branch ? `&branch=${encodeURIComponent(branch)}` : '';
-    fetch(`/api/github/repo-status?repo=${encodeURIComponent(repo)}${q}`, { credentials: 'include' })
+    apiFetch(`/api/github/repo-status?repo=${encodeURIComponent(repo)}${q}`)
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!alive) return;
@@ -1047,7 +1034,7 @@ export function FileViewerWidget({ widget, editing }) {
   useEffect(() => {
     if (!project) return;
     let alive = true;
-    fetch(`/api/projects/${project}/files`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/files`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (!alive || !d) return;
@@ -1068,7 +1055,7 @@ export function FileViewerWidget({ widget, editing }) {
     if (!project || !path) return;
     let alive = true;
     setContent(null); setError(null);
-    fetch(`/api/projects/${project}/files/${path}`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/files/${path}`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(d => { if (alive) setContent(d?.content ?? ''); })
       .catch(e => { if (alive) setError(`Could not read ${path}: ${e.message}`); });

@@ -2,6 +2,8 @@
 // and the only place that owns React notification + project task refresh.
 // See ADR-0019 and docs/concepts/frontend-runtime.md.
 
+import { apiFetch } from '../utils/apiFetch.js'
+
 function getWindow() {
   if (typeof globalThis !== 'undefined' && globalThis.window) return globalThis.window
   return null
@@ -56,14 +58,7 @@ export async function refreshTasks(projectOverride = null) {
   const project = projectOverride || getCurrentProject()
   if (!project || typeof globalThis.fetch !== 'function') return null
 
-  const headers = {}
-  const tg = getWindow()?.Telegram?.WebApp
-  if (tg?.initData) headers['X-Telegram-Init-Data'] = tg.initData
-
-  const res = await fetch(`/api/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`, {
-    credentials: 'include',
-    headers,
-  })
+  const res = await apiFetch(`/api/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`)
 
   if (!res.ok) {
     let detail = ''

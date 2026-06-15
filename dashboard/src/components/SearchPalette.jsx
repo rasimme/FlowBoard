@@ -7,6 +7,7 @@ import Spinner from './Spinner.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
+import { apiFetch } from '../utils/apiFetch.js';
 
 /**
  * SearchPalette — global unified search (T-301, T-349).
@@ -47,7 +48,7 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
     const seq = ++seqRef.current;
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}&limit=15`, { credentials: 'include' });
+        const res = await apiFetch(`/api/search?q=${encodeURIComponent(query.trim())}&limit=15`);
         const data = await res.json().catch(() => ({}));
         if (seq !== seqRef.current) return; // stale response
         // flatten the three kinds into one keyboard-navigable list

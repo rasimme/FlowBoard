@@ -4,6 +4,7 @@ import Button from './Button.jsx';
 import Dropdown from './Dropdown.jsx';
 import FormGroup from './FormGroup.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
+import { apiFetch } from '../utils/apiFetch.js';
 
 /**
  * MoveTaskModal — move a task to another project or change its parent (T-302).
@@ -27,7 +28,7 @@ export default function MoveTaskModal({ open, onClose, task, project, projects =
     setError(null);
     setSubmitting(false);
     // top-level tasks of this project are the parent candidates
-    fetch(`/api/projects/${project}/tasks`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/tasks`)
       .then(r => r.json())
       .then(d => {
         const opts = (d.tasks || [])
@@ -48,10 +49,8 @@ export default function MoveTaskModal({ open, onClose, task, project, projects =
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/projects/${project}/tasks/${task.id}/${path}`, {
+      const res = await apiFetch(`/api/projects/${project}/tasks/${task.id}/${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));

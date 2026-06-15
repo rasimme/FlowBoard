@@ -44,6 +44,7 @@ import Button from '../components/Button.jsx';
 import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { WIDGET_REGISTRY } from '../components/overview/registry.js';
+import { apiFetch } from '../utils/apiFetch.js';
 import 'react-grid-layout/css/styles.css';
 import '../../styles/overview.css';
 
@@ -112,7 +113,7 @@ export default function OverviewView() {
     setError(null);
     setEditing(false);
     setDraft(null);
-    fetch(`/api/projects/${project}/overview`, { credentials: 'include' })
+    apiFetch(`/api/projects/${project}/overview`)
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(d => { if (alive) setOverview(d.overview); })
       .catch(e => { if (alive) setError(e.message); });
@@ -133,7 +134,7 @@ export default function OverviewView() {
     liveLayout.current = null;
     setEditing(true);
     if (!manifest) {
-      fetch('/api/overview/widgets', { credentials: 'include' })
+      apiFetch('/api/overview/widgets')
         .then(r => r.json())
         .then(setManifest)
         .catch(() => {});
@@ -217,10 +218,8 @@ export default function OverviewView() {
       });
     }
     try {
-      const res = await fetch(`/api/projects/${project}/overview`, {
+      const res = await apiFetch(`/api/projects/${project}/overview`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ version: 1, layout: 'grid', ...(draftPreset ? { preset: draftPreset, widgets } : { widgets }) }),
       });
       const data = await res.json().catch(() => ({}));

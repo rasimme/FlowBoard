@@ -3,12 +3,11 @@ import { Archive, ArchiveRestore, Folder, FolderPlus, MoreHorizontal, Pencil, Tr
 import Popover from './Popover.jsx';
 import Input from './Input.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
+import { apiFetch } from '../utils/apiFetch.js';
 
 async function putProject(name, patch) {
-  const res = await fetch(`/api/projects/${encodeURIComponent(name)}`, {
+  const res = await apiFetch(`/api/projects/${encodeURIComponent(name)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
     body: JSON.stringify(patch),
   });
   if (!res.ok) {
