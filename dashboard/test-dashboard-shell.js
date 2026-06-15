@@ -546,6 +546,37 @@ async function run() {
     ok(autoScrolled || !asStart.scrollable, 'holding a drag at the board edge auto-scrolls to off-screen columns (T-368-1)');
     const snapBack = await page.evaluate(() => { window.__h?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: window.innerWidth - 8, clientY: 400, button: 0, pointerId: 1 })); return !document.querySelector('.kanban').classList.contains('is-dragging'); });
     ok(snapBack, 'scroll-snap restored after drop (.is-dragging removed)');
+
+    // --- Flow 22 (T-370): keyboard reorder (Space pick up, arrows move, Space drop) ---
+    await page.setViewport({ width: 1400, height: 900 });
+    await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
+    await page.click('#tabBar .tab[data-tab="tasks"]');
+    await waitFor(() => page.$('.kanban'), 'kanban for keyboard reorder', 5000);
+    const kb = [];
+    for (const title of ['KB A', 'KB B', 'KB C']) {
+      const id = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title })).body?.task?.id;
+      await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/tasks/${id}`, { status: 'review' });
+      kb.push(id);
+    }
+    await page.evaluate(() => window.appState?._refreshBoard && window.appState._refreshBoard());
+    await waitFor(() => page.$(`.column[data-status="review"] [data-task-id="${kb[2]}"]`), 'keyboard seeds on board', 5000);
+    await page.focus(`.column[data-status="review"] [data-task-id="${kb[2]}"]`); // focus the last card
+    await page.keyboard.press(' '); // pick up
+    const pickedUp = await page.evaluate(() => {
+      const live = document.querySelector('[role="status"][aria-live]')?.textContent || '';
+      return /Picked up/.test(live) && !!document.querySelector('.column[data-status="review"].drag-over');
+    });
+    ok(pickedUp, 'Space picks up the card (announced + column highlighted) (T-370)');
+    for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowUp'); // move to the top
+    await page.keyboard.press(' '); // drop
+    const kbReordered = await waitFor(async () => {
+      const list = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/tasks`)).body?.tasks || [];
+      const o = Object.fromEntries(list.map(t => [t.id, t.order]));
+      return typeof o[kb[2]] === 'number' && o[kb[2]] < o[kb[0]] && o[kb[2]] < o[kb[1]];
+    }, 'keyboard reorder persisted', 5000).catch(() => false);
+    ok(kbReordered, 'keyboard arrows + Space reorder the card to the top and persist (T-370)');
+    const droppedMsg = await page.evaluate(() => /Dropped/.test(document.querySelector('[role="status"][aria-live]')?.textContent || ''));
+    ok(droppedMsg, 'drop is announced to screen readers (T-370)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

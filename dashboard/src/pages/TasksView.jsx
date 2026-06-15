@@ -259,7 +259,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, wasDraggedRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, onCardKeyDown, wasDraggedRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -414,10 +414,9 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           } : undefined}
           onClick={!removing ? handleClick : undefined}
           onKeyDown={!removing ? (e) => {
-            if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
-              e.preventDefault();
-              handleClick(e);
-            }
+            // T-370: full keyboard reorder is handled centrally; only when the
+            // card itself (not a child control) holds focus.
+            if (e.target === e.currentTarget) onCardKeyDown?.(e, task.id, task.status);
           } : undefined}
           /* T-371: NOT role="button" — the card holds real buttons (grip, delete,
              archive, status…) and "interactive content inside a button role" is
@@ -932,7 +931,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, wasDraggedRef, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, onCardKeyDown, wasDraggedRef, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -1002,6 +1001,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                   onTaskTrashed={onTaskTrashed}
                   onTaskUpdated={onTaskUpdated}
                   onHandlePointerDown={onHandlePointerDown}
+                  onCardKeyDown={onCardKeyDown}
                   wasDraggedRef={wasDraggedRef}
                   isNew={t.id === lastCreatedId}
                   addingSubtask={addingSubtaskParentId === t.id}
@@ -1134,6 +1134,10 @@ export default function TasksView() {
   // in rendered-list space (0 = before first card, N = after last). Mirrors the
   // sidebar's drop-target line so a reorder shows where the card will land.
   const [dropHint, setDropHint] = useState(null);
+  // T-370: keyboard reorder. kbRef holds the in-progress keyboard "grab"
+  // { id, status, index }; liveMsg drives the aria-live announcements.
+  const kbRef = useRef(null);
+  const [liveMsg, setLiveMsg] = useState('');
   const handleDragHint = useCallback((status, index) => {
     setDropHint(prev => (prev && prev.status === status && prev.index === index) ? prev : { status, index });
   }, []);
@@ -1545,6 +1549,59 @@ export default function TasksView() {
     window.addEventListener('pointercancel', onUp);
   }, [handleDrop, handleDragHint]);
 
+  // T-370: keyboard reorder for a focused card. Enter opens the detail; Space
+  // "picks up" the card; while grabbed, Arrow keys move it (up/down within a
+  // column, left/right across columns), Space/Enter drops (reusing handleDrop),
+  // Escape cancels. Column counts are read from the DOM so there's no stale
+  // closure; each step is announced via the aria-live region.
+  const handleCardKeyDown = useCallback((e, taskId, status) => {
+    const colLen = (s) => document.querySelectorAll(`.column[data-status="${s}"] [data-react-tasks]`).length;
+    const clearVisual = () => {
+      document.querySelectorAll('.column.drag-over').forEach(c => c.classList.remove('drag-over'));
+      setDropHint(null);
+    };
+    const st = kbRef.current;
+    if (!st) {
+      if (e.key === 'Enter') { e.preventDefault(); if (!wasDraggedRef.current && window.openTaskDetail) window.openTaskDetail(taskId); return; }
+      if (e.key === ' ') {
+        e.preventDefault();
+        const cards = [...document.querySelectorAll(`.column[data-status="${status}"] [data-react-tasks]`)];
+        const index = Math.max(0, cards.findIndex(c => c.dataset.taskId === taskId));
+        kbRef.current = { id: taskId, status, index };
+        draggedId.current = taskId;
+        document.querySelector(`.column[data-status="${status}"]`)?.classList.add('drag-over');
+        setDropHint({ status, index });
+        setLiveMsg(`Picked up ${taskId}. Use arrow keys to move it, Space or Enter to drop, Escape to cancel.`);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault(); clearVisual(); kbRef.current = null; draggedId.current = null;
+      setLiveMsg(`Cancelled moving ${st.id}.`);
+      return;
+    }
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      const { status: s, index } = st;
+      clearVisual(); kbRef.current = null;
+      handleDrop(s, index); // draggedId.current still set — handleDrop reads it synchronously
+      draggedId.current = null;
+      setLiveMsg(`Dropped ${st.id} in ${STATUS_LABELS[s]}, position ${index + 1}.`);
+      return;
+    }
+    let { status: s, index } = st;
+    if (e.key === 'ArrowUp') { e.preventDefault(); index = Math.max(0, index - 1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); index = Math.min(colLen(s), index + 1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); const i = STATUS_KEYS.indexOf(s); if (i > 0) { s = STATUS_KEYS[i - 1]; index = Math.min(index, colLen(s)); } }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); const i = STATUS_KEYS.indexOf(s); if (i < STATUS_KEYS.length - 1) { s = STATUS_KEYS[i + 1]; index = Math.min(index, colLen(s)); } }
+    else return;
+    st.status = s; st.index = index;
+    document.querySelectorAll('.column.drag-over').forEach(c => c.classList.remove('drag-over'));
+    document.querySelector(`.column[data-status="${s}"]`)?.classList.add('drag-over');
+    setDropHint({ status: s, index });
+    setLiveMsg(`${st.id}: ${STATUS_LABELS[s]} column, position ${index + 1}.`);
+  }, [handleDrop]);
+
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);
     const groups = {};
@@ -1591,6 +1648,8 @@ export default function TasksView() {
   // Each column shows its own empty state; the backlog column carries the form.
   return (
     <div className="flex flex-col h-full" data-react-tasks>
+      {/* T-370: announces keyboard-reorder steps to screen readers */}
+      <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
       <ActiveAgentsBar />
       <div className="flex items-center justify-end pb-2 gap-2 shrink-0">
         <div className="sort-mode" style={{ position: 'relative' }}>
@@ -1675,6 +1734,7 @@ export default function TasksView() {
             onTaskTrashed={handleTaskTrashed}
             onTaskUpdated={handleTaskUpdated}
             onHandlePointerDown={startPointerDrag}
+            onCardKeyDown={handleCardKeyDown}
             wasDraggedRef={wasDraggedRef}
             dropIndex={sortMode === 'custom' && dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
