@@ -122,18 +122,25 @@ async function run() {
     await page.keyboard.press('Escape');
     await waitFor(async () => !(await page.$('[data-detail-panel]')), 'detail panel closes');
 
-    // --- Flow 6: navigation flag (_scrollToTaskId) reveals + highlights a card ---
-    await page.click('#tabBar .tab[data-tab="ideas"]');
+    // --- Flow 6: global search picks a task → switches to Tasks + highlights it
+    //     (the real NavigationContext intent path; replaces the old window flag) ---
+    await page.click('#tabBar .tab[data-tab="ideas"]'); // start off the Tasks tab
     await waitFor(() => page.$('[data-react-canvas]'), 'on ideas');
-    await page.evaluate((id) => { window._scrollToTaskId = id; }, t2);
-    await page.click('#tabBar .tab[data-tab="tasks"]');
-    const highlighted = await waitFor(async () => {
-      return page.evaluate((id) => {
-        const el = document.querySelector(`[data-task-id="${id}"]`);
-        return el && el.classList.contains('highlighted-from-back');
-      }, t2);
-    }, 'scroll-to-task highlight', 4000).catch(() => false);
-    ok(highlighted, 'navigation flag reveals + highlights the target card');
+    await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control');
+    await page.waitForSelector('input[aria-label="Search query"]', { timeout: 4000 });
+    await page.type('input[aria-label="Search query"]', 'Shell task two');
+    const picked = await waitFor(async () => page.evaluate((id) => {
+      const opt = Array.from(document.querySelectorAll('[role="option"] button'))
+        .find(b => (b.textContent || '').includes(id));
+      if (opt) { opt.click(); return true; }
+      return false;
+    }, t2), 'task result appears in global search', 6000).catch(() => false);
+    ok(picked, 'global search lists the task and it can be picked');
+    const highlighted = await waitFor(async () => page.evaluate((id) => {
+      const el = document.querySelector(`[data-task-id="${id}"]`);
+      return el && el.classList.contains('highlighted-from-back');
+    }, t2), 'search-picked task highlighted', 5000).catch(() => false);
+    ok(highlighted, 'picking a task in search switches to Tasks and highlights it (NavigationContext intent)');
 
     // --- Flow 7: identity (agentId/authUser) propagated to React + rendered ---
     // This is the path the removed 5s watchdog used to cover (T-356). With

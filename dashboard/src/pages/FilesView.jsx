@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
+import { useNavigation } from '../context/NavigationContext.jsx';
 import { Button, Input, Modal } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
@@ -424,6 +425,7 @@ function JsonPreview({ content }) {
 export default function FilesView() {
   const { state } = useAppState();
   const { switchTab } = useDashboard();
+  const { intent: navIntent, clearPendingNewFile, goToTask } = useNavigation();
   const viewedProject = state?.viewedProject;
 
   const [fileTree, setFileTree] = useState(null);
@@ -443,13 +445,13 @@ export default function FilesView() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  // overview quick action "New File" — consumed like window._scrollToTaskId
+  // overview quick action "New File" — consume the navigation intent (T-356)
   useEffect(() => {
-    if (window._pendingNewFile) {
-      delete window._pendingNewFile;
+    if (navIntent.pendingNewFile) {
+      clearPendingNewFile();
       setCreateOpen(true);
     }
-  });
+  }, [navIntent.pendingNewFile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [newFileTitle, setNewFileTitle] = useState('');
   const [creatingFile, setCreatingFile] = useState(false);
   const abortRef = useRef(null);
@@ -928,7 +930,7 @@ export default function FilesView() {
                 if (triggerFromPanel && window.openTaskDetail) {
                   window.openTaskDetail(taskId);
                 } else {
-                  window._scrollToTaskId = taskId;
+                  goToTask(taskId);
                 }
               }
             }}

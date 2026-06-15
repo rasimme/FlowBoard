@@ -75,17 +75,19 @@ async function run() {
     await page.waitForSelector('.note', { timeout: 8000 });
     await new Promise(r => setTimeout(r, 600));
 
-    // Trigger the search-navigation: set the flag + force a CanvasView render.
-    await page.evaluate((id) => {
-      window._scrollToNoteId = id;
-      window.dispatchEvent(new CustomEvent('flowboard:canvas-reload'));
-    }, targetId);
-
-    // The flag is consumed exactly once.
-    const consumed = await waitFor(async () => {
-      return await page.evaluate(() => window._scrollToNoteId === undefined);
-    }, 'scrollToNoteId consumed', 4000).catch(() => false);
-    ok(consumed, 'window._scrollToNoteId is consumed (deleted) by the canvas');
+    // Trigger via the real path (T-356): global search picks the note, which
+    // sets the goToNote navigation intent; CanvasView consumes it (centers +
+    // highlights). Replaces the old window._scrollToNoteId global.
+    await page.keyboard.down('Control'); await page.keyboard.press('k'); await page.keyboard.up('Control');
+    await page.waitForSelector('input[aria-label="Search query"]', { timeout: 4000 });
+    await page.type('input[aria-label="Search query"]', 'find me');
+    const picked = await waitFor(async () => page.evaluate(() => {
+      const opt = Array.from(document.querySelectorAll('[role="option"] button'))
+        .find(b => (b.textContent || '').includes('find me'));
+      if (opt) { opt.click(); return true; }
+      return false;
+    }), 'note result appears in global search', 6000).catch(() => false);
+    ok(picked, 'global search lists the note and it can be picked');
 
     // The target note element flashes the highlight class.
     const highlighted = await waitFor(async () => {

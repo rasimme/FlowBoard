@@ -4,6 +4,7 @@ import AgentChip from '../AgentChip.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
+import { useNavigation } from '../../context/NavigationContext.jsx';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -81,6 +82,7 @@ function leaseState(task) {
 
 export function ActiveAgentsWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const tasks = useProjectTasks();
   const { state } = useAppState();
   const maxRows = widget?.props?.maxRows || 14;
@@ -124,7 +126,7 @@ export function ActiveAgentsWidget({ widget, editing, onRemove }) {
               key={agent + task.id}
               className="ov-agent-row"
               style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = task.id; }}
+              onClick={editing ? undefined : () => { goTab('tasks'); goToTask(task.id); }}
               title={editing ? undefined : `Open ${task.id} on the board`}
             >
               <span className="ov-agent-id"><AgentChip name={agent} size="md" /></span>
@@ -158,6 +160,7 @@ const STATUS_LABELS = { backlog: 'Backlog', open: 'Open', 'in-progress': 'In Pro
 
 export function TaskStatsWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { goToTask, goToColumn } = useNavigation();
   const allTasks = useProjectTasks();
   const tasks = allTasks.filter(t => t.status !== 'archived');
   const { state } = useAppState();
@@ -178,8 +181,8 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
 
   // stats as a launchpad (inert while editing): a status jumps to that
   // column on the board, the stuck chip to the oldest stuck task itself.
-  const jumpTo = (id) => { if (editing || !id) return; goTab('tasks'); window._scrollToTaskId = id; };
-  const showColumn = (s) => { if (editing) return; window._scrollToColumn = s; goTab('tasks'); };
+  const jumpTo = (id) => { if (editing || !id) return; goTab('tasks'); goToTask(id); };
+  const showColumn = (s) => { if (editing) return; goToColumn(s); goTab('tasks'); };
 
   const counts = Object.fromEntries(STATUS_ORDER.map(s => [s, 0]));
   for (const t of tasks) if (counts[t.status] !== undefined) counts[t.status]++;
@@ -269,6 +272,7 @@ const PRIO_RANK = { high: 0, medium: 1, low: 2 };
 
 export function NextUpWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const tasks = useProjectTasks();
   const limit = widget?.props?.limit || 12;
   // "next" = claimable first: open ranks above backlog, then priority,
@@ -293,7 +297,7 @@ export function NextUpWidget({ widget, editing, onRemove }) {
           </div>
         )}
         {next.map(t => (
-          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); goToTask(t.id); }}>
             <span className="ov-task-id">{t.id}</span>
             <span className="ov-task-title">{t.title}</span>
             <span className={'ov-pill ' + (t.priority || 'medium')}>{t.priority || 'medium'}</span>
@@ -405,19 +409,20 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
 /* ---------- quick-links ---------- */
 export function QuickLinksWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { requestNewTask, requestNewNote, requestNewFile } = useNavigation();
   return (
     <OvWidget title={widget?.title || 'Quick Actions'}>
       <div className="ov-links">
         <button type="button" className="ov-link main" title="Create a task in the Kanban backlog"
-          onClick={() => { window._pendingNewTask = true; goTab('tasks'); }}>
+          onClick={() => { requestNewTask(); goTab('tasks'); }}>
           <Plus size={15} /><span>New Task</span><span className="sub">Kanban</span>
         </button>
         <button type="button" className="ov-link" title="Create an idea note on the Ideas canvas"
-          onClick={() => { window._pendingNewNote = true; goTab('ideas'); }}>
+          onClick={() => { requestNewNote(); goTab('ideas'); }}>
           <Lightbulb size={15} /><span>New Idea</span><span className="sub">Ideas canvas</span>
         </button>
         <button type="button" className="ov-link" title="Create a markdown file in context/"
-          onClick={() => { window._pendingNewFile = true; goTab('files'); }}>
+          onClick={() => { requestNewFile(); goTab('files'); }}>
           <FilePlus size={15} /><span>New File</span><span className="sub">context/</span>
         </button>
       </div>
@@ -428,6 +433,7 @@ export function QuickLinksWidget({ widget, editing, onRemove }) {
 /* ---------- kanban-mini ---------- */
 export function KanbanMiniWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const tasks = useProjectTasks().filter(t => !t.parentId && t.status !== 'archived');
   const cols = STATUS_ORDER.map(s => {
     const inCol = tasks.filter(t => t.status === s);
@@ -452,7 +458,7 @@ export function KanbanMiniWidget({ widget, editing, onRemove }) {
             <ScrollArea className="flex-1 min-h-0" innerClassName="ov-kbars">
               {c.bars.map(t => (
                 <span key={t.id} className="ov-kbar" title={`${t.id} ${t.title}`}
-                  onClick={editing ? undefined : e => { e.stopPropagation(); goTab('tasks'); window._scrollToTaskId = t.id; }}>
+                  onClick={editing ? undefined : e => { e.stopPropagation(); goTab('tasks'); goToTask(t.id); }}>
                   <span className="tid">{t.id}</span>
                   <span className="ttl">{t.title}</span>
                   {t.agent && <AgentChip name={t.agent} size="xs" />}
@@ -482,6 +488,7 @@ function timeAgo(ts) {
 /* ---------- current-focus: the prominent "who is on what, since when" ---------- */
 export function CurrentFocusWidget({ widget, editing }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const tasks = useProjectTasks();
   const claims = tasks
     .filter(t => t.agent && t.claimedAt)
@@ -505,7 +512,7 @@ export function CurrentFocusWidget({ widget, editing }) {
               key={t.id}
               className="ov-agent-row"
               style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}
+              onClick={editing ? undefined : () => { goTab('tasks'); goToTask(t.id); }}
             >
               <span className="ov-agent-id"><AgentChip name={t.agent} size="md" /></span>
               <span className="ov-agent-main">
@@ -525,6 +532,7 @@ export function CurrentFocusWidget({ widget, editing }) {
 /* ---------- blocked: needs-me — what is stuck on a human ---------- */
 export function BlockedWidget({ widget, editing }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const tasks = useProjectTasks().filter(t => t.blocked && t.status !== 'archived' && t.status !== 'done');
   return (
     <OvWidget title={widget?.title || 'Blocked'} meta={tasks.length ? `${tasks.length} waiting` : null}>
@@ -536,7 +544,7 @@ export function BlockedWidget({ widget, editing }) {
           </div>
         )}
         {tasks.slice(0, widget?.props?.limit || 14).map(t => (
-          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); goToTask(t.id); }}>
             <span className="ov-task-id">{t.id}</span>
             <span className="ov-task-title">{t.title}</span>
             <span className="ov-pill high">blocked</span>
@@ -550,6 +558,7 @@ export function BlockedWidget({ widget, editing }) {
 /* ---------- approvals: needs-me — the review lane is your inbox ---------- */
 export function ApprovalsWidget({ widget, editing }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const tasks = useProjectTasks()
     .filter(t => t.status === 'review')
     .sort((a, b) => String(a.created || '').localeCompare(String(b.created || '')));
@@ -563,7 +572,7 @@ export function ApprovalsWidget({ widget, editing }) {
           </div>
         )}
         {tasks.slice(0, widget?.props?.limit || 14).map(t => (
-          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+          <div key={t.id} className="ov-task-row" onClick={editing ? undefined : () => { goTab('tasks'); goToTask(t.id); }}>
             <span className="ov-task-id">{t.id}</span>
             <span className="ov-task-title">{t.title}</span>
             {t.agent && <AgentChip name={t.agent} size="xs" />}
@@ -599,6 +608,7 @@ function useActivity(project, since, limit) {
 }
 
 function ActivityRows({ items, editing, goTab, emptyTitle, emptyHint }) {
+  const { goToTask } = useNavigation();
   if (!items) return null;
   if (items.length === 0) {
     return (
@@ -615,7 +625,7 @@ function ActivityRows({ items, editing, goTab, emptyTitle, emptyHint }) {
           key={`${a.taskId || ''}:${a.timestamp || ''}:${i}`}
           className="ov-dec"
           style={{ cursor: editing ? undefined : 'pointer' }}
-          onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = a.taskId; }}
+          onClick={editing ? undefined : () => { goTab('tasks'); goToTask(a.taskId); }}
         >
           <span className="ov-dec-date">{timeAgo(a.timestamp)}</span>
           <span className="ov-dec-body">

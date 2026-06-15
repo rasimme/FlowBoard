@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, AlertCircle, RotateCcw, FastForward, CheckCi
 import { Modal, Button, Textarea, Spinner, Checkbox } from './index.js';
 import MarkdownPreview from './MarkdownPreview.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
+import { useNavigation } from '../context/NavigationContext.jsx';
 
 // Mirrors MAX_CLARIFICATIONS in specify-policy.js (server-enforced cap).
 const MAX_QUESTIONS = 4;
@@ -26,6 +27,7 @@ function BusyState({ label, hint }) {
 
 export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
   const { switchTab } = useDashboard();
+  const { goToTask } = useNavigation();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -165,7 +167,7 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
   }
 
   function viewInKanban() {
-    if (createdTasks[0]) window._scrollToTaskId = createdTasks[0];
+    if (createdTasks[0]) goToTask(createdTasks[0]);
     switchTab('tasks');
     finish();
   }

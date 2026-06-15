@@ -4,6 +4,7 @@ import { OvWidget } from './widgets.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
+import { useNavigation } from '../../context/NavigationContext.jsx';
 import { refreshTasks } from '../../state/appStateBridge.mjs';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
@@ -234,6 +235,7 @@ function MsTaskPicker({ tasks, excludeIds, busy, confirmLabel, onConfirm, onCanc
 }
 
 function MsChecklist({ items, editing, goTab, busy, onRemove }) {
+  const { goToTask } = useNavigation();
   return (
     <ScrollArea className="flex-1 min-h-0" innerClassName="ms-check">
       {items.length === 0 && <span className="gh-none">Empty milestone — it disappears once nothing carries the tag.</span>}
@@ -241,7 +243,7 @@ function MsChecklist({ items, editing, goTab, busy, onRemove }) {
         <div key={t.id} className={'ms-check-row' + (t.status === 'done' ? ' done' : '')}>
           <span className="box" aria-hidden="true">{t.status === 'done' ? '✓' : ''}</span>
           <span className="body" style={{ cursor: editing ? undefined : 'pointer' }}
-            onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = t.id; }}>
+            onClick={editing ? undefined : () => { goTab('tasks'); goToTask(t.id); }}>
             <span className="num">{t.id}</span>
             <span className="msg">{t.title}</span>
             <span className={'ms-st only-wide st-' + t.status}>{t.status}</span>
@@ -510,6 +512,7 @@ function dayLabel(ts) {
 
 export function TimelineWidget({ widget, editing }) {
   const goTab = useGoTab();
+  const { goToTask } = useNavigation();
   const { state } = useAppState();
   const items = useActivityFeed(state?.viewedProject, widget?.props?.limit || 25);
   const groups = [];
@@ -531,7 +534,7 @@ export function TimelineWidget({ widget, editing }) {
               <div className="tl-day">{grp.label}</div>
               {grp.items.map((it, i) => (
                 <div key={`${it.taskId || ''}:${it.timestamp || ''}:${i}`} className="tl-node" style={{ cursor: editing ? undefined : 'pointer' }}
-                  onClick={editing ? undefined : () => { goTab('tasks'); window._scrollToTaskId = it.taskId; }}>
+                  onClick={editing ? undefined : () => { goTab('tasks'); goToTask(it.taskId); }}>
                   <span className={'tl-dot ' + (it.event === 'status_changed' ? 'hot' : '')}></span>
                   <span className="tl-title"><span className="tid">{it.taskId}</span> {it.message}</span>
                 </div>

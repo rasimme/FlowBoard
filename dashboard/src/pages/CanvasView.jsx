@@ -18,6 +18,7 @@ import {
 } from '../utils/canvasGeometry.mjs';
 import { NOTE_WIDTH, MAX_PORTS_PER_SIDE, COLOR_STROKE } from '../utils/canvasConstants.mjs';
 import { apiFetch } from '../utils/apiFetch.js';
+import { useNavigation } from '../context/NavigationContext.jsx';
 import NoteCard from '../components/canvas/NoteCard.jsx';
 import NoteSidebar from '../components/canvas/NoteSidebar.jsx';
 import ConnectionLayer from '../components/canvas/ConnectionLayer.jsx';
@@ -79,6 +80,7 @@ function findLinkHrefAtPoint(noteEl, clientX, clientY) {
 export default function CanvasView() {
   const { state } = useAppState();
   const specify = useSpecify();
+  const { intent: navIntent, clearScrollToNote, clearPendingNewNote } = useNavigation();
   const viewedProject = state?.viewedProject;
 
   const [canvas, dispatch] = useReducer(canvasReducer, undefined, initialCanvasState);
@@ -247,30 +249,29 @@ export default function CanvasView() {
     return () => { cancelled = true; };
   }, [viewedProject, applyTransform, cancelLinkOpen]);
 
-  // Overview quick action "New Note" — consumed like window._scrollToTaskId.
+  // Overview quick action "New Note" — consume the navigation intent (T-356).
   useEffect(() => {
-    if (window._pendingNewNote && viewedProject && !canvas.loading) {
-      delete window._pendingNewNote;
+    if (navIntent.pendingNewNote && viewedProject && !canvas.loading) {
+      clearPendingNewNote();
       onAddNote();
     }
-  });
+  }, [navIntent.pendingNewNote, viewedProject, canvas.loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Search-navigation (T-351): consume window._scrollToNoteId set by the header
-  // search (T-349). Pan/zoom the camera onto the note and flash a 2s highlight —
-  // the canvas analog of the Kanban's ScrollToTask + .highlighted-from-back.
-  // No-deps effect (like _pendingNewNote above): read+delete the flag once, then
-  // a self-contained rAF retries until the note element mounts after load. Runs
-  // after the viewport-restore layout effect, so it overrides the camera only
-  // for this one jump (and marks fittedRef so no re-fit fights it).
+  // Search-navigation (T-351/T-356): consume the scrollToNote intent set by the
+  // header search. Pan/zoom the camera onto the note and flash a 2s highlight —
+  // the canvas analog of the Kanban's ScrollToTask. If the note isn't in this
+  // project's canvas yet (project still switching), the intent is LEFT set so
+  // the correct project's canvas consumes it on a later run; it is cleared only
+  // once acted on (or after the element fails to mount within the budget).
   useEffect(() => {
     if (canvas.loading || !viewedProject) return;
-    const noteId = window._scrollToNoteId;
+    const noteId = navIntent.scrollToNote;
     if (!noteId) return;
     const note = canvas.notes.find(n => n.id === noteId);
-    if (!note) return; // not in this project (yet) — leave the flag for its canvas
-    delete window._scrollToNoteId;
+    if (!note) return; // not in this project (yet) — keep the intent for its canvas
 
     let tries = 0;
+    let raf = 0;
     const tick = () => {
       const wrap = wrapRef.current;
       if (!wrap) return; // unmounted / project switched away
@@ -283,12 +284,15 @@ export default function CanvasView() {
         bumpView();
         el.classList.add('canvas-note-highlighted');
         setTimeout(() => el.classList.remove('canvas-note-highlighted'), 2000);
+        clearScrollToNote();
         return;
       }
-      if (++tries < 30) requestAnimationFrame(tick); // ~500ms budget for load→render
+      if (++tries < 30) raf = requestAnimationFrame(tick); // ~500ms budget for load→render
+      else clearScrollToNote();
     };
-    requestAnimationFrame(tick);
-  });
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [navIntent.scrollToNote, canvas.loading, viewedProject, canvas.notes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Reload after a completed Specify session (promoted notes vanish) ---
   useEffect(() => {

@@ -6,6 +6,7 @@ import Badge from './Badge.jsx';
 import Spinner from './Spinner.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 import { useDashboard } from '../context/DashboardContext.jsx';
+import { useNavigation } from '../context/NavigationContext.jsx';
 
 /**
  * SearchPalette — global unified search (T-301, T-349).
@@ -16,6 +17,7 @@ import { useDashboard } from '../context/DashboardContext.jsx';
  */
 export default function SearchPalette({ open, onClose, projects = [] }) {
   const { viewProject, switchTab } = useDashboard();
+  const { goToTask, goToNote } = useNavigation();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -72,15 +74,15 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
       // _scrollToTaskId set on a tab that never rendered (T-355). Mirrors the
       // note branch below.
       switchTab('tasks');
-      window._scrollToTaskId = r.id;
+      goToTask(r.id);
     } else if (r.kind === 'note') {
       viewProject(r.project);
       switchTab('ideas');
-      window._scrollToNoteId = r.id; // canvas consumes if it supports it
+      goToNote(r.id); // canvas consumes if it supports it
     } else if (r.kind === 'project') {
       viewProject(r.name);
     }
-  }, [onClose, viewProject, switchTab]);
+  }, [onClose, viewProject, switchTab, goToTask, goToNote]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') { onClose?.(); return; }

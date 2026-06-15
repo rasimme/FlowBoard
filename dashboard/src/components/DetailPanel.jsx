@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw, FolderInput } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
+import { useNavigation } from '../context/NavigationContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
 import Input from './Input.jsx';
@@ -171,6 +172,7 @@ function showToast(msg, type = 'info') {
 export default function DetailPanel() {
   const { state, version } = useAppState();
   const { openSpec, viewProject } = useDashboard();
+  const { goToTask } = useNavigation();
   const taskActions = useTaskActions();
   const [taskId, setTaskId] = useState(null);
   const [task, setTask] = useState(null);
@@ -1192,7 +1194,7 @@ export default function DetailPanel() {
               // immediately instead of waiting for the next poll (T-355).
               refreshTasks(project);
             }
-            window._scrollToTaskId = result.id;
+            goToTask(result.id);
           }}
         />
 

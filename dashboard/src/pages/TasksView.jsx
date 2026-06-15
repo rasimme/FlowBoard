@@ -1,6 +1,7 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
+import { useNavigation } from '../context/NavigationContext.jsx';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../components/index.js';
 import AgentChip, { agentColor } from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
@@ -768,6 +769,7 @@ function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
 
 // --- Inline Add-Task form (Backlog only) ---
 function AddTaskForm({ project, onCreated }) {
+  const { intent: navIntent, clearPendingNewTask } = useNavigation();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -780,13 +782,13 @@ function AddTaskForm({ project, onCreated }) {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  // overview quick action "New Task" — consumed like window._scrollToTaskId
+  // overview quick action "New Task" — consume the navigation intent (T-356)
   useEffect(() => {
-    if (window._pendingNewTask) {
-      delete window._pendingNewTask;
+    if (navIntent.pendingNewTask) {
+      clearPendingNewTask();
       handleOpen();
     }
-  });
+  }, [navIntent.pendingNewTask]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = () => {
     setTitle('');
@@ -1357,14 +1359,14 @@ export default function TasksView() {
   );
 }
 
-// Scrolls a task card into view when coming back from spec view
-// without an active detail panel. Consumes window._scrollToTaskId
-// set by FilesView's onBackToTask.
+// Scrolls a task card into view when coming back from spec view, global search,
+// or an overview widget. Consumes the navigation `scrollToTask` intent
+// (NavigationContext) and clears it once revealed.
 function ScrollToTask({ onExpandParent }) {
+  const { intent, clearScrollToTask } = useNavigation();
   useEffect(() => {
-    const taskId = window._scrollToTaskId;
+    const taskId = intent.scrollToTask;
     if (!taskId) return;
-    delete window._scrollToTaskId;
 
     const reveal = (card) => {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1380,27 +1382,32 @@ function ScrollToTask({ onExpandParent }) {
 
     // Time-budgeted retry: a same-tab expand→render lands in a few frames, but a
     // cross-project jump from global search (T-355) must also wait for the new
-    // project's task list to fetch + render, so allow up to ~2.5s.
+    // project's task list to fetch + render, so allow up to ~2.5s. The intent is
+    // cleared once revealed (or after the budget) so it can't fire twice (T-356).
     const start = performance.now();
+    let raf = 0;
     const tick = () => {
       const card = document.querySelector(`[data-task-id="${taskId}"]`);
-      if (card) { reveal(card); return; }
-      if (performance.now() - start < 2500) requestAnimationFrame(tick);
+      if (card) { reveal(card); clearScrollToTask(); return; }
+      if (performance.now() - start < 2500) raf = requestAnimationFrame(tick);
+      else clearScrollToTask();
     };
-    requestAnimationFrame(tick);
-  });
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [intent.scrollToTask]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
 
 // Scrolls a whole status column into view (horizontal kanban scroll) and
-// briefly highlights it. Consumes window._scrollToColumn — set by the
-// task-stats widget's legend so "Review 7" lands on the Review column
+// briefly highlights it. Consumes the navigation `scrollToColumn` intent — set
+// by the task-stats widget's legend so "Review 7" lands on the Review column
 // rather than one arbitrary task.
 function ScrollToColumn() {
+  const { intent, clearScrollToColumn } = useNavigation();
   useEffect(() => {
-    const status = window._scrollToColumn;
+    const status = intent.scrollToColumn;
     if (!status) return;
-    delete window._scrollToColumn;
+    clearScrollToColumn();
     requestAnimationFrame(() => {
       const col = document.querySelector(`.column[data-status="${status}"]`);
       if (!col) return;
@@ -1408,6 +1415,6 @@ function ScrollToColumn() {
       col.classList.add('column-highlight');
       setTimeout(() => col.classList.remove('column-highlight'), 1600);
     });
-  });
+  }, [intent.scrollToColumn]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
