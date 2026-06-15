@@ -76,6 +76,11 @@ document.addEventListener('click', (e) => {
       try { localStorage.setItem('flowboard_agent_id', window.appState.agentId); } catch { /* ignore */ }
     }
   } finally {
+    // Notify React explicitly so authUser/agentId propagate without relying on a
+    // polling watchdog (T-356). These writes happen after React mounts, so an
+    // event is the propagation path; DashboardContext's first post-bootstrap
+    // dispatch also picks them up, this just makes it intentional + immediate.
+    try { window.dispatchEvent(new CustomEvent('appstate:change')); } catch { /* non-DOM env */ }
     resolveBootstrap();
   }
 })();

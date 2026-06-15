@@ -2,9 +2,7 @@ import { createContext, useContext, useEffect, useRef, useCallback, useSyncExter
 
 const AppStateContext = createContext(null);
 const APPSTATE_EVENT = 'appstate:change';
-const LEGACY_WATCHDOG_MS = 5000;
 let appStateVersion = 0;
-let lastSnapshotFingerprint = '';
 
 // T-355: expose an IMMUTABLE shallow snapshot of window.appState as the context
 // `state` instead of the live mutable object. Previously `state: window.appState`
@@ -18,31 +16,6 @@ function buildSnapshot() {
   return (typeof window !== 'undefined' && window.appState) ? { ...window.appState } : null;
 }
 
-/**
- * Lightweight fingerprint of window.appState for change detection.
- * Avoids expensive JSON.stringify on the full tasks array every tick.
- */
-function fingerprint(s) {
-  if (!s) return '';
-  // Build a compact tasks hash. Includes agent/claimedAt so the C2 Labeled bar
-  // re-renders when a claim changes on a task even if status/priority don't.
-  const tasksHash = s.tasks
-    ? s.tasks.map(t => t.id + t.status + t.priority + (t.agent || '') + (t.claimedAt || '')).join(',')
-    : '';
-  const agentsHash = s.agents
-    ? s.agents.map(a => (a.agent_id || '') + ':' + (a.active_project || '')).join(',')
-    : '';
-  return [
-    s.viewedProject,
-    s.activeProject,
-    s.authUser,
-    s.currentTab,
-    s.projects?.length,
-    tasksHash,
-    agentsHash,
-  ].join('|');
-}
-
 function notifyAppStateChanged() {
   window.dispatchEvent(new CustomEvent(APPSTATE_EVENT));
 }
@@ -51,7 +24,6 @@ function subscribeAppState(callback) {
   if (typeof window === 'undefined') return () => {};
 
   const publish = () => {
-    lastSnapshotFingerprint = fingerprint(window.appState);
     currentSnapshot = buildSnapshot(); // fresh immutable view for this change
     appStateVersion += 1;
     callback();
@@ -60,17 +32,12 @@ function subscribeAppState(callback) {
   const handler = () => publish();
   window.addEventListener(APPSTATE_EVENT, handler);
 
-  // Legacy compatibility: older vanilla paths can still mutate window.appState
-  // without dispatching appstate:change. Keep a slow watchdog so those paths do
-  // not go stale, but make explicit events the normal render path.
-  const interval = window.setInterval(() => {
-    const fp = fingerprint(window.appState);
-    if (fp !== lastSnapshotFingerprint) publish();
-  }, LEGACY_WATCHDOG_MS);
-
+  // T-356: the 5s fingerprint watchdog was removed. Every update to a rendered
+  // field now goes through dispatch() (which fires APPSTATE_EVENT) or an
+  // explicit notify (bootstrap auth, agents fetch), so there are no un-notified
+  // mutations left to poll for.
   return () => {
     window.removeEventListener(APPSTATE_EVENT, handler);
-    window.clearInterval(interval);
   };
 }
 
