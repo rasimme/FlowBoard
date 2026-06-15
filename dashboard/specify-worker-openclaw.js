@@ -163,6 +163,18 @@ function createOpenClawCliAdapter(opts = {}) {
 
     async call(sessionId, workerRequest) {
       const prompt = buildWorkerPrompt(workerRequest);
+      // T-286: the OpenClaw CLI only accepts the prompt as a `--message <text>`
+      // argv argument (no stdin / --message-file), so an oversized prompt would
+      // blow ARG_MAX and crash the spawn. Until the CLI gains a stdin/file
+      // option, guard it: fail fast with a clear, actionable message instead.
+      const MAX_PROMPT_BYTES = 96 * 1024; // safely under the per-arg / ARG_MAX limit
+      const promptBytes = Buffer.byteLength(prompt, 'utf8');
+      if (promptBytes > MAX_PROMPT_BYTES) {
+        return {
+          action: 'error',
+          message: `Specify prompt too large (${Math.round(promptBytes / 1024)}KB > ${MAX_PROMPT_BYTES / 1024}KB): the OpenClaw CLI passes it as a --message argument (ARG_MAX). Reduce the number/size of the selected notes.`,
+        };
+      }
       const sessionKey = `agent:${cfg.agentId}:flowboard-specify-${sessionId}`;
       const args = [
         'agent',

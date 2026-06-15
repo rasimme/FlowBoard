@@ -121,6 +121,15 @@ function fakeExec(responseFactory) {
   const failedRunRes = await failedRunAdapter.call('s3', SAMPLE_REQUEST);
   ok(failedRunRes.action === 'error' && /gateway down/.test(failedRunRes.message), 'failed gateway run → error with detail');
 
+  // T-286: an oversized prompt is rejected BEFORE spawning (the CLI passes it as
+  // a --message argv argument → ARG_MAX). Guard fails fast with a clear message.
+  let bigExecCalled = false;
+  const bigExec = fakeExec(() => { bigExecCalled = true; return { err: null, stdout: '{"status":"ok","result":{"payloads":[]}}', stderr: '' }; });
+  const bigAdapter = createOpenClawCliAdapter({ exec: bigExec });
+  const bigRes = await bigAdapter.call('s-big', { ...SAMPLE_REQUEST, input: { blob: 'x'.repeat(200 * 1024) } });
+  ok(bigRes.action === 'error' && /too large/.test(bigRes.message), 'oversized prompt → error (ARG_MAX guard)');
+  ok(bigExecCalled === false, 'oversized prompt is rejected before spawning the CLI');
+
   const proseExec = fakeExec(() => ({
     err: null,
     stdout: JSON.stringify({ status: 'ok', result: { payloads: [{ text: 'Sorry, I can only chat.' }] } }),
