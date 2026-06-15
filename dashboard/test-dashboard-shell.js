@@ -454,6 +454,46 @@ async function run() {
     ok(opened, 'tapping a file shows it full-screen with a ← Files back button (T-367-3)');
     await page.click('.file-back-to-list');    const backToList = await waitFor(async () => page.evaluate(() => document.querySelector(".file-explorer")?.dataset.view === "list"), "back returns to the list", 4000).catch(() => false);
     ok(backToList, 'the back button returns to the file list (T-367-3)');
+
+    // --- Flow 19 (T-367-4): touch/pointer drag via the card handle reorders ---
+    // Wide viewport so all columns are on-screen (elementFromPoint hit-testing).
+    // The handle is display:none on hover-capable devices, but we dispatch the
+    // PointerEvents on it directly — exercising the same pointer-drag path touch
+    // uses. Create 3 'open' tasks, drag the last to the top, assert it persisted.
+    await page.setViewport({ width: 1400, height: 900 });
+    await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
+    await page.click('#tabBar .tab[data-tab="tasks"]');
+    await waitFor(() => page.$('.kanban'), 'kanban for pointer-drag', 5000);
+    const pd = [];
+    for (const title of ['PDrag A', 'PDrag B', 'PDrag C']) {
+      const id = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title })).body?.task?.id;
+      await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/tasks/${id}`, { status: 'open' });
+      pd.push(id);
+    }
+    await page.evaluate(() => window.appState?._refreshBoard && window.appState._refreshBoard());
+    await waitFor(() => page.$(`.column[data-status="open"] [data-task-id="${pd[2]}"]`), 'pointer-drag seeds on board', 5000);
+    const dragRan = await page.evaluate((srcId) => {
+      const col = document.querySelector('.column[data-status="open"]');
+      const card = col.querySelector(`[data-task-id="${srcId}"]`);
+      const handle = card.querySelector('.card-drag-handle');
+      if (!handle) return 'no-handle';
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true }));
+      const cr = card.getBoundingClientRect();
+      fire(handle, 'pointerdown', cr.left + 12, cr.top + 12);
+      const first = col.querySelector('[data-react-tasks]');
+      const fr = first.getBoundingClientRect();
+      fire(window, 'pointermove', fr.left + 30, fr.top + 1);
+      fire(window, 'pointermove', fr.left + 30, fr.top + 1);
+      fire(window, 'pointerup', fr.left + 30, fr.top + 1);
+      return 'ok';
+    }, pd[2]);
+    ok(dragRan === 'ok', `pointer-drag handle present and drag dispatched (${dragRan})`);
+    const pdPersisted = await waitFor(async () => {
+      const list = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/tasks`)).body?.tasks || [];
+      const o = Object.fromEntries(list.map(t => [t.id, t.order]));
+      return typeof o[pd[2]] === 'number' && o[pd[2]] < o[pd[0]] && o[pd[2]] < o[pd[1]];
+    }, 'pointer-drag reorder persisted', 5000).catch(() => false);
+    ok(pdPersisted, 'pointer/touch drag via the handle reorders + persists (T-367-4)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

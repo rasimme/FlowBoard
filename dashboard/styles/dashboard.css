@@ -732,6 +732,24 @@
     .task-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
     .task-card.dragging { opacity: 0.4; }
     .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
+
+    /* T-367-4: touch drag handle + floating drag clone (Pointer-Events drag).
+       Handle is hidden on pointer-precise (mouse) devices — there the whole
+       card is HTML5-draggable — and shown on touch where that doesn't work. */
+    .card-drag-handle {
+      display: none;
+      align-items: center; justify-content: center;
+      width: 26px; height: 26px; margin: -3px 0 -3px -4px; padding: 0;
+      flex-shrink: 0; border: none; background: none; cursor: grab;
+      color: var(--muted); border-radius: var(--radius-sm); touch-action: none;
+    }
+    .card-drag-handle:active { cursor: grabbing; background: var(--bg-hover); }
+    @media (hover: none) { .card-drag-handle { display: inline-flex; } }
+    .drag-ghost {
+      box-shadow: var(--shadow-lg);
+      transform: rotate(1.5deg) scale(1.02);
+      opacity: 0.92;
+    }
     .task-card.is-blocked {
       border: 1px dashed var(--status-blocked);
       opacity: 0.65;

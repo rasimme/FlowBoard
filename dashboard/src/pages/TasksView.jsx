@@ -11,7 +11,7 @@ import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
-import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check } from 'lucide-react';
+import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check, GripVertical } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import { getTasks, replaceTasks, refreshTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
@@ -278,7 +278,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDragHint, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDragHint, onHandlePointerDown, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -469,8 +469,26 @@ const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onTog
           data-react-tasks
         >
           <div className="flex items-start justify-between gap-2 mb-1">
-            <span className="task-id mono">
-              {task.id}
+            <span className="flex items-center gap-1 min-w-0">
+              {/* T-367-4: touch drag handle — Pointer-Events drag (mouse + touch)
+                  that reuses the same drop pipeline as the desktop HTML5 drag.
+                  Shown on touch devices (CSS); a grab here can't be confused
+                  with a scroll swipe. */}
+              {onHandlePointerDown && !removing && (
+                <button
+                  type="button"
+                  className="card-drag-handle"
+                  aria-label="Drag to reorder"
+                  style={{ touchAction: 'none' }}
+                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onHandlePointerDown(e, task.id); }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GripVertical size={14} />
+                </button>
+              )}
+              <span className="task-id mono">
+                {task.id}
+              </span>
             </span>
             {/* Right cluster — hover-revealed admin icons sit directly to
                 the left of the permanent AgentChip cluster. If no agent
@@ -953,7 +971,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, onHandlePointerDown, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -1049,6 +1067,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                   onTaskUpdated={onTaskUpdated}
                   dragRef={dragRef}
                   onDragHint={onDragHint}
+                  onHandlePointerDown={onHandlePointerDown}
                   isNew={t.id === lastCreatedId}
                   addingSubtask={addingSubtaskParentId === t.id}
                   onAddSubtask={onAddSubtask}
@@ -1468,6 +1487,50 @@ export default function TasksView() {
     });
   }, [viewedProject, sortMode]);
 
+  // T-367-4: Pointer-Events drag (mouse + touch) initiated from a card's drag
+  // handle. Reuses the exact same drop pipeline as the desktop HTML5 drag
+  // (draggedId → dropHint → handleDrop), so reorder/cross-column/indicator all
+  // behave identically; this just makes drag work on touch where HTML5 drag
+  // never fires. A floating clone follows the pointer; the column + insert index
+  // are hit-tested from the pointer position each move.
+  const startPointerDrag = useCallback((e, taskId) => {
+    if (typeof e.button === 'number' && e.button !== 0) return; // primary button / touch only
+    const cardEl = e.target.closest('[data-task-id]');
+    if (!cardEl) return;
+    draggedId.current = taskId;
+    const rect = cardEl.getBoundingClientRect();
+    const offX = e.clientX - rect.left;
+    const offY = e.clientY - rect.top;
+    const ghost = cardEl.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
+    document.body.appendChild(ghost);
+    cardEl.classList.add('dragging');
+
+    const columnAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('.column');
+    const onMove = (ev) => {
+      ev.preventDefault(); // stop touch scroll while dragging from the handle
+      ghost.style.left = `${ev.clientX - offX}px`;
+      ghost.style.top = `${ev.clientY - offY}px`;
+      const col = columnAt(ev.clientX, ev.clientY);
+      if (col?.dataset?.status) setDropHint({ status: col.dataset.status, index: computeDropIndex(col, ev.clientY) });
+    };
+    const onUp = (ev) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      ghost.remove();
+      cardEl.classList.remove('dragging');
+      const col = columnAt(ev.clientX, ev.clientY);
+      if (col?.dataset?.status) handleDrop(col.dataset.status, computeDropIndex(col, ev.clientY));
+      setDropHint(null);
+      draggedId.current = null;
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }, [handleDrop]);
+
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);
     const groups = {};
@@ -1607,6 +1670,7 @@ export default function TasksView() {
             dragRef={draggedId}
             onDrop={handleDrop}
             onDragHint={sortMode === 'custom' ? handleDragHint : undefined}
+            onHandlePointerDown={startPointerDrag}
             dropIndex={sortMode === 'custom' && dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
             addingSubtaskParentId={addingSubtaskParentId}
