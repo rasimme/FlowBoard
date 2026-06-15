@@ -2,6 +2,16 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Safer project deletion + restore (T-357, T-358).** Hard-deleting a project
+  now needs an explicit `hardDelete` acknowledgement on top of `?confirm=<name>`
+  AND the project must be **deactivated (archived) first** — a bare confirm is
+  rejected with guidance toward `PUT { archived:true }`. The UI only offers
+  "Delete permanently" on already-archived projects. Deleted projects are
+  recoverable: a new **Trash** section in the sidebar lists them with a
+  **Restore** action (`GET /api/projects/deleted`, `POST /api/projects/:name/restore`).
+  Prompted by an accidental hard-delete; the goal is that a project can't be
+  deleted by mistake and can always be brought back.
+
 - **Review-followup hardening (T-355).** Fixed a stored XSS in the canvas note
   markdown link renderer (the href is now attribute-escaped; non-http(s) schemes
   are neutralized). Hardened the file endpoints: `PUT` is allow-listed to

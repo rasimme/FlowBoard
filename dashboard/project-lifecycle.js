@@ -408,6 +408,49 @@ function deleteProject(name, { hzlService, fbMeta, projectsDir }) {
 }
 
 /**
+ * T-358: Reverse a hard-delete. HZL keeps the projection (projects +
+ * tasks_current) after delete, so restoring is: (1) move the project dir back
+ * from .trash/<name>-<ts> (newest) to projects/<name>, and (2) remove the
+ * metadata tombstone so listProjects() surfaces it again. The tasks reappear
+ * from the projection in whatever state they were left (the delete archived the
+ * top-level ones). Throws NOT_FOUND if the project is not tombstoned.
+ */
+function restoreProject(name, { fbMeta, projectsDir }) {
+  if (typeof fbMeta.isProjectDeleted === 'function' && !fbMeta.isProjectDeleted(name)) {
+    throw Object.assign(new Error(`Project "${name}" is not deleted`), { code: 'NOT_FOUND' });
+  }
+  const warnings = [];
+  let restoredFrom = null;
+
+  // 1. Move the directory back from .trash (newest matching snapshot), unless the
+  //    live dir is already present.
+  const projectDir = path.join(projectsDir, name);
+  const trashRoot = path.join(projectsDir, '.trash');
+  if (fs.existsSync(projectDir)) {
+    warnings.push('project directory already present — left as-is');
+  } else if (fs.existsSync(trashRoot)) {
+    const candidates = fs.readdirSync(trashRoot)
+      // `${name}-${ISOtimestamp}`; the timestamp part starts with the year digit
+      // so a sibling project like `${name}-2` is not mistaken for a snapshot.
+      .filter(d => d.startsWith(`${name}-`) && /^\d{4}-/.test(d.slice(name.length + 1)))
+      .sort(); // ISO timestamps sort lexically → last is newest
+    const latest = candidates[candidates.length - 1];
+    if (latest) {
+      try { fs.renameSync(path.join(trashRoot, latest), projectDir); restoredFrom = latest; }
+      catch (e) { warnings.push(`restore dir: ${e.message}`); }
+    } else {
+      warnings.push('no trashed directory snapshot found');
+    }
+  }
+
+  // 2. Remove the tombstone so the project is listed again.
+  const removed = fbMeta.restoreProjectMeta(name);
+  if (!removed) warnings.push('no tombstone row was present');
+
+  return { ok: true, restoredFrom, warnings };
+}
+
+/**
  * Heal a project whose state exists at the filesystem layer or in the
  * flowboard_projects metadata table but is missing a canonical HZL
  * project_created event. Idempotent: a no-op when the project is already
@@ -543,4 +586,4 @@ function detectProjectDrift({ hzlService, fbMeta, projectsDir }) {
   return [...drift.values()];
 }
 
-module.exports = { createProject, healProject, updateProject, deleteProject, detectProjectDrift };
+module.exports = { createProject, healProject, updateProject, deleteProject, restoreProject, detectProjectDrift };

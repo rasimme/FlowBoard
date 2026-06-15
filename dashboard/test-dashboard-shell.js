@@ -163,6 +163,28 @@ async function run() {
       }, probeTitle);
     }, 'UI-created task appears', 1500).catch(() => false);
     ok(appearedFast, 'a task created in the UI shows on the board within 1.5s (optimistic dispatch, not the watchdog)');
+
+    // --- Flow 9 (T-358): hard-deleted project shows in the sidebar Trash and restores ---
+    const TP = 'shell-trash';
+    await fetchJson(base, 'POST', '/api/projects', { name: TP });
+    await fetchJson(base, 'PUT', `/api/projects/${TP}`, { archived: true }); // deactivate (required first)
+    const delr = await fetchJson(base, 'DELETE', `/api/projects/${TP}?confirm=${TP}&hardDelete=true`);
+    ok(delr.status === 200, 'seeded project deactivated + hard-deleted (two-step)');
+    // A UI delete would dispatch appstate:change; nudge it so the Trash list reloads.
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('appstate:change')));
+    const trashHeader = await waitFor(() => page.$('[data-sidebar-trash] > button'), 'Trash section appears', 4000).catch(() => null);
+    ok(trashHeader, 'Trash section appears in the sidebar after a hard-delete');
+    await page.click('[data-sidebar-trash] > button'); // expand (collapsed by default)
+    const inTrash = await waitFor(() => page.$(`[data-trash-project="${TP}"]`), 'project row in Trash', 4000).catch(() => null);
+    ok(inTrash, 'hard-deleted project appears in the sidebar Trash');
+    await page.click(`[data-trash-project="${TP}"] button`); // Restore
+    const restored = await waitFor(async () => {
+      const r = await fetchJson(base, 'GET', '/api/projects');
+      return (r.body?.projects || []).some(p => p.name === TP);
+    }, 'project restored', 5000).catch(() => false);
+    ok(restored, 'Restore brings the project back into the project list');
+    const goneFromTrash = await waitFor(async () => !(await page.$(`[data-trash-project="${TP}"]`)), 'trash row gone', 4000).catch(() => false);
+    ok(goneFromTrash, 'restored project no longer shown in Trash');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

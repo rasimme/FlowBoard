@@ -1485,6 +1485,17 @@ app.delete('/api/projects/:name', (req, res) => {
       code: 'HARD_DELETE_NOT_ACKNOWLEDGED',
     });
   }
+  // T-358: two-step delete — a project must be DEACTIVATED (archived) before it
+  // can be hard-deleted. This makes "deactivate" a required, reversible first
+  // step that can never be one-shot-confused with permanent deletion.
+  const meta = fbMeta.getProject(req.params.name);
+  if (!meta || meta.status !== 'archived') {
+    return res.status(409).json({
+      error: `"${req.params.name}" must be deactivated before it can be deleted. `
+        + `First PUT /api/projects/${req.params.name} { "archived": true } (reversible), then delete.`,
+      code: 'NOT_ARCHIVED',
+    });
+  }
   const lifecycle = require('./project-lifecycle.js');
   try {
     const result = lifecycle.deleteProject(req.params.name, {
@@ -1508,6 +1519,33 @@ app.delete('/api/projects/:name', (req, res) => {
     if (e.code === 'NOT_FOUND')      return res.status(404).json({ error: e.message });
     if (e.code === 'METADATA_ERROR') return res.status(500).json({ error: e.message });
     console.error('[projects] deleteProject failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/projects/deleted — T-358: tombstoned (hard-deleted) projects so the
+// UI can offer restore. Defined before any /:name GET to avoid capture.
+app.get('/api/projects/deleted', (req, res) => {
+  try {
+    return res.json({ projects: fbMeta.listDeletedProjects() });
+  } catch (e) {
+    console.error('[projects] listDeleted failed:', e.message);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:name/restore — T-358: reverse a hard-delete (untombstone +
+// move the dir back from .trash/). The tasks reappear from the HZL projection.
+app.post('/api/projects/:name/restore', (req, res) => {
+  const lifecycle = require('./project-lifecycle.js');
+  try {
+    const result = lifecycle.restoreProject(req.params.name, { fbMeta, projectsDir: PROJECTS_DIR });
+    const response = { ok: true, restoredFrom: result.restoredFrom };
+    if (result.warnings && result.warnings.length > 0) response.warnings = result.warnings;
+    return res.json(response);
+  } catch (e) {
+    if (e.code === 'NOT_FOUND') return res.status(404).json({ error: e.message });
+    console.error('[projects] restoreProject failed:', e.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

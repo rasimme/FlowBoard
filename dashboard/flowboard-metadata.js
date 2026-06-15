@@ -285,6 +285,28 @@ function deleteProjectMeta(name) {
 }
 
 /**
+ * T-358: Reverse a tombstone-delete. Removing the flowboard_deleted_projects
+ * row makes listProjects() surface the project again — HZL retains the
+ * projection (projects + tasks_current), so the project and its tasks reappear.
+ * The caller also moves the project directory back from .trash/. Returns true
+ * if a tombstone row was actually removed.
+ */
+function restoreProjectMeta(name) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const info = _db.prepare('DELETE FROM flowboard_deleted_projects WHERE name = ?').run(name);
+  return info.changes > 0;
+}
+
+/**
+ * T-358: List tombstoned (hard-deleted) projects so the UI can offer restore.
+ * Returns [{ name, deleted_at }] newest first.
+ */
+function listDeletedProjects() {
+  if (!_db) return [];
+  return _db.prepare('SELECT name, deleted_at FROM flowboard_deleted_projects ORDER BY deleted_at DESC').all();
+}
+
+/**
  * T-136: True/false whether a project is in the tombstone table.
  * Used by createProject to reject resurrection of a just-deleted name.
  */
@@ -484,6 +506,8 @@ module.exports = {
   upsertProject,
   updateProjectMeta,
   deleteProjectMeta,
+  restoreProjectMeta,
+  listDeletedProjects,
   isProjectDeleted,
   migrateFromIndexMd,
   listProjects,

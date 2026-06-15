@@ -222,6 +222,20 @@
     },
     {
       "method": "GET",
+      "path": "/api/projects/deleted",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/restore",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
+      "method": "GET",
       "path": "/api/projects/:name/activity",
       "auth": "user",
       "group": "projects",

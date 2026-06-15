@@ -10,6 +10,7 @@ import Button from './Button.jsx';
 import Input from './Input.jsx';
 import FormGroup from './FormGroup.jsx';
 import DeleteProjectModal from './DeleteProjectModal.jsx';
+import DeletedProjectsTrash from './DeletedProjectsTrash.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';
 import Popover from './Popover.jsx';
 
@@ -737,6 +738,9 @@ export default function Sidebar() {
             </div>
           </div>
         )}
+
+        {/* T-358: hard-deleted projects + Restore (recovery path). */}
+        <DeletedProjectsTrash />
       </div>
 
 

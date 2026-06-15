@@ -128,12 +128,19 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
                 {project.archived ? 'Restore' : 'Archive'}
               </span>
             </Popover.Option>
-            <div className="h-px bg-border my-1" />
-            <Popover.Option onClick={handleDelete} className="text-danger">
-              <span className="inline-flex items-center gap-2">
-                <Trash2 size={13} /> Delete…
-              </span>
-            </Popover.Option>
+            {/* T-358: hard-delete is two-step — only offered once a project is
+                deactivated (archived). Active projects must be archived first,
+                which is reversible. This makes accidental deletion much harder. */}
+            {project.archived && (
+              <>
+                <div className="h-px bg-border my-1" />
+                <Popover.Option onClick={handleDelete} className="text-danger">
+                  <span className="inline-flex items-center gap-2">
+                    <Trash2 size={13} /> Delete permanently…
+                  </span>
+                </Popover.Option>
+              </>
+            )}
           </>
         )}
 

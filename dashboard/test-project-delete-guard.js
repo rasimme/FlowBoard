@@ -69,21 +69,38 @@ async function run() {
       'guidance points to the PUT { archived:true } deactivate path');
     ok((await listNames(base)).includes(P), 'project still exists after the blocked delete');
 
-    // The intended safe path: deactivate keeps the project + data.
+    // T-358 two-step: even WITH the ack, a non-archived (live) project is refused.
+    const live = await api(base, 'DELETE', `/api/projects/${P}?confirm=${P}&hardDelete=true`);
+    ok(live.status === 409 && live.body?.code === 'NOT_ARCHIVED',
+      'DELETE of a non-archived project → 409 NOT_ARCHIVED (must deactivate first)');
+    ok((await listNames(base)).includes(P), 'live project still present after the refused delete');
+
+    // Step 1 — deactivate (reversible, keeps data).
     const deact = await api(base, 'PUT', `/api/projects/${P}`, { archived: true });
     ok(deact.status === 200, 'PUT { archived:true } deactivates (200, data kept)');
     ok((await listNames(base)).includes(P), 'deactivated project is still present (not deleted)');
 
-    // Deliberate hard-delete with the explicit flag → succeeds.
+    // Step 2 — now the deliberate hard-delete (archived + confirm + ack) succeeds.
     const del = await api(base, 'DELETE', `/api/projects/${P}?confirm=${P}&hardDelete=true`);
-    ok(del.status === 200 && del.body?.ok === true, 'DELETE confirm + hardDelete=true → 200 (deliberate)');
-    ok(!(await listNames(base)).includes(P), 'project gone after acknowledged hard-delete');
+    ok(del.status === 200 && del.body?.ok === true, 'archived + confirm + hardDelete → 200 (deliberate two-step)');
+    ok(!(await listNames(base)).includes(P), 'project gone after the acknowledged two-step delete');
 
-    // Body-form acknowledgement also works (not only the query flag).
+    // T-358 restore round-trip: the deleted project is listed under /deleted, and
+    // restore brings it back (untombstone + dir move from .trash).
+    const deletedList = await api(base, 'GET', '/api/projects/deleted');
+    ok((deletedList.body?.projects || []).some(d => d.name === P), 'deleted project appears in GET /api/projects/deleted');
+    const restored = await api(base, 'POST', `/api/projects/${P}/restore`);
+    ok(restored.status === 200 && restored.body?.ok === true, 'POST /api/projects/<name>/restore → 200');
+    ok((await listNames(base)).includes(P), 'restored project is listed again');
+    ok(!((await api(base, 'GET', '/api/projects/deleted')).body?.projects || []).some(d => d.name === P),
+      'restored project no longer appears under /deleted');
+
+    // Body-form ack also works (still subject to the archived precondition).
     const P2 = 'guard-test-2';
     await api(base, 'POST', '/api/projects', { name: P2 });
+    await api(base, 'PUT', `/api/projects/${P2}`, { archived: true });
     const delBody = await api(base, 'DELETE', `/api/projects/${P2}?confirm=${P2}`, { hardDelete: true });
-    ok(delBody.status === 200, 'hardDelete:true in the body is also accepted');
+    ok(delBody.status === 200, 'hardDelete:true in the body is also accepted (archived project)');
   } finally {
     child.kill('SIGTERM');
     await new Promise(r => setTimeout(r, 300));
