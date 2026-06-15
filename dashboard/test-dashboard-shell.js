@@ -230,18 +230,16 @@ async function run() {
     await waitFor(() => page.$(`.column[data-status="review"] [data-task-id="${rTasks[2]}"]`), 'reorder seeds on board');
     const reordered = await page.evaluate((srcId) => {
       const col = document.querySelector('.column[data-status="review"]');
-      const card = (id) => col.querySelector(`[data-task-id="${id}"]`);
-      const src = card(srcId);
-      const dt = new DataTransfer();
-      const fire = (el, type, clientY) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientY }));
-      fire(src, 'dragstart', src.getBoundingClientRect().top + 5);
-      const firstRect = col.querySelector('[data-react-tasks]').getBoundingClientRect();
-      fire(col, 'dragover', firstRect.top + 1); // hover above the first card → insert at top
-      fire(col, 'drop', firstRect.top + 1);
-      fire(src, 'dragend', 0);
+      const src = col.querySelector(`[data-task-id="${srcId}"]`);
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      const cr = src.getBoundingClientRect();
+      const first = col.querySelector('[data-react-tasks]').getBoundingClientRect();
+      fire(src, 'pointerdown', cr.left + 40, cr.top + 10); // grab the card body
+      fire(window, 'pointermove', first.left + 40, first.top + 1); // crosses threshold + targets the top
+      fire(window, 'pointerup', first.left + 40, first.top + 1);
       return true;
     }, rTasks[2]).catch(() => false);
-    ok(reordered, 'synthetic drag dispatched on the review column');
+    ok(reordered, 'pointer drag dispatched on the review column');
     const movedToTop = await waitFor(async () => page.evaluate((srcId) => {
       const ids = Array.from(document.querySelectorAll('.column[data-status="review"] [data-task-id]'))
         .map(e => e.dataset.taskId);
@@ -255,56 +253,48 @@ async function run() {
       return typeof byId[rTasks[2]] === 'number' && byId[rTasks[2]] < byId[rTasks[0]] && byId[rTasks[2]] < byId[rTasks[1]];
     }, 'reorder persisted to the server', 5000).catch(() => false);
     ok(persisted, 'the new manual order is persisted (lowest rank for the moved card)');
+    const noPanelAfterDrag = await page.evaluate(() => !document.querySelector('[data-detail-panel]'));
+    ok(noPanelAfterDrag, 'a card drag does NOT also open the detail panel (T-374)');
 
-    // --- Flow 12 (T-130): the drop indicator survives noisy dragleave, clears on dragend ---
-    // Regression guard for the flicker bug: a real drag fires dragleave on every
-    // card-boundary crossing (often relatedTarget=null). Those must NOT clear the
-    // insertion line — only dragend (or moving to another column) may.
+    // --- Flow 12 (T-374): pointer-drag shows the insert line + column highlight, clears on drop ---
     await page.evaluate(() => {
       const col = document.querySelector('.column[data-status="review"]');
       const cards = [...col.querySelectorAll('[data-react-tasks]')];
-      window.__dt = new DataTransfer();
-      window.__src = cards[cards.length - 1];
-      const fire = (el, type, extra = {}) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt, ...extra }));
-      fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
-      fire(col, 'dragover', { clientY: cards[0].getBoundingClientRect().top + 1 });
+      const src = cards[cards.length - 1];
+      window.__pdSrc = src;
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      const cr = src.getBoundingClientRect();
+      const top = cards[0].getBoundingClientRect();
+      fire(src, 'pointerdown', cr.left + 40, cr.top + 10);
+      fire(window, 'pointermove', top.left + 40, top.top + 1); // activate + hover the top
+      window.__pdAt = { x: top.left + 40, y: top.top + 1 };
     });
     const lineUp = await waitFor(async () => page.evaluate(() => {
       const l = document.querySelector('.column[data-status="review"] .drop-line');
-      return l && l.offsetHeight > 0; // must be visibly tall, not just present in the DOM
-    }), 'drop indicator appears on dragover', 3000).catch(() => null);
+      return l && l.offsetHeight > 0; // visibly tall, not just present in the DOM
+    }), 'insert line appears during pointer-drag', 3000).catch(() => null);
     ok(lineUp, 'drop indicator line renders with visible height during a drag');
-    // Fire a spurious dragleave with no relatedTarget (the flicker trigger).
-    await page.evaluate(() => {
-      const col = document.querySelector('.column[data-status="review"]');
-      col.dispatchEvent(new DragEvent('dragleave', { bubbles: true, dataTransfer: window.__dt, relatedTarget: null }));
-    });
-    await new Promise(r => setTimeout(r, 120));
-    const stillThere = await page.$('.column[data-status="review"] .drop-line');
-    ok(stillThere, 'a null-relatedTarget dragleave does NOT clear the indicator (flicker fix)');
-    // dragend must clear it.
-    await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
-    const cleared = await waitFor(async () => !(await page.$('.column[data-status="review"] .drop-line')), 'indicator cleared on dragend', 3000).catch(() => false);
-    ok(cleared, 'dragend clears the drop indicator');
+    const colHi = await page.evaluate(() => !!document.querySelector('.column[data-status="review"].drag-over'));
+    ok(colHi, 'target column is highlighted during the drag (.drag-over)');
+    await page.evaluate(() => { const a = window.__pdAt; window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: a.x, clientY: a.y, button: 0, pointerId: 1 })); });
+    const cleared = await waitFor(async () => page.evaluate(() => !document.querySelector('.column[data-status="review"] .drop-line') && !document.querySelector('.column.drag-over')), 'indicator + highlight clear on drop', 3000).catch(() => false);
+    ok(cleared, 'drop clears the insert line and the column highlight');
 
-    // --- Flow 13 (T-130): per-CARD drop targeting works in the backlog column ---
-    // Backlog has the add-task form + (now) ranked cards — the column that the
-    // coarse hit-test struggled with. Dispatch dragover on a CARD (not the
-    // column) and assert the indicator appears: exercises the sidebar-pattern
-    // per-card handler that replaced the flaky column scan.
+    // --- Flow 13 (T-374): pointer-drag shows the insert line in the busy backlog column ---
     await page.evaluate(() => {
       const col = document.querySelector('.column[data-status="backlog"]');
       const cards = [...col.querySelectorAll('[data-react-tasks]')];
-      window.__dt = new DataTransfer();
-      window.__src = cards[cards.length - 1];
-      const fire = (el, type, extra = {}) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt, ...extra }));
-      fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
-      const tgt = cards[0]; const r = tgt.getBoundingClientRect();
-      fire(tgt, 'dragover', { clientY: r.top + 2 }); // upper half of first card → before it
+      const src = cards[cards.length - 1];
+      window.__pdSrc = src;
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      const cr = src.getBoundingClientRect();
+      const r = cards[0].getBoundingClientRect();
+      fire(src, 'pointerdown', cr.left + 40, cr.top + 10);
+      fire(window, 'pointermove', r.left + 40, r.top + 2); // over the first card → before it
     });
-    const blLine = await waitFor(() => page.$('.column[data-status="backlog"] .drop-line'), 'backlog per-card indicator', 3000).catch(() => null);
-    ok(blLine, 'drop indicator renders via per-card targeting in the backlog column');
-    await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
+    const blLine = await waitFor(() => page.$('.column[data-status="backlog"] .drop-line'), 'backlog drop indicator', 3000).catch(() => null);
+    ok(blLine, 'drop indicator renders during a pointer-drag in the backlog column');
+    await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 0, clientY: 0, button: 0, pointerId: 1 })));
 
     // --- Flow 13b (T-130 #2): a newly created backlog task lands at the TOP ---
     await page.click('.add-task-btn');
@@ -354,19 +344,19 @@ async function run() {
     await page.evaluate(() => {
       const col = document.querySelector('.column[data-status="backlog"]');
       const cards = [...col.querySelectorAll('[data-react-tasks]')];
-      window.__dt = new DataTransfer();
-      window.__src = cards[cards.length - 1];
-      const fire = (el, type, extra = {}) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt, ...extra }));
-      fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
-      const tgt = cards[2]; const r = tgt.getBoundingClientRect();
-      fire(tgt, 'dragover', { clientY: r.top + 2 });
+      const src = cards[cards.length - 1];
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true, pointerType: 'mouse' }));
+      const cr = src.getBoundingClientRect();
+      const r = cards[0].getBoundingClientRect(); // top card is on-screen even in the short viewport
+      fire(src, 'pointerdown', cr.left + 40, cr.top + 6);
+      fire(window, 'pointermove', r.left + 40, r.top + 2);
     });
     const visibleInOverflow = await waitFor(async () => page.evaluate(() => {
       const l = document.querySelector('.column[data-status="backlog"] .drop-line');
       return l && l.offsetHeight >= 2; // NOT collapsed by the flex algorithm
     }), 'indicator visible in overflowing column', 3000).catch(() => false);
     ok(visibleInOverflow, 'drop indicator keeps visible height in an overflowing column (flex-shrink fix)');
-    await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
+    await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 0, clientY: 0, button: 0, pointerId: 1 })));
 
     // --- Flow 15 (T-364): expanded subtasks survive navigating away and back ---
     const parentId = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'Parent with subs' })).body?.task?.id;
@@ -537,8 +527,8 @@ async function run() {
       const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true }));
       const cr = card.getBoundingClientRect();
       fire(handle, 'pointerdown', cr.left + 12, cr.top + 12);
-      const snapOff = kb.classList.contains('is-dragging');
-      fire(window, 'pointermove', window.innerWidth - 8, 400); // hold near right edge
+      fire(window, 'pointermove', window.innerWidth - 8, 400); // first move activates the drag + holds near the right edge
+      const snapOff = kb.classList.contains('is-dragging'); // checked AFTER activation (T-374: activate on first move)
       window.__kb = kb; window.__before = kb.scrollLeft; window.__h = handle;
       return { ok: true, snapOff, scrollable: kb.scrollWidth > kb.clientWidth };
     });

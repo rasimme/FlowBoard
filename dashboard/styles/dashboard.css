@@ -488,14 +488,20 @@
       transition: opacity var(--duration-fast), color var(--duration-fast);
       font-family: inherit;
     }
-    .project-item .row-grip { cursor: grab; width: 12px; height: 16px; flex-shrink: 0; touch-action: none; }
-    /* T-367-5: on touch the whole-item HTML5 drag doesn't work, so the grip
-       (the Pointer-Events drag handle) must be permanently visible/grabbable. */
-    /* T-368-2: on touch-capable devices the grip is the drag affordance — make
-       it visible and a proper ~40px touch target (negative margin keeps the row
-       height unchanged). */
-    @media (any-pointer: coarse) {
-      .project-item .row-grip { opacity: 0.55; width: 40px; height: 40px; margin: -12px -6px -12px -10px; }
+    /* T-374: grip is a no-indent OVERLAY in the row's left padding (absolute →
+       reserves no layout space, so the project name stays flush like before the
+       grip existed), faded in on row hover. Mirrors the card grip. */
+    .project-item .row-grip {
+      position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+      width: 14px; height: 16px; cursor: grab; touch-action: none;
+    }
+    /* Real touch-primary devices (no hover): grip in-flow, visible, ~40px tap
+       target (no hover to reveal it; HTML5 drag dead on touch). */
+    @media (hover: none) {
+      .project-item .row-grip {
+        position: static; transform: none; opacity: 0.55;
+        width: 40px; height: 40px; margin: -12px -6px -12px -10px;
+      }
     }
     .project-item .row-kebab { width: 20px; height: 20px; border-radius: var(--radius-sm); }
     .project-item:hover .row-grip { opacity: 0.5; }
@@ -746,20 +752,32 @@
     /* T-367-4: touch drag handle + floating drag clone (Pointer-Events drag).
        Handle is hidden on pointer-precise (mouse) devices — there the whole
        card is HTML5-draggable — and shown on touch where that doesn't work. */
+    /* T-374: drag grip. Desktop = an OVERLAY hint in the card's left padding
+       (position:absolute → reserves NO layout space, so T-000 stays flush like
+       before), faded in on card hover, sitting just left of the id. Dragging
+       works on the whole card body too; the grip is the visible affordance.
+       Touch (any-pointer:coarse) = in-flow ~40px tap target (the only initiator
+       there, since the body must stay scrollable). */
     .card-drag-handle {
-      display: none;
-      align-items: center; justify-content: center;
-      width: 26px; height: 26px; margin: -3px 0 -3px -4px; padding: 0;
-      flex-shrink: 0; border: none; background: none; cursor: grab;
+      position: absolute; left: 1px; top: 11px;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 16px; padding: 0;
+      border: none; background: none; cursor: grab;
       color: var(--muted); border-radius: var(--radius-sm); touch-action: none;
+      opacity: 0; transition: opacity var(--duration-fast);
     }
-    .card-drag-handle:active { cursor: grabbing; background: var(--bg-hover); }
-    /* T-368-2: show on any touch-capable device (incl. hybrid touch+trackpad
-       laptops, where HTML5 drag is unreliable) — any-pointer:coarse, not the
-       primary-pointer hover:none. Enlarge to a ~44px touch target on touch,
-       absorbed by negative margins so the card layout doesn't grow. */
-    @media (any-pointer: coarse) {
-      .card-drag-handle { display: inline-flex; width: 40px; height: 40px; margin: -10px -4px -10px -10px; }
+    .task-card:hover .card-drag-handle { opacity: 0.45; }
+    .card-drag-handle:hover { opacity: 0.85; }
+    .card-drag-handle:active { cursor: grabbing; }
+    /* Real touch-primary devices (no hover): the body can't initiate a drag
+       (it must scroll) and there's no hover to reveal the grip, so make the grip
+       a permanently-visible, in-flow ~40px tap target. Hover-capable devices
+       (desktop + hybrids) keep the no-indent overlay above and drag the body. */
+    @media (hover: none) {
+      .card-drag-handle {
+        position: static; opacity: 0.6;
+        width: 40px; height: 40px; margin: -12px -6px -12px -10px;
+      }
     }
     .drag-ghost {
       box-shadow: var(--shadow-lg);

@@ -278,7 +278,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDragHint, onHandlePointerDown, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -296,37 +296,6 @@ const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onTog
 
   const handleClick = () => {
     if (window.openTaskDetail) window.openTaskDetail(task.id);
-  };
-
-  // --- Drag handlers ---
-  const handleDragStart = (e) => {
-    dragRef.current = task.id;
-    e.dataTransfer.effectAllowed = 'move';
-    e.currentTarget.classList.add('dragging');
-  };
-
-  const handleDragEnd = (e) => {
-    e.currentTarget.classList.remove('dragging');
-    document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
-    dragRef.current = null;
-  };
-
-  // T-130: per-card drop targeting (sidebar pattern). Each card decides whether
-  // the insertion goes before or after itself from the pointer's position
-  // relative to its own midpoint, then reports the rendered-space insert index.
-  // stopPropagation means the column's coarse fallback only runs over empty
-  // padding — far more reliable than a single column-wide hit-test, which was
-  // flaky in the busy backlog/done columns. Only active in 'custom' sort
-  // (onDragHint is undefined otherwise).
-  const handleCardDragOver = (e) => {
-    if (!dragRef?.current || !onDragHint) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'move';
-    e.currentTarget.closest('.column')?.classList.add('drag-over');
-    const r = e.currentTarget.getBoundingClientRect();
-    const after = e.clientY > r.top + r.height / 2;
-    onDragHint(task.status, index + (after ? 1 : 0));
   };
 
   // --- Delete with shrink animation ---
@@ -451,10 +420,14 @@ const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onTog
           className={cardClass}
           style={cardStyle}
           data-task-id={task.id}
-          draggable={!removing}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOver={handleCardDragOver}
+          onPointerDown={onHandlePointerDown && !removing ? (e) => {
+            // whole-card drag (mouse): a small move threshold means a plain click
+            // still opens the card. Skip when starting on an interactive child or
+            // the grip. On touch the body never drags (grip does) — handled in
+            // startPointerDrag via pointerType.
+            if (e.target.closest('button, a, input, textarea, select, [role="menu"]')) return;
+            onHandlePointerDown(e, task.id, { fromBody: true, threshold: 6 });
+          } : undefined}
           onClick={!removing ? handleClick : undefined}
           onKeyDown={!removing ? (e) => {
             if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
@@ -480,7 +453,7 @@ const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onTog
                   className="card-drag-handle"
                   aria-label="Drag to reorder"
                   style={{ touchAction: 'none' }}
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onHandlePointerDown(e, task.id); }}
+                  onPointerDown={(e) => { e.stopPropagation(); onHandlePointerDown(e, task.id); }}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <GripVertical size={14} />
@@ -971,7 +944,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, onHandlePointerDown, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -991,42 +964,15 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
     prevShowArchivedRef.current = showArchived;
   }, [showArchived, isDone]);
 
-  const handleDragOver = (e) => {
-    if (!dragRef?.current) return; // only react to a task drag, not e.g. text selection
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    e.currentTarget.classList.add('drag-over');
-    onDragHint?.(status, computeDropIndex(e.currentTarget, e.clientY));
-  };
-
-  const handleDragLeave = (e) => {
-    // Only react to a genuine column exit. During a drag the browser fires a
-    // dragleave on every card-boundary crossing, often with relatedTarget=null
-    // (fast moves) — clearing the hint on those made the indicator flicker /
-    // never settle, worst in the busy backlog column. So: never clear the hint
-    // here (handleDragHint follows the active column; the window 'dragend'
-    // listener does the final cleanup); only drop the column highlight when the
-    // pointer truly left this column.
-    if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {
-      e.currentTarget.classList.remove('drag-over');
-    }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.currentTarget.classList.remove('drag-over');
-    onDrop?.(status, computeDropIndex(e.currentTarget, e.clientY));
-  };
-
+  // T-374: drag is fully Pointer-Events now (see board startPointerDrag); the
+  // column needs no HTML5 drag handlers — the drag controller hit-tests columns
+  // itself and toggles .drag-over + the insert line.
   const DropLine = () => <div className="drop-line" aria-hidden="true" />;
 
   return (
     <div
       className="column"
       data-status={status}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
     >
       <div className="column-header">
         <span className="column-title">{STATUS_LABELS[status]}</span>
@@ -1057,7 +1003,6 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                 {dropIndex === i && <DropLine />}
                 <TaskCard
                   task={t}
-                  index={i}
                   allTasks={allTasks}
                   expanded={expandedParents.has(t.id)}
                   onToggleExpand={onToggleExpand}
@@ -1065,8 +1010,6 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                   onTaskDeleted={onTaskDeleted}
                   onTaskTrashed={onTaskTrashed}
                   onTaskUpdated={onTaskUpdated}
-                  dragRef={dragRef}
-                  onDragHint={onDragHint}
                   onHandlePointerDown={onHandlePointerDown}
                   isNew={t.id === lastCreatedId}
                   addingSubtask={addingSubtaskParentId === t.id}
@@ -1498,38 +1441,37 @@ export default function TasksView() {
   // behave identically; this just makes drag work on touch where HTML5 drag
   // never fires. A floating clone follows the pointer; the column + insert index
   // are hit-tested from the pointer position each move.
-  const startPointerDrag = useCallback((e, taskId) => {
-    if (typeof e.button === 'number' && e.button !== 0) return; // primary button / touch only
-    if (draggedId.current) return; // already dragging — ignore a second pointer (multi-touch)
+  // T-374: the single drag mechanism for the board — Pointer Events for mouse
+  // AND touch (the native HTML5 drag is gone). Initiated from the whole card
+  // body (mouse, with a small move threshold so a plain click still opens the
+  // card) or from the grip (touch + mouse, immediate). One styled-clone visual
+  // everywhere; highlights the target column (.drag-over) + shows the insert
+  // line; reuses handleDrop. opts: { fromBody, threshold }.
+  const startPointerDrag = useCallback((e, taskId, opts = {}) => {
+    if (typeof e.button === 'number' && e.button !== 0) return; // primary button only
+    if (draggedId.current || dragTeardownRef.current) return;   // a drag (pending or active) already runs
+    // On touch, only the grip initiates — a body-drag would fight list scrolling.
+    if (opts.fromBody && e.pointerType === 'touch') return;
     const cardEl = e.target.closest('[data-task-id]');
     if (!cardEl) return;
     const pointerId = e.pointerId;
-    draggedId.current = taskId;
-    const rect = cardEl.getBoundingClientRect();
-    const offX = e.clientX - rect.left;
-    const offY = e.clientY - rect.top;
-    const ghost = cardEl.cloneNode(true);
-    ghost.classList.add('drag-ghost');
-    // Don't leak duplicate identifying attributes into document.body while the
-    // clone lives there (global [data-task-id] queries could match the ghost).
-    for (const a of ['data-task-id', 'data-react-tasks', 'id', 'draggable']) ghost.removeAttribute(a);
-    ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
-    document.body.appendChild(ghost);
-    cardEl.classList.add('dragging');
-    // T-368-1: turn off horizontal scroll-snap while dragging so the board can
-    // smoothly auto-scroll to off-screen columns (one column = 82vw on phones).
-    kanbanRef.current?.classList.add('is-dragging');
+    const threshold = opts.threshold ?? 0;
+    const startX = e.clientX, startY = e.clientY;
+    let lastX = startX, lastY = startY, offX = 0, offY = 0;
+    let ghost = null, active = false, raf = 0;
+    const EDGE = 52, SPEED = 16;
 
     const columnAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('.column');
-    const applyHint = (x, y) => { const col = columnAt(x, y); if (col?.dataset?.status) handleDragHint(col.dataset.status, computeDropIndex(col, y)); };
-
-    // T-368-1: edge auto-scroll. With one column visible per screen on a phone,
-    // cross-column drag is impossible without scrolling the board to the target
-    // column; long columns likewise need vertical scroll. While the pointer sits
-    // in an edge zone, a rAF loop scrolls the board (horizontal) and the hovered
-    // column body (vertical), re-hit-testing each frame.
-    let lastX = e.clientX, lastY = e.clientY, raf = 0;
-    const EDGE = 52, SPEED = 16;
+    function highlightColumn(x, y) {
+      const col = columnAt(x, y);
+      document.querySelectorAll('.column.drag-over').forEach(c => { if (c !== col) c.classList.remove('drag-over'); });
+      if (col?.dataset?.status) col.classList.add('drag-over');
+      return col;
+    }
+    function applyHint(x, y) {
+      const col = highlightColumn(x, y);
+      if (col?.dataset?.status) handleDragHint(col.dataset.status, computeDropIndex(col, y));
+    }
     function autoScrollTick() {
       raf = 0;
       let scrolled = false;
@@ -1555,22 +1497,40 @@ export default function TasksView() {
       const nearV = body && (lastY < body.getBoundingClientRect().top + EDGE || lastY > body.getBoundingClientRect().bottom - EDGE);
       if (nearH || nearV) raf = requestAnimationFrame(autoScrollTick);
     }
+    function activate() {
+      active = true;
+      draggedId.current = taskId;
+      const rect = cardEl.getBoundingClientRect();
+      offX = lastX - rect.left; offY = lastY - rect.top;
+      ghost = cardEl.cloneNode(true);
+      ghost.classList.add('drag-ghost');
+      for (const a of ['data-task-id', 'data-react-tasks', 'id', 'draggable']) ghost.removeAttribute(a);
+      ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
+      document.body.appendChild(ghost);
+      cardEl.classList.add('dragging');
+      kanbanRef.current?.classList.add('is-dragging');
+    }
     function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
       if (raf) cancelAnimationFrame(raf);
-      ghost.remove();
+      if (ghost) ghost.remove();
       cardEl.classList.remove('dragging');
       kanbanRef.current?.classList.remove('is-dragging');
+      document.querySelectorAll('.column.drag-over').forEach(c => c.classList.remove('drag-over'));
       setDropHint(null);
       draggedId.current = null;
       dragTeardownRef.current = null;
     }
     function onMove(ev) {
       if (ev.pointerId !== pointerId) return;
-      ev.preventDefault(); // stop touch scroll while dragging from the handle
       lastX = ev.clientX; lastY = ev.clientY;
+      if (!active) {
+        if (Math.abs(ev.clientX - startX) < threshold && Math.abs(ev.clientY - startY) < threshold) return;
+        activate(); // crossed the threshold → it's a drag, not a click
+      }
+      ev.preventDefault();
       ghost.style.left = `${ev.clientX - offX}px`;
       ghost.style.top = `${ev.clientY - offY}px`;
       applyHint(ev.clientX, ev.clientY);
@@ -1578,8 +1538,13 @@ export default function TasksView() {
     }
     function onUp(ev) {
       if (ev.pointerId !== pointerId) return;
-      const col = ev.type !== 'pointercancel' ? columnAt(ev.clientX, ev.clientY) : null;
-      if (col?.dataset?.status) handleDrop(col.dataset.status, computeDropIndex(col, ev.clientY));
+      if (active) {
+        const col = ev.type !== 'pointercancel' ? columnAt(ev.clientX, ev.clientY) : null;
+        if (col?.dataset?.status) handleDrop(col.dataset.status, computeDropIndex(col, ev.clientY));
+        // No click-suppression needed: a >threshold drag doesn't emit a browser
+        // click, so the card's onClick (open detail) won't fire after a drag.
+      }
+      // if never activated → it was a click/tap: do nothing, let the click open the card
       cleanup();
     }
     dragTeardownRef.current = cleanup;
@@ -1717,9 +1682,6 @@ export default function TasksView() {
             onTaskDeleted={handleTaskDeleted}
             onTaskTrashed={handleTaskTrashed}
             onTaskUpdated={handleTaskUpdated}
-            dragRef={draggedId}
-            onDrop={handleDrop}
-            onDragHint={sortMode === 'custom' ? handleDragHint : undefined}
             onHandlePointerDown={startPointerDrag}
             dropIndex={sortMode === 'custom' && dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
