@@ -5,6 +5,7 @@ import Button from './Button.jsx';
 import Input from './Input.jsx';
 import FormGroup from './FormGroup.jsx';
 import { apiFetch } from '../utils/apiFetch.js';
+import { shouldOfferSuggestion, presetLabel } from '../utils/overviewSuggestion.js';
 
 function slugify(s) {
   return (s || '')
@@ -36,6 +37,10 @@ export default function CreateProjectModal({
   const [newFolderInput, setNewFolderInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  // After a UI create, the server may suggest a best-fit dashboard preset to
+  // confirm (T-365). Holds { project, preset, rationale } while that step shows.
+  const [suggestion, setSuggestion] = useState(null);
+  const [applying, setApplying] = useState(false);
 
   const nameInputRef = useRef(null);
   const newFolderRef = useRef(null);
@@ -49,6 +54,8 @@ export default function CreateProjectModal({
     setNewFolderInput('');
     setSubmitting(false);
     setError(null);
+    setSuggestion(null);
+    setApplying(false);
     setTimeout(() => nameInputRef.current?.focus(), 0);
   }, [open]);
 
@@ -88,11 +95,49 @@ export default function CreateProjectModal({
       // If user picked an existing folder, the backend already stored it.
       // For the rare "New folder…" case we rely on the same `group` field —
       // no separate folder-creation endpoint is needed.
+      //
+      // T-365: the server may return a best-fit dashboard suggestion. For a
+      // non-default, not-yet-applied one, pause on a confirm step instead of
+      // closing — the user decides whether to apply it.
+      if (shouldOfferSuggestion(data.overview)) {
+        setSuggestion({ project: data.project, preset: data.overview.preset, rationale: data.overview.rationale });
+        setSubmitting(false);
+        return;
+      }
       onCreated?.(data.project);
       onClose?.();
     } catch (err) {
       setError(err.message);
       setSubmitting(false);
+    }
+  }
+
+  function finishCreate() {
+    const created = suggestion?.project;
+    setSuggestion(null);
+    if (created) onCreated?.(created);
+    onClose?.();
+  }
+
+  async function applySuggestion() {
+    if (!suggestion) return;
+    setApplying(true);
+    setError(null);
+    try {
+      const res = await apiFetch(`/api/projects/${suggestion.project.name}/overview`, {
+        method: 'PUT',
+        body: JSON.stringify({ preset: suggestion.preset }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || `HTTP ${res.status}`);
+        setApplying(false);
+        return;
+      }
+      finishCreate();
+    } catch (err) {
+      setError(err.message);
+      setApplying(false);
     }
   }
 
@@ -114,22 +159,48 @@ export default function CreateProjectModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
-      title="New project"
+      onClose={suggestion ? finishCreate : onClose}
+      title={suggestion ? 'Set up the dashboard' : 'New project'}
       size="sm"
       showClose
-      dismissible={!submitting}
+      dismissible={!submitting && !applying}
       actions={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={handleCreate} disabled={!canCreate}>
-            {submitting ? 'Creating…' : 'Create project'}
-          </Button>
-        </>
+        suggestion ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={finishCreate} disabled={applying}>
+              Keep default
+            </Button>
+            <Button size="sm" onClick={applySuggestion} disabled={applying}>
+              {applying ? 'Applying…' : `Use ${presetLabel(suggestion.preset)}`}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleCreate} disabled={!canCreate}>
+              {submitting ? 'Creating…' : 'Create project'}
+            </Button>
+          </>
+        )
       }
     >
+      {suggestion ? (
+        <div className="flex flex-col gap-3">
+          <div className="text-[13px] text-text">
+            Project{' '}
+            <span className="text-text-strong">{suggestion.project.displayName || suggestion.project.name}</span>{' '}
+            created.
+          </div>
+          <div className="flex flex-col gap-1.5 rounded-lg border border-solid border-border bg-bg-elevated p-3">
+            <div className="text-[11px] text-muted">Suggested dashboard</div>
+            <div className="text-[14px] text-text-strong">{presetLabel(suggestion.preset)}</div>
+            <div className="text-[12px] text-muted">{suggestion.rationale}</div>
+          </div>
+          {error && <div className="text-[11px] text-danger">{error}</div>}
+        </div>
+      ) : (
       <div className="flex flex-col gap-3.5">
         <FormGroup
           label="Project name"
@@ -232,6 +303,7 @@ export default function CreateProjectModal({
           <div className="text-[11px] text-danger">{error}</div>
         )}
       </div>
+      )}
     </Modal>
   );
 }
