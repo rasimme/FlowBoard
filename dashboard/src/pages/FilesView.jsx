@@ -445,6 +445,8 @@ export default function FilesView() {
   const [fileData, setFileData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [treeLoading, setTreeLoading] = useState(false);
+  // T-375-1: the tree shows Markdown only by default; reveal operational files on demand.
+  const [showHidden, setShowHidden] = useState(false);
   const [fileConflict, setFileConflict] = useState(null);
   const uploadInputRef = useRef(null);
   // T-221: when FilesView is opened from a task's "Open spec" action, we
@@ -503,7 +505,8 @@ export default function FilesView() {
     if (!viewedProject) return null;
     if (!opts.background) setTreeLoading(true);
     try {
-      const res = await apiFetch(`/api/projects/${viewedProject}/files`);
+      const qs = showHidden ? '?includeHidden=true' : '';
+      const res = await apiFetch(`/api/projects/${viewedProject}/files${qs}`);
       if (!res.ok) throw new Error('File tree failed');
       const data = await res.json();
       setFileTree(data);
@@ -514,7 +517,7 @@ export default function FilesView() {
     } finally {
       if (!opts.background) setTreeLoading(false);
     }
-  }, [viewedProject]);
+  }, [viewedProject, showHidden]);
 
   useEffect(() => {
     if (!viewedProject) {
@@ -874,7 +877,18 @@ export default function FilesView() {
         <div className="file-tree-footer">
           {fileTree && (
             <>
-              <span>{fileTree.fileCount} files · {formatSize(fileTree.totalSize)}</span>
+              <span>
+                {fileTree.fileCount} files · {formatSize(fileTree.totalSize)}
+                {' · '}
+                <button
+                  type="button"
+                  onClick={() => setShowHidden(v => !v)}
+                  title="Operational files (JSON, backups) are hidden by default"
+                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', textDecoration: 'underline', font: 'inherit' }}
+                >
+                  {showHidden ? 'Hide operational' : 'Show hidden'}
+                </button>
+              </span>
               <div className="context-bar">
                 <div
                   className="context-bar-fill"

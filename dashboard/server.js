@@ -59,6 +59,7 @@ const { autoPlaceNote } = require('./canvas-placement.js');
 const versionCheck = require('./version-check.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
+const { isEditorVisible } = require('./file-visibility.js');
 
 // Gateway webhook config (for project-switch wake events).
 // Resolution contract (docs/reference/env-vars.md): OPENCLAW_-prefixed vars
@@ -2092,7 +2093,7 @@ function getFileCategory(relPath) {
   return 'optional';
 }
 
-function buildFileTree(projectName) {
+function buildFileTree(projectName, { includeHidden = false } = {}) {
   const projectDir = path.join(PROJECTS_DIR, projectName);
   if (!fs.existsSync(projectDir)) return null;
 
@@ -2114,6 +2115,10 @@ function buildFileTree(projectName) {
         });
         walk(fullPath, relPath);
       } else {
+        // T-375-1: the editor shows the knowledge layer (Markdown). Operational
+        // JSON and migration/backup artifacts are hidden unless includeHidden.
+        const hidden = !isEditorVisible(relPath);
+        if (hidden && !includeHidden) continue;
         const stat = fs.statSync(fullPath);
         const version = `${stat.mtimeMs}:${stat.size}`;
         entries.push({
@@ -2122,6 +2127,7 @@ function buildFileTree(projectName) {
           type: 'file',
           size: stat.size,
           category: getFileCategory(relPath),
+          hidden,
           modified: stat.mtime.toISOString(),
           modifiedMs: stat.mtimeMs,
           version
@@ -2178,7 +2184,8 @@ function buildFileTree(projectName) {
 
 // GET /api/projects/:name/files
 app.get('/api/projects/:name/files', (req, res) => {
-  const result = buildFileTree(req.params.name);
+  const includeHidden = req.query.includeHidden === 'true';
+  const result = buildFileTree(req.params.name, { includeHidden });
   if (!result) return res.status(404).json({ error: 'Project not found' });
   res.json(result);
 });
