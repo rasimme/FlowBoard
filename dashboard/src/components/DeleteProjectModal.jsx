@@ -31,7 +31,10 @@ export default function DeleteProjectModal({ open, onClose, project, onDeleted }
     setError(null);
     try {
       const name = encodeURIComponent(project.name);
-      const res = await fetch(`/api/projects/${name}?confirm=${name}`, {
+      // hardDelete=true is the explicit acknowledgement the server now requires
+      // (T-357) — the typed-name confirmation modal above is the deliberate
+      // intent; this flag carries it to the API so a bare confirm can't delete.
+      const res = await fetch(`/api/projects/${name}?confirm=${name}&hardDelete=true`, {
         method: 'DELETE',
         credentials: 'include',
       });

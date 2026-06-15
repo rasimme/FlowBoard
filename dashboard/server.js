@@ -1471,6 +1471,20 @@ app.delete('/api/projects/:name', (req, res) => {
   if (req.query.confirm !== req.params.name) {
     return res.status(400).json({ error: 'Missing or mismatched ?confirm=<projectName>' });
   }
+  // Guardrail (T-357): the project name alone is trivially known to any caller,
+  // so `confirm` is not real proof of destructive intent. Require an explicit
+  // hardDelete acknowledgement on top of it, and point a caller that merely
+  // wanted to deactivate at the safe, reversible PUT path. This is what stops
+  // an agent that means "deactivate" from accidentally hard-deleting a project.
+  const ack = req.query.hardDelete === 'true' || req.body?.hardDelete === true;
+  if (!ack) {
+    return res.status(400).json({
+      error: `Refusing to hard-delete "${req.params.name}" without explicit acknowledgement. `
+        + `To DEACTIVATE and keep all data (reversible), use PUT /api/projects/${req.params.name} { "archived": true }. `
+        + 'To permanently trash it (moves the dir to .trash/ and tombstones it), repeat this DELETE with hardDelete=true.',
+      code: 'HARD_DELETE_NOT_ACKNOWLEDGED',
+    });
+  }
   const lifecycle = require('./project-lifecycle.js');
   try {
     const result = lifecycle.deleteProject(req.params.name, {
