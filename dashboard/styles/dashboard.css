@@ -500,6 +500,26 @@
       border-radius: 1px;
       pointer-events: none;
     }
+    /* T-130: sort-mode dropdown (Custom / Newest / Oldest) */
+    .sort-mode-menu {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sort-mode-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      width: 100%; padding: 6px 8px; margin: 0;
+      background: none; border: none; cursor: pointer;
+      font-size: 12px; color: var(--text); text-align: left;
+      border-radius: var(--radius-sm); transition: background var(--duration-normal);
+    }
+    .sort-mode-item:hover { background: var(--card-highlight); }
+    .sort-mode-item.active { color: var(--accent); }
     /* Empty-section drop zone (e.g. empty folder body, empty archive placeholder) —
        kept as a ring since there's no gap to place a divider in. */
     .drop-into {

@@ -11,7 +11,7 @@ import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
-import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
+import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import { getTasks, replaceTasks, refreshTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
@@ -44,8 +44,16 @@ const STATUS_LABELS = {
   done: 'Done',
 };
 
-function getInitialSort() {
-  return localStorage.getItem('sortNewestFirst') !== 'false';
+// T-130: sort modes. 'custom' = manual drag order (the default now that columns
+// are user-orderable); 'newest'/'oldest' sort purely by task number and ignore
+// (but preserve) the manual ranks.
+const SORT_MODES = ['custom', 'newest', 'oldest'];
+const SORT_LABELS = { custom: 'Custom', newest: 'Newest first', oldest: 'Oldest first' };
+function getInitialSortMode() {
+  const m = localStorage.getItem('sortMode');
+  if (SORT_MODES.includes(m)) return m;
+  // Migrate the old boolean toggle: default everyone to the new manual order.
+  return 'custom';
 }
 function getInitialArchived() {
   return localStorage.getItem('showArchived') === 'true';
@@ -55,19 +63,22 @@ function parseTaskNum(id) {
   return parseInt(id.replace('T-', ''));
 }
 
-// T-130: a task carries an optional manual `order` rank (set by drag-to-reorder
-// within a column). Manually-ranked tasks sort ahead of unranked ones, ascending
-// by rank — so cards stay in the position they were dropped, regardless of the
-// newest-first toggle. Unranked tasks fall back to numeric id by that toggle.
-function sortTasks(tasks, newestFirst) {
-  const dir = newestFirst ? -1 : 1;
+// T-130: sort a column's tasks for the given mode.
+//  - 'newest'/'oldest': purely by task number (manual ranks ignored).
+//  - 'custom': manually-ranked tasks first, ascending by rank (so a card stays
+//    where it was dropped); unranked tasks fall back to newest-first, which also
+//    keeps freshly created, not-yet-ranked tasks near the top.
+function sortTasks(tasks, sortMode) {
+  const byNum = (a, b, dir) => dir * (parseTaskNum(a.id) - parseTaskNum(b.id));
+  if (sortMode === 'newest') return [...tasks].sort((a, b) => byNum(a, b, -1));
+  if (sortMode === 'oldest') return [...tasks].sort((a, b) => byNum(a, b, 1));
   return [...tasks].sort((a, b) => {
     const ao = typeof a.order === 'number';
     const bo = typeof b.order === 'number';
     if (ao && bo) return a.order - b.order;
     if (ao) return -1;
     if (bo) return 1;
-    return dir * (parseTaskNum(a.id) - parseTaskNum(b.id));
+    return byNum(a, b, -1);
   });
 }
 
@@ -241,7 +252,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, index, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDragHint, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -272,6 +283,24 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
     e.currentTarget.classList.remove('dragging');
     document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
     dragRef.current = null;
+  };
+
+  // T-130: per-card drop targeting (sidebar pattern). Each card decides whether
+  // the insertion goes before or after itself from the pointer's position
+  // relative to its own midpoint, then reports the rendered-space insert index.
+  // stopPropagation means the column's coarse fallback only runs over empty
+  // padding — far more reliable than a single column-wide hit-test, which was
+  // flaky in the busy backlog/done columns. Only active in 'custom' sort
+  // (onDragHint is undefined otherwise).
+  const handleCardDragOver = (e) => {
+    if (!dragRef?.current || !onDragHint) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.closest('.column')?.classList.add('drag-over');
+    const r = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    onDragHint(task.status, index + (after ? 1 : 0));
   };
 
   // --- Delete with shrink animation ---
@@ -399,6 +428,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
           draggable={!removing}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          onDragOver={handleCardDragOver}
           onClick={!removing ? handleClick : undefined}
           onKeyDown={!removing ? (e) => {
             if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) {
@@ -897,11 +927,11 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, dropIndex, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, dropIndex, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
-  const sortedArchived = isDone && showArchived ? sortTasks(archivedTasks, sortNewestFirst) : [];
+  const sortedArchived = isDone && showArchived ? sortTasks(archivedTasks, sortMode) : [];
 
   // When the user toggles "show archived" on, scroll the column so the
   // archived section is immediately visible — otherwise they'd have to
@@ -983,6 +1013,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                 {dropIndex === i && <DropLine />}
                 <TaskCard
                   task={t}
+                  index={i}
                   allTasks={allTasks}
                   expanded={expandedParents.has(t.id)}
                   onToggleExpand={onToggleExpand}
@@ -991,6 +1022,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                   onTaskTrashed={onTaskTrashed}
                   onTaskUpdated={onTaskUpdated}
                   dragRef={dragRef}
+                  onDragHint={onDragHint}
                   isNew={t.id === lastCreatedId}
                   addingSubtask={addingSubtaskParentId === t.id}
                   onAddSubtask={onAddSubtask}
@@ -1040,7 +1072,8 @@ export default function TasksView() {
   const viewedProject = state?.viewedProject;
   const allTasks = state?.tasks || [];
 
-  const [sortNewestFirst, setSortNewestFirst] = useState(getInitialSort);
+  const [sortMode, setSortMode] = useState(getInitialSortMode);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(getInitialArchived);
   const [expandedParents, setExpandedParents] = useState(() => {
     try { return new Set(window.kanbanState?.expandedParents || []); } catch { return new Set(); }
@@ -1070,13 +1103,11 @@ export default function TasksView() {
     return () => window.removeEventListener('dragend', clear);
   }, []);
 
-  const handleToggleSort = useCallback(() => {
-    setSortNewestFirst(prev => {
-      const next = !prev;
-      localStorage.setItem('sortNewestFirst', next);
-      try { if (window.kanbanState) window.kanbanState.sortNewestFirst = next; } catch { /* noop */ }
-      return next;
-    });
+  const handleSetSortMode = useCallback((mode) => {
+    setSortMode(mode);
+    setSortMenuOpen(false);
+    localStorage.setItem('sortMode', mode);
+    try { if (window.kanbanState) window.kanbanState.sortMode = mode; } catch { /* noop */ }
   }, []);
 
   const handleToggleArchived = useCallback(() => {
@@ -1114,9 +1145,31 @@ export default function TasksView() {
   }, []);
 
   const handleTaskCreated = useCallback((newTaskId) => {
-    if (newTaskId) setLastCreatedId(newTaskId);
+    if (newTaskId) {
+      setLastCreatedId(newTaskId);
+      // T-130 (#2): keep newly created backlog tasks at the TOP. With manual
+      // ranks present, a rank-less new task would sort below them — so give it a
+      // rank just above the current minimum and persist it. (If nothing is ranked
+      // yet, the 'custom' newest-first fallback already puts it on top.)
+      const tasks = getTasks();
+      const created = tasks.find(t => t.id === newTaskId);
+      if (created && created.status === 'backlog' && !created.parentId) {
+        const ranks = tasks
+          .filter(t => !t.parentId && !t.trashedAt && t.status === 'backlog' && typeof t.order === 'number')
+          .map(t => t.order);
+        if (ranks.length > 0) {
+          const topRank = Math.min(...ranks) - 10;
+          replaceTasks(patchTask(getTasks(), newTaskId, { order: topRank }));
+          apiFetch(`/api/projects/${viewedProject}/tasks/${newTaskId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order: topRank }),
+          }).catch(() => { /* optimistic; reconciles on next refresh */ });
+        }
+      }
+    }
     notify();
-  }, []);
+  }, [viewedProject]);
 
   const handleAddSubtask = useCallback((parentId) => {
     setAddingSubtaskParentId(parentId);
@@ -1246,37 +1299,49 @@ export default function TasksView() {
 
     const oldStatus = task.status;
     const statusChanged = oldStatus !== newStatus;
+    // Manual ranks are only written/honoured in 'custom' sort. In newest/oldest a
+    // drop is a pure status change (cross-column); intra-column drops are a no-op.
+    const manual = sortMode === 'custom';
 
-    // T-130: rebuild the target column's manual order with the dragged card
-    // inserted at the drop position, then assign sparse ranks (10, 20, 30…).
+    // T-130: in custom mode, rebuild the target column's order with the dragged
+    // card inserted at the drop position, then assign sparse ranks (10, 20, 30…).
     // `dropIndex` is in rendered-list space (includes the dragged card when it
     // started in this column), so translate it to the dragged-excluded list.
-    const colAll = sortTasks(
-      tasksBefore.filter(t => !t.parentId && !t.trashedAt && t.status === newStatus),
-      sortNewestFirst,
-    );
-    const colTasks = colAll.filter(t => t.id !== id);
-    const draggedPos = colAll.findIndex(t => t.id === id);
-    let idx = (typeof dropIndex === 'number' && dropIndex >= 0) ? dropIndex : colTasks.length;
-    if (draggedPos !== -1 && idx > draggedPos) idx -= 1; // account for the dragged card's own removal
-    idx = Math.max(0, Math.min(idx, colTasks.length));
-    const ordered = [...colTasks.slice(0, idx), task, ...colTasks.slice(idx)];
-    const rankById = new Map(ordered.map((t, i) => [t.id, (i + 1) * 10]));
+    let ordered = [];
+    let rankById = new Map();
     const orderChanged = (t) => rankById.get(t.id) !== (typeof t.order === 'number' ? t.order : null);
+    if (manual) {
+      const colAll = sortTasks(
+        tasksBefore.filter(t => !t.parentId && !t.trashedAt && t.status === newStatus),
+        sortMode,
+      );
+      const colTasks = colAll.filter(t => t.id !== id);
+      const draggedPos = colAll.findIndex(t => t.id === id);
+      let idx = (typeof dropIndex === 'number' && dropIndex >= 0) ? dropIndex : colTasks.length;
+      if (draggedPos !== -1 && idx > draggedPos) idx -= 1; // account for the dragged card's own removal
+      idx = Math.max(0, Math.min(idx, colTasks.length));
+      ordered = [...colTasks.slice(0, idx), task, ...colTasks.slice(idx)];
+      rankById = new Map(ordered.map((t, i) => [t.id, (i + 1) * 10]));
+    }
     const reordered = ordered.filter(orderChanged);
 
     if (!statusChanged && reordered.length === 0) return;
 
     // --- Optimistic apply: status (dragged) + new ranks (whole column) ---
     let optimistic = tasksBefore;
-    for (const t of ordered) {
-      const patch = { order: rankById.get(t.id) };
-      if (t.id === id && statusChanged) {
-        patch.status = newStatus;
-        if (newStatus === 'done') patch.completed = new Date().toISOString().slice(0, 10);
-        if (oldStatus === 'done' && newStatus !== 'done') patch.completed = null;
+    const applyStatusPatch = (patch) => {
+      if (newStatus === 'done') patch.completed = new Date().toISOString().slice(0, 10);
+      if (oldStatus === 'done' && newStatus !== 'done') patch.completed = null;
+      return patch;
+    };
+    if (manual) {
+      for (const t of ordered) {
+        const patch = { order: rankById.get(t.id) };
+        if (t.id === id && statusChanged) applyStatusPatch(patch).status = newStatus;
+        optimistic = patchTask(optimistic, t.id, patch);
       }
-      optimistic = patchTask(optimistic, t.id, patch);
+    } else if (statusChanged) {
+      optimistic = patchTask(optimistic, id, applyStatusPatch({ status: newStatus }));
     }
     replaceTasks(optimistic);
 
@@ -1296,13 +1361,17 @@ export default function TasksView() {
         body: JSON.stringify({ actor: window.appState?.agentId || 'human' }),
       }));
     }
-    // One PUT per task whose rank changed; fold the dragged task's status in
-    // (unless it went through the approve endpoint above).
-    for (const t of ordered) {
-      const body = {};
-      if (orderChanged(t)) body.order = rankById.get(t.id);
-      if (t.id === id && statusChanged && !reviewApproval) body.status = newStatus;
-      if (Object.keys(body).length > 0) requests.push(put(t.id, body));
+    if (manual) {
+      // One PUT per task whose rank changed; fold the dragged task's status in
+      // (unless it went through the approve endpoint above).
+      for (const t of ordered) {
+        const body = {};
+        if (orderChanged(t)) body.order = rankById.get(t.id);
+        if (t.id === id && statusChanged && !reviewApproval) body.status = newStatus;
+        if (Object.keys(body).length > 0) requests.push(put(t.id, body));
+      }
+    } else if (statusChanged && !reviewApproval) {
+      requests.push(put(id, { status: newStatus }));
     }
 
     Promise.all(requests).then(async (responses) => {
@@ -1322,7 +1391,7 @@ export default function TasksView() {
       if (window.showToast) window.showToast('Failed to move task', 'error');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
     });
-  }, [viewedProject, sortNewestFirst]);
+  }, [viewedProject, sortMode]);
 
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);
@@ -1347,12 +1416,12 @@ export default function TasksView() {
       }
     }
     for (const s of STATUS_KEYS) {
-      groups[s] = sortTasks(groups[s], sortNewestFirst);
+      groups[s] = sortTasks(groups[s], sortMode);
     }
     // Sort trashed newest-first by trashedAt so recently deleted items surface first
     trashed.sort((a, b) => new Date(b.trashedAt).getTime() - new Date(a.trashedAt).getTime());
     return { grouped: groups, archivedTopLevel: archived, trashedTopLevel: trashed };
-  }, [allTasks, sortNewestFirst]);
+  }, [allTasks, sortMode]);
 
   if (!viewedProject) {
     return (
@@ -1379,15 +1448,46 @@ export default function TasksView() {
     <div className="flex flex-col h-full" data-react-tasks>
       <ActiveAgentsBar />
       <div className="flex items-center justify-end pb-2 gap-2 shrink-0">
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
-          onClick={handleToggleSort}
-        >
-          <span>{sortNewestFirst ? '↓' : '↑'}</span>
-          <span>{sortNewestFirst ? 'Newest first' : 'Oldest first'}</span>
-        </button>
+        <div className="sort-mode" style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            onClick={() => setSortMenuOpen(o => !o)}
+            aria-haspopup="listbox"
+            aria-expanded={sortMenuOpen}
+            title="Sort order"
+          >
+            <ArrowUpDown size={12} />
+            <span>{SORT_LABELS[sortMode]}</span>
+            <ChevronDown size={12} />
+          </button>
+          {sortMenuOpen && (
+            <>
+              {/* click-away backdrop */}
+              <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setSortMenuOpen(false)} />
+              <div
+                className="sort-mode-menu"
+                role="listbox"
+                style={{ position: 'absolute', right: 0, top: '100%', marginTop: '4px', zIndex: 41, minWidth: '150px' }}
+              >
+                {SORT_MODES.map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="option"
+                    aria-selected={sortMode === mode}
+                    className={`sort-mode-item${sortMode === mode ? ' active' : ''}`}
+                    onClick={() => handleSetSortMode(mode)}
+                  >
+                    <span>{SORT_LABELS[mode]}</span>
+                    {sortMode === mode && <Check size={12} />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {/* T-161-4: Trash toolbar icon. Rendered only when the project has
             at least one trashed task so an empty Trash does not clutter the
             header. Badge shows the count; click opens the TrashPanel. */}
@@ -1422,7 +1522,7 @@ export default function TasksView() {
             onToggleArchived={handleToggleArchived}
             expandedParents={expandedParents}
             onToggleExpand={handleToggleExpand}
-            sortNewestFirst={sortNewestFirst}
+            sortMode={sortMode}
             project={viewedProject}
             onTaskCreated={handleTaskCreated}
             onTaskDeleted={handleTaskDeleted}
@@ -1430,8 +1530,8 @@ export default function TasksView() {
             onTaskUpdated={handleTaskUpdated}
             dragRef={draggedId}
             onDrop={handleDrop}
-            onDragHint={handleDragHint}
-            dropIndex={dropHint?.status === status ? dropHint.index : null}
+            onDragHint={sortMode === 'custom' ? handleDragHint : undefined}
+            dropIndex={sortMode === 'custom' && dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
             addingSubtaskParentId={addingSubtaskParentId}
             onAddSubtask={handleAddSubtask}

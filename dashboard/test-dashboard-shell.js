@@ -278,6 +278,52 @@ async function run() {
     await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
     const cleared = await waitFor(async () => !(await page.$('.column[data-status="review"] .drop-line')), 'indicator cleared on dragend', 3000).catch(() => false);
     ok(cleared, 'dragend clears the drop indicator');
+
+    // --- Flow 13 (T-130): per-CARD drop targeting works in the backlog column ---
+    // Backlog has the add-task form + (now) ranked cards — the column that the
+    // coarse hit-test struggled with. Dispatch dragover on a CARD (not the
+    // column) and assert the indicator appears: exercises the sidebar-pattern
+    // per-card handler that replaced the flaky column scan.
+    await page.evaluate(() => {
+      const col = document.querySelector('.column[data-status="backlog"]');
+      const cards = [...col.querySelectorAll('[data-react-tasks]')];
+      window.__dt = new DataTransfer();
+      window.__src = cards[cards.length - 1];
+      const fire = (el, type, extra = {}) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt, ...extra }));
+      fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
+      const tgt = cards[0]; const r = tgt.getBoundingClientRect();
+      fire(tgt, 'dragover', { clientY: r.top + 2 }); // upper half of first card → before it
+    });
+    const blLine = await waitFor(() => page.$('.column[data-status="backlog"] .drop-line'), 'backlog per-card indicator', 3000).catch(() => null);
+    ok(blLine, 'drop indicator renders via per-card targeting in the backlog column');
+    await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
+
+    // --- Flow 13b (T-130 #2): a newly created backlog task lands at the TOP ---
+    await page.click('.add-task-btn');
+    await page.waitForSelector('#newTaskTitle', { timeout: 4000 });
+    const topProbe = 'Top of backlog probe';
+    await page.type('#newTaskTitle', topProbe);
+    await page.keyboard.press('Enter');
+    const isFirst = await waitFor(async () => page.evaluate((title) => {
+      const first = document.querySelector('.column[data-status="backlog"] [data-task-id]');
+      return first && (first.textContent || '').includes(title);
+    }, topProbe), 'new backlog task is first', 4000).catch(() => false);
+    ok(isFirst, 'a newly created backlog task appears at the top (T-130 #2)');
+
+    // --- Flow 13c (T-130 #3): switching sort mode to Newest re-sorts by id ---
+    await page.click('.sort-mode button[aria-haspopup="listbox"]');
+    await page.waitForSelector('.sort-mode-menu', { timeout: 3000 });
+    await page.evaluate(() => {
+      const item = Array.from(document.querySelectorAll('.sort-mode-item')).find(b => /Newest/.test(b.textContent || ''));
+      item?.click();
+    });
+    const newestOk = await waitFor(async () => page.evaluate(() => {
+      const ids = Array.from(document.querySelectorAll('.column[data-status="backlog"] [data-task-id]'))
+        .map(e => parseInt(e.dataset.taskId.replace('T-', ''), 10));
+      // newest-first → strictly descending by id, ignoring manual ranks
+      return ids.length > 1 && ids.every((n, i) => i === 0 || ids[i - 1] >= n);
+    }), 'backlog sorted newest-first', 4000).catch(() => false);
+    ok(newestOk, 'Newest-first mode sorts by id and ignores manual ranks (T-130 #3)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');
