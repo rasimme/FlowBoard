@@ -70,7 +70,7 @@ async function run() {
     browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--no-sandbox'] });
     const page = await browser.newPage();
     await page.setViewport({ width: 1400, height: 900 });
-    await page.goto(base + '/', { waitUntil: 'networkidle2' });
+    await page.goto(base + '/?agentId=shell-tester', { waitUntil: 'networkidle2' });
     await page.waitForSelector('.app', { timeout: 8000 });
     await page.waitForSelector('#tabBar .tab', { timeout: 8000 });
 
@@ -134,6 +134,35 @@ async function run() {
       }, t2);
     }, 'scroll-to-task highlight', 4000).catch(() => false);
     ok(highlighted, 'navigation flag reveals + highlights the target card');
+
+    // --- Flow 7: identity (agentId/authUser) propagated to React + rendered ---
+    // This is the path the removed 5s watchdog used to cover (T-356). With
+    // ?agentId=shell-tester + that agent active on the project, the ActiveAgentsBar
+    // must render it — proving the identity reached React without polling.
+    ok(await page.evaluate(() => window.appState?.agentId === 'shell-tester'), 'agentId resolved into appState');
+    const idShown = await waitFor(async () => {
+      return page.evaluate(() => {
+        const bar = document.querySelector('.active-agents-bar');
+        return bar && /shell-tester/.test(bar.textContent || '');
+      });
+    }, 'identity rendered in ActiveAgentsBar', 5000).catch(() => false);
+    ok(idShown, 'agent identity is rendered (no watchdog needed to propagate it)');
+
+    // --- Flow 8: a UI-created task appears IMMEDIATELY (< 1.5s, well under the
+    // old 5s watchdog). If any local mutation now relied on the watchdog instead
+    // of a dispatch, this fails. ---
+    const probeTitle = 'Immediacy probe alpha';
+    await page.click('.add-task-btn'); // backlog column "+ New Task"
+    await page.waitForSelector('#newTaskTitle', { timeout: 4000 });
+    await page.type('#newTaskTitle', probeTitle);
+    await page.keyboard.press('Enter');
+    const appearedFast = await waitFor(async () => {
+      return page.evaluate((title) => {
+        return Array.from(document.querySelectorAll('[data-task-id]'))
+          .some(el => (el.textContent || '').includes(title));
+      }, probeTitle);
+    }, 'UI-created task appears', 1500).catch(() => false);
+    ok(appearedFast, 'a task created in the UI shows on the board within 1.5s (optimistic dispatch, not the watchdog)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');
