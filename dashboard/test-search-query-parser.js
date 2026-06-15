@@ -23,7 +23,9 @@ eq(parseQuery('369').idQuery, 'T-369', 'bare number → T-369');
 eq(parseQuery('T-369').idQuery, 'T-369', 'T-369 → T-369');
 eq(parseQuery('t369').idQuery, 'T-369', 't369 → T-369');
 eq(parseQuery('t-369').idQuery, 'T-369', 't-369 → T-369');
-eq(parseQuery('T-042-1').idQuery, 'T-042-1', 'subtask id preserved');
+eq(parseQuery('13').idQuery, 'T-13', 'leading-zero-insensitive: 13 → T-13');
+eq(parseQuery('042').idQuery, 'T-42', 'leading zeros stripped: 042 → T-42');
+eq(parseQuery('T-042-1').idQuery, 'T-42-1', 'subtask id normalized (zeros stripped)');
 eq(parseQuery('auth bug').idQuery, null, 'free text → no id');
 eq(parseQuery('').idQuery, null, 'empty → no id');
 

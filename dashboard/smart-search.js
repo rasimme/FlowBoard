@@ -46,9 +46,20 @@ function parseQuery(raw) {
   const text = textTokens.join(' ');
   let idQuery = null;
   const idm = text.match(ID_RE);
-  if (idm) idQuery = 'T-' + idm[1];
+  if (idm) idQuery = normId(idm[1]);
 
   return { text, idQuery, filters };
+}
+
+/**
+ * Normalize a task-id (or the numeric tail of one) to a leading-zero-insensitive
+ * comparison key: `T-<n>[-<n>...]`. So `007`, `T-007`, `7` all → `T-7`, matching
+ * how FlowBoard zero-pads ids (`T-013`). Subtask ids keep their suffix (`T-42-1`).
+ */
+function normId(s) {
+  const digits = String(s).replace(/^[tT]-?/, '');
+  if (!/^\d+(?:-\d+)?$/.test(digits)) return null;
+  return 'T-' + digits.split('-').map(n => String(parseInt(n, 10))).join('-');
 }
 
 // --- ranking weights --------------------------------------------------------
@@ -140,10 +151,10 @@ function rankTasks(tasks, raw, opts = {}) {
     let exact = false;
 
     if (idMode) {
-      const id = String(task.id || '').toLowerCase();
-      const q = parsed.idQuery.toLowerCase();
+      const id = normId(task.id);
+      const q = parsed.idQuery;
       if (id === q) { score = 1000; exact = true; }
-      else if (id.startsWith(q)) { score = 300; }
+      else if (id && id.startsWith(q)) { score = 300; }
       else continue; // id query → only id matches survive
     } else if (qTokens.length) {
       const f = {

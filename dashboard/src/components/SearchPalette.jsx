@@ -133,8 +133,9 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
                 >
                   {r.kind === 'task' && (
                     <>
-                      <ListTodo size={14} className="text-muted shrink-0" />
-                      <span className="mono text-[11px] text-muted shrink-0">{r.id}</span>
+                      <ListTodo size={14} className={`shrink-0 ${r.exact ? 'text-accent' : 'text-muted'}`} />
+                      <span className={`mono text-[11px] shrink-0 ${r.exact ? 'text-accent font-semibold' : 'text-muted'}`}>{r.id}</span>
+                      {r.exact && <span className="text-[10px] uppercase tracking-wide text-accent shrink-0">exact</span>}
                       <span className="text-sm text-text truncate flex-1">{r.title}</span>
                       <Badge>{formatDisplayName(r.project, projects)}</Badge>
                       <span className="text-[11px] text-muted shrink-0">{r.status}</span>
@@ -162,6 +163,14 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
         )}
         {!loading && query.trim() && results.length === 0 && (
           <div className="px-4 py-6 text-sm text-muted text-center">No tasks, notes or projects found</div>
+        )}
+        {!query.trim() && (
+          <div className="px-4 py-3 border-t border-border text-[11px] text-muted leading-relaxed">
+            Search by task number (e.g. <span className="mono">369</span>), or filter with{' '}
+            <span className="mono">status:</span> <span className="mono">project:</span>{' '}
+            <span className="mono">agent:</span> <span className="mono">is:blocked</span>{' '}
+            <span className="mono">has:spec</span> — combine with free text.
+          </div>
         )}
       </div>
     </div>,

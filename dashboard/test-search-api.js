@@ -106,6 +106,35 @@ async function run() {
     ok((r.body?.projects || []).some(p => p.name === 'alpha'), 'projects match by name');
     r = await api('GET', '/search?q=styling');
     ok((r.body?.notes || []).length === 1 && (r.body?.tasks || []).length === 1, 'a query can return both tasks and notes');
+
+    // T-369: smart search — task numbers, typo tolerance, infix, operators
+    await api('POST', '/projects', { name: 'gamma' });
+    const g1 = await api('POST', '/projects/gamma/tasks', { title: 'Implement OAuth login flow' });
+    const g2 = await api('POST', '/projects/gamma/tasks', { title: 'Fix login redirect bug' });
+    const gid = g1.body?.task?.id;                 // e.g. 'T-001'
+    const gid2 = g2.body?.task?.id;
+    const gnum = String(gid || '').replace(/\D/g, ''); // '001'
+
+    r = await api('GET', `/search?q=${gnum}&project=gamma`);
+    ok((r.body?.tasks || [])[0]?.id === gid, `task-number search finds ${gid} (got ${(r.body?.tasks || [])[0]?.id})`);
+    ok((r.body?.tasks || [])[0]?.exact === true, 'exact task-number hit is flagged exact');
+
+    r = await api('GET', `/search?q=${encodeURIComponent('T-' + parseInt(gnum, 10))}&project=gamma`);
+    ok((r.body?.tasks || [])[0]?.id === gid, 'leading-zero-insensitive id search finds the task');
+
+    r = await api('GET', '/search?q=redirct&project=gamma'); // typo of "redirect"
+    ok((r.body?.tasks || []).some(t => t.title.includes('redirect')), 'typo tolerance finds "redirect"');
+
+    r = await api('GET', '/search?q=aut&project=gamma'); // infix in "OAuth"
+    ok((r.body?.tasks || []).some(t => t.title.includes('OAuth')), 'infix matching finds "OAuth"');
+
+    await api('PUT', '/projects/gamma/tasks/' + gid + '?agentId=human', { status: 'review' });
+    r = await api('GET', '/search?q=status:review&project=gamma');
+    ok((r.body?.tasks || []).length === 1 && r.body.tasks[0].status === 'review', 'status: operator filters by status');
+
+    await api('POST', `/projects/gamma/tasks/${gid2}/claim`, { agent: 'tester' });
+    r = await api('GET', '/search?q=agent:tester&project=gamma');
+    ok((r.body?.tasks || []).every(t => t.agent === 'tester') && (r.body?.tasks || []).length === 1, 'agent: operator filters by claim');
   } catch (err) {
     fail++;
     failures.push(err.message);

@@ -18,6 +18,7 @@ const TASKS = [
   { id: 'T-9', title: 'auth', status: 'done', project: 'flowboard', agent: null, specFile: null, tags: [], created: '2026-04-03', priority: 'medium' },
   { id: 'T-10', title: 'auth', status: 'in-progress', project: 'flowboard', agent: 'dev-botti', specFile: null, tags: [], created: '2026-04-03', priority: 'medium' },
   { id: 'T-11', title: 'Mobile layout', status: 'blocked', project: 'other', agent: null, specFile: null, blocked: true, tags: [], created: '2026-04-04', priority: 'medium' },
+  { id: 'T-052', title: 'Padding probe', status: 'backlog', project: 'flowboard', agent: null, specFile: null, tags: [], created: '2026-03-01', priority: 'medium' },
 ];
 
 console.log('# Smart search — matcher + ranker (T-369)');
@@ -30,6 +31,11 @@ console.log('# Smart search — matcher + ranker (T-369)');
 }
 ok(rankTasks(TASKS, 'T-369')[0].id === 'T-369', 'T-369 finds T-369');
 ok(ids(rankTasks(TASKS, '36')).includes('T-369'), 'id prefix 36 finds T-369');
+{
+  const r = rankTasks(TASKS, '52');
+  ok(r.length >= 1 && r[0].id === 'T-052' && r[0].exact === true, 'leading-zero-insensitive: 52 → T-052 exact');
+}
+ok(rankTasks(TASKS, '052')[0].id === 'T-052', 'padded 052 → T-052');
 
 // --- infix / partial-word ---
 ok(ids(rankTasks(TASKS, 'thent')).includes('T-13'), 'infix "thent" → authentication');
