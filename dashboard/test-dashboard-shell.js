@@ -362,6 +362,46 @@ async function run() {
     }), 'indicator visible in overflowing column', 3000).catch(() => false);
     ok(visibleInOverflow, 'drop indicator keeps visible height in an overflowing column (flex-shrink fix)');
     await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
+
+    // --- Flow 15 (T-364): expanded subtasks survive navigating away and back ---
+    const parentId = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'Parent with subs' })).body?.task?.id;
+    await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/tasks/${parentId}`, { status: 'open' });
+    const subId = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'A persisted subtask', parentId })).body?.task?.id;
+    await page.evaluate(() => window.appState?._refreshBoard && window.appState._refreshBoard());
+    await waitFor(() => page.$(`[data-task-id="${parentId}"] .subtask-progress`), 'parent shows subtask progress', 5000);
+    await page.click(`[data-task-id="${parentId}"] .subtask-progress`); // expand
+    await waitFor(() => page.$(`[data-task-id="${subId}"]`), 'subtask visible after expand', 4000);
+    ok(true, 'parent expands to reveal its subtask');
+    await page.click('#tabBar .tab[data-tab="ideas"]');
+    await waitFor(() => page.$('[data-react-canvas]'), 'on ideas');
+    await page.click('#tabBar .tab[data-tab="tasks"]');
+    await waitFor(() => page.$('.kanban'), 'back on tasks');
+    const stillExpanded = await waitFor(() => page.$(`[data-task-id="${subId}"]`), 'subtask still visible after returning', 4000).catch(() => null);
+    ok(stillExpanded, 'expanded subtasks persist across tab navigation (T-364)');
+
+    // --- Flow 16 (T-364): column scroll position persists + restores ---
+    const scrolled = await page.evaluate(() => {
+      const b = document.querySelector('.column[data-status="backlog"] .column-body');
+      if (!b || b.scrollHeight <= b.clientHeight) return false;
+      b.scrollTop = 120;
+      b.dispatchEvent(new Event('scroll', { bubbles: true }));
+      return b.scrollTop > 0;
+    });
+    ok(scrolled, 'backlog column is scrollable and was scrolled');
+    await new Promise(r => setTimeout(r, 300)); // let the debounced persist fire
+    const savedScroll = await page.evaluate((proj) => {
+      try { return JSON.parse(sessionStorage.getItem('flowboard.kanban.view.' + proj) || 'null'); } catch { return null; }
+    }, PROJECT);
+    ok(savedScroll?.cols?.backlog >= 100, 'column scroll persisted to sessionStorage');
+    await page.click('#tabBar .tab[data-tab="ideas"]');
+    await waitFor(() => page.$('[data-react-canvas]'), 'on ideas again');
+    await page.click('#tabBar .tab[data-tab="tasks"]');
+    await waitFor(() => page.$('.kanban'), 'back on tasks again');
+    const scrollRestored = await waitFor(async () => page.evaluate(() => {
+      const b = document.querySelector('.column[data-status="backlog"] .column-body');
+      return b && b.scrollTop >= 100;
+    }), 'scroll restored', 4000).catch(() => false);
+    ok(scrollRestored, 'column scroll position restored after navigation (T-364)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

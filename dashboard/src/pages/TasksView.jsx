@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect, memo, Fragment } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect, memo, Fragment } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
@@ -54,6 +54,32 @@ function getInitialSortMode() {
   if (SORT_MODES.includes(m)) return m;
   // Migrate the old boolean toggle: default everyone to the new manual order.
   return 'custom';
+}
+
+// T-364: persist the Kanban view per project (expanded parents + scroll), the
+// same way the Canvas persists pan/zoom (sessionStorage → survives a tab switch
+// / page navigation / reload, not a restart). One slot per project so switching
+// projects restores the right view. (sortMode/showArchived already persist via
+// localStorage.) Replaces the dead `window.kanbanState` global left over from
+// the removed vanilla runtime (ADR-0024), which never persisted anything.
+function kanbanViewKey(project) {
+  return `flowboard.kanban.view.${project}`;
+}
+function loadKanbanView(project) {
+  if (!project) return null;
+  try {
+    const o = JSON.parse(sessionStorage.getItem(kanbanViewKey(project)) || 'null');
+    return o && typeof o === 'object' ? o : null;
+  } catch { return null; }
+}
+function saveKanbanView(project, patch) {
+  if (!project) return;
+  try {
+    const cur = loadKanbanView(project) || {};
+    const merged = { ...cur, ...patch };
+    if (patch.cols) merged.cols = { ...(cur.cols || {}), ...patch.cols }; // deep-merge per-column scroll
+    sessionStorage.setItem(kanbanViewKey(project), JSON.stringify(merged));
+  } catch { /* storage unavailable/quota — view persistence is best-effort */ }
 }
 function getInitialArchived() {
   return localStorage.getItem('showArchived') === 'true';
@@ -927,7 +953,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, dropIndex, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -1000,7 +1026,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
           )}
         </div>
       </div>
-      <div className="column-body">
+      <div className="column-body" onScroll={(e) => onColumnScroll?.(status, e.currentTarget.scrollTop)}>
         {isBacklog && project && (
           <AddTaskForm project={project} onCreated={onTaskCreated} />
         )}
@@ -1075,9 +1101,7 @@ export default function TasksView() {
   const [sortMode, setSortMode] = useState(getInitialSortMode);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(getInitialArchived);
-  const [expandedParents, setExpandedParents] = useState(() => {
-    try { return new Set(window.kanbanState?.expandedParents || []); } catch { return new Set(); }
-  });
+  const [expandedParents, setExpandedParents] = useState(() => new Set(loadKanbanView(viewedProject)?.expanded || []));
   const [lastCreatedId, setLastCreatedId] = useState(null);
   const [addingSubtaskParentId, setAddingSubtaskParentId] = useState(null);
   // T-161-4: Trash panel + Undo-toast state. UndoState lives alongside
@@ -1087,6 +1111,59 @@ export default function TasksView() {
   const [undoState, setUndoState] = useState(null); // { taskId, title, prevStatus }
 
   const draggedId = useRef(null);
+
+  // T-364: Kanban view persistence (expanded parents + scroll), per project.
+  const kanbanRef = useRef(null);
+  const persistTimer = useRef(null);
+  const pendingView = useRef({});
+  const restoredFor = useRef(null);
+  const schedulePersist = useCallback((patch) => {
+    pendingView.current = {
+      ...pendingView.current, ...patch,
+      cols: { ...(pendingView.current.cols || {}), ...(patch.cols || {}) },
+    };
+    if (persistTimer.current) clearTimeout(persistTimer.current);
+    persistTimer.current = setTimeout(() => {
+      saveKanbanView(viewedProject, pendingView.current);
+      pendingView.current = {};
+    }, 200);
+  }, [viewedProject]);
+  const handleColumnScroll = useCallback((status, scrollTop) => {
+    schedulePersist({ cols: { [status]: scrollTop } });
+  }, [schedulePersist]);
+  // Expand/collapse is a discrete, intentional action — persist it immediately
+  // (not debounced) so it survives even if the user navigates away instantly.
+  const persistExpanded = useCallback((set) => {
+    saveKanbanView(viewedProject, { expanded: [...set] });
+  }, [viewedProject]);
+  const handleKanbanScroll = useCallback((e) => {
+    schedulePersist({ scrollLeft: e.currentTarget.scrollLeft });
+  }, [schedulePersist]);
+
+  // Restore expanded parents when the viewed project changes (the component also
+  // remounts on tab/page navigation, where the useState initializer covers it).
+  useEffect(() => {
+    setExpandedParents(new Set(loadKanbanView(viewedProject)?.expanded || []));
+    restoredFor.current = null; // re-arm scroll restore for the new project
+  }, [viewedProject]);
+
+  // Restore scroll once the columns have rendered with their tasks. Runs once per
+  // project (guarded by restoredFor) so it doesn't fight the user's own scrolling.
+  useLayoutEffect(() => {
+    if (!viewedProject || allTasks.length === 0 || !kanbanRef.current) return;
+    if (restoredFor.current === viewedProject) return;
+    restoredFor.current = viewedProject;
+    const v = loadKanbanView(viewedProject);
+    if (!v) return;
+    if (Number.isFinite(v.scrollLeft)) kanbanRef.current.scrollLeft = v.scrollLeft;
+    if (v.cols) {
+      for (const [status, top] of Object.entries(v.cols)) {
+        const body = kanbanRef.current.querySelector(`.column[data-status="${status}"] .column-body`);
+        if (body && Number.isFinite(top)) body.scrollTop = top;
+      }
+    }
+  }, [viewedProject, allTasks.length]);
+
   // T-130: live drop position for the insertion indicator — { status, index }
   // in rendered-list space (0 = before first card, N = after last). Mirrors the
   // sidebar's drop-target line so a reorder shows where the card will land.
@@ -1107,14 +1184,12 @@ export default function TasksView() {
     setSortMode(mode);
     setSortMenuOpen(false);
     localStorage.setItem('sortMode', mode);
-    try { if (window.kanbanState) window.kanbanState.sortMode = mode; } catch { /* noop */ }
   }, []);
 
   const handleToggleArchived = useCallback(() => {
     setShowArchived(prev => {
       const next = !prev;
       localStorage.setItem('showArchived', next);
-      try { if (window.kanbanState) window.kanbanState.showArchived = next; } catch { /* noop */ }
       return next;
     });
   }, []);
@@ -1124,10 +1199,10 @@ export default function TasksView() {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      try { if (window.kanbanState) { window.kanbanState.expandedParents = next; } } catch { /* noop */ }
+      persistExpanded(next);
       return next;
     });
-  }, []);
+  }, [persistExpanded]);
 
   // ScrollToTask uses this to reveal a subtask whose parent is collapsed
   const handleExpandParent = useCallback((parentId) => {
@@ -1135,10 +1210,10 @@ export default function TasksView() {
       if (prev.has(parentId)) return prev;
       const next = new Set(prev);
       next.add(parentId);
-      try { if (window.kanbanState) { window.kanbanState.expandedParents = next; } } catch { /* noop */ }
+      persistExpanded(next);
       return next;
     });
-  }, []);
+  }, [persistExpanded]);
 
   const handleTaskDeleted = useCallback(() => {
     notify();
@@ -1177,10 +1252,10 @@ export default function TasksView() {
     setExpandedParents(prev => {
       const next = new Set(prev);
       next.add(parentId);
-      try { if (window.kanbanState) { window.kanbanState.expandedParents = next; } } catch { /* noop */ }
+      persistExpanded(next);
       return next;
     });
-  }, []);
+  }, [persistExpanded]);
 
   const handleSubtaskCreated = useCallback(() => {
     setAddingSubtaskParentId(null);
@@ -1510,11 +1585,12 @@ export default function TasksView() {
           FilesView's onBackToTask when there's no openTaskDetail bridge. */}
       <ScrollToTask onExpandParent={handleExpandParent} />
       <ScrollToColumn />
-      <div className="kanban">
+      <div className="kanban" ref={kanbanRef} onScroll={handleKanbanScroll}>
         {STATUS_KEYS.map(status => (
           <Column
             key={status}
             status={status}
+            onColumnScroll={handleColumnScroll}
             tasks={grouped[status]}
             archivedTasks={archivedTopLevel}
             allTasks={allTasks}
