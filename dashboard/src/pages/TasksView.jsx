@@ -897,7 +897,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, onClearDragHint, dropIndex, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, dropIndex, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -926,9 +926,15 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
   };
 
   const handleDragLeave = (e) => {
-    if (!e.currentTarget.contains(e.relatedTarget)) {
+    // Only react to a genuine column exit. During a drag the browser fires a
+    // dragleave on every card-boundary crossing, often with relatedTarget=null
+    // (fast moves) — clearing the hint on those made the indicator flicker /
+    // never settle, worst in the busy backlog column. So: never clear the hint
+    // here (handleDragHint follows the active column; the window 'dragend'
+    // listener does the final cleanup); only drop the column highlight when the
+    // pointer truly left this column.
+    if (e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) {
       e.currentTarget.classList.remove('drag-over');
-      onClearDragHint?.();
     }
   };
 
@@ -1055,7 +1061,14 @@ export default function TasksView() {
   const handleDragHint = useCallback((status, index) => {
     setDropHint(prev => (prev && prev.status === status && prev.index === index) ? prev : { status, index });
   }, []);
-  const clearDragHint = useCallback(() => setDropHint(null), []);
+  // The drop indicator is cleared centrally when any drag ends (the source card's
+  // dragend bubbles to window) — robust against the browser's noisy per-card
+  // dragleave events, which otherwise made the line flicker mid-drag.
+  useEffect(() => {
+    const clear = () => setDropHint(null);
+    window.addEventListener('dragend', clear);
+    return () => window.removeEventListener('dragend', clear);
+  }, []);
 
   const handleToggleSort = useCallback(() => {
     setSortNewestFirst(prev => {
@@ -1418,7 +1431,6 @@ export default function TasksView() {
             dragRef={draggedId}
             onDrop={handleDrop}
             onDragHint={handleDragHint}
-            onClearDragHint={clearDragHint}
             dropIndex={dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
             addingSubtaskParentId={addingSubtaskParentId}

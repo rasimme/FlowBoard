@@ -250,6 +250,34 @@ async function run() {
       return typeof byId[rTasks[2]] === 'number' && byId[rTasks[2]] < byId[rTasks[0]] && byId[rTasks[2]] < byId[rTasks[1]];
     }, 'reorder persisted to the server', 5000).catch(() => false);
     ok(persisted, 'the new manual order is persisted (lowest rank for the moved card)');
+
+    // --- Flow 12 (T-130): the drop indicator survives noisy dragleave, clears on dragend ---
+    // Regression guard for the flicker bug: a real drag fires dragleave on every
+    // card-boundary crossing (often relatedTarget=null). Those must NOT clear the
+    // insertion line — only dragend (or moving to another column) may.
+    await page.evaluate(() => {
+      const col = document.querySelector('.column[data-status="review"]');
+      const cards = [...col.querySelectorAll('[data-react-tasks]')];
+      window.__dt = new DataTransfer();
+      window.__src = cards[cards.length - 1];
+      const fire = (el, type, extra = {}) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: window.__dt, ...extra }));
+      fire(window.__src, 'dragstart', { clientY: window.__src.getBoundingClientRect().top + 5 });
+      fire(col, 'dragover', { clientY: cards[0].getBoundingClientRect().top + 1 });
+    });
+    const lineUp = await waitFor(() => page.$('.column[data-status="review"] .drop-line'), 'drop indicator appears on dragover', 3000).catch(() => null);
+    ok(lineUp, 'drop indicator line renders during a drag');
+    // Fire a spurious dragleave with no relatedTarget (the flicker trigger).
+    await page.evaluate(() => {
+      const col = document.querySelector('.column[data-status="review"]');
+      col.dispatchEvent(new DragEvent('dragleave', { bubbles: true, dataTransfer: window.__dt, relatedTarget: null }));
+    });
+    await new Promise(r => setTimeout(r, 120));
+    const stillThere = await page.$('.column[data-status="review"] .drop-line');
+    ok(stillThere, 'a null-relatedTarget dragleave does NOT clear the indicator (flicker fix)');
+    // dragend must clear it.
+    await page.evaluate(() => window.__src.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt, clientY: 0 })));
+    const cleared = await waitFor(async () => !(await page.$('.column[data-status="review"] .drop-line')), 'indicator cleared on dragend', 3000).catch(() => false);
+    ok(cleared, 'dragend clears the drop indicator');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');
