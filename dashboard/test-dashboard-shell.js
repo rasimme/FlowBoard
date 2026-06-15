@@ -60,6 +60,8 @@ async function run() {
   try {
     await waitForServer(base, child);
     await fetchJson(base, 'POST', '/api/projects', { name: PROJECT });
+    // T-367-3: seed a markdown file on disk so the Files view has something to open
+    try { fs.writeFileSync(path.join(tmp, 'projects', PROJECT, 'note.md'), '# Note\n\nA file body for the master-detail test.\n'); } catch {}
     // Register an agent so the agents fetch has something observable to propagate.
     await fetchJson(base, 'PUT', '/api/status', { agentId: 'shell-tester', project: PROJECT });
     const t1 = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'Shell task one' })).body?.task?.id;
@@ -424,6 +426,34 @@ async function run() {
     });
     ok(widgetOverflow.length === 0, `no overview widget overflows at 375px (offenders: ${widgetOverflow.slice(0, 5).join(', ') || 'none'})`);
     }
+
+    // --- Flow 18 (T-367-3): Files master-detail on mobile (375px) ---
+    // Re-select the seeded project (an earlier flow may have left a different one
+    // viewed) so the Files tree actually has our note.md.
+    await page.evaluate((name) => {
+      document.querySelector('.app')?.classList.remove('sidebar-collapsed');
+      const hit = Array.from(document.querySelectorAll('.project-item')).find(el => el.textContent && el.textContent.includes(name));
+      if (hit) hit.click();
+    }, PROJECT);
+    await waitFor(() => page.evaluate((p) => window.appState?.viewedProject === p, PROJECT), 'seeded project re-selected', 4000).catch(() => {});
+    await page.evaluate(() => document.querySelector('.app')?.classList.add('sidebar-collapsed'));
+    await page.click('#tabBar .tab[data-tab="files"]');
+    await waitFor(() => page.$('.file-explorer'), 'files explorer mounts', 5000);
+    await waitFor(() => page.$('.tree-item:not(.directory)'), 'a file appears in the tree', 5000);
+    const filesList = await page.evaluate(() => {
+      const ex = document.querySelector('.file-explorer');
+      return { view: ex?.dataset.view, treeVisible: document.querySelector('.file-tree')?.offsetParent !== null, previewVisible: document.querySelector('.file-preview')?.offsetParent != null && document.querySelector('.file-preview')?.offsetParent !== null };
+    });
+    ok(filesList.view === 'list' && filesList.treeVisible, 'Files lands on the list (no auto-opened file) on mobile (T-367-3)');
+    await page.click('.tree-item:not(.directory)');
+    const opened = await waitFor(async () => page.evaluate(() => {
+      const ex = document.querySelector('.file-explorer');
+      const back = document.querySelector('.file-back-to-list');
+      return ex?.dataset.view === 'preview' && back && back.offsetParent !== null;
+    }), 'tapping a file opens it full-screen with a back button', 5000).catch(() => false);
+    ok(opened, 'tapping a file shows it full-screen with a ← Files back button (T-367-3)');
+    await page.click('.file-back-to-list');    const backToList = await waitFor(async () => page.evaluate(() => document.querySelector(".file-explorer")?.dataset.view === "list"), "back returns to the list", 4000).catch(() => false);
+    ok(backToList, 'the back button returns to the file list (T-367-3)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

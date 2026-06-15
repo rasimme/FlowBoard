@@ -141,6 +141,7 @@ function FilePreview({
   previewScrollRef,
   fromTaskId,
   onBackToTask,
+  onBackToList,
   conflict,
   onReloadFromDisk,
   onKeepLocalChanges,
@@ -249,7 +250,10 @@ function FilePreview({
     }
   };
 
-  if (!fileData) {
+  // Guard on filePath too: when the selection is cleared (e.g. mobile "← Files")
+  // fileData may briefly linger a render before it's reset — without this the
+  // filePath.split() below would throw (T-367-3).
+  if (!fileData || !filePath) {
     return <div className="file-preview-empty">Select a file to preview</div>;
   }
 
@@ -261,6 +265,9 @@ function FilePreview({
   return (
     <>
       <div className="file-preview-header">
+        {/* T-367-3: mobile master-detail — return to the file list. Hidden on
+            wide screens (list + preview shown side by side) via CSS. */}
+        <button className="file-back-to-list" onClick={onBackToList} aria-label="Back to file list">← Files</button>
         {fromTaskId && (
           <button className="file-back-btn" onClick={onBackToTask}>← Back to Task</button>
         )}
@@ -791,7 +798,12 @@ export default function FilesView() {
       conflict: fileConflict,
       pendingSpecFile: window.appState?.pendingSpecFile,
     });
-    if (action.type === 'select') selectFile(action.path);
+    // T-367-3: on phones (master-detail) don't auto-open a default file when
+    // nothing is selected — the user should land on the file LIST and tap to
+    // open. Reconciliation selects (e.g. a renamed/deleted current file) still
+    // run; only the "pick a default for an empty selection" case is suppressed.
+    const isNarrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches;
+    if (action.type === 'select' && !(isNarrow && !selectedFile)) selectFile(action.path);
   }, [fileConflict, fileTree, selectedFile, selectFile, treeLoading, viewedProject]);
 
   if (!viewedProject) {
@@ -808,6 +820,7 @@ export default function FilesView() {
     <div
       className="file-explorer"
       data-react-files
+      data-view={selectedFile ? 'preview' : 'list'}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -914,6 +927,7 @@ export default function FilesView() {
             onSaved={handleSaved}
             previewScrollRef={previewScrollRef}
             fromTaskId={fromTaskId}
+            onBackToList={() => { setSelectedFile(null); setFileData(null); }}
             conflict={fileConflict}
             onReloadFromDisk={reloadSelectedFromDisk}
             onKeepLocalChanges={() => {

@@ -1560,6 +1560,18 @@
     }
     .file-back-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
 
+    /* T-367-3: master-detail back button — styled like .file-back-btn but only
+       shown on the narrow single-pane layout (the @media block below). */
+    .file-back-to-list {
+      display: none;
+      align-items: center; gap: 4px;
+      background: none; border: 1px solid var(--border); border-radius: var(--radius-md);
+      color: var(--text); font-size: 13px; font-family: inherit;
+      padding: 4px 10px; cursor: pointer; margin-right: 8px;
+      transition: all var(--duration-normal);
+    }
+    .file-back-to-list:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+
     .file-preview-header {
       display: flex; align-items: center; justify-content: space-between;
       padding: 10px 18px;
@@ -1844,6 +1856,15 @@
       /* CRITICAL: span full width — sidebar is out of grid flow (position:fixed) */
       .content, .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
       .tab-bar { grid-column: 1 / -1; }
+
+      /* T-367-3: Files master-detail — show the list OR the open file full
+         width, never the cramped split. data-view is set by FilesView from
+         whether a file is selected; the ← Files button clears the selection. */
+      .file-explorer { grid-template-columns: 1fr; }
+      .file-explorer[data-view="preview"] .file-tree { display: none; }
+      .file-explorer[data-view="list"] .file-preview { display: none; }
+      .file-explorer .file-tree { border-right: none; }
+      .file-back-to-list { display: inline-flex; order: 0; }
 
       /* Narrower columns on small phones */
       .column { min-width: 82vw; max-width: 82vw; }
