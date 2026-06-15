@@ -242,19 +242,22 @@ async function run() {
     // still-default nudge (T-365-3): a UI-created project (no auto-apply) that
     // later gains tasks gets a gentle best-fit nudge on GET overview.
     {
+      // Keyword lives ONLY in the displayName (neutral project name) so this
+      // exercises the existing-project signal path through fbMeta.getProject —
+      // which stores the column as display_name (not displayName).
       await fetch(`http://127.0.0.1:${PORT}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-FlowBoard-Client': 'dashboard' },
-        body: JSON.stringify({ name: 'api-svc', displayName: 'API Service' }),
+        body: JSON.stringify({ name: 'svc-alpha', displayName: 'Backend API' }),
       });
-      let g = await api('GET', '/projects/api-svc/overview');
+      let g = await api('GET', '/projects/svc-alpha/overview');
       ok(g.body?.overview?.source === 'default' && !g.body.overview.nudge,
          'a still-default project with no tasks gets no nudge');
-      await api('POST', '/projects/api-svc/tasks', { title: 'do a thing' });
-      g = await api('GET', '/projects/api-svc/overview');
+      await api('POST', '/projects/svc-alpha/tasks', { title: 'do a thing' });
+      g = await api('GET', '/projects/svc-alpha/overview');
       ok(g.body?.overview?.nudge && g.body.overview.nudge.suggested?.preset === 'coding'
          && g.body.overview.nudge.taskCount >= 1,
-         'a still-default project with tasks gets a best-fit nudge');
+         'a still-default project with tasks gets a best-fit nudge (from displayName)');
     }
 
     // validation failures

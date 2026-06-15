@@ -1628,17 +1628,10 @@ export default function TasksView() {
     );
   }
 
-  if (allTasks.length === 0) {
-    return (
-      <div className="flex flex-col h-full" data-react-tasks>
-        <ActiveAgentsBar />
-        <div className="flex items-center justify-center flex-1 text-muted text-sm">
-          No tasks
-        </div>
-      </div>
-    );
-  }
-
+  // A brand-new project has zero tasks — still render the full board so the
+  // columns and the backlog "Add task" form are available (an early "No tasks"
+  // return here left new projects with no columns and no way to add a task).
+  // Each column shows its own empty state; the backlog column carries the form.
   return (
     <div className="flex flex-col h-full" data-react-tasks>
       <ActiveAgentsBar />

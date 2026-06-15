@@ -3419,9 +3419,10 @@ app.get('/api/projects/:name/overview', (req, res) => {
     try {
       const meta = fbMeta.getProject(req.params.name) || {};
       const taskCount = hzlService.listTasks(req.params.name, { includeArchived: false }).length;
+      // fbMeta.getProject returns the raw row — the column is `display_name`.
       const nudge = overview.buildNudge(
         ov,
-        { name: req.params.name, displayName: meta.displayName, description: meta.description, group: meta.group },
+        { name: req.params.name, displayName: meta.display_name, description: meta.description, group: meta.group },
         taskCount,
       );
       if (nudge) ov.nudge = nudge;

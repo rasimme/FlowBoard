@@ -191,7 +191,7 @@ function ProjectItem({
 
 export default function Sidebar() {
   const { state } = useAppState();
-  const { viewProject, refreshProjectsOnly } = useDashboard();
+  const { viewProject, refreshProjectsOnly, switchTab } = useDashboard();
   const [container, setContainer] = useState(null);
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [userFolders, setUserFolders] = useState(loadUserFolders);
@@ -865,7 +865,13 @@ export default function Sidebar() {
         onCreated={(project) => {
           if (project?.group) removeUserFolderIfMaterialized(project.group);
           refreshProjectsOnly().then(() => {
-            if (project?.name) viewProject(project.name);
+            if (project?.name) {
+              viewProject(project.name);
+              // Land on the Overview for a freshly created project — it is the
+              // onboarding home (suggested/auto preset, goals, quick actions),
+              // not the empty task board (T-365-4).
+              switchTab('overview');
+            }
           });
         }}
       />
