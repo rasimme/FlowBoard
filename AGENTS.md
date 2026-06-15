@@ -34,6 +34,20 @@ UI or agent-facing API messages.
 Do **not** add AI co-author trailers (`Co-Authored-By: Claude ...` or
 similar) to commit messages in this repository.
 
+## Shared checkout / parallel agents
+
+Multiple agents may work in the **same** checkout at the same time. A blanket
+`git add -A` / `git add .` / `git commit -a` will sweep another agent's
+unstaged or new files into your commit — often under a misleading message.
+
+- Stage only **your own** files explicitly (`git add <path> …`) — never
+  `-A`, `.`, or `commit -a`.
+- Run `git status` before committing; do not stage changes you did not make.
+- Commit your work promptly and atomically — don't leave loose WIP in the tree.
+- For larger changes that touch shared files (`server.js`, `hzl-service.js`,
+  `package.json`), build in your own `git worktree` and fast-forward onto the
+  target branch instead of editing the shared checkout.
+
 ## Delegation (for parent agents)
 
 When you spawn a child agent for FlowBoard work, do not write a custom prompt from memory. Use `buildSpawnPrompt()` in `dashboard/hzl-service.js`:
