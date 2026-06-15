@@ -472,6 +472,27 @@ function suggestPreset(signals = {}) {
 }
 
 /**
+ * "Still default but the project now has content" nudge (T-365-3, Weg 3).
+ * Returns a gentle hint object when a project never tailored its overview (it
+ * is still the default fallback) yet has accumulated tasks AND there is a
+ * concrete better-fit preset to offer — otherwise null. The endpoint attaches
+ * whatever this returns; it never nags about a project that is genuinely a
+ * default-shaped one (best fit === default) or still empty.
+ *
+ * @param {{source?:string}} overview the result of readOverview
+ * @param {object} signals best-fit signals (name/displayName/description/group)
+ * @param {number} taskCount number of (non-archived) tasks in the project
+ * @returns {{reason:string, taskCount:number, suggested:{preset,rationale}}|null}
+ */
+function buildNudge(overview, signals, taskCount) {
+  if (!overview || overview.source !== 'default') return null;
+  if (!Number.isFinite(taskCount) || taskCount <= 0) return null;
+  const suggested = suggestPreset(signals || {});
+  if (suggested.preset === DEFAULT_PRESET) return null;
+  return { reason: 'still-default-with-content', taskCount, suggested };
+}
+
+/**
  * Validate an overview config against the trusted registry.
  * Returns { ok: true, config } with a normalized copy, or { ok: false, errors }.
  */
@@ -572,6 +593,7 @@ module.exports = {
   packFlow,
   applyOps,
   suggestPreset,
+  buildNudge,
   presetConfig,
   readOverview,
   writeOverview,

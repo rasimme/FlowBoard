@@ -148,6 +148,13 @@ is a deterministic floor from the project's name/description/group — treat it
 as a starting point and override it (preset, flow or full grid) whenever you
 know the project better.
 
+If a project was never tailored (still the default fallback) but has since
+gained tasks, `GET /api/projects/:name/overview` attaches a one-off
+`overview.nudge = { reason, taskCount, suggested:{ preset, rationale } }` —
+a gentle reminder, with the current best fit, to tailor the dashboard now
+that the project has content. It only appears when there is a concrete
+non-default fit to offer; apply it with a preset/flow write or ignore it.
+
 ## Editing rules for agents
 
 1. **Read before write**: `GET` the current config, modify, `PUT` the whole

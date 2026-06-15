@@ -3407,7 +3407,25 @@ app.get('/api/overview/widgets', (req, res) => {
 // GET /api/projects/:name/overview — layout config (default preset when no file exists)
 app.get('/api/projects/:name/overview', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
-  res.json({ ok: true, overview: overview.readOverview(PROJECTS_DIR, req.params.name) });
+  const ov = overview.readOverview(PROJECTS_DIR, req.params.name);
+  // T-365-3: when the project never tailored its overview but now has tasks,
+  // attach a gentle best-fit nudge so an agent is reminded to tailor it at a
+  // useful moment. Best-effort — never break the read.
+  if (ov.source === 'default') {
+    try {
+      const meta = fbMeta.getProject(req.params.name) || {};
+      const taskCount = hzlService.listTasks(req.params.name, { includeArchived: false }).length;
+      const nudge = overview.buildNudge(
+        ov,
+        { name: req.params.name, displayName: meta.displayName, description: meta.description, group: meta.group },
+        taskCount,
+      );
+      if (nudge) ov.nudge = nudge;
+    } catch (e) {
+      console.warn('[overview] nudge computation failed:', e.message);
+    }
+  }
+  res.json({ ok: true, overview: ov });
 });
 
 // PUT /api/projects/:name/overview — body: { preset } to materialize a named

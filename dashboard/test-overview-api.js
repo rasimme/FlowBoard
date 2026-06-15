@@ -239,6 +239,24 @@ async function run() {
       ok(g.body?.overview?.source === 'default', 'UI create leaves the overview unwritten (still default)');
     }
 
+    // still-default nudge (T-365-3): a UI-created project (no auto-apply) that
+    // later gains tasks gets a gentle best-fit nudge on GET overview.
+    {
+      await fetch(`http://127.0.0.1:${PORT}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-FlowBoard-Client': 'dashboard' },
+        body: JSON.stringify({ name: 'api-svc', displayName: 'API Service' }),
+      });
+      let g = await api('GET', '/projects/api-svc/overview');
+      ok(g.body?.overview?.source === 'default' && !g.body.overview.nudge,
+         'a still-default project with no tasks gets no nudge');
+      await api('POST', '/projects/api-svc/tasks', { title: 'do a thing' });
+      g = await api('GET', '/projects/api-svc/overview');
+      ok(g.body?.overview?.nudge && g.body.overview.nudge.suggested?.preset === 'coding'
+         && g.body.overview.nudge.taskCount >= 1,
+         'a still-default project with tasks gets a best-fit nudge');
+    }
+
     // validation failures
     r = await api('PUT', '/projects/ov/overview', { version: 1, widgets: [{ id: 'x', type: 'evil-widget', grid: { x: 0, y: 0, w: 4, h: 2 } }] });
     ok(r.status === 400 && JSON.stringify(r.body?.errors).includes('not a registered widget'), 'unknown widget type is rejected (trusted registry)');
