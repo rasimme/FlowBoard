@@ -795,6 +795,18 @@ export default function FilesView() {
     };
   }, [fetchTree, reconcileSelectedFile, state?.currentTab, viewedProject]);
 
+  // T-372: track the master-detail breakpoint reactively, so rotating/resizing
+  // across 600px re-evaluates the auto-select suppression below (previously it
+  // only re-checked when another dep changed → stale after a rotate).
+  const [isNarrow, setIsNarrow] = useState(() => (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches) || false);
+  useEffect(() => {
+    const mql = window.matchMedia?.('(max-width: 600px)');
+    if (!mql) return undefined;
+    const onChange = () => setIsNarrow(mql.matches);
+    mql.addEventListener?.('change', onChange);
+    return () => mql.removeEventListener?.('change', onChange);
+  }, []);
+
   useEffect(() => {
     if (!viewedProject || treeLoading || !fileTree?.tree?.length) return;
     const action = getDefaultFileSelectionAction({
@@ -809,9 +821,8 @@ export default function FilesView() {
     // nothing is selected — the user should land on the file LIST and tap to
     // open. Reconciliation selects (e.g. a renamed/deleted current file) still
     // run; only the "pick a default for an empty selection" case is suppressed.
-    const isNarrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 600px)').matches;
     if (action.type === 'select' && !(isNarrow && !selectedFile)) selectFile(action.path);
-  }, [fileConflict, fileTree, selectedFile, selectFile, treeLoading, viewedProject]);
+  }, [fileConflict, fileTree, selectedFile, selectFile, treeLoading, viewedProject, isNarrow]);
 
   if (!viewedProject) {
     return (
