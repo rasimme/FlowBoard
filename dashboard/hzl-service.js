@@ -119,6 +119,9 @@ function _toFbTask(hzlTask, project) {
     lastCheckpointAt: fb.lastCheckpointAt || null,
     staleAfterMinutes: fb.staleAfterMinutes ?? null,
     checkpointCount: fb.checkpointCount || 0,
+    // T-130: manual per-column ordering rank (null = unordered → falls back to
+    // numeric id sort in the UI). Set by drag-to-reorder within a column.
+    order: typeof fb.order === 'number' ? fb.order : null,
     // Filterable tags (HZL native column) — milestone:<name> drives the
     // overview milestones widget
     tags: hzlTask.tags || [],
@@ -814,6 +817,7 @@ function createTask(project, opts) {
     lastCheckpointAt: null,
     checkpointCount: 0,
     routedAgent: null,
+    order: null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -937,6 +941,15 @@ function updateTask(project, flowboardId, updates) {
     metaUpdates.flowboard.staleAfterMinutes = v;
   }
 
+  // T-130: manual per-column ordering rank (number, or null to clear).
+  if (Object.prototype.hasOwnProperty.call(updates, 'order')) {
+    const v = updates.order;
+    if (v !== null && !Number.isFinite(v)) {
+      throw new Error('order must be a finite number or null');
+    }
+    metaUpdates.flowboard.order = v;
+  }
+
   // Write scalar updates (title, priority, etc.) via updateTask — metadata handled separately
   if (Object.keys(hzlUpdates).length > 0) {
     _taskService.updateTask(ulid, hzlUpdates);
@@ -991,7 +1004,7 @@ function updateTask(project, flowboardId, updates) {
   // in `updates`). After this loop, `cached` holds the dashboard's view of
   // truth — including any null-clears applied by the auto-release block
   // above (when transitioning to review/done).
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags', 'order'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       if (key === 'blocked') cached[key] = updates[key] === true;

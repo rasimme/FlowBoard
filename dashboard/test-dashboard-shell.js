@@ -192,6 +192,23 @@ async function run() {
     ok(restored, 'Restore brings the project back into the project list');
     const goneFromTrash = await waitFor(async () => !(await page.$(`[data-trash-project="${TP}"]`)), 'trash row gone', 4000).catch(() => false);
     ok(goneFromTrash, 'restored project no longer shown in Trash');
+
+    // --- Flow 10 (T-130): manual order rank overrides numeric sort on the board ---
+    // Default sort is newest-first (descending id → t2 before t1). Giving t1 a
+    // LOWER rank than t2 must flip that: ranked cards sort ascending by rank,
+    // ahead of any unranked card — proving the board honours manual order.
+    await page.click('#tabBar .tab[data-tab="tasks"]');
+    await waitFor(() => page.$('.kanban'), 'back on tasks board');
+    await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/tasks/${t1}`, { order: 10 });
+    await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/tasks/${t2}`, { order: 20 });
+    await page.evaluate(() => window.appState?._refreshBoard && window.appState._refreshBoard());
+    const orderOk = await waitFor(async () => page.evaluate((a, b) => {
+      const ids = Array.from(document.querySelectorAll('.column[data-status="backlog"] [data-task-id]'))
+        .map(e => e.dataset.taskId);
+      const ia = ids.indexOf(a), ib = ids.indexOf(b);
+      return ia !== -1 && ib !== -1 && ia < ib;
+    }, t1, t2), 'manual order applied on board', 5000).catch(() => false);
+    ok(orderOk, 'tasks render by manual order rank, not numeric id (T-130)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

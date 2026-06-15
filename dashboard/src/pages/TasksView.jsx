@@ -14,7 +14,7 @@ import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import { getTasks, replaceTasks, refreshTasks, notify } from '../state/appStateBridge.mjs';
-import { patchTask, applyTaskResponse, snapshotTask, rollbackSnapshot } from '../state/taskState.mjs';
+import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
 // animates between the soft ring token and the full ring token. Returning null
@@ -55,9 +55,33 @@ function parseTaskNum(id) {
   return parseInt(id.replace('T-', ''));
 }
 
+// T-130: a task carries an optional manual `order` rank (set by drag-to-reorder
+// within a column). Manually-ranked tasks sort ahead of unranked ones, ascending
+// by rank — so cards stay in the position they were dropped, regardless of the
+// newest-first toggle. Unranked tasks fall back to numeric id by that toggle.
 function sortTasks(tasks, newestFirst) {
   const dir = newestFirst ? -1 : 1;
-  return [...tasks].sort((a, b) => dir * (parseTaskNum(a.id) - parseTaskNum(b.id)));
+  return [...tasks].sort((a, b) => {
+    const ao = typeof a.order === 'number';
+    const bo = typeof b.order === 'number';
+    if (ao && bo) return a.order - b.order;
+    if (ao) return -1;
+    if (bo) return 1;
+    return dir * (parseTaskNum(a.id) - parseTaskNum(b.id));
+  });
+}
+
+// T-130: find the insertion index for a drop, by comparing the pointer's Y to
+// each card's vertical midpoint. Excludes the card being dragged and any nested
+// subtask cards, so the index aligns with the column's sorted top-level list.
+function computeDropIndex(columnEl, clientY) {
+  const cards = [...columnEl.querySelectorAll('[data-react-tasks]')]
+    .filter(el => !el.closest('.subtask-container') && !el.classList.contains('dragging'));
+  for (let i = 0; i < cards.length; i++) {
+    const r = cards[i].getBoundingClientRect();
+    if (clientY < r.top + r.height / 2) return i;
+  }
+  return cards.length;
 }
 
 // --- Subtask progress bar ---
@@ -905,7 +929,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
   const handleDrop = (e) => {
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
-    onDrop?.(status);
+    onDrop?.(status, computeDropIndex(e.currentTarget, e.clientY));
   };
 
   return (
@@ -1180,49 +1204,87 @@ export default function TasksView() {
     }
   }, [viewedProject]);
 
-  const handleDrop = useCallback((newStatus) => {
+  const handleDrop = useCallback((newStatus, dropIndex) => {
     const id = draggedId.current;
     if (!id) return;
     const tasksBefore = getTasks();
     const task = tasksBefore.find(t => t.id === id);
-    if (!task || task.status === newStatus) return;
+    if (!task) return;
 
     const oldStatus = task.status;
-    const snapshot = snapshotTask(tasksBefore, id);
+    const statusChanged = oldStatus !== newStatus;
 
-    const optimistic = { status: newStatus };
-    if (newStatus === 'done') optimistic.completed = new Date().toISOString().slice(0, 10);
-    if (oldStatus === 'done' && newStatus !== 'done') optimistic.completed = null;
-    replaceTasks(patchTask(tasksBefore, id, optimistic));
+    // T-130: rebuild the target column's manual order with the dragged card
+    // inserted at the drop position, then assign sparse ranks (10, 20, 30…).
+    const colTasks = sortTasks(
+      tasksBefore.filter(t => !t.parentId && !t.trashedAt && t.status === newStatus && t.id !== id),
+      sortNewestFirst,
+    );
+    const idx = (typeof dropIndex === 'number' && dropIndex >= 0 && dropIndex <= colTasks.length)
+      ? dropIndex : colTasks.length;
+    const ordered = [...colTasks.slice(0, idx), task, ...colTasks.slice(idx)];
+    const rankById = new Map(ordered.map((t, i) => [t.id, (i + 1) * 10]));
+    const orderChanged = (t) => rankById.get(t.id) !== (typeof t.order === 'number' ? t.order : null);
+    const reordered = ordered.filter(orderChanged);
 
-    // T-186: drag from review column to done = explicit review approval,
-    // not a generic PUT. Other transitions still go via PUT.
-    const reviewApproval = (oldStatus === 'review' && newStatus === 'done');
-    const dropPromise = reviewApproval
-      ? apiFetch(`/api/projects/${viewedProject}/tasks/${id}/approve`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ actor: window.appState?.agentId || 'human' }),
-        })
-      : apiFetch(`/api/projects/${viewedProject}/tasks/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStatus }),
-        });
-    dropPromise.then(async (res) => {
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to move task');
-      replaceTasks(applyTaskResponse(getTasks(), data));
-      if (window.showToast) {
+    if (!statusChanged && reordered.length === 0) return;
+
+    // --- Optimistic apply: status (dragged) + new ranks (whole column) ---
+    let optimistic = tasksBefore;
+    for (const t of ordered) {
+      const patch = { order: rankById.get(t.id) };
+      if (t.id === id && statusChanged) {
+        patch.status = newStatus;
+        if (newStatus === 'done') patch.completed = new Date().toISOString().slice(0, 10);
+        if (oldStatus === 'done' && newStatus !== 'done') patch.completed = null;
+      }
+      optimistic = patchTask(optimistic, t.id, patch);
+    }
+    replaceTasks(optimistic);
+
+    // --- Persist ---
+    // T-186: review → done is an explicit approval, not a generic status PUT.
+    const reviewApproval = statusChanged && oldStatus === 'review' && newStatus === 'done';
+    const put = (taskId, body) => apiFetch(`/api/projects/${viewedProject}/tasks/${taskId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const requests = [];
+    if (reviewApproval) {
+      requests.push(apiFetch(`/api/projects/${viewedProject}/tasks/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor: window.appState?.agentId || 'human' }),
+      }));
+    }
+    // One PUT per task whose rank changed; fold the dragged task's status in
+    // (unless it went through the approve endpoint above).
+    for (const t of ordered) {
+      const body = {};
+      if (orderChanged(t)) body.order = rankById.get(t.id);
+      if (t.id === id && statusChanged && !reviewApproval) body.status = newStatus;
+      if (Object.keys(body).length > 0) requests.push(put(t.id, body));
+    }
+
+    Promise.all(requests).then(async (responses) => {
+      let next = getTasks();
+      for (const res of responses) {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to move task');
+        next = applyTaskResponse(next, data);
+      }
+      replaceTasks(next);
+      if (statusChanged && window.showToast) {
         window.showToast(`${task.title}: ${STATUS_LABELS[oldStatus]} → ${STATUS_LABELS[newStatus]}`, 'success');
       }
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('medium');
     }).catch(() => {
-      replaceTasks(rollbackSnapshot(getTasks(), snapshot));
+      replaceTasks(tasksBefore);
       if (window.showToast) window.showToast('Failed to move task', 'error');
       window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('error');
     });
-  }, [viewedProject]);
+  }, [viewedProject, sortNewestFirst]);
 
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);

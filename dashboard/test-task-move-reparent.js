@@ -80,6 +80,17 @@ async function run() {
     const trimmed = await api('POST', '/projects/src/tasks', { title: '  Trimmed me  ' });
     ok(trimmed.status === 200 && trimmed.body.task.title === 'Trimmed me', 'title is trimmed before save');
 
+    // --- T-130: manual order rank round-trips (drag-to-reorder persistence) ---
+    const ot = (await api('POST', '/projects/src/tasks', { title: 'Order me' })).body.task.id;
+    ok((await api('POST', '/projects/src/tasks', { title: 'no-order check' })).body.task.order === null, 'new task has order=null by default');
+    const setOrd = await api('PUT', `/projects/src/tasks/${ot}`, { order: 50 });
+    ok(setOrd.status === 200 && setOrd.body.task.order === 50, 'order persists via PUT');
+    const gotList = (await api('GET', '/projects/src/tasks')).body.tasks;
+    ok(gotList.find(t => t.id === ot)?.order === 50, 'order round-trips on GET');
+    const clr = await api('PUT', `/projects/src/tasks/${ot}`, { order: null });
+    ok(clr.status === 200 && clr.body.task.order === null, 'order clears to null');
+    ok((await api('PUT', `/projects/src/tasks/${ot}`, { order: 'nope' })).status === 400, 'non-numeric order → 400');
+
     // --- move with subtasks ---
     let r = await api('POST', '/projects/src/tasks/T-001/move', { toProject: 'dst' });
     ok(r.status === 200, `move returns 200 (got ${r.status})`);

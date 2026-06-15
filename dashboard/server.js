@@ -1890,7 +1890,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     updates.completed = null;
   }
 
-  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags'];
+  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags', 'order'];
   const hzlUpdates = {};
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
@@ -1900,6 +1900,10 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 
   if (hzlUpdates.tags !== undefined && (!Array.isArray(hzlUpdates.tags) || hzlUpdates.tags.some(t => typeof t !== 'string'))) {
     return res.status(400).json({ error: 'tags must be an array of strings' });
+  }
+  // T-130: manual per-column ordering rank — a finite number, or null to clear it.
+  if (hzlUpdates.order !== undefined && hzlUpdates.order !== null && !Number.isFinite(hzlUpdates.order)) {
+    return res.status(400).json({ error: 'order must be a finite number or null' });
   }
   // blocked + trashedAt are handled separately below (not in ALLOWED to keep whitelist clean)
 
