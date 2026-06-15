@@ -1349,8 +1349,6 @@ export default function TasksView() {
           onDismiss={() => setUndoState(null)}
         />
       )}
-      <ScrollToTask onExpandParent={handleExpandParent} />
-      <ScrollToColumn />
     </div>
   );
 }

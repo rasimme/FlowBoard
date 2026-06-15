@@ -1120,10 +1120,12 @@ export default function CanvasView() {
   useLayoutEffect(() => { applyTransform(); });
 
   // Flush any pending viewport write when the canvas unmounts (T-345-2).
-  // Also drop any pending single-click link-open timer (T-345-8).
+  // Also drop pending interaction timers so they can't fire on a dead view
+  // (single-click link-open T-345-8; long-press-to-edit T-355).
   useEffect(() => () => {
     if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
     if (gestureRef.current.linkOpenTimer) clearTimeout(gestureRef.current.linkOpenTimer);
+    if (gestureRef.current.longPressTimer) clearTimeout(gestureRef.current.longPressTimer);
   }, []);
 
   // --- Toolbar "+ Note" ---

@@ -1738,7 +1738,14 @@ function normalizePriority(value) {
 app.post('/api/projects/:name/tasks', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const { title, priority, parentId } = req.body;
-  if (!title) return res.status(400).json({ error: 'Title required' });
+  // Reject empty/whitespace-only titles and bound the length (T-355).
+  if (typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'Title required' });
+  }
+  const cleanTitle = title.trim();
+  if (cleanTitle.length > 500) {
+    return res.status(400).json({ error: 'Title too long (max 500 characters)' });
+  }
 
   const normalizedPriority = normalizePriority(priority);
   if (!normalizedPriority) {
@@ -1769,7 +1776,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
 
   try {
     const task = hzlService.createTask(req.params.name, {
-      title,
+      title: cleanTitle,
       priority: effectivePriority,
       parentId: parentId || null,
       status: req.body.status || 'backlog',

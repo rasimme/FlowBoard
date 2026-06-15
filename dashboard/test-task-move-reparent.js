@@ -72,6 +72,14 @@ async function run() {
     await api('POST', '/projects/src/tasks', { title: 'Child B', parentId: 'T-001' });  // T-001-2
     await api('POST', '/projects/dst/tasks', { title: 'Existing in dst' });             // dst/T-001
 
+    // --- title validation (T-355): empty/whitespace/oversized rejected ---
+    ok((await api('POST', '/projects/src/tasks', { title: '   ' })).status === 400, 'whitespace-only title → 400');
+    ok((await api('POST', '/projects/src/tasks', { title: '' })).status === 400, 'empty title → 400');
+    ok((await api('POST', '/projects/src/tasks', {})).status === 400, 'missing title → 400');
+    ok((await api('POST', '/projects/src/tasks', { title: 'x'.repeat(501) })).status === 400, 'title > 500 chars → 400');
+    const trimmed = await api('POST', '/projects/src/tasks', { title: '  Trimmed me  ' });
+    ok(trimmed.status === 200 && trimmed.body.task.title === 'Trimmed me', 'title is trimmed before save');
+
     // --- move with subtasks ---
     let r = await api('POST', '/projects/src/tasks/T-001/move', { toProject: 'dst' });
     ok(r.status === 200, `move returns 200 (got ${r.status})`);

@@ -285,11 +285,13 @@ export async function sendPromote(project, notes, connections, noteIds, mode, sh
 export function repositionZeroNote(project, dispatch, note, viewportW, viewportH, pan, scale) {
   const cx = (viewportW / 2 - pan.x) / scale;
   const cy = (viewportH / 2 - pan.y) / scale;
-  const x = cx + (Math.random() - 0.5) * 200;
-  const y = cy + (Math.random() - 0.5) * 100;
+  // Round once so the in-memory note matches exactly what is persisted (avoids a
+  // fractional-vs-rounded drift between state and the server, T-355).
+  const x = Math.round(cx + (Math.random() - 0.5) * 200);
+  const y = Math.round(cy + (Math.random() - 0.5) * 100);
   dispatch({ type: 'note-patch', id: note.id, patch: { x, y } });
   if (!project) return;
   api(`/projects/${project}/canvas/notes/${note.id}`, {
-    method: 'PUT', body: { x: Math.round(x), y: Math.round(y) },
+    method: 'PUT', body: { x, y },
   }).catch(() => {});
 }

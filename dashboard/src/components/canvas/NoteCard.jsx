@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { renderNoteMarkdown } from '../../utils/canvasMarkdown.mjs';
 import MarkdownEditor from '../MarkdownEditor.jsx';
 
@@ -82,7 +82,11 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
     onSaveText(note.id, valueRef.current);
   }, [onSaveText, note.id]);
 
-  const rendered = renderNoteMarkdown(note.text || '');
+  // Memoize the markdown parse so a canvas commit (drag/selection/port re-render)
+  // doesn't re-parse every note's text — only re-runs when this note's text
+  // changes (T-355). The component still re-renders so live ports/position stay
+  // correct during drag; only the parse is skipped.
+  const rendered = useMemo(() => renderNoteMarkdown(note.text || ''), [note.text]);
   const classes = [
     'note',
     `color-${note.color || 'grey'}`,
