@@ -486,7 +486,10 @@
       transition: opacity var(--duration-fast), color var(--duration-fast);
       font-family: inherit;
     }
-    .project-item .row-grip { cursor: grab; width: 12px; height: 16px; flex-shrink: 0; }
+    .project-item .row-grip { cursor: grab; width: 12px; height: 16px; flex-shrink: 0; touch-action: none; }
+    /* T-367-5: on touch the whole-item HTML5 drag doesn't work, so the grip
+       (the Pointer-Events drag handle) must be permanently visible/grabbable. */
+    @media (hover: none) { .project-item .row-grip { opacity: 0.55; } }
     .project-item .row-kebab { width: 20px; height: 20px; border-radius: var(--radius-sm); }
     .project-item:hover .row-grip { opacity: 0.5; }
     .project-item:hover .row-kebab,

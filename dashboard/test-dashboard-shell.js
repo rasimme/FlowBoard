@@ -62,6 +62,9 @@ async function run() {
     await fetchJson(base, 'POST', '/api/projects', { name: PROJECT });
     // T-367-3: seed a markdown file on disk so the Files view has something to open
     try { fs.writeFileSync(path.join(tmp, 'projects', PROJECT, 'note.md'), '# Note\n\nA file body for the master-detail test.\n'); } catch {}
+    // T-367-5: two extra projects so the sidebar grip-drag reorder has something to move
+    await fetchJson(base, 'POST', '/api/projects', { name: 'zzz-aaa' });
+    await fetchJson(base, 'POST', '/api/projects', { name: 'zzz-bbb' });
     // Register an agent so the agents fetch has something observable to propagate.
     await fetchJson(base, 'PUT', '/api/status', { agentId: 'shell-tester', project: PROJECT });
     const t1 = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'Shell task one' })).body?.task?.id;
@@ -494,6 +497,32 @@ async function run() {
       return typeof o[pd[2]] === 'number' && o[pd[2]] < o[pd[0]] && o[pd[2]] < o[pd[1]];
     }, 'pointer-drag reorder persisted', 5000).catch(() => false);
     ok(pdPersisted, 'pointer/touch drag via the handle reorders + persists (T-367-4)');
+
+    // --- Flow 20 (T-367-5): sidebar project reorder via the grip (pointer drag) ---
+    await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
+    await waitFor(() => page.$('.project-item[data-project="zzz-bbb"]'), 'seeded projects in sidebar', 5000);
+    const sbBefore = await page.evaluate(() => [...document.querySelectorAll('.project-item')].map(e => e.dataset.project).filter(n => n && n.startsWith('zzz-')));
+    const sbDrag = await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.project-item')];
+      const src = items.find(i => i.dataset.project === 'zzz-bbb');
+      const tgt = items.find(i => i.dataset.project === 'zzz-aaa');
+      if (!src || !tgt) return 'missing';
+      const grip = src.querySelector('.row-grip');
+      if (!grip) return 'no-grip';
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true }));
+      const sr = src.getBoundingClientRect(); const tr = tgt.getBoundingClientRect();
+      fire(grip, 'pointerdown', sr.left + 6, sr.top + 8);
+      fire(window, 'pointermove', tr.left + 40, tr.top + 2); // above zzz-aaa
+      fire(window, 'pointermove', tr.left + 40, tr.top + 2);
+      fire(window, 'pointerup', tr.left + 40, tr.top + 2);
+      return 'ok';
+    });
+    ok(sbDrag === 'ok', `sidebar grip present + drag dispatched (${sbDrag})`);
+    const sbReordered = await waitFor(async () => page.evaluate(() => {
+      const order = [...document.querySelectorAll('.project-item')].map(e => e.dataset.project).filter(n => n && n.startsWith('zzz-'));
+      return order.indexOf('zzz-bbb') < order.indexOf('zzz-aaa'); // bbb moved above aaa
+    }), 'sidebar reorder applied', 5000).catch(() => false);
+    ok(sbReordered, `dragging a project's grip reorders it in the sidebar (T-367-5, was ${sbBefore.join(',')})`);
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

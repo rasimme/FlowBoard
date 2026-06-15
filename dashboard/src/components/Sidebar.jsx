@@ -105,6 +105,7 @@ function ProjectItem({
   onDragOverItem,
   onDragLeaveItem,
   onDropItem,
+  onGripPointerDown,
 }) {
   const [renameValue, setRenameValue] = useState(project.displayName || project.name);
   const inputRef = useRef(null);
@@ -128,6 +129,8 @@ function ProjectItem({
   return (
     <div
       className={cls}
+      data-project={project.name}
+      data-section={section}
       draggable={!renaming}
       onDragStart={(e) => onDragStart?.(e, project, section)}
       onDragEnd={onDragEnd}
@@ -136,7 +139,16 @@ function ProjectItem({
       onDrop={(e) => onDropItem?.(e, project, section)}
       onClick={() => !renaming && onView?.(project.name)}
     >
-      <span className="row-grip" aria-hidden="true">
+      {/* T-367-5: the grip starts a Pointer-Events drag (mouse + touch). On touch
+          the whole-item HTML5 drag above never fires; the grip path does, reusing
+          the same dropTarget + applyDrop pipeline. touch-action:none so a grip
+          grab is never read as a list scroll. */}
+      <span
+        className="row-grip"
+        style={{ touchAction: 'none' }}
+        onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onGripPointerDown?.(e, project, section); }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <GripVertical size={12} />
       </span>
       {renaming ? (
@@ -449,6 +461,67 @@ export default function Sidebar() {
     applyDrop(section, insertAt);
   }
 
+  // T-367-5: Pointer-Events drag for touch (and mouse), started from a project
+  // item's grip. Reuses dropTarget (the insertion indicator) + applyDrop. A
+  // floating clone follows the pointer; the target item + before/after is
+  // hit-tested each move. Dropping onto an item in another section moves it
+  // there; dropping onto a section's empty zone appends.
+  function onGripPointerDown(e, project, section) {
+    if (typeof e.button === 'number' && e.button !== 0) return;
+    dragState.current.sourceName = project.name;
+    dragState.current.sourceSection = section;
+    const itemEl = e.target.closest('.project-item');
+    if (!itemEl) return;
+    const rect = itemEl.getBoundingClientRect();
+    const offY = e.clientY - rect.top;
+    const ghost = itemEl.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
+    document.body.appendChild(ghost);
+    itemEl.classList.add('dragging');
+    let target = null; // { name|null, section, kind: 'before'|'after'|'into' }
+    const onMove = (ev) => {
+      ev.preventDefault();
+      ghost.style.top = `${ev.clientY - offY}px`;
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      const overItem = el?.closest?.('.project-item');
+      if (overItem?.dataset?.project && overItem.dataset.project !== project.name) {
+        const r = overItem.getBoundingClientRect();
+        const kind = ev.clientY < r.top + r.height / 2 ? 'before' : 'after';
+        target = { name: overItem.dataset.project, section: overItem.dataset.section, kind };
+        setDropTarget({ kind, itemName: target.name, section: target.section });
+      } else {
+        const zone = el?.closest?.('[data-section-zone]')?.dataset?.sectionZone;
+        if (zone) { target = { name: null, section: zone, kind: 'into' }; setDropTarget({ kind: 'into', section: zone }); }
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      ghost.remove();
+      itemEl.classList.remove('dragging');
+      if (target) {
+        const destList = sectionItems(target.section).filter((p) => p.name !== project.name);
+        let insertAt;
+        if (target.kind === 'into') insertAt = destList.length;
+        else {
+          let idx = destList.findIndex((p) => p.name === target.name);
+          if (idx < 0) idx = destList.length;
+          insertAt = target.kind === 'after' ? idx + 1 : idx;
+        }
+        applyDrop(target.section, insertAt); // clears dragState + dropTarget
+      } else {
+        dragState.current.sourceName = null;
+        dragState.current.sourceSection = null;
+        setDropTarget(null);
+      }
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  }
+
   function onDropSection(section) {
     return (e) => {
       e.preventDefault();
@@ -562,6 +635,7 @@ export default function Sidebar() {
       onDragOverItem={onDragOverItem}
       onDragLeaveItem={onDragLeaveItem}
       onDropItem={onDropItem}
+      onGripPointerDown={onGripPointerDown}
     />
   );
 
@@ -642,6 +716,7 @@ export default function Sidebar() {
 
         <div
           className={emptySectionIntoClass(ROOT_ZONE, rootItems)}
+          data-section-zone={ROOT_ZONE}
           onDragOver={onDragOverSection(ROOT_ZONE)}
           onDragLeave={onDragLeaveSection(ROOT_ZONE)}
           onDrop={onDropSection(ROOT_ZONE)}
@@ -664,6 +739,7 @@ export default function Sidebar() {
               <div
                 key={f}
                 className="folder-group"
+                data-section-zone={sectionKey}
                 onDragOver={onDragOverSection(sectionKey)}
                 onDragLeave={onDragLeaveSection(sectionKey)}
                 onDrop={onDropSection(sectionKey)}
@@ -700,6 +776,7 @@ export default function Sidebar() {
         {archiveItems.length > 0 && (
           <div
             className="archive-section"
+            data-section-zone={ARCHIVE_KEY}
             onDragOver={onDragOverSection(ARCHIVE_KEY)}
             onDragLeave={onDragLeaveSection(ARCHIVE_KEY)}
             onDrop={onDropSection(ARCHIVE_KEY)}
@@ -727,6 +804,7 @@ export default function Sidebar() {
         {archiveItems.length === 0 && dragState.current.sourceName && (
           <div
             className={`archive-section ${emptySectionIntoClass(ARCHIVE_KEY, archiveItems)}`}
+            data-section-zone={ARCHIVE_KEY}
             onDragOver={onDragOverSection(ARCHIVE_KEY)}
             onDragLeave={onDragLeaveSection(ARCHIVE_KEY)}
             onDrop={onDropSection(ARCHIVE_KEY)}
