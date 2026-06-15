@@ -291,6 +291,13 @@
       "doc": "api/projects.md"
     },
     {
+      "method": "POST",
+      "path": "/api/projects/:name/overview/ops",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md"
+    },
+    {
       "method": "GET",
       "path": "/api/projects/:name/questions",
       "auth": "user",

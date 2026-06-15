@@ -345,6 +345,101 @@ function packFlow(items) {
   return { version: 1, layout: 'grid', widgets };
 }
 
+// Inverse of FLOW_SIZE_WIDTH: derive a coarse size hint from a grid width, so an
+// existing grid config can round-trip through the coordinate-free flow layer.
+function widthToSize(w) {
+  if (w >= 11) return 'full';
+  if (w >= 7) return 'l';
+  if (w >= 5) return 'm';
+  return 's';
+}
+
+/**
+ * Apply a batch of small, coordinate-free operations to an existing grid
+ * overview and return a freshly packed grid config (T-365-2).
+ *
+ * The current layout is read back into an ordered flow-list ({type,size,...}),
+ * the ops are applied in order, and the result is re-packed with `packFlow`
+ * so positions are always clean and non-overlapping — the caller never touches
+ * x/y/w/h. Supported ops:
+ *   - { op:'add', type, size?, props?, title?, id? }   append (auto-id if none)
+ *   - { op:'remove', id }                              drop a widget
+ *   - { op:'resize', id, size }                        set the width hint
+ *   - { op:'reorder', id, toIndex }                    move to a position
+ *
+ * Validation is total: an unknown id (remove/resize/reorder), an unknown op, or
+ * an `add` without a type throws an Error whose message names the op index
+ * (e.g. `ops[2]: no widget with id "x"`). Ops are applied to a working copy and
+ * only returned if every op succeeds — no partial application, and the input
+ * config is never mutated. Does not touch the filesystem.
+ *
+ * @param {object} config grid overview { version, layout:'grid', widgets:[...] }
+ * @param {Array} ops ordered operations
+ * @returns {{version,layout:'grid',widgets:Array}} a packed grid config
+ */
+function applyOps(config, ops) {
+  const srcWidgets = config && Array.isArray(config.widgets) ? config.widgets : [];
+  // Convert the grid config to an ordered, coordinate-free flow-list.
+  const list = srcWidgets.map(w => {
+    const grid = w && w.grid && typeof w.grid === 'object' ? w.grid : {};
+    return {
+      type: w.type,
+      size: widthToSize(Number.isInteger(grid.w) ? grid.w : (FLOW_FALLBACK_SIZE.w)),
+      ...(typeof w.title === 'string' ? { title: w.title } : {}),
+      ...(w.props && typeof w.props === 'object' && !Array.isArray(w.props) ? { props: w.props } : {}),
+      ...(typeof w.id === 'string' && w.id ? { id: w.id } : {}),
+    };
+  });
+
+  const opList = Array.isArray(ops) ? ops : [];
+  const indexOfId = id => list.findIndex(it => it.id === id);
+
+  opList.forEach((raw, i) => {
+    const op = raw && typeof raw === 'object' ? raw : {};
+    const at = `ops[${i}]`;
+    switch (op.op) {
+      case 'add': {
+        if (typeof op.type !== 'string' || !op.type) {
+          throw new Error(`${at}: add requires a "type"`);
+        }
+        list.push({
+          type: op.type,
+          ...(typeof op.size === 'string' ? { size: op.size } : {}),
+          ...(typeof op.title === 'string' ? { title: op.title } : {}),
+          ...(op.props && typeof op.props === 'object' && !Array.isArray(op.props) ? { props: op.props } : {}),
+          ...(typeof op.id === 'string' && op.id ? { id: op.id } : {}),
+        });
+        break;
+      }
+      case 'remove': {
+        const idx = indexOfId(op.id);
+        if (idx === -1) throw new Error(`${at}: no widget with id "${op.id}"`);
+        list.splice(idx, 1);
+        break;
+      }
+      case 'resize': {
+        const idx = indexOfId(op.id);
+        if (idx === -1) throw new Error(`${at}: no widget with id "${op.id}"`);
+        list[idx] = { ...list[idx], size: op.size };
+        break;
+      }
+      case 'reorder': {
+        const idx = indexOfId(op.id);
+        if (idx === -1) throw new Error(`${at}: no widget with id "${op.id}"`);
+        let to = Number.isInteger(op.toIndex) ? op.toIndex : 0;
+        const [moved] = list.splice(idx, 1);
+        to = Math.max(0, Math.min(list.length, to));
+        list.splice(to, 0, moved);
+        break;
+      }
+      default:
+        throw new Error(`${at}: unknown op "${op.op}"`);
+    }
+  });
+
+  return packFlow(list);
+}
+
 // Best-fit preset inference (T-365) — the deterministic "floor". Maps the
 // shallow signals available when a project is created to a preset name + a
 // short human rationale. Best-effort and meant to be overridden by an agent
@@ -475,6 +570,7 @@ module.exports = {
   DEFAULT_PRESET,
   validateOverview,
   packFlow,
+  applyOps,
   suggestPreset,
   presetConfig,
   readOverview,

@@ -3440,6 +3440,31 @@ app.put('/api/projects/:name/overview', (req, res) => {
   }
 });
 
+// POST /api/projects/:name/overview/ops — incremental patch-ops (T-365-2).
+// Body: { ops:[...] } of small, coordinate-free operations (add/remove/resize/
+// reorder). The current layout is loaded, the ops are applied and re-packed
+// into a clean grid, then run through the same trusted validator as any other
+// write. Lets agents refine a layout without rewriting the whole thing.
+app.post('/api/projects/:name/overview/ops', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    const current = overview.readOverview(PROJECTS_DIR, req.params.name);
+    let packed;
+    try {
+      packed = overview.applyOps(current, req.body && req.body.ops);
+    } catch (opErr) {
+      return res.status(400).json({ error: opErr.message });
+    }
+    const result = overview.validateOverview(packed);
+    if (!result.ok) return res.status(400).json({ error: 'Invalid overview config', errors: result.errors });
+    overview.writeOverview(PROJECTS_DIR, req.params.name, result.config);
+    res.json({ ok: true, overview: { source: 'file', ...result.config } });
+  } catch (err) {
+    console.error('[overview]', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/projects/:name/stats — project metrics (T-303), same numbers
 // the task-stats widget shows, for agents to query programmatically
 app.get('/api/projects/:name/stats', (req, res) => {

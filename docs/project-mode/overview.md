@@ -61,6 +61,36 @@ unchanged.
 Use flow to compose a fresh layout fast; use the explicit grid form when you
 need exact placement.
 
+## Incremental patch-ops
+
+To refine an existing overview without resending the whole layout, `POST` a
+batch of small operations to `/api/projects/:name/overview/ops`. The server
+reads the current layout, applies the ops in order, re-packs into a clean grid
+(no coordinates), validates and saves it:
+
+```json
+{
+  "ops": [
+    { "op": "add", "type": "blocked", "size": "m" },
+    { "op": "remove", "id": "w-notes" },
+    { "op": "resize", "id": "w-stats", "size": "full" },
+    { "op": "reorder", "id": "w-stats", "toIndex": 0 }
+  ]
+}
+```
+
+- `add` — append a widget (`type` required; optional `size`, `props`, `title`,
+  `id`; an id is generated when omitted).
+- `remove` — drop the widget with that `id`.
+- `resize` — set the coarse width hint (`s` | `m` | `l` | `full`).
+- `reorder` — move the widget to integer `toIndex` (clamped to bounds).
+
+`size` uses the same coarse buckets as flow authoring. Ops apply atomically:
+an unknown `id`, unknown `op`, or `add` without a `type` fails the whole batch
+with a `400` naming the offending op index (e.g. `ops[2]: no widget with id
+"x"`) and nothing is written. The response is the saved `grid` config, so the
+UI drag-editor and later edits work unchanged.
+
 ## Trusted registry
 
 Only registered widget `type`s render; `PUT` rejects unknown types with an

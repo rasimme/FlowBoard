@@ -192,6 +192,23 @@ async function run() {
     ok(r.status === 400 && JSON.stringify(r.body?.errors).includes('not a registered widget'),
        'flow authoring rejects an unknown widget type through the trusted validator');
 
+    // incremental patch-ops (T-365-2): refine the persisted layout with small
+    // operations instead of rewriting it. The previous block left a 2-widget
+    // flow layout (task-stats, notes) on disk.
+    r = await api('POST', '/projects/ov/overview/ops', { ops: [{ op: 'add', type: 'blocked', size: 'm' }] });
+    ok(r.status === 200 && r.body?.overview?.source === 'file' && r.body.overview.widgets.length === 3
+       && r.body.overview.widgets.some(w => w.type === 'blocked'),
+       'patch-ops add appends a widget and returns the packed grid');
+    r = await api('GET', '/projects/ov/overview');
+    ok(r.body?.overview?.source === 'file' && r.body.overview.widgets.length === 3
+       && r.body.overview.widgets.some(w => w.type === 'blocked'),
+       'patch-ops result is persisted to overview.json');
+    r = await api('POST', '/projects/ov/overview/ops', { ops: [{ op: 'remove', id: 'ghost-id' }] });
+    ok(r.status === 400 && typeof r.body?.error === 'string' && r.body.error.includes('ghost-id'),
+       'patch-ops with an unknown id is rejected (400) with the offending id');
+    r = await api('POST', '/projects/nope/overview/ops', { ops: [] });
+    ok(r.status === 404, 'patch-ops on a missing project is 404');
+
     // creation-time best-fit preset suggestion (T-365 Increment 2)
     // headless create (no UI client header) -> auto-applies a non-default best fit
     r = await api('POST', '/projects', { name: 'createcode', displayName: 'API Gateway', description: 'backend service' });
