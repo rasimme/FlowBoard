@@ -402,6 +402,28 @@ async function run() {
       return b && b.scrollTop >= 100;
     }), 'scroll restored', 4000).catch(() => false);
     ok(scrollRestored, 'column scroll position restored after navigation (T-364)');
+
+    // --- Flow 17 (T-367-1): overview widgets don't overflow at mobile width ---
+    await page.setViewport({ width: 375, height: 720 });
+    await page.click('#tabBar .tab[data-tab="overview"]');
+    const hasWidgets = await waitFor(() => page.$('.ov-cell'), 'overview renders widgets', 4000).catch(() => null);
+    if (!hasWidgets) { ok(true, 'overview has no widgets in test env — overflow check skipped'); }
+    else {
+    await new Promise(r => setTimeout(r, 600)); // let widgets settle / fetch
+    const widgetOverflow = await page.evaluate(() => {
+      const bad = [];
+      document.querySelectorAll('.ov-cell').forEach(cell => {
+        cell.querySelectorAll('*').forEach(el => {
+          // ignore intentionally-scrollable regions (lists, prose, markdown)
+          const cls = (el.className || '').toString().split(' ')[0] || '';
+          if (/scroll|kbars|prose|markdown|ScrollArea/i.test(cls)) return;
+          if (el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 2) bad.push(`${cls || el.tagName}:${el.scrollWidth}>${el.clientWidth}`);
+        });
+      });
+      return [...new Set(bad)];
+    });
+    ok(widgetOverflow.length === 0, `no overview widget overflows at 375px (offenders: ${widgetOverflow.slice(0, 5).join(', ') || 'none'})`);
+    }
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

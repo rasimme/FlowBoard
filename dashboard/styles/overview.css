@@ -391,6 +391,31 @@
 }
 @container widget (max-width: 340px) {
   .ov-link .sub { display: none; }
+
+  /* T-367-1: narrow-card reflows. The grid stacks single-column on phones
+     (≤720px), so every widget cell becomes ~full width (~340px) — these rules
+     fix the multi-column INNER layouts that the height-only container queries
+     never covered. No effect on wider cards/desktop. */
+
+  /* task-stats: wrap the 3 KPIs + tighten the legend instead of overflowing */
+  .ov-kpis { gap: 8px 16px; flex-wrap: wrap; }
+  .ov-kpi .num { font-size: 17px; }
+  .ov-legend { gap: 3px 10px; }
+
+  /* kanban-mini: 5 columns at ~50px can't show task titles — keep the id + the
+     status dot, drop the per-task title text, and tighten padding so the
+     columns stay legible side by side */
+  .ov-kmini { gap: 5px; }
+  .ov-kcol { padding: 6px 5px; gap: 5px; }
+  .ov-kbar { padding: 1px 3px; gap: 3px; }
+  .ov-kbar .ttl { display: none; }
+
+  /* GitHub pulls/issues KPI rows: wrap rather than squash */
+  .ghp-kpis { flex-wrap: wrap; gap: 6px 12px; }
+
+  /* repo-status: stack the two commit/PR columns; rein in the branch pill */
+  .gh-body { flex-direction: column; gap: 8px; }
+  .gh-branch { max-width: 52%; }
 }
 /* low AND narrow: icons only — clipped labels are worse than none */
 @container widget (max-height: 120px) and (max-width: 460px) {
