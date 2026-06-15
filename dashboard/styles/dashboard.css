@@ -175,7 +175,7 @@
     /* T-367-2: keep scrollable content clear of the home indicator on notched
        phones. env(...) resolves to 0 on non-notched devices → no visual change
        there; with viewport-fit=cover it adds the needed bottom breathing room. */
-    .column-body { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+    .column-body { padding-bottom: env(safe-area-inset-bottom, 0px); } /* T-368-3: only the inset (env=0 on desktop → no change there) */
     /* The detail panel is full-height; keep its header clear of the notch and
        its footer clear of the home indicator. */
     [data-detail-panel] { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -229,7 +229,9 @@
     /* --- Sidebar head (label + "+ New" pill) --- */
     .sidebar-head {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 14px 8px;
+      /* T-368-3: clear the notch in the mobile fixed-overlay sidebar (env=0 on
+         desktop / non-notched → unchanged). */
+      padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 8px;
     }
     .sidebar-label {
       font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
@@ -257,7 +259,7 @@
     .sidebar-scroll {
       flex: 1;
       overflow-y: auto;
-      padding: 0 10px 12px;
+      padding: 0 10px calc(12px + env(safe-area-inset-bottom, 0px)); /* T-368-3: clear the home indicator */
       display: flex;
       flex-direction: column;
     }
@@ -1408,6 +1410,10 @@
       border-radius: var(--radius-lg); padding: 24px;
       max-width: 360px; width: 90%; box-shadow: var(--shadow-lg);
       animation: modalIn 0.2s var(--ease-out);
+      /* T-368-3: never taller than the safe viewport on small phones; scroll
+         inside instead of being clipped under the notch / home indicator. */
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+      overflow-y: auto;
     }
     .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
     .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
