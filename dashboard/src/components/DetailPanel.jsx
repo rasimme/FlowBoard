@@ -925,7 +925,7 @@ export default function DetailPanel() {
       />
 
       {/* Panel */}
-      <div className="fixed top-0 right-0 z-[1600] h-full w-full max-w-[480px] bg-card border-l border-border shadow-[-4px_0_24px_rgba(0,0,0,0.3)] flex flex-col animate-slide-in-right">
+      <div data-detail-panel="true" className="fixed top-0 right-0 z-[1600] h-full w-full max-w-[480px] bg-card border-l border-border shadow-[-4px_0_24px_rgba(0,0,0,0.3)] flex flex-col animate-slide-in-right">
         {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <div className="flex justify-between items-start mb-3">
