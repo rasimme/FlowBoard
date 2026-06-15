@@ -419,9 +419,13 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
               handleClick(e);
             }
           } : undefined}
-          role="button"
+          /* T-371: NOT role="button" — the card holds real buttons (grip, delete,
+             archive, status…) and "interactive content inside a button role" is
+             an ARIA violation. It stays keyboard-focusable (tabIndex + Enter/Space
+             opens) as a labelled clickable container; the nested controls are now
+             legitimately reachable. */
           tabIndex={removing ? -1 : 0}
-          aria-label={`${task.id}: ${task.title}`}
+          aria-label={`Open task ${task.id}: ${task.title}`}
           onAnimationEnd={handleAnimationEnd}
           data-react-tasks
         >
@@ -728,9 +732,9 @@ function ArchivedTaskCard({ task, project, onTaskUpdated, onTaskTrashed }) {
               handleClick(e);
             }
           }}
-          role="button"
+          /* T-371: not role="button" (contains interactive controls) */
           tabIndex={0}
-          aria-label={`${task.id}: ${task.title} (archived)`}
+          aria-label={`Open task ${task.id}: ${task.title} (archived)`}
         >
           <div className="flex items-start justify-between gap-2 mb-1">
             <span className="task-id mono">{task.id}</span>
