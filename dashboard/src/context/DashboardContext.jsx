@@ -163,17 +163,11 @@ export function DashboardProvider({ children }) {
     });
   }, [dispatch]);
 
-  // Install legacy bridge stubs so existing React components (Sidebar, TabBar,
-  // ProjectActionsMenu, TasksView, FilesView, DetailPanel) and the appStateBridge
-  // refresh hook continue to function without changes.
+  // Install the global toast, the sidebar-backdrop click handler, and the
+  // appStateBridge refresh hook. T-356-2: the window._viewProject/_switchTab/…
+  // command bridges were removed — components now call these actions directly
+  // via useDashboard() instead of reaching through window.
   useEffect(() => {
-    window._viewProject = viewProject;
-    window._activateProject = activateProject;
-    window._deactivateProject = deactivateProject;
-    window._toggleSidebar = toggleSidebar;
-    window._switchTab = switchTab;
-    window._refreshProjects = refreshProjectsOnly;
-    window._openSpec = openSpec;
     const uninstallToast = installGlobalToast();
 
     // Restore sidebar-backdrop click handler (was in legacy app.js, lost in migration)
@@ -191,20 +185,13 @@ export function DashboardProvider({ children }) {
     });
 
     return () => {
-      delete window._viewProject;
-      delete window._activateProject;
-      delete window._deactivateProject;
-      delete window._toggleSidebar;
-      delete window._switchTab;
-      delete window._refreshProjects;
-      delete window._openSpec;
       uninstallToast();
       backdrop?.removeEventListener('click', onBackdropClick);
       if (window.appState && installed && window.appState._refreshBoard === installed) {
         delete window.appState._refreshBoard;
       }
     };
-  }, [viewProject, activateProject, deactivateProject, toggleSidebar, switchTab, refreshProjectsOnly, openSpec, fetchTasksForProject]);
+  }, [toggleSidebar, fetchTasksForProject]);
 
   // Initial fetch — runs once after window.appState bootstrap is in place.
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw, FolderInput } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 import Button from './Button.jsx';
 import Badge from './Badge.jsx';
 import Input from './Input.jsx';
@@ -169,6 +170,7 @@ function showToast(msg, type = 'info') {
 
 export default function DetailPanel() {
   const { state, version } = useAppState();
+  const { openSpec, viewProject } = useDashboard();
   const taskActions = useTaskActions();
   const [taskId, setTaskId] = useState(null);
   const [task, setTask] = useState(null);
@@ -552,9 +554,9 @@ export default function DetailPanel() {
   // the Files view anyway.
   function handleOpenSpec() {
     const t = taskRef.current;
-    if (t && t.specFile && window._openSpec) {
+    if (t && t.specFile) {
       window.appState.pendingSpecFromPanel = true;
-      window._openSpec(t.specFile, t.id);
+      openSpec(t.specFile, t.id);
       close();
     }
   }
@@ -565,10 +567,8 @@ export default function DetailPanel() {
       const res = await apiFetch(`/projects/${project}/specs/${t.id}`, { method: 'POST' });
       if (res?.ok && res.specFile) {
         syncPanelTask({ ...t, specFile: res.specFile });
-        if (window._openSpec) {
-          window.appState.pendingSpecFromPanel = true;
-          window._openSpec(res.specFile, t.id);
-        }
+        window.appState.pendingSpecFromPanel = true;
+        openSpec(res.specFile, t.id);
         showToast(`Spec created for ${t.id}`, 'success');
         close();
       }
@@ -1185,7 +1185,7 @@ export default function DetailPanel() {
           onDone={({ type, task: result, toProject }) => {
             close();
             if (type === 'move' && toProject) {
-              window._viewProject?.(toProject); // project switch reloads the board
+              viewProject(toProject); // project switch reloads the board
             } else if (type === 'reparent') {
               // Same-project reparent changes parent/child links on both the task
               // and its old/new parent — refetch so the board reflects it

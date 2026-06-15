@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../components/index.js';
 import AgentChip, { agentColor } from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
@@ -89,6 +90,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
   const [popover, setPopover] = useState({ type: null, open: false, rect: null });
   const suppressClickRef = useRef(false);
   const haptic = useHaptic();
+  const { openSpec } = useDashboard();
 
   const handleClick = () => {
     // Guard: don't open detail panel right after a popover action
@@ -118,7 +120,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 
   const handleOpenSpec = (e) => {
     e.stopPropagation();
-    if (window._openSpec) window._openSpec(task.specFile, task.id);
+    openSpec(task.specFile, task.id);
   };
 
   const handleCreateSpec = async (e) => {
@@ -129,7 +131,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
       if (data.ok && data.specFile) {
         task.specFile = data.specFile;
         if (window.showToast) window.showToast(`Spec created for ${task.id}`, 'success');
-        if (window._openSpec) window._openSpec(data.specFile, task.id);
+        openSpec(data.specFile, task.id);
       }
     } catch (err) {
       console.warn('[create-spec]', err);
@@ -217,6 +219,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   const [animated, setAnimated] = useState(false);
   const [popover, setPopover] = useState({ type: null, open: false, rect: null });
   const haptic = useHaptic();
+  const { openSpec } = useDashboard();
 
   // T-295: derive from the live task list, not task.subtaskIds — a PUT
   // response can momentarily carry an empty subtaskIds and unmount the
@@ -318,7 +321,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   // --- Spec file ---
   const handleOpenSpec = (e) => {
     e.stopPropagation();
-    if (window._openSpec) window._openSpec(task.specFile, task.id);
+    openSpec(task.specFile, task.id);
   };
 
   const handleCreateSpec = async (e) => {
@@ -329,7 +332,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
       if (data.ok && data.specFile) {
         task.specFile = data.specFile;
         if (window.showToast) window.showToast(`Spec created for ${task.id}`, 'success');
-        if (window._openSpec) window._openSpec(data.specFile, task.id);
+        openSpec(data.specFile, task.id);
       }
     } catch (err) {
       console.warn('[create-spec]', err);
@@ -990,6 +993,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
 
 export default function TasksView() {
   const { state } = useAppState();
+  const { refreshProjectsOnly } = useDashboard();
   const viewedProject = state?.viewedProject;
   const allTasks = state?.tasks || [];
 
@@ -1142,10 +1146,10 @@ export default function TasksView() {
   // Trigger a refresh so state.tasks drops them and the panel + toolbar
   // reflect the new empty state.
   const handleTrashEmptied = useCallback(() => {
-    window._refreshProjects?.();
+    refreshProjectsOnly();
     refreshTasks(viewedProject).catch(() => { /* ignore */ });
     setTrashPanelOpen(false);
-  }, [viewedProject]);
+  }, [viewedProject, refreshProjectsOnly]);
 
   const handleTaskUpdated = useCallback(async (taskId, updates) => {
     try {

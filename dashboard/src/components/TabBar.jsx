@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 import { VIEWS, getView } from '../config/views.js';
 
 /**
@@ -8,11 +9,12 @@ import { VIEWS, getView } from '../config/views.js';
  *
  * Replaces the static HTML tab buttons. On tab click:
  * - Updates currentTab in appState via dispatch
- * - For legacy-owned views, calls window._switchTab() to trigger vanilla rendering
+ * - For legacy-owned views, calls switchTab() to trigger vanilla rendering
  * - For react-owned views, ViewShell handles rendering
  */
 export default function TabBar() {
   const { state, dispatch } = useAppState();
+  const { switchTab } = useDashboard();
   const [container, setContainer] = useState(null);
   const rightSlotRef = useRef(null);
 
@@ -39,7 +41,7 @@ export default function TabBar() {
 
     if (view?.owner === 'legacy') {
       // Let legacy switchTab handle DOM rendering for this view
-      window._switchTab?.(viewId);
+      switchTab(viewId);
     }
     // For react-owned views, ViewShell picks up the currentTab change automatically
   }

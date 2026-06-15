@@ -4,6 +4,7 @@ import { OvWidget } from './widgets.jsx';
 import { TokenAffordance, useProjectGithub } from './widgets2.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
+import { useDashboard } from '../../context/DashboardContext.jsx';
 
 /**
  * GitHub widget family (T-316..T-319) — gh-pulls, gh-ci, gh-releases,
@@ -348,6 +349,7 @@ export function GhIssuesWidget({ widget, editing }) {
 /* ---------- agent-questions: open questions from agents (T-307) ---------- */
 export function AgentQuestionsWidget({ widget, editing }) {
   const { state } = useAppState();
+  const { switchTab } = useDashboard();
   const project = state?.viewedProject;
   const [questions, setQuestions] = useState(null);
   const [tick, setTick] = useState(0);
@@ -389,7 +391,7 @@ export function AgentQuestionsWidget({ widget, editing }) {
   }
 
   const goTask = (taskId) => {
-    window._switchTab ? window._switchTab('tasks') : null;
+    switchTab('tasks');
     window._scrollToTaskId = taskId;
   };
 

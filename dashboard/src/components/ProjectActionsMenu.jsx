@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Archive, ArchiveRestore, Folder, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import Popover from './Popover.jsx';
 import Input from './Input.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 
 async function putProject(name, patch) {
   const res = await fetch(`/api/projects/${encodeURIComponent(name)}`, {
@@ -25,6 +26,7 @@ async function putProject(name, patch) {
  *  - folders: string[] — existing folder names for the "Move to folder" submenu
  */
 export default function ProjectActionsMenu({ project, folders = [], onRenameRequest, onDeleteRequest }) {
+  const { refreshProjectsOnly } = useDashboard();
   const btnRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [rect, setRect] = useState(null);
@@ -51,7 +53,7 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
     closeMenu();
     try {
       await putProject(project.name, patch);
-      await window._refreshProjects?.();
+      await refreshProjectsOnly();
     } catch (err) {
       window.showToast?.(`Could not ${label}: ${err.message}`, 'error');
     } finally {

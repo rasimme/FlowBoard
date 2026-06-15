@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 import { Button, Input, Modal } from '../components/index.js';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
@@ -422,6 +423,7 @@ function JsonPreview({ content }) {
 // --- Main view ---
 export default function FilesView() {
   const { state } = useAppState();
+  const { switchTab } = useDashboard();
   const viewedProject = state?.viewedProject;
 
   const [fileTree, setFileTree] = useState(null);
@@ -921,7 +923,7 @@ export default function FilesView() {
               const taskId = fromTaskId;
               setFromTaskId(null);
               setTriggerFromPanel(false);
-              if (window._switchTab) window._switchTab('tasks');
+              switchTab('tasks');
               if (taskId) {
                 if (triggerFromPanel && window.openTaskDetail) {
                   window.openTaskDetail(taskId);

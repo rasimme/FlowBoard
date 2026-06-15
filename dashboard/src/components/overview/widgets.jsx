@@ -3,6 +3,7 @@ import { Clock, Plus, Lightbulb, FileText, FilePlus } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
+import { useDashboard } from '../../context/DashboardContext.jsx';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -62,9 +63,10 @@ function useProjectFile(project, filename) {
 // off to the legacy DOM switcher only for legacy-owned views.
 function useGoTab() {
   const { dispatch } = useAppState();
+  const { switchTab } = useDashboard();
   return (tab) => {
     dispatch({ currentTab: tab });
-    if (tab === 'ideas') window._switchTab?.('ideas');
+    if (tab === 'ideas') switchTab('ideas');
   };
 }
 
@@ -326,6 +328,7 @@ function parseDecisions(md) {
 /* ---------- recent-decisions ---------- */
 export function RecentDecisionsWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { openSpec } = useDashboard();
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'DECISIONS.md');
   const count = widget?.props?.count || 12;
@@ -360,7 +363,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
               </div>
             ))}
           </ScrollArea>
-          <div className="ov-wfoot" onClick={editing ? undefined : () => window._openSpec?.('DECISIONS.md')}>DECISIONS.md →</div>
+          <div className="ov-wfoot" onClick={editing ? undefined : () => openSpec('DECISIONS.md')}>DECISIONS.md →</div>
         </>
       )}
     </OvWidget>
@@ -370,6 +373,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
 /* ---------- project-goals ---------- */
 export function ProjectGoalsWidget({ widget, editing, onRemove }) {
   const goTab = useGoTab();
+  const { openSpec } = useDashboard();
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'PROJECT.md');
 
@@ -391,7 +395,7 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
       ) : (
         <>
           <div className="ov-goal-text">{goal}</div>
-          <div className="ov-wfoot" onClick={editing ? undefined : () => window._openSpec?.('PROJECT.md')}>PROJECT.md →</div>
+          <div className="ov-wfoot" onClick={editing ? undefined : () => openSpec('PROJECT.md')}>PROJECT.md →</div>
         </>
       )}
     </OvWidget>

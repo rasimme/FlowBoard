@@ -3,6 +3,7 @@ import OptionList from './OptionList.jsx';
 import { ChevronRight, ChevronDown, AlertCircle, RotateCcw, FastForward, CheckCircle2 } from 'lucide-react';
 import { Modal, Button, Textarea, Spinner, Checkbox } from './index.js';
 import MarkdownPreview from './MarkdownPreview.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 
 // Mirrors MAX_CLARIFICATIONS in specify-policy.js (server-enforced cap).
 const MAX_QUESTIONS = 4;
@@ -24,6 +25,7 @@ function BusyState({ label, hint }) {
 }
 
 export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
+  const { switchTab } = useDashboard();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -164,7 +166,7 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
 
   function viewInKanban() {
     if (createdTasks[0]) window._scrollToTaskId = createdTasks[0];
-    window._switchTab?.('tasks');
+    switchTab('tasks');
     finish();
   }
 

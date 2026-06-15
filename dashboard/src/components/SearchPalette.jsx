@@ -5,6 +5,7 @@ import Input from './Input.jsx';
 import Badge from './Badge.jsx';
 import Spinner from './Spinner.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
+import { useDashboard } from '../context/DashboardContext.jsx';
 
 /**
  * SearchPalette — global unified search (T-301, T-349).
@@ -14,6 +15,7 @@ import { formatDisplayName } from '../utils/formatting.js';
  * card, a note opens its project's Ideas canvas, a project is activated.
  */
 export default function SearchPalette({ open, onClose, projects = [] }) {
+  const { viewProject, switchTab } = useDashboard();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -64,21 +66,21 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
   const pick = useCallback((r) => {
     onClose?.();
     if (r.kind === 'task') {
-      window._viewProject?.(r.project);
+      viewProject(r.project);
       // Switch to the Tasks tab so ScrollToTask actually mounts and consumes the
       // flag — without this, picking a task from Overview/Files/Ideas left
       // _scrollToTaskId set on a tab that never rendered (T-355). Mirrors the
       // note branch below.
-      window._switchTab?.('tasks');
+      switchTab('tasks');
       window._scrollToTaskId = r.id;
     } else if (r.kind === 'note') {
-      window._viewProject?.(r.project);
-      window._switchTab?.('ideas');
+      viewProject(r.project);
+      switchTab('ideas');
       window._scrollToNoteId = r.id; // canvas consumes if it supports it
     } else if (r.kind === 'project') {
-      window._viewProject?.(r.name);
+      viewProject(r.name);
     }
-  }, [onClose]);
+  }, [onClose, viewProject, switchTab]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') { onClose?.(); return; }

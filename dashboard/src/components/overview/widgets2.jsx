@@ -3,6 +3,7 @@ import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plu
 import { OvWidget } from './widgets.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
+import { useDashboard } from '../../context/DashboardContext.jsx';
 import { refreshTasks } from '../../state/appStateBridge.mjs';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
@@ -16,9 +17,10 @@ const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
 
 function useGoTab() {
   const { dispatch } = useAppState();
+  const { switchTab } = useDashboard();
   return (tab) => {
     dispatch({ currentTab: tab });
-    if (tab === 'ideas') window._switchTab?.(tab);
+    if (tab === 'ideas') switchTab(tab);
   };
 }
 
@@ -545,6 +547,7 @@ export function TimelineWidget({ widget, editing }) {
 /* ---------- context-index: context/ files, pins via props ---------- */
 export function ContextIndexWidget({ widget, editing }) {
   const { state } = useAppState();
+  const { openSpec } = useDashboard();
   const project = state?.viewedProject;
   const [files, setFiles] = useState(null);
   useEffect(() => {
@@ -573,7 +576,7 @@ export function ContextIndexWidget({ widget, editing }) {
         <ScrollArea className="flex-1 min-h-0" innerClassName="ci-list">
           {sorted.slice(0, widget?.props?.limit || 100).map(f => (
             <div key={f} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => window._openSpec?.(`context/${f}`)}>
+              onClick={editing ? undefined : () => openSpec(`context/${f}`)}>
               <FileText size={13} className="text-muted shrink-0" />
               <span className="nm">{pins.includes(f) && <span className="pin">★ </span>}{f}</span>
             </div>
@@ -1026,6 +1029,7 @@ export function RepoStatusWidget({ widget, editing }) {
 /* ---------- file-viewer: one rendered file on the overview (T-322) ---------- */
 export function FileViewerWidget({ widget, editing }) {
   const { state } = useAppState();
+  const { openSpec } = useDashboard();
   const project = state?.viewedProject;
   // local path state: the pick must render immediately — the stored
   // overview only refreshes on reload, and in an unsaved edit draft the
@@ -1101,7 +1105,7 @@ export function FileViewerWidget({ widget, editing }) {
         <ScrollArea className="flex-1 min-h-0" innerClassName="fv-body"
           innerStyle={{ cursor: editing ? undefined : 'pointer' }}
           title={editing ? undefined : `Open ${name} in Files`}
-          onClick={editing ? undefined : e => { if (!e.target.closest('a')) window._openSpec?.(path); }}>
+          onClick={editing ? undefined : e => { if (!e.target.closest('a')) openSpec(path); }}>
           <Suspense fallback={<div className="nt-loading">…</div>}>
             <MarkdownPreview content={content} />
           </Suspense>

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } fro
 import { createPortal } from 'react-dom';
 import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
+import { useDashboard } from '../context/DashboardContext.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 import CreateProjectModal from './CreateProjectModal.jsx';
 import Modal from './Modal.jsx';
@@ -178,6 +179,7 @@ function ProjectItem({
 
 export default function Sidebar() {
   const { state } = useAppState();
+  const { viewProject, refreshProjectsOnly } = useDashboard();
   const [container, setContainer] = useState(null);
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [userFolders, setUserFolders] = useState(loadUserFolders);
@@ -300,7 +302,7 @@ export default function Sidebar() {
     });
   }
 
-  async function refresh() { await window._refreshProjects?.(); }
+  async function refresh() { await refreshProjectsOnly(); }
 
   // --- DnD ---
 
@@ -550,7 +552,7 @@ export default function Sidebar() {
       allProjects={projects}
       folders={folders}
       renaming={renamingName === p.name}
-      onView={(name) => window._viewProject?.(name)}
+      onView={(name) => viewProject(name)}
       onStartRename={() => setRenamingName(p.name)}
       onCommitRename={(v) => commitRename(p.name, v)}
       onCancelRename={() => setRenamingName(null)}
@@ -746,8 +748,8 @@ export default function Sidebar() {
         existingNames={projects.map((p) => p.name)}
         onCreated={(project) => {
           if (project?.group) removeUserFolderIfMaterialized(project.group);
-          window._refreshProjects?.().then(() => {
-            if (project?.name) window._viewProject?.(project.name);
+          refreshProjectsOnly().then(() => {
+            if (project?.name) viewProject(project.name);
           });
         }}
       />
@@ -767,7 +769,7 @@ export default function Sidebar() {
         open={!!deleteTarget}
         project={deleteTarget}
         onClose={() => setDeleteTarget(null)}
-        onDeleted={() => { window._refreshProjects?.(); }}
+        onDeleted={() => { refreshProjectsOnly(); }}
       />
     </>,
     container
