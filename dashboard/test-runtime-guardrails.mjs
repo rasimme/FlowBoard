@@ -130,7 +130,7 @@ console.log('✅ runtime guard: API calls go through apiFetch')
 // 3. window.appState is written only by the store (AppStateContext dispatch /
 //    agents fetch) and the pre-React bootstrap — never ad hoc elsewhere.
 const appStateWrite = /(?:Object\.assign\(\s*window\.appState|window\.appState\.[A-Za-z]+\s*=|window\.appState\s*=)/
-const ALLOWED_APPSTATE_WRITERS = new Set(['src/context/AppStateContext.jsx', 'src/bootstrap.js'])
+const ALLOWED_APPSTATE_WRITERS = new Set(['src/state/appStore.mjs', 'src/bootstrap.js'])
 const appStateWriteOffenders = sourceFiles
   .filter(file => !ALLOWED_APPSTATE_WRITERS.has(file.path))
   .filter(file => appStateWrite.test(withoutLineComments(file.text)))

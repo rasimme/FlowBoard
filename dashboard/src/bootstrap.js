@@ -1,5 +1,5 @@
-// Bootstrap-only: initialise window.appState shape and run Telegram WebApp
-// auth + agentId resolution. Imported FIRST by src/main.jsx so the shape
+// Bootstrap-only: install the window.appState store Proxy and run Telegram
+// WebApp auth + agentId resolution. Imported FIRST by src/main.jsx so the store
 // exists before any React code runs; the React tree owns all UI and data
 // fetching via DashboardContext.
 //
@@ -7,18 +7,11 @@
 // first /api/* fetch so agentId is populated when the session is Telegram-backed.
 
 import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
+import { installAppStateProxy } from './state/appStore.mjs';
 
-window.appState = {
-  projects: [],
-  activeProject: null,
-  viewedProject: null,
-  tasks: [],
-  currentTab: 'overview',
-  agents: [],
-  agentId: null,
-  agentIdSource: null,
-  agentIdChatBound: false,
-};
+// window.appState is now a Proxy over the React-owned store (appStore.mjs). The
+// auth/agentId writes below go through it and notify React automatically.
+installAppStateProxy();
 
 let resolveBootstrap;
 window.__flowboardBootstrap = new Promise((r) => { resolveBootstrap = r; });
