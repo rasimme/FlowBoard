@@ -17,6 +17,7 @@ import {
   screenToCanvas, routePath, stackOffset, portDotCss, buildConnectedPorts, centerViewOnNote,
 } from '../utils/canvasGeometry.mjs';
 import { NOTE_WIDTH, MAX_PORTS_PER_SIDE, COLOR_STROKE } from '../utils/canvasConstants.mjs';
+import { apiFetch } from '../utils/apiFetch.js';
 import NoteCard from '../components/canvas/NoteCard.jsx';
 import NoteSidebar from '../components/canvas/NoteSidebar.jsx';
 import ConnectionLayer from '../components/canvas/ConnectionLayer.jsx';
@@ -232,7 +233,7 @@ export default function CanvasView() {
     dispatch({ type: 'load-start' });
     (async () => {
       try {
-        const res = await fetch(`/api/projects/${viewedProject}/canvas`);
+        const res = await apiFetch(`/api/projects/${viewedProject}/canvas`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
@@ -294,7 +295,7 @@ export default function CanvasView() {
     if (!viewedProject) return undefined;
     const reload = async () => {
       try {
-        const res = await fetch(`/api/projects/${viewedProject}/canvas`);
+        const res = await apiFetch(`/api/projects/${viewedProject}/canvas`);
         if (!res.ok) return;
         const data = await res.json();
         dispatch({ type: 'loaded', notes: data.notes || [], connections: data.connections || [] });

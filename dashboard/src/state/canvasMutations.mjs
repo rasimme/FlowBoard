@@ -4,16 +4,20 @@
 // server), text/color/size/position update memory first and persist silently.
 
 import { remapRestoredConnections } from './canvasStore.mjs';
+import { apiFetch } from '../utils/apiFetch.js';
 
 function toast(msg, type) {
   if (window.showToast) window.showToast(msg, type);
 }
 
 async function api(path, opts = {}) {
-  const res = await fetch(`/api${path}`, {
+  // Route through apiFetch so canvas calls carry auth (session cookie via
+  // credentials + Telegram init-data) like the rest of the app — a bare fetch
+  // here 403'd under the Telegram/JWT tunnel deployment (T-355). apiFetch
+  // stringifies object bodies and sets Content-Type.
+  const res = await apiFetch(`/api${path}`, {
     method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    body: opts.body,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok && data.error === undefined) data.error = `HTTP ${res.status}`;

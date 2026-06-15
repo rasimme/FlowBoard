@@ -1376,11 +1376,14 @@ function ScrollToTask({ onExpandParent }) {
     const subMatch = /^(T-\d+)-\d+$/.exec(taskId);
     if (subMatch) onExpandParent?.(subMatch[1]);
 
-    let tries = 0;
+    // Time-budgeted retry: a same-tab expand→render lands in a few frames, but a
+    // cross-project jump from global search (T-355) must also wait for the new
+    // project's task list to fetch + render, so allow up to ~2.5s.
+    const start = performance.now();
     const tick = () => {
       const card = document.querySelector(`[data-task-id="${taskId}"]`);
       if (card) { reveal(card); return; }
-      if (++tries < 12) requestAnimationFrame(tick); // ~200ms budget for expand→render
+      if (performance.now() - start < 2500) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });

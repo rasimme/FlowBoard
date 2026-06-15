@@ -1185,7 +1185,12 @@ export default function DetailPanel() {
           onDone={({ type, task: result, toProject }) => {
             close();
             if (type === 'move' && toProject) {
-              window._viewProject?.(toProject);
+              window._viewProject?.(toProject); // project switch reloads the board
+            } else if (type === 'reparent') {
+              // Same-project reparent changes parent/child links on both the task
+              // and its old/new parent — refetch so the board reflects it
+              // immediately instead of waiting for the next poll (T-355).
+              refreshTasks(project);
             }
             window._scrollToTaskId = result.id;
           }}

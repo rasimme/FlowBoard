@@ -65,6 +65,11 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
     onClose?.();
     if (r.kind === 'task') {
       window._viewProject?.(r.project);
+      // Switch to the Tasks tab so ScrollToTask actually mounts and consumes the
+      // flag — without this, picking a task from Overview/Files/Ideas left
+      // _scrollToTaskId set on a tab that never rendered (T-355). Mirrors the
+      // note branch below.
+      window._switchTab?.('tasks');
       window._scrollToTaskId = r.id;
     } else if (r.kind === 'note') {
       window._viewProject?.(r.project);
