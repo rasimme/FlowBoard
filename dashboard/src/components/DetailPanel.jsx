@@ -213,9 +213,6 @@ export default function DetailPanel() {
   const project = state?.viewedProject;
   const isOpen = taskId !== null;
 
-  // Sync global flag for vanilla JS bridge
-  if (isOpen) window._detailPanelOpen = true;
-
   // Keep taskRef in sync
   taskRef.current = task;
 
@@ -235,11 +232,11 @@ export default function DetailPanel() {
     stickToBottomRef.current = true;
   }, []);
 
-  // --- Expose window.openTaskDetail for vanilla JS bridge ---
+  // --- window.openTaskDetail: imperative "open the panel for task <id>" command
+  // used by sibling React surfaces (task cards, ActiveAgentsBar, Files back-to-task).
   useEffect(() => {
     const handler = (id) => {
       setTaskId(id);
-      window._detailPanelOpen = true;
       setTask(null);
       setFeed([]);
       setSyntheticItems([]);
@@ -248,11 +245,6 @@ export default function DetailPanel() {
       resetPanelOverlays();
     };
     window.openTaskDetail = handler;
-    // Drain any calls that arrived before React mounted
-    if (window._detailQueue && window._detailQueue.length > 0) {
-      window._detailQueue.forEach(handler);
-      window._detailQueue.length = 0;
-    }
     return () => { delete window.openTaskDetail; };
   }, []);
 
@@ -386,7 +378,6 @@ export default function DetailPanel() {
   }, [isOpen, isEditingTitle]);
 
   function close() {
-    window._detailPanelOpen = false;
     setTaskId(null);
     setTask(null);
     setFeed([]);
