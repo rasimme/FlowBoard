@@ -1300,30 +1300,21 @@ function nextSubtaskId(parentId, existingSubtaskIds) {
   return `${parentId}-${next}`;
 }
 
-function recalcParentStatus(tasks, parentId) {
-  const parent = tasks.find(t => t.id === parentId);
-  if (!parent || parent.status === 'done') return null;
-
-  const subtasks = tasks.filter(t => t.parentId === parentId);
-  if (subtasks.length === 0) return null;
-
-  const allDone = subtasks.every(t => t.status === 'done');
-  const anyStarted = subtasks.some(t => t.status !== 'open');
-
-  let newStatus = parent.status;
-  if (allDone) {
-    newStatus = 'review';
-  } else if (anyStarted && parent.status === 'open') {
-    newStatus = 'in-progress';
-  } else if (!allDone && parent.status === 'review') {
-    newStatus = 'in-progress';
-  }
-
-  if (newStatus !== parent.status) {
-    parent.status = newStatus;
-    return { id: parent.id, status: newStatus };
-  }
-  return null;
+// T-366: recalc a subtask's parent after a lifecycle change and describe the
+// result for the API response. claim/release/reject/complete/approve all set
+// the subtask status outside the generic updateTask path (which is what
+// normally triggers parent aggregation, T-299), so each of those endpoints must
+// call this explicitly — otherwise e.g. claiming a subtask (→ in-progress)
+// leaves the parent sitting in backlog/open. The aggregation rule itself lives
+// in hzlService.recalcParentStatus. Returns { id, status, progress } or null.
+function recalcParentForResponse(project, parentId) {
+  if (!parentId) return null;
+  try {
+    const updated = hzlService.recalcParentStatus(project, parentId);
+    if (!updated) return null;
+    updated.progress = getSubtaskProgress(hzlService.listTasks(project), parentId);
+    return updated;
+  } catch (e) { console.warn('[recalcParent]', e); return null; }
 }
 
 function getSubtaskProgress(tasks, parentId) {
@@ -3098,7 +3089,13 @@ app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
     const task = hzlService.claimTask(req.params.name, req.params.id, { agent: identity.id, lease });
-    res.json({ ok: true, task, agentIdentity: agentIdentity.responseMeta(identity) });
+    // T-366: claiming a subtask moves it to in-progress; pull the parent along
+    // (backlog/open → in-progress) so a started subtask never sits under an
+    // idle parent. claimTask bypasses the generic aggregation path.
+    const response = { ok: true, task, agentIdentity: agentIdentity.responseMeta(identity) };
+    const parentUpdated = recalcParentForResponse(req.params.name, task.parentId);
+    if (parentUpdated) response.parentUpdated = parentUpdated;
+    res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
@@ -3112,6 +3109,11 @@ app.post('/api/projects/:name/tasks/:id/release', (req, res) => {
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
     const result = hzlService.releaseTask(req.params.name, req.params.id, { agent: identity.id, force });
+    // T-366: releasing a subtask reverts it (in-progress → its previous status);
+    // if no sibling is still active the parent should drop back to open/backlog.
+    const full = hzlService.getTask(req.params.name, req.params.id);
+    const parentUpdated = recalcParentForResponse(req.params.name, full?.parentId);
+    if (parentUpdated) result.parentUpdated = parentUpdated;
     res.json(result);
   } catch (err) {
     const status = httpStatusForError(err);
@@ -3126,12 +3128,11 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
     const task = hzlService.completeTask(req.params.name, req.params.id, { agent: identity.id });
-    // Recalculate parent status if this is a subtask
-    const full = hzlService.getTask(req.params.name, req.params.id);
-    if (full && full.parentId) {
-      hzlService.recalcParentStatus(req.params.name, full.parentId);
-    }
-    res.json({ ok: true, task });
+    // Recalculate parent status if this is a subtask (T-366: also report it back)
+    const response = { ok: true, task };
+    const parentUpdated = recalcParentForResponse(req.params.name, task.parentId);
+    if (parentUpdated) response.parentUpdated = parentUpdated;
+    res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
@@ -3147,11 +3148,10 @@ app.post('/api/projects/:name/tasks/:id/approve', (req, res) => {
   try {
     const { actor, reason } = req.body || {};
     const task = hzlService.approveTask(req.params.name, req.params.id, { actor, reason });
-    const full = hzlService.getTask(req.params.name, req.params.id);
-    if (full && full.parentId) {
-      try { hzlService.recalcParentStatus(req.params.name, full.parentId); } catch (e) { console.warn('[approve recalcParent]', e); }
-    }
-    res.json({ ok: true, task });
+    const response = { ok: true, task };
+    const parentUpdated = recalcParentForResponse(req.params.name, task.parentId);
+    if (parentUpdated) response.parentUpdated = parentUpdated;
+    res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
@@ -3168,7 +3168,12 @@ app.post('/api/projects/:name/tasks/:id/reject', (req, res) => {
       return res.status(400).json({ error: `Invalid target: "${target}". Must be "in-progress" or "blocked".` });
     }
     const task = hzlService.rejectTask(req.params.name, req.params.id, { actor, reason, target });
-    res.json({ ok: true, task });
+    // T-366: rejecting a subtask back to in-progress/blocked may pull a parent
+    // that had reached review back into in-progress.
+    const response = { ok: true, task };
+    const parentUpdated = recalcParentForResponse(req.params.name, task.parentId);
+    if (parentUpdated) response.parentUpdated = parentUpdated;
+    res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
@@ -3392,6 +3397,13 @@ app.put('/api/projects/:name/overview', (req, res) => {
     if (req.body && typeof req.body.preset === 'string' && !req.body.widgets) {
       config = overview.presetConfig(req.body.preset);
       if (!config) return res.status(400).json({ error: `Unknown preset "${req.body.preset}"`, presets: Object.keys(overview.PRESETS) });
+    } else if (req.body && req.body.layout === 'flow') {
+      // Coordinate-free flow authoring (T-365): the caller sends an ordered list
+      // of { type, size?, props?, title? } and the server packs it into a grid,
+      // then runs the same trusted validator as any other config.
+      const result = overview.validateOverview(overview.packFlow(req.body.widgets));
+      if (!result.ok) return res.status(400).json({ error: 'Invalid overview config', errors: result.errors });
+      config = result.config;
     } else {
       const result = overview.validateOverview(req.body);
       if (!result.ok) return res.status(400).json({ error: 'Invalid overview config', errors: result.errors });

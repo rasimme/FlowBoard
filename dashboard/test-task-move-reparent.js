@@ -136,6 +136,38 @@ async function run() {
     ok(Boolean(kid), 'guard setup: parent has a child again');
     r = await api('POST', `/projects/src/tasks/${newParent}/parent`, { parentId: r.body.task.id });
     ok(r.status === 409, `parent with subtasks cannot become a subtask (got ${r.status})`);
+
+    // --- T-366: lifecycle endpoints propagate to the parent ---
+    await api('POST', '/projects', { name: 'prop' });
+    const P = (await api('POST', '/projects/prop/tasks', { title: 'Parent' })).body.task.id;       // backlog
+    const A = (await api('POST', '/projects/prop/tasks', { title: 'Sub A', parentId: P })).body.task.id;
+    const B = (await api('POST', '/projects/prop/tasks', { title: 'Sub B', parentId: P })).body.task.id;
+    const pStatus = async () => (await api('GET', `/projects/prop/tasks/${P}`)).body?.task?.status
+      ?? (await api('GET', '/projects/prop/tasks')).body.tasks.find(t => t.id === P).status;
+    ok((await pStatus()) === 'backlog', 'parent starts in backlog');
+
+    // CLAIM a subtask → parent must leave backlog/open for in-progress (the bug)
+    let cl = await api('POST', `/projects/prop/tasks/${A}/claim`, { agent: 'tester' });
+    ok(cl.status === 200, 'subtask A claimed');
+    ok(cl.body?.parentUpdated?.status === 'in-progress', 'claim response reports parent → in-progress');
+    ok((await pStatus()) === 'in-progress', 'claiming a subtask promotes the parent to in-progress (T-366)');
+
+    // RELEASE the only active subtask → parent falls back (nothing started)
+    const rel = await api('POST', `/projects/prop/tasks/${A}/release`, { agent: 'tester', force: true });
+    ok(rel.status === 200, 'subtask A released');
+    ok((await pStatus()) !== 'in-progress', 'releasing the last active subtask demotes the parent off in-progress');
+
+    // Drive both subtasks to review → parent becomes review-ready
+    for (const s of [A, B]) {
+      await api('POST', `/projects/prop/tasks/${s}/claim`, { agent: 'tester' });
+      await api('POST', `/projects/prop/tasks/${s}/complete`, { agent: 'tester' }); // → review
+    }
+    ok((await pStatus()) === 'review', 'all subtasks in review → parent is review-ready');
+
+    // REJECT one subtask back to in-progress → parent pulled back out of review
+    const rj = await api('POST', `/projects/prop/tasks/${A}/reject`, { actor: 'human', reason: 'redo', target: 'in-progress' });
+    ok(rj.status === 200, 'subtask A rejected back to in-progress');
+    ok((await pStatus()) === 'in-progress', 'rejecting a subtask pulls the parent back out of review (T-366)');
   } catch (err) {
     fail++;
     failures.push(err.message);

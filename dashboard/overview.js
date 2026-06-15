@@ -271,6 +271,13 @@ const PRESETS = {
 const DEFAULT_PRESET = 'default';
 const MAX_WIDGETS = 40;
 const MAX_PROPS_BYTES = 2048;
+const GRID_COLUMNS = 12;
+
+// Coarse size hints for the coordinate-free flow authoring path: a width in
+// columns. Height comes from the widget's defaultSize. An unrecognized hint is
+// ignored (the widget keeps its natural defaultSize width).
+const FLOW_SIZE_WIDTH = { s: 3, m: 6, l: 8, full: GRID_COLUMNS };
+const FLOW_FALLBACK_SIZE = { w: 4, h: 2 };
 
 function overviewPath(projectsDir, projectName) {
   return path.join(projectsDir, projectName, 'overview.json');
@@ -285,6 +292,57 @@ function presetConfig(name) {
     preset: name,
     widgets: preset.widgets.map(w => ({ ...w, grid: { ...w.grid }, ...(w.props ? { props: { ...w.props } } : {}) })),
   };
+}
+
+/**
+ * Expand a coordinate-free, ordered widget list into a 12-column grid config.
+ * Each item is { type, size?, props?, title?, id? } — `size` is a coarse hint
+ * ('s'|'m'|'l'|'full', case-insensitive); height comes from the widget's
+ * defaultSize. Widgets flow left-to-right and wrap to the next row when they
+ * would overflow the 12 columns (shelf packing), so layouts never overlap.
+ *
+ * Unknown widget types are packed with a neutral fallback size and left for
+ * validateOverview to reject — flow authoring stays a thin layer over the one
+ * trusted validator. Returns a grid config { version, layout:'grid', widgets }.
+ */
+function packFlow(items) {
+  const list = Array.isArray(items) ? items : [];
+  const usedIds = new Set();
+  let cursorX = 0;
+  let rowY = 0;
+  let rowMaxH = 0;
+  const widgets = list.map((item, i) => {
+    const it = item && typeof item === 'object' ? item : {};
+    const def = WIDGET_TYPES[it.type];
+    const base = def ? def.defaultSize : FLOW_FALLBACK_SIZE;
+    const min = def ? def.minSize : { w: 1, h: 1 };
+    let w = base.w;
+    if (typeof it.size === 'string') {
+      const mapped = FLOW_SIZE_WIDTH[it.size.toLowerCase()];
+      if (Number.isInteger(mapped)) w = mapped;
+    }
+    w = Math.max(min.w, Math.min(GRID_COLUMNS, w));
+    const h = Math.max(min.h, Math.min(12, base.h));
+    if (cursorX + w > GRID_COLUMNS) {
+      rowY += rowMaxH;
+      cursorX = 0;
+      rowMaxH = 0;
+    }
+    const grid = { x: cursorX, y: rowY, w, h };
+    cursorX += w;
+    rowMaxH = Math.max(rowMaxH, h);
+    let id = typeof it.id === 'string' && it.id ? it.id : `w-${i}`;
+    while (usedIds.has(id)) id = `${id}-${i}`;
+    usedIds.add(id);
+    return {
+      id,
+      type: it.type,
+      ...(typeof it.title === 'string' ? { title: it.title } : {}),
+      ...(it.props && typeof it.props === 'object' && !Array.isArray(it.props) ? { props: it.props } : {}),
+      grid,
+    };
+  });
+  return { version: 1, layout: 'grid', widgets };
 }
 
 /**
@@ -385,6 +443,7 @@ module.exports = {
   PRESETS,
   DEFAULT_PRESET,
   validateOverview,
+  packFlow,
   presetConfig,
   readOverview,
   writeOverview,

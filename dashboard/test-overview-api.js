@@ -172,6 +172,26 @@ async function run() {
     });
     ok(r.status === 200 && r.body?.overview?.widgets?.length === 2, 'custom config accepted');
 
+    // flow authoring (T-365): a coordinate-free, ordered list — the server packs
+    // it into a valid grid, no x/y/w/h supplied by the caller.
+    r = await api('PUT', '/projects/ov/overview', {
+      layout: 'flow',
+      widgets: [
+        { type: 'task-stats', size: 'full' },
+        { type: 'notes', size: 'm' },
+      ],
+    });
+    ok(r.status === 200 && r.body?.overview?.widgets?.length === 2
+       && r.body.overview.widgets[0]?.grid?.w === 12 && r.body.overview.widgets[1]?.grid?.y > 0,
+       'flow layout is packed into a valid grid (no coordinates supplied)');
+    r = await api('GET', '/projects/ov/overview');
+    ok(r.body?.overview?.source === 'file' && r.body.overview.layout === 'grid'
+       && r.body.overview.widgets.length === 2,
+       'flow layout persists as a grid config');
+    r = await api('PUT', '/projects/ov/overview', { layout: 'flow', widgets: [{ type: 'evil-widget', size: 'l' }] });
+    ok(r.status === 400 && JSON.stringify(r.body?.errors).includes('not a registered widget'),
+       'flow authoring rejects an unknown widget type through the trusted validator');
+
     // validation failures
     r = await api('PUT', '/projects/ov/overview', { version: 1, widgets: [{ id: 'x', type: 'evil-widget', grid: { x: 0, y: 0, w: 4, h: 2 } }] });
     ok(r.status === 400 && JSON.stringify(r.body?.errors).includes('not a registered widget'), 'unknown widget type is rejected (trusted registry)');

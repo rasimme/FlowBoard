@@ -32,6 +32,35 @@ Grid contract: **12 columns** (`x` 0–11, `x+w ≤ 12`), row unit **88px**
 (`h` in rows), 12px gutter. Widgets adapt their content to their width
 (w=4 compact → w=8+ rich) — any arrangement works.
 
+## Coordinate-free authoring (flow)
+
+Computing `x/y/w/h` by hand is error-prone. To author a layout without
+coordinates, `PUT` a **flow** body — an ordered widget list. The server packs
+it into the grid above (left-to-right, wrapping rows) and validates the result:
+
+```json
+{
+  "layout": "flow",
+  "widgets": [
+    { "type": "task-stats", "size": "full" },
+    { "type": "blocked", "size": "m" },
+    { "type": "approvals", "size": "m" },
+    { "type": "notes" }
+  ]
+}
+```
+
+`size` is a coarse width hint — `s` (3 cols), `m` (6), `l` (8), `full` (12);
+omit it to use the widget's natural `defaultSize`. Order is reading order:
+widgets fill a row and wrap to the next, never overlapping. `props`, `title`
+and an explicit `id` are preserved; missing ids are generated. The same
+trusted registry applies — unknown types are rejected (400). The stored
+result is a normal `grid` config, so the UI drag-editor and later edits work
+unchanged.
+
+Use flow to compose a fresh layout fast; use the explicit grid form when you
+need exact placement.
+
 ## Trusted registry
 
 Only registered widget `type`s render; `PUT` rejects unknown types with an
