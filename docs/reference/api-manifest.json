@@ -466,6 +466,13 @@
       "doc": null
     },
     {
+      "method": "POST",
+      "path": "/api/projects/:name/sessions",
+      "auth": "user",
+      "group": "files",
+      "doc": null
+    },
+    {
       "method": "GET",
       "path": "/api/projects/:name/tasks",
       "auth": "user",

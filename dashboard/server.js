@@ -60,6 +60,7 @@ const versionCheck = require('./version-check.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 const { isEditorVisible } = require('./file-visibility.js');
+const { formatSessionEntry, insertEntry } = require('./session-log.js');
 
 // Gateway webhook config (for project-switch wake events).
 // Resolution contract (docs/reference/env-vars.md): OPENCLAW_-prefixed vars
@@ -2436,6 +2437,38 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   const specFileRelPath = writeSpecFileForTask(req.params.name, task, template);
   const updatedTask = hzlService.getTask(req.params.name, task.id);
   return res.json({ ok: true, specFile: specFileRelPath, taskId, task: taskWithSpecStatus(req.params.name, updatedTask) });
+});
+
+// POST /api/projects/:name/sessions — append a SESSIONS.md entry (T-375-3).
+// Append-only, newest-first. Called by an agent (or the session-end hook) when
+// a working session ends; see agent-bridge.md § Session end.
+app.post('/api/projects/:name/sessions', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  const { summary, title } = req.body || {};
+  const identity = agentIdentity.validateAgentId(req.body?.agent);
+  if (!identity.ok) return res.status(400).json({ error: identity.error + ' in request body' });
+  if (typeof summary !== 'string' || !summary.trim()) {
+    return res.status(400).json({ error: 'summary required (non-empty string)' });
+  }
+  if (summary.length > 8192) return res.status(400).json({ error: 'summary too long (max 8KB)' });
+  if (title !== undefined && (typeof title !== 'string' || title.length > 200)) {
+    return res.status(400).json({ error: 'title must be a string ≤ 200 chars' });
+  }
+
+  const date = new Date().toISOString().slice(0, 10);
+  const file = path.join(PROJECTS_DIR, req.params.name, 'SESSIONS.md');
+  let content;
+  try { content = fs.readFileSync(file, 'utf8'); }
+  catch { content = `# Session Log — ${req.params.name}\n\n## Session Log\n`; }
+
+  const block = formatSessionEntry({ date, agent: identity.id, summary, title });
+  try {
+    fs.writeFileSync(file, insertEntry(content, block));
+  } catch (err) {
+    console.error('[sessions]', err);
+    return res.status(500).json({ error: 'Failed to write SESSIONS.md' });
+  }
+  return res.json({ ok: true, date, agent: identity.id, file: 'SESSIONS.md' });
 });
 
 /**

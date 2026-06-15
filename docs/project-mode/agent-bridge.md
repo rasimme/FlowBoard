@@ -61,6 +61,17 @@ For concrete endpoint shapes and request bodies, see `tasks-api.md` § Coordinat
 - **Route**: Soft-assigns to a specific agent. Does NOT auto-claim — target still needs to claim.
 - **Comments**: Append-only steering signals, not chat. Agents should read comments when claiming or resuming.
 
+### Session end (shutdown contract)
+
+When a working session ends — on project deactivation, or after a substantial block of work before handing off — append one short `SESSIONS.md` entry:
+
+```
+POST /api/projects/:name/sessions
+{ "agent": "<your-agent-id>", "summary": "what was done, key outcomes/blockers, next step", "title": "<optional short title>" }
+```
+
+One entry per session, not per task. The server prepends a dated, newest-first heading (`### YYYY-MM-DD — <title|agent>`); entries are append-only and never edited. This is the only thing an agent must write at shutdown beyond setting its tasks to `review`/`done`. Durable decisions go to `DECISIONS.md` immediately when made, not here. A session-end hook may call this endpoint automatically so the log is captured even when a session ends silently (idle deactivation).
+
 ## Handoff Context
 
 The `/handoff` endpoint returns structured context for spawning a coding agent (CC, Codex, etc.): task title, description, spec content, recent checkpoints/comments, and parent context if subtask. Used to construct ACP spawn payloads.
