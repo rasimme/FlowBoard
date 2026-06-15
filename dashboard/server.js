@@ -158,65 +158,56 @@ function validateTelegramWebApp(initData) {
   return user;
 }
 
+// Session token helpers (T-355): single source for TTL, cookie flags, the
+// pinned HMAC algorithm, and the verify/issue logic that was previously copied
+// inline several times in the auth middleware.
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8h
+const SESSION_COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'none', maxAge: SESSION_TTL_MS };
+// Pin HS256 so a token cannot be presented under a different (or "none") alg.
+function verifySession(token) { return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }); }
+function issueSession(res, user) {
+  const sessionToken = jwt.sign(
+    { id: user.id, username: user.username, agentId: user.agentId || null },
+    JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' }
+  );
+  res.cookie('flowboard_session', sessionToken, SESSION_COOKIE_OPTS);
+}
+// Shared challenge: accept a valid session cookie, else validate Telegram
+// init-data and mint a session, else 403. Identical for tunnel and direct paths.
+function authenticateOrChallenge(req, res, next) {
+  const token = req.cookies?.flowboard_session;
+  if (token) {
+    try { req.user = verifySession(token); return next(); } catch { /* expired/invalid → fall through */ }
+  }
+  const user = validateTelegramWebApp(req.headers['x-telegram-init-data']);
+  if (!user) {
+    console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  issueSession(res, user);
+  req.user = user;
+  return next();
+}
+
 function telegramAuthMiddleware(req, res, next) {
   // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so IP check can't distinguish
   // local vs external. cf-ray is ONLY set by Cloudflare edge — if present, request is external.
+  // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so the IP
+  // check can't distinguish local vs external. cf-ray is ONLY set by the
+  // Cloudflare edge — if present, the request is external and must authenticate.
   if (req.headers['cf-ray']) {
     if (!AUTH_ENABLED) {
       // Auth not configured but request is external via tunnel — block it
       console.warn(`[auth] Blocked tunnel request — auth not configured. cf-connecting-ip=${req.headers['cf-connecting-ip']} ${new Date().toISOString()}`);
       return res.status(403).json({ error: 'Auth not configured — tunnel access denied' });
     }
-    // External request via Cloudflare — must authenticate
-    const token = req.cookies?.flowboard_session;
-    if (token) {
-      try {
-        req.user = jwt.verify(token, JWT_SECRET);
-        return next();
-      } catch { /* abgelaufen */ }
-    }
-    const initData = req.headers['x-telegram-init-data'];
-    const user = validateTelegramWebApp(initData);
-    if (!user) {
-      console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const sessionToken = jwt.sign({ id: user.id, username: user.username, agentId: user.agentId || null }, JWT_SECRET, { expiresIn: '8h' });
-    res.cookie('flowboard_session', sessionToken, {
-      httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
-    });
-    req.user = user;
-    return next();
+    return authenticateOrChallenge(req, res, next);
   }
   if (!AUTH_ENABLED) {
     // Fail-closed: only allow localhost when auth is not configured (direct local access only)
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
     return res.status(403).json({ error: 'Auth not configured — only localhost access permitted' });
-  }
-  // Requests via Cloudflare Tunnel always require auth (cf-ray header is set by CF edge)
-  // Cloudflared connects locally so req.ip is always 127.0.0.1 — IP cannot distinguish local vs tunnel
-  if (req.headers['cf-ray']) {
-    // External request via Cloudflare — must authenticate
-    const token = req.cookies?.flowboard_session;
-    if (token) {
-      try {
-        req.user = jwt.verify(token, JWT_SECRET);
-        return next();
-      } catch { /* abgelaufen */ }
-    }
-    const initData = req.headers['x-telegram-init-data'];
-    const user = validateTelegramWebApp(initData);
-    if (!user) {
-      console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-    const sessionToken = jwt.sign({ id: user.id, username: user.username, agentId: user.agentId || null }, JWT_SECRET, { expiresIn: '8h' });
-    res.cookie('flowboard_session', sessionToken, {
-      httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
-    });
-    req.user = user;
-    return next();
   }
   // Direct local requests (no cf-ray) — allow for dev/ops access
   if (!AUTH_ALWAYS) {
@@ -236,25 +227,7 @@ function telegramAuthMiddleware(req, res, next) {
       return next();
     }
   }
-  const token = req.cookies?.flowboard_session;
-  if (token) {
-    try {
-      req.user = jwt.verify(token, JWT_SECRET);
-      return next();
-    } catch { /* abgelaufen */ }
-  }
-  const initData = req.headers['x-telegram-init-data'];
-  const user = validateTelegramWebApp(initData);
-  if (!user) {
-    console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
-    return res.status(403).json({ error: 'Unauthorized' });
-  }
-  const sessionToken = jwt.sign({ id: user.id, username: user.username, agentId: user.agentId || null }, JWT_SECRET, { expiresIn: '8h' });
-  res.cookie('flowboard_session', sessionToken, {
-    httpOnly: true, secure: true, sameSite: 'none', maxAge: 8 * 60 * 60 * 1000
-  });
-  req.user = user;
-  next();
+  return authenticateOrChallenge(req, res, next);
 }
 
 // --- Middleware stack ---
@@ -329,7 +302,11 @@ app.use('/api/', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
-  skip: (req) => req.ip === '127.0.0.1' || req.ip === '::1', // localhost immer erlauben
+  // Skip ONLY genuinely-local requests. cloudflared connects from 127.0.0.1, so
+  // without excluding the tunnel marker (cf-ray) every external request would be
+  // treated as local and skip the limit entirely (T-355). Tunneled requests are
+  // keyed by their real client IP below.
+  skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),
   keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip || 'unknown',
   message: { error: 'Too many requests, please slow down.' }
 }));
@@ -2125,18 +2102,59 @@ app.get('/api/projects/:name/files', (req, res) => {
   res.json(result);
 });
 
+// Symlink-aware path containment for the file endpoints (T-355 security).
+// path.resolve() collapses `..` but does NOT resolve symlinks, while fs.* DO
+// follow them — so a symlink inside a project dir could otherwise escape the
+// tree. Reads may legitimately follow symlinks (e.g. a project's
+// PROJECT-RULES.md → the FlowBoard repo docs), so reads are allowed to resolve
+// within the project, the projects dir, or the FlowBoard install. Writes/deletes
+// are stricter: the real parent must stay inside the project and the target is
+// never followed through a symlink.
+const REPO_ROOT_REAL = (() => { try { return fs.realpathSync(path.join(__dirname, '..')); } catch { return path.join(__dirname, '..'); } })();
+function withinReal(target, root) {
+  return target === root || target.startsWith(root + path.sep);
+}
+function resolveProjectFile(projectDir, filePath, { forWrite = false } = {}) {
+  const resolved = path.resolve(projectDir, filePath);
+  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
+    return { ok: false, code: 403, error: 'Path traversal not allowed' };
+  }
+  let projReal;
+  try { projReal = fs.realpathSync(projectDir); } catch { return { ok: false, code: 404, error: 'Project not found' }; }
+
+  if (forWrite) {
+    // Never write/delete through a symlink, and the real parent must stay inside the project.
+    try { if (fs.lstatSync(resolved).isSymbolicLink()) return { ok: false, code: 403, error: 'Refusing to operate through a symlink' }; } catch { /* target may not exist yet (create) */ }
+    let parentReal = null;
+    try { parentReal = fs.realpathSync(path.dirname(resolved)); } catch { /* parent created on demand */ }
+    if (parentReal && !withinReal(parentReal, projReal)) {
+      return { ok: false, code: 403, error: 'Resolved path escapes the project directory' };
+    }
+    return { ok: true, resolved };
+  }
+
+  // Read: the file must exist and its REAL target must stay within an allowed root.
+  if (!fs.existsSync(resolved)) return { ok: false, code: 404, error: 'File not found' };
+  let real;
+  try { real = fs.realpathSync(resolved); } catch { return { ok: false, code: 404, error: 'File not found' }; }
+  const roots = [projReal, REPO_ROOT_REAL];
+  try { roots.push(fs.realpathSync(PROJECTS_DIR)); } catch { /* ignore */ }
+  if (!roots.some(r => withinReal(real, r))) {
+    return { ok: false, code: 403, error: 'Resolved path escapes the allowed roots' };
+  }
+  return { ok: true, resolved };
+}
+
 // GET /api/projects/:name/files/{*filePath} — read file content
 app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 
-  // Security: prevent path traversal
-  const resolved = path.resolve(projectDir, filePath);
-  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
-    return res.status(403).json({ error: 'Path traversal not allowed' });
-  }
+  const safe = resolveProjectFile(projectDir, filePath, { forWrite: false });
+  if (!safe.ok) return res.status(safe.code).json({ error: safe.error });
+  const resolved = safe.resolved;
 
-  if (!fs.existsSync(resolved) || fs.statSync(resolved).isDirectory()) {
+  if (fs.statSync(resolved).isDirectory()) {
     return res.status(404).json({ error: 'File not found' });
   }
 
@@ -2167,11 +2185,18 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 
-  // Security: prevent path traversal
-  const resolved = path.resolve(projectDir, filePath);
-  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
-    return res.status(403).json({ error: 'Path traversal not allowed' });
+  // Only editable areas may be written via the API. Agent-consumed control
+  // files (AGENTS.md, PROJECT-RULES.md, rules, PROJECT.md, canvas.json, …) live
+  // outside context/ and specs/ and must not be overwritable through this route
+  // (indirect instruction injection). Mirrors the DELETE allow-list (T-355).
+  if (!filePath.startsWith('context/') && !filePath.startsWith('specs/')) {
+    return res.status(403).json({ error: 'Only files in context/ and specs/ can be written' });
   }
+
+  // Security: prevent path traversal + symlink escape (no write through a symlink).
+  const safe = resolveProjectFile(projectDir, filePath, { forWrite: true });
+  if (!safe.ok) return res.status(safe.code).json({ error: safe.error });
+  const resolved = safe.resolved;
 
   const { content } = req.body;
   if (content === undefined) return res.status(400).json({ error: 'Content required' });
@@ -2258,16 +2283,15 @@ app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 
-  // Security: prevent path traversal
-  const resolved = path.resolve(projectDir, filePath);
-  if (!resolved.startsWith(projectDir + path.sep) && resolved !== projectDir) {
-    return res.status(403).json({ error: 'Path traversal not allowed' });
-  }
-
   // Only allow deletion in context/ and specs/
   if (!filePath.startsWith('context/') && !filePath.startsWith('specs/')) {
     return res.status(403).json({ error: 'Only files in context/ and specs/ can be deleted' });
   }
+
+  // Security: prevent path traversal + symlink escape (never delete through a symlink).
+  const safe = resolveProjectFile(projectDir, filePath, { forWrite: true });
+  if (!safe.ok) return res.status(safe.code).json({ error: safe.error });
+  const resolved = safe.resolved;
 
   if (!fs.existsSync(resolved)) {
     return res.status(404).json({ error: 'File not found' });

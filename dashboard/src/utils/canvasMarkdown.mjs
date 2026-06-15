@@ -8,6 +8,13 @@ export function escHtml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Escape a string for safe interpolation inside a double-quoted HTML attribute.
+// A stray `"` here is what previously let note text break out of href="…" and
+// inject an event handler (stored XSS, T-355).
+function escAttr(s) {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 export function renderNoteMarkdown(text) {
   if (!text) return '';
   // Process line by line so list items stay together, plain lines use <br>
@@ -24,18 +31,24 @@ export function renderNoteMarkdown(text) {
     // Strip remaining unpaired/empty markers and empty tags
     line = line.replace(/\*+/g, '');
     line = line.replace(/<(strong|em)><\/\1>/g, '');
-    // Explicit markdown links [label](url) — unescape URL for href (& → &amp; is valid in href)
+    // Explicit markdown links [label](url). The url still carries escHtml
+    // encoding; decode it only to inspect the real scheme. A non-http(s) scheme
+    // is forced under https:// (so a `javascript:`/`data:` link becomes an inert
+    // https URL, not an executable one), and the final href is ATTRIBUTE-escaped
+    // so a `"` in the note can never close href="…" and inject an event handler
+    // (stored XSS, T-355). escAttr re-encodes the decoded value safely.
     line = line.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
-      // url may have &amp; from escHtml — decode for href
       const rawUrl = url.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-      const href = /^https?:\/\//.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
-      return `<a href="${href}" target="_blank" rel="noopener">${label}</a>`;
+      const href = /^https?:\/\//i.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
+      return `<a href="${escAttr(href)}" target="_blank" rel="noopener">${label}</a>`;
     });
-    // Auto-link bare URLs — only in text segments outside HTML tags
+    // Auto-link bare URLs — only in text segments outside HTML tags. The URL
+    // pattern already excludes quotes/angle brackets, but escAttr the href too
+    // for a valid, consistently-escaped attribute (e.g. stray `&`).
     line = line.replace(/(<[^>]*>)|(?:https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g, (match, tag) => {
       if (tag) return tag; // HTML tag — pass through unchanged
       const href = match.startsWith('http') ? match : 'https://' + match;
-      return `<a href="${href}" target="_blank" rel="noopener">${match}</a>`;
+      return `<a href="${escAttr(href)}" target="_blank" rel="noopener">${match}</a>`;
     });
     const numListMatch = line.match(/^\d+\. (.*)/);
     if (line.startsWith('- ')) {

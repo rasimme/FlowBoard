@@ -292,10 +292,25 @@ ok(renderNoteMarkdown('*it*') === '<em>it</em>', 'italic');
 ok(renderNoteMarkdown('*dangling') === 'dangling', 'unpaired asterisks are stripped');
 ok(renderNoteMarkdown('<script>') === '&lt;script&gt;', 'HTML is escaped before markdown');
 ok(renderNoteMarkdown('[site](example.com/a&b)') ===
-  '<a href="https://example.com/a&b" target="_blank" rel="noopener">site</a>',
-  'markdown link gets https:// prefix and decoded href');
+  '<a href="https://example.com/a&amp;b" target="_blank" rel="noopener">site</a>',
+  'markdown link gets https:// prefix and an attribute-escaped href (& → &amp;)');
 ok(renderNoteMarkdown('see www.foo.de now').includes('<a href="https://www.foo.de"'),
   'bare www URL is auto-linked');
+
+// T-355 (security): the link href must never let a `"` break out of the
+// attribute and inject an event handler (stored XSS). The quote stays encoded.
+{
+  const html = renderNoteMarkdown('[x](https://evil.test" onmouseover="alert(1))');
+  ok(!/onmouseover="/.test(html), 'markdown link cannot inject an unescaped event handler');
+  ok(html.includes('&quot;'), 'a quote in the URL is attribute-escaped to &quot;');
+  ok(!/href="https:\/\/evil\.test"\s+onmouseover/.test(html), 'the href attribute is not closed early by the payload');
+}
+// Non-http(s) schemes are forced under https:// (inert), never emitted raw.
+{
+  const html = renderNoteMarkdown('[x](javascript:alert(1))');
+  ok(!/href="javascript:/i.test(html), 'javascript: scheme is not emitted as a raw href');
+  ok(/href="https:\/\/javascript:/i.test(html), 'non-http(s) scheme is neutralized under https://');
+}
 ok(renderNoteMarkdown('- a\n- b') === '<ul><li>a</li><li>b</li></ul>', 'dash list becomes <ul>');
 ok(renderNoteMarkdown('1. a\n2. b') === '<ol><li>a</li><li>b</li></ol>', 'numbered list becomes <ol>');
 ok(renderNoteMarkdown('- a\n1. b') === '<ul><li>a</li></ul><ol><li>b</li></ol>',
