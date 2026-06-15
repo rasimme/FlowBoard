@@ -1396,6 +1396,29 @@ app.post('/api/projects', (req, res) => {
     });
     const response = { project: result.project };
     if (result.warnings.length > 0) response.warnings = result.warnings;
+    // T-365: best-fit overview suggestion at creation (Model D). The UI (human
+    // present) only gets a suggestion to confirm; any other caller (agent /
+    // headless) gets the non-default best fit applied straight away. A default
+    // suggestion is never written — the fallback already serves it. This never
+    // fails project creation.
+    try {
+      const isUi = req.get('X-FlowBoard-Client') === 'dashboard';
+      const { preset, rationale } = overview.suggestPreset({
+        name: result.project.name,
+        displayName: result.project.displayName,
+        description: result.project.description,
+        group: result.project.group,
+      });
+      if (isUi) {
+        response.overview = { preset, rationale, applied: false, mode: 'suggested' };
+      } else {
+        const applied = preset !== overview.DEFAULT_PRESET;
+        if (applied) overview.writeOverview(PROJECTS_DIR, result.project.name, overview.presetConfig(preset));
+        response.overview = { preset, rationale, applied, mode: 'auto' };
+      }
+    } catch (e) {
+      console.warn('[overview] creation-time suggestion failed:', e.message);
+    }
     return res.status(201).json(response);
   } catch (e) {
     if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: e.message });

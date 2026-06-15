@@ -345,6 +345,37 @@ function packFlow(items) {
   return { version: 1, layout: 'grid', widgets };
 }
 
+// Best-fit preset inference (T-365) — the deterministic "floor". Maps the
+// shallow signals available when a project is created to a preset name + a
+// short human rationale. Best-effort and meant to be overridden by an agent
+// that knows more. Precedence: a bound repo, then code, then knowledge, then
+// coordination keywords; otherwise the standard default.
+const PRESET_SIGNALS = [
+  { preset: 'coding', re: /\b(repo|repository|code|coding|backend|frontend|api|service|server|library|sdk|cli|build|deploy)\b/, why: 'code/repository keywords in the project text' },
+  { preset: 'knowledge', re: /\b(docs?|documentation|wiki|notes?|research|knowledge|handbook|writing|content|book|article|blog|journal)\b/, why: 'documentation/knowledge keywords in the project text' },
+  { preset: 'mission', re: /\b(orchestrat\w*|coordinat\w*|mission|ops|operations|fleet|swarm|multi-agent|agents?)\b/, why: 'coordination/multi-agent keywords in the project text' },
+];
+
+/**
+ * Suggest a best-fit preset from creation-time signals.
+ * @param {{name?, displayName?, description?, group?, github?:{repo?}}} signals
+ * @returns {{ preset: string, rationale: string }}
+ */
+function suggestPreset(signals = {}) {
+  const s = signals || {};
+  if (s.github && typeof s.github.repo === 'string' && s.github.repo) {
+    return { preset: 'coding', rationale: 'repo-first layout — a GitHub repository is bound to this project' };
+  }
+  const hay = [s.name, s.displayName, s.description, s.group]
+    .filter(v => typeof v === 'string')
+    .join(' ')
+    .toLowerCase();
+  for (const cand of PRESET_SIGNALS) {
+    if (cand.re.test(hay)) return { preset: cand.preset, rationale: cand.why };
+  }
+  return { preset: DEFAULT_PRESET, rationale: 'no strong signal — starting from the standard daily-driver layout' };
+}
+
 /**
  * Validate an overview config against the trusted registry.
  * Returns { ok: true, config } with a normalized copy, or { ok: false, errors }.
@@ -444,6 +475,7 @@ module.exports = {
   DEFAULT_PRESET,
   validateOverview,
   packFlow,
+  suggestPreset,
   presetConfig,
   readOverview,
   writeOverview,

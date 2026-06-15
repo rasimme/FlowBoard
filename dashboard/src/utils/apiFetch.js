@@ -14,6 +14,11 @@
 export function apiFetch(path, opts = {}) {
   const headers = { ...opts.headers };
 
+  // Identify the dashboard UI to the server so it can tell a human-driven
+  // request from an agent/headless one (e.g. creation-time overview suggestion
+  // is offered for confirmation in the UI but auto-applied for agents — T-365).
+  if (!headers['X-FlowBoard-Client']) headers['X-FlowBoard-Client'] = 'dashboard';
+
   // Always send credentials (cookies) for cross-origin auth via tunnel
   const credentials = 'include';
 

@@ -109,6 +109,15 @@ When creating a new project, pick the preset that fits it — or compose a
 custom layout from the catalog. Projects without a stored file serve the
 `default` preset automatically; you only need to write when deviating.
 
+**At creation time the server already suggests a best fit.** `POST
+/api/projects` returns an `overview` hint: `{ preset, rationale, applied,
+mode }`. For an agent/headless caller a non-`default` best fit is applied
+straight away (`mode: "auto"`, `applied: true`); the dashboard UI receives a
+suggestion to confirm (`mode: "suggested"`, `applied: false`). The inference
+is a deterministic floor from the project's name/description/group — treat it
+as a starting point and override it (preset, flow or full grid) whenever you
+know the project better.
+
 ## Editing rules for agents
 
 1. **Read before write**: `GET` the current config, modify, `PUT` the whole

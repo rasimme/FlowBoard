@@ -192,6 +192,36 @@ async function run() {
     ok(r.status === 400 && JSON.stringify(r.body?.errors).includes('not a registered widget'),
        'flow authoring rejects an unknown widget type through the trusted validator');
 
+    // creation-time best-fit preset suggestion (T-365 Increment 2)
+    // headless create (no UI client header) -> auto-applies a non-default best fit
+    r = await api('POST', '/projects', { name: 'createcode', displayName: 'API Gateway', description: 'backend service' });
+    ok(r.status === 201 && r.body?.overview?.mode === 'auto' && r.body.overview.applied === true
+       && r.body.overview.preset === 'coding' && typeof r.body.overview.rationale === 'string',
+       'headless create auto-applies the best-fit preset with a rationale');
+    r = await api('GET', '/projects/createcode/overview');
+    ok(r.body?.overview?.source === 'file' && r.body.overview.preset === 'coding',
+       'auto-applied preset is persisted to overview.json');
+    // headless create with no strong signal -> default is NOT written (fallback serves it)
+    r = await api('POST', '/projects', { name: 'createplain', displayName: 'Misc Thing' });
+    ok(r.status === 201 && r.body?.overview?.preset === 'default' && r.body.overview.applied === false,
+       'a default suggestion is not written (the fallback already serves default)');
+    r = await api('GET', '/projects/createplain/overview');
+    ok(r.body?.overview?.source === 'default', 'no-signal project keeps the unwritten default');
+    // UI create (dashboard client header) -> suggest only, never write
+    {
+      const res = await fetch(`http://127.0.0.1:${PORT}/api/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-FlowBoard-Client': 'dashboard' },
+        body: JSON.stringify({ name: 'createui', displayName: 'Research Wiki', description: 'research notes and docs' }),
+      });
+      const body = await res.json().catch(() => null);
+      ok(res.status === 201 && body?.overview?.mode === 'suggested' && body.overview.applied === false
+         && body.overview.preset === 'knowledge',
+         'UI create suggests a preset without applying it');
+      const g = await api('GET', '/projects/createui/overview');
+      ok(g.body?.overview?.source === 'default', 'UI create leaves the overview unwritten (still default)');
+    }
+
     // validation failures
     r = await api('PUT', '/projects/ov/overview', { version: 1, widgets: [{ id: 'x', type: 'evil-widget', grid: { x: 0, y: 0, w: 4, h: 2 } }] });
     ok(r.status === 400 && JSON.stringify(r.body?.errors).includes('not a registered widget'), 'unknown widget type is rejected (trusted registry)');
