@@ -109,6 +109,20 @@ node scripts/setup.mjs --dry-run   # preview, change nothing
 Re-run with `--update` after `openclaw plugins update` to rebuild & restart.
 Prefer the manual path? It's below.
 
+### Updating
+
+After `openclaw plugins update flowboard` the new plugin source is on disk but
+the running dashboard still serves the previous build. Two ways to apply it:
+
+- **From the dashboard (recommended).** The header **Update** panel
+  (SnippetUpgrade) detects the version mismatch and shows an *“Update available ·
+  vX → vY”* chip. Click **Update & restart** — it runs `setup.mjs --update`
+  (reinstall deps + rebuild UI + restart the service, leaving your `.env` and
+  data untouched), then reloads the page onto the new build. Backed by
+  `GET /api/update/status` and `POST /api/update/run`.
+- **From the CLI.** `node scripts/setup.mjs --update` from the FlowBoard checkout
+  does the same rebuild + restart.
+
 ### 1. Clone & install (manual)
 
 ```bash
@@ -409,7 +423,7 @@ systemctl --user restart dashboard
 │   ├── rules-api.js              # Lazy-load rules registry + manifest
 │   ├── snippets-doctor.js        # Installer / migrator (state machine)
 │   ├── src/                      # React + Vite + Tailwind UI
-│   └── styles/dashboard.css      # Legacy vanilla fallback + component styles
+│   └── styles/dashboard.css      # Global component styles + design tokens (CSS custom properties), loaded by index.html
 ├── docs/project-mode/            # Rule sections served via /api/projects/:name/rules/:section
 │   ├── commands.md / tasks-api.md / hzl.md / canvas-and-notes.md
 │   ├── project-files.md / specify-workflow.md / agent-bridge.md

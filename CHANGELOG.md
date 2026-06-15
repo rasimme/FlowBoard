@@ -2,6 +2,29 @@
 
 ### Unreleased — v5 Release Hardening (T-288)
 
+- **Review-followup hardening (T-355).** Fixed a stored XSS in the canvas note
+  markdown link renderer (the href is now attribute-escaped; non-http(s) schemes
+  are neutralized). Hardened the file endpoints: `PUT` is allow-listed to
+  `context/`/`specs/`, and write/delete never follow symlinks while reads cannot
+  resolve outside the project/projects/repo roots. The rate limiter no longer
+  skips Cloudflare-tunnel traffic, JWT verification is pinned to HS256, and the
+  auth middleware was de-duplicated. Functional fixes: global search switches to
+  the Tasks tab so the result is revealed; canvas API calls carry auth via
+  `apiFetch`; a same-project reparent refreshes the board immediately. The
+  context `state` is now an immutable snapshot (meaningful React identity). Plus
+  smaller cleanups (task-title trim/bound, memoized note markdown, timer
+  cleanup). Remaining architecture cleanup tracked in T-356.
+
+- **Canvas: server-side note auto-placement (T-352).** `POST /canvas/notes`
+  without `x`/`y` now drops the note into a collision-free slot near the existing
+  cluster (or beside an optional `near` note) instead of stacking at (0,0) —
+  agent-friendly. Explicit coordinates are still honored.
+
+- **In-dashboard self-update (T-353).** After `openclaw plugins update flowboard`,
+  the SnippetUpgrade panel detects the newer on-disk version and offers a
+  one-click rebuild + restart (`setup.mjs --update`; `.env`/data untouched) via
+  `GET/POST /api/update/status|run`, then reloads onto the fresh build.
+
 - **Canvas v2 — editing & navigation polish (T-345).** The note sidebar is now
   a real CodeMirror `MarkdownEditor` (syntax-highlighted) instead of a plain
   textarea; a **minimap + zoom controls** (−/%/+/Fit) make pan/zoom

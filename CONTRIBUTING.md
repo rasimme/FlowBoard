@@ -12,16 +12,13 @@ Thanks for helping improve FlowBoard!
 ```
 dashboard/
 ├── server.js           # Express 5 API + auth + project/task endpoints
-├── index.html          # SPA shell
-├── js/
-│   ├── app.js          # Legacy shell bridge and project refresh
-│   ├── canvas/         # Vanilla Idea Canvas runtime
-│   └── utils.js        # Legacy shared helpers
+├── index.html          # SPA shell (loads styles/dashboard.css + the Vite bundle)
 ├── src/
-│   ├── components/     # React UI components
-│   ├── context/        # React bridge over app state
-│   ├── pages/          # React-owned views
-│   └── utils/          # React-side utility modules
+│   ├── components/     # React UI components (incl. components/canvas/)
+│   ├── context/        # React state contexts + window.appState bridge
+│   ├── pages/          # React-owned views (TasksView, CanvasView, …)
+│   ├── state/          # Task/canvas runtime helpers + mutations
+│   └── utils/          # Pure utility modules (geometry, markdown, …)
 └── styles/
     ├── dashboard.css   # Global/dashboard styles
     └── canvas.css      # Canvas-specific styles
@@ -33,8 +30,7 @@ docs/
 
 **Key conventions:**
 - Backend: Express 5 API; HZL/SQLite is canonical task state
-- Frontend: React is the primary dashboard UI runtime
-- Legacy JS is compatibility infrastructure and still hosts the vanilla Canvas
+- Frontend: React is the dashboard UI runtime; the Idea Canvas is a React view (`src/pages/CanvasView.jsx`). The former vanilla `js/` runtime (canvas, app.js, utils.js) has been removed (ADR-0024).
 - Modules are small and cohesive - one concern per file
 - Dark theme, mobile-responsive
 - Project knowledge is Markdown/JSON; operational task state lives in HZL/SQLite
@@ -49,7 +45,7 @@ Task UI state has one intended mutation path. Read [Frontend Runtime](docs/conce
 - Apply optimistic UI changes through the runtime, then merge the canonical server response.
 - Handle related server records such as `parentUpdated` explicitly.
 - Treat polling as reconciliation only, not as the visible update path for local actions.
-- Keep Canvas vanilla until ADR-0012 is superseded, but use the runtime foundation for future Canvas task-state work.
+- The Canvas is React now (ADR-0024 supersedes ADR-0012); its notes/connections live in the DB (ADR-0025 supersedes ADR-0014) — read/write via the canvas API, never files or SQL.
 
 ## Design tokens & styling
 

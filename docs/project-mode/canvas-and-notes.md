@@ -35,7 +35,7 @@ Legacy projects that still have a `~/.openclaw/projects/<project>/canvas.json` k
 | `id` | string | Auto-generated, unique within project |
 | `text` | string | Content, max 50KB |
 | `x`, `y` | number | Position on canvas |
-| `color` | string | `yellow`, `blue`, `green`, `red`, `purple`, `grey` |
+| `color` | string | `grey`, `yellow`, `blue`, `green`, `red`, `teal` |
 | `size` | string | `small`, `medium`, `large` |
 | `created` | date string | Creation date |
 
@@ -53,7 +53,7 @@ Base: `http://localhost:18790/api`
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/projects/:name/canvas` | Read full canvas |
-| `POST` | `/projects/:name/canvas/notes` | Create note. Body: `{ text, x?, y?, color?, size? }` |
+| `POST` | `/projects/:name/canvas/notes` | Create note. Body: `{ text, x?, y?, color?, size?, near? }`. Omit **both** `x` and `y` for collision-free auto-placement near the existing note cluster (or beside `near: <noteId>`) — ideal for agents that just want to drop a note. Explicit coordinates (incl. an explicit `0`) are always honored (T-352). |
 | `PUT` | `/projects/:name/canvas/notes/:id` | Update note fields |
 | `DELETE` | `/projects/:name/canvas/notes/:id` | Delete single note |
 | `DELETE` | `/projects/:name/canvas/notes/batch` | Batch delete. Body: `{ noteIds: [...] }` |
