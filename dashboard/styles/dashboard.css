@@ -162,11 +162,23 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 14px;
-      height: 56px;
+      /* T-367-2: grow into the notch instead of hiding under it. env(...) is 0
+         on non-notched devices, so this is a no-op there. min-height keeps the
+         56px bar; the top inset is added on top of the 12px padding. */
+      padding: calc(12px + env(safe-area-inset-top, 0px)) calc(14px + env(safe-area-inset-right, 0px)) 12px calc(14px + env(safe-area-inset-left, 0px));
+      min-height: 56px;
+      height: auto;
       background: var(--bg);
       border-bottom: 1px solid var(--border);
     }
+
+    /* T-367-2: keep scrollable content clear of the home indicator on notched
+       phones. env(...) resolves to 0 on non-notched devices → no visual change
+       there; with viewport-fit=cover it adds the needed bottom breathing room. */
+    .column-body { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); }
+    /* The detail panel is full-height; keep its header clear of the notch and
+       its footer clear of the home indicator. */
+    [data-detail-panel] { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 
     .header-left { display: flex; align-items: center; gap: 12px; }
 
