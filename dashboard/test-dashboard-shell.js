@@ -209,6 +209,47 @@ async function run() {
       return ia !== -1 && ib !== -1 && ia < ib;
     }, t1, t2), 'manual order applied on board', 5000).catch(() => false);
     ok(orderOk, 'tasks render by manual order rank, not numeric id (T-130)');
+
+    // --- Flow 11 (T-130): a real drag reorders within the column and persists ---
+    // Seed three fresh, unranked tasks in their own column (review, kept empty so
+    // far), drag the LAST one above the FIRST, and assert it now sorts first AND
+    // the new rank was persisted (exercises handleDrop's index translation +
+    // the drop indicator path — synthetic HTML5 DnD events with a DataTransfer).
+    const rTasks = [];
+    for (const title of ['Reorder A', 'Reorder B', 'Reorder C']) {
+      const id = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title })).body?.task?.id;
+      await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/tasks/${id}`, { status: 'review' });
+      rTasks.push(id);
+    }
+    await page.evaluate(() => window.appState?._refreshBoard && window.appState._refreshBoard());
+    await waitFor(() => page.$(`.column[data-status="review"] [data-task-id="${rTasks[2]}"]`), 'reorder seeds on board');
+    const reordered = await page.evaluate((srcId) => {
+      const col = document.querySelector('.column[data-status="review"]');
+      const card = (id) => col.querySelector(`[data-task-id="${id}"]`);
+      const src = card(srcId);
+      const dt = new DataTransfer();
+      const fire = (el, type, clientY) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt, clientY }));
+      fire(src, 'dragstart', src.getBoundingClientRect().top + 5);
+      const firstRect = col.querySelector('[data-react-tasks]').getBoundingClientRect();
+      fire(col, 'dragover', firstRect.top + 1); // hover above the first card → insert at top
+      fire(col, 'drop', firstRect.top + 1);
+      fire(src, 'dragend', 0);
+      return true;
+    }, rTasks[2]).catch(() => false);
+    ok(reordered, 'synthetic drag dispatched on the review column');
+    const movedToTop = await waitFor(async () => page.evaluate((srcId) => {
+      const ids = Array.from(document.querySelectorAll('.column[data-status="review"] [data-task-id]'))
+        .map(e => e.dataset.taskId);
+      return ids[0] === srcId;
+    }, rTasks[2]), 'dragged card moved to top of its column', 5000).catch(() => false);
+    ok(movedToTop, 'dragging the last card to the top reorders it there (T-130)');
+    const persisted = await waitFor(async () => {
+      const list = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/tasks`)).body?.tasks || [];
+      const byId = Object.fromEntries(list.map(t => [t.id, t.order]));
+      // dragged card must now have the smallest rank in the column
+      return typeof byId[rTasks[2]] === 'number' && byId[rTasks[2]] < byId[rTasks[0]] && byId[rTasks[2]] < byId[rTasks[1]];
+    }, 'reorder persisted to the server', 5000).catch(() => false);
+    ok(persisted, 'the new manual order is persisted (lowest rank for the moved card)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

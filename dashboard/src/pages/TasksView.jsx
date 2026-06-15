@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect, memo } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect, memo, Fragment } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
@@ -72,11 +72,14 @@ function sortTasks(tasks, newestFirst) {
 }
 
 // T-130: find the insertion index for a drop, by comparing the pointer's Y to
-// each card's vertical midpoint. Excludes the card being dragged and any nested
-// subtask cards, so the index aligns with the column's sorted top-level list.
+// each top-level card's vertical midpoint. Works in rendered-list space (counts
+// every top-level card, including the one being dragged — it keeps its slot
+// during an HTML5 drag), so the index maps 1:1 onto the column's rendered list.
+// Nested subtask cards are excluded. handleDrop adjusts for the dragged card's
+// own removal before assigning ranks.
 function computeDropIndex(columnEl, clientY) {
   const cards = [...columnEl.querySelectorAll('[data-react-tasks]')]
-    .filter(el => !el.closest('.subtask-container') && !el.classList.contains('dragging'));
+    .filter(el => !el.closest('.subtask-container'));
   for (let i = 0; i < cards.length; i++) {
     const r = cards[i].getBoundingClientRect();
     if (clientY < r.top + r.height / 2) return i;
@@ -894,7 +897,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortNewestFirst, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, dragRef, onDrop, onDragHint, onClearDragHint, dropIndex, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -915,14 +918,17 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
   }, [showArchived, isDone]);
 
   const handleDragOver = (e) => {
+    if (!dragRef?.current) return; // only react to a task drag, not e.g. text selection
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     e.currentTarget.classList.add('drag-over');
+    onDragHint?.(status, computeDropIndex(e.currentTarget, e.clientY));
   };
 
   const handleDragLeave = (e) => {
     if (!e.currentTarget.contains(e.relatedTarget)) {
       e.currentTarget.classList.remove('drag-over');
+      onClearDragHint?.();
     }
   };
 
@@ -931,6 +937,8 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
     e.currentTarget.classList.remove('drag-over');
     onDrop?.(status, computeDropIndex(e.currentTarget, e.clientY));
   };
+
+  const DropLine = () => <div className="drop-line" aria-hidden="true" />;
 
   return (
     <div
@@ -964,25 +972,28 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
           <div className="column-empty">No tasks</div>
         ) : (
           <>
-            {tasks.map(t => (
-              <TaskCard
-                key={t.id}
-                task={t}
-                allTasks={allTasks}
-                expanded={expandedParents.has(t.id)}
-                onToggleExpand={onToggleExpand}
-                project={project}
-                onTaskDeleted={onTaskDeleted}
-                onTaskTrashed={onTaskTrashed}
-                onTaskUpdated={onTaskUpdated}
-                dragRef={dragRef}
-                isNew={t.id === lastCreatedId}
-                addingSubtask={addingSubtaskParentId === t.id}
-                onAddSubtask={onAddSubtask}
-                onSubtaskCreated={onSubtaskCreated}
-                onCancelAddSubtask={onCancelAddSubtask}
-              />
+            {tasks.map((t, i) => (
+              <Fragment key={t.id}>
+                {dropIndex === i && <DropLine />}
+                <TaskCard
+                  task={t}
+                  allTasks={allTasks}
+                  expanded={expandedParents.has(t.id)}
+                  onToggleExpand={onToggleExpand}
+                  project={project}
+                  onTaskDeleted={onTaskDeleted}
+                  onTaskTrashed={onTaskTrashed}
+                  onTaskUpdated={onTaskUpdated}
+                  dragRef={dragRef}
+                  isNew={t.id === lastCreatedId}
+                  addingSubtask={addingSubtaskParentId === t.id}
+                  onAddSubtask={onAddSubtask}
+                  onSubtaskCreated={onSubtaskCreated}
+                  onCancelAddSubtask={onCancelAddSubtask}
+                />
+              </Fragment>
             ))}
+            {typeof dropIndex === 'number' && dropIndex >= tasks.length && <DropLine />}
             {sortedArchived.length > 0 && (
               <>
                 {/* Subtle divider — 1px-tall background stripe instead
@@ -1037,6 +1048,14 @@ export default function TasksView() {
   const [undoState, setUndoState] = useState(null); // { taskId, title, prevStatus }
 
   const draggedId = useRef(null);
+  // T-130: live drop position for the insertion indicator — { status, index }
+  // in rendered-list space (0 = before first card, N = after last). Mirrors the
+  // sidebar's drop-target line so a reorder shows where the card will land.
+  const [dropHint, setDropHint] = useState(null);
+  const handleDragHint = useCallback((status, index) => {
+    setDropHint(prev => (prev && prev.status === status && prev.index === index) ? prev : { status, index });
+  }, []);
+  const clearDragHint = useCallback(() => setDropHint(null), []);
 
   const handleToggleSort = useCallback(() => {
     setSortNewestFirst(prev => {
@@ -1205,6 +1224,7 @@ export default function TasksView() {
   }, [viewedProject]);
 
   const handleDrop = useCallback((newStatus, dropIndex) => {
+    setDropHint(null);
     const id = draggedId.current;
     if (!id) return;
     const tasksBefore = getTasks();
@@ -1216,12 +1236,17 @@ export default function TasksView() {
 
     // T-130: rebuild the target column's manual order with the dragged card
     // inserted at the drop position, then assign sparse ranks (10, 20, 30…).
-    const colTasks = sortTasks(
-      tasksBefore.filter(t => !t.parentId && !t.trashedAt && t.status === newStatus && t.id !== id),
+    // `dropIndex` is in rendered-list space (includes the dragged card when it
+    // started in this column), so translate it to the dragged-excluded list.
+    const colAll = sortTasks(
+      tasksBefore.filter(t => !t.parentId && !t.trashedAt && t.status === newStatus),
       sortNewestFirst,
     );
-    const idx = (typeof dropIndex === 'number' && dropIndex >= 0 && dropIndex <= colTasks.length)
-      ? dropIndex : colTasks.length;
+    const colTasks = colAll.filter(t => t.id !== id);
+    const draggedPos = colAll.findIndex(t => t.id === id);
+    let idx = (typeof dropIndex === 'number' && dropIndex >= 0) ? dropIndex : colTasks.length;
+    if (draggedPos !== -1 && idx > draggedPos) idx -= 1; // account for the dragged card's own removal
+    idx = Math.max(0, Math.min(idx, colTasks.length));
     const ordered = [...colTasks.slice(0, idx), task, ...colTasks.slice(idx)];
     const rankById = new Map(ordered.map((t, i) => [t.id, (i + 1) * 10]));
     const orderChanged = (t) => rankById.get(t.id) !== (typeof t.order === 'number' ? t.order : null);
@@ -1392,6 +1417,9 @@ export default function TasksView() {
             onTaskUpdated={handleTaskUpdated}
             dragRef={draggedId}
             onDrop={handleDrop}
+            onDragHint={handleDragHint}
+            onClearDragHint={clearDragHint}
+            dropIndex={dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
             addingSubtaskParentId={addingSubtaskParentId}
             onAddSubtask={handleAddSubtask}
