@@ -1516,14 +1516,53 @@ export default function TasksView() {
     ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
     document.body.appendChild(ghost);
     cardEl.classList.add('dragging');
+    // T-368-1: turn off horizontal scroll-snap while dragging so the board can
+    // smoothly auto-scroll to off-screen columns (one column = 82vw on phones).
+    kanbanRef.current?.classList.add('is-dragging');
 
     const columnAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('.column');
+    const applyHint = (x, y) => { const col = columnAt(x, y); if (col?.dataset?.status) handleDragHint(col.dataset.status, computeDropIndex(col, y)); };
+
+    // T-368-1: edge auto-scroll. With one column visible per screen on a phone,
+    // cross-column drag is impossible without scrolling the board to the target
+    // column; long columns likewise need vertical scroll. While the pointer sits
+    // in an edge zone, a rAF loop scrolls the board (horizontal) and the hovered
+    // column body (vertical), re-hit-testing each frame.
+    let lastX = e.clientX, lastY = e.clientY, raf = 0;
+    const EDGE = 52, SPEED = 16;
+    function autoScrollTick() {
+      raf = 0;
+      let scrolled = false;
+      const kb = kanbanRef.current;
+      if (kb) {
+        const r = kb.getBoundingClientRect();
+        if (lastX < r.left + EDGE && kb.scrollLeft > 0) { kb.scrollLeft -= SPEED; scrolled = true; }
+        else if (lastX > r.right - EDGE && kb.scrollLeft < kb.scrollWidth - kb.clientWidth) { kb.scrollLeft += SPEED; scrolled = true; }
+      }
+      const body = document.elementFromPoint(lastX, lastY)?.closest?.('.column-body');
+      if (body) {
+        const r = body.getBoundingClientRect();
+        if (lastY < r.top + EDGE && body.scrollTop > 0) { body.scrollTop -= SPEED; scrolled = true; }
+        else if (lastY > r.bottom - EDGE && body.scrollTop < body.scrollHeight - body.clientHeight) { body.scrollTop += SPEED; scrolled = true; }
+      }
+      if (scrolled) { applyHint(lastX, lastY); raf = requestAnimationFrame(autoScrollTick); }
+    }
+    function maybeAutoScroll() {
+      if (raf) return;
+      const kb = kanbanRef.current;
+      const nearH = kb && (lastX < kb.getBoundingClientRect().left + EDGE || lastX > kb.getBoundingClientRect().right - EDGE);
+      const body = document.elementFromPoint(lastX, lastY)?.closest?.('.column-body');
+      const nearV = body && (lastY < body.getBoundingClientRect().top + EDGE || lastY > body.getBoundingClientRect().bottom - EDGE);
+      if (nearH || nearV) raf = requestAnimationFrame(autoScrollTick);
+    }
     function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      if (raf) cancelAnimationFrame(raf);
       ghost.remove();
       cardEl.classList.remove('dragging');
+      kanbanRef.current?.classList.remove('is-dragging');
       setDropHint(null);
       draggedId.current = null;
       dragTeardownRef.current = null;
@@ -1531,11 +1570,11 @@ export default function TasksView() {
     function onMove(ev) {
       if (ev.pointerId !== pointerId) return;
       ev.preventDefault(); // stop touch scroll while dragging from the handle
+      lastX = ev.clientX; lastY = ev.clientY;
       ghost.style.left = `${ev.clientX - offX}px`;
       ghost.style.top = `${ev.clientY - offY}px`;
-      const col = columnAt(ev.clientX, ev.clientY);
-      // guarded setter (skips no-op updates) — avoids a re-render per pointermove
-      if (col?.dataset?.status) handleDragHint(col.dataset.status, computeDropIndex(col, ev.clientY));
+      applyHint(ev.clientX, ev.clientY);
+      maybeAutoScroll();
     }
     function onUp(ev) {
       if (ev.pointerId !== pointerId) return;

@@ -523,6 +523,30 @@ async function run() {
       return order.indexOf('zzz-bbb') < order.indexOf('zzz-aaa'); // bbb moved above aaa
     }), 'sidebar reorder applied', 5000).catch(() => false);
     ok(sbReordered, `dragging a project's grip reorders it in the sidebar (T-367-5, was ${sbBefore.join(',')})`);
+
+    // --- Flow 21 (T-368-1): drag disables scroll-snap + edge auto-scrolls the board ---
+    await page.setViewport({ width: 390, height: 760, isMobile: true, hasTouch: true });
+    await page.evaluate(() => document.querySelector('.app')?.classList.add('sidebar-collapsed'));
+    await page.click('#tabBar .tab[data-tab="tasks"]');
+    await waitFor(() => page.$('.kanban [data-task-id] .card-drag-handle'), 'mobile handles present', 5000).catch(() => {});
+    const asStart = await page.evaluate(() => {
+      const card = document.querySelector('.column[data-status="backlog"] [data-task-id]');
+      const handle = card?.querySelector('.card-drag-handle');
+      const kb = document.querySelector('.kanban');
+      if (!handle || !kb) return { ok: false };
+      const fire = (el, type, x, y) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, pointerId: 1, isPrimary: true }));
+      const cr = card.getBoundingClientRect();
+      fire(handle, 'pointerdown', cr.left + 12, cr.top + 12);
+      const snapOff = kb.classList.contains('is-dragging');
+      fire(window, 'pointermove', window.innerWidth - 8, 400); // hold near right edge
+      window.__kb = kb; window.__before = kb.scrollLeft; window.__h = handle;
+      return { ok: true, snapOff, scrollable: kb.scrollWidth > kb.clientWidth };
+    });
+    ok(asStart.ok && asStart.snapOff, 'scroll-snap disabled while dragging (.is-dragging)');
+    const autoScrolled = await waitFor(async () => page.evaluate(() => window.__kb && window.__kb.scrollLeft > window.__before), 'board edge auto-scrolls during drag', 3000).catch(() => false);
+    ok(autoScrolled || !asStart.scrollable, 'holding a drag at the board edge auto-scrolls to off-screen columns (T-368-1)');
+    const snapBack = await page.evaluate(() => { window.__h?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: window.innerWidth - 8, clientY: 400, button: 0, pointerId: 1 })); return !document.querySelector('.kanban').classList.contains('is-dragging'); });
+    ok(snapBack, 'scroll-snap restored after drop (.is-dragging removed)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

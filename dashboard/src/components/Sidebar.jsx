@@ -486,10 +486,37 @@ export default function Sidebar() {
     document.body.appendChild(ghost);
     itemEl.classList.add('dragging');
     let target = null; // { name|null, section, kind: 'before'|'after'|'into' }
+    let lastX = e.clientX, lastY = e.clientY, raf = 0;
+    const EDGE = 44, SPEED = 14;
+    function applyTargetAt(x, y) {
+      const el = document.elementFromPoint(x, y);
+      const overItem = el?.closest?.('.project-item');
+      if (overItem?.dataset?.project && overItem.dataset.project !== project.name) {
+        const r = overItem.getBoundingClientRect();
+        const kind = y < r.top + r.height / 2 ? 'before' : 'after';
+        target = { name: overItem.dataset.project, section: overItem.dataset.section, kind };
+        setDropTarget({ kind, itemName: target.name, section: target.section });
+      } else {
+        const zone = el?.closest?.('[data-section-zone]')?.dataset?.sectionZone;
+        if (zone) { target = { name: null, section: zone, kind: 'into' }; setDropTarget({ kind: 'into', section: zone }); }
+      }
+    }
+    // T-368-1: vertical edge auto-scroll for a long project list.
+    function autoScrollTick() {
+      raf = 0;
+      const sc = document.elementFromPoint(lastX, lastY)?.closest?.('.sidebar-scroll');
+      if (!sc) return;
+      const r = sc.getBoundingClientRect();
+      let scrolled = false;
+      if (lastY < r.top + EDGE && sc.scrollTop > 0) { sc.scrollTop -= SPEED; scrolled = true; }
+      else if (lastY > r.bottom - EDGE && sc.scrollTop < sc.scrollHeight - sc.clientHeight) { sc.scrollTop += SPEED; scrolled = true; }
+      if (scrolled) { applyTargetAt(lastX, lastY); raf = requestAnimationFrame(autoScrollTick); }
+    }
     function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
+      if (raf) cancelAnimationFrame(raf);
       ghost.remove();
       itemEl.classList.remove('dragging');
       gripTeardownRef.current = null;
@@ -497,17 +524,12 @@ export default function Sidebar() {
     function onMove(ev) {
       if (ev.pointerId !== pointerId) return;
       ev.preventDefault();
+      lastX = ev.clientX; lastY = ev.clientY;
       ghost.style.top = `${ev.clientY - offY}px`;
-      const el = document.elementFromPoint(ev.clientX, ev.clientY);
-      const overItem = el?.closest?.('.project-item');
-      if (overItem?.dataset?.project && overItem.dataset.project !== project.name) {
-        const r = overItem.getBoundingClientRect();
-        const kind = ev.clientY < r.top + r.height / 2 ? 'before' : 'after';
-        target = { name: overItem.dataset.project, section: overItem.dataset.section, kind };
-        setDropTarget({ kind, itemName: target.name, section: target.section });
-      } else {
-        const zone = el?.closest?.('[data-section-zone]')?.dataset?.sectionZone;
-        if (zone) { target = { name: null, section: zone, kind: 'into' }; setDropTarget({ kind: 'into', section: zone }); }
+      applyTargetAt(ev.clientX, ev.clientY);
+      if (!raf) {
+        const sc = document.elementFromPoint(lastX, lastY)?.closest?.('.sidebar-scroll');
+        if (sc) { const r = sc.getBoundingClientRect(); if (lastY < r.top + EDGE || lastY > r.bottom - EDGE) raf = requestAnimationFrame(autoScrollTick); }
       }
     }
     function onUp(ev) {

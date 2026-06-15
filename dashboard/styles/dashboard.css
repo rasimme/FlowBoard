@@ -753,6 +753,10 @@
       transform: rotate(1.5deg) scale(1.02);
       opacity: 0.92;
     }
+    /* T-368-1: disable horizontal scroll-snap while dragging so edge auto-scroll
+       can glide the board to off-screen columns (higher specificity than the
+       .kanban snap rule in the mobile media query, so this wins everywhere). */
+    .kanban.is-dragging { scroll-snap-type: none; }
     .task-card.is-blocked {
       border: 1px dashed var(--status-blocked);
       opacity: 0.65;
