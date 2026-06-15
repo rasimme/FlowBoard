@@ -6,6 +6,18 @@ const LEGACY_WATCHDOG_MS = 5000;
 let appStateVersion = 0;
 let lastSnapshotFingerprint = '';
 
+// T-355: expose an IMMUTABLE shallow snapshot of window.appState as the context
+// `state` instead of the live mutable object. Previously `state: window.appState`
+// was the same reference on every render, so identity/memo checks on `state`
+// were meaningless. Now a fresh object is built on each change, so consumers can
+// rely on `state` identity changing exactly when the data changes. window.appState
+// remains the underlying store (still mutated directly by ~10 call sites + legacy
+// app.js, which is why the watchdog stays); the snapshot is a read-only view.
+let currentSnapshot = buildSnapshot();
+function buildSnapshot() {
+  return (typeof window !== 'undefined' && window.appState) ? { ...window.appState } : null;
+}
+
 /**
  * Lightweight fingerprint of window.appState for change detection.
  * Avoids expensive JSON.stringify on the full tasks array every tick.
@@ -40,6 +52,7 @@ function subscribeAppState(callback) {
 
   const publish = () => {
     lastSnapshotFingerprint = fingerprint(window.appState);
+    currentSnapshot = buildSnapshot(); // fresh immutable view for this change
     appStateVersion += 1;
     callback();
   };
@@ -124,9 +137,14 @@ export function AppStateProvider({ children }) {
     notifyAppStateChanged();
   }, []);
 
-  // The value object changes when version changes, triggering consumer re-renders.
-  // Consumers read from state (which is window.appState) directly.
-  const value = { state: window.appState, version, dispatch };
+  // Pick up a late legacy init (window.appState created after this module loaded)
+  // on the next render without waiting for a publish.
+  if (!currentSnapshot && typeof window !== 'undefined' && window.appState) {
+    currentSnapshot = buildSnapshot();
+  }
+  // The value changes when version changes, triggering consumer re-renders.
+  // `state` is an immutable snapshot whose identity changes only on real updates.
+  const value = { state: currentSnapshot, version, dispatch };
 
   return (
     <AppStateContext.Provider value={value}>
