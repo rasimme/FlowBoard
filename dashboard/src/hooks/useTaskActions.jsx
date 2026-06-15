@@ -38,22 +38,9 @@ export default function useTaskActions() {
     return mutations.updateTaskPriority(proj(), taskId, priority)
   }, [])
 
-  const deleteTask = useCallback(async (taskId) => {
-    return mutations.deleteTask(proj(), taskId)
-  }, [])
-
-  const restoreTask = useCallback(async (taskId) => {
-    return mutations.restoreTask(proj(), taskId)
-  }, [])
-
-  const trashTask = useCallback(async (taskId) => {
-    return mutations.trashTask(proj(), taskId)
-  }, [])
-
-  const createTask = useCallback(async (title, opts) => {
-    return mutations.createTask(proj(), title, opts)
-  }, [])
-
+  // T-356 Step 4: list-CRUD wrappers (deleteTask/restoreTask/trashTask/createTask)
+  // were removed — the Kanban board hand-rolls those with its own optimistic
+  // logic. This hook exposes only the coordination primitives the DetailPanel uses.
   return {
     claimTask,
     releaseTask,
@@ -61,9 +48,5 @@ export default function useTaskActions() {
     routeTask,
     updateStatus,
     updatePriority,
-    deleteTask,
-    restoreTask,
-    trashTask,
-    createTask,
   }
 }

@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef } fr
 import { useAppState } from './AppStateContext.jsx';
 import { selectViewedProject } from '../utils/projectSelection.mjs';
 import * as bridge from '../state/appStateBridge.mjs';
-import useTaskActions from '../hooks/useTaskActions.jsx';
 import { apiJson } from '../utils/apiFetch.js';
 import { installGlobalToast, showToast } from '../utils/toast.js';
 
@@ -57,7 +56,6 @@ function hapticNotification(type = 'success') {
 
 export function DashboardProvider({ children }) {
   const { state, dispatch } = useAppState();
-  const actions = useTaskActions();
   const initRef = useRef(false);
   const prevTasksRef = useRef('');
   const prevProjectsRef = useRef('');
@@ -306,7 +304,6 @@ export function DashboardProvider({ children }) {
 
   const value = useMemo(() => ({
     state,
-    actions,
     viewProject,
     activateProject,
     deactivateProject,
@@ -317,7 +314,7 @@ export function DashboardProvider({ children }) {
     applyTelegramTheme: applyTelegramThemeImpl,
     haptic,
     hapticNotification,
-  }), [state, actions, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, openSpec]);
+  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, openSpec]);
 
   return (
     <DashboardContext.Provider value={value}>

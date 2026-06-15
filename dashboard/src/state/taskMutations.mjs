@@ -135,28 +135,6 @@ export async function updateTaskStatus(project, taskId, status, priority) {
   })
 }
 
-export async function approveTask(project, taskId, reason) {
-  return mutate(project, taskId, { status: 'done', agent: null, claimedAt: null, leaseUntil: null }, () =>
-    apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/approve`,
-      'POST',
-      { actor: currentAgent(), ...(reason ? { reason } : {}) }
-    )
-  )
-}
-
-export async function rejectTask(project, taskId, reason, target) {
-  const optimistic = { status: 'in-progress' }
-  if (target === 'blocked') optimistic.blocked = true
-  return mutate(project, taskId, optimistic, () =>
-    apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}/reject`,
-      'POST',
-      { actor: currentAgent(), reason, ...(target ? { target } : {}) }
-    )
-  )
-}
-
 export async function updateTaskPriority(project, taskId, priority) {
   return mutate(project, taskId, { priority }, () =>
     apiRequest(
@@ -167,49 +145,11 @@ export async function updateTaskPriority(project, taskId, priority) {
   )
 }
 
-export async function deleteTask(project, taskId) {
-  return mutate(project, taskId, { status: 'archived' }, () =>
-    apiRequest(`/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`, 'DELETE')
-  )
-}
-
-export async function restoreTask(project, taskId) {
-  return mutate(project, taskId, { trashedAt: null }, () =>
-    apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
-      'PUT',
-      { trashedAt: null }
-    )
-  )
-}
-
-export async function trashTask(project, taskId) {
-  const trashedAt = new Date().toISOString()
-  return mutate(project, taskId, { trashedAt }, () =>
-    apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
-      'PUT',
-      { trashedAt }
-    )
-  )
-}
-
-export async function createTask(project, title, opts = {}) {
-  if (!project) return { ok: false, error: 'No active project' }
-  try {
-    const body = { title, ...opts }
-    const result = await apiRequest(
-      `/api/projects/${encodeURIComponent(project)}/tasks`,
-      'POST',
-      body
-    )
-
-    // After create, refresh the full task list
-    const refreshed = await bridge.refreshTasks(project)
-    if (refreshed !== null) bridge.replaceTasks(refreshed)
-
-    return { ok: true, task: result.task }
-  } catch (err) {
-    return { ok: false, error: err.message }
-  }
-}
+// T-356 Step 4: the never-wired CRUD/admin helpers (deleteTask, restoreTask,
+// trashTask, createTask, approveTask, rejectTask) were removed. The Kanban board
+// (TasksView) intentionally hand-rolls list CRUD — create / drop / trash / undo —
+// with its own optimistic+rollback logic close to the drag-and-drop UI (ADR-0019);
+// this module is the task-COORDINATION primitive layer (claim / release / complete
+// / route + status & priority updates) consumed by the DetailPanel via
+// useTaskActions. Keeping both surfaces lean avoids the previous "looks like one
+// enforced contract but the board bypasses it" confusion.
