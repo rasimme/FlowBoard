@@ -30,12 +30,15 @@ These are the rules every future change (human or agent) must keep. They are
 **enforced by `test-runtime-guardrails.mjs`** (the gate fails on a regression),
 not just documented.
 
-1. **State lives behind `AppStateContext`.** `window.appState` is the underlying
-   store but is **written only** by `AppStateContext` (`dispatch` →
-   `Object.assign` + notify; the initial agents fetch) and by `bootstrap.js`
-   (pre-React auth/agentId). Everywhere else, change state via `dispatch(...)`.
-   Consumers read the **immutable snapshot** `useAppState().state` (a fresh object
-   per change — identity is meaningful, memo works). No polling watchdog.
+1. **State lives in `src/state/appStore.mjs`** (the React-owned store).
+   `window.appState` is a transparent **Proxy** over it: reads come from the
+   store, writes/deletes forward into it AND notify. So **every** write — in-app
+   `dispatch(...)` or a raw `window.appState.x = …` — goes through the store and
+   re-renders React; there is no un-notified-mutation path (that is why the old
+   5s watchdog is gone for good). App code changes state via `dispatch(...)`;
+   the proxy facade exists for `bootstrap.js` (pre-React auth/agentId) and the
+   browser-test driving hook. Consumers read the **immutable snapshot**
+   `useAppState().state` (fresh ref per change — identity/memo are meaningful).
 
 2. **Cross-view commands go through `DashboardContext`** (`useDashboard()`):
    `viewProject`, `switchTab`, `activateProject`, `deactivateProject`,
@@ -73,11 +76,14 @@ not just documented.
   cross-view flows (project/tab switch, search→reveal, quick-actions, detail
   panel, trash/restore) and must grow with each new flow.
 
-## Not covered (deliberate, tracked)
-- `window.appState` is still the store object that `dispatch` mutates (React reads
-  an immutable snapshot of it). Moving the store fully into a React reducer /
-  external store — making `window.appState` a pure read-mirror — is a possible
-  future step; it is optional and lower-priority now that the watchdog is gone
-  and the snapshot is immutable.
-- `window._detailPanelOpen` (write-only) and `window._detailQueue` are small
-  remaining globals outside this ADR's scope.
+## Done in T-360
+- The store was moved fully into `src/state/appStore.mjs`; `window.appState`
+  became a Proxy facade (see invariant 1). Every write now notifies React.
+- The dead `window._detailPanelOpen` (write-only) and `window._detailQueue`
+  globals were removed.
+
+## Not covered (deliberate)
+- `window.openTaskDetail` remains an imperative cross-surface "open the detail
+  panel" command (used by task cards / ActiveAgentsBar / Files back-to-task).
+  It works and is low-risk; it could become a context command later but is not
+  part of this ADR's enforced set.

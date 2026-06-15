@@ -51,7 +51,7 @@ Task UI state has one intended mutation path. Read [Frontend Runtime](docs/conce
 
 These are checked by `dashboard/test-runtime-guardrails.mjs`; the gate fails on a regression. **Do not reintroduce `window.*` globals — use the contexts:**
 
-- **State** → change via `dispatch` (`useAppState`); read the immutable snapshot `state`. `window.appState` is written only by `AppStateContext` + `bootstrap.js`. No polling watchdog.
+- **State** → the store is `src/state/appStore.mjs`; `window.appState` is a transparent Proxy over it (every write notifies React → no un-notified mutations, no watchdog). Change state via `dispatch` (`useAppState`); read the immutable snapshot `state`.
 - **Commands** (view/tab/project/spec) → `useDashboard()`. No `window._viewProject`/`_switchTab`/`_openSpec`/… bridges.
 - **Navigation intents** (scroll-to/new-x) → `useNavigation()`. No `window._scrollTo*`/`_pendingNew*` flags.
 - **API** → always `apiFetch`/`apiJson` (carries auth). A bare `fetch('/api…')` 403s under tunnel auth; only `bootstrap.js` may call it raw.
