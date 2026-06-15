@@ -489,7 +489,12 @@
     .project-item .row-grip { cursor: grab; width: 12px; height: 16px; flex-shrink: 0; touch-action: none; }
     /* T-367-5: on touch the whole-item HTML5 drag doesn't work, so the grip
        (the Pointer-Events drag handle) must be permanently visible/grabbable. */
-    @media (hover: none) { .project-item .row-grip { opacity: 0.55; } }
+    /* T-368-2: on touch-capable devices the grip is the drag affordance — make
+       it visible and a proper ~40px touch target (negative margin keeps the row
+       height unchanged). */
+    @media (any-pointer: coarse) {
+      .project-item .row-grip { opacity: 0.55; width: 40px; height: 40px; margin: -12px -6px -12px -10px; }
+    }
     .project-item .row-kebab { width: 20px; height: 20px; border-radius: var(--radius-sm); }
     .project-item:hover .row-grip { opacity: 0.5; }
     .project-item:hover .row-kebab,
@@ -747,7 +752,13 @@
       color: var(--muted); border-radius: var(--radius-sm); touch-action: none;
     }
     .card-drag-handle:active { cursor: grabbing; background: var(--bg-hover); }
-    @media (hover: none) { .card-drag-handle { display: inline-flex; } }
+    /* T-368-2: show on any touch-capable device (incl. hybrid touch+trackpad
+       laptops, where HTML5 drag is unreliable) — any-pointer:coarse, not the
+       primary-pointer hover:none. Enlarge to a ~44px touch target on touch,
+       absorbed by negative margins so the card layout doesn't grow. */
+    @media (any-pointer: coarse) {
+      .card-drag-handle { display: inline-flex; width: 40px; height: 40px; margin: -10px -4px -10px -10px; }
+    }
     .drag-ghost {
       box-shadow: var(--shadow-lg);
       transform: rotate(1.5deg) scale(1.02);
