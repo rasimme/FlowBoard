@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -204,6 +204,9 @@ export default function Sidebar() {
   const [renamingName, setRenamingName] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // { kind, itemName?, section }
   const dragState = useRef({ sourceName: null, sourceSection: null });
+  // T-368-5: teardown for an in-flight grip pointer-drag (unmount-mid-drag safety).
+  const gripTeardownRef = useRef(null);
+  useEffect(() => () => gripTeardownRef.current?.(), []);
 
   // "+ New" menu
   const newBtnRef = useRef(null);
@@ -468,19 +471,31 @@ export default function Sidebar() {
   // there; dropping onto a section's empty zone appends.
   function onGripPointerDown(e, project, section) {
     if (typeof e.button === 'number' && e.button !== 0) return;
+    if (dragState.current.sourceName) return; // already dragging — ignore second pointer
+    const itemEl = e.target.closest('.project-item');
+    if (!itemEl) return; // guard BEFORE touching dragState so we never wedge a phantom drag
+    const pointerId = e.pointerId;
     dragState.current.sourceName = project.name;
     dragState.current.sourceSection = section;
-    const itemEl = e.target.closest('.project-item');
-    if (!itemEl) return;
     const rect = itemEl.getBoundingClientRect();
     const offY = e.clientY - rect.top;
     const ghost = itemEl.cloneNode(true);
     ghost.classList.add('drag-ghost');
+    for (const a of ['data-project', 'data-section', 'id', 'draggable']) ghost.removeAttribute(a);
     ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
     document.body.appendChild(ghost);
     itemEl.classList.add('dragging');
     let target = null; // { name|null, section, kind: 'before'|'after'|'into' }
-    const onMove = (ev) => {
+    function cleanup() {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      ghost.remove();
+      itemEl.classList.remove('dragging');
+      gripTeardownRef.current = null;
+    }
+    function onMove(ev) {
+      if (ev.pointerId !== pointerId) return;
       ev.preventDefault();
       ghost.style.top = `${ev.clientY - offY}px`;
       const el = document.elementFromPoint(ev.clientX, ev.clientY);
@@ -494,14 +509,11 @@ export default function Sidebar() {
         const zone = el?.closest?.('[data-section-zone]')?.dataset?.sectionZone;
         if (zone) { target = { name: null, section: zone, kind: 'into' }; setDropTarget({ kind: 'into', section: zone }); }
       }
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      ghost.remove();
-      itemEl.classList.remove('dragging');
-      if (target) {
+    }
+    function onUp(ev) {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
+      if (ev.type !== 'pointercancel' && target) {
         const destList = sectionItems(target.section).filter((p) => p.name !== project.name);
         let insertAt;
         if (target.kind === 'into') insertAt = destList.length;
@@ -516,7 +528,8 @@ export default function Sidebar() {
         dragState.current.sourceSection = null;
         setDropTarget(null);
       }
-    };
+    }
+    gripTeardownRef.current = () => { cleanup(); dragState.current.sourceName = null; dragState.current.sourceSection = null; setDropTarget(null); };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);

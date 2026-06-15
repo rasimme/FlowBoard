@@ -1130,6 +1130,11 @@ export default function TasksView() {
   const [undoState, setUndoState] = useState(null); // { taskId, title, prevStatus }
 
   const draggedId = useRef(null);
+  // T-368-5: teardown for an in-flight pointer-drag, so unmounting mid-drag
+  // (tab/project switch) removes the window listeners + floating ghost instead
+  // of leaking them and firing state updates on an unmounted tree.
+  const dragTeardownRef = useRef(null);
+  useEffect(() => () => dragTeardownRef.current?.(), []);
 
   // T-364: Kanban view persistence (expanded parents + scroll), per project.
   const kanbanRef = useRef(null);
@@ -1495,41 +1500,54 @@ export default function TasksView() {
   // are hit-tested from the pointer position each move.
   const startPointerDrag = useCallback((e, taskId) => {
     if (typeof e.button === 'number' && e.button !== 0) return; // primary button / touch only
+    if (draggedId.current) return; // already dragging — ignore a second pointer (multi-touch)
     const cardEl = e.target.closest('[data-task-id]');
     if (!cardEl) return;
+    const pointerId = e.pointerId;
     draggedId.current = taskId;
     const rect = cardEl.getBoundingClientRect();
     const offX = e.clientX - rect.left;
     const offY = e.clientY - rect.top;
     const ghost = cardEl.cloneNode(true);
     ghost.classList.add('drag-ghost');
+    // Don't leak duplicate identifying attributes into document.body while the
+    // clone lives there (global [data-task-id] queries could match the ghost).
+    for (const a of ['data-task-id', 'data-react-tasks', 'id', 'draggable']) ghost.removeAttribute(a);
     ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
     document.body.appendChild(ghost);
     cardEl.classList.add('dragging');
 
     const columnAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('.column');
-    const onMove = (ev) => {
-      ev.preventDefault(); // stop touch scroll while dragging from the handle
-      ghost.style.left = `${ev.clientX - offX}px`;
-      ghost.style.top = `${ev.clientY - offY}px`;
-      const col = columnAt(ev.clientX, ev.clientY);
-      if (col?.dataset?.status) setDropHint({ status: col.dataset.status, index: computeDropIndex(col, ev.clientY) });
-    };
-    const onUp = (ev) => {
+    function cleanup() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
       ghost.remove();
       cardEl.classList.remove('dragging');
-      const col = columnAt(ev.clientX, ev.clientY);
-      if (col?.dataset?.status) handleDrop(col.dataset.status, computeDropIndex(col, ev.clientY));
       setDropHint(null);
       draggedId.current = null;
-    };
+      dragTeardownRef.current = null;
+    }
+    function onMove(ev) {
+      if (ev.pointerId !== pointerId) return;
+      ev.preventDefault(); // stop touch scroll while dragging from the handle
+      ghost.style.left = `${ev.clientX - offX}px`;
+      ghost.style.top = `${ev.clientY - offY}px`;
+      const col = columnAt(ev.clientX, ev.clientY);
+      // guarded setter (skips no-op updates) — avoids a re-render per pointermove
+      if (col?.dataset?.status) handleDragHint(col.dataset.status, computeDropIndex(col, ev.clientY));
+    }
+    function onUp(ev) {
+      if (ev.pointerId !== pointerId) return;
+      const col = ev.type !== 'pointercancel' ? columnAt(ev.clientX, ev.clientY) : null;
+      if (col?.dataset?.status) handleDrop(col.dataset.status, computeDropIndex(col, ev.clientY));
+      cleanup();
+    }
+    dragTeardownRef.current = cleanup;
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onUp);
-  }, [handleDrop]);
+  }, [handleDrop, handleDragHint]);
 
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
     const topLevel = allTasks.filter(t => !t.parentId);
