@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect, mem
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
+import { sortTasks } from './taskSort.js';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../components/index.js';
 import AgentChip, { agentColor } from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
@@ -85,28 +86,8 @@ function getInitialArchived() {
   return localStorage.getItem('showArchived') === 'true';
 }
 
-function parseTaskNum(id) {
-  return parseInt(id.replace('T-', ''));
-}
-
-// T-130: sort a column's tasks for the given mode.
-//  - 'newest'/'oldest': purely by task number (manual ranks ignored).
-//  - 'custom': manually-ranked tasks first, ascending by rank (so a card stays
-//    where it was dropped); unranked tasks fall back to newest-first, which also
-//    keeps freshly created, not-yet-ranked tasks near the top.
-function sortTasks(tasks, sortMode) {
-  const byNum = (a, b, dir) => dir * (parseTaskNum(a.id) - parseTaskNum(b.id));
-  if (sortMode === 'newest') return [...tasks].sort((a, b) => byNum(a, b, -1));
-  if (sortMode === 'oldest') return [...tasks].sort((a, b) => byNum(a, b, 1));
-  return [...tasks].sort((a, b) => {
-    const ao = typeof a.order === 'number';
-    const bo = typeof b.order === 'number';
-    if (ao && bo) return a.order - b.order;
-    if (ao) return -1;
-    if (bo) return 1;
-    return byNum(a, b, -1);
-  });
-}
+// Column sort (custom / newest / oldest) lives in ./taskSort.js so the ordering
+// logic is unit-testable without a DOM (T-376).
 
 // T-130: find the insertion index for a drop, by comparing the pointer's Y to
 // each top-level card's vertical midpoint. Works in rendered-list space (counts
@@ -991,7 +972,10 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
         </div>
       </div>
       <div className="column-body" onScroll={(e) => onColumnScroll?.(status, e.currentTarget.scrollTop)}>
-        {isBacklog && project && (
+        {/* New tasks appear at the top in custom/newest, so the add form sits on
+            top there; in oldest-first they append at the bottom, so the form
+            moves below the list to stay next to where the task will land (T-376). */}
+        {isBacklog && project && sortMode !== 'oldest' && (
           <AddTaskForm project={project} onCreated={onTaskCreated} />
         )}
         {tasks.length === 0 && sortedArchived.length === 0 && !isBacklog ? (
@@ -1048,6 +1032,9 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
               </>
             )}
           </>
+        )}
+        {isBacklog && project && sortMode === 'oldest' && (
+          <AddTaskForm project={project} onCreated={onTaskCreated} />
         )}
       </div>
     </div>
@@ -1188,27 +1175,12 @@ export default function TasksView() {
 
   const handleTaskCreated = useCallback((newTaskId) => {
     if (newTaskId) {
+      // T-376: new tasks stay unranked (no manual `order`) so the 'custom' sort
+      // shows them at the top — unranked-first, newest among themselves — no
+      // matter which path created them. A task only gains a manual rank once it
+      // is dragged. (Replaces the old optimistic top-rank hack, which only fired
+      // for board-form creates and pushed the new card below older unranked ones.)
       setLastCreatedId(newTaskId);
-      // T-130 (#2): keep newly created backlog tasks at the TOP. With manual
-      // ranks present, a rank-less new task would sort below them — so give it a
-      // rank just above the current minimum and persist it. (If nothing is ranked
-      // yet, the 'custom' newest-first fallback already puts it on top.)
-      const tasks = getTasks();
-      const created = tasks.find(t => t.id === newTaskId);
-      if (created && created.status === 'backlog' && !created.parentId) {
-        const ranks = tasks
-          .filter(t => !t.parentId && !t.trashedAt && t.status === 'backlog' && typeof t.order === 'number')
-          .map(t => t.order);
-        if (ranks.length > 0) {
-          const topRank = Math.min(...ranks) - 10;
-          replaceTasks(patchTask(getTasks(), newTaskId, { order: topRank }));
-          apiFetch(`/api/projects/${viewedProject}/tasks/${newTaskId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ order: topRank }),
-          }).catch(() => { /* optimistic; reconciles on next refresh */ });
-        }
-      }
     }
     notify();
   }, [viewedProject]);
