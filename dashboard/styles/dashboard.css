@@ -488,18 +488,17 @@
       transition: opacity var(--duration-fast), color var(--duration-fast);
       font-family: inherit;
     }
-    /* T-374: grip is a no-indent OVERLAY in the row's left padding (absolute →
-       reserves no layout space, so the project name stays flush like before the
-       grip existed), faded in on row hover. Mirrors the card grip. */
+    /* T-374 (rev): grip is in-flow, hover-revealed (the original behaviour) — it
+       reserves its ~12px so the project name keeps the small left gutter it had
+       before (desktop drags projects via this grip; there's no whole-row drag). */
     .project-item .row-grip {
-      position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
-      width: 14px; height: 16px; cursor: grab; touch-action: none;
+      width: 12px; height: 16px; cursor: grab; touch-action: none; flex-shrink: 0;
     }
     /* Real touch-primary devices (no hover): grip in-flow, visible, ~40px tap
        target (no hover to reveal it; HTML5 drag dead on touch). */
     @media (hover: none) {
       .project-item .row-grip {
-        position: static; transform: none; opacity: 0.55;
+        opacity: 0.55;
         width: 40px; height: 40px; margin: -12px -6px -12px -10px;
       }
     }
@@ -749,33 +748,20 @@
     .task-card.dragging { opacity: 0.4; }
     .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
 
-    /* T-367-4: touch drag handle + floating drag clone (Pointer-Events drag).
-       Handle is hidden on pointer-precise (mouse) devices — there the whole
-       card is HTML5-draggable — and shown on touch where that doesn't work. */
-    /* T-374: drag grip. Desktop = an OVERLAY hint in the card's left padding
-       (position:absolute → reserves NO layout space, so T-000 stays flush like
-       before), faded in on card hover, sitting just left of the id. Dragging
-       works on the whole card body too; the grip is the visible affordance.
-       Touch (any-pointer:coarse) = in-flow ~40px tap target (the only initiator
-       there, since the body must stay scrollable). */
+    /* T-374 (rev): card drag grip is HIDDEN on desktop — there the whole card is
+       draggable (body pointer-drag), so no grip clutter and T-000 stays flush.
+       Shown only on real touch devices (no hover), where the body must scroll so
+       the grip is the drag initiator: in-flow, visible, ~40px tap target. */
     .card-drag-handle {
-      position: absolute; left: 1px; top: 11px;
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 14px; height: 16px; padding: 0;
+      display: none;
+      align-items: center; justify-content: center; padding: 0;
       border: none; background: none; cursor: grab;
       color: var(--muted); border-radius: var(--radius-sm); touch-action: none;
-      opacity: 0; transition: opacity var(--duration-fast);
     }
-    .task-card:hover .card-drag-handle { opacity: 0.45; }
-    .card-drag-handle:hover { opacity: 0.85; }
     .card-drag-handle:active { cursor: grabbing; }
-    /* Real touch-primary devices (no hover): the body can't initiate a drag
-       (it must scroll) and there's no hover to reveal the grip, so make the grip
-       a permanently-visible, in-flow ~40px tap target. Hover-capable devices
-       (desktop + hybrids) keep the no-indent overlay above and drag the body. */
     @media (hover: none) {
       .card-drag-handle {
-        position: static; opacity: 0.6;
+        display: inline-flex; opacity: 0.6;
         width: 40px; height: 40px; margin: -12px -6px -12px -10px;
       }
     }

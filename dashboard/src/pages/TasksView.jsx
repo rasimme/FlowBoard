@@ -259,7 +259,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, wasDraggedRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -276,6 +276,9 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   const hasDerivedSubtaskActivity = !isActivelyClaimed(task) && activeSubtaskClaims.length > 0;
 
   const handleClick = () => {
+    // T-374 fix: a click emitted right after a drag must NOT open the detail
+    // panel (the gesture was a drag, not a click).
+    if (wasDraggedRef?.current) return;
     if (window.openTaskDetail) window.openTaskDetail(task.id);
   };
 
@@ -925,7 +928,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, wasDraggedRef, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -995,6 +998,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                   onTaskTrashed={onTaskTrashed}
                   onTaskUpdated={onTaskUpdated}
                   onHandlePointerDown={onHandlePointerDown}
+                  wasDraggedRef={wasDraggedRef}
                   isNew={t.id === lastCreatedId}
                   addingSubtask={addingSubtaskParentId === t.id}
                   onAddSubtask={onAddSubtask}
@@ -1065,6 +1069,10 @@ export default function TasksView() {
   // of leaking them and firing state updates on an unmounted tree.
   const dragTeardownRef = useRef(null);
   useEffect(() => () => dragTeardownRef.current?.(), []);
+  // T-374 fix: true between a drag's activation and the next gesture, so the
+  // card's onClick can swallow the click that a completed drag may emit (the
+  // drag must NOT open the detail panel). Reset on every new pointerdown.
+  const wasDraggedRef = useRef(false);
 
   // T-364: Kanban view persistence (expanded parents + scroll), per project.
   const kanbanRef = useRef(null);
@@ -1432,6 +1440,11 @@ export default function TasksView() {
     let lastX = startX, lastY = startY, offX = 0, offY = 0;
     let ghost = null, active = false, raf = 0;
     const EDGE = 52, SPEED = 16;
+    wasDraggedRef.current = false;
+    // T-374 fix: no text selection while a drag gesture is in progress (a
+    // pointerdown+move would otherwise select the cards' text). Restored in cleanup.
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
 
     const columnAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('.column');
     function highlightColumn(x, y) {
@@ -1471,6 +1484,7 @@ export default function TasksView() {
     }
     function activate() {
       active = true;
+      wasDraggedRef.current = true;
       draggedId.current = taskId;
       const rect = cardEl.getBoundingClientRect();
       offX = lastX - rect.left; offY = lastY - rect.top;
@@ -1491,6 +1505,8 @@ export default function TasksView() {
       cardEl.classList.remove('dragging');
       kanbanRef.current?.classList.remove('is-dragging');
       document.querySelectorAll('.column.drag-over').forEach(c => c.classList.remove('drag-over'));
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
       setDropHint(null);
       draggedId.current = null;
       dragTeardownRef.current = null;
@@ -1655,6 +1671,7 @@ export default function TasksView() {
             onTaskTrashed={handleTaskTrashed}
             onTaskUpdated={handleTaskUpdated}
             onHandlePointerDown={startPointerDrag}
+            wasDraggedRef={wasDraggedRef}
             dropIndex={sortMode === 'custom' && dropHint?.status === status ? dropHint.index : null}
             lastCreatedId={lastCreatedId}
             addingSubtaskParentId={addingSubtaskParentId}

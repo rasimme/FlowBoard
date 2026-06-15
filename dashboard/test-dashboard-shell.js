@@ -253,7 +253,12 @@ async function run() {
       return typeof byId[rTasks[2]] === 'number' && byId[rTasks[2]] < byId[rTasks[0]] && byId[rTasks[2]] < byId[rTasks[1]];
     }, 'reorder persisted to the server', 5000).catch(() => false);
     ok(persisted, 'the new manual order is persisted (lowest rank for the moved card)');
-    const noPanelAfterDrag = await page.evaluate(() => !document.querySelector('[data-detail-panel]'));
+    // a click emitted right after the drag (wasDraggedRef guard) must NOT open the panel
+    const noPanelAfterDrag = await page.evaluate((srcId) => {
+      const card = document.querySelector(`.column[data-status="review"] [data-task-id="${srcId}"]`);
+      card?.dispatchEvent(new MouseEvent('click', { bubbles: true })); // the click a drag may emit
+      return !document.querySelector('[data-detail-panel]');
+    }, rTasks[2]);
     ok(noPanelAfterDrag, 'a card drag does NOT also open the detail panel (T-374)');
 
     // --- Flow 12 (T-374): pointer-drag shows the insert line + column highlight, clears on drop ---
@@ -276,7 +281,11 @@ async function run() {
     ok(lineUp, 'drop indicator line renders with visible height during a drag');
     const colHi = await page.evaluate(() => !!document.querySelector('.column[data-status="review"].drag-over'));
     ok(colHi, 'target column is highlighted during the drag (.drag-over)');
+    const noSelectDuringDrag = await page.evaluate(() => document.body.style.userSelect === 'none');
+    ok(noSelectDuringDrag, 'text selection is disabled while dragging (T-374 fix #4)');
     await page.evaluate(() => { const a = window.__pdAt; window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: a.x, clientY: a.y, button: 0, pointerId: 1 })); });
+    const selectRestored = await waitFor(async () => page.evaluate(() => document.body.style.userSelect === ''), 'text selection restored after drop', 2000).catch(() => false);
+    ok(selectRestored, 'text selection is restored after the drop (T-374 fix #4)');
     const cleared = await waitFor(async () => page.evaluate(() => !document.querySelector('.column[data-status="review"] .drop-line') && !document.querySelector('.column.drag-over')), 'indicator + highlight clear on drop', 3000).catch(() => false);
     ok(cleared, 'drop clears the insert line and the column highlight');
 
