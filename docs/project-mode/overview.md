@@ -148,6 +148,11 @@ is a deterministic floor from the project's name/description/group — treat it
 as a starting point and override it (preset, flow or full grid) whenever you
 know the project better.
 
+When you create a project and the response reports `mode: "auto"` with
+`applied: true`, record the applied preset and its `rationale` in your task
+checkpoint or notes — the layout was chosen for you, so noting it keeps that
+automatic decision traceable for whoever looks later.
+
 If a project was never tailored (still the default fallback) but has since
 gained tasks, `GET /api/projects/:name/overview` attaches a one-off
 `overview.nudge = { reason, taskCount, suggested:{ preset, rationale } }` —

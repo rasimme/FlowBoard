@@ -305,7 +305,12 @@ function presetConfig(name) {
  * validateOverview to reject — flow authoring stays a thin layer over the one
  * trusted validator. Returns a grid config { version, layout:'grid', widgets }.
  */
-function packFlow(items) {
+// Shelf-pack already-sized items into a 12-column grid: assign x/y left-to-right
+// with row wrapping, dedup ids, never overlap. Each item carries its own desired
+// { w, h } (clamped to the grid + the type's registry minimum); `props` is
+// deep-copied so the returned config never shares nested references with the
+// caller's input. Items missing w/h fall back to the type's defaultSize.
+function packGrid(items) {
   const list = Array.isArray(items) ? items : [];
   const usedIds = new Set();
   let cursorX = 0;
@@ -316,13 +321,8 @@ function packFlow(items) {
     const def = WIDGET_TYPES[it.type];
     const base = def ? def.defaultSize : FLOW_FALLBACK_SIZE;
     const min = def ? def.minSize : { w: 1, h: 1 };
-    let w = base.w;
-    if (typeof it.size === 'string') {
-      const mapped = FLOW_SIZE_WIDTH[it.size.toLowerCase()];
-      if (Number.isInteger(mapped)) w = mapped;
-    }
-    w = Math.max(min.w, Math.min(GRID_COLUMNS, w));
-    const h = Math.max(min.h, Math.min(12, base.h));
+    const w = Math.max(min.w, Math.min(GRID_COLUMNS, Number.isInteger(it.w) ? it.w : base.w));
+    const h = Math.max(min.h, Math.min(12, Number.isInteger(it.h) ? it.h : base.h));
     if (cursorX + w > GRID_COLUMNS) {
       rowY += rowMaxH;
       cursorX = 0;
@@ -338,40 +338,55 @@ function packFlow(items) {
       id,
       type: it.type,
       ...(typeof it.title === 'string' ? { title: it.title } : {}),
-      ...(it.props && typeof it.props === 'object' && !Array.isArray(it.props) ? { props: it.props } : {}),
+      ...(it.props && typeof it.props === 'object' && !Array.isArray(it.props) ? { props: JSON.parse(JSON.stringify(it.props)) } : {}),
       grid,
     };
   });
   return { version: 1, layout: 'grid', widgets };
 }
 
-// Inverse of FLOW_SIZE_WIDTH: derive a coarse size hint from a grid width, so an
-// existing grid config can round-trip through the coordinate-free flow layer.
-function widthToSize(w) {
-  if (w >= 11) return 'full';
-  if (w >= 7) return 'l';
-  if (w >= 5) return 'm';
-  return 's';
+function packFlow(items) {
+  const list = Array.isArray(items) ? items : [];
+  // Resolve each coarse size hint to a width; height comes from the defaultSize.
+  const sized = list.map(item => {
+    const it = item && typeof item === 'object' ? item : {};
+    const def = WIDGET_TYPES[it.type];
+    const base = def ? def.defaultSize : FLOW_FALLBACK_SIZE;
+    let w = base.w;
+    if (typeof it.size === 'string') {
+      const mapped = FLOW_SIZE_WIDTH[it.size.toLowerCase()];
+      if (Number.isInteger(mapped)) w = mapped;
+    }
+    return {
+      type: it.type,
+      w,
+      h: base.h,
+      ...(typeof it.title === 'string' ? { title: it.title } : {}),
+      ...(it.props && typeof it.props === 'object' && !Array.isArray(it.props) ? { props: it.props } : {}),
+      ...(typeof it.id === 'string' && it.id ? { id: it.id } : {}),
+    };
+  });
+  return packGrid(sized);
 }
 
 /**
  * Apply a batch of small, coordinate-free operations to an existing grid
  * overview and return a freshly packed grid config (T-365-2).
  *
- * The current layout is read back into an ordered flow-list ({type,size,...}),
- * the ops are applied in order, and the result is re-packed with `packFlow`
- * so positions are always clean and non-overlapping — the caller never touches
- * x/y/w/h. Supported ops:
+ * Each existing widget keeps its EXACT width and height; an op changes the size
+ * of the widget it targets and nothing else, then the layout is re-packed so
+ * only positions (x/y) are recomputed — clean and non-overlapping. Supported ops:
  *   - { op:'add', type, size?, props?, title?, id? }   append (auto-id if none)
  *   - { op:'remove', id }                              drop a widget
- *   - { op:'resize', id, size }                        set the width hint
+ *   - { op:'resize', id, size }                        set the width hint (height kept)
  *   - { op:'reorder', id, toIndex }                    move to a position
  *
  * Validation is total: an unknown id (remove/resize/reorder), an unknown op, or
  * an `add` without a type throws an Error whose message names the op index
  * (e.g. `ops[2]: no widget with id "x"`). Ops are applied to a working copy and
- * only returned if every op succeeds — no partial application, and the input
- * config is never mutated. Does not touch the filesystem.
+ * only returned if every op succeeds — no partial application. The input config
+ * is never mutated (nested `props` are deep-copied into the result). Does not
+ * touch the filesystem.
  *
  * @param {object} config grid overview { version, layout:'grid', widgets:[...] }
  * @param {Array} ops ordered operations
@@ -379,12 +394,17 @@ function widthToSize(w) {
  */
 function applyOps(config, ops) {
   const srcWidgets = config && Array.isArray(config.widgets) ? config.widgets : [];
-  // Convert the grid config to an ordered, coordinate-free flow-list.
+  // Carry each existing widget's EXACT { w, h } into the working list — an op
+  // only changes the size of the widget it explicitly targets. Re-packing then
+  // recomputes positions (x/y) only, so a reorder/remove never re-buckets a
+  // sibling's width or resets its height.
+  const sizeToWidth = size => (typeof size === 'string' ? FLOW_SIZE_WIDTH[size.toLowerCase()] : undefined);
   const list = srcWidgets.map(w => {
     const grid = w && w.grid && typeof w.grid === 'object' ? w.grid : {};
     return {
       type: w.type,
-      size: widthToSize(Number.isInteger(grid.w) ? grid.w : (FLOW_FALLBACK_SIZE.w)),
+      w: grid.w,
+      h: grid.h,
       ...(typeof w.title === 'string' ? { title: w.title } : {}),
       ...(w.props && typeof w.props === 'object' && !Array.isArray(w.props) ? { props: w.props } : {}),
       ...(typeof w.id === 'string' && w.id ? { id: w.id } : {}),
@@ -402,9 +422,13 @@ function applyOps(config, ops) {
         if (typeof op.type !== 'string' || !op.type) {
           throw new Error(`${at}: add requires a "type"`);
         }
+        const def = WIDGET_TYPES[op.type];
+        const base = def ? def.defaultSize : FLOW_FALLBACK_SIZE;
+        const mapped = sizeToWidth(op.size);
         list.push({
           type: op.type,
-          ...(typeof op.size === 'string' ? { size: op.size } : {}),
+          w: Number.isInteger(mapped) ? mapped : base.w,
+          h: base.h,
           ...(typeof op.title === 'string' ? { title: op.title } : {}),
           ...(op.props && typeof op.props === 'object' && !Array.isArray(op.props) ? { props: op.props } : {}),
           ...(typeof op.id === 'string' && op.id ? { id: op.id } : {}),
@@ -420,7 +444,9 @@ function applyOps(config, ops) {
       case 'resize': {
         const idx = indexOfId(op.id);
         if (idx === -1) throw new Error(`${at}: no widget with id "${op.id}"`);
-        list[idx] = { ...list[idx], size: op.size };
+        // `size` is a coarse WIDTH hint — change only the width, keep the height.
+        const mapped = sizeToWidth(op.size);
+        list[idx] = { ...list[idx], w: Number.isInteger(mapped) ? mapped : list[idx].w };
         break;
       }
       case 'reorder': {
@@ -437,7 +463,7 @@ function applyOps(config, ops) {
     }
   });
 
-  return packFlow(list);
+  return packGrid(list);
 }
 
 // Best-fit preset inference (T-365) — the deterministic "floor". Maps the

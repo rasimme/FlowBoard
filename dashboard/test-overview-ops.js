@@ -5,7 +5,7 @@
 // operations (add/remove/resize/reorder) instead of rewriting the whole
 // layout, then re-packs to a clean valid grid via packFlow.
 
-const { applyOps, validateOverview } = require('./overview.js');
+const { applyOps, validateOverview, presetConfig } = require('./overview.js');
 
 let pass = 0;
 let fail = 0;
@@ -148,6 +148,50 @@ section('failure does not partially apply', () => {
   }
   ok(threw, 'a bad op in the batch throws');
   ok(JSON.stringify(cfg) === before, 'the input config is not mutated on failure');
+});
+
+// H1 regression: an op must refine a real layout, not silently rewrite the
+// sizes of widgets it never touched. Start from a varied preset so widths and
+// heights are NOT all on flow buckets.
+section('reorder preserves untouched widget sizes (H1)', () => {
+  const baseCfg = presetConfig('coding');
+  const before = baseCfg.widgets.map(w => ({ id: w.id, w: w.grid.w, h: w.grid.h }));
+  const out = applyOps(baseCfg, [{ op: 'reorder', id: 'w-ci', toIndex: 0 }]);
+  let preserved = true;
+  for (const b of before) {
+    const a = out.widgets.find(x => x.id === b.id);
+    if (!a || a.grid.w !== b.w || a.grid.h !== b.h) preserved = false;
+  }
+  ok(preserved, 'a reorder keeps every widget\'s exact width and height');
+  ok(out.widgets[0].id === 'w-ci', 'the reorder still moved the target to the front');
+  ok(validateOverview(out).ok === true, 'the result still validates');
+});
+
+section('resize changes only the target width and keeps heights (H1)', () => {
+  const baseCfg = presetConfig('default');
+  const before = baseCfg.widgets.map(w => ({ id: w.id, w: w.grid.w, h: w.grid.h }));
+  const out = applyOps(baseCfg, [{ op: 'resize', id: 'w-timeline', size: 's' }]);
+  const target = out.widgets.find(x => x.id === 'w-timeline');
+  ok(target.grid.w === 3, 'the resized widget gets the new width (s -> 3)');
+  ok(target.grid.h === before.find(b => b.id === 'w-timeline').h, 'the resized widget keeps its height');
+  let othersIntact = true;
+  for (const b of before) {
+    if (b.id === 'w-timeline') continue;
+    const a = out.widgets.find(x => x.id === b.id);
+    if (!a || a.grid.w !== b.w || a.grid.h !== b.h) othersIntact = false;
+  }
+  ok(othersIntact, 'every other widget keeps its exact width and height');
+});
+
+// M2: the returned config must not share nested props references with the input.
+section('output does not share props references with the input (M2)', () => {
+  const input = { version: 1, layout: 'grid', widgets: [
+    { id: 'lnk', type: 'links', props: { links: [{ label: 'x', url: 'https://e.x' }] }, grid: { x: 0, y: 0, w: 3, h: 2 } },
+  ] };
+  const out = applyOps(input, [{ op: 'reorder', id: 'lnk', toIndex: 0 }]);
+  ok(out.widgets[0].props !== input.widgets[0].props, 'props is a distinct object, not a shared reference');
+  out.widgets[0].props.links.push({ label: 'y', url: 'https://e.y' });
+  ok(input.widgets[0].props.links.length === 1, 'mutating the output props does not affect the input');
 });
 
 if (fail === 0) {

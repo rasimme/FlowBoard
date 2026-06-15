@@ -1402,6 +1402,10 @@ app.post('/api/projects', (req, res) => {
     // suggestion is never written — the fallback already serves it. This never
     // fails project creation.
     try {
+      // The client header is advisory, not a trust boundary: the only effect is
+      // whether a non-default preset is auto-applied vs offered for confirmation
+      // (worst case a suggest-vs-auto mismatch, both reversible). Do not rely on
+      // it for anything security-sensitive.
       const isUi = req.get('X-FlowBoard-Client') === 'dashboard';
       const { preset, rationale } = overview.suggestPreset({
         name: result.project.name,
