@@ -265,9 +265,13 @@ function FilePreview({
   return (
     <>
       <div className="file-preview-header">
-        {/* T-367-3: mobile master-detail — return to the file list. Hidden on
-            wide screens (list + preview shown side by side) via CSS. */}
-        <button className="file-back-to-list" onClick={onBackToList} aria-label="Back to file list">← Files</button>
+        {/* T-367-3 / T-368-4: mobile master-detail back button. Hidden on wide
+            screens (CSS) AND suppressed when opened from a task — then the
+            single "← Back to Task" is the one obvious back action, instead of
+            two competing left-arrow buttons. */}
+        {!fromTaskId && (
+          <button className="file-back-to-list" onClick={onBackToList} aria-label="Back to file list">← Files</button>
+        )}
         {fromTaskId && (
           <button className="file-back-btn" onClick={onBackToTask}>← Back to Task</button>
         )}

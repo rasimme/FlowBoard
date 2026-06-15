@@ -3546,7 +3546,9 @@ app.get('/api/search', (req, res) => {
     const limit = req.query.limit !== undefined ? Math.max(1, Math.min(50, parseInt(req.query.limit) || 20)) : 20;
     const offset = req.query.offset !== undefined ? Math.max(0, parseInt(req.query.offset) || 0) : 0;
     const project = req.query.project || undefined;
-    const result = hzlService.searchTasks(q, { project, limit, offset });
+    // T-369: smart in-memory task search (id lookup, operators, infix + fuzzy,
+    // custom ranking). Notes and project-name matching below stay as-is.
+    const result = hzlService.smartSearchTasks(q, { project, limit, offset });
 
     // T-349: unified search also covers canvas notes and project names
     const { notes } = hzlService.searchNotes(q, { project, limit: 10 });

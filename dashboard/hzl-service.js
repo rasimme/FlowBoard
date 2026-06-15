@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { parseQuery, rankTasks } = require('./smart-search');
 
 // =============================================================================
 // T-248: Stuck-Task Notification Contract
@@ -1549,6 +1550,76 @@ function searchTasks(query, opts = {}) {
     tasks.push({ ...(_publicTask(cached)), project: cached._project, rank: row.rank });
   }
   return { tasks, total: result.total };
+}
+
+/**
+ * T-369: smart task search over the in-memory cache (no hzl-core/FTS change).
+ * Adds task-id lookup + jump, filter operators (status/project/agent/is/has),
+ * infix + typo-tolerant matching, and custom ranking. Same `{tasks,total}`
+ * shape as searchTasks. Each task carries `exact` (true for an exact id hit).
+ * Free-text scoring covers title + tags + description (description fetched
+ * lazily from tasks_current for parity with the FTS path).
+ */
+function smartSearchTasks(query, opts = {}) {
+  const raw = String(query || '').trim();
+  if (!raw) return { tasks: [], total: 0 };
+  const parsed = parseQuery(raw);
+  const { project, limit = 20, offset = 0 } = opts;
+  const cap = Math.min(Math.max(1, limit), 50);
+
+  // Candidate set from the in-memory cache — same exclusions as the FTS path.
+  const originals = [];
+  for (const task of _cache.values()) {
+    if (task.trashedAt || task.status === 'archived') continue;
+    if (project && task._project !== project) continue;
+    originals.push(task);
+  }
+
+  // is:stale — annotate candidates flagged stale/expired by stuck detection.
+  let staleKeys = null;
+  if (parsed.filters.is.includes('stale')) {
+    try {
+      const stuck = getStuckTasks();
+      staleKeys = new Set((stuck.combined || [])
+        .filter(e => e.reason === 'stale' || e.reason === 'expired')
+        .map(e => `${e.project}:${e.id}`));
+    } catch { staleKeys = null; }
+  }
+
+  // Description map for free-text parity (gated to free-text, non-id queries).
+  let descByUlid = null;
+  if (parsed.text && !parsed.idQuery && _cacheDb) {
+    try {
+      descByUlid = new Map(_cacheDb.prepare('SELECT task_id, description FROM tasks_current').all()
+        .map(r => [r.task_id, r.description || '']));
+    } catch { descByUlid = null; }
+  }
+
+  const forRank = originals.map(t => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    blocked: t.blocked === true,
+    priority: t.priority,
+    created: t.created,
+    tags: t.tags || [],
+    agent: t.agent || null,
+    routedAgent: t.routedAgent || null,
+    specFile: t.specFile || null,
+    project: t._project,
+    description: descByUlid ? (descByUlid.get(t._ulid) || '') : '',
+    _stale: staleKeys ? staleKeys.has(`${t._project}:${t.id}`) : false,
+    _key: `${t._project}:${t.id}`,
+  }));
+
+  const ranked = rankTasks(forRank, raw, { parsed });
+  const total = ranked.length;
+  const byKey = new Map(originals.map(t => [`${t._project}:${t.id}`, t]));
+  const tasks = ranked.slice(offset, offset + cap).map(r => {
+    const cached = byKey.get(r._key);
+    return { ...(_publicTask(cached)), project: cached._project, exact: r.exact === true, rank: -r._score };
+  });
+  return { tasks, total };
 }
 
 /**
@@ -3494,6 +3565,7 @@ module.exports = {
   init,
   rebuildCache,
   searchTasks,
+  smartSearchTasks,
   searchNotes,
   getProjectActivity,
   getProjectActivityDaily,
