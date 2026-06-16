@@ -140,7 +140,9 @@ function FilePreview({
   onSaved,
   previewScrollRef,
   fromTaskId,
+  fromBackTab,
   onBackToTask,
+  onBackToOverview,
   onBackToList,
   conflict,
   onReloadFromDisk,
@@ -269,11 +271,14 @@ function FilePreview({
             screens (CSS) AND suppressed when opened from a task — then the
             single "← Back to Task" is the one obvious back action, instead of
             two competing left-arrow buttons. */}
-        {!fromTaskId && (
+        {!fromTaskId && !fromBackTab && (
           <button className="file-back-to-list" onClick={onBackToList} aria-label="Back to file list">← Files</button>
         )}
         {fromTaskId && (
           <button className="file-back-btn" onClick={onBackToTask}>← Back to Task</button>
+        )}
+        {!fromTaskId && fromBackTab === 'overview' && (
+          <button className="file-back-btn" onClick={onBackToOverview}>← Back to Overview</button>
         )}
         <div className="file-preview-info">
           <span className="file-preview-name">
@@ -454,6 +459,9 @@ export default function FilesView() {
   // "← Back to Task" button. Cleared as soon as the user picks a different
   // file from the tree (manual navigation = no implicit "back" target).
   const [fromTaskId, setFromTaskId] = useState(null);
+  // T-399: when a file is opened from an overview widget (no task), remember the
+  // tab to return to so the preview can show a "← Back to Overview" button.
+  const [fromBackTab, setFromBackTab] = useState(null);
   // T-222: file upload state
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -546,13 +554,17 @@ export default function FilesView() {
     lastSpecRef.current = pending;
     const pendingTaskId = window.appState?.pendingSpecTaskId || null;
     const pendingFromPanel = window.appState?.pendingSpecFromPanel || false;
+    const pendingBackTab = window.appState?.pendingSpecBackTab || null;
     delete window.appState.pendingSpecFile;
     delete window.appState.pendingSpecTaskId;
     delete window.appState.pendingSpecFromPanel;
+    delete window.appState.pendingSpecBackTab;
     // fromTaskId is set whenever a task context opened the spec.
     // triggerFromPanel remembers how onBackToTask should route.
+    // fromBackTab (T-399) is set when an overview widget opened the file.
     setFromTaskId(pendingTaskId);
     setTriggerFromPanel(pendingFromPanel);
+    setFromBackTab(pendingBackTab);
     selectFile(pending, { keepFromTaskId: true });
   });
 
@@ -575,7 +587,7 @@ export default function FilesView() {
     setSelectedFile(filePath);
     if (!opts.background) setLoading(true);
     if (!opts.keepPreview) setFileData(null);
-    if (!opts.keepFromTaskId) setFromTaskId(null);
+    if (!opts.keepFromTaskId) { setFromTaskId(null); setFromBackTab(null); }
 
     setExpandedDirs(prev => expandParentsOf(filePath, prev));
     setLastOpenedFile(filePath);
@@ -887,30 +899,18 @@ export default function FilesView() {
         </div>
         <div className="file-tree-footer">
           {fileTree && (
-            <>
-              <span>
-                {fileTree.fileCount} files · {formatSize(fileTree.totalSize)}
-                {' · '}
-                <button
-                  type="button"
-                  onClick={() => setShowHidden(v => !v)}
-                  title="Operational files (JSON, backups) are hidden by default"
-                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', textDecoration: 'underline', font: 'inherit' }}
-                >
-                  {showHidden ? 'Hide operational' : 'Show hidden'}
-                </button>
-              </span>
-              <div className="context-bar">
-                <div
-                  className="context-bar-fill"
-                  style={{
-                    width: `${Math.min(100, Math.round((fileTree.totalSize / 50000) * 100))}%`,
-                    background: fileTree.totalSize > 50000 ? 'var(--danger)'
-                      : fileTree.totalSize > 40000 ? 'var(--warn)' : 'var(--ok)',
-                  }}
-                />
-              </div>
-            </>
+            <span>
+              {fileTree.fileCount} files · {formatSize(fileTree.totalSize)}
+              {' · '}
+              <button
+                type="button"
+                onClick={() => setShowHidden(v => !v)}
+                title="Operational files (JSON, backups) are hidden by default"
+                style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', textDecoration: 'underline', font: 'inherit' }}
+              >
+                {showHidden ? 'Hide operational' : 'Show hidden'}
+              </button>
+            </span>
           )}
         </div>
       </div>
@@ -956,6 +956,8 @@ export default function FilesView() {
             onSaved={handleSaved}
             previewScrollRef={previewScrollRef}
             fromTaskId={fromTaskId}
+            fromBackTab={fromBackTab}
+            onBackToOverview={() => { setFromBackTab(null); switchTab('overview'); }}
             onBackToList={() => { setSelectedFile(null); setFileData(null); }}
             conflict={fileConflict}
             onReloadFromDisk={reloadSelectedFromDisk}

@@ -401,7 +401,7 @@ export function RecentDecisionsWidget({ widget, editing, onRemove }) {
               </div>
             ))}
           </ScrollArea>
-          <div className="ov-wfoot" onClick={editing ? undefined : () => openSpec('DECISIONS.md')}>DECISIONS.md →</div>
+          <div className="ov-wfoot" onClick={editing ? undefined : () => openSpec('DECISIONS.md', null, { backTab: 'overview' })}>DECISIONS.md →</div>
         </>
       )}
     </OvWidget>
@@ -434,11 +434,11 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
         <>
           <ScrollArea className="flex-1 min-h-0" innerClassName="ov-goal-view"
             title="Open PROJECT.md"
-            onClick={editing ? undefined : () => openSpec('PROJECT.md')}
+            onClick={editing ? undefined : () => openSpec('PROJECT.md', null, { backTab: 'overview' })}
             innerStyle={{ cursor: editing ? undefined : 'pointer' }}>
             <div className="ov-goal-text">{goal}</div>
           </ScrollArea>
-          <div className="ov-wfoot ov-goal-foot" onClick={editing ? undefined : () => openSpec('PROJECT.md')}>PROJECT.md →</div>
+          <div className="ov-wfoot ov-goal-foot" onClick={editing ? undefined : () => openSpec('PROJECT.md', null, { backTab: 'overview' })}>PROJECT.md →</div>
         </>
       )}
     </OvWidget>

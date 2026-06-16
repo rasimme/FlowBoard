@@ -1550,16 +1550,6 @@
       font-size: 11px; color: var(--muted);
     }
 
-    .context-bar {
-      height: 4px; border-radius: 2px;
-      background: var(--secondary);
-      margin-top: 6px; overflow: hidden;
-    }
-    .context-bar-fill {
-      height: 100%; border-radius: 2px;
-      transition: width var(--duration-normal);
-    }
-
     .tree-item {
       display: flex; align-items: center; gap: 8px;
       padding: 6px 14px 6px 14px;

@@ -149,7 +149,7 @@ export function DashboardProvider({ children }) {
     haptic('light');
   }, []);
 
-  const openSpec = useCallback((specPath, taskId) => {
+  const openSpec = useCallback((specPath, taskId, opts) => {
     if (!specPath) {
       showToast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
       return;
@@ -157,6 +157,9 @@ export function DashboardProvider({ children }) {
     dispatch({
       pendingSpecFile: specPath,
       pendingSpecTaskId: taskId || null,
+      // T-399: files opened from an overview widget remember the tab to return
+      // to, so the preview can show a "← Back to Overview" button.
+      pendingSpecBackTab: (opts && opts.backTab) || null,
       currentTab: 'files',
     });
   }, [dispatch]);

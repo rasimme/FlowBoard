@@ -612,7 +612,7 @@ export function ContextIndexWidget({ widget, editing }) {
         <ScrollArea className="flex-1 min-h-0" innerClassName="ci-list">
           {sorted.slice(0, widget?.props?.limit || 100).map(f => (
             <div key={f.name} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => openSpec(`context/${f.name}`)}>
+              onClick={editing ? undefined : () => openSpec(`context/${f.name}`, null, { backTab: 'overview' })}>
               <FileText size={13} className="text-muted shrink-0" />
               <span className="nm">{pins.includes(f.name) && <span className="pin">★ </span>}{f.name}</span>
               {f.modifiedMs ? <span className="ci-when text-muted">{dayLabel(f.modifiedMs)}</span> : null}
@@ -1368,7 +1368,7 @@ export function FileViewerWidget({ widget, editing }) {
         <ScrollArea className="flex-1 min-h-0" innerClassName="fv-body"
           innerStyle={{ cursor: editing ? undefined : 'pointer' }}
           title={editing ? undefined : `Open ${name} in Files`}
-          onClick={editing ? undefined : e => { if (!e.target.closest('a')) openSpec(path); }}>
+          onClick={editing ? undefined : e => { if (!e.target.closest('a')) openSpec(path, null, { backTab: 'overview' }); }}>
           <Suspense fallback={<div className="nt-loading">…</div>}>
             <MarkdownPreview content={content} />
           </Suspense>
