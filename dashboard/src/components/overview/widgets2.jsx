@@ -367,6 +367,11 @@ export function MilestonesWidget({ widget, editing }) {
     return (
       <OvWidget title={widget?.title || 'Milestones'} meta="new milestone">
         <div className="ms-create">
+          <div className="ms-create-head">
+            <button type="button" className="ms-back" aria-label="Cancel new milestone" title="Cancel"
+              onClick={() => { setView({ mode: 'list' }); setDraftName(''); }}>←</button>
+            <span className="ms-create-title">New milestone</span>
+          </div>
           <input className="lk-in" placeholder="Milestone name — e.g. Launch or v1.0" value={draftName}
             autoFocus onChange={e => setDraftName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setView({ mode: 'list' }); }} />
@@ -441,7 +446,7 @@ export function MilestonesWidget({ widget, editing }) {
         <div className="ov-empty">
           <Flag size={22} />
           <span className="ov-empty-title">No milestones yet</span>
-          <span className="ov-empty-hint">A milestone is a set of tasks tagged <span className="w-mono">milestone:&lt;name&gt;</span> — its checklist is done when they are.</span>
+          <span className="ov-empty-hint">A milestone groups tasks into one trackable goal.</span>
           {!editing && (
             <button type="button" className="lk-btn ms-cta" onClick={() => setView({ mode: 'create' })}>
               Create your first milestone
@@ -980,6 +985,8 @@ export function LinksWidget({ widget, editing }) {
           <button type="button" className="lk-btn" onClick={addLink} disabled={saving || !url.trim()}>
             {saving ? '…' : 'Pin'}
           </button>
+          <button type="button" className="lk-btn lk-btn-ghost" aria-label="Cancel adding link" title="Cancel"
+            onClick={() => { setAdding(false); setLabel(''); setUrl(''); }}><X size={12} /></button>
         </div>
       ) : (
         <div className="lk-foot">

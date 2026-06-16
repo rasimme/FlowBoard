@@ -398,7 +398,9 @@
     grid-auto-rows: minmax(40px, 1fr); gap: 6px;
   }
 }
-@container widget (max-width: 250px) {
+/* icon-only only for genuinely tiny tiles — a w:3 widget (the preset default)
+   stays ~190-280px wide on a normal screen and must keep its labels (T-394) */
+@container widget (max-width: 170px) {
   .ov-links span { display: none; }
   .ov-links { gap: 6px; }
   .ov-link { min-height: 34px; }
@@ -645,7 +647,8 @@
 .ci-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
 .ci-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); min-width: 0; flex-shrink: 0; }
 .ci-row:hover { background: var(--bg-hover); }
-.ci-row .nm { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-row .nm { flex: 1; min-width: 0; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-row .ci-when { flex-shrink: 0; font-size: 10px; color: var(--muted); }
 .ci-row .pin { color: var(--warn); font-size: 10px; }
 
 /* quick-drop */
@@ -895,6 +898,8 @@
 /* milestones v2 (T-315): create / drilldown checklist */
 .ms-cta { margin-top: 8px; align-self: center; }
 .ms-create { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.ms-create-head { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ms-create-title { font-size: 12px; font-weight: 600; color: var(--text); }
 .msp { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
 .msp-list { flex: 1; min-height: 40px; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 1px; }
 .msp-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: var(--radius-sm); cursor: pointer; min-width: 0; }
