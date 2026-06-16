@@ -1057,7 +1057,7 @@ export function StallDetectionWidget({ widget }) {
             {days.map(d => {
               const cls = d.count === 0 ? 'sd-bar' : d.count > median ? 'sd-bar a-peak' : 'sd-bar a-on';
               return <i key={d.day}
-                className={cls + (d.day === todayIso ? ' is-today' : '')}
+                className={cls}
                 tabIndex={0} role="img"
                 aria-label={`${sdDayLabel(d.day)}: ${d.count} event${d.count === 1 ? '' : 's'}`}
                 style={{ height: heightPct(d.count) + '%' }}

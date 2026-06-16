@@ -750,14 +750,13 @@
 /* T-387: one tone for the bars; height carries the volume. Empty days are a
    faint baseline tick so gaps/streaks read at a glance; active days share a
    neutral tone; only days above the typical pace take the accent. */
-.sd-bar { flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--secondary); display: block; outline: none; transition: filter var(--duration-fast), background var(--duration-fast); }
+.sd-bar { position: relative; z-index: 1; flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--secondary); display: block; outline: none; transition: filter var(--duration-fast), background var(--duration-fast); }
 .sd-bar.a-on { background: var(--border-strong); }
 .sd-bar.a-peak { background: var(--chart-1); }
-.sd-bar.is-today { box-shadow: 0 2px 0 0 var(--accent); }
 .sd-bar:hover, .sd-bar:focus-visible { filter: brightness(1.35); }
 .sd-bar:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
-/* typical-pace reference line drawn across the strip */
-.sd-median { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--border-strong); opacity: .7; pointer-events: none; }
+/* typical-pace reference line — sits behind the bars (z-index 0 vs the bars' 1) */
+.sd-median { position: absolute; z-index: 0; left: 0; right: 0; height: 0; border-top: 1px dashed var(--border-strong); opacity: .7; pointer-events: none; }
 .sd-strip-lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
 /* T-387: rich hover/focus tooltip — portal-rendered, so it escapes widget clipping */
 .sd-tip {
@@ -777,7 +776,7 @@
 .sd-tip-rows b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 14px; text-align: right; }
 .sd-tip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--chart-1); flex-shrink: 0; }
 .sd-tip-empty { margin-top: 4px; color: var(--muted); font-style: italic; }
-.sd-tip-foot { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; }
+.sd-tip-foot { margin-top: 6px; color: var(--muted); font-size: 10px; }
 .sd-tip-foot b { color: var(--text); }
 
 /* repo-status */
