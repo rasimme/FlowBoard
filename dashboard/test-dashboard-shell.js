@@ -614,6 +614,7 @@ async function run() {
         rows: document.querySelectorAll('.lk-row').length,
         actions: document.querySelectorAll('.lk-act').length,
         hasManage: [...document.querySelectorAll('.lk-foot .lk-addtoggle')].some(b => /Manage/.test(b.textContent)),
+        rowH: Math.round(document.querySelector('.lk-row')?.getBoundingClientRect().height || 0),
       }));
       ok(before.rows === 2 && before.actions === 0 && before.hasManage, 'links render as clean rows + a Manage toggle, no inline actions (T-381)');
       // enter manage mode → action buttons appear
@@ -621,8 +622,10 @@ async function run() {
       const inManage = await waitFor(() => page.evaluate(() => ({
         edit: !!document.querySelector('.lk-row-manage .lk-act'),
         del: !!document.querySelector('.lk-row-manage .lk-act-danger'),
+        rowH: Math.round(document.querySelector('.lk-row-manage')?.getBoundingClientRect().height || 0),
       })).then(s => (s.edit && s.del) ? s : null), 'manage mode reveals edit + remove', 4000).catch(() => false);
       ok(inManage, 'Manage mode reveals per-row edit + remove controls (T-381)');
+      ok(inManage && Math.abs(inManage.rowH - before.rowH) <= 1, `manage rows keep the same height as normal rows (T-381) — ${before.rowH}px vs ${inManage && inManage.rowH}px`);
       await page.evaluate(() => document.querySelector('.lk-row-manage .lk-act-danger').click());
       const removed = await waitFor(async () => {
         const links = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`)).body?.overview?.widgets?.find(w => w.id === 'w-links')?.props?.links || [];

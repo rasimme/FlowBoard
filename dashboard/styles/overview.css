@@ -679,7 +679,7 @@
 
 /* links */
 .lk-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
-.lk-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); min-width: 0; flex-shrink: 0; color: var(--text); text-decoration: none; }
+.lk-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; min-height: 26px; border-radius: var(--radius-sm); min-width: 0; flex-shrink: 0; color: var(--text); text-decoration: none; }
 .lk-row:hover { background: var(--bg-hover); }
 .lk-fav { width: 18px; height: 18px; border-radius: var(--radius-sm); background: var(--secondary); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 600; flex-shrink: 0; }
 .lk-row .nm { font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -713,9 +713,11 @@
 .lk-addtoggle.is-active { color: var(--text); border-style: solid; border-color: var(--accent); }
 .lk-row-manage { cursor: default; }
 .lk-row-manage:hover { background: transparent; }
+/* Match the favicon's height (18px) so a manage row is exactly as tall as a
+   normal link row — the button stays wide for an easy click target. */
 .lk-act {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; flex-shrink: 0; border: none; cursor: pointer;
+  width: 24px; height: 18px; flex-shrink: 0; border: none; cursor: pointer;
   background: transparent; color: var(--muted); border-radius: var(--radius-sm);
 }
 .lk-act:hover:not(:disabled) { color: var(--text); background: var(--secondary); }
