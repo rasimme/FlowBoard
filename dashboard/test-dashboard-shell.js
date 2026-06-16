@@ -595,10 +595,11 @@ async function run() {
     const projDropped = await page.evaluate(() => /Dropped/.test(document.querySelector('.sidebar [role="status"][aria-live]')?.textContent || ''));
     ok(projDropped, 'sidebar drop is announced to screen readers (T-378)');
 
-    // --- Flow 24 (T-381): Links widget edit + remove ---
+    // --- Flow 24 (T-381): Links widget manage mode (edit + remove) ---
     // Seed two links into the overview's links widget (GET→mutate→PUT, the same
-    // path the widget uses), then remove one via the row's trash button and
-    // assert it persisted.
+    // path the widget uses). In the normal view the rows are plain links with no
+    // action buttons; entering "Manage" reveals per-row edit/remove. Remove one
+    // via the trash button and assert it persisted.
     const ovGet = await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`);
     const ov = ovGet.body?.overview;
     const lw = (ov?.widgets || []).find(w => w.id === 'w-links');
@@ -608,14 +609,21 @@ async function run() {
       await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/overview`, ov);
       await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
       await page.click('#tabBar .tab[data-tab="overview"]');
-      await waitFor(() => page.$('.lk-row-wrap'), 'links widget rows render', 5000);
-      const lkState = await page.evaluate(() => ({
-        rows: document.querySelectorAll('.lk-row-wrap').length,
-        edit: !!document.querySelector('.lk-act'),
-        del: !!document.querySelector('.lk-act-danger'),
+      await waitFor(() => page.$('.lk-row'), 'links widget rows render', 5000);
+      const before = await page.evaluate(() => ({
+        rows: document.querySelectorAll('.lk-row').length,
+        actions: document.querySelectorAll('.lk-act').length,
+        hasManage: [...document.querySelectorAll('.lk-foot .lk-addtoggle')].some(b => /Manage/.test(b.textContent)),
       }));
-      ok(lkState.rows === 2 && lkState.edit && lkState.del, 'links render with per-row edit + remove controls (T-381)');
-      await page.evaluate(() => document.querySelector('.lk-row-wrap .lk-act-danger').click());
+      ok(before.rows === 2 && before.actions === 0 && before.hasManage, 'links render as clean rows + a Manage toggle, no inline actions (T-381)');
+      // enter manage mode → action buttons appear
+      await page.evaluate(() => [...document.querySelectorAll('.lk-foot .lk-addtoggle')].find(b => /Manage/.test(b.textContent)).click());
+      const inManage = await waitFor(() => page.evaluate(() => ({
+        edit: !!document.querySelector('.lk-row-manage .lk-act'),
+        del: !!document.querySelector('.lk-row-manage .lk-act-danger'),
+      })).then(s => (s.edit && s.del) ? s : null), 'manage mode reveals edit + remove', 4000).catch(() => false);
+      ok(inManage, 'Manage mode reveals per-row edit + remove controls (T-381)');
+      await page.evaluate(() => document.querySelector('.lk-row-manage .lk-act-danger').click());
       const removed = await waitFor(async () => {
         const links = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`)).body?.overview?.widgets?.find(w => w.id === 'w-links')?.props?.links || [];
         return links.length === 1 && links[0].label === 'Beta';

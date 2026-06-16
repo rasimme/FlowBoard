@@ -704,26 +704,22 @@
 }
 .lk-btn:hover:not(:disabled) { background: var(--bg-hover); }
 .lk-btn:disabled { opacity: .45; cursor: default; }
-/* T-381: per-link edit/remove. Actions overlay the row's right edge, revealed on
-   hover (always on touch); inline edit reuses the .lk-add form row. */
-.lk-row-wrap { position: relative; flex-shrink: 0; }
-.lk-row-actions {
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-  display: flex; align-items: center; gap: 2px; padding: 2px;
-  background: var(--bg-hover); border-radius: var(--radius-sm);
-  opacity: 0; transition: opacity var(--duration-fast);
-}
-.lk-row-wrap:hover .lk-row-actions, .lk-row-wrap:focus-within .lk-row-actions { opacity: 1; }
-/* Permanently visible only on real touch devices (no hover to reveal them);
-   hover-capable devices — incl. touch+trackpad hybrids — get hover-reveal. */
-@media (hover: none) { .lk-row-actions { opacity: 1; } }
+/* T-381: edit/remove via an explicit "Manage" mode (toggled from the footer).
+   In manage mode each row is an in-flow flex row — the name truncates and the
+   action buttons get their own column, so nothing ever overlaps the link text.
+   Inline edit reuses the .lk-add form row. */
+.lk-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-shrink: 0; }
+.lk-foot .lk-addtoggle { margin-top: 4px; }
+.lk-addtoggle.is-active { color: var(--text); border-style: solid; border-color: var(--accent); }
+.lk-row-manage { cursor: default; }
+.lk-row-manage:hover { background: transparent; }
 .lk-act {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border: none; background: transparent; cursor: pointer;
-  color: var(--muted); border-radius: var(--radius-sm);
+  width: 26px; height: 26px; flex-shrink: 0; border: none; cursor: pointer;
+  background: transparent; color: var(--muted); border-radius: var(--radius-sm);
 }
 .lk-act:hover:not(:disabled) { color: var(--text); background: var(--secondary); }
-.lk-act-danger:hover:not(:disabled) { color: var(--accent); }
+.lk-act-danger:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .lk-act:disabled { opacity: .45; cursor: default; }
 .lk-edit { margin-top: 0; }
 .lk-btn-ghost { background: transparent; border-color: var(--border); }
