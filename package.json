@@ -69,6 +69,7 @@
     "!dashboard/test-*.js",
     "!dashboard/test-*.mjs",
     "!dashboard/test-fixtures/**",
+    "!dashboard/test-support/**",
     "!**/*.db-wal",
     "!**/*.db-shm",
     "!**/.hzl/**"
