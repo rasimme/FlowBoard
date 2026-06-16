@@ -60,6 +60,7 @@ const versionCheck = require('./version-check.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 const { isEditorVisible } = require('./file-visibility.js');
+const { buildStuckNotifications } = require('./stuck-notify.js');
 const { formatSessionEntry, insertEntry } = require('./session-log.js');
 
 // Gateway webhook config (for project-switch wake events).
@@ -3886,25 +3887,29 @@ async function startServer() {
     });
 
     // Completion notification callback — sends to gateway when a task is completed.
-    // T-177-3: route to the agent that completed the task (from event payload),
-    // not to a static service-default agent.
-    hzlService.setOnComplete(({ project, taskId, title, agent }) => {
-      const gatewayUrl = GATEWAY_URL;
-      const token = HOOKS_TOKEN;
-      const msg = `✅ Task ${taskId} "${title}" completed by ${agent || 'unknown'} (${project})`;
-      fetch(`${gatewayUrl}/hooks/agent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({
-          message: msg,
-          name: 'FlowBoard',
-          ...flowboardNotificationDelivery(),
-          wakeMode: 'now',
-          agentId: agent || undefined,
-          sessionKey: agent ? `agent:${agent}:main` : undefined,
-        }),
-      }).catch(e => console.warn('[notify] Gateway unreachable:', e.message));
-    });
+    // T-177-3: route to the agent that completed the task (from event payload).
+    // T-400: OFF by default — a finished task does not need to wake or ping
+    // anyone (it is visible in the dashboard activity feed/timeline). Opt back
+    // in with FLOWBOARD_NOTIFY_ON_COMPLETE=true.
+    if (process.env.FLOWBOARD_NOTIFY_ON_COMPLETE === 'true') {
+      hzlService.setOnComplete(({ project, taskId, title, agent }) => {
+        const gatewayUrl = GATEWAY_URL;
+        const token = HOOKS_TOKEN;
+        const msg = `✅ Task ${taskId} "${title}" completed by ${agent || 'unknown'} (${project})`;
+        fetch(`${gatewayUrl}/hooks/agent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            message: msg,
+            name: 'FlowBoard',
+            ...flowboardNotificationDelivery(),
+            wakeMode: 'now',
+            agentId: agent || undefined,
+            sessionKey: agent ? `agent:${agent}:main` : undefined,
+          }),
+        }).catch(e => console.warn('[notify] Gateway unreachable:', e.message));
+      });
+    }
 
     // Hook drain — process outbox every 2 minutes
     setInterval(async () => {
@@ -3935,54 +3940,29 @@ async function startServer() {
         const routedList  = (notifiable && Array.isArray(notifiable.routedUnclaimed)) ? notifiable.routedUnclaimed : [];
 
         if (staleList.length > 0 || expiredList.length > 0 || routedList.length > 0) {
-          // Tasks without a responsible agent go to the operator fallback
-          // channel instead of being dropped silently (T-304).
-          const fallbackAgent = process.env.STUCK_FALLBACK_AGENT || 'main';
-          // Group stuck tasks by agent for targeted notification
-          const byAgent = {};
-          for (const t of staleList) {
-            const a = t.agent || fallbackAgent;
-            if (!byAgent[a]) byAgent[a] = [];
-            byAgent[a].push({ type: 'stale', id: t.id, project: t.project, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
-          }
-          for (const t of expiredList) {
-            const a = t.agent || fallbackAgent;
-            if (!byAgent[a]) byAgent[a] = [];
-            byAgent[a].push({ type: 'lease_expired', id: t.id, project: t.project, title: t.title });
-          }
-          for (const t of routedList) {
-            const a = t.routedAgent || fallbackAgent;
-            if (!byAgent[a]) byAgent[a] = [];
-            byAgent[a].push({ type: 'routed_unclaimed', id: t.id, project: t.project, title: t.title });
-          }
+          // T-400: owned stuck tasks wake ONLY their own agent's session
+          // (channel 'none' → no operator Telegram); tasks without a responsible
+          // agent escalate to the operator in one message. Replaces the old
+          // blanket fallback to the `main` agent that spammed the operator.
+          const payloads = buildStuckNotifications(
+            { stale: staleList, expired: expiredList, routedUnclaimed: routedList },
+            {
+              operatorDelivery: flowboardNotificationDelivery(),
+              wakeChannel: process.env.FLOWBOARD_STUCK_WAKE_CHANNEL || 'none',
+            }
+          );
 
-          // Send one structured notification per affected agent
           const gatewayUrl = GATEWAY_URL;
           const token = HOOKS_TOKEN;
-          for (const [agent, tasks] of Object.entries(byAgent)) {
-            const parts = tasks.map(t =>
-              t.type === 'stale' ? `⚠️ ${t.id} "${t.title}" — ${t.staleSinceMinutes}min without checkpoint`
-              : t.type === 'lease_expired' ? `🔴 ${t.id} "${t.title}" — lease expired`
-              : `📨 ${t.id} "${t.title}" — routed to you, never claimed`
-            );
-            const msg = `🔍 Stuck-Check (${agent}):\n${parts.join('\n')}`;
+          for (const body of payloads) {
+            const who = body.agentId || 'unowned';
             fetch(`${gatewayUrl}/hooks/agent`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-              body: JSON.stringify({
-                // Gateway /hooks/agent contract: `message` carries the text
-                // (the old `text` field was silently rejected with 400, T-304)
-                message: msg,
-                name: 'FlowBoard Stuck-Check',
-                ...flowboardNotificationDelivery(),
-                wakeMode: 'now',
-                stuck: tasks,
-                agentId: agent,
-                sessionKey: `agent:${agent}:main`,
-              }),
+              body: JSON.stringify(body),
             }).then(r => {
-              console.log(`[stale-check] notified ${agent}: ${tasks.length} task(s) (gateway ${r.status})`);
-            }).catch(e => console.warn(`[stale-check] Gateway unreachable (${agent}):`, e.message));
+              console.log(`[stale-check] notified ${who}: ${(body.stuck || []).length} task(s) (gateway ${r.status})`);
+            }).catch(e => console.warn(`[stale-check] Gateway unreachable (${who}):`, e.message));
           }
         }
       } catch (e) { console.warn('[stale-check] Error:', e.message); }

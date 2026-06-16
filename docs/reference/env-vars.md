@@ -78,7 +78,8 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_KNOWN_AGENT_IDS` | empty | Comma-separated extra stable agent ids to classify as known without near-collision protection. Prefer `FLOWBOARD_MANAGED_AGENT_IDS` for OpenClaw-managed local agents. |
 | `STALE_THRESHOLD_MINUTES` | `30` | Minutes of idle before a claimed task is considered stale by the cron sweeper. |
 | `NOTIFICATION_WINDOW_MINUTES` | `60` | Minimum minutes between repeat stuck-task notifications for the same task in the cron sweeper. |
-| `STUCK_FALLBACK_AGENT` | `main` | Agent that receives stuck-task notifications when the affected task has no responsible agent (unassigned stale/expired, unroutable). |
+| `FLOWBOARD_NOTIFY_ON_COMPLETE` | `false` | When `true`, FlowBoard pings the gateway each time a task is completed. Off by default — completions are visible in the dashboard and do not need to wake or notify anyone. |
+| `FLOWBOARD_STUCK_WAKE_CHANNEL` | `none` | Delivery channel for the per-owner stuck-task wake. `none` wakes the owning agent's session (the message is its inbound nudge) without any outbound channel delivery; set to a channel id to also deliver outbound. Stuck tasks without a responsible agent escalate to the operator via `FLOWBOARD_NOTIFICATION_TARGET` instead. |
 | `FLOWBOARD_NOTIFICATION_CHANNEL` | `telegram` | OpenClaw delivery channel used by FlowBoard agent notifications when posting to `/hooks/agent`. Required when multiple gateway channels are configured. |
 | `FLOWBOARD_NOTIFICATION_TARGET` | empty | Delivery target / gateway session key for FlowBoard agent + stuck-task notifications (e.g. a Telegram chat id). If unset and exactly one `ALLOWED_USER_IDS` entry exists with `FLOWBOARD_NOTIFICATION_CHANNEL=telegram`, that id is used. |
 | `FLOWBOARD_NOTIFICATION_TO` | empty | Legacy alias / recipient override for `FLOWBOARD_NOTIFICATION_TARGET`. |
