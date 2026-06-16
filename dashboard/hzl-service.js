@@ -129,6 +129,9 @@ function _toFbTask(hzlTask, project) {
     // Filterable tags (HZL native column) — milestone:<name> drives the
     // overview milestones widget
     tags: hzlTask.tags || [],
+    // T-396: short inline context (HZL native column). Returned so the detail
+    // panel can show/edit it and search can match it.
+    description: hzlTask.description ?? '',
     // Agent routing (explicit pre-assignment, separate from claim ownership)
     routedAgent: fb.routedAgent || null,
     // T-161-4: soft-delete pointer into Trash. Null = live task; ISO string =
@@ -753,6 +756,7 @@ function workflowDelegate(project, opts = {}) {
 function createTask(project, opts) {
   const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null, staleAfterMinutes = null } = opts;
   const tags = opts.tags !== undefined ? _cleanTags(opts.tags) : [];
+  const description = typeof opts.description === 'string' ? opts.description : ''; // T-396
   if (staleAfterMinutes !== null && (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes <= 0)) {
     throw new Error('staleAfterMinutes must be a positive integer or null');
   }
@@ -792,6 +796,7 @@ function createTask(project, opts) {
   const hzlTask = _taskService.createTask({
     title,
     project,
+    description,
     metadata: {
       flowboard: {
         id: newId,
@@ -822,6 +827,7 @@ function createTask(project, opts) {
     blocked: false,
     priority,
     tags,
+    description,
     parentId,
     subtaskIds: [],
     specFile: null,
@@ -871,6 +877,7 @@ function updateTask(project, flowboardId, updates) {
   if (updates.title !== undefined) hzlUpdates.title = updates.title;
   if (updates.priority !== undefined) hzlUpdates.priority = _priorityToInt(updates.priority);
   if (updates.tags !== undefined) hzlUpdates.tags = _cleanTags(updates.tags);
+  if (updates.description !== undefined) hzlUpdates.description = updates.description; // T-396
 
   if (updates.status !== undefined) {
     if (!VALID_STATUSES.has(updates.status)) throw new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
@@ -1021,7 +1028,7 @@ function updateTask(project, flowboardId, updates) {
   // in `updates`). After this loop, `cached` holds the dashboard's view of
   // truth — including any null-clears applied by the auto-release block
   // above (when transitioning to review/done).
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags', 'order'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
       if (key === 'blocked') cached[key] = updates[key] === true;

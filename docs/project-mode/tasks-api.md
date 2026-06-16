@@ -61,7 +61,7 @@ POST /projects/:name/tasks
 | `priority` | string | no | `low`, `medium`, `high`. Default: `medium`. Legacy `critical` is normalized to `high`; other values are rejected. Subtasks inherit parent priority. |
 | `parentId` | string | no | FlowBoard ID of parent task (e.g. `T-042`). Creates a subtask with auto-incremented ID (`T-042-1`). Max 1 nesting level. |
 | `status` | string | no | Initial status: `backlog` (default), `open`, `in-progress`, `review`, `done`, `archived`. |
-| `description` | string | no | Max 16KB |
+| `description` | string | no | Short inline context, max 16KB. See **Description vs spec** below — most tasks should have one. |
 | `tags` | string[] | no | Filterable tags, max 100 |
 | `forceId` | string | no | Migration mode: use exact ID instead of auto-generated. Throws on duplicate. |
 | `staleAfterMinutes` | int | no | Per-task stale threshold (minutes) for stuck detection; also updatable via `PUT`. `null` clears the override. |
@@ -86,10 +86,20 @@ PUT /projects/:name/tasks/:id
 | `priority` | string | `low`, `medium`, `high` (legacy `critical` → `high`) |
 | `completed` | string | ISO date, auto-set on `done` |
 | `specFile` | string | Link a spec file to the task |
+| `description` | string | Short inline context, max 16KB (see **Description vs spec**). |
 | `blocked` | boolean | Set/clear blocked flag |
 | `tags` | string[] | Replaces the full tag list (max 100). `milestone:<name>` tags feed the overview milestones widget. |
 
 Note: `parentId` cannot be changed via PUT after creation.
+
+### Description vs spec
+
+A task can carry two kinds of detail — use both deliberately:
+
+- **`description`** — a short inline paragraph stored on the task itself: what it is, why, key context. Always visible in the detail panel and full-text searchable. **Most non-trivial tasks should have one.** Set it on create (`POST`) or edit it later (`PUT`).
+- **`specFile`** — a detailed `specs/<taskId>-*.md` document (Goal, Done-When checklist, approach) for substantial or complex work only. Created via `POST /projects/:name/specs/:taskId`, not written by hand. See [Project files](project-files.md).
+
+Rule of thumb: every non-trivial task gets a one-paragraph `description`; only complex or multi-step tasks additionally get a spec. The description is the quick "what is this", the spec is the detailed plan.
 
 ### Coordination Workflows
 

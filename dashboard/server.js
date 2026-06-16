@@ -1370,7 +1370,7 @@ function projectExists(projectName) {
  */
 function getTaskReminder(task, action, newStatus, prevStatus) {
   if (action === 'create') {
-    return '\u{1F4A1} Evaluate: does this task need a spec? Consider: multiple files affected, new UI pattern, unclear scope, or complex logic \u2192 create a spec. Simple fix or config change \u2192 title is enough.';
+    return '\u{1F4A1} Add a one-line `description` for context (most tasks should have one). Then evaluate a spec: multiple files, new UI pattern, unclear scope or complex logic \u2192 create a spec; a simple fix needs only title + description.';
   }
   if (action === 'status-change' && newStatus && newStatus !== prevStatus) {
     if (newStatus === 'in-progress') {
@@ -1846,6 +1846,11 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     return res.status(400).json({ error: 'tags must be an array of strings' });
   }
 
+  // T-396: optional inline description (short context). Max 16KB.
+  if (req.body.description !== undefined && (typeof req.body.description !== 'string' || req.body.description.length > 16384)) {
+    return res.status(400).json({ error: 'description must be a string of at most 16KB' });
+  }
+
   try {
     const task = hzlService.createTask(req.params.name, {
       title: cleanTitle,
@@ -1854,6 +1859,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       status: req.body.status || 'backlog',
       staleAfterMinutes,
       ...(req.body.tags !== undefined ? { tags: req.body.tags } : {}),
+      ...(req.body.description !== undefined ? { description: req.body.description } : {}),
     });
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
     try {
@@ -1910,7 +1916,13 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     updates.completed = null;
   }
 
-  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags', 'order'];
+  // T-396: inline description (short context). Max 16KB.
+  if (Object.prototype.hasOwnProperty.call(updates, 'description')
+      && (typeof updates.description !== 'string' || updates.description.length > 16384)) {
+    return res.status(400).json({ error: 'description must be a string of at most 16KB' });
+  }
+
+  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description'];
   const hzlUpdates = {};
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
