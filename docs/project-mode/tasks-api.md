@@ -123,6 +123,10 @@ Primitive endpoints are used by the dashboard UI and for explicit edge cases. Ag
 | `POST` | `/projects/:name/tasks/:id/checkpoint` | Progress update. Body: `{ message, agent, progress? }` |
 | `POST` | `/projects/:name/tasks/:id/comment` | Steering comment. Body: `{ message, author }` |
 | `POST` | `/projects/:name/tasks/:id/route` | Route to agent. Body: `{ agent }` |
+| `POST` | `/projects/:name/tasks/:id/approve` | Approve a `review` task → `done`. Body: `{ actor?, reason? }`. This is the review→done gate; the approver need not be the claimant. |
+| `POST` | `/projects/:name/tasks/:id/reject` | Send a `review` task back. Body: `{ actor?, reason?, target? }` — `target` is `in-progress` (default) or `blocked`. |
+| `POST` | `/projects/:name/tasks/:id/move` | Move the task (and its subtasks) to another project. Body: `{ toProject }`. |
+| `POST` | `/projects/:name/tasks/:id/parent` | Re-parent within the project. Body: `{ parentId }` — `null` detaches to top level. |
 | `GET` | `/projects/:name/tasks/:id/checkpoints` | List checkpoints |
 | `GET` | `/projects/:name/tasks/:id/comments` | List comments |
 | `GET` | `/projects/:name/tasks/:id/handoff` | Get handoff context for agent spawning |

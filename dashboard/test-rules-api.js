@@ -233,5 +233,22 @@ section('buildOperationalTaskStateMarkdown() — T-230 transient degradation');
   assert(stillBlocks.includes('**BLOCKER:** hard fail'), 'explicit blocker still renders as a hard blocker');
 }
 
+section('SECTIONS registry covers every project-mode rule file');
+{
+  const fs = require('fs');
+  const path = require('path');
+  const rulesDir = path.resolve(__dirname, '..', 'docs', 'project-mode');
+  const onDisk = fs.readdirSync(rulesDir)
+    .filter(f => f.endsWith('.md') && f !== 'README.md')
+    .sort();
+  const registered = new Set(rulesApi.SECTIONS.map(s => s.file));
+  for (const f of onDisk) {
+    assert(registered.has(f), `project-mode/${f} is reachable as a rule section (registered in SECTIONS)`);
+  }
+  for (const s of rulesApi.SECTIONS) {
+    assert(fs.existsSync(path.join(rulesDir, s.file)), `section "${s.name}" maps to an existing file: ${s.file}`);
+  }
+}
+
 console.log(`\n=== ${passed} passed, ${failed} failed ===`);
 process.exit(failed === 0 ? 0 : 1);

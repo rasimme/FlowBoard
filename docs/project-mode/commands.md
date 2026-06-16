@@ -157,7 +157,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 | **Complete → review** | `POST /api/projects/:name/tasks/:id/complete` | `{ agent }` |
 | **Checkpoint** | `POST /api/projects/:name/tasks/:id/checkpoint` | `{ agent, message, progress? }` |
 | **Route** | `POST /api/projects/:name/tasks/:id/route` | `{ agent }` — redirects to another agent |
-| **Comment** | `POST /api/projects/:name/tasks/:id/comment` | `{ agent, text }` |
+| **Comment** | `POST /api/projects/:name/tasks/:id/comment` | `{ agent, message }` — typed `kind` optional (see agent-bridge) |
 
 ### Trash & delete
 | Action | Endpoint | Effect |

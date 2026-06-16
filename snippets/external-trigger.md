@@ -15,7 +15,7 @@ Use a local-capable tool for this localhost API (exec/curl/node or an internal A
    - Wait for `contextReady` to be true; details live in `rules/error-handling`.
    - Fetch full project context: `GET /api/projects/<activeProject>/bootstrap`
    - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
-   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`
+   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`, `overview`
 
 ### Where details live
 
