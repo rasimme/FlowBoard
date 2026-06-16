@@ -1,6 +1,6 @@
 # Changelog
 
-### v5.0.0 (2026-06-16) — React Rebuild, Event-Sourced Backend & Multi-Agent Workspaces
+### v5.0.0 (2026-06-17) — React Rebuild, Event-Sourced Backend & Multi-Agent Workspaces
 
 FlowBoard v5 is a ground-up rebuild: a full React frontend, an event-sourced
 task backend (HZL), first-class multi-agent support, a customizable project
