@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, Plus, Lightbulb, FileText, FilePlus } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
 import ScrollArea from '../ScrollArea.jsx';
@@ -181,6 +182,22 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
   }, [state?.viewedProject]);
   const stuck = stuckTasks.length;
 
+  // T-389: styled hover/focus tooltip on the spark bars (mirrors Momentum/T-387).
+  const [tip, setTip] = useState(null);
+  const [tipPos, setTipPos] = useState(null);
+  const tipRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!tip || !tipRef.current) return;
+    const r = tipRef.current.getBoundingClientRect();
+    const gap = 8;
+    const left = Math.max(6, Math.min(tip.anchor.cx - r.width / 2, window.innerWidth - r.width - 6));
+    let top = tip.anchor.top - r.height - gap;
+    if (top < 6) top = tip.anchor.bottom + gap;
+    setTipPos({ top, left });
+  }, [tip]);
+  const showTip = (e, v) => { const r = e.currentTarget.getBoundingClientRect(); setTipPos(null); setTip({ v, anchor: { cx: r.left + r.width / 2, top: r.top, bottom: r.bottom } }); };
+  const hideTip = () => { setTip(null); setTipPos(null); };
+
   // stats as a launchpad (inert while editing): a status jumps to that
   // column on the board, the stuck chip to the oldest stuck task itself.
   const jumpTo = (id) => { if (editing || !id) return; goTab('tasks'); goToTask(id); };
@@ -217,6 +234,7 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
     const max = Math.max(...spark.map(x => x.n), 1);
 
   return (
+    <>
     <OvWidget title={widget?.title || 'Task Stats'} meta={`${tasks.length} tasks`}>
       <div className="ts-wrap">
         <div className="ov-statbar">
@@ -258,7 +276,9 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
           <div className="bars">
             {spark.map((v, i) => (
               <i key={i} className={i === spark.length - 1 ? 'hi' : ''}
-                title={`${v.label} — ${v.n} done`}
+                tabIndex={0} role="img" aria-label={`${v.label} — ${v.n} done`}
+                onMouseEnter={e => showTip(e, { ...v, today: i === spark.length - 1 })} onMouseLeave={hideTip}
+                onFocus={e => showTip(e, { ...v, today: i === spark.length - 1 })} onBlur={hideTip}
                 style={{ height: v.n ? Math.max(12, Math.round(v.n / max * 100)) + '%' : '6%' }}></i>
             ))}
           </div>
@@ -266,6 +286,18 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
         </div>
       </div>
     </OvWidget>
+    {tip && createPortal(
+      <div ref={tipRef} role="tooltip" className="sd-tip"
+        style={{ top: tipPos ? tipPos.top : -9999, left: tipPos ? tipPos.left : -9999, visibility: tipPos ? 'visible' : 'hidden' }}>
+        <div className="sd-tip-head">
+          <span className="sd-tip-date">{tip.v.label}</span>
+          {tip.v.today && <span className="sd-tip-today">today</span>}
+        </div>
+        <div className="sd-tip-total"><b>{tip.v.n}</b> done</div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
 

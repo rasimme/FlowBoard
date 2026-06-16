@@ -171,8 +171,13 @@
 /* task-stats layout (T-303 rework): vertical flow, trend fills the bottom
    only when the card is tall enough — no cramped corner sparkline */
 .ts-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.ts-trend { display: none; flex: 1; min-height: 0; flex-direction: column; justify-content: flex-end; margin-top: 12px; }
-@container widget (min-height: 150px) { .ts-trend { display: flex; } }
+/* T-389: the stat blocks never give up their space, so the trend can never
+   overlap the KPI text; the trend itself clips rather than overflow upward. */
+.ts-wrap > .ov-statbar, .ts-wrap > .ov-legend, .ts-wrap > .ov-kpis { flex-shrink: 0; }
+.ts-trend { display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; justify-content: flex-end; margin-top: 12px; }
+/* T-389: only show the 7-day trend when there's genuinely room — at smaller
+   (mobile) heights the bars (min-height:24px) used to overlap the KPIs. */
+@container widget (min-height: 200px) { .ts-trend { display: flex; } }
 /* h1 task-stats: only the distribution bar + headline KPIs fit — drop the
    (wrapping) legend and tighten so nothing clips at the minimum size */
 @container widget (max-height: 120px) {
