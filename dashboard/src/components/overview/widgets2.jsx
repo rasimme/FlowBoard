@@ -8,6 +8,7 @@ import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
 import { refreshTasks } from '../../state/appStateBridge.mjs';
 import { apiFetch } from '../../utils/apiFetch.js';
+import { sortContextFiles } from '../../utils/contextSort.js';
 import { posToOffset, resolveSelection, estimateColumn } from '../../utils/notesLocate.mjs';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
@@ -28,12 +29,16 @@ function useGoTab() {
   };
 }
 
-function Empty({ icon: Icon, title, hint }) {
+function Empty({ icon: Icon, title, hint, action }) {
   return (
     <div className="ov-empty">
       {Icon && <Icon size={22} />}
       <span className="ov-empty-title">{title}</span>
       <span className="ov-empty-hint">{hint}</span>
+      {action && (
+        <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }}
+          onClick={action.onClick}>{action.label}</button>
+      )}
     </div>
   );
 }
@@ -546,6 +551,7 @@ export function TimelineWidget({ widget, editing }) {
 export function ContextIndexWidget({ widget, editing }) {
   const { state } = useAppState();
   const { openSpec } = useDashboard();
+  const goTab = useGoTab();
   const project = state?.viewedProject;
   const [files, setFiles] = useState(null);
   useEffect(() => {
@@ -556,27 +562,30 @@ export function ContextIndexWidget({ widget, editing }) {
       .then(d => {
         if (!alive) return;
         const ctx = (d?.tree || []).find(e => e.name === 'context' && e.type === 'directory');
-        setFiles((ctx?.children || []).filter(e => e.type === 'file').map(e => e.name));
+        setFiles((ctx?.children || []).filter(e => e.type === 'file').map(e => ({ name: e.name, modifiedMs: e.modifiedMs })));
       })
       .catch(() => { if (alive) setFiles([]); });
     return () => { alive = false; };
   }, [project]);
 
   const pins = widget?.props?.pins || [];
-  const sorted = [...(files || [])].sort((a, b) => (pins.includes(b) ? 1 : 0) - (pins.includes(a) ? 1 : 0) || a.localeCompare(b));
+  // T-392: pinned first, then most-recently-edited.
+  const sorted = sortContextFiles(files || [], pins);
 
   return (
     <OvWidget title={widget?.title || 'Context Index'} meta={files?.length ? `${files.length} files` : null}>
       {files && files.length === 0 ? (
         <Empty icon={Pin} title="No context files yet"
-          hint={<>Files in <span className="w-mono">context/</span> are what agents read first — drop knowledge here.</>} />
+          hint={<>Files in <span className="w-mono">context/</span> are what agents read first — drop knowledge here.</>}
+          action={editing ? undefined : { label: 'Browse files', onClick: () => goTab('files') }} />
       ) : (
         <ScrollArea className="flex-1 min-h-0" innerClassName="ci-list">
           {sorted.slice(0, widget?.props?.limit || 100).map(f => (
-            <div key={f} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => openSpec(`context/${f}`)}>
+            <div key={f.name} className="ci-row" style={{ cursor: editing ? undefined : 'pointer' }}
+              onClick={editing ? undefined : () => openSpec(`context/${f.name}`)}>
               <FileText size={13} className="text-muted shrink-0" />
-              <span className="nm">{pins.includes(f) && <span className="pin">★ </span>}{f}</span>
+              <span className="nm">{pins.includes(f.name) && <span className="pin">★ </span>}{f.name}</span>
+              {f.modifiedMs ? <span className="ci-when text-muted">{dayLabel(f.modifiedMs)}</span> : null}
             </div>
           ))}
         </ScrollArea>
@@ -901,7 +910,8 @@ export function LinksWidget({ widget, editing }) {
     <OvWidget title={widget?.title || 'Links'} meta={links.length ? `${links.length} pinned` : null}>
       {links.length === 0 && !adding ? (
         <Empty icon={ExternalLink} title="No links yet"
-          hint="Pin deploys, docs or dashboards — via the button below or by asking your agent." />
+          hint="Pin deploys, docs or dashboards — via the button below or by asking your agent."
+          action={editing ? undefined : { label: 'Add a link', onClick: () => setAdding(true) }} />
       ) : (
         <ScrollArea className="flex-1 min-h-0" innerClassName="lk-list">
           {links.slice(0, widget?.props?.limit || 6).map((l, idx) => (
