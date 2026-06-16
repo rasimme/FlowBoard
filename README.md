@@ -15,6 +15,7 @@
   <a href="#features">Features</a> •
   <a href="#-idea-canvas">Idea Canvas</a> •
   <a href="#remote-access-telegram-mini-app">Remote Access</a> •
+  <a href="docs/README.md">Docs</a> •
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
@@ -442,6 +443,14 @@ systemctl --user restart dashboard
 - 🧪 **API-driven** — dashboard and agents share the same REST surface
 
 ---
+
+## Documentation
+
+Full documentation lives in [`docs/`](docs/README.md) — organized by audience:
+
+- [User guide](docs/guide/) — install, search, mobile use, managing projects
+- [Concepts](docs/concepts/) & [ADRs](docs/adr/) — how and why it works
+- [Reference](docs/reference/) — API manifest & environment variables
 
 ## Contributing
 
