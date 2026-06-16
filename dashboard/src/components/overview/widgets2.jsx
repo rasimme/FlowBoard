@@ -7,6 +7,7 @@ import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
 import { refreshTasks } from '../../state/appStateBridge.mjs';
 import { apiFetch } from '../../utils/apiFetch.js';
+import { posToOffset, resolveSelection, estimateColumn } from '../../utils/notesLocate.mjs';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
 const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
@@ -686,10 +687,59 @@ export function NotesWidget({ editing }) {
   // the editor only shows while actually writing — clicking out
   // autosaves and returns to the rendered note
   const [open, setOpen] = useState(false);
+  // T-380: location captured from the preview click/selection, applied in the editor
+  const [pendingLoc, setPendingLoc] = useState(null);
 
   function finishEdit() {
     if (dirty) save();
     setOpen(false);
+    setPendingLoc(null);
+  }
+
+  // Map a click/selection in the rendered preview back to a source location.
+  function locateFromEvent(ev) {
+    const src = text ?? '';
+    const scroller = ev.currentTarget;
+    const anchorY = ev.clientY - scroller.getBoundingClientRect().top;
+    const lineOf = (node) => {
+      let el = node && node.nodeType === 3 ? node.parentElement : node;
+      el = el && el.closest ? el.closest('[data-sourceline]') : null;
+      const n = el ? parseInt(el.getAttribute('data-sourceline'), 10) : NaN;
+      return Number.isFinite(n) ? n : null;
+    };
+    const sel = typeof window !== 'undefined' ? window.getSelection?.() : null;
+    if (sel && !sel.isCollapsed && sel.toString().trim()) {
+      const a = lineOf(sel.anchorNode);
+      const b = lineOf(sel.focusNode);
+      if (a != null || b != null) {
+        const lo = Math.min(a ?? b, b ?? a);
+        const hi = Math.max(a ?? b, b ?? a);
+        const { from, to } = resolveSelection(src, lo, hi, sel.toString());
+        return { from, to, anchorY };
+      }
+    }
+    const line = lineOf(ev.target);
+    if (line == null) return { anchorY };
+    let col = 0;
+    try {
+      let cr = document.caretRangeFromPoint?.(ev.clientX, ev.clientY);
+      if (!cr && document.caretPositionFromPoint) {
+        const p = document.caretPositionFromPoint(ev.clientX, ev.clientY);
+        if (p) cr = { startContainer: p.offsetNode, startOffset: p.offset };
+      }
+      if (cr && cr.startContainer && cr.startContainer.nodeType === 3) {
+        const before = cr.startContainer.textContent.slice(0, cr.startOffset);
+        col = estimateColumn(src.split('\n')[line - 1] || '', before);
+      }
+    } catch { /* best-effort column */ }
+    const off = posToOffset(src, line, col);
+    return { from: off, to: off, anchorY };
+  }
+
+  function openFromPreview(ev) {
+    if (editing) return;
+    setPendingLoc(locateFromEvent(ev));
+    setOpen(true);
   }
 
   return (
@@ -705,16 +755,17 @@ export function NotesWidget({ editing }) {
               value={text ?? ''}
               onChange={v => { setText(v); setDirty(true); }}
               onSave={finishEdit}
+              initialLocation={pendingLoc}
             />
           </Suspense>
         </div>
       ) : (
         <ScrollArea className="flex-1 min-h-0" innerClassName="nt-view" title="Click to edit"
-          onClick={editing ? undefined : () => setOpen(true)}
+          onMouseUp={editing ? undefined : openFromPreview}
           innerStyle={{ cursor: editing ? undefined : 'text' }}>
           {text ? (
             <Suspense fallback={<div className="nt-loading">…</div>}>
-              <MarkdownPreview content={text} breaks />
+              <MarkdownPreview content={text} breaks trackSource />
             </Suspense>
           ) : (
             <span className="nt-placeholder">Click to jot anything — agents can read and append to NOTES.md too.</span>

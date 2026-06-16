@@ -111,6 +111,27 @@ function insertTable(view) {
  * numberedList, link, focus }`. Each runs the same wrapSelection/
  * prefixSelectedLines commands the built-in toolbar uses, on the live view.
  */
+// T-380: place the cursor/selection + scroll when opening the editor from a
+// click/selection in the rendered preview. `loc` = { from, to, anchorY? }
+// (document offsets; anchorY = px from the top of the source scroller).
+function applyInitialLocation(view, loc) {
+  if (!loc) return;
+  const len = view.state.doc.length;
+  const from = Math.max(0, Math.min(loc.from ?? 0, len));
+  const to = Math.max(from, Math.min(loc.to ?? from, len));
+  view.dispatch({
+    selection: { anchor: from, head: to },
+    effects: EditorView.scrollIntoView(from, { y: 'start' }),
+  });
+  if (typeof loc.anchorY === 'number') {
+    // best-effort: drop the target line to roughly where the click was
+    requestAnimationFrame(() => {
+      try { view.scrollDOM.scrollTop = Math.max(0, view.scrollDOM.scrollTop - loc.anchorY); } catch { /* ignore */ }
+    });
+  }
+  view.focus();
+}
+
 const MarkdownEditor = forwardRef(function MarkdownEditor({
   value,
   onChange,
@@ -121,6 +142,7 @@ const MarkdownEditor = forwardRef(function MarkdownEditor({
   compact = false,
   autoFocus = true,
   onReady,
+  initialLocation = null,
 }, ref) {
   const viewRef = useRef(null);
 
@@ -285,6 +307,7 @@ const MarkdownEditor = forwardRef(function MarkdownEditor({
           onCreateEditor={(view) => {
             viewRef.current = view;
             onReady?.(commandApi);
+            if (initialLocation) applyInitialLocation(view, initialLocation);
           }}
           autoFocus={autoFocus}
           basicSetup={{
