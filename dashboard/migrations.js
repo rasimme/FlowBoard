@@ -187,27 +187,36 @@ const migrations = [
       // installs don't depend on this at runtime.
       const sharedRulesPath = path.join(projectsDir, 'PROJECT-RULES.md');
       const canonicalRulesPath = path.join(systemDocsDir, 'legacy', 'PROJECT-RULES.md');
-      try {
-        const stat = fs.lstatSync(sharedRulesPath);
-        if (stat.isSymbolicLink()) {
-          // Re-point symlink to new canonical location
-          fs.unlinkSync(sharedRulesPath);
-          fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
-          console.log(`[m005] Re-pointed symlink: ${sharedRulesPath} → ${canonicalRulesPath}`);
-        } else {
-          // Regular file — back up and replace with symlink
-          const bak = sharedRulesPath + '.bak-m005';
-          fs.renameSync(sharedRulesPath, bak);
-          fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
-          console.log(`[m005] Replaced file with symlink: ${sharedRulesPath} (backup: ${bak})`);
-        }
-      } catch (e) {
-        if (e.code === 'ENOENT') {
-          // No existing file — just create symlink
-          fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
-          console.log(`[m005] Created symlink: ${sharedRulesPath} → ${canonicalRulesPath}`);
-        } else {
-          throw e;
+      // T-407: only wire the legacy redirect when the archived target actually
+      // ships (otherwise this creates a dangling symlink), and ensure the parent
+      // projects dir exists first — on a fresh install it does not, which made
+      // fs.symlinkSync throw ENOENT and block server startup.
+      if (!fs.existsSync(canonicalRulesPath)) {
+        console.log(`[m005] Legacy rules target not present (${canonicalRulesPath}) — skipping redirect`);
+      } else {
+        fs.mkdirSync(projectsDir, { recursive: true });
+        try {
+          const stat = fs.lstatSync(sharedRulesPath);
+          if (stat.isSymbolicLink()) {
+            // Re-point symlink to new canonical location
+            fs.unlinkSync(sharedRulesPath);
+            fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
+            console.log(`[m005] Re-pointed symlink: ${sharedRulesPath} → ${canonicalRulesPath}`);
+          } else {
+            // Regular file — back up and replace with symlink
+            const bak = sharedRulesPath + '.bak-m005';
+            fs.renameSync(sharedRulesPath, bak);
+            fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
+            console.log(`[m005] Replaced file with symlink: ${sharedRulesPath} (backup: ${bak})`);
+          }
+        } catch (e) {
+          if (e.code === 'ENOENT') {
+            // No existing file — just create symlink
+            fs.symlinkSync(canonicalRulesPath, sharedRulesPath);
+            console.log(`[m005] Created symlink: ${sharedRulesPath} → ${canonicalRulesPath}`);
+          } else {
+            throw e;
+          }
         }
       }
 

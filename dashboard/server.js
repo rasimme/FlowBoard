@@ -57,6 +57,7 @@ const agentIdentity = require('./agent-identity.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
 const versionCheck = require('./version-check.js');
+const { updateSpawnEnv } = require('./update-env.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 const { isEditorVisible } = require('./file-visibility.js');
@@ -1682,7 +1683,9 @@ app.post('/api/update/run', (req, res) => {
     const child = require('child_process').spawn(
       process.execPath,
       [SETUP_SCRIPT_REL, '--update'],
-      { cwd: REPO_ROOT, detached: true, stdio: 'ignore' }
+      // T-406: the service often runs with a minimal launchd/systemd PATH that
+      // lacks node/npm — augment it so setup.mjs's `npm` prerequisite resolves.
+      { cwd: REPO_ROOT, detached: true, stdio: 'ignore', env: updateSpawnEnv(process.env, process.execPath) }
     );
     child.unref();
     res.status(202).json({ ok: true, started: true, command });
@@ -3873,6 +3876,10 @@ async function startServer() {
     // one-time m003 backfill of ACTIVE-PROJECT.md → flowboard_agents). When
     // unset (the new normal post-T-177-3), m003 logs and skips. The
     // migration is idempotent and already applied on existing installs.
+    // T-407: guarantee the projects dir exists before migrations run. On a
+    // fresh install nothing creates it yet, and m005 writes a symlink into it —
+    // a missing dir made fs.symlinkSync throw ENOENT and blocked startup.
+    fs.mkdirSync(PROJECTS_DIR, { recursive: true });
     const migrations = require('./migrations.js');
     migrations.runPending(hzlService.getCacheDb(), {
       hzlService,

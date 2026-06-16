@@ -20,7 +20,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, delimiter } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { get } from 'node:http';
@@ -106,6 +106,10 @@ const serviceEnv = {
   FLOWBOARD_HOST: '127.0.0.1',        // loopback-only; widen only behind a tunnel/proxy
   OPENCLAW_WORKSPACE: workspace,
   JWT_SECRET: randomBytes(32).toString('hex'),  // used only if auth is enabled later
+  // T-406: bake a usable PATH into the service so it (and the `setup.mjs --update`
+  // it spawns for the in-UI update) can find node/npm. The default launchd/systemd
+  // service PATH omits homebrew/nvm/etc. bin dirs where node/npm actually live.
+  PATH: [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
 };
 log(`${c.ok} env prepared (FLOWBOARD_PORT, OPENCLAW_WORKSPACE, fresh JWT_SECRET) — injected into the service`);
 log(c.dim('  Telegram Mini App / remote access is optional (loopback needs no auth).'));

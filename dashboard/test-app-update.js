@@ -38,6 +38,19 @@ ok(vc.isNewer('5.1.0-rc.2', '5.1.0-rc.1'), 'later rc is newer');
 ok(!vc.isNewer('garbage', '5.0.0'), 'unparseable candidate is not newer (fail-safe)');
 ok(vc.compareSemver('5.0.0', '5.0.0') === 0, 'compareSemver equality');
 
+// --- 1b) update-env: PATH augmentation for the detached setup.mjs spawn (T-406)
+console.log('# update-env (spawn PATH so npm resolves under launchd/systemd)');
+const { updateSpawnEnv } = require('./update-env.js');
+{
+  const e = updateSpawnEnv({ PATH: '/usr/bin:/bin' }, '/opt/hb/bin/node');
+  ok(e.PATH.split(path.delimiter)[0] === '/opt/hb/bin', 'prepends node bin dir so npm resolves');
+  ok(e.PATH.includes('/usr/bin') && e.PATH.includes('/bin'), 'keeps the existing PATH entries');
+  const e2 = updateSpawnEnv({ PATH: '/x:/opt/hb/bin' }, '/opt/hb/bin/node');
+  ok(e2.PATH === '/x:/opt/hb/bin', 'no duplicate when node dir is already on PATH');
+  const e3 = updateSpawnEnv({}, '/opt/hb/bin/node');
+  ok(e3.PATH === '/opt/hb/bin', 'sets PATH even when the base env had none');
+}
+
 // --- 2) endpoint tests ------------------------------------------------------
 async function fetchJson(base, method, urlPath, body) {
   const res = await fetch(base + urlPath, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
