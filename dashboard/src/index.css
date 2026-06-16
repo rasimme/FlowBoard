@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Minimal border/button reset (T-273).
+ *
+ * Tailwind's preflight is disabled (legacy dashboard.css coexists), but the
+ * codebase relies on two preflight guarantees:
+ *   1. `border-*` utilities assume `border-style: solid; border-width: 0`
+ *      defaults — without them, `border` on a div renders nothing and on a
+ *      <button> renders the UA's 3D outset bevel ("lit from top-left").
+ *   2. Raw <button> elements assume no UA chrome — without preflight they
+ *      get the light-gray `buttonface` background and UA font.
+ * Legacy CSS always sets borders via shorthand (`border: 1px solid …`),
+ * which re-sets style and width, so these defaults are safe for it.
+ */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-style: solid;
+    border-width: 0;
+    border-color: var(--border);
+  }
+
+  button {
+    background: none;
+    font: inherit;
+    color: inherit;
+  }
+}

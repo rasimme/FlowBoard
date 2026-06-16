@@ -1,0 +1,1128 @@
+/* =====================================================================
+   FlowBoard · Overview (T-305) — widget grid layer.
+   Derived 1:1 from the Claude Design handoff (context/claude-design-t305);
+   tokens come from dashboard.css. App chrome lives in the real shell.
+   ===================================================================== */
+
+.ov-toolbar {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 6px; padding: 4px 2px 8px;
+  min-height: 34px;
+}
+.ov-toolbar-note { margin-right: auto; font-size: 11.5px; color: var(--muted); }
+
+/* ---------- 12-col widget grid ---------- */
+.ov-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: 88px;
+  gap: 12px;
+  flex: 1; min-height: 0;
+  align-content: start;
+}
+.ov-cell { display: flex; min-width: 0; min-height: 0; position: relative; }
+.ov-cell > .ov-widget { flex: 1; }
+
+/* ---------- Widget card ---------- */
+.ov-widget {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-highlight);
+  display: flex; flex-direction: column;
+  min-width: 0; min-height: 0; overflow: hidden;
+  container-type: size;
+  container-name: widget;
+}
+.ov-whead {
+  display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px 0;
+  flex-shrink: 0;
+}
+.ov-wtitle {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov-wmeta {
+  margin-left: auto; flex-shrink: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px; color: var(--muted);
+}
+.ov-wbody {
+  padding: 10px 14px 12px;
+  flex: 1; min-height: 0; min-width: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.ov-wfoot {
+  margin-top: auto; padding-top: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px; color: var(--muted);
+  cursor: pointer; flex-shrink: 0;
+}
+.ov-wfoot:hover { color: var(--text); }
+
+/* lists scroll inside their card instead of clipping rows mid-line */
+.ov-agents, .ov-tasks, .ov-decs {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.ov-agent-row, .ov-task-row, .ov-dec { flex-shrink: 0; }
+
+/* ---------- active-agents ---------- */
+.ov-agents { display: flex; flex-direction: column; gap: 4px; min-height: 0; }
+.ov-agent-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 9px; min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-accent);
+}
+.ov-agent-row.idle { border-style: dashed; opacity: .65; }
+.ov-agent-id { position: relative; display: inline-flex; flex-shrink: 0; }
+.ov-agent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ov-agent-handle {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px; font-weight: 600; color: var(--text-strong);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov-agent-task {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov-agent-task .tid { font-family: "JetBrains Mono", monospace; color: var(--text); }
+.ov-lease {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 500;
+  padding: 3px 8px; border-radius: var(--radius-full);
+  border: 1px solid var(--border); color: var(--muted);
+  white-space: nowrap; flex-shrink: 0;
+}
+.ov-lease svg { width: 10px; height: 10px; }
+.ov-lease.expiring { color: var(--warn); border-color: rgba(245,158,11,.35); background: var(--warn-subtle); }
+.ov-lease.expired { color: var(--danger); border-color: rgba(239,68,68,.35); background: var(--danger-subtle); }
+
+/* activity pulse — same neutral signal as agent-layer exploration */
+.ov-pulse {
+  position: relative; width: 8px; height: 8px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.ov-pulse::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: rgba(180,200,220,.6);
+  animation: ovPulse 2.2s ease-out infinite;
+}
+.ov-pulse::after {
+  content: ''; width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(180,200,220,.9);
+}
+@keyframes ovPulse {
+  0%   { transform: scale(1); opacity: .6; }
+  70%  { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .ov-pulse::before { animation: none; opacity: 0; } }
+
+/* ---------- task-stats ---------- */
+.ov-statbar {
+  display: flex; height: 8px; border-radius: var(--radius-full);
+  overflow: hidden; background: var(--secondary); flex-shrink: 0;
+}
+.ov-statbar span { height: 100%; }
+.ov-legend {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  margin-top: 8px; flex-shrink: 0;
+}
+.ov-legend-item {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10.5px; color: var(--muted); white-space: nowrap;
+  border: 0; background: transparent; padding: 1px 4px; margin: 0 -4px;
+  border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-size: 10.5px;
+}
+.ov-legend-item:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.ov-legend-item:disabled { cursor: default; }
+.ov-legend-item .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.ov-legend-item .n { font-family: "JetBrains Mono", monospace; color: var(--text); }
+.ov-kpis { display: flex; gap: 18px; margin-top: 12px; align-items: flex-end; min-width: 0; }
+.ov-kpi { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ov-kpi .num {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 19px; font-weight: 600; color: var(--text-strong); line-height: 1.1;
+}
+.ov-kpi .num em { font-style: normal; font-size: 11px; color: var(--muted); margin-left: 2px; }
+.ov-kpi .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+.ov-stuck {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: auto; padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px; font-weight: 500; color: var(--warn);
+  border: 1px solid rgba(245,158,11,.35); background: var(--warn-subtle);
+  white-space: nowrap; align-self: flex-end; cursor: pointer; font: inherit; font-size: 11px;
+}
+.ov-stuck:hover:not(:disabled) { background: var(--warn); color: #fff; border-color: var(--warn); }
+.ov-stuck:disabled { cursor: default; }
+
+/* task-stats layout (T-303 rework): vertical flow, trend fills the bottom
+   only when the card is tall enough — no cramped corner sparkline */
+.ts-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* T-389: the stat blocks never give up their space, so the trend can never
+   overlap the KPI text; the trend itself clips rather than overflow upward. */
+.ts-wrap > .ov-statbar, .ts-wrap > .ov-legend, .ts-wrap > .ov-kpis { flex-shrink: 0; }
+.ts-trend { display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; justify-content: flex-end; margin-top: 12px; }
+/* T-389: show the 7-day trend only when there's genuinely room — needs both
+   height AND width. A wide desktop card at h=2 (~554×188) has room; the same
+   widget on mobile (~329 wide) wraps the legend/KPIs and has none, so the bars
+   would overlap the text — hide it there. Measured widths drive the 420px gate. */
+@container widget (min-width: 420px) and (min-height: 160px) { .ts-trend { display: flex; } }
+/* h1 task-stats: only the distribution bar + headline KPIs fit — drop the
+   (wrapping) legend and tighten so nothing clips at the minimum size */
+@container widget (max-height: 120px) {
+  .ov-legend { display: none; }
+  .ov-kpis { margin-top: 8px; gap: 14px; }
+  .ov-kpi .num { font-size: 16px; }
+}
+.ts-trend .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 24px; max-width: 240px; }  /* compact — don't stretch across a wide card */
+.ts-trend .bars i { flex: 1; border-radius: 2px 2px 0 0; background: var(--bg-hover); display: block; min-width: 0; }
+.ts-trend .bars i.hi { background: var(--chart-1); opacity: .85; }
+/* T-409 (review of T-389): the trend bars are tabIndex=0 but had no focus ring —
+   mirror the Momentum .sd-bar:focus-visible so keyboard focus is visible. */
+.ts-trend .bars i:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.ts-trend .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 5px; flex-shrink: 0; }
+.ov-spark { display: none; }
+.ov-spark .bars { display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+.ov-spark .bars i { width: 9px; border-radius: 2px 2px 0 0; background: var(--bg-hover); display: block; }
+.ov-spark .bars i.hi { background: var(--chart-1); opacity: .75; }
+.ov-spark .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+
+/* ---------- next-up ---------- */
+.ov-tasks { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.ov-task-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; min-width: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ov-task-row:hover { background: var(--bg-hover); }
+.ov-task-id {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px; color: var(--muted); flex-shrink: 0;
+  min-width: 34px; white-space: nowrap;
+}
+.ov-task-title {
+  flex: 1; min-width: 0; font-size: 12.5px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov-pill {
+  display: inline-flex; padding: 2px 8px; border-radius: var(--radius-full);
+  font-size: 10px; font-weight: 500; flex-shrink: 0;
+}
+.ov-pill.high { color: var(--danger); border: 1px solid #ef444459; background: var(--danger-subtle); }
+.ov-pill.medium { color: var(--warn); border: 1px solid #f59e0b59; background: var(--warn-subtle); }
+.ov-pill.low { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
+
+/* ---------- recent-decisions / markdown widgets ---------- */
+.ov-decs { display: flex; flex-direction: column; gap: 9px; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.ov-dec { display: flex; gap: 10px; min-width: 0; }
+.ov-dec-date {
+  font-family: "JetBrains Mono", monospace; font-size: 10px;
+  color: var(--muted); flex-shrink: 0; width: 44px; padding-top: 2px;
+}
+.ov-dec-body { min-width: 0; }
+.ov-dec-title {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov-dec-text {
+  font-size: 11.5px; color: var(--muted); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ov-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px;
+  text-align: center; padding: 8px 16px;
+}
+.ov-empty svg { width: 22px; height: 22px; color: var(--muted); opacity: .6; margin-bottom: 2px; }
+.ov-empty-title { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.ov-empty-hint { font-size: 11px; color: var(--muted); line-height: 1.5; max-width: 240px; text-wrap: pretty; }
+
+/* ---------- project-goals ---------- */
+.ov-goal-text { font-size: 13px; line-height: 1.55; color: var(--text); text-wrap: pretty; }
+.ov-scope { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ov-scope li { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; color: var(--text); min-width: 0; }
+.ov-scope li .mk { font-family: "JetBrains Mono", monospace; font-size: 10.5px; flex-shrink: 0; }
+.ov-scope li.in .mk { color: var(--ok); }
+.ov-scope li.out { color: var(--muted); }
+.ov-scope li.out .mk { color: var(--muted); }
+.ov-scope li.out .tx { text-decoration: line-through; text-decoration-color: var(--border-strong); }
+
+/* T-382: at minimal widget height the centered empty-state / goal text overflowed
+   the overflow:hidden body and clipped the icon+text at the bottom. Compact the
+   empty state (drop the supplementary hint, shrink icon/gaps) and clamp the goal
+   text so the icon+title and the PROJECT.md footer stay fully visible. */
+@container widget (max-height: 150px) {
+  .ov-wbody { padding: 8px 12px; }
+  .ov-empty { gap: 2px; padding: 2px 10px; }
+  .ov-empty svg { width: 16px; height: 16px; margin-bottom: 0; }
+  .ov-empty-title { font-size: 11.5px; }
+  .ov-empty-hint { display: none; }
+  .ov-goal-text { font-size: 12px; line-height: 1.45; }
+  /* T-383: at h=1 (≈88px) the footer ate the only goal line. Drop it — the goal
+     area itself is clickable to open PROJECT.md, and overflow now scroll+fades.
+     Scoped to the goal footer so the decisions footer is unaffected. */
+  .ov-goal-foot { display: none; }
+}
+
+/* ---------- quick-links ---------- */
+.ov-links { display: flex; gap: 8px; flex: 1; min-height: 0; }
+.ov-link {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--bg-accent); color: var(--text);
+  font-size: 11px; font-weight: 500; cursor: pointer;
+  padding: 6px 4px;
+}
+.ov-link:hover { background: var(--bg-hover); border-color: var(--border-strong); }
+.ov-link svg { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
+.ov-link span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ov-link .sub { font-size: 9px; color: var(--muted); margin-top: -2px; }
+.ov-link.main { border-color: var(--border-strong); }
+.ov-link.main svg { color: var(--text); }
+.ov-links.tiles { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+/* tall mid-width cards (e.g. 5x3/6x3): two rows — idea + file on top,
+   New Task full-width below as the primary action */
+@container widget (min-height: 220px) and (max-width: 640px) {
+  .ov-links:not(.tiles) {
+    display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 8px;
+  }
+  .ov-link.main { order: 3; grid-column: 1 / -1; }
+}
+
+/* ---------- kanban-mini ---------- */
+.ov-kmini { display: flex; gap: 10px; flex: 1; min-height: 0; }
+.ov-kcol {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg-accent); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: 8px 9px;
+}
+.ov-kcol-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.ov-kcol-title {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em;
+  font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ov-kcol-count {
+  font-family: "JetBrains Mono", monospace; font-size: 10px;
+  color: var(--muted); background: var(--secondary);
+  border-radius: var(--radius-full); padding: 1px 6px; flex-shrink: 0;
+}
+.ov-kbars { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.ov-kbar { flex-shrink: 0; }
+.ov-kbar {
+  min-height: 17px; border-radius: 4px;
+  background: var(--card); border: 1px solid var(--border);
+  display: flex; align-items: center; padding: 1px 5px; gap: 5px;
+}
+.ov-kbar:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.ov-kbar .tid { font-family: "JetBrains Mono", monospace; font-size: 9px; color: var(--muted); flex-shrink: 0; }
+.ov-kbar .ttl { font-size: 10px; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ov-kbar .chipdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.ov-kmore { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); padding-left: 2px; }
+
+/* ---------- edit mode ---------- */
+.ov-grid-guides {
+  position: absolute; inset: 0; z-index: 0;
+  display: grid; grid-template-columns: repeat(12, minmax(0,1fr)); gap: 12px;
+  pointer-events: none;
+}
+.ov-grid-guides i { border: 1px dashed var(--border); border-radius: var(--radius-md); opacity: .55; }
+.ov-grid.editing .ov-cell { z-index: 1; }
+.ov-grid.editing .ov-widget { border-style: solid; }
+.ov-grip { display: inline-flex; color: var(--muted); cursor: grab; flex-shrink: 0; margin-left: -3px; }
+.ov-grip svg { width: 11px; height: 11px; }
+.ov-grip:hover { color: var(--text); }
+.ov-wx {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: var(--radius-sm);
+  color: var(--muted); cursor: pointer; flex-shrink: 0;
+  border: none; background: none; padding: 0;
+}
+.ov-wx:hover { color: var(--danger); background: var(--danger-subtle); }
+.ov-wx svg { width: 11px; height: 11px; }
+.ov-resize {
+  position: absolute; right: 5px; bottom: 5px;
+  width: 13px; height: 13px;
+  border-right: 2px solid var(--border-strong);
+  border-bottom: 2px solid var(--border-strong);
+  border-bottom-right-radius: 4px;
+  cursor: nwse-resize;
+}
+.ov-resize:hover, .ov-resize.hot { border-color: var(--accent); }
+.ov-sizechip {
+  position: absolute; right: 24px; bottom: 6px;
+  font-family: "JetBrains Mono", monospace; font-size: 9.5px;
+  color: var(--text); background: var(--bg-elevated);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 2px 6px; pointer-events: none;
+}
+.ov-add {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 7px;
+  border: 1.5px dashed var(--border-strong); border-radius: var(--radius-lg);
+  color: var(--muted); font-size: 12px; font-weight: 500;
+  cursor: pointer; background: transparent;
+}
+.ov-add:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-subtle); }
+.ov-add .ring {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 1.5px dashed currentColor;
+  display: flex; align-items: center; justify-content: center;
+}
+.ov-add svg { width: 12px; height: 12px; }
+
+/* ---------- container queries: w=4 (narrow) → w=12 (full) ---------- */
+.only-wide { display: none !important; }
+
+@container widget (min-width: 560px) {
+  .only-wide { display: flex !important; }
+  .ov-spark { display: block; }
+}
+@container widget (max-width: 400px) {
+  .hide-narrow { display: none !important; }
+  .ov-links:not(.tiles) {
+    display: grid; grid-template-columns: 1fr 1fr;
+    grid-auto-rows: minmax(40px, 1fr); gap: 6px;
+  }
+}
+/* icon-only only for genuinely tiny tiles — a w:3 widget (the preset default)
+   stays ~190-280px wide on a normal screen and must keep its labels (T-394) */
+@container widget (max-width: 170px) {
+  .ov-links span { display: none; }
+  .ov-links { gap: 6px; }
+  .ov-link { min-height: 34px; }
+}
+/* low cards (h=1): one single row — overrides the 2x2 grid forms */
+@container widget (max-height: 120px) {
+  .ov-links, .ov-links.tiles, .ov-links:not(.tiles) {
+    display: flex; flex-direction: row; gap: 6px;
+  }
+  .ov-link { flex-direction: row; gap: 6px; padding: 4px 6px; min-height: 0; }
+  .ov-link svg { width: 13px; height: 13px; }
+  .ov-link span { font-size: 10.5px; }
+  .ov-link .sub { display: none; }
+}
+@container widget (max-width: 340px) {
+  .ov-link .sub { display: none; }
+
+  /* T-367-1: narrow-card reflows. The grid stacks single-column on phones
+     (≤720px), so every widget cell becomes ~full width (~340px) — these rules
+     fix the multi-column INNER layouts that the height-only container queries
+     never covered. No effect on wider cards/desktop. */
+
+  /* task-stats: wrap the 3 KPIs + tighten the legend instead of overflowing */
+  .ov-kpis { gap: 8px 16px; flex-wrap: wrap; }
+  .ov-kpi .num { font-size: 17px; }
+  .ov-legend { gap: 3px 10px; }
+
+  /* kanban-mini: 5 columns at ~50px can't show task titles — keep the id + the
+     status dot, drop the per-task title text, and tighten padding so the
+     columns stay legible side by side */
+  .ov-kmini { gap: 5px; }
+  .ov-kcol { padding: 6px 5px; gap: 5px; }
+  .ov-kbar { padding: 1px 3px; gap: 3px; }
+  .ov-kbar .ttl { display: none; }
+
+  /* GitHub pulls/issues KPI rows: wrap rather than squash */
+  .ghp-kpis { flex-wrap: wrap; gap: 6px 12px; }
+
+  /* repo-status: stack the two commit/PR columns; rein in the branch pill */
+  .gh-body { flex-direction: column; gap: 8px; }
+  .gh-branch { max-width: 52%; }
+}
+/* low AND narrow: icons only — clipped labels are worse than none */
+@container widget (max-height: 120px) and (max-width: 460px) {
+  .ov-link span { display: none; }
+  .ov-agent-row { padding: 6px 8px; gap: 8px; }
+  .ov-agent-task .ttl { display: none; }       /* keep T-id, drop title */
+  .ov-kpis { gap: 12px; flex-wrap: wrap; }
+  .ov-kpi .num { font-size: 16px; }
+  .ov-stuck { margin-left: 0; align-self: flex-start; }
+  .ov-dec-date { width: 38px; }
+  .ov-kcol { padding: 6px 6px; }
+  .ov-kcol-title { font-size: 8.5px; }
+  .ov-kbar .ttl { display: none; }
+  .ov-links:not(.tiles) .ov-link span { font-size: 10px; }
+}
+
+
+/* ---------- narrow viewports: stack single column (Telegram Mini App) ---------- */
+@media (max-width: 720px) {
+  .ov-grid {
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+  }
+  .ov-cell { min-height: 180px; flex-shrink: 0; }
+  .ov-grid-guides { display: none; }
+}
+
+/* ---------- react-grid-layout chrome (edit mode, T-305-5) ---------- */
+.ov-rgl .ov-cell { display: flex; position: relative; height: 100%; }
+.ov-rgl .ov-cell > .ov-widget { flex: 1; }
+.ov-rgl .react-grid-placeholder {
+  background: var(--accent-subtle) !important;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  opacity: 1 !important;
+}
+.ov-rgl .react-grid-item.react-draggable-dragging .ov-widget {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-strong);
+}
+/* while resizing the element snaps in grid steps (see onResize) — the
+   placeholder shows the target cell underneath */
+.ov-rgl .react-grid-item.resizing .ov-edit-x { opacity: 0; }
+/* =====================================================================
+   Final edit mode (Claude Design N2 base, context/claude-design-t305)
+   Cards stay pixel-identical to view mode. The only in-card signal is
+   the hatched, draggable title row. Delete + size live OUTSIDE the card;
+   resizing uses slim edge grab-bars.
+   ===================================================================== */
+
+/* hatched, draggable title row — 1px dashed border is compensated so the
+   card's outer size does not change */
+.ov-rgl.editing .ov-whead {
+  background: repeating-linear-gradient(135deg,
+    rgba(255,255,255,.045) 0 1px, transparent 1px 6px);
+  border-bottom: 1px dashed var(--border-strong);
+  cursor: grab;
+  padding-bottom: 8px;
+  margin-bottom: -1px;
+  user-select: none;
+}
+.ov-rgl.editing .ov-wbody { padding-top: 2px; pointer-events: none; user-select: none; }
+.ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-whead { cursor: grabbing; }
+.ov-rgl.editing .react-grid-item.react-draggable-dragging .ov-widget {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent);
+}
+
+/* delete: round badge outside the top-right corner */
+.ov-edit-x {
+  position: absolute; top: -8px; right: -8px; z-index: 6;
+  width: 22px; height: 22px; border-radius: 50%; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  color: var(--text); cursor: pointer; box-shadow: var(--shadow-md);
+}
+.ov-edit-x:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+
+/* size label: outside, bottom-right, subtle; accent while resizing */
+.ov-fin-size {
+  position: absolute; top: -7px; right: 20px; z-index: 5;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px;
+  color: var(--muted); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 1px 6px; pointer-events: none; white-space: nowrap;
+}
+/* during resize the static label hides and a CSS-driven live label
+   (immune to RGL render memoization) takes its place */
+.ov-rgl .react-grid-item.resizing .ov-fin-size { display: none; }
+.ov-rgl .react-grid-item.resizing::after {
+  content: var(--ov-snap-label, "");
+  position: absolute; top: -7px; right: 20px; z-index: 6;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 9.5px;
+  color: var(--text); background: var(--bg-elevated);
+  border: 1px solid var(--accent); border-radius: var(--radius-sm);
+  padding: 1px 6px; pointer-events: none; white-space: nowrap;
+}
+.ov-rgl .react-grid-item.resizing .ov-widget { border-color: var(--accent); }
+
+/* slim edge grab-bars (N2) — RGL's n/e/s/w handles restyled */
+.ov-rgl .react-resizable-handle {
+  position: absolute; z-index: 5;
+  background: var(--border-strong);
+  border: none; padding: 0;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 3px var(--bg);
+  transform: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.ov-rgl .react-resizable-handle::after { display: none; }
+.ov-rgl .react-resizable-handle:hover { background: var(--accent); }
+/* full-specificity overrides — RGL's stylesheet positions and ROTATES the
+   handles via .react-grid-item > .react-resizable-handle-* rules */
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-e,
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-w {
+  top: 50%; margin: 0; transform: translateY(-50%);
+  width: 6px; height: 40px; cursor: ew-resize;
+}
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-e { right: -3.5px; left: auto; }
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-w { left: -3.5px; right: auto; }
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-n,
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-s {
+  left: 50%; margin: 0; transform: translateX(-50%);
+  height: 6px; width: 40px; cursor: ns-resize;
+}
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-n { top: -3.5px; bottom: auto; }
+.ov-rgl .react-grid-item > .react-resizable-handle.react-resizable-handle-s { bottom: -3.5px; top: auto; }
+
+/* stacking: the touched item always above its neighbours */
+.ov-rgl .react-grid-item { z-index: 1; }
+.ov-rgl .react-grid-item:hover,
+.ov-rgl .react-grid-item.react-draggable-dragging,
+.ov-rgl .react-grid-item.resizing { z-index: 4; }
+
+/* suppress RGL transitions on edit-mode mount (anti-flicker) */
+.ov-no-anim .react-grid-item { transition: none !important; }
+
+
+
+/* 1) the dashed placeholder is a DRAG preview only — during resize the
+   card itself snaps, the placeholder would just duplicate it */
+.ov-rgl .react-grid-placeholder.placeholder-resizing { display: none; }
+
+/* 2) pressed handle reads as active */
+.ov-rgl .react-resizable-handle:active { background: var(--accent); }
+
+/* post-release settle: no transitions while the committed layout lands */
+.ov-settle .react-grid-item { transition: none !important; }
+
+/* =====================================================================
+   Catalog v2 (T-308) — restrained palette: accent-2 only for progress,
+   everything else muted/border tones
+   ===================================================================== */
+.w-mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.92em; color: var(--text); }
+
+/* milestones */
+.ms-wrap { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.ms-top { display: flex; gap: 18px; flex-shrink: 0; align-items: flex-start; }
+.ms-focus { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.ms-ring-row { display: flex; align-items: center; gap: 12px; }
+.ms-ring { position: relative; flex-shrink: 0; display: inline-flex; }
+.ms-ring svg { transform: rotate(-90deg); }
+.ms-ring .pct {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: "JetBrains Mono", monospace; font-size: 13px; font-weight: 600; color: var(--text-strong);
+}
+.ms-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ms-name { font-size: 13px; font-weight: 600; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-meta { font-size: 11px; color: var(--muted); }
+.ms-bar { height: 6px; border-radius: var(--radius-full); background: var(--secondary); overflow: hidden; }
+.ms-bar > span { display: block; height: 100%; background: var(--chart-1); border-radius: var(--radius-full); }
+.ms-roadmap { width: 38%; flex-shrink: 0; display: none; flex-direction: column; gap: 8px; max-height: 110px; overflow-y: auto; scrollbar-width: thin; }
+@container widget (min-width: 560px) { .ms-roadmap { display: flex; } }
+/* narrow cards: roadmap as one compact wrapping chip row under the focus */
+@container widget (max-width: 559.9px) {
+  .ms-roadmap { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; width: auto; max-height: 52px; }
+  .ms-roadmap .ms-up { flex: 0 1 auto; min-width: 100px; }
+  .ms-top { flex-direction: column; gap: 8px; }
+  /* T-393: in column mode .ms-top keeps align-items:flex-start (needed for the
+     row layout), which shrank .ms-focus to its content width — so the focus
+     name and the progress bar tracked the milestone-name length. Stretch it to
+     full card width so the bar is always full-width, independent of the text. */
+  .ms-focus { align-self: stretch; }
+}
+.ms-up .nm { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text); min-width: 0; }
+.ms-up .nm .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-up .v { font-family: "JetBrains Mono", monospace; color: var(--muted); }
+.ms-up .mini { display: block; height: 4px; margin-top: 3px; border-radius: var(--radius-full); background: var(--secondary); overflow: hidden; }
+.ms-up .mini > span { display: block; height: 100%; background: var(--border-strong); }
+
+/* timeline */
+.tl-spine { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+.tl-day { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 6px 0 2px 2px; }
+.tl-group:first-child .tl-day { padding-top: 0; }
+.tl-node { display: flex; align-items: baseline; gap: 8px; padding: 3px 4px; border-radius: var(--radius-sm); min-width: 0; flex-shrink: 0; }
+.tl-node:hover { background: var(--bg-hover); }
+.tl-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); flex-shrink: 0; align-self: center; }
+.tl-dot.hot { background: var(--chart-2); }
+.tl-title { font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-title .tid { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); }
+
+/* context-index */
+.ci-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+.ci-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); min-width: 0; flex-shrink: 0; }
+.ci-row:hover { background: var(--bg-hover); }
+.ci-row .nm { flex: 1; min-width: 0; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci-row .ci-when { flex-shrink: 0; font-size: 10px; color: var(--muted); }
+.ci-row .pin { color: var(--warn); font-size: 10px; }
+
+/* quick-drop */
+.qd-zone {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  border: 1.5px dashed var(--border-strong); border-radius: var(--radius-md);
+  color: var(--muted); text-align: center; padding: 8px;
+}
+.qd-zone.hot { border-color: var(--accent); color: var(--accent); background: var(--accent-subtle); }
+.qd-ring { width: 26px; height: 26px; border-radius: 50%; border: 1.5px dashed currentColor; display: flex; align-items: center; justify-content: center; }
+.qd-title { font-size: 12px; font-weight: 500; color: var(--text); }
+.qd-hint { font-size: 10.5px; color: var(--muted); }
+.qd-recent { display: flex; gap: 6px; margin-top: 8px; flex-shrink: 0; }
+.qd-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-full); font-size: 10.5px; color: var(--text); }
+
+/* notes */
+.nt-view { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: var(--radius-md); padding: 2px 4px; }
+.nt-view:hover { background: var(--bg-accent); }
+.nt-view .md-content { font-size: 12px; line-height: 1.55; }
+.nt-view .md-content h1, .nt-view .md-content h2, .nt-view .md-content h3 { font-size: 12.5px; margin: 8px 0 4px; }
+.nt-view .md-content p, .nt-view .md-content ul, .nt-view .md-content ol { margin: 4px 0; }
+.nt-placeholder { font-size: 12px; color: var(--muted); }
+.nt-md-wrap { flex: 1; min-height: 0; display: flex; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.nt-md-wrap .markdown-editor { background: transparent; }
+.nt-md-wrap .markdown-editor-toolbar { padding: 3px 6px; gap: 2px; background: var(--bg-accent); }
+.nt-md-wrap .markdown-editor-tool { width: 24px; height: 24px; }
+.nt-md-wrap .markdown-editor-tool svg { width: 13px; height: 13px; }
+.nt-md-wrap .cm-content { padding: 8px 10px !important; }
+.nt-md-wrap .cm-editor { font-size: 12px !important; }
+.nt-loading { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); }
+@container widget (max-width: 400px) {
+  .nt-md-wrap .markdown-editor-tool:nth-child(n+6) { display: none; }
+}
+.nt-foot { display: flex; align-items: center; justify-content: space-between; padding-top: 6px; flex-shrink: 0; }
+.nt-state { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); }
+.nt-save {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--card); color: var(--text); font-size: 11px; cursor: pointer;
+}
+.nt-save:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-hover); }
+.nt-save:disabled { opacity: .45; cursor: default; }
+
+/* links */
+.lk-list { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+.lk-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; min-height: 26px; border-radius: var(--radius-sm); min-width: 0; flex-shrink: 0; color: var(--text); text-decoration: none; }
+.lk-row:hover { background: var(--bg-hover); }
+.lk-fav { width: 18px; height: 18px; border-radius: var(--radius-sm); background: var(--secondary); color: var(--muted); display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 600; flex-shrink: 0; }
+.lk-row .nm { font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lk-addtoggle {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+  margin-top: 4px; padding: 2px 8px; flex-shrink: 0;
+  border: 1px dashed var(--border); border-radius: var(--radius-full);
+  background: transparent; color: var(--muted); font-size: 10.5px; cursor: pointer;
+}
+.lk-addtoggle:hover { color: var(--text); border-color: var(--border-strong); }
+.lk-add { display: flex; gap: 5px; margin-top: 5px; flex-shrink: 0; }
+.lk-in {
+  flex: 1; min-width: 0; padding: 3px 7px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); color: var(--text); font-size: 11px; outline: none;
+}
+.lk-in:focus { border-color: var(--accent); }
+.lk-btn {
+  padding: 3px 10px; flex-shrink: 0;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--card); color: var(--text); font-size: 11px; cursor: pointer;
+}
+.lk-btn:hover:not(:disabled) { background: var(--bg-hover); }
+.lk-btn:disabled { opacity: .45; cursor: default; }
+/* T-381: edit/remove via an explicit "Manage" mode (toggled from the footer).
+   In manage mode each row is an in-flow flex row — the name truncates and the
+   action buttons get their own column, so nothing ever overlaps the link text.
+   Inline edit reuses the .lk-add form row. */
+.lk-foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-shrink: 0; }
+.lk-foot .lk-addtoggle { margin-top: 4px; }
+.lk-addtoggle.is-active { color: var(--text); border-style: solid; border-color: var(--accent); }
+.lk-row-manage { cursor: default; }
+.lk-row-manage:hover { background: transparent; }
+/* Match the favicon's height (18px) so a manage row is exactly as tall as a
+   normal link row — the button stays wide for an easy click target. */
+.lk-act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 18px; flex-shrink: 0; border: none; cursor: pointer;
+  background: transparent; color: var(--muted); border-radius: var(--radius-sm);
+}
+.lk-act:hover:not(:disabled) { color: var(--text); background: var(--secondary); }
+.lk-act-danger:hover:not(:disabled) { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.lk-act:disabled { opacity: .45; cursor: default; }
+.lk-edit { margin-top: 0; }
+.lk-btn-ghost { background: transparent; border-color: var(--border); }
+
+/* stall-detection */
+.sd-wrap { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; }
+.sd-status { display: flex; align-items: center; gap: 10px; padding-top: 6px; }
+.sd-orb {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-strong); color: var(--muted); background: var(--bg-accent);
+}
+.sd-orb.active { color: var(--chart-1); border-color: var(--chart-1); }
+.sd-orb.slow { color: var(--warn); border-color: rgba(245,158,11,.4); }
+.sd-orb.dormant { color: var(--muted); }
+.sd-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sd-headline { font-size: 12.5px; font-weight: 600; color: var(--text-strong); }
+.sd-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sd-sub .tid { font-family: "JetBrains Mono", monospace; color: var(--text); }
+.sd-strip-block { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+@container widget (max-height: 120px) { .sd-strip-block, .sd-stats { display: none; } }
+.sd-strip { position: relative; display: flex; align-items: flex-end; gap: 3px; flex: 1; min-height: 26px; }
+.sd-stats { display: none; gap: 14px; flex-shrink: 0; font-size: 10.5px; color: var(--muted); padding-top: 2px; }
+.sd-stats b { color: var(--text); font-weight: 600; }
+@container widget (min-height: 240px) { .sd-stats { display: flex; } }
+/* T-387: one tone for the bars; height carries the volume. Empty days are a
+   faint baseline tick so gaps/streaks read at a glance; active days share a
+   neutral tone; only days above the typical pace take the accent. */
+.sd-bar { position: relative; z-index: 1; flex: 1; min-width: 0; border-radius: 2px 2px 0 0; background: var(--secondary); display: block; outline: none; transition: filter var(--duration-fast), background var(--duration-fast); }
+.sd-bar.a-on { background: var(--border-strong); }
+.sd-bar.a-peak { background: var(--chart-1); }
+.sd-bar:hover, .sd-bar:focus-visible { filter: brightness(1.35); }
+.sd-bar:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+/* typical-pace reference line — sits behind the bars (z-index 0 vs the bars' 1) */
+.sd-median { position: absolute; z-index: 0; left: 0; right: 0; height: 0; border-top: 1px dashed var(--border-strong); opacity: .7; pointer-events: none; }
+.sd-strip-lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+/* T-387: rich hover/focus tooltip — portal-rendered, so it escapes widget clipping */
+.sd-tip {
+  position: fixed; z-index: 1900; min-width: 150px; max-width: 240px;
+  padding: 8px 10px; background: var(--card); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.35)); pointer-events: none;
+  font-size: 11px; line-height: 1.45;
+}
+.sd-tip-head { display: flex; align-items: center; gap: 6px; }
+.sd-tip-date { font-weight: 600; color: var(--text-strong); }
+.sd-tip-today { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-full); padding: 0 5px; }
+.sd-tip-total { margin-top: 2px; color: var(--muted); }
+.sd-tip-total b { color: var(--text-strong); font-size: 13px; }
+.sd-tip-rows { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sd-tip-rows li { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.sd-tip-rows b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 14px; text-align: right; }
+.sd-tip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--chart-1); flex-shrink: 0; }
+.sd-tip-empty { margin-top: 4px; color: var(--muted); font-style: italic; }
+.sd-tip-foot { margin-top: 6px; color: var(--muted); font-size: 10px; }
+.sd-tip-foot b { color: var(--text); }
+
+/* repo-status */
+.gh-setup { display: flex; flex-direction: column; gap: 8px; justify-content: center; flex: 1; min-height: 0; }
+.gh-setup-hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.gh-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding-bottom: 7px; }
+.gh-repo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-strong); text-decoration: none; }
+.gh-repo svg { color: var(--muted); flex-shrink: 0; }
+.gh-repo .nm { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gh-repo:hover .nm { color: var(--accent); }
+.gh-repo .br { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); background: var(--secondary); border-radius: var(--radius-full); padding: 1px 7px; flex-shrink: 0; }
+.gh-branch {
+  font-family: "JetBrains Mono", monospace; font-size: 10px;
+  color: var(--text); background: var(--secondary);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  padding: 1px 6px; max-width: 130px; cursor: pointer; outline: none;
+}
+.gh-branch:hover { border-color: var(--border-strong); }
+.gh-ci { font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; border-radius: var(--radius-full); padding: 2px 8px; flex-shrink: 0; border: 1px solid var(--border-strong); color: var(--muted); }
+.gh-ci.passing { color: var(--accent-2); border-color: var(--accent-2); }
+.gh-ci.failing { color: var(--danger); border-color: var(--danger); }
+.gh-ci.pending { color: var(--warn, #f59e0b); border-color: rgba(245,158,11,.4); }
+.gh-body { display: flex; gap: 14px; flex: 1; min-height: 0; }
+.gh-sec { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+.gh-sec-h { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; color: var(--muted); padding-bottom: 2px; }
+.gh-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: var(--radius-sm); min-width: 0; color: var(--text); text-decoration: none; }
+.gh-row:hover { background: var(--bg-hover); }
+.gh-row .num { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.gh-row .msg { font-size: 11px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gh-row .when { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
+.gh-none { font-size: 11px; color: var(--muted); padding: 3px 5px; }
+.ghp-wrap > .gh-none, .ghi-wrap > .gh-none, .ghc-wrap > .gh-none { margin-block: auto; text-align: center; }
+.gh-error { font-size: 11px; color: var(--muted); padding: 6px 0; }
+
+/* gh widget family (T-316..T-319) */
+.gh-rows { display: flex; flex-direction: column; gap: 2px; overflow: hidden; min-height: 0; }
+.gh-row.dim .msg { color: var(--muted); }
+
+/* gh-pulls */
+.ghp-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.ghp-kpis { display: flex; gap: 14px; flex-shrink: 0; font-size: 10.5px; color: var(--muted); }
+.ghp-kpi b { color: var(--text-strong); font-weight: 600; font-size: 14px; margin-right: 3px; }
+.ghp-kpi b.hot { color: var(--chart-1); }
+.ghp-split { display: flex; height: 5px; border-radius: var(--radius-full); overflow: hidden; gap: 2px; flex-shrink: 0; }
+.ghp-split .rev { background: var(--chart-1); }
+.ghp-split .rdy { background: var(--border-strong); }
+.ghp-split .drf { background: var(--secondary); }
+.ghp-rev { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--chart-1); flex-shrink: 0; }
+
+/* gh-ci */
+.ghc-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.ghc-bars { display: flex; align-items: flex-end; gap: 3px; flex: 1; min-height: 30px; }
+.ghc-bar { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.ghc-bar i { display: block; width: 100%; border-radius: 2px 2px 0 0; background: var(--secondary); }
+.ghc-bar.ok i { background: color-mix(in srgb, var(--accent-2) 55%, var(--secondary)); }
+.ghc-bar.ok:hover i { background: var(--accent-2); }
+.ghc-bar.fail i { background: var(--danger); }
+.ghc-bar.mute i { background: var(--secondary); }
+.ghc-bar.live i { background: repeating-linear-gradient(45deg, var(--border-strong) 0 3px, var(--secondary) 3px 6px); }
+.ghc-latest { display: flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 3px 5px; border-radius: var(--radius-sm); color: var(--text); text-decoration: none; min-width: 0; }
+.ghc-latest:hover { background: var(--bg-hover); }
+.ghc-latest .msg { font-size: 11px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ghc-latest .num { color: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 10px; }
+.ghc-latest .when { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
+.ghc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--secondary); }
+.ghc-dot.ok { background: var(--accent-2); }
+.ghc-dot.fail { background: var(--danger); }
+.ghc-dot.live { background: var(--warn, #f59e0b); }
+
+/* gh-releases */
+.ghr-wrap { display: flex; flex-direction: column; gap: 9px; flex: 1; min-height: 0; }
+.ghr-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+.ghr-tag { display: inline-flex; align-items: center; gap: 7px; color: var(--text-strong); text-decoration: none; min-width: 0; }
+.ghr-tag svg { color: var(--chart-1); flex-shrink: 0; }
+.ghr-tag .tag { font-family: "JetBrains Mono", monospace; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ghr-tag:hover .tag { color: var(--accent); }
+.ghr-tag .pre { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--warn, #f59e0b); border: 1px solid rgba(245,158,11,.4); border-radius: var(--radius-full); padding: 1px 6px; }
+.ghr-when { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.ghr-ahead { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-accent); color: var(--text); text-decoration: none; flex-shrink: 0; }
+.ghr-ahead:hover { border-color: var(--border-strong); }
+.ghr-ahead .n { font-family: "JetBrains Mono", monospace; font-size: 16px; font-weight: 600; color: var(--text-strong); }
+.ghr-ahead .lbl { font-size: 10.5px; color: var(--muted); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* gh-issues */
+.ghi-wrap { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.ghi-age { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.ghi-bucket { display: flex; align-items: center; gap: 7px; }
+.ghi-bucket .bar { flex: 1; height: 5px; background: var(--secondary); border-radius: var(--radius-full); overflow: hidden; }
+.ghi-bucket .bar i { display: block; height: 100%; background: var(--border-strong); border-radius: var(--radius-full); }
+.ghi-bucket:first-child .bar i { background: var(--chart-1); }
+.ghi-bucket .lbl { font-size: 9.5px; color: var(--muted); width: 34px; flex-shrink: 0; }
+.ghi-bucket .n { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--text); width: 18px; text-align: right; flex-shrink: 0; }
+.ghi-quiet { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--chart-1); border: 1px solid var(--chart-1); border-radius: var(--radius-full); padding: 0 6px; flex-shrink: 0; }
+
+/* gh token affordance (T-320) */
+.gh-errwrap { display: flex; flex-direction: column; gap: 8px; }
+.gh-token-toggle {
+  display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  padding: 2px 8px; border: 1px dashed var(--border); border-radius: var(--radius-full);
+  background: transparent; color: var(--muted); font-size: 10.5px; cursor: pointer;
+}
+.gh-token-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+
+/* milestones v2 (T-315): create / drilldown checklist */
+.ms-cta { margin-top: 8px; align-self: center; }
+.ms-create { display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0; }
+.ms-create-head { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ms-create-title { font-size: 12px; font-weight: 600; color: var(--text); }
+.msp { display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 0; }
+.msp-list { flex: 1; min-height: 40px; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 1px; }
+.msp-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: var(--radius-sm); cursor: pointer; min-width: 0; }
+.msp-row:hover { background: var(--bg-hover); }
+.msp-row input { accent-color: var(--accent-2); margin: 0; flex-shrink: 0; }
+.msp-row .num { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.msp-row .msg { font-size: 11px; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msp-foot { display: flex; justify-content: flex-end; gap: 6px; flex-shrink: 0; }
+.lk-btn.ghosty { border-color: transparent; background: transparent; color: var(--muted); }
+.lk-btn.ghosty:hover { color: var(--text); }
+.ms-detail { display: flex; flex-direction: column; gap: 7px; flex: 1; min-height: 0; }
+.ms-detail-head { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ms-back { width: 20px; height: 20px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; padding: 0; line-height: 1; flex-shrink: 0; }
+.ms-back:hover { color: var(--text); border-color: var(--border-strong); }
+.ms-check { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; display: flex; flex-direction: column; gap: 2px; }
+.ms-check-row { display: flex; align-items: center; gap: 7px; padding: 3px 5px; border-radius: var(--radius-sm); min-width: 0; }
+.ms-check-row:hover { background: var(--bg-hover); }
+.ms-check-row .box { width: 14px; height: 14px; border-radius: 4px; border: 1px solid var(--border-strong); flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; color: var(--accent-2); }
+.ms-check-row.done .box { border-color: var(--accent-2); }
+.ms-check-row .body { display: flex; align-items: center; gap: 7px; flex: 1; min-width: 0; }
+.ms-check-row .num { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); flex-shrink: 0; }
+.ms-check-row .msg { font-size: 11px; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-check-row.done .msg { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--border-strong); }
+.ms-check-row .rm { width: 16px; height: 16px; border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0; border-radius: 50%; flex-shrink: 0; opacity: 0; }
+.ms-check-row:hover .rm { opacity: 1; }
+.ms-check-row .rm:hover { color: var(--danger); }
+
+/* milestones v2.1: pinnable focus, completed chips, richer drilldown */
+.ms-pin { border: none; background: transparent; color: var(--muted); cursor: pointer; padding: 0 2px; font-size: 11px; opacity: .5; }
+.ms-up:hover .ms-pin { opacity: 1; }
+.ms-pin:hover { color: var(--accent-2); }
+.ms-pin.head { font-size: 12px; vertical-align: 1px; margin-left: 4px; opacity: .55; }
+.ms-pin.head.on { color: var(--accent-2); opacity: 1; }
+.ms-focus:hover .ms-pin.head { opacity: 1; }
+/* inline checklist under the focus ring — fills whatever space the card
+   has (a couple of rows even on small cards); h=1 keeps just the ring */
+.ms-inline { display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--border); padding-top: 6px; }
+.ms-inline .ms-check { flex: 1; min-height: 0; }
+@container widget (max-height: 120px) { .ms-inline { display: none; } }
+/* low cards: compact ring + drop secondary rows so 2-3 checks still fit */
+@container widget (max-height: 230px) {
+  .ms-wrap { gap: 6px; }
+  .ms-focus { gap: 5px; }
+  .ms-ring { width: 38px !important; height: 38px !important; }
+  .ms-ring .pct { font-size: 9px; }
+  .ms-name { font-size: 12px; }
+  .ms-meta { font-size: 10px; }
+  .ms-done-row { display: none; }
+  .ms-roadmap { display: none !important; }
+  .ms-inline { padding-top: 4px; }
+  .ms-wrap > .lk-addtoggle { display: none; }
+}
+.ms-done-row { display: flex; flex-wrap: wrap; gap: 4px; flex-shrink: 0; }
+.ms-done-chip {
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  background: transparent; color: var(--muted); font-size: 10px;
+  padding: 1px 8px; cursor: pointer;
+}
+.ms-done-chip:hover { color: var(--accent-2); border-color: var(--accent-2); }
+.ms-st { font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); border: 1px solid var(--border); border-radius: var(--radius-full); padding: 0 6px; flex-shrink: 0; }
+.ms-st.st-in-progress { color: var(--status-in-progress); border-color: var(--status-in-progress); }
+.ms-st.st-review { color: var(--status-review); border-color: var(--status-review); }
+.ms-agent { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
+
+/* create flow: the name input must keep its natural height — `.lk-in` is
+   `flex:1` (grows to fill horizontal rows elsewhere), which in this flex COLUMN
+   grew it vertically into a tall field with a centred placeholder that hid the
+   task picker below. `flex:0 0 auto` pins it to content height (T-393). */
+.ms-create .lk-in { flex: 0 0 auto; }
+.msp-foot { padding-top: 2px; }
+
+/* T-393: compact active-milestone switcher. Lives in the widget HEADER (the
+   meta slot) so it sits in a stable, full-width spot and doesn't shift with the
+   focus milestone's name; cycles the shown milestone. JSX renders it only with
+   >1 active milestone. */
+.ms-switch { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.ms-switch-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; border-radius: var(--radius-sm); }
+.ms-switch-btn:hover { color: var(--text); background: var(--bg-hover); }
+.ms-switch-pos { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); min-width: 22px; text-align: center; }
+@container widget (max-height: 220px) {
+  .msp-list { min-height: 24px; }
+  .msp-row { padding: 1px 5px; }
+}
+
+/* gh-ci at h=1: drop the latest-run row, keep the bars breathing */
+@container widget (max-height: 120px) {
+  .ghc-latest { display: none; }
+  .ghc-wrap { gap: 4px; }
+  .ghp-kpis { gap: 10px; }
+  .ghi-age { display: none; }
+  .gh-body { display: none; }  /* repo-status: head row only */
+  .gh-head { padding-bottom: 0; margin-block: auto; }
+}
+
+/* file-viewer (T-322) */
+.fv-pick {
+  font-family: "JetBrains Mono", monospace; font-size: 9.5px;
+  color: var(--muted); background: var(--secondary);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  padding: 1px 6px; max-width: 200px; cursor: pointer; outline: none;
+}
+.fv-pick:hover { color: var(--text); border-color: var(--border-strong); }
+.fv-body { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; border-radius: var(--radius-md); padding: 2px 6px 2px 2px; }
+.fv-body:hover { background: var(--bg-accent); }
+.fv-body .md-content { font-size: 12px; line-height: 1.55; }
+.fv-body .md-content h1 { font-size: 14px; margin: 10px 0 5px; }
+.fv-body .md-content h2, .fv-body .md-content h3 { font-size: 12.5px; margin: 9px 0 4px; }
+.fv-body .md-content p, .fv-body .md-content ul, .fv-body .md-content ol { margin: 4px 0; }
+.fv-body .md-content pre { font-size: 10.5px; padding: 6px 8px; border-radius: var(--radius-sm); }
+
+/* emphasis (T-326): props.emphasis lifts a card out of the equal-weight
+   grid — stronger frame, accent title tick, deeper shadow. Restrained:
+   no fills, one accent element. */
+.ov-emph > .ov-widget {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md), inset 0 1px 0 var(--card-highlight);
+}
+.ov-emph > .ov-widget > .ov-whead { position: relative; }
+.ov-emph > .ov-widget > .ov-whead::before {
+  content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+  width: 3px; height: 14px; border-radius: var(--radius-full);
+  background: var(--accent-2);
+}
+.ov-emph > .ov-widget > .ov-whead .ov-wtitle { padding-left: 9px; color: var(--text-strong); }
+
+/* file-viewer picker on tiny cards */
+@container widget (max-width: 250px) {
+  .fv-pick { max-width: 80px; }
+}
+
+/* ===== T-328: scroll + small-size polish round =====
+   Shared scroll feel inside widgets: reserve no layout space (overlay-like
+   thumb via webkit styling), show the thumb while hovering the area. */
+/* native scrollbars stay globally hidden — every widget scroll region
+   goes through ScrollArea (custom thumb), so re-enabling them here only
+   produced doubled, fat bars. */
+
+/* (3) file viewer: trackpads emit diagonal deltas — horizontal pans of the
+   whole body felt like a "shift". Only code blocks scroll sideways. */
+.fv-body { overflow-x: hidden; }
+.fv-body .md-content pre { overflow-x: auto; }
+
+/* (11) notes view scrolls with the same hover thumb */
+.nt-view { overflow-x: hidden; }
+
+/* (12) repo-status: commit/PR lists scroll within their section */
+.gh-sec { min-height: 0; }
+.gh-sec .gh-rows { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+
+/* (2) checklist: fade the cut edge instead of a hard half-row */
+.ms-check {
+  mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
+}
+.ms-check::after { content: ''; flex-shrink: 0; height: 4px; }
+
+/* (4) quick drop at h=1: row layout, small ring */
+@container widget (max-height: 120px) {
+  .qd-zone { flex-direction: row; gap: 8px; padding: 4px 10px; }
+  .qd-ring { width: 22px; height: 22px; }
+  .qd-ring svg { width: 11px; height: 11px; }
+  .qd-title { font-size: 11px; }
+  .qd-recent { display: none; }
+}
+
+/* (6) links at h=1: vertically centered rows, no add-toggle */
+@container widget (max-height: 120px) {
+  .lk-list { justify-content: center; }
+  .lk-list .lk-row { padding-block: 2px; }
+  .lk-addtoggle { display: none; }
+}
+
+/* (5) resize at the minimum: live chip flips to accent */
+.ov-min-reached .react-grid-item.resizing ~ * .ov-fin-size,
+.ov-min-reached .ov-fin-size { border-color: var(--accent); color: var(--accent); }
+
+/* (2) milestones: header add + drilldown actions */
+.ms-add-head {
+  width: 16px; height: 16px; margin-left: 6px; padding: 0;
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  background: transparent; color: var(--muted); cursor: pointer;
+  font-size: 12px; line-height: 1; vertical-align: -2px;
+}
+.ms-add-head:hover { color: var(--accent-2); border-color: var(--accent-2); }
+.ms-detail-actions { display: flex; gap: 10px; flex-shrink: 0; align-items: center; }
+.lk-addtoggle.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* (1) consistent fade on every widget scroll area where rows can get cut */
+.ov-agents, .ov-tasks, .ov-decs, .gh-rows, .ci-list, .lk-list, .tl-spine,
+.ov-kbars, .msp-list, .ms-roadmap, .nt-view, .fv-body, .ov-goal-view {
+  mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
+}
+
+/* (4) quick drop: the ring must never be squeezed; narrow cards compact */
+.qd-ring { flex-shrink: 0; }
+@container widget (max-width: 250px) {
+  .qd-zone { gap: 4px; padding: 6px; }
+  .qd-ring { width: 22px; height: 22px; }
+  .qd-ring svg { width: 11px; height: 11px; }
+  .qd-title { font-size: 10px; text-align: center; }
+  .qd-hint { display: none; }
+}
+
+/* (5) at the resize limit the card itself shows it */
+.ov-min-reached .react-grid-item.resizing .ov-widget {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* widget scroll areas use the app's ScrollArea — track tightened to the
+   card and revealed on hover (11) */
+.ov-widget .cscroll-track { top: 2px; bottom: 2px; right: 1px; opacity: 0; transition: opacity .15s; }
+.ov-widget:hover .cscroll-track { opacity: 1; }
+
+/* agent-questions (T-307) */
+.aq-list { display: flex; flex-direction: column; gap: 8px; }
+.aq-item { display: flex; flex-direction: column; gap: 4px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-accent); flex-shrink: 0; }
+.aq-head { display: flex; align-items: center; gap: 7px; }
+.aq-task { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); background: var(--secondary); border: none; border-radius: var(--radius-full); padding: 1px 7px; cursor: pointer; }
+.aq-task:hover { color: var(--accent); }
+.aq-author { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--accent-2); }
+.aq-when { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); margin-left: auto; }
+.aq-msg { font-size: 12px; color: var(--text); line-height: 1.45; }
+.aq-count { color: var(--accent-2); }

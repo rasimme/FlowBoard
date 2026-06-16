@@ -11,6 +11,7 @@
       --border: #27272a;
       --border-strong: #3f3f46;
       --accent: #ff5c5c;
+      --accent-hover: #ff7070;
       --accent-subtle: rgba(255, 92, 92, .15);
       --accent-2: #14b8a6;
       --accent-2-subtle: rgba(20, 184, 166, 0.12);
@@ -20,29 +21,95 @@
       --warn-subtle: rgba(245, 158, 11, .12);
       --danger: #ef4444;
       --danger-subtle: rgba(239, 68, 68, .12);
+      --danger-border: rgba(239, 68, 68, .35);
+      --warn-border: rgba(245, 158, 11, .35);
+      --ok-border: rgba(34, 197, 94, .35);
       --info: #3b82f6;
       --info-subtle: rgba(59, 130, 246, .12);
+      --hue-1: #5b6b82;
+      --hue-1-fg: #e6ecf5;
+      --hue-1-soft: color-mix(in srgb, var(--hue-1) 18%, transparent);
+      --hue-1-canvas: color-mix(in srgb, var(--hue-1) 35%, #0a0c10);
+      --hue-1-ring: #7d8da6;
+      --hue-1-ring-soft: color-mix(in srgb, var(--hue-1-ring) 25%, transparent);
+      --hue-2: #3e7a78;
+      --hue-2-fg: #dff0ee;
+      --hue-2-soft: color-mix(in srgb, var(--hue-2) 18%, transparent);
+      --hue-2-canvas: color-mix(in srgb, var(--hue-2) 35%, #0a0c10);
+      --hue-2-ring: #5a9694;
+      --hue-2-ring-soft: color-mix(in srgb, var(--hue-2-ring) 25%, transparent);
+      --hue-3: #6b6fa8;
+      --hue-3-fg: #e7e8f7;
+      --hue-3-soft: color-mix(in srgb, var(--hue-3) 18%, transparent);
+      --hue-3-canvas: color-mix(in srgb, var(--hue-3) 35%, #0a0c10);
+      --hue-3-ring: #8a8fc5;
+      --hue-3-ring-soft: color-mix(in srgb, var(--hue-3-ring) 25%, transparent);
+      --hue-4: #607a5c;
+      --hue-4-fg: #e2ecde;
+      --hue-4-soft: color-mix(in srgb, var(--hue-4) 18%, transparent);
+      --hue-4-canvas: color-mix(in srgb, var(--hue-4) 35%, #0a0c10);
+      --hue-4-ring: #7f997a;
+      --hue-4-ring-soft: color-mix(in srgb, var(--hue-4-ring) 25%, transparent);
+      --hue-5: #7e5a7a;
+      --hue-5-fg: #efe2ed;
+      --hue-5-soft: color-mix(in srgb, var(--hue-5) 18%, transparent);
+      --hue-5-canvas: color-mix(in srgb, var(--hue-5) 35%, #0a0c10);
+      --hue-5-ring: #9d7899;
+      --hue-5-ring-soft: color-mix(in srgb, var(--hue-5-ring) 25%, transparent);
+      --hue-6: #8a6a4a;
+      --hue-6-fg: #f2e6d6;
+      --hue-6-soft: color-mix(in srgb, var(--hue-6) 18%, transparent);
+      --hue-6-canvas: color-mix(in srgb, var(--hue-6) 35%, #0a0c10);
+      --hue-6-ring: #a88968;
+      --hue-6-ring-soft: color-mix(in srgb, var(--hue-6-ring) 25%, transparent);
+      --hue-7: #4e6e7a;
+      --hue-7-fg: #dfe9ee;
+      --hue-7-soft: color-mix(in srgb, var(--hue-7) 18%, transparent);
+      --hue-7-canvas: color-mix(in srgb, var(--hue-7) 35%, #0a0c10);
+      --hue-7-ring: #6d8b97;
+      --hue-7-ring-soft: color-mix(in srgb, var(--hue-7-ring) 25%, transparent);
+      --hue-8: #6a5f82;
+      --hue-8-fg: #ebe6f2;
+      --hue-8-soft: color-mix(in srgb, var(--hue-8) 18%, transparent);
+      --hue-8-canvas: color-mix(in srgb, var(--hue-8) 35%, #0a0c10);
+      --hue-8-ring: #897ea3;
+      --hue-8-ring-soft: color-mix(in srgb, var(--hue-8-ring) 25%, transparent);
+      --chart-1: var(--hue-2-ring);
+      --chart-1-soft: var(--hue-2-soft);
+      --chart-2: var(--hue-3-ring);
+      --chart-2-soft: var(--hue-3-soft);
+      --chart-3: var(--hue-6-ring);
+      --chart-3-soft: var(--hue-6-soft);
       --card-highlight: rgba(255, 255, 255, .05);
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, .2);
       --shadow-md: 0 4px 12px rgba(0, 0, 0, .25), 0 0 0 1px rgba(255, 255, 255, .03);
       --shadow-lg: 0 8px 24px rgba(0, 0, 0, .4), 0 0 0 1px rgba(255, 255, 255, .03);
+      --shadow-card: 0 12px 28px rgba(0, 0, 0, .35);
       --radius-sm: 6px;
       --radius-md: 8px;
       --radius-lg: 12px;
       --radius-full: 9999px;
-      --duration-fast: 0.12s;
+      --duration-fast: 0.15s;
       --duration-normal: 0.2s;
       --duration-slow: 0.35s;
       --ease-out: cubic-bezier(.16, 1, .3, 1);
       --sidebar-width: 220px;
+      --status-backlog: #666;
       --status-open: #888;
       --status-in-progress: #f0c000;
       --status-review: #e07020;
       --status-done: #d04040;
+      --status-blocked: #ef4444;
       --tree-line: #3f3f46;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* T-370: visually-hidden but exposed to screen readers (aria-live region). */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
 
     body {
       font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -74,6 +141,7 @@
     .cscroll-track.hidden { display: none; }
     /* In file-preview, track should not overlap the header */
     .file-preview > .cscroll-track { top: 54px; }
+    .file-tree > .cscroll-track { bottom: 58px; }
     .cscroll-thumb {
       width: 100%; border-radius: 9999px;
       background: var(--border); position: absolute; min-height: 24px;
@@ -100,11 +168,23 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 14px;
-      height: 56px;
+      /* T-367-2: grow into the notch instead of hiding under it. env(...) is 0
+         on non-notched devices, so this is a no-op there. min-height keeps the
+         56px bar; the top inset is added on top of the 12px padding. */
+      padding: calc(12px + env(safe-area-inset-top, 0px)) calc(14px + env(safe-area-inset-right, 0px)) 12px calc(14px + env(safe-area-inset-left, 0px));
+      min-height: 56px;
+      height: auto;
       background: var(--bg);
       border-bottom: 1px solid var(--border);
     }
+
+    /* T-367-2: keep scrollable content clear of the home indicator on notched
+       phones. env(...) resolves to 0 on non-notched devices → no visual change
+       there; with viewport-fit=cover it adds the needed bottom breathing room. */
+    .column-body { padding-bottom: env(safe-area-inset-bottom, 0px); } /* T-368-3: only the inset (env=0 on desktop → no change there) */
+    /* The detail panel is full-height; keep its header clear of the notch and
+       its footer clear of the home indicator. */
+    [data-detail-panel] { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 
     .header-left { display: flex; align-items: center; gap: 12px; }
 
@@ -140,47 +220,93 @@
       text-transform: uppercase; letter-spacing: 0.04em;
     }
 
-    /* Sidebar */
+    /* Sidebar — T-136: flex column so sidebar-scroll can pin archive to bottom */
     .sidebar {
       background: var(--bg);
-      padding: 10px 14px 12px 14px;
-      overflow-y: auto;
-      overflow-x: hidden;
+      padding: 0;
+      overflow: hidden;
       transition: opacity var(--duration-normal);
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
     }
     .app.sidebar-collapsed .sidebar { opacity: 0; pointer-events: none; }
 
+    /* --- Sidebar head (label + "+ New" pill) --- */
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      /* T-368-3: clear the notch in the mobile fixed-overlay sidebar (env=0 on
+         desktop / non-notched → unchanged). */
+      padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 8px;
+    }
     .sidebar-label {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--muted); font-weight: 600; margin-bottom: 8px; padding: 0;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); font-weight: 600; margin: 0; padding: 0;
+    }
+    .sidebar-new {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px 3px 7px;
+      font-size: 11px; font-weight: 600;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-family: inherit;
+      transition: all var(--duration-fast);
+    }
+    .sidebar-new:hover {
+      background: var(--accent-subtle);
+      border-color: rgba(255, 92, 92, 0.25);
+    }
+    .sidebar-new svg { width: 11px; height: 11px; }
+
+    /* --- Scrollable project list (flex container to let archive pin) --- */
+    .sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 10px calc(12px + env(safe-area-inset-bottom, 0px)); /* T-368-3: clear the home indicator */
+      display: flex;
+      flex-direction: column;
     }
 
+    /* --- Project item (base) --- */
     .project-item {
-      display: flex; align-items: center; justify-content: space-between;
+      display: flex; align-items: center; gap: 6px;
       padding: 8px 14px; border-radius: var(--radius-md);
       font-size: 13px; font-weight: 500; color: var(--muted);
       cursor: pointer; transition: all var(--duration-normal);
       border: 1px solid transparent; margin-bottom: 2px;
+      position: relative;
     }
-
-    .project-item:hover { 
-      background: var(--bg-hover); 
+    .project-item:hover {
+      background: var(--bg-hover);
       color: var(--text-strong);
     }
-    .project-item.viewed { 
+    /* Viewed = the project currently open in the kanban. Gets the full
+       emphasis (background + accent border + glow). Agent activity is signaled
+       separately by the pulse marker, not by this contour. */
+    .project-item.viewed {
       background: var(--accent-subtle);
       color: var(--text-strong);
-    }
-    .project-item.agent-active {
       border: 1px solid var(--accent);
-      color: var(--text-strong);
-      box-shadow: 0 0 12px rgba(255, 92, 92, .15);
-    }
-    .project-item.agent-active.viewed {
-      background: var(--accent-subtle);
-      border: 1px solid var(--accent);
-      color: var(--text-strong);
       box-shadow: 0 0 12px rgba(255, 92, 92, .15), inset 0 1px 0 rgba(255, 92, 92, .1);
+    }
+    .project-item .proj-name {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    /* Archived state — section + lower opacity is enough. No strikethrough:
+       the archive-section is the primary signal, text decoration would be noise. */
+    .project-item.archived { opacity: 0.55; }
+    .project-item.dragging { opacity: 0.4; }
+
+    /* Inside sidebar-scroll, project items are denser (per design spec) */
+    .sidebar-scroll .project-item {
+      padding: 6px 10px;
+      font-size: 12.5px;
+      margin-bottom: 1px;
+      border-radius: var(--radius-sm);
     }
 
     .project-badge {
@@ -188,9 +314,332 @@
       padding: 2px 8px; font-size: 11px; font-weight: 500; color: var(--muted);
     }
 
+    /* T-161 B4 Pulse: subtle marker when any agent is active on this project.
+       Answers "is there agent activity here?" only — never names agents.
+       Deliberately neutral (desaturated cool gray), so it does not overlap with
+       status/warn/danger semantics or with the red legacy .agent-active border. */
+    .agent-pulse {
+      position: relative;
+      width: 8px; height: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-right: 2px;
+    }
+    .agent-pulse-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(180, 200, 220, 0.85);
+      position: relative; z-index: 1;
+    }
+    .agent-pulse-halo {
+      position: absolute; inset: 0;
+      border-radius: 50%;
+      background: rgba(180, 200, 220, 0.6);
+      animation: fb-agent-pulse 2.2s ease-out infinite;
+      pointer-events: none;
+    }
+    @keyframes fb-agent-pulse {
+      0%   { transform: scale(1);   opacity: 0.6; }
+      70%  { transform: scale(2.2); opacity: 0;   }
+      100% { transform: scale(2.2); opacity: 0;   }
+    }
+    /* Respect reduced-motion: show the dot, drop the halo animation. */
+    @media (prefers-reduced-motion: reduce) {
+      .agent-pulse-halo { animation: none; opacity: 0.3; transform: scale(1.4); }
+    }
+
+    /* T-161 active-claim emphasis on TaskCard / SubtaskCard.
+       The task-list cards use only the card contour pulse. AgentChip still
+       supports a halo for other surfaces, but the task list keeps chips static
+       so parent/subtask activity does not read as two independent pulses.
+       Agent color is passed via CSS custom properties from AgentChip / the
+       card render path (--agent-pulse-color, --agent-glow-color). */
+    .agent-chip-pulse-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .agent-chip-pulse-halo {
+      position: absolute;
+      inset: -2px;
+      border-radius: 50%;
+      background: var(--agent-pulse-color, rgba(180, 200, 220, 0.6));
+      animation: fb-chip-pulse 2.4s ease-out infinite;
+      animation-delay: var(--agent-pulse-delay, 0ms);
+      pointer-events: none;
+      z-index: 0;
+    }
+    @keyframes fb-chip-pulse {
+      0%   { transform: scale(1);   opacity: 0.55; }
+      70%  { transform: scale(1.6); opacity: 0;    }
+      100% { transform: scale(1.6); opacity: 0;    }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .agent-chip-pulse-halo { animation: none; opacity: 0.35; transform: scale(1.2); }
+    }
+    /* Active-claim contour — replaces the existing 1px border with the agent
+       color, gently pulsing between soft and full alpha. No outer glow, no
+       box-shadow expansion → never clips at container edges, never overlaps
+       neighbouring cards. The two CSS vars are set inline by the call site:
+         --agent-claim-color       full agent.ring hex (peak of pulse)
+         --agent-claim-color-soft  same hex with ~25% alpha (trough of pulse)
+       Specificity uses two-class compound (0,2,0) to beat the base .task-card
+       border-color rule, and :hover is listed so hovering doesn't snap back
+       to the default border. */
+    .task-card.task-card-active-claim,
+    .task-card.task-card-active-claim:hover {
+      border-color: var(--agent-claim-color, rgba(127,142,166,1));
+      animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+      animation-delay: var(--agent-pulse-delay, 0ms);
+    }
+    .subtask-card.subtask-card-active-claim,
+    .subtask-card.subtask-card-active-claim:hover {
+      border-color: var(--agent-claim-color, rgba(127,142,166,1));
+      animation: fb-card-claim-pulse 2.4s ease-in-out infinite;
+      animation-delay: var(--agent-pulse-delay, 0ms);
+    }
+    @keyframes fb-card-claim-pulse {
+      0%, 100% { border-color: var(--agent-claim-color-soft, rgba(127,142,166,0.4)); }
+      50%      { border-color: var(--agent-claim-color,      rgba(127,142,166,1));   }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .task-card.task-card-active-claim,
+      .subtask-card.subtask-card-active-claim {
+        animation: none;
+        border-color: var(--agent-claim-color, rgba(127,142,166,1));
+      }
+    }
+
+    /* T-161 C2 Labeled bar — "Active on this project" strip above the kanban.
+       Primary driver: flowboard_agents.active_project == viewedProject.
+       Secondary (per-pill sub-line): the agent's currently-claimed task in this
+       project, if any. Routed agents are intentionally not shown here. */
+    .active-agents-bar {
+      padding: 12px 20px 14px;
+      margin: 0 -16px 10px;
+      background: var(--bg-accent);
+      border-bottom: 1px solid var(--border);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .active-agents-bar__label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .active-agents-bar__list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .active-agents-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px 4px 4px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      max-width: 320px;
+      transition: background var(--duration-fast), border-color var(--duration-fast);
+    }
+    .active-agents-pill.has-task {
+      cursor: pointer;
+    }
+    .active-agents-pill.has-task:hover {
+      background: var(--card-highlight);
+      border-color: var(--border-strong);
+    }
+    .active-agents-pill.has-task:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-subtle);
+    }
+    .active-agents-pill__meta {
+      display: inline-flex;
+      flex-direction: column;
+      line-height: 1.2;
+      min-width: 0;
+    }
+    .active-agents-pill__name {
+      font-size: 11px;
+      color: var(--text-strong);
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 500;
+    }
+    .active-agents-pill__task {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
+    }
+    .active-agents-pill__task--idle {
+      font-style: italic;
+      opacity: 0.75;
+    }
+    .active-agents-pill__task-id {
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    /* Grip + kebab — hover-revealed affordances */
+    .project-item .row-grip,
+    .project-item .row-kebab {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent; border: 0; cursor: pointer;
+      color: var(--muted); padding: 0;
+      opacity: 0;
+      transition: opacity var(--duration-fast), color var(--duration-fast);
+      font-family: inherit;
+    }
+    /* T-374 (rev): grip is in-flow, hover-revealed (the original behaviour) — it
+       reserves its ~12px so the project name keeps the small left gutter it had
+       before (desktop drags projects via this grip; there's no whole-row drag). */
+    .project-item .row-grip {
+      width: 12px; height: 16px; cursor: grab; touch-action: none; flex-shrink: 0;
+    }
+    /* Real touch-primary devices (no hover): grip in-flow, visible, ~40px tap
+       target (no hover to reveal it; HTML5 drag dead on touch). */
+    @media (hover: none) {
+      .project-item .row-grip {
+        opacity: 0.55;
+        width: 40px; height: 40px; margin: -12px -6px -12px -10px;
+      }
+    }
+    .project-item .row-kebab { width: 20px; height: 20px; border-radius: var(--radius-sm); }
+    .project-item:hover .row-grip { opacity: 0.5; }
+    .project-item:hover .row-kebab,
+    .project-item .row-kebab[aria-expanded="true"] { opacity: 1; }
+    .project-item .row-kebab:hover { background: var(--bg-hover); color: var(--text-strong); }
+
+    /* Inline rename input — replaces proj-name span */
+    .project-item .proj-rename {
+      flex: 1; min-width: 0;
+      background: var(--bg); color: var(--text-strong);
+      border: 1px solid var(--accent); border-radius: var(--radius-sm);
+      padding: 2px 6px; font: inherit; outline: none;
+    }
+
+    /* DnD insertion divider — rendered as a real element BETWEEN rows.
+       Clean 2px line, no clipping on rounded corners, no "jump" between the
+       top-of-next and bottom-of-previous because both states map to the same
+       insert index and therefore the same DOM position. */
+    .drop-line {
+      height: 2px;
+      /* flex-shrink:0 + min-height are essential: .column-body is a flex column
+         that overflows (scrolls) in busy columns like Backlog/Done. Without
+         this the flexbox algorithm shrinks a 2px item to 0 height — the line is
+         in the DOM but invisible, exactly where there are the most cards. */
+      flex-shrink: 0;
+      min-height: 2px;
+      margin: 1px 2px;
+      background: var(--accent);
+      border-radius: 1px;
+      pointer-events: none;
+    }
+    /* T-130: sort-mode dropdown (Custom / Newest / Oldest) */
+    .sort-mode-menu {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-lg);
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .sort-mode-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      width: 100%; padding: 6px 8px; margin: 0;
+      background: none; border: none; cursor: pointer;
+      font-size: 12px; color: var(--text); text-align: left;
+      border-radius: var(--radius-sm); transition: background var(--duration-normal);
+    }
+    .sort-mode-item:hover { background: var(--card-highlight); }
+    .sort-mode-item.active { color: var(--accent); }
+    /* Empty-section drop zone (e.g. empty folder body, empty archive placeholder) —
+       kept as a ring since there's no gap to place a divider in. */
+    .drop-into {
+      box-shadow: inset 0 0 0 1px var(--accent);
+      border-radius: var(--radius-sm);
+    }
+
+    /* Folder groups — boxed */
+    .folder-group {
+      margin: 8px 0 4px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.015);
+      border-radius: var(--radius-sm);
+      padding: 3px 4px 5px;
+    }
+    .folder-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px 4px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); font-weight: 600;
+      cursor: pointer; user-select: none;
+      border-radius: var(--radius-sm);
+      background: transparent; border: 0;
+      width: 100%; text-align: left; font-family: inherit;
+    }
+    .folder-head:hover { color: var(--text); }
+    .folder-head .chev {
+      width: 10px; height: 10px; opacity: 0.7;
+      display: inline-flex; align-items: center;
+      transition: transform var(--duration-fast);
+    }
+    .folder-head.collapsed .chev { transform: rotate(-90deg); }
+    .folder-head .folder-ico {
+      width: 11px; height: 11px; opacity: 0.55;
+      display: inline-flex; align-items: center;
+    }
+    .folder-body {
+      display: flex; flex-direction: column;
+      padding: 2px 2px 0;
+    }
+
+    /* Archive section — pinned bottom, separated from live tasks by
+       extra breathing room rather than a hard divider line (the solid
+       border-top read as a bright seam on dark cards). */
+    .archive-section {
+      margin-top: auto;
+      padding-top: 18px;
+    }
+    .archive-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 10px 6px;
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); font-weight: 600;
+      cursor: pointer; user-select: none;
+      opacity: 0.75;
+      background: transparent; border: 0;
+      width: 100%; text-align: left; font-family: inherit;
+    }
+    .archive-head:hover { opacity: 1; color: var(--text); }
+    .archive-head .chev {
+      width: 10px; height: 10px; display: inline-flex; align-items: center;
+      transition: transform var(--duration-fast);
+    }
+    .archive-head.collapsed .chev { transform: rotate(-90deg); }
+    .archive-head .folder-ico {
+      width: 11px; height: 11px; opacity: 0.8;
+      display: inline-flex; align-items: center;
+    }
+    .archive-head .folder-count {
+      margin-left: auto;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10.5px; opacity: 0.8;
+    }
+
     .sidebar-empty { color: var(--muted); font-size: 12px; padding: 12px; text-align: center; }
 
-    .sidebar-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .sidebar-actions {
+      margin: 0 10px 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
 
     .btn {
       display: inline-flex; align-items: center; justify-content: center;
@@ -219,9 +668,17 @@
 
     /* Content area */
     .content {
+      grid-row: 3;
+      grid-column: 2;
       padding: 12px 18px 16px 22px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
-    /* Content wrapper (created by cscrollWrap) */
+    /* Canvas uses its own margin — override content padding */
+    .content:has(.canvas-wrap) { padding: 8px 18px 16px 22px; }
+    /* Content wrapper (created by cscrollWrap) — legacy, kept for compat */
     .cscroll-wrap.content-wrapper {
       grid-row: 3;
     }
@@ -232,7 +689,11 @@
     }
 
     /* Kanban */
-    .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    /* columns gain from width up to a point — past 340px cards stretch into
+   unreadable slabs on ultrawides, so the tracks cap and the board centers
+   via max-width. NOT justify-content: center — on an overflowing scroll
+   container that puts the left edge out of reach (backlog column clipped). */
+    .kanban { display: grid; grid-template-columns: repeat(5, minmax(240px, 340px)); gap: 12px; overflow-x: auto; width: 100%; min-width: 0; max-width: calc(5 * 340px + 4 * 12px); margin-inline: auto; }
 
     .column {
       background: var(--bg-accent); border: 1px solid var(--border);
@@ -252,15 +713,34 @@
       font-weight: 600; color: var(--text);
     }
 
+    .column-header-right { display: flex; align-items: center; gap: 4px; }
     .column-count {
       background: var(--secondary); border-radius: var(--radius-full);
       padding: 2px 8px; font-size: 11px; font-weight: 600; color: var(--muted);
     }
 
-    .column-body { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .column-body { display: flex; flex-direction: column; gap: 8px; flex: 1; overflow-y: auto; min-height: 0; }
     .column-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 24px 0; opacity: 0.5; }
 
     /* Task Cards */
+    /* flash target card after navigating in from search/overview/spec-back.
+       Inset ring: kanban columns clip overflowing outlines left/right, and
+       the claim pulse animates border-color — an inner ring avoids both. */
+    .column.column-highlight {
+      animation: colFlash 1.6s ease-out;
+    }
+    @keyframes colFlash {
+      0%, 40% { box-shadow: inset 0 0 0 2px var(--accent); }
+      100% { box-shadow: inset 0 0 0 2px transparent; }
+    }
+    .task-card.highlighted-from-back,
+    .subtask-card.highlighted-from-back {
+      animation: cardFlash 2s ease-out;
+    }
+    @keyframes cardFlash {
+      0%, 45% { box-shadow: inset 0 0 0 2px var(--accent); }
+      100% { box-shadow: inset 0 0 0 2px transparent; }
+    }
     .task-card {
       background: var(--card); border: 1px solid var(--border);
       border-radius: var(--radius-md); padding: 12px; position: relative;
@@ -274,7 +754,180 @@
     .task-card.dragging { opacity: 0.4; }
     .task-card.removing { animation: shrink 0.25s var(--ease-out) forwards; }
 
-    .task-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    /* T-374 (rev): card drag grip is HIDDEN on desktop — there the whole card is
+       draggable (body pointer-drag), so no grip clutter and T-000 stays flush.
+       Shown only on real touch devices (no hover), where the body must scroll so
+       the grip is the drag initiator: in-flow, visible, ~40px tap target. */
+    .card-drag-handle {
+      display: none;
+      align-items: center; justify-content: center; padding: 0;
+      border: none; background: none; cursor: grab;
+      color: var(--muted); border-radius: var(--radius-sm); touch-action: none;
+    }
+    .card-drag-handle:active { cursor: grabbing; }
+    @media (hover: none) {
+      .card-drag-handle {
+        display: inline-flex; opacity: 0.6;
+        width: 40px; height: 40px; margin: -12px -6px -12px -10px;
+      }
+    }
+    .drag-ghost {
+      box-shadow: var(--shadow-lg);
+      transform: rotate(1.5deg) scale(1.02);
+      opacity: 0.92;
+    }
+    /* T-368-1: disable horizontal scroll-snap while dragging so edge auto-scroll
+       can glide the board to off-screen columns (higher specificity than the
+       .kanban snap rule in the mobile media query, so this wins everywhere). */
+    .kanban.is-dragging { scroll-snap-type: none; }
+    .task-card.is-blocked {
+      border: 1px dashed var(--status-blocked);
+      opacity: 0.65;
+      background: rgba(239, 68, 68, 0.04);
+    }
+    .task-card.is-blocked:hover { border-color: var(--status-blocked); box-shadow: none; }
+    /* T-246-9: blocked subtasks mirror the parent's blocked card layout */
+    .subtask-card.is-blocked {
+      border: 1px dashed var(--status-blocked);
+      opacity: 0.65;
+      background: rgba(239, 68, 68, 0.04);
+    }
+    .subtask-card.is-blocked:hover { border-color: var(--status-blocked); box-shadow: none; }
+    /* Archived cards: deliberately low visual weight — these are
+       historical records, not actionable. Keep a faint border so
+       adjacent cards don't blur together, but strip colour from the
+       meta row (priority pill, blocked chip, any future chip) so the
+       eye registers them as "past".
+       `box-shadow: none` removes the subtle raised shadow that live
+       task-cards get; archived shouldn't look "lifted". */
+    .task-card.is-archived {
+      /* Inherits every layout property from .task-card (padding,
+         min-height on mobile, display, flex behaviour of children).
+         We only override the colour side — background, border color,
+         box-shadow — and the cursor. Do NOT re-declare padding or
+         min-height here: doing that broke layout parity with live
+         cards on mobile. Archived and live cards should be the same
+         shape, just dimmer. */
+      background: transparent;
+      border-color: rgba(255, 255, 255, 0.04);
+      box-shadow: none;
+      cursor: pointer;
+    }
+    .task-card.is-archived:hover {
+      background: rgba(255, 255, 255, 0.02);
+      border-color: rgba(255, 255, 255, 0.08);
+      box-shadow: none;
+    }
+    .task-card.is-archived .task-title { color: var(--muted); }
+    .task-card.is-archived .task-id { opacity: 0.7; }
+    /* Desaturate meta-row chips (priority pill, blocked chip, etc.)
+       so they read as neutral rather than signalling action needed. */
+    .task-card.is-archived .task-meta,
+    .task-card.is-archived .priority-pill-wrap {
+      filter: grayscale(1);
+      opacity: 0.7;
+    }
+    .task-card.is-archived .priority-pill,
+    .task-card.is-archived .spec-badge,
+    .task-card.is-archived .subtask-add-btn,
+    .task-card.is-archived .delete-btn,
+    .task-card.is-archived .blocked-toggle { pointer-events: none; }
+    /* Restore + Delete on archived cards MUST stay interactive — they
+       are the user's way back out of the archive. Explicitly re-enable
+       pointer-events in case the meta-row grayscale filter cascades.
+       Also: show them permanently (not only on :hover). Archived cards
+       have only these two actions, so there's no "reveal on hover" need
+       like on live cards, and on mobile there is no hover state at all —
+       hover-gating would leave the icons invisible. */
+    .task-card.is-archived .card-hover-actions,
+    .task-card.is-archived .card-hover-btn { pointer-events: auto; filter: none; }
+    .task-card.is-archived .card-hover-btn {
+      opacity: 0.6;
+      border-color: var(--border);
+    }
+    .task-card.is-archived .card-hover-btn:hover {
+      opacity: 1;
+      color: var(--text); background: #ffffff0f; border-color: var(--border-strong);
+    }
+    .task-card.is-archived .card-hover-btn-restore:hover {
+      color: var(--ok); background: var(--ok-subtle); border-color: rgba(34,197,94,0.3);
+    }
+    .task-card.is-archived .card-hover-btn-delete:hover {
+      color: var(--danger); background: var(--danger-subtle); border-color: rgba(239,68,68,0.3);
+    }
+
+
+    .blocked-badge {
+      display: inline-block; margin-left: 6px; vertical-align: middle;
+      background: rgba(239, 68, 68, 0.15); color: var(--status-blocked);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: var(--radius-full); padding: 1px 6px;
+      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      pointer-events: none; line-height: 1.4;
+    }
+
+    .blocked-toggle {
+      background: none; border: none; cursor: pointer; padding: 2px 4px;
+      color: var(--muted); opacity: 0; border-radius: var(--radius-sm);
+      display: inline-flex; align-items: center; font-size: 13px; line-height: 1;
+      transition: opacity var(--duration-fast), background var(--duration-fast);
+    }
+    .task-card:hover .blocked-toggle { opacity: 0.6; }
+    .task-card:hover .blocked-toggle:hover { opacity: 1; background: rgba(239, 68, 68, 0.12); color: var(--status-blocked); }
+    .task-card.is-blocked .blocked-toggle { opacity: 1; color: var(--status-blocked); }
+
+    .archive-toggle {
+      background: none; border: none; cursor: pointer; padding: 2px 6px;
+      color: var(--muted); border-radius: var(--radius-sm); font-size: 11px;
+      display: inline-flex; align-items: center; gap: 3px;
+      transition: color var(--duration-fast), background var(--duration-fast);
+    }
+    .archive-toggle:hover { color: var(--text); background: rgba(255,255,255,.06); }
+    .archive-toggle.active { color: var(--text); }
+
+    .restore-btn { display: inline-flex; align-items: center; gap: 3px; }
+    .restore-btn svg { flex-shrink: 0; }
+
+    .archive-btn {
+      background: none; border: none; cursor: pointer; padding: 2px 4px;
+      color: var(--muted); opacity: 0; border-radius: var(--radius-sm);
+      display: inline-flex; align-items: center; font-size: 13px; line-height: 1;
+      transition: opacity var(--duration-fast), background var(--duration-fast);
+    }
+    .task-card:hover .archive-btn { opacity: 0.6; }
+    .task-card:hover .archive-btn:hover { opacity: 1; background: rgba(255,255,255,.08); color: var(--text); }
+
+    .archive-group { opacity: 0.35; }
+
+    .archive-divider {
+      border: none; border-top: 1px dashed var(--border);
+      margin: 6px 0; opacity: 0.5;
+    }
+
+    .task-id { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .task-id[data-action] { cursor: pointer; }
+    .task-id[data-action]:hover { color: var(--text); text-decoration: underline; }
+    .agent-id-badge {
+      color: var(--accent-2);
+      font-weight: 600;
+      opacity: 0.8;
+      font-size: 10px;
+    }
+    .stale-warning {
+      color: var(--warn);
+      display: inline-flex;
+      align-items: center;
+      animation: stale-pulse 2s infinite ease-in-out;
+      cursor: help;
+    }
+    @keyframes stale-pulse {
+      0% { opacity: 0.4; transform: scale(0.95); }
+      50% { opacity: 1; transform: scale(1.1); }
+      100% { opacity: 0.4; transform: scale(0.95); }
+    }
+    .task-card.is-stale {
+      border-left: 3px solid var(--warn);
+    }
     .task-title {
       font-size: 13px; font-weight: 500; color: var(--text);
       margin-bottom: 8px; line-height: 1.4; cursor: pointer;
@@ -366,9 +1019,9 @@
       font-size: 11px; font-weight: 500; cursor: pointer;
       transition: all var(--duration-normal);
     }
-    .priority-high { color: var(--danger); border: 1px solid #ef444459; background: var(--danger-subtle); }
-    .priority-medium { color: var(--warn); border: 1px solid #f59e0b59; background: var(--warn-subtle); }
-    .priority-low { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
+    .priority-high { color: var(--danger); border: 1px solid var(--danger-border); background: var(--danger-subtle); }
+    .priority-medium { color: var(--warn); border: 1px solid var(--warn-border); background: var(--warn-subtle); }
+    .priority-low { color: var(--ok); border: 1px solid var(--ok-border); background: var(--ok-subtle); }
 
     .priority-popover {
       position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
@@ -395,6 +1048,70 @@
     .file-preview-actions .delete-btn { opacity: 0.6; }
     .file-preview-actions .delete-btn:hover { opacity: 1; }
     .delete-btn:hover { color: var(--danger); background: var(--danger-subtle); }
+
+    /* T-161-4: Trash toolbar button (right of Sort button on the TasksView
+       header). Only rendered when the viewed project has at least one
+       trashed task. Shows a count badge. */
+    .trash-toolbar-btn {
+      position: relative;
+      color: var(--muted);
+    }
+    .trash-toolbar-btn:hover {
+      color: var(--danger);
+    }
+    .trash-toolbar-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--danger-subtle);
+      color: var(--danger);
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+    }
+
+    /* T-161-4: hover-revealed admin icons in the top-right cluster of
+       TaskCard, to the left of the permanent AgentChip cluster. Same
+       footprint (26x26) and hover semantics as .subtask-add-btn and
+       .spec-badge so the card-level button family stays consistent. */
+    .card-hover-actions {
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .card-hover-btn {
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: var(--radius-sm);
+      opacity: 0; color: var(--muted); background: transparent;
+      border: 1px solid transparent;
+      transition: all var(--duration-fast);
+      /* Invisible must mean non-interactive — revealed on card hover,
+         keyboard focus, and permanently on touch devices (T-292). */
+      pointer-events: none;
+    }
+    .task-card:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .task-card:focus-within .card-hover-btn,
+    .task-card:hover .card-hover-btn,
+    .card-hover-btn:focus-visible {
+      opacity: 0.5; border-color: var(--border); pointer-events: auto;
+    }
+    @media (hover: none) {
+      .card-hover-btn { opacity: 0.5; border-color: var(--border); pointer-events: auto; }
+    }
+    .task-card:hover .card-hover-btn:hover {
+      opacity: 1; color: var(--text); background: #ffffff0f; border-color: var(--border-strong);
+    }
+    .task-card:hover .card-hover-btn-delete:hover {
+      color: var(--danger); background: var(--danger-subtle); border-color: rgba(239,68,68,0.3);
+    }
+    .task-card:hover .card-hover-btn-archive:hover {
+      color: var(--warn); background: var(--warn-subtle); border-color: rgba(245,158,11,0.3);
+    }
 
     /* Subtask Progress Bar (on parent cards) */
     .subtask-progress {
@@ -449,7 +1166,8 @@
     /* Subtask container — wraps all subtask cards for a parent */
     .subtask-container {
       position: relative;
-      margin-left: 14px;
+      margin-left: 10px;
+      margin-top: 4px;
       padding-left: 22px;
       display: flex;
       flex-direction: column;
@@ -477,8 +1195,9 @@
     .subtask-card {
       position: relative;
       display: flex;
-      align-items: center;
-      gap: 8px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
       padding: 7px 10px;
       min-height: 34px;
       background: var(--bg-accent);
@@ -488,11 +1207,34 @@
     }
     .subtask-card:hover { background: var(--bg-hover); }
 
-    /* Tree-line: horizontal branch from trunk to card */
-    .subtask-card::after {
+    /* T-161-4: the main subtask row (title + status + chips + actions).
+       Holds the positional anchor for tree-dot and the horizontal
+       tree-line so they center on this row rather than on the full card
+       when a Blocked line pushes the card taller. */
+    .subtask-card-row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 20px;
+    }
+
+    /* Blocked line — appears only when task.blocked is true. Indented so
+       the chip visually aligns under the title, not the tree-dot cluster. */
+    .subtask-card-blocked {
+      display: flex;
+      align-items: center;
+      padding-left: 28px;
+    }
+
+    /* Tree-line: horizontal branch from trunk to card.
+       Anchored on .subtask-card-row (not .subtask-card) so the branch
+       centers on the title row rather than the full card when the card
+       grows taller because of a Blocked line below. */
+    .subtask-card-row::after {
       content: '';
       position: absolute;
-      left: -14px;
+      left: -24px;
       top: 50%;
       width: 10px;
       height: 1.5px;
@@ -503,7 +1245,7 @@
     /* Tree-line: dot connector */
     .tree-dot {
       position: absolute;
-      left: -6px;
+      left: -16px;
       top: 50%;
       width: 5px;
       height: 5px;
@@ -558,6 +1300,7 @@
     .status-dot-in-progress { background: var(--status-in-progress); }
     .status-dot-open { background: var(--status-open); }
     .status-dot-review { background: var(--status-review); }
+    .status-dot-backlog { background: var(--status-backlog); }
 
     /* Clickable status dot wrapper */
     .status-dot-wrap {
@@ -632,9 +1375,9 @@
       color: var(--muted); transition: all var(--duration-normal); font-family: inherit;
     }
     .priority-option.selected { color: var(--text-strong); }
-    .priority-option[data-p="high"].selected { color: var(--danger); border-color: #ef444459; background: var(--danger-subtle); }
-    .priority-option[data-p="medium"].selected { color: var(--warn); border-color: #f59e0b59; background: var(--warn-subtle); }
-    .priority-option[data-p="low"].selected { color: var(--ok); border-color: #22c55e59; background: var(--ok-subtle); }
+    .priority-option[data-p="high"].selected { color: var(--danger); border-color: var(--danger-border); background: var(--danger-subtle); }
+    .priority-option[data-p="medium"].selected { color: var(--warn); border-color: var(--warn-border); background: var(--warn-subtle); }
+    .priority-option[data-p="low"].selected { color: var(--ok); border-color: var(--ok-border); background: var(--ok-subtle); }
 
     .form-actions { display: flex; gap: 8px; }
 
@@ -662,12 +1405,14 @@
       animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* Icon spin utility (T-353 update button, reuses the keyframe above). */
+    .spin { animation: spin 0.8s linear infinite; }
 
     /* Modal */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
       display: flex; align-items: center; justify-content: center;
-      z-index: 1000; backdrop-filter: blur(4px);
+      z-index: 2000; backdrop-filter: blur(4px); /* above DetailPanel (z-1600) */
       animation: fadeIn 0.15s ease-out;
     }
     .modal {
@@ -675,11 +1420,15 @@
       border-radius: var(--radius-lg); padding: 24px;
       max-width: 360px; width: 90%; box-shadow: var(--shadow-lg);
       animation: modalIn 0.2s var(--ease-out);
+      /* T-368-3: never taller than the safe viewport on small phones; scroll
+         inside instead of being clipped under the notch / home indicator. */
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+      overflow-y: auto;
     }
     .modal-title { font-size: 15px; font-weight: 600; color: var(--text-strong); margin-bottom: 8px; }
     .modal-body { font-size: 13px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
     .modal-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-    .modal-checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); cursor: pointer; user-select: none; }
+    .modal-checkbox { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); cursor: pointer; user-select: none; }
     .modal-checkbox input[type="checkbox"] { display: none; }
     .modal-checkbox .check-box {
       width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--border-strong);
@@ -736,6 +1485,10 @@
       gap: 0;
       height: 100%;
       min-height: 0;
+      /* reading surface: don't stretch across ultrawide monitors */
+      max-width: 1500px;
+      margin-inline: auto;
+      width: 100%;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
@@ -754,20 +1507,47 @@
 
     .file-tree-items { flex: 1; overflow-y: auto; }
 
+    /* T-222: Upload area for context/ folder */
+    .file-upload-area {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: stretch;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .file-upload-area.drag-over {
+      background: var(--bg-hover);
+      border: 2px dashed var(--accent);
+      border-radius: 6px;
+      margin: 8px;
+      padding: 24px 14px;
+      justify-content: center;
+    }
+    .file-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+    }
+    .file-upload-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+    .file-upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .file-upload-hint { color: var(--muted); font-size: 11px; }
+
     .file-tree-footer {
       padding: 12px 14px;
       border-top: 1px solid var(--border);
       font-size: 11px; color: var(--muted);
-    }
-
-    .context-bar {
-      height: 4px; border-radius: 2px;
-      background: var(--secondary);
-      margin-top: 6px; overflow: hidden;
-    }
-    .context-bar-fill {
-      height: 100%; border-radius: 2px;
-      transition: width var(--duration-normal);
     }
 
     .tree-item {
@@ -779,6 +1559,10 @@
       user-select: none;
     }
     .tree-item:hover { background: var(--bg-hover); }
+    /* T-409 (review of T-375-1): when "Show hidden" is on, dim operational
+       (non-Markdown/backup) files so they're visually distinct from knowledge docs. */
+    .tree-item.is-hidden { opacity: 0.55; }
+    .tree-item.is-hidden.selected { opacity: 1; }
     .tree-item.selected {
       background: var(--accent-subtle);
       border-left-color: var(--accent);
@@ -813,7 +1597,7 @@
     }
 
     .file-back-btn {
-      display: none;
+      display: flex;
       align-items: center; gap: 4px;
       background: none; border: 1px solid var(--border); border-radius: var(--radius-md);
       color: var(--text); font-size: 13px; font-family: inherit;
@@ -821,6 +1605,18 @@
       transition: all var(--duration-normal);
     }
     .file-back-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+
+    /* T-367-3: master-detail back button — styled like .file-back-btn but only
+       shown on the narrow single-pane layout (the @media block below). */
+    .file-back-to-list {
+      display: none;
+      align-items: center; gap: 4px;
+      background: none; border: 1px solid var(--border); border-radius: var(--radius-md);
+      color: var(--text); font-size: 13px; font-family: inherit;
+      padding: 4px 10px; cursor: pointer; margin-right: 8px;
+      transition: all var(--duration-normal);
+    }
+    .file-back-to-list:hover { border-color: var(--border-strong); background: var(--bg-hover); }
 
     .file-preview-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -839,11 +1635,24 @@
       font-size: 10px; font-weight: 500; text-transform: uppercase;
       letter-spacing: 0.04em;
     }
-    .file-preview-badge.always { color: var(--ok); border: 1px solid #22c55e59; background: var(--ok-subtle); }
-    .file-preview-badge.lazy { color: var(--warn); border: 1px solid #f59e0b59; background: var(--warn-subtle); }
+    .file-preview-badge.always { color: var(--ok); border: 1px solid var(--ok-border); background: var(--ok-subtle); }
+    .file-preview-badge.lazy { color: var(--warn); border: 1px solid var(--warn-border); background: var(--warn-subtle); }
     .file-preview-badge.optional { color: var(--info); border: 1px solid #3b82f659; background: var(--info-subtle); }
 
     .file-preview-actions { display: flex; gap: 6px; }
+
+    .file-conflict-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border-bottom: 1px solid var(--warn-border);
+      background: var(--warn-subtle);
+      color: var(--text);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .file-conflict-banner span { flex: 1; color: var(--text-strong); }
 
     .file-preview-body {
       flex: 1; overflow-y: auto; padding: 18px 24px;
@@ -916,16 +1725,63 @@
     .json-null { color: var(--muted); }
 
     /* Edit mode */
-    .file-editor {
+    .file-editor,
+    .markdown-editor {
       width: 100%; height: 100%; resize: none;
       background: var(--bg); color: var(--text);
       border: none; outline: none;
       font-family: "JetBrains Mono", monospace;
       font-size: 13px; line-height: 1.6;
-      padding: 18px 24px;
       overflow-y: auto;
     }
-    .file-editor:focus { outline: none; }
+    .markdown-editor {
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .file-editor {
+      padding: 18px 24px;
+    }
+    .file-editor:focus,
+    .markdown-editor:focus { outline: none; }
+
+    .markdown-editor-toolbar {
+      display: flex; align-items: center; gap: 4px;
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+    .markdown-editor-tool {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      transition: background var(--duration-fast), color var(--duration-fast), border-color var(--duration-fast);
+    }
+    .markdown-editor-tool:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+      border-color: var(--border);
+    }
+    .markdown-editor-tool:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .markdown-editor-body {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .markdown-editor-body > div {
+      height: 100%;
+    }
+
+    .markdown-editor .cm-editor {
+      height: 100%;
+      background: var(--bg);
+    }
 
     .unsaved-dot {
       width: 8px; height: 8px; border-radius: 50%;
@@ -935,14 +1791,37 @@
 
     @media (max-width: 900px) {
       .app { grid-template-columns: 0px 1fr; }
-      .file-explorer { grid-template-columns: 1fr; display: block; height: 100%; overflow: hidden; }
-      /* Mobile file nav: show tree OR preview, not both */
-      .file-explorer .file-tree { display: flex; flex-direction: column; border-right: none; height: 100%; overflow-y: auto; }
-      .file-explorer .file-preview { display: none; }
-      .file-explorer.show-preview .file-tree { display: none; }
-      .file-explorer.show-preview .file-preview { display: flex; flex-direction: column; height: 100%; overflow: auto; }
-      /* Back button — only visible on mobile */
-      .file-back-btn { display: flex !important; }
+      .file-explorer {
+        grid-template-columns: minmax(132px, 38%) minmax(0, 1fr);
+        display: grid;
+        height: 100%;
+        overflow: hidden;
+      }
+      .file-explorer .file-tree {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .file-explorer .file-preview {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .file-upload-area {
+        padding: 8px 10px;
+      }
+      .file-upload-hint {
+        display: none;
+      }
+      .file-upload-btn {
+        padding: 6px 8px;
+        font-size: 11px;
+      }
+      .file-back-btn { display: flex; }
 
       /* File preview header: two rows on mobile */
       .file-preview-header {
@@ -988,7 +1867,7 @@
       }
 
       /* Span full width — sidebar is out of grid flow (position:fixed) */
-      .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
+      .content, .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
       .tab-bar { grid-column: 1 / -1; }
 
       /* Allow horizontal scroll through the cscroll wrapper */
@@ -1021,8 +1900,17 @@
     /* Mobile: Telegram Mini App + small screens */
     @media (max-width: 600px) {
       /* CRITICAL: span full width — sidebar is out of grid flow (position:fixed) */
-      .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
+      .content, .cscroll-wrap.content-wrapper { grid-column: 1 / -1; }
       .tab-bar { grid-column: 1 / -1; }
+
+      /* T-367-3: Files master-detail — show the list OR the open file full
+         width, never the cramped split. data-view is set by FilesView from
+         whether a file is selected; the ← Files button clears the selection. */
+      .file-explorer { grid-template-columns: 1fr; }
+      .file-explorer[data-view="preview"] .file-tree { display: none; }
+      .file-explorer[data-view="list"] .file-preview { display: none; }
+      .file-explorer .file-tree { border-right: none; }
+      .file-back-to-list { display: inline-flex; order: 0; }
 
       /* Narrower columns on small phones */
       .column { min-width: 82vw; max-width: 82vw; }
@@ -1033,9 +1921,14 @@
         min-height: 44px;
       }
       .task-card .task-actions { opacity: 1; } /* Always show on mobile */
+      .task-card .delete-btn { opacity: 1; }
+      .task-card .spec-badge-add { opacity: 0.5; }
+      .subtask-card .spec-badge-add { opacity: 0.5; }
 
-      /* Header */
-      .header { padding: 8px 12px; }
+      /* Header — keep the tighter mobile padding but preserve the notch insets
+         (T-409 review of T-367-2: the plain 8px 12px override discarded the base
+         env(safe-area-*) padding, so header content sat under the notch). */
+      .header { padding: calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px)); }
       .header-logo { display: none; }
 
       /* Sidebar toggle: more prominent */
@@ -1108,11 +2001,11 @@
     .note.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* Note color variants */
-    .note.color-yellow { background: var(--warn-subtle);  border-left-color: var(--warn); }
-    .note.color-blue   { background: rgba(59,130,246,.12); border-left-color: var(--info); }
-    .note.color-green  { background: var(--ok-subtle);    border-left-color: var(--ok); }
-    .note.color-red    { background: var(--danger-subtle); border-left-color: var(--danger); }
-    .note.color-teal   { background: var(--accent-2-subtle); border-left-color: var(--accent-2); }
+    .note.color-yellow { background: var(--hue-6-canvas); border-left-color: var(--hue-6-ring); }
+    .note.color-blue   { background: var(--hue-3-canvas); border-left-color: var(--hue-3-ring); }
+    .note.color-green  { background: var(--hue-4-canvas); border-left-color: var(--hue-4-ring); }
+    .note.color-red    { background: var(--hue-5-canvas); border-left-color: var(--hue-5-ring); }
+    .note.color-teal   { background: var(--hue-2-canvas); border-left-color: var(--hue-2-ring); }
 
     /* Note header (drag handle) */
     .note-header {
@@ -1129,11 +2022,11 @@
       transition: transform var(--duration-normal);
     }
     .note-color-dot:hover { transform: scale(1.2); }
-    .note.color-yellow .note-color-dot { background: var(--warn); }
-    .note.color-blue   .note-color-dot { background: var(--info); }
-    .note.color-green  .note-color-dot { background: var(--ok); }
-    .note.color-red    .note-color-dot { background: var(--danger); }
-    .note.color-teal   .note-color-dot { background: var(--accent-2); }
+    .note.color-yellow .note-color-dot { background: var(--hue-6-ring); }
+    .note.color-blue   .note-color-dot { background: var(--hue-3-ring); }
+    .note.color-green  .note-color-dot { background: var(--hue-4-ring); }
+    .note.color-red    .note-color-dot { background: var(--hue-5-ring); }
+    .note.color-teal   .note-color-dot { background: var(--hue-2-ring); }
 
     /* Note ID label */
     .note-id {
@@ -1242,12 +2135,12 @@
     }
     .color-swatch:hover { transform: scale(1.2); }
     .color-swatch.selected { border-color: var(--text-strong); }
-    .color-swatch-yellow { background: var(--warn); }
-    .color-swatch-blue   { background: var(--info); }
-    .color-swatch-green  { background: var(--ok); }
-    .color-swatch-red    { background: var(--danger); }
-    .color-swatch-teal   { background: var(--accent-2); }
-    .color-swatch-grey   { background: var(--border-strong); }
+    .color-swatch-yellow { background: var(--hue-6-ring); }
+    .color-swatch-blue   { background: var(--hue-3-ring); }
+    .color-swatch-green  { background: var(--hue-4-ring); }
+    .color-swatch-red    { background: var(--hue-5-ring); }
+    .color-swatch-teal   { background: var(--hue-2-ring); }
+    .color-swatch-grey   { background: var(--hue-1-ring); }
 
     /* Lasso selection rectangle */
     .canvas-lasso {
@@ -1260,3 +2153,669 @@
     @media (max-width: 600px) {
       .conn-dot { width: 12px; height: 12px; box-sizing: border-box; }
     }
+
+.task-card-click-area {
+  cursor: pointer;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 12px;
+}
+.task-card-click-area:hover {
+  background: var(--bg-hover);
+}
+.task-card-click-area [data-action] {
+  position: relative;
+  z-index: 2;
+}
+
+/* =========================================================================
+   SNIPPET UPGRADE FLOW — header pill + upgrade modal
+   Added for the FlowBoard system-upgrade feature (see dashboard/snippets-doctor.js,
+   /api/snippets/status, /api/snippets/apply). All selectors prefixed or scoped
+   under .upgrade-modal / .snippet-modal-overlay to avoid collision with the
+   existing generic .modal-overlay / .modal-body rules above.
+   ========================================================================= */
+
+/* Migration chip — header trigger for the snippet upgrade modal.
+   Warn-amber palette (not the attention-grabbing accent red) and a
+   simple AlertTriangle: this is advisory, not urgent. No count badge,
+   no pulse animation — per latest design (Claude Design handoff v2). */
+.migration-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 9px;
+  background: var(--warn-subtle);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all var(--duration-fast);
+}
+.migration-chip:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.55);
+}
+/* Info variant: used for "Finish setup" — neutral teal instead of warn amber.
+   Signals "additive setup action", not "attention needed". */
+.migration-chip.migration-chip-info {
+  background: rgba(20, 184, 166, 0.12);
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  color: var(--accent-2);
+}
+.migration-chip.migration-chip-info:hover {
+  background: rgba(20, 184, 166, 0.2);
+  border-color: rgba(20, 184, 166, 0.55);
+}
+.migration-chip-icon { display: flex; }
+.migration-chip-icon svg { width: 13px; height: 13px; }
+
+/* Divider used between header-right elements */
+.header-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
+/* Modal overlay (dedicated name to avoid collision with legacy .modal-overlay) */
+.snippet-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  animation: snippetFadeIn 0.18s ease-out;
+  padding: 24px;
+  /* Overlay clips everything to the viewport. Prevents the page from panning on
+     mobile if the modal or its content ever tries to extend past viewport bounds. */
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+@keyframes snippetFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes snippetModalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.upgrade-modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 1080px;
+  height: 100%;
+  max-height: 720px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  /* CRITICAL: without an explicit column track, the grid's single implicit
+     column sizes to its children's max-content. On a narrow viewport a long
+     modal-title / subtitle / file-path pushes that column wider than the
+     modal's max-width, and `overflow: hidden` silently clips the right edge.
+     `minmax(0, 1fr)` lets the column shrink to the modal width regardless of
+     children's min-content. Children that need to stay readable must then
+     handle their own wrapping (see rules below on modal-header-left,
+     modal-title, modal-subtitle, footer-hint). */
+  grid-template-columns: minmax(0, 1fr);
+  animation: snippetModalIn 0.22s var(--ease-out);
+  overflow: hidden;
+}
+
+/* Mobile-right fix — unlock flex children in the header + footer so long
+   strings wrap instead of widening their grid column past the modal edge. */
+.upgrade-modal .modal-header-left { min-width: 0; flex: 1 1 auto; }
+.upgrade-modal .modal-header-left > * { min-width: 0; }
+.upgrade-modal .modal-title,
+.upgrade-modal .modal-subtitle,
+.upgrade-modal .footer-hint {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.upgrade-modal .footer-left { min-width: 0; flex-wrap: wrap; }
+
+/* Modal chrome — all scoped under .upgrade-modal to sit alongside legacy rules */
+.upgrade-modal .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+.upgrade-modal .modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.upgrade-modal .modal-header-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upgrade-modal .modal-header-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.upgrade-modal .modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.01em;
+}
+.upgrade-modal .modal-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.upgrade-modal .modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-fast);
+}
+.upgrade-modal .modal-close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.upgrade-modal .modal-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Body — rendered inside <ScrollArea>. The outer .modal-body-wrap is the
+   grid cell (1fr), and .modal-body-v2 is the actual scroll surface. The
+   native scrollbar stays globally hidden; useCustomScroll paints the
+   dark-mode track/thumb on top as position: absolute (no layout width),
+   which means no content shift when the scrollbar appears. */
+.upgrade-modal .modal-body-wrap {
+  /* unlocks the `1fr` grid track so it actually caps the body (see the
+     same pattern elsewhere in this file — min-height: 0 on flex/grid
+     children with overflow is mandatory for scroll to activate) */
+  min-height: 0;
+}
+.upgrade-modal .modal-body-wrap > .modal-body-v2 {
+  /* .cscroll-inner already provides `flex: 1; overflow-y: auto` — here we
+     just add the modal-specific padding/layout. */
+  min-height: 0;
+  overscroll-behavior: contain;
+  padding: 14px 18px 18px;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+}
+
+/* Group */
+.upgrade-modal .group {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  /* CRITICAL: groups are flex children of .modal-body-v2. Their `overflow: hidden`
+     (needed to clip rounded corners) silently sets their auto min-height to 0,
+     which lets Flexbox shrink them below content size. Under pressure (expanded
+     file-row makes a group taller than the body's 1fr allotment), they shrink,
+     their content is clipped away, and the body never needs to scroll because
+     content appears to fit. flex-shrink: 0 keeps groups at natural size, so the
+     body overflows properly and .modal-body-v2's overflow-y: auto kicks in. */
+  flex-shrink: 0;
+}
+.upgrade-modal .group-header {
+  display: grid;
+  /* minmax(0, 1fr) lets the text column shrink below its min-content width
+     so long labels/summaries wrap instead of forcing the grid wider than the
+     modal — which on narrow viewports would cause right-side clipping. */
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+/* v2 header: [master-checkbox] [icon] [text] — consistent across all groups.
+   Retains the minmax(0, …) shrinkable text column. */
+.upgrade-modal .group-header.group-header-v2 {
+  grid-template-columns: auto auto minmax(0, 1fr);
+  background: var(--bg-accent);
+  border-bottom: 1px solid var(--border);
+}
+.upgrade-modal .group-header-text { min-width: 0; }
+.upgrade-modal .group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: 0.02em;
+}
+.upgrade-modal .group-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.upgrade-modal .group-header-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upgrade-modal .group-header-icon.warn {
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+.upgrade-modal .group-header-icon.info {
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--accent-2);
+}
+.upgrade-modal .group-header-icon.ok {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+/* Checkbox button — used for both the master (group-header) checkbox and
+   per-file checkbox. Uses aria-pressed for state (no <input> to bypass
+   browser label-click forwarding quirks). */
+.upgrade-modal .cb-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+.upgrade-modal .cb-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.upgrade-modal .cb-button[aria-pressed='true'] .checkbox-box,
+.upgrade-modal .cb-button[aria-pressed='mixed'] .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.upgrade-modal .group-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Checkbox */
+.upgrade-modal .group-checkbox,
+.upgrade-modal .file-row-checkbox {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+}
+.upgrade-modal .group-checkbox input,
+.upgrade-modal .file-row-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+.upgrade-modal .checkbox-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: all var(--duration-fast);
+}
+.upgrade-modal .group-checkbox input:checked + .checkbox-box,
+.upgrade-modal .file-row-checkbox input:checked + .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.upgrade-modal .checkbox-dash {
+  width: 8px;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
+}
+.upgrade-modal .group-checkbox.indeterminate .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* File row */
+.upgrade-modal .file-row + .file-row {
+  border-top: 1px solid var(--border);
+}
+.upgrade-modal .file-row-main {
+  display: grid;
+  /* minmax(0, 1fr) on the text column so long file paths can wrap instead
+     of pushing the row wider than the modal on narrow viewports. */
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.upgrade-modal .file-row-main:hover { background: var(--bg-hover); }
+/* D3: When a file row is expanded, its header sticks to the top of the scrolling
+   modal body so the user never loses context for "which file's diff am I reading".
+   z-index:2 keeps it above the diff body + the other group-body rows. */
+.upgrade-modal .file-row.expanded .file-row-main {
+  background: var(--bg-hover);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 1px 0 var(--border);
+}
+.upgrade-modal .file-row.upgraded .file-row-main { opacity: 0.55; }
+
+.upgrade-modal .file-row-marker {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upgrade-modal .file-row-marker.warn { color: var(--warn); }
+
+.upgrade-modal .file-row-text { min-width: 0; }
+.upgrade-modal .file-row-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-strong);
+  font-weight: 500;
+}
+.upgrade-modal .file-row-bytes {
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--bg-accent);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+.upgrade-modal .file-row-summary {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+.upgrade-modal .file-row-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+  white-space: nowrap;
+  font-family: inherit;
+}
+.upgrade-modal .file-row-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-accent);
+}
+.upgrade-modal .file-row-toggle svg { transition: transform var(--duration-fast); }
+.upgrade-modal .file-row-toggle svg.rot { transform: rotate(90deg); }
+
+.upgrade-modal .file-row-detail {
+  padding: 12px 14px 14px 42px;
+  background: var(--bg-accent);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+
+/* Status chip inside a row ("Upgraded", "Manual") */
+.upgrade-modal .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+}
+.upgrade-modal .chip.ok {
+  color: var(--ok);
+  border-color: rgba(34, 197, 94, 0.35);
+  background: var(--ok-subtle);
+}
+.upgrade-modal .chip.warn {
+  color: var(--warn);
+  border-color: rgba(245, 158, 11, 0.35);
+  background: var(--warn-subtle);
+}
+
+/* =====================================================================
+   Diff block — three-column grid [sigil, line-number, text]. The sigil
+   (+/-/~/ ) is a real <span className="diff-sigil"> rendered in React,
+   not a ::before pseudo — pseudo-elements on a 2-column grid parent
+   become grid items themselves and collide with .ln + text span,
+   pushing text to row 2 col 1 (40px-wide). Explicit columns keep every
+   line's sigil, number, and text on the same row and in the same lanes.
+   Internal vertical scroll via max-height + overflow-y: auto kicks in
+   for very long diffs (like GitHub's file-diff viewer).
+   ===================================================================== */
+.upgrade-modal .diff {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;                 /* rounded corners clip inner scroll area */
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  display: flex;
+  flex-direction: column;
+}
+/* D1: single scroll surface — the modal body scrolls everything. Each diff
+   grows to its natural height, so we never scroll "into" a diff that is itself
+   already partially clipped by an outer scroll viewport. */
+.upgrade-modal .diff-body {
+  padding: 6px 0;
+}
+
+.upgrade-modal .diff-line {
+  display: grid;
+  grid-template-columns: 14px 32px minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 1px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  align-items: start;
+}
+.upgrade-modal .diff-sigil {
+  font-weight: 700;
+  text-align: center;
+  user-select: none;
+  opacity: 0.8;
+}
+.upgrade-modal .diff-ln {
+  color: var(--muted);
+  opacity: 0.7;
+  text-align: right;
+  user-select: none;
+}
+.upgrade-modal .diff-text {
+  min-width: 0;                     /* allow text column to shrink for wrapping */
+}
+
+.upgrade-modal .diff-line.add { background: rgba(34, 197, 94, 0.08); }
+.upgrade-modal .diff-line.add .diff-sigil { color: var(--ok); opacity: 1; }
+.upgrade-modal .diff-line.del { background: rgba(239, 68, 68, 0.08); }
+.upgrade-modal .diff-line.del .diff-sigil { color: var(--danger); opacity: 1; }
+.upgrade-modal .diff-line.conflict { background: rgba(245, 158, 11, 0.10); }
+.upgrade-modal .diff-line.conflict .diff-sigil { color: var(--warn); opacity: 1; }
+.upgrade-modal .diff-line.ctx { color: var(--muted); }
+.upgrade-modal .diff-line.ctx .diff-sigil { color: var(--muted); opacity: 0.35; }
+
+.upgrade-modal .diff-line.hunk {
+  grid-template-columns: 1fr;       /* single column: just the @@ label */
+  color: var(--muted);
+  background: var(--bg-accent);
+  padding: 4px 12px;
+  font-size: 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+/* Footer */
+.upgrade-modal .modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+}
+.upgrade-modal .footer-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+.upgrade-modal .footer-hint { color: var(--muted); }
+.upgrade-modal .footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.upgrade-modal .footer-status.ok { color: var(--ok); }
+.upgrade-modal .footer-actions { display: flex; gap: 8px; }
+
+/* =====================================================================
+   D4: Responsive — snippet upgrade modal on narrow viewports (≤640px).
+   Single block; desktop layout untouched above this breakpoint.
+   ===================================================================== */
+@media (max-width: 640px) {
+  .snippet-modal-overlay {
+    padding: 8px;
+    /* Pin the overlay to the DYNAMIC viewport (visible area only).
+       `position: fixed; inset: 0` by itself would fill the LAYOUT viewport
+       — which on iOS Safari / Android Chrome includes the area behind the
+       URL bar and home indicator. The modal inside with max-height: 100dvh
+       would then be smaller than the overlay, get centered, and part of it
+       would sit behind browser chrome. Setting height: 100dvh here clips
+       the overlay to exactly the visible area; the modal centers within
+       it and never hides behind chrome. */
+    height: 100dvh;
+  }
+  .upgrade-modal {
+    max-width: 100%;
+    max-height: 100dvh;
+    border-radius: var(--radius-md);
+  }
+  .upgrade-modal .modal-header {
+    padding: 12px 14px;
+  }
+  .upgrade-modal .modal-title {
+    font-size: 14px;
+  }
+  .upgrade-modal .modal-subtitle {
+    font-size: 10.5px;
+  }
+  .upgrade-modal .modal-body-v2 {
+    padding: 10px 10px 14px;
+    gap: 12px;
+  }
+  .upgrade-modal .group-header {
+    padding: 10px 12px;
+  }
+  .upgrade-modal .file-row-main {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  /* Diff claims near-full row width on small screens — drop the 42px left inset */
+  .upgrade-modal .file-row-detail {
+    padding-left: 14px;
+    padding-right: 12px;
+  }
+  /* Shrink toggle to chevron-only; hide the "View diff" / "Hide diff" label */
+  .upgrade-modal .file-row-toggle {
+    padding: 4px 6px;
+    gap: 0;
+  }
+  .upgrade-modal .file-row-toggle > span {
+    display: none;
+  }
+  /* Footer: stack hint above buttons; buttons go full-width side-by-side */
+  .upgrade-modal .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 14px 12px;
+  }
+  .upgrade-modal .footer-left {
+    order: -1;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .upgrade-modal .footer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .upgrade-modal .footer-actions > .btn {
+    width: 100%;
+  }
+  /* Diff font stays readable on small screens */
+  .upgrade-modal .diff-line {
+    font-size: 11px;
+    padding: 1px 10px;
+  }
+}
+
+/* Lease-expired pulse animation */
+@keyframes lease-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .45; }
+}
+.lease-indicator-pulse {
+  animation: lease-pulse 2s ease-in-out infinite;
+}

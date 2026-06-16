@@ -2,16 +2,16 @@
 
 These rules apply whenever a project is active.
 
-**Context Loading:** Automatic via project-context Hook → writes BOOTSTRAP.md on startup/reset/compaction.
+**Context Loading:** API-first. On startup, call `GET /api/status?agentId=<agentId>`. If a project is active and `contextReady === true`, fetch `GET /api/projects/<activeProject>/bootstrap` and lazy-load deeper rule sections via `GET /api/projects/<activeProject>/rules/<section>`. `flowboard_agents.active_project` in the FlowBoard DB is the single source of truth; on-disk `BOOTSTRAP.md`, `ACTIVE-PROJECT.md`, and `SESSION-STATE.md` are not authoritative.
 
 ---
 
 ## Commands
 
-- **"Projekt: [Name]"** → Activate: verify in `_index.md`, `PUT /api/status {"project":"name"}`, confirm
-- **"Projekt beenden"** → Deactivate: append session summary to PROJECT.md Session Log, `PUT /api/status {"project":"none"}`
-- **"Projekte"** → Show list from `_index.md`, mark active
-- **"Neues Projekt: [Name]"** → Create folder + PROJECT.md + DECISIONS.md + tasks.json + context/, update `_index.md`, activate
+- **"Projekt: [Name]"** → Activate via `PUT /api/status {"project":"name","agentId":"<agentId>"}`, verify with `GET /api/status?agentId=<agentId>`
+- **"Projekt beenden"** → Deactivate via `PUT /api/status {"project":null,"agentId":"<agentId>"}`, verify with `GET /api/status?agentId=<agentId>`
+- **"Projekte"** → Show `GET /api/projects` plus current agent state from `GET /api/status?agentId=<agentId>`
+- **"Neues Projekt: [Name]"** → Create via `POST /api/projects`; creation does not imply activation
 
 ---
 
@@ -20,7 +20,7 @@ These rules apply whenever a project is active.
 - All work relates to project context (unrelated questions answered normally)
 - **Decisions:** Record in DECISIONS.md (date + reasoning) — load on demand only
 - **Tasks:** Break work into tasks before execution (tracking + dashboard visibility). Exception: quick questions/discussions
-- **PROJECT.md:** Keep "Current Status" updated after significant progress
+- **PROJECT.md:** Keep stable project knowledge only. Never write current task focus, claims, priorities, status, or next implementation steps there.
 
 ---
 
@@ -56,10 +56,10 @@ Dashboard server manages all data. **Always use API for mutations:**
 | Batch delete notes | `DELETE /api/projects/:name/canvas/notes/batch` `{noteIds:[...]}` |
 | Promote notes | `POST /api/projects/:name/canvas/promote` `{notes, connections, mode}` |
 
-**Reading tasks:** Prefer BOOTSTRAP.md (contains filtered active tasks). Only use API/file as fallback. Never read tasks.json directly — at scale (100+ tasks) it wastes context.
+**Reading tasks:** Use `GET /api/projects/:name/tasks`. Bootstrap may include an `Operational Task State` section from the same API, but the API is canonical. Never read `tasks.json` directly and never derive current task work from `PROJECT.md` or `SESSIONS.md`.
 
 ### Spec Files
-- Live in `~/.openclaw/workspace/projects/<name>/specs/` (NOT in git repo)
+- Live in `~/.openclaw/projects/<name>/specs/` (NOT in git repo)
 - Created via Dashboard or API; `specFile` field links automatically
 - Auto-load spec when task moves to in-progress
 - Update checkboxes + log as work progresses
@@ -98,22 +98,23 @@ The Idea Canvas is a visual brainstorming space. Notes can be promoted to tasks.
 ## File Management
 
 - **context/ folder:** External references only (hardware guides, API docs). NOT for code docs (git repo) or planning (specs/)
-- **Project Files section:** Update in PROJECT.md when creating files in context/
+- **Project Files section:** Update in PROJECT.md only when creating stable reference files in context/. Do not record task progress or next work there.
 
 ---
 
 ## Error Handling
 
-- Missing ACTIVE-PROJECT.md → no project active
-- Missing project folder → notify user, offer recreate
-- Missing/corrupt tasks.json → create empty `{"tasks":[]}`
+- Missing active project from `/api/status` → no project active
+- Missing project folder → notify user; repair via project APIs, never by hand-scaffolding
+- Missing/corrupt legacy `tasks.json` → ignore when HZL/API is available
 - Task ID not found → notify user, show available
 
 ---
 
 ## Key Principles
 
-- **ACTIVE-PROJECT.md** = single source of truth for project state
-- **API-first** for all mutations (never edit JSON files directly)
-- **BOOTSTRAP.md** = auto-generated context (PROJECT-RULES + PROJECT.md)
+- **flowboard_agents.active_project** = single source of truth for per-agent active project state
+- **API-first** for all mutations (never edit JSON/state files directly)
+- **HZL/Tasks API** = single source of truth for task state, claims, priorities, and next work
+- **Bootstrap endpoint** = current project context; on-disk `BOOTSTRAP.md` is legacy/stale unless injected by runtime
 - **DECISIONS.md** loaded on demand only

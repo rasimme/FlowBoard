@@ -177,38 +177,41 @@ Breakpoint: `900px`
 **All UI text in English** — labels, buttons, toasts, placeholders, tab names.
 Project content (tasks, specs, docs) can be in any language.
 
-## Shared Components (`utils.js`)
+## Shared components (React)
 
-All reusable UI components live in `js/utils.js`. Modules import what they need.
+Reusable UI lives in `dashboard/src/components/` and is composed with React. Icons come from
+[`lucide-react`](https://lucide.dev) (14px, stroke-based) — import the named icon, e.g.
+`import { Trash2 } from 'lucide-react'`. Common building blocks:
 
-### ICONS
-Central SVG icon registry. All icons follow the Lucide template (14px, stroke-based).
+- **Modals / dialogs** → `src/components/Modal.jsx` (overlay; Escape/backdrop close). Use for
+  destructive actions instead of `confirm()`.
+- **Toasts** → `window.showToast(message, type)` — `'info'` (default), `'success'`, `'warn'`,
+  `'error'`; auto-dismisses.
+- **Scrollable panels** → `src/components/ScrollArea.jsx` (custom scrollbar; native scrollbars are
+  hidden globally in `dashboard.css`).
+- **Popovers** → `src/components/Popover.jsx`.
 
-```js
-import { ICONS } from './utils.js';
-// ICONS.trash — Trash/delete icon
-```
+**Convention:** shared UI → `src/components/`; view-specific rendering stays under that view's
+`src/pages/*` or `src/components/<area>/`. If two views need the same element, extract a shared
+component.
 
-**Adding new icons:** Add to the `ICONS` object in utils.js. Use Lucide SVGs from https://lucide.dev with the template from the Icons section above.
+## Color tokens — the Hue palette
 
-### renderDeleteBtn(onclick, title)
-Renders a consistent delete button with trash icon. Uses `.delete-btn` CSS class (opacity 0, shows on parent hover, red on hover).
+Agent chips, canvas notes and charts share one palette of numbered hue tokens defined as CSS custom
+properties in `dashboard/styles/dashboard.css` (`--hue-1` … `--hue-8`). Each hue exposes variants:
 
-```js
-import { renderDeleteBtn } from './utils.js';
-renderDeleteBtn("window.handleDelete('id')", 'Delete item')
-```
+| Variant | Use |
+|---------|-----|
+| `--hue-N` | base fill |
+| `--hue-N-fg` | foreground/text on the hue |
+| `--hue-N-soft` | subtle translucent fill |
+| `--hue-N-canvas` | darkened note tint (`color-mix(… 35%, #0a0c10)`) |
+| `--hue-N-ring` / `--hue-N-ring-soft` | borders / strokes |
 
-### toast(message, type)
-Bottom-right notification. Types: `'info'` (default), `'success'`, `'error'`. Auto-dismisses after 3s.
-
-### showModal(title, body, onConfirm, confirmLabel, confirmClass)
-Confirm dialog with overlay. Closes on Cancel, Escape, or backdrop click. Use for destructive actions instead of `confirm()`.
-
-### Convention for New Components
-- **Shared UI helpers** → `utils.js` (buttons, modals, icons, formatters)
-- **Module-specific rendering** → stays in `kanban.js` or `file-explorer.js`
-- **Rule of thumb:** If two modules need the same UI element → extract to utils.js
+Canvas note colors map to hues via `COLOR_STROKE` in `src/utils/canvasConstants.mjs`
+(`grey→1`, `teal→2`, `blue→3`, `green→4`, `red→5`, `yellow→6`). Never hard-code hex for these —
+reference the token so agent chips, canvas, and charts stay consistent (T-342). The token-drift test
+(`test-design-tokens-drift.js`) fails the build if a `var(--…)` usage references an undefined token.
 
 ---
 

@@ -2,14 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- viewport-fit=cover lets the app fill the screen edge-to-edge on notched
+       phones; the CSS then pads with env(safe-area-inset-*) so nothing hides
+       under the notch / home indicator (T-367-2). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- Standalone / add-to-home-screen + browser UI theming (T-367-2) -->
+  <meta name="theme-color" content="#12141a">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FlowBoard">
   <title>FlowBoard — Project Management for OpenClaw</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles/dashboard.css?v=19">
+  <link rel="stylesheet" href="./styles/dashboard.css?v=35">
   <!-- Telegram WebApp SDK (loads tg object, also used for graceful degradation check) -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -19,7 +29,8 @@
   // If opened outside Telegram AND no session cookie → show info page
   const _tg = window.Telegram?.WebApp;
   const _isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.hostname === (window.__LOCAL_HOSTNAME__ || '');
-  if (!_isLocal && (!_tg || !_tg.initData)) {
+  const _authRequired = window.__AUTH_ENABLED__ !== false; // server injects this; false = auth disabled = always allow
+  if (!_isLocal && _authRequired && (!_tg || !_tg.initData)) {
     document.addEventListener('DOMContentLoaded', () => {
       document.body.innerHTML = `
         <div style="font-family:sans-serif;text-align:center;padding:60px 20px;max-width:400px;margin:0 auto">
@@ -65,7 +76,19 @@
 
 <div class="toast-container" id="toastContainer"></div>
 <div id="modalRoot"></div>
+<div id="react-root"></div>
 
-<script type="module" src="./js/app.js?v=20"></script>
+  <!-- Bridge stub: queue openTaskDetail calls until React registers the real handler -->
+  <script>
+  (function() {
+    var q = [];
+    window.openTaskDetail = function(id) { q.push(id); };
+    window._detailQueue = q;
+  })();
+  </script>
+
+  <!-- React entry: JSX runs only under Vite dev server; production requires a build step (T-137) -->
+  <script type="module" src="./src/main.jsx"></script>
+
 </body>
 </html>

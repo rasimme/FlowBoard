@@ -1,0 +1,79 @@
+# FlowBoard
+
+> Project workspaces for AI agents. Self-hosted FlowBoard server provides an API-driven Kanban, project-context, file, canvas, and Specify system where OpenClaw-managed and external agents coordinate through one local REST surface.
+
+## Overview
+
+- [README](README.md) — quick start, install, features, external-agent onboarding
+- [CHANGELOG](CHANGELOG.md) — release notes
+- [CONTRIBUTING](CONTRIBUTING.md) — contributor guidelines
+
+## Concepts
+
+<!-- Concept docs are listed here once they contain substantive content (>50 lines or marked v1-complete). Stubs are intentionally not linked. -->
+
+- [Lazy Loading](docs/concepts/lazy-loading.md) — rule sections served on demand; manifest/section split; eager-load escape hatch for external agents
+- [Agent Identity](docs/concepts/agent-identity.md) — agent-id as a string contract; OpenClaw vs. FlowBoard layers; lazy registration; attribution
+- [Hook Architecture](docs/concepts/hook-architecture.md) — the single `agent:bootstrap` subscription; mutates `bootstrapFiles`; no on-disk writes
+- [Multi-Agent Model](docs/concepts/multi-agent-model.md) — `flowboard_agents` vs. `tasks_current.agent`; lazy registration; claim/release/handoff
+- [Kanban](docs/concepts/kanban.md) — five-column workflow; lease semantics; subtask depth; blocked-as-flag; archived-vs-trashed
+- [Frontend Runtime](docs/concepts/frontend-runtime.md) — React task-state convergence; optimistic mutations; `window.appState` bridge rules
+- [Idea Canvas](docs/concepts/idea-canvas.md) — visual brainstorm; notes/connections/clusters; promote pipeline via Specify session
+- [HZL Event Sourcing](docs/concepts/hzl-event-sourcing.md) — event log + projections; brain/muscle split; single-writer constraint
+- [Specify Workflow](docs/concepts/specify-workflow.md) — 6-step agent process; session lifecycle; RAM-only sessions
+- [Auth Model](docs/concepts/auth-model.md) — middleware decision tree; Telegram init-data + JWT; loopback/tunnel/LAN bypasses
+
+## Decisions (ADRs)
+
+<!-- Accepted ADRs are listed here. Drafts are not linked. -->
+
+- [ADR-0001](docs/adr/0001-live-inject-bootstrap.md) — Project context delivered via live-inject, not file-write
+- [ADR-0002](docs/adr/0002-api-status-requires-agent-id.md) — `/api/status` requires an explicit agentId
+- [ADR-0003](docs/adr/0003-dashboard-has-no-agent-identity.md) — The dashboard service has no agent identity
+- [ADR-0004](docs/adr/0004-disk-bootstrap-is-non-authoritative.md) — On-disk `BOOTSTRAP.md` is non-authoritative
+- [ADR-0005](docs/adr/0005-minimal-trigger-and-lazy-rules.md) — Minimal-trigger snippet + lazy rule loading
+- [ADR-0006](docs/adr/0006-structural-fingerprinting-for-snippet-drift.md) — Multi-phrase structural fingerprinting for snippet drift detection
+- [ADR-0007](docs/adr/0007-hzl-task-bridge-and-brain-muscle-split.md) — HZL Task-Bridge + Brain/Muscle split (umbrella, retroactive)
+- [ADR-0008](docs/adr/0008-hzl-single-writer-constraint.md) — HZL DB single-writer constraint
+- [ADR-0009](docs/adr/0009-blocked-as-flag-not-status.md) — `blocked` is a flag, not a status
+- [ADR-0010](docs/adr/0010-subtask-depth-max-one.md) — Subtask depth hard-capped at one level
+- [ADR-0011](docs/adr/0011-external-agent-discovery.md) — External-agent discovery via `/api/info` and self-onboarding snippet
+- [ADR-0012](docs/adr/0012-canvas-migration-deferred.md) — Canvas migration deferred (superseded by ADR-0024)
+- [ADR-0013](docs/adr/0013-x-openclaw-agent-id-header-dual-acceptance.md) — `x-openclaw-agent-id` header accepted as alternative to `?agentId=` on `/api/status`
+- [ADR-0014](docs/adr/0014-canvas-state-as-json-not-event-sourced.md) — Canvas state in `canvas.json` per project, not HZL event-sourced (superseded by ADR-0025)
+- [ADR-0015](docs/adr/0015-specify-sessions-ram-only.md) — Specify sessions are RAM-only — no DB persistence
+- [ADR-0016](docs/adr/0016-specify-persist-step-ordering.md) — Specify PERSIST step — strict ordering as rollback contract
+- [ADR-0017](docs/adr/0017-project-drift-and-heal.md) — Project drift detection and `healProject()` recovery path
+- [ADR-0018](docs/adr/0018-hzl-filesystem-rollback-detection.md) — HZL filesystem-level rollback detection via boot watermark
+- [ADR-0019](docs/adr/0019-frontend-runtime-foundation.md) — Frontend runtime foundation owns task UI state convergence
+- [ADR-0020](docs/adr/0020-agent-idle-auto-deactivation.md) — Agents auto-deactivate their active project after idle timeout
+- [ADR-0021](docs/adr/0021-specify-worker-openclaw-cli.md) — Specify worker runs as synchronous OpenClaw CLI one-shots
+- [ADR-0022](docs/adr/0022-parent-status-aggregation-review-gate.md) — Parent status aggregation: one review-gated rule, parents never auto-complete
+- [ADR-0023](docs/adr/0023-overview-sdui-trusted-registry.md) — Overview landing page: server-driven UI, trusted widget registry, flat agent-editable layout schema
+- [ADR-0024](docs/adr/0024-canvas-react-migration.md) — Canvas migrated to React — logic-preserving port, no vanilla runtime left
+- [ADR-0025](docs/adr/0025-canvas-state-in-db.md) — Canvas state in relational DB tables — gated migration off `canvas.json`, still not event-sourced
+- [ADR-0026](docs/adr/0026-frontend-architecture-invariants.md) — Frontend architecture invariants — no reintroduced `window.*` globals, single task-state path; enforced by the runtime-guardrails test
+- [ADR-0027](docs/adr/0027-agent-doc-separation.md) — Agent-facing docs split by home — trigger vs project dev-rules vs repo conventions
+- [ADR-0028](docs/adr/0028-auth-model-middleware.md) — Auth model: one `/api/` middleware (origin + credentials + config); loopback-trusted, production fail-closed
+
+## Reference
+
+<!-- Reference docs land here once written. -->
+
+- [Environment Variables](docs/reference/env-vars.md) — server + hook env vars, defaults, purpose
+- [API manifest](docs/reference/api-manifest.json) — machine-readable endpoint list (authoritative)
+- [API endpoint docs (Discovery)](docs/reference/api/discovery.md) — `/api/health`, `/api/info`
+- [API endpoint docs (Agents)](docs/reference/api/agents.md) — `/api/agents`, `/api/status`
+- [API endpoint docs (Projects)](docs/reference/api/projects.md) — projects CRUD, bootstrap, rules
+- [API endpoint docs (Tasks)](docs/reference/api/tasks.md) — task CRUD + lifecycle, including workflow and stuck-task endpoints
+- [API endpoint docs (Migrations)](docs/reference/api/migrations.md) — gated canvas `canvas.json` → DB migration (`/api/migrations/canvas/status|run`)
+
+## How to
+
+<!-- How-tos are added on-demand. -->
+
+(none yet — see [docs/how-to/README.md](docs/how-to/README.md))
+
+## Operational rules (NOT for human reading)
+
+The contents of `docs/project-mode/` are operational rules served at runtime via `GET /api/projects/:name/rules/:section`. They are consumed by active-project agents, not by humans or tooling. Do not link or include this directory in documentation builds.

@@ -19,3 +19,26 @@ docs/reviews/
 docs/code-analysis-*.md
 docs/connection-routing.md
 CLAUDE.md
+
+# Vite build output
+dashboard/dist/
+.flowboard-v5-demo.json
+.tmp/
+
+# HZL database files — contain private project/task names, never commit
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/flowboard
+data/flowboard-*
+dashboard/*.db
+dashboard/*.db-shm
+dashboard/*.db-wal
+dashboard/hzl-data/
+dashboard/test-workspace/
+dashboard/test-workspace-endpoint/
+dashboard/test-workspace-*/
+# Test-run artifacts — created when e2e suites run with a repo-local projects dir
+dashboard/projects/
+hzl-spike/
+specs/
