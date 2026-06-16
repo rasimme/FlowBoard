@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest, KeyRound } from 'lucide-react';
+import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest, KeyRound, Pencil, Trash2, X } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
@@ -801,6 +801,45 @@ export function LinksWidget({ widget, editing }) {
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  // T-381: per-row edit state. editIdx is the index of the link being edited.
+  const [editIdx, setEditIdx] = useState(-1);
+  const [editLabel, setEditLabel] = useState('');
+  const [editUrl, setEditUrl] = useState('');
+
+  function startEdit(idx, link) {
+    setAdding(false);
+    setEditIdx(idx);
+    setEditLabel(link.label || '');
+    setEditUrl(link.url || '');
+  }
+  function cancelEdit() { setEditIdx(-1); setEditLabel(''); setEditUrl(''); }
+
+  async function saveEdit(idx) {
+    const cleanUrl = editUrl.trim() ? absoluteUrl(editUrl.trim()) : '';
+    if (!project || !widget?.id || !cleanUrl || saving) return;
+    setSaving(true);
+    try {
+      const next = await persistWidgetProps(project, widget.id, props => ({
+        ...props,
+        links: (props.links || []).map((l, i) => i === idx ? { label: editLabel.trim() || cleanUrl, url: cleanUrl } : l),
+      }));
+      if (next) { setLinks(next.links); cancelEdit(); window.showToast?.('Link updated', 'success'); }
+      else window.showToast?.('Updating link failed — save the layout first?', 'error');
+    } finally { setSaving(false); }
+  }
+
+  async function removeLink(idx) {
+    if (!project || !widget?.id || saving) return;
+    setSaving(true);
+    try {
+      const next = await persistWidgetProps(project, widget.id, props => ({
+        ...props,
+        links: (props.links || []).filter((_, i) => i !== idx),
+      }));
+      if (next) { setLinks(next.links); if (editIdx === idx) cancelEdit(); window.showToast?.('Link removed', 'success'); }
+      else window.showToast?.('Removing link failed — save the layout first?', 'error');
+    } finally { setSaving(false); }
+  }
 
   async function addLink() {
     const cleanUrl = url.trim() ? absoluteUrl(url.trim()) : '';
@@ -830,13 +869,38 @@ export function LinksWidget({ widget, editing }) {
           hint="Pin deploys, docs or dashboards — via the button below or by asking your agent." />
       ) : (
         <ScrollArea className="flex-1 min-h-0" innerClassName="lk-list">
-          {links.slice(0, widget?.props?.limit || 6).map(l => (
-            <a key={l.url} className="lk-row" href={editing ? undefined : absoluteUrl(l.url)} target="_blank" rel="noreferrer"
-              onClick={e => { if (editing) e.preventDefault(); }}>
-              <span className="lk-fav">{(l.label || l.url).slice(0, 1).toUpperCase()}</span>
-              <span className="nm">{l.label || l.url}</span>
-              <ExternalLink size={11} className="text-muted shrink-0" />
-            </a>
+          {links.slice(0, widget?.props?.limit || 6).map((l, idx) => (
+            editIdx === idx ? (
+              <div key={idx} className="lk-add lk-edit">
+                <input className="lk-in" placeholder="Label" value={editLabel} autoFocus
+                  onChange={e => setEditLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') cancelEdit(); }} />
+                <input className="lk-in" placeholder="https://…" value={editUrl}
+                  onChange={e => setEditUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveEdit(idx); if (e.key === 'Escape') cancelEdit(); }} />
+                <button type="button" className="lk-btn" onClick={() => saveEdit(idx)} disabled={saving || !editUrl.trim()} title="Save">
+                  {saving ? '…' : <Save size={12} />}
+                </button>
+                <button type="button" className="lk-btn lk-btn-ghost" onClick={cancelEdit} title="Cancel"><X size={12} /></button>
+              </div>
+            ) : (
+              <div key={idx} className="lk-row-wrap">
+                <a className="lk-row" href={editing ? undefined : absoluteUrl(l.url)} target="_blank" rel="noreferrer"
+                  onClick={e => { if (editing) e.preventDefault(); }}>
+                  <span className="lk-fav">{(l.label || l.url).slice(0, 1).toUpperCase()}</span>
+                  <span className="nm">{l.label || l.url}</span>
+                  <ExternalLink size={11} className="text-muted shrink-0" />
+                </a>
+                {!editing && (
+                  <span className="lk-row-actions">
+                    <button type="button" className="lk-act" title="Edit link" aria-label="Edit link"
+                      onClick={() => startEdit(idx, l)}><Pencil size={11} /></button>
+                    <button type="button" className="lk-act lk-act-danger" title="Remove link" aria-label="Remove link"
+                      onClick={() => removeLink(idx)} disabled={saving}><Trash2 size={11} /></button>
+                  </span>
+                )}
+              </div>
+            )
           ))}
         </ScrollArea>
       )}

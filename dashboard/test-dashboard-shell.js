@@ -594,6 +594,36 @@ async function run() {
     ok(projFirst, 'keyboard arrows + Space reorder a project to the top (T-378)');
     const projDropped = await page.evaluate(() => /Dropped/.test(document.querySelector('.sidebar [role="status"][aria-live]')?.textContent || ''));
     ok(projDropped, 'sidebar drop is announced to screen readers (T-378)');
+
+    // --- Flow 24 (T-381): Links widget edit + remove ---
+    // Seed two links into the overview's links widget (GET→mutate→PUT, the same
+    // path the widget uses), then remove one via the row's trash button and
+    // assert it persisted.
+    const ovGet = await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`);
+    const ov = ovGet.body?.overview;
+    const lw = (ov?.widgets || []).find(w => w.id === 'w-links');
+    if (lw) {
+      delete ov.source;
+      lw.props = { links: [{ label: 'Alpha', url: 'https://alpha.example' }, { label: 'Beta', url: 'https://beta.example' }] };
+      await fetchJson(base, 'PUT', `/api/projects/${PROJECT}/overview`, ov);
+      await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
+      await page.click('#tabBar .tab[data-tab="overview"]');
+      await waitFor(() => page.$('.lk-row-wrap'), 'links widget rows render', 5000);
+      const lkState = await page.evaluate(() => ({
+        rows: document.querySelectorAll('.lk-row-wrap').length,
+        edit: !!document.querySelector('.lk-act'),
+        del: !!document.querySelector('.lk-act-danger'),
+      }));
+      ok(lkState.rows === 2 && lkState.edit && lkState.del, 'links render with per-row edit + remove controls (T-381)');
+      await page.evaluate(() => document.querySelector('.lk-row-wrap .lk-act-danger').click());
+      const removed = await waitFor(async () => {
+        const links = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`)).body?.overview?.widgets?.find(w => w.id === 'w-links')?.props?.links || [];
+        return links.length === 1 && links[0].label === 'Beta';
+      }, 'link removed + persisted', 5000).catch(() => false);
+      ok(removed, 'removing a link via the trash button persists (T-381)');
+    } else {
+      ok(true, 'overview has no links widget in test env — links edit/remove check skipped');
+    }
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');
