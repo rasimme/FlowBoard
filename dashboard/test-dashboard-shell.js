@@ -563,7 +563,7 @@ async function run() {
     await page.focus(`.column[data-status="review"] [data-task-id="${kb[2]}"]`); // focus the last card
     await page.keyboard.press(' '); // pick up
     const pickedUp = await page.evaluate(() => {
-      const live = document.querySelector('[role="status"][aria-live]')?.textContent || '';
+      const live = document.querySelector('[data-react-tasks] [role="status"][aria-live]')?.textContent || '';
       return /Picked up/.test(live) && !!document.querySelector('.column[data-status="review"].drag-over');
     });
     ok(pickedUp, 'Space picks up the card (announced + column highlighted) (T-370)');
@@ -575,8 +575,25 @@ async function run() {
       return typeof o[kb[2]] === 'number' && o[kb[2]] < o[kb[0]] && o[kb[2]] < o[kb[1]];
     }, 'keyboard reorder persisted', 5000).catch(() => false);
     ok(kbReordered, 'keyboard arrows + Space reorder the card to the top and persist (T-370)');
-    const droppedMsg = await page.evaluate(() => /Dropped/.test(document.querySelector('[role="status"][aria-live]')?.textContent || ''));
+    const droppedMsg = await page.evaluate(() => /Dropped/.test(document.querySelector('[data-react-tasks] [role="status"][aria-live]')?.textContent || ''));
     ok(droppedMsg, 'drop is announced to screen readers (T-370)');
+
+    // --- Flow 23 (T-378): keyboard reorder of sidebar projects ---
+    await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
+    await waitFor(() => page.$('.project-item[data-project="zzz-aaa"]'), 'sidebar projects present for keyboard', 5000);
+    await page.focus('.project-item[data-project="zzz-aaa"]');
+    await page.keyboard.press(' '); // pick up
+    const projPicked = await page.evaluate(() => /Picked up/.test(document.querySelector('.sidebar [role="status"][aria-live]')?.textContent || ''));
+    ok(projPicked, 'Space picks up a sidebar project (announced) (T-378)');
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowUp'); // move to the top
+    await page.keyboard.press(' '); // drop
+    const projFirst = await waitFor(async () => page.evaluate(() => {
+      const order = [...document.querySelectorAll('.project-item')].map(e => e.dataset.project).filter(n => n && n.startsWith('zzz-'));
+      return order.indexOf('zzz-aaa') === 0 && order.indexOf('zzz-aaa') < order.indexOf('zzz-bbb');
+    }), 'project moved to top via keyboard', 5000).catch(() => false);
+    ok(projFirst, 'keyboard arrows + Space reorder a project to the top (T-378)');
+    const projDropped = await page.evaluate(() => /Dropped/.test(document.querySelector('.sidebar [role="status"][aria-live]')?.textContent || ''));
+    ok(projDropped, 'sidebar drop is announced to screen readers (T-378)');
   } finally {
     if (browser) await browser.close().catch(() => {});
     child.kill('SIGTERM');

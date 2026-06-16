@@ -106,6 +106,7 @@ function ProjectItem({
   onDragLeaveItem,
   onDropItem,
   onGripPointerDown,
+  onItemKeyDown,
 }) {
   const [renameValue, setRenameValue] = useState(project.displayName || project.name);
   const inputRef = useRef(null);
@@ -138,6 +139,11 @@ function ProjectItem({
       onDragLeave={(e) => onDragLeaveItem?.(e, project)}
       onDrop={(e) => onDropItem?.(e, project, section)}
       onClick={() => !renaming && onView?.(project.name)}
+      /* T-378: keyboard reorder — focusable; Enter opens, Space picks up, arrows
+         move within the section, Space/Enter drops, Escape cancels. */
+      tabIndex={renaming ? -1 : 0}
+      aria-label={`Project ${project.displayName || project.name}`}
+      onKeyDown={(e) => { if (!renaming && e.target === e.currentTarget) onItemKeyDown?.(e, project.name, section); }}
     >
       {/* T-367-5: the grip starts a Pointer-Events drag (mouse + touch). On touch
           the whole-item HTML5 drag above never fires; the grip path does, reusing
@@ -204,6 +210,10 @@ export default function Sidebar() {
   const [renamingName, setRenamingName] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // { kind, itemName?, section }
   const dragState = useRef({ sourceName: null, sourceSection: null });
+  // T-378: keyboard reorder — kbProjRef holds the grabbed project { name, section,
+  // index }; projLive drives the aria-live announcements.
+  const kbProjRef = useRef(null);
+  const [projLive, setProjLive] = useState('');
   // T-368-5: teardown for an in-flight grip pointer-drag (unmount-mid-drag safety).
   const gripTeardownRef = useRef(null);
   useEffect(() => () => gripTeardownRef.current?.(), []);
@@ -451,6 +461,57 @@ export default function Sidebar() {
     }
   }
 
+  // T-378: keyboard reorder for a focused project item. Enter opens the project;
+  // Space "picks it up"; Arrow up/down move it within its section; Space/Enter
+  // drops (reusing applyDrop); Escape cancels. Announced via aria-live.
+  function handleItemKeyDown(e, name, section) {
+    const label = (n) => formatDisplayName(n, projects);
+    const setIndicator = (sec, index, exclude) => {
+      const dest = sectionItems(sec).filter((p) => p.name !== exclude);
+      if (dest.length === 0) { setDropTarget({ kind: 'into', section: sec }); return dest.length; }
+      if (index < dest.length) setDropTarget({ kind: 'before', itemName: dest[index].name, section: sec });
+      else setDropTarget({ kind: 'after', itemName: dest[dest.length - 1].name, section: sec });
+      return dest.length;
+    };
+    const st = kbProjRef.current;
+    if (!st) {
+      if (e.key === 'Enter') { e.preventDefault(); viewProject(name); return; }
+      if (e.key === ' ') {
+        e.preventDefault();
+        const index = Math.max(0, sectionItems(section).findIndex((p) => p.name === name));
+        kbProjRef.current = { name, section, index };
+        dragState.current.sourceName = name;
+        dragState.current.sourceSection = section;
+        setIndicator(section, index, name);
+        setProjLive(`Picked up ${label(name)}. Arrow up/down to move, Space or Enter to drop, Escape to cancel.`);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setDropTarget(null); kbProjRef.current = null;
+      dragState.current.sourceName = null; dragState.current.sourceSection = null;
+      setProjLive(`Cancelled moving ${label(st.name)}.`);
+      return;
+    }
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      const { section: s, index } = st;
+      kbProjRef.current = null;
+      applyDrop(s, index); // reads dragState (set on pickup), clears dropTarget + dragState
+      setProjLive(`Dropped ${label(st.name)} at position ${index + 1}.`);
+      return;
+    }
+    let index = st.index;
+    const destLen = sectionItems(st.section).filter((p) => p.name !== st.name).length;
+    if (e.key === 'ArrowUp') { e.preventDefault(); index = Math.max(0, index - 1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); index = Math.min(destLen, index + 1); }
+    else return;
+    st.index = index;
+    setIndicator(st.section, index, st.name);
+    setProjLive(`${label(st.name)}: position ${index + 1} of ${destLen + 1}.`);
+  }
+
   function onDropItem(e, project, section) {
     e.preventDefault();
     e.stopPropagation();
@@ -671,6 +732,7 @@ export default function Sidebar() {
       onDragLeaveItem={onDragLeaveItem}
       onDropItem={onDropItem}
       onGripPointerDown={onGripPointerDown}
+      onItemKeyDown={handleItemKeyDown}
     />
   );
 
@@ -744,6 +806,8 @@ export default function Sidebar() {
         </Popover.Option>
       </Popover>
 
+      {/* T-378: announces keyboard project-reorder steps to screen readers */}
+      <div role="status" aria-live="polite" className="sr-only">{projLive}</div>
       <div className="sidebar-scroll">
         {projects.length === 0 && folders.length === 0 && (
           <div className="sidebar-empty">No projects</div>
