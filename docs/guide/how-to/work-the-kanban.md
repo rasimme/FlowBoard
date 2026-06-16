@@ -6,7 +6,7 @@ The board is the operational heart of a project. Tasks flow left to right throug
 
 - **Change status:** drag a card to another column, or change it from the card's detail panel.
 - **Reorder within a column:** drag a card up or down. The order sticks while you're in the **Custom** sort mode.
-- **Sort modes:** the column toolbar offers **Custom** (your manual order), **Newest**, and **Oldest**. The choice is remembered. Recently moved cards float to the top of their column until you re-sort.
+- **Sort modes:** the column toolbar offers **Custom** (your manual order), **Newest first**, and **Oldest first**. The choice is remembered. Recently moved cards float to the top of their column until you re-sort.
 
 ## Subtasks
 

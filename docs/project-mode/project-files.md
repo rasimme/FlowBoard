@@ -76,7 +76,7 @@ Agents can read and write project files through the API instead of the shell:
 | `GET` | `/api/projects/:name/files/<path>` | Read one file (returned as text). |
 | `PUT` | `/api/projects/:name/files/<path>` | Write a file. Body: `{ content }`. |
 | `DELETE` | `/api/projects/:name/files/<path>` | Delete a file. |
-| `POST` | `/api/projects/:name/files/context` | Upload a file into `context/`. |
+| `POST` | `/api/projects/:name/files/context` | Upload a file into `context/`. Body: `{ filename, content }` — `.md` only, **409** on duplicate. |
 
 **Write boundary:** `PUT`/`DELETE` only succeed under `context/` and `specs/`. Writing anywhere else (e.g. `PROJECT.md`) returns **403** — those files are owned by their conventions, not edited ad hoc. And **spec files are still never written by hand**: create them via `POST /api/projects/:name/specs/:taskId` (see Spec Index below), not via `PUT`.
 

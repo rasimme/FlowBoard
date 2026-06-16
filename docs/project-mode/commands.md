@@ -39,7 +39,7 @@ Use this only when the user did not issue an explicit FlowBoard command.
    - Then immediately fetch project context as Markdown/plain text: `GET /api/projects/<activeProject>/bootstrap`
    - Do this before answering project questions; do not rely on memory or generic knowledge.
    - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
-   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`
+   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `compliance`, `error-handling`, `key-principles`, `overview`
 
 ## Project commands (explicit command wins over passive startup)
 
@@ -102,7 +102,7 @@ Rules:
 - If the work has identifiable sub-steps, create subtasks (use `parentId` with the parent task's id).
 - If the task needs a spec (multi-file, new UI, complex logic, unclear scope), create one via `POST /api/projects/:name/specs/:taskId`.
 - Do NOT create tasks for every offhand remark — only when the user is clearly requesting work, or the request has an actionable scope.
-- Do NOT create speculative tasks. If the user says "maybe" / "someday" / "später", leave it as conversation, not a task.
+- Do NOT create speculative tasks. If the user says "maybe" / "someday" / "later", leave it as conversation, not a task.
 
 This rule is only active when a project is loaded (lazy-loaded via bootstrap). It does not apply without an active project.
 
@@ -169,10 +169,10 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 | **Hard delete + subtasks** | `DELETE /api/projects/:name/tasks/:id?mode=all` | Hard-deletes task and all subtasks |
 
 ### Archive vs Trash vs Delete
-- **Archive** (`status: archived`): task ist sauber wegsortiert, taucht nicht in default queries auf. Nur möglich wenn alle Subtasks done/archived sind. Subtasks werden automatisch mitarchiviert.
+- **Archive** (`status: archived`): task is cleanly filed away and doesn't appear in default queries. Only possible when all subtasks are done/archived. Subtasks are archived along with it.
 - **Backlog** (`status: backlog`): planned but not ready to start; also used to deprioritize without archiving. Lighter than archive, stays visible.
-- **Trash** (`trashedAt` set): soft delete, hidden, aber restorable. Behält original status.
-- **Delete** (DELETE endpoint): permanent, unrecoverable. Nur bei expliziter Bestätigung.
+- **Trash** (`trashedAt` set): soft delete, hidden, but restorable. Keeps the original status.
+- **Delete** (DELETE endpoint): permanent, unrecoverable. Only on explicit confirmation.
 
 ### Subtask operations
 - When creating with a `parentId`, the task is a subtask.

@@ -9,6 +9,7 @@ Every widget you can place on a [project overview](../how-to/customize-overview.
 | Approvals | `approvals` | Tasks in review, waiting for your sign-off. |
 | Blocked | `blocked` | Tasks flagged blocked, waiting for a human decision. |
 | Agent Questions | `agent-questions` | Open questions agents raised — answer them inline. |
+| Since your last visit | `since-last-visit` | What moved while you were away — status changes, checkpoints, comments. |
 
 ## Live
 
@@ -19,7 +20,6 @@ Every widget you can place on a [project overview](../how-to/customize-overview.
 | Momentum | `stall-detection` | Friendly stall check — last activity plus a 14-day strip. |
 | Activity | `activity-stream` | Latest task events across the project. |
 | Timeline | `timeline` | A dated spine over all project activity (tasks, checkpoints, comments). |
-| Since your last visit | `since-last-visit` | What moved while you were away — status changes, checkpoints, comments. |
 
 ## Direction
 

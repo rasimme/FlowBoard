@@ -16,7 +16,7 @@ Use a local-capable tool for this localhost API (exec/curl/node or an internal A
    - Fetch project context: `GET /api/projects/<activeProject>/bootstrap`
    - Treat `Operational Task State` / `GET /api/projects/<activeProject>/tasks` as the only current task truth. `PROJECT.md` content in bootstrap is stable project knowledge, not current work.
    - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
-   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `error-handling`, `key-principles`, `overview`
+   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `compliance`, `error-handling`, `key-principles`, `overview`
 
 ### Where details live
 

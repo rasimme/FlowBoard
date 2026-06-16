@@ -10,7 +10,7 @@ The dashboard is also reached as a [Telegram Mini App](auth-model.md) and from p
 
 ## How it works
 
-- **Input gating** keys off `pointer:coarse` (not `hover:none`) so hybrid devices behave correctly, and touch targets meet a minimum size.
+- **Input gating** keys off `@media (hover: none)` so touch devices get touch-appropriate affordances (larger targets, no hover-only controls).
 - **Drag-and-drop** is unified on **Pointer Events**: a press-and-hold grip starts a drag, and dragging near a viewport edge **auto-scrolls** the board or column so distant targets are reachable. The same code path serves mouse and touch.
 - **Detail as a sheet:** on narrow screens the task detail and similar panels become full-screen sheets with an explicit back control, rather than cramped side panels.
 - **Files master-detail:** the Files page shows the list first; tapping opens a full-screen preview with "← Files" to return. The breakpoint reacts to rotation/resize via `matchMedia`.

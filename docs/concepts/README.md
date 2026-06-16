@@ -53,6 +53,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | ✅ ADR-0024, ADR-0025 (superseding ADR-0012, ADR-0014) | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | ✅ ADR-0007 | — |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | ✅ ADR-0015, ADR-0016 | — |
+| Modular Project Overview | Server-driven widget grid; trusted registry; presets; GitHub binding | ✅ [overview-widgets.md](overview-widgets.md) | ✅ ADR-0023 | — |
 | Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | ✅ ADR-0028 | — |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ✅ [external-agent-discovery.md](external-agent-discovery.md) | ✅ ADR-0011 | — |
 | Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ✅ [snippet-doctor.md](snippet-doctor.md) | ✅ ADR-0006 | — |
