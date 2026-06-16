@@ -40,6 +40,19 @@ async function main() {
       return row ? row.textContent.replace(/^★\s*/, '').trim() : null;
     }, { timeout: 8000 }).then(h => h.jsonValue()).catch(() => null);
     r.ok(firstCtx === 'bravo.md', `most-recently-edited context file is first (got ${firstCtx})`);
+
+    // T-398: NOTES.md lives in context/ (writable zone) but has its own Notes
+    // widget — it must NOT also clutter the Context Index list.
+    await api('POST', `/projects/${P}/files/context`, { filename: 'NOTES.md', content: '# scratch' });
+    await page.reload({ waitUntil: 'networkidle2' });
+    await page.evaluate((p) => window._viewProject && window._viewProject(p), P);
+    await page.click('#tabBar .tab[data-tab="overview"]');
+    const ciNames = await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll('.ci-list .ci-row .nm')];
+      return rows.length ? rows.map(n => n.textContent.replace(/^★\s*/, '').trim()) : null;
+    }, { timeout: 8000 }).then(h => h.jsonValue()).catch(() => null);
+    r.ok(Array.isArray(ciNames) && !ciNames.includes('NOTES.md'), `Context Index excludes NOTES.md (got ${JSON.stringify(ciNames)})`);
+    r.ok(Array.isArray(ciNames) && ciNames.includes('bravo.md'), 'Context Index still lists regular context files');
   });
 
   if (res?.skipped) r.skip(res.reason);

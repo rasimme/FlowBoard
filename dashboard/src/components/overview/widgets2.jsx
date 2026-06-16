@@ -588,7 +588,11 @@ export function ContextIndexWidget({ widget, editing }) {
       .then(d => {
         if (!alive) return;
         const ctx = (d?.tree || []).find(e => e.name === 'context' && e.type === 'directory');
-        setFiles((ctx?.children || []).filter(e => e.type === 'file').map(e => ({ name: e.name, modifiedMs: e.modifiedMs })));
+        // NOTES.md is the freeform scratchpad surfaced by the dedicated Notes
+        // widget — keep it in context/ (writable zone) but out of this index (T-398).
+        setFiles((ctx?.children || [])
+          .filter(e => e.type === 'file' && e.name.toLowerCase() !== 'notes.md')
+          .map(e => ({ name: e.name, modifiedMs: e.modifiedMs })));
       })
       .catch(() => { if (alive) setFiles([]); });
     return () => { alive = false; };
