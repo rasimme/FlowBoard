@@ -690,6 +690,28 @@ export function NotesWidget({ editing }) {
   const [open, setOpen] = useState(false);
   // T-380: location captured from the preview click/selection, applied in the editor
   const [pendingLoc, setPendingLoc] = useState(null);
+  // T-385: outer scroll positions to hold steady across the open transition
+  const scrollLockRef = useRef(null);
+
+  // T-385: opening the editor (focus + async lazy mount + CM revealing the
+  // caret) could scroll the surrounding page. Hold the outer scroll containers
+  // (captured at click time) steady for a few frames across the transition.
+  // CM's own scroller lives inside the editor subtree and is not captured here.
+  useEffect(() => {
+    if (!open) return undefined;
+    const lock = scrollLockRef.current;
+    if (!lock || !lock.length) return undefined;
+    let frames = 0;
+    let raf = requestAnimationFrame(function tick() {
+      for (const [el, top, left] of lock) {
+        if (el.scrollTop !== top) el.scrollTop = top;
+        if (el.scrollLeft !== left) el.scrollLeft = left;
+      }
+      if (++frames < 18) raf = requestAnimationFrame(tick);
+      else scrollLockRef.current = null;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [open]);
 
   function finishEdit() {
     if (dirty) save();
@@ -739,6 +761,15 @@ export function NotesWidget({ editing }) {
 
   function openFromPreview(ev) {
     if (editing) return;
+    // T-385: snapshot the scroll offset of every scrollable ancestor (the
+    // outer page containers) + the document, to restore across the transition.
+    const lock = [];
+    for (let el = ev.currentTarget.parentElement; el; el = el.parentElement) {
+      if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) lock.push([el, el.scrollTop, el.scrollLeft]);
+    }
+    const se = document.scrollingElement;
+    if (se) lock.push([se, se.scrollTop, se.scrollLeft]);
+    scrollLockRef.current = lock;
     setPendingLoc(locateFromEvent(ev));
     setOpen(true);
   }
