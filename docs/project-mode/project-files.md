@@ -21,6 +21,12 @@ Stable project knowledge. Should be readable in isolation and explain what the p
 - Git repo reference (if applicable)
 - Tech stack summary
 - Stable constraints, scope, background, and important project files
+- **Project-specific development rules** — a `## Development rules` section is the
+  canonical home for how to develop *this* project (branch/commit flow, build &
+  test gate, where shared-file changes go, what must never be committed, deploy
+  steps). Because `bootstrap` serves `PROJECT.md` to every agent (OpenClaw and
+  external), these rules reach anyone working on the project without living in
+  the repo's public agent file. The scaffold seeds the section stub.
 
 **Not for:** current task focus, next implementation steps, claims, priorities, status labels, session history, decision rationale, task lists, specs.
 

@@ -73,6 +73,9 @@ function _scaffoldFilesystem(projectsDir, name, displayName, description) {
     '## Project Files',
     '[List stable non-standard project knowledge files when created. Specs are linked via FlowBoard tasks and do not need entries here.]',
     '',
+    '## Development rules (read before changing code)',
+    '[Project-specific rules for working on this project. Served to every agent via bootstrap — the single place for how to develop here (branch/commit flow, build & test gate, where shared-file changes go, what must never be committed, deploy/restart steps). Fill in or delete this stub.]',
+    '',
   ].join('\n');
 
   // Required: SESSIONS.md

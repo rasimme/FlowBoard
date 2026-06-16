@@ -110,6 +110,15 @@ git push origin feat/my-change
 - `const` over `let`, no `var`
 - Descriptive function/variable names
 - Avoid adding dependencies unless there's a clear, significant win
+- User-facing UI strings (labels, buttons, empty states, toasts, preset names,
+  notifications) **and** agent-facing API messages are **English only** — no
+  German or other localized strings in shipped UI/API copy
+
+## Commit conventions
+
+- Conventional-commit style: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`
+- Do **not** add AI co-author trailers (`Co-Authored-By: Claude …` or similar) —
+  commits use owner-only attribution
 
 ## Documentation discipline
 
