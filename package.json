@@ -24,9 +24,13 @@
     "url": "https://github.com/rasimme/FlowBoard.git"
   },
   "openclaw": {
+    "build": {
+      "openclawVersion": "2026.6.6"
+    },
     "install": {
-      "defaultChoice": "git",
-      "minHostVersion": ">=2026.5.20"
+      "defaultChoice": "clawhub",
+      "clawhubSpec": "flowboard",
+      "minHostVersion": ">=2026.6.6"
     },
     "compat": {
       "pluginApi": ">=2026.5.20"
