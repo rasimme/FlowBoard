@@ -9,7 +9,7 @@ const demoMetaPath = resolve(repoRoot, '.flowboard-v5-demo.json');
 const API = process.env.FLOWBOARD_API || 'http://127.0.0.1:18790';
 const CDP = process.env.FLOWBOARD_CDP || 'http://127.0.0.1:18800';
 const DASHBOARD_URL = process.env.FLOWBOARD_DASHBOARD_URL || API;
-const VIEWPORT = { width: 1600, height: 900, deviceScaleFactor: 1 };
+const VIEWPORT = { width: 1600, height: 1080, deviceScaleFactor: 1 };
 
 if (!existsSync(demoMetaPath)) {
   throw new Error('Missing .flowboard-v5-demo.json. Run: node scripts/v5-demo-fixture.mjs seed');
@@ -168,14 +168,12 @@ async function preparePage(client) {
   });
   await client.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `
-      window.kanbanState = {
-        expandedParents: new Set(${JSON.stringify([demo.parentId])}),
-        sortNewestFirst: false,
-        showArchived: false
-      };
       try {
-        localStorage.setItem('sortNewestFirst', 'false');
+        localStorage.setItem('sortMode', 'custom');
         localStorage.setItem('showArchived', 'false');
+        // T-364: expanded parents persist per project in sessionStorage — pre-expand
+        // the demo parent so its subtasks show in the Kanban shot.
+        sessionStorage.setItem('flowboard.kanban.view.${demo.project}', JSON.stringify({ expanded: ${JSON.stringify([demo.parentId])} }));
       } catch {}
     `,
   });
@@ -247,6 +245,13 @@ async function anonymizeSidebar(client) {
         item('Discovery Notes'),
       ]),
     ].join('');
+    // Hide transient header chips (migration/setup/update) for clean marketing shots.
+    for (const el of document.querySelectorAll('button')) {
+      const t = (el.innerText || '').trim();
+      if (/Migration required|Finish setup|Update available/i.test(t)) el.style.display = 'none';
+    }
+    // Hide the archived-count toggle (accumulated demo archive) for clean shots.
+    for (const el of document.querySelectorAll('.archive-toggle')) el.style.display = 'none';
     return true;
   })()`);
 }

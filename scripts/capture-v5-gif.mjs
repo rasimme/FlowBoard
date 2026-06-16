@@ -22,6 +22,7 @@ const FRAMES_DIR = resolve(repoRoot, '.tmp', 'gif-frames');
 const OUT_GIF = resolve(repoRoot, 'docs', 'demo.gif');
 
 if (!existsSync(demoMetaPath)) throw new Error('Missing .flowboard-v5-demo.json. Run: node scripts/v5-demo-fixture.mjs seed');
+const demo = JSON.parse(readFileSync(demoMetaPath, 'utf8'));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function cdpFetch(path, options = {}) {
@@ -118,6 +119,11 @@ async function anonymizeSidebar(client) {
       folder('AGENT LAB', [item('QA Workspace'), item('Plugin Lab'), item('Research Notes')]),
       archive([item('Archived Sprint'), item('Discovery Notes')]),
     ].join('');
+    for (const el of document.querySelectorAll('button')) {
+      const t = (el.innerText || '').trim();
+      if (/Migration required|Finish setup|Update available/i.test(t)) el.style.display = 'none';
+    }
+    for (const el of document.querySelectorAll('.archive-toggle')) el.style.display = 'none';
     return true;
   })()`);
 }
@@ -138,6 +144,13 @@ try {
   await client.send('Page.enable');
   await client.send('Runtime.enable');
   await client.send('Emulation.setDeviceMetricsOverride', { width: VIEWPORT.width, height: VIEWPORT.height, deviceScaleFactor: VIEWPORT.deviceScaleFactor, mobile: false });
+  await client.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `try {
+      localStorage.setItem('sortMode','custom');
+      localStorage.setItem('showArchived','false');
+      sessionStorage.setItem('flowboard.kanban.view.${demo.project}', JSON.stringify({ expanded: ${JSON.stringify([demo.parentId])} }));
+    } catch {}`,
+  });
   await client.send('Page.navigate', { url: `${DASHBOARD_URL}/?agentId=release-lead` });
   await waitFor(client, `document.readyState === 'complete'`, 'document ready');
   await waitFor(client, `document.body.innerText.includes('Website Launch Demo')`, 'demo loaded');
@@ -154,7 +167,7 @@ try {
   let i = 0;
   for (const tab of tabs) {
     await clickText(client, tab);
-    await sleep(700);
+    await sleep(1100);
     for (let d = 0; d < DWELL; d++) {
       await anonymizeSidebar(client);
       await frame(client, i++);
@@ -168,7 +181,7 @@ try {
 
 // Encode with gifski (sped up: ~12fps playback over the captured frames).
 const gifski = ['gifski', resolve(process.env.HOME || '', 'homebrew/bin/gifski'), '/opt/homebrew/bin/gifski', '/usr/local/bin/gifski'].find((p) => p === 'gifski' || existsSync(p)) || 'gifski';
-const args = ['--fps', '12', '--quality', '80', '--width', '1200', '-o', OUT_GIF, `${FRAMES_DIR}/f-*.png`];
+const args = ['--fps', '12', '--quality', '100', '--width', '1200', '-o', OUT_GIF, `${FRAMES_DIR}/f-*.png`];
 const r = spawnSync('sh', ['-c', `${gifski} ${args.join(' ')}`], { stdio: 'inherit' });
 if (r.status !== 0) throw new Error('gifski encode failed');
 console.log(`wrote ${OUT_GIF}`);

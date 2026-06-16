@@ -2,9 +2,12 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 const API = process.env.FLOWBOARD_API || 'http://127.0.0.1:18790';
 const PROJECT = 'flowboard-v5-demo';
+const PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR
+  || join(process.env.OPENCLAW_HOME || join(homedir(), '.openclaw'), 'projects');
 const AGENTS = ['release-lead', 'design-agent', 'content-agent', 'qa-agent'];
 const SUPPORT_PROJECTS = [
   ['flowboard-demo-core', 'Core Platform', 'Launcher platform infrastructure.', 'Launch Program', false, 10],
@@ -14,6 +17,44 @@ const SUPPORT_PROJECTS = [
   ['flowboard-demo-archive', 'Archived Sprint', 'Completed launch spike kept as archive example.', null, true, 90],
 ];
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const PROJECT_MD = [
+  '# Website Launch Demo',
+  '',
+  '## Goal',
+  'Launch a focused marketing site for Atelier Nova and coordinate design, content, QA, and release in FlowBoard.',
+  '',
+  '## Scope',
+  '- Landing page: hero, proof, pricing, FAQ, footer — one primary CTA throughout',
+  '- Launch analytics + consent review before tracking ships',
+  '- Accessibility and mobile smoke as release gates',
+  '',
+  '## Operational state',
+  'Current work, claims, review state, and next tasks live in FlowBoard tasks — not in this file.',
+  '',
+  '## Project files',
+  '- context/launch-playbook.md — strategy, content matrix, tracking snippet',
+  '- context/campaign-brief.md — audience, tone, offer',
+  '- context/launch-metrics.md — target metrics + event schema',
+  '- context/NOTES.md — freeform scratchpad (Notes widget)',
+  '- specs/accessibility-pass.md — accessibility done-when',
+  '',
+  '## Development rules',
+  '- One primary CTA; measure before adding secondary actions.',
+  '- Publish only after QA and analytics both pass.',
+  '',
+].join('\n');
+
+const NOTES_MD = [
+  '# Scratchpad',
+  '',
+  '- Hero copy v3 reads tighter — drop the second sentence.',
+  '- @design-agent: confirm pricing card spacing on mobile (375px).',
+  '- Open question: gate the FAQ behind the fold? leaning no.',
+  '- Consent banner must load before any tracking pixel.',
+  '- Post-launch: revisit localization once the first campaign settles.',
+  '',
+].join('\n');
 
 async function request(path, options = {}) {
   const res = await fetch(`${API}${path}`, {
@@ -51,7 +92,7 @@ async function ensureProject({ name, displayName, description, group = null, arc
 }
 
 async function clearProjectTasks(project) {
-  const data = await request(`/api/projects/${project}/tasks`);
+  const data = await request(`/api/projects/${project}/tasks?includeArchived=true`);
   const tasks = data.tasks || [];
   const parents = tasks.filter((task) => !task.parentId);
   const children = tasks.filter((task) => task.parentId);
@@ -176,8 +217,19 @@ async function seedTasks() {
 }
 
 async function seedFiles(taskIds) {
-  // PROJECT.md is scaffolded at project creation; the hardened file endpoint
-  // only accepts context/ and specs/ writes (T-355), so we don't rewrite it here.
+  // Clean context/ so re-seeds don't accumulate stray files from older fixtures.
+  const tree = await request(`/api/projects/${PROJECT}/files`).catch(() => null);
+  const ctx = (tree?.tree || []).find((e) => e.name === 'context' && e.type === 'directory');
+  for (const f of ctx?.children || []) {
+    if (f.type === 'file') {
+      await request(`/api/projects/${PROJECT}/files/context/${f.name}`, { method: 'DELETE' }).catch(() => null);
+    }
+  }
+
+  // PROJECT.md is a root file (the hardened endpoint blocks API root writes) — write it on disk.
+  try { writeFileSync(join(PROJECTS_DIR, PROJECT, 'PROJECT.md'), PROJECT_MD); }
+  catch (e) { console.warn('PROJECT.md write failed:', e.message); }
+
   await writeProjectFile('context/launch-playbook.md', [
     '# Atelier Nova Launch Playbook',
     '',
@@ -232,6 +284,26 @@ async function seedFiles(taskIds) {
     'Primary offer: launch-ready visual system and landing page in one focused sprint.',
     '',
   ].join('\n'));
+
+  await writeProjectFile('context/launch-metrics.md', [
+    '# Launch Metrics',
+    '',
+    '## Targets',
+    '- CTA click-through: > 6% on hero',
+    '- Form start → submit: > 40%',
+    '- Mobile bounce: < 55%',
+    '',
+    '## Event schema',
+    '',
+    '| event | surface | props |',
+    '|---|---|---|',
+    '| launch_cta_click | hero / pricing / footer | surface, campaign |',
+    '| form_start | signup | field_count |',
+    '| form_submit | signup | duration_ms |',
+    '',
+  ].join('\n'));
+
+  await writeProjectFile('context/NOTES.md', NOTES_MD);
 
   await writeProjectFile('specs/accessibility-pass.md', [
     '# Accessibility Pass',
@@ -307,31 +379,32 @@ async function seedCanvas() {
 }
 
 async function seedOverview() {
-  // Bind the public FlowBoard repo so the GitHub widgets render real public data.
-  await request(`/api/projects/${PROJECT}/github`, {
-    method: 'PUT',
-    body: JSON.stringify({ repo: 'rasimme/FlowBoard' }),
-  }).catch((e) => console.warn('github bind failed:', e.message));
-
-  const repo = { repo: 'rasimme/FlowBoard' };
-  // Repo-first overview: GitHub status/CI/PRs on top, focus/blocked/approvals,
-  // releases/issues/milestones, then the board preview — a full, representative view.
+  // Standard "default" preset layout (matches a fresh project), with the Links
+  // widget pre-populated so the board reads full. No GitHub widgets — keeps the
+  // standard view and avoids depending on a bound repo.
+  const links = [
+    { label: 'Launch brief', url: 'https://example.com/atelier-nova/brief' },
+    { label: 'Staging preview', url: 'https://staging.atelier-nova.example' },
+    { label: 'Analytics', url: 'https://analytics.example.com/atelier-nova' },
+    { label: 'Brand kit', url: 'https://example.com/brand' },
+  ];
   await request(`/api/projects/${PROJECT}/overview`, {
     method: 'PUT',
     body: JSON.stringify({
       version: 1,
       layout: 'grid',
+      preset: 'default',
       widgets: [
-        { id: 'w-repo', type: 'repo-status', grid: { x: 0, y: 0, w: 5, h: 2 }, props: repo },
-        { id: 'w-ci', type: 'gh-ci', grid: { x: 5, y: 0, w: 4, h: 2 }, props: repo },
-        { id: 'w-pulls', type: 'gh-pulls', grid: { x: 9, y: 0, w: 3, h: 2 }, props: repo },
-        { id: 'w-focus', type: 'current-focus', grid: { x: 0, y: 2, w: 5, h: 2 } },
-        { id: 'w-blocked', type: 'blocked', grid: { x: 5, y: 2, w: 4, h: 2 } },
-        { id: 'w-approvals', type: 'approvals', grid: { x: 9, y: 2, w: 3, h: 2 } },
-        { id: 'w-releases', type: 'gh-releases', grid: { x: 0, y: 4, w: 4, h: 2 }, props: repo },
-        { id: 'w-issues', type: 'gh-issues', grid: { x: 4, y: 4, w: 4, h: 2 }, props: repo },
-        { id: 'w-milestones', type: 'milestones', grid: { x: 8, y: 4, w: 4, h: 2 } },
-        { id: 'w-board', type: 'kanban-mini', grid: { x: 0, y: 6, w: 12, h: 2 } },
+        { id: 'w-stall', type: 'stall-detection', grid: { x: 0, y: 0, w: 6, h: 3 } },
+        { id: 'w-timeline', type: 'timeline', grid: { x: 6, y: 0, w: 3, h: 5 } },
+        { id: 'w-drop', type: 'quick-drop', grid: { x: 9, y: 0, w: 3, h: 2 } },
+        { id: 'w-context', type: 'context-index', grid: { x: 9, y: 2, w: 3, h: 3 } },
+        { id: 'w-milestones', type: 'milestones', grid: { x: 0, y: 3, w: 3, h: 2 } },
+        { id: 'w-quick', type: 'quick-links', grid: { x: 3, y: 3, w: 3, h: 2 } },
+        { id: 'w-agents', type: 'active-agents', grid: { x: 0, y: 5, w: 5, h: 2 } },
+        { id: 'w-notes', type: 'notes', grid: { x: 5, y: 5, w: 4, h: 2 } },
+        { id: 'w-links', type: 'links', grid: { x: 9, y: 5, w: 3, h: 2 }, props: { links } },
+        { id: 'w-stats', type: 'task-stats', grid: { x: 0, y: 7, w: 12, h: 2 } },
       ],
     }),
   }).catch((e) => console.warn('overview seed failed:', e.message));
