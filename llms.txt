@@ -54,6 +54,7 @@
 - [ADR-0025](docs/adr/0025-canvas-state-in-db.md) — Canvas state in relational DB tables — gated migration off `canvas.json`, still not event-sourced
 - [ADR-0026](docs/adr/0026-frontend-architecture-invariants.md) — Frontend architecture invariants — no reintroduced `window.*` globals, single task-state path; enforced by the runtime-guardrails test
 - [ADR-0027](docs/adr/0027-agent-doc-separation.md) — Agent-facing docs split by home — trigger vs project dev-rules vs repo conventions
+- [ADR-0028](docs/adr/0028-auth-model-middleware.md) — Auth model: one `/api/` middleware (origin + credentials + config); loopback-trusted, production fail-closed
 
 ## Reference
 

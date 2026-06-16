@@ -45,11 +45,11 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | ✅ ADR-0007 | — |
 | Kanban | Status workflow; subtask model; lease semantics from user POV | ✅ [kanban.md](kanban.md) | ✅ ADR-0007 | — |
-| Frontend Runtime | React task-state convergence; optimistic mutation contract; `appStateBridge`, `taskState`, `taskMutations`, `useTaskActions` | ✅ [frontend-runtime.md](frontend-runtime.md) | ✅ ADR-0019 | T-129 (Phase 6) |
+| Frontend Runtime | React task-state convergence; optimistic mutation contract; `appStateBridge`, `taskState`, `taskMutations`, `useTaskActions` | ✅ [frontend-runtime.md](frontend-runtime.md) | ✅ ADR-0019, ADR-0026 | T-129 (Phase 6) |
 | Idea Canvas | Notes/connections/clusters; promote-to-task; webhook path | ✅ [idea-canvas.md](idea-canvas.md) | ✅ ADR-0024, ADR-0025 (superseding ADR-0012, ADR-0014) | — |
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | ✅ ADR-0007 | — |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | ✅ ADR-0015, ADR-0016 | — |
-| Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | 🔲 likely needed | — |
+| Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | ✅ ADR-0028 | — |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ⬜ partial in [agent-identity.md](agent-identity.md) | ✅ ADR-0011 | — |
 | Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ⬜ partial in ADR-0006 | ✅ ADR-0006 (covers fingerprinting) | — |
 | Project File Structure | `PROJECT.md`, `tasks.json`, `specs/`, `context/` roles | ⬜ not yet | ⬜ TBD | — |

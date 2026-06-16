@@ -68,6 +68,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0025](0025-canvas-state-in-db.md) — Canvas state in relational DB tables — gated migration off `canvas.json` (2026-06-12)
 - [ADR-0026](0026-frontend-architecture-invariants.md) — Frontend architecture invariants — no reintroduced `window.*` globals, single task-state path; enforced by the runtime-guardrails test (2026-06-15)
 - [ADR-0027](0027-agent-doc-separation.md) — Agent-facing docs split by home — trigger (`AGENTS.md`) vs project dev-rules (`PROJECT.md`) vs repo conventions (`CONTRIBUTING`) (2026-06-16)
+- [ADR-0028](0028-auth-model-middleware.md) — Auth model: one `/api/` middleware gated on origin + credentials + config; loopback-trusted, production fail-closed (2026-06-16)
 
 ## See also
 
