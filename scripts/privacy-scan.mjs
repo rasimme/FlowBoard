@@ -26,7 +26,7 @@ const ALLOWED_PLACEHOLDER_VALUES = new Set([
 ]);
 
 const BLOCKED_PATTERNS = [
-  { name: 'private hostname', pattern: /simme-ns5\.com/i },
+  { name: 'private hostname', pattern: /simme-ns5/i },
   { name: 'telegram user id', pattern: /\b15707748\b/ },
   { name: 'local user path', pattern: /\/Users\/simeon(?:\.ortmueller)?\b/ },
   { name: 'local username/email fragment', pattern: /\bsimeon\.ortmueller\b/i },

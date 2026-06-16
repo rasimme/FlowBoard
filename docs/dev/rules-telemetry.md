@@ -40,9 +40,9 @@ systemctl --user restart flowboard-dashboard
 ### macOS launchd
 
 ```bash
-PLIST=~/Library/LaunchAgents/ai.simme-ns5.flowboard-dashboard.plist
+PLIST=~/Library/LaunchAgents/ai.openclaw.flowboard-dashboard.plist
 /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables:FLOWBOARD_RULES_TELEMETRY string 1' "$PLIST"
-launchctl kickstart -k "gui/$(id -u)/ai.simme-ns5.flowboard-dashboard"
+launchctl kickstart -k "gui/$(id -u)/ai.openclaw.flowboard-dashboard"
 ```
 
 Verify the flag is picked up:
