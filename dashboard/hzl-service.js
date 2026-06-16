@@ -2183,24 +2183,32 @@ function getProjectActivity(project, opts = {}) {
     if (key.startsWith(project + ':')) { warm = true; break; }
   }
   if (!warm) listTasks(project);
-  // Page backwards through the global stream until the cap is met — a
-  // fixed over-fetch used to return nothing for small limits whenever
-  // busier projects dominated the recent events.
+  // Query only THIS project's events, by its task ULIDs (T-390). A previous
+  // version paged the GLOBAL event stream with a fixed MAX_SCAN cap and filtered
+  // per event; once a busy project (plus its task_updated churn) dominated the
+  // recent stream, a quieter project's events sat beyond the cap and the feed
+  // returned empty. Scoping the query to the project's own task ids removes that
+  // dependency on global volume — the scan is bounded by this project alone.
+  const ulids = [];
+  for (const [key, ulid] of _fbToUlid) {
+    if (key.startsWith(project + ':')) ulids.push(ulid);
+  }
+  if (ulids.length === 0) return [];
+  const placeholders = ulids.map(() => '?').join(',');
   const out = [];
   const BATCH = 500;
-  const MAX_SCAN = 20000; // bound for projects with little/no event history
   let beforeId = Number.MAX_SAFE_INTEGER;
-  let scanned = 0;
-  while (out.length < cap && scanned < MAX_SCAN) {
-    const rows = since
-      ? _eventsDb.prepare('SELECT * FROM events WHERE id < ? AND timestamp > ? ORDER BY id DESC LIMIT ?').all(beforeId, String(since), BATCH)
-      : _eventsDb.prepare('SELECT * FROM events WHERE id < ? ORDER BY id DESC LIMIT ?').all(beforeId, BATCH);
+  while (out.length < cap) {
+    const sql = since
+      ? `SELECT * FROM events WHERE task_id IN (${placeholders}) AND id < ? AND timestamp > ? ORDER BY id DESC LIMIT ?`
+      : `SELECT * FROM events WHERE task_id IN (${placeholders}) AND id < ? ORDER BY id DESC LIMIT ?`;
+    const params = since ? [...ulids, beforeId, String(since), BATCH] : [...ulids, beforeId, BATCH];
+    const rows = _eventsDb.prepare(sql).all(...params);
     if (rows.length === 0) break;
-    scanned += rows.length;
     beforeId = rows[rows.length - 1].id;
     for (const ev of rows) {
       const mapKey = _ulidToFb.get(ev.task_id);
-      if (!mapKey || !mapKey.startsWith(project + ':')) continue;
+      if (!mapKey) continue;
       const fbId = mapKey.slice(project.length + 1);
       const cached = _cache.get(mapKey);
       if (cached?.trashedAt) continue;
