@@ -43,6 +43,7 @@ Everything else builds on that layer:
 
 - **Agent-native Kanban** — tasks, specs, claims, checkpoints, and review, so "where things stand" is always live instead of narrated.
 - **Idea Canvas** — brainstorm visually, then promote connected notes straight into tasks and specs.
+- **Spec-driven development** — the Specify workflow turns a rough idea into a proper spec through a short clarify loop, so agents build from a clear definition of done, not a one-line title.
 - **Modular Overview** — a per-project dashboard that surfaces the context that matters at a glance.
 - **Built for many agents** — stable identity, claims, and a live multi-agent view, for OpenClaw and external agents alike.
 
@@ -56,7 +57,7 @@ It's local-first: everything runs on your machine, event-sourced in SQLite — n
 
 Activate a project and the agent gets the context it needs — goal, scope, architecture, decisions, current task state, specs. Everything is loaded on demand: the agent pulls in what it needs, when it needs it, keeping token usage low. Switch between projects without losing track.
 
-- Structured project files: `PROJECT.md` → `DECISIONS.md` → `specs/` (canvas lives in the database since ADR-0025)
+- Structured project files: `PROJECT.md` → `DECISIONS.md` → `specs/` (canvas lives in the database)
 - HZL-backed task runtime with claims, leases, checkpoints, comments, and review gates
 - Lazy loading — zero overhead when no project is active
 - Session handoff — pick up exactly where you left off
@@ -93,7 +94,7 @@ Your agent operates the board through the same REST API as the dashboard. It cre
 
 ### 💡 Idea Canvas
 
-A node-based brainstorming space. Sticky notes with connections form clusters. One click sends them to your agent, who analyzes the ideas and creates:
+A node-based brainstorming space. Sticky notes with connections form clusters. One click runs the **Specify workflow** — a guided ANALYZE → CLARIFY → GENERATE loop that asks a few clarifying questions and turns the ideas into proper specs (not just titles):
 
 ![FlowBoard Canvas](docs/screenshot-canvas.png)
 
@@ -101,7 +102,7 @@ A node-based brainstorming space. Sticky notes with connections form clusters. O
 - **Detailed idea** → Task + spec with acceptance criteria
 - **Complex cluster** → Parent task + subtasks with specs
 
-Visual brainstorming → structured tasks, zero manual overhead.
+Visual brainstorming → spec-backed, structured tasks — zero manual overhead.
 
 ### 📁 File Explorer
 
@@ -441,19 +442,6 @@ systemctl --user restart dashboard
 
 ## Architecture
 
-How the pieces fit — you and your agents drive the same server, the single writer of an event-sourced task store, which feeds project context back to agents on demand:
-
-```mermaid
-flowchart LR
-  A["AI agents<br/>Claude Code · Cursor · Codex · OpenClaw"] -->|REST API| S["FlowBoard server (Express)"]
-  U["You"] -->|browser · Telegram| D["React dashboard<br/>Kanban · Canvas · Overview"]
-  D -->|REST API| S
-  S --> DB[("Event-sourced task store<br/>HZL · SQLite")]
-  S -. project context on demand .-> A
-```
-
-Directory layout:
-
 ```
 ~/.openclaw/workspace-<agent>/
 ├── AGENTS.md                     # Minimal FlowBoard trigger — status check + lazy load
@@ -503,7 +491,7 @@ Directory layout:
 Full documentation lives in [`docs/`](docs/README.md) — organized by audience:
 
 - [User guide](docs/guide/) — install, search, mobile use, managing projects
-- [Concepts](docs/concepts/) & [ADRs](docs/adr/) — how and why it works
+- [Concepts](docs/concepts/) — how and why it works
 - [Reference](docs/reference/) — API manifest & environment variables
 
 ## Contributing
@@ -517,6 +505,10 @@ git commit -m "feat: your feature"
 ```
 
 ---
+
+## Built on
+
+FlowBoard's task runtime is built on **[HZL](https://www.hzl-tasks.com)** — an event-sourced, losslessly auditable task ledger for coding agents and OpenClaw.
 
 ## License
 
