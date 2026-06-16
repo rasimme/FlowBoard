@@ -23,6 +23,14 @@ Each concept doc answers five questions:
 - [Specify Workflow](specify-workflow.md) — 6-step agent process for unstructured-to-structured work, session lifecycle, RAM-only sessions
 - [Modular Project Overview](overview-widgets.md) — server-driven widget grid, trusted registry, presets, GitHub binding, milestones/questions as task conventions
 - [Auth Model](auth-model.md) — middleware decision tree, Telegram init-data + JWT cookie, loopback / tunnel / LAN bypasses, fail-closed in production
+- [Smart Search](smart-search.md) — cross-project `Cmd/Ctrl+K` palette; query parser, operators, typo-tolerant matching
+- [Mobile & Touch](mobile-and-touch.md) — responsive single app; Pointer-Events drag, full-screen sheets, master-detail, safe-area
+- [Accessibility](accessibility.md) — keyboard drag-and-drop, `aria-live` announcements, focusable cards (not buttons)
+- [In-App Update](app-update.md) — version detection + `setup.mjs --update` rebuild/restart, fail-silent status
+- [File Visibility](file-visibility.md) — Markdown-first file listing, `includeHidden`, vs. the write boundary
+- [Stuck Detection & Notifications](stuck-notifications.md) — stale/expired/routed-unclaimed detection, notification guards, owner-wake vs operator-notify
+- [Testing Strategy](testing-strategy.md) — `npm test` gate, real-browser E2E harness, runtime guardrails
+- [Docs-Drift Enforcement](docs-drift-enforcement.md) — the drift-test family that ties docs to code
 
 ## Coverage Matrix
 
@@ -46,6 +54,14 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ⬜ partial in ADR-0006 | ✅ ADR-0006 (covers fingerprinting) | — |
 | Project File Structure | `PROJECT.md`, `tasks.json`, `specs/`, `context/` roles | ⬜ not yet | ⬜ TBD | — |
 | Telegram Mini App | Mobile UI shell; HMAC-SHA256 verification; tunnel options | ⬜ not yet | ⬜ TBD | — |
+| Smart Search | Cross-project palette; query parser + operators; typo-tolerant | ✅ [smart-search.md](smart-search.md) | ⬜ none yet | — |
+| Mobile & Touch | Responsive UI; Pointer-Events DnD; full-screen sheets; safe-area | ✅ [mobile-and-touch.md](mobile-and-touch.md) | ⬜ none yet | — |
+| Accessibility | Keyboard DnD; `aria-live`; focusable cards (not buttons) | ✅ [accessibility.md](accessibility.md) | ⬜ none yet | — |
+| In-App Update | Version detect; `setup.mjs --update`; fail-silent status | ✅ [app-update.md](app-update.md) | ⬜ none yet | — |
+| File Visibility | Markdown-first listing; `includeHidden`; vs. write boundary | ✅ [file-visibility.md](file-visibility.md) | ⬜ none yet | — |
+| Stuck Detection & Notifications | Stale/expired/routed-unclaimed; notification guards | ✅ [stuck-notifications.md](stuck-notifications.md) | ⬜ none yet | — |
+| Testing Strategy | Browser E2E harness; runtime guardrails; the `npm test` gate | ✅ [testing-strategy.md](testing-strategy.md) | ✅ ADR-0026 (frontend invariants) | — |
+| Docs-Drift Enforcement | Drift-test family ties docs to code | ✅ [docs-drift-enforcement.md](docs-drift-enforcement.md) | ⬜ none yet | — |
 
 **Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
 
