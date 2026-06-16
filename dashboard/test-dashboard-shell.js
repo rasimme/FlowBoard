@@ -626,6 +626,22 @@ async function run() {
       })).then(s => (s.edit && s.del) ? s : null), 'manage mode reveals edit + remove', 4000).catch(() => false);
       ok(inManage, 'Manage mode reveals per-row edit + remove controls (T-381)');
       ok(inManage && Math.abs(inManage.rowH - before.rowH) <= 1, `manage rows keep the same height as normal rows (T-381) — ${before.rowH}px vs ${inManage && inManage.rowH}px`);
+      // T-409 (review of T-381): cover the edit round-trip — change the first
+      // row's label, Save, and assert it persists with the url preserved (the
+      // spread fix). This was the only mutation path Flow 24 didn't exercise.
+      await page.evaluate(() => document.querySelector('.lk-row-manage .lk-act').click()); // pencil on Alpha
+      await waitFor(() => page.$('.lk-edit .lk-in'), 'edit form opens', 4000);
+      await page.evaluate(() => {
+        const input = document.querySelector('.lk-edit .lk-in');
+        const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        set.call(input, 'Alpha2'); input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.evaluate(() => document.querySelector('.lk-edit .lk-btn[title="Save"]').click());
+      const edited = await waitFor(async () => {
+        const links = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`)).body?.overview?.widgets?.find(w => w.id === 'w-links')?.props?.links || [];
+        return links[0] && links[0].label === 'Alpha2' && links[0].url === 'https://alpha.example';
+      }, 'edited link persists + url preserved', 5000).catch(() => false);
+      ok(edited, 'editing a link label saves + preserves the url (T-381/T-409)');
       await page.evaluate(() => document.querySelector('.lk-row-manage .lk-act-danger').click());
       const removed = await waitFor(async () => {
         const links = (await fetchJson(base, 'GET', `/api/projects/${PROJECT}/overview`)).body?.overview?.widgets?.find(w => w.id === 'w-links')?.props?.links || [];

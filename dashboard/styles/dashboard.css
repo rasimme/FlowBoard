@@ -1559,6 +1559,10 @@
       user-select: none;
     }
     .tree-item:hover { background: var(--bg-hover); }
+    /* T-409 (review of T-375-1): when "Show hidden" is on, dim operational
+       (non-Markdown/backup) files so they're visually distinct from knowledge docs. */
+    .tree-item.is-hidden { opacity: 0.55; }
+    .tree-item.is-hidden.selected { opacity: 1; }
     .tree-item.selected {
       background: var(--accent-subtle);
       border-left-color: var(--accent);
@@ -1921,8 +1925,10 @@
       .task-card .spec-badge-add { opacity: 0.5; }
       .subtask-card .spec-badge-add { opacity: 0.5; }
 
-      /* Header */
-      .header { padding: 8px 12px; }
+      /* Header — keep the tighter mobile padding but preserve the notch insets
+         (T-409 review of T-367-2: the plain 8px 12px override discarded the base
+         env(safe-area-*) padding, so header content sat under the notch). */
+      .header { padding: calc(8px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px)) 8px calc(12px + env(safe-area-inset-left, 0px)); }
       .header-logo { display: none; }
 
       /* Sidebar toggle: more prominent */

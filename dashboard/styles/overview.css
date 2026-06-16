@@ -190,6 +190,9 @@
 .ts-trend .bars { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-height: 24px; max-width: 240px; }  /* compact — don't stretch across a wide card */
 .ts-trend .bars i { flex: 1; border-radius: 2px 2px 0 0; background: var(--bg-hover); display: block; min-width: 0; }
 .ts-trend .bars i.hi { background: var(--chart-1); opacity: .85; }
+/* T-409 (review of T-389): the trend bars are tabIndex=0 but had no focus ring —
+   mirror the Momentum .sd-bar:focus-visible so keyboard focus is visible. */
+.ts-trend .bars i:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .ts-trend .lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: 5px; flex-shrink: 0; }
 .ov-spark { display: none; }
 .ov-spark .bars { display: flex; align-items: flex-end; gap: 3px; height: 30px; }

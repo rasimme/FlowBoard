@@ -119,8 +119,9 @@ function TreeNode({ entry, depth, expandedDirs, onToggleDir, selectedFile, onSel
   const isSelected = selectedFile === entry.path;
   return (
     <div
-      className={`tree-item${isSelected ? ' selected' : ''}`}
+      className={`tree-item${isSelected ? ' selected' : ''}${entry.hidden ? ' is-hidden' : ''}`}
       style={{ paddingLeft: `${indent}px` }}
+      title={entry.hidden ? 'Operational file — hidden by default' : undefined}
       onClick={() => onSelectFile(entry.path)}
     >
       {entry.category && <span className={`tree-badge ${entry.category}`} />}
