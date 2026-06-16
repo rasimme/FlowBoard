@@ -6,6 +6,7 @@ import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
 import { apiFetch } from '../../utils/apiFetch.js';
+import { extractGoal } from '../../utils/projectGoal.mjs';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -382,20 +383,20 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
   const { state } = useAppState();
   const md = useProjectFile(state?.viewedProject, 'PROJECT.md');
 
-  let goal = null;
-  if (md) {
-    const m = md.match(/^##\s+(Ziel|Goal)\s*\n+([\s\S]*?)(?=^##\s|\Z)/m);
-    goal = (m ? m[2] : md.split(/^##\s/m)[0].split('\n').slice(1).join(' '))
-      .replace(/[#>*_`\[\]]/g, '').trim().slice(0, 280);
-  }
+  const hasFile = Boolean(md);
+  const goal = hasFile ? extractGoal(md) : '';
 
   return (
-    <OvWidget title={widget?.title || 'Project Goal'} meta={md ? 'PROJECT.md' : null}>
+    <OvWidget title={widget?.title || 'Project Goal'} meta={hasFile ? 'PROJECT.md' : null}>
       {!goal ? (
         <div className="ov-empty">
           <FileText size={22} />
-          <span className="ov-empty-title">No PROJECT.md yet</span>
-          <span className="ov-empty-hint">The project goal renders here from PROJECT.md — markdown stays the source of truth.</span>
+          <span className="ov-empty-title">{hasFile ? 'No goal section yet' : 'No PROJECT.md yet'}</span>
+          <span className="ov-empty-hint">
+            {hasFile
+              ? 'Add a ## Ziel or ## Goal section to PROJECT.md — it renders here.'
+              : 'The project goal renders here from PROJECT.md — markdown stays the source of truth.'}
+          </span>
         </div>
       ) : (
         <>
