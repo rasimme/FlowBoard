@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Flag, ExternalLink, Upload, FileText, Pin, Sun, Coffee, Moon, Play, Plus, Save, GitBranch, GitPullRequest, KeyRound, Pencil, Trash2, X, Check } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
 import ScrollArea from '../ScrollArea.jsx';
@@ -936,6 +937,18 @@ export function LinksWidget({ widget, editing }) {
 }
 
 /* ---------- stall-detection: friendly momentum check ---------- */
+// T-387: human labels + display order for the Momentum tooltip's action breakdown.
+const SD_TYPE_ORDER = ['status_changed', 'task_created', 'checkpoint_recorded', 'comment_added', 'task_archived', 'project_created'];
+const SD_TYPE_LABEL = {
+  status_changed: 'status changes',
+  task_created: 'created',
+  checkpoint_recorded: 'checkpoints',
+  comment_added: 'comments',
+  task_archived: 'archived',
+  project_created: 'project created',
+};
+const sdDayLabel = (iso) => new Date(iso).toLocaleDateString('en', { weekday: 'long', month: 'short', day: 'numeric' });
+
 export function StallDetectionWidget({ widget }) {
   const { state } = useAppState();
   const project = state?.viewedProject;
@@ -949,6 +962,25 @@ export function StallDetectionWidget({ widget }) {
       .catch(() => { if (alive) setAgg({ days: [], latest: null, total: 0 }); });
     return () => { alive = false; };
   }, [project]);
+
+  // T-387: hover/focus tooltip. `tip` holds the day + the bar's screen anchor;
+  // tipPos is computed after the tooltip mounts so we can place it above the
+  // bar (flipping below when there's no room) and clamp it into the viewport.
+  const [tip, setTip] = useState(null);
+  const [tipPos, setTipPos] = useState(null);
+  const tipRef = useRef(null);
+  useLayoutEffect(() => {
+    if (!tip || !tipRef.current) return;
+    const r = tipRef.current.getBoundingClientRect();
+    const gap = 8;
+    const left = Math.max(6, Math.min(tip.anchor.cx - r.width / 2, window.innerWidth - r.width - 6));
+    let top = tip.anchor.top - r.height - gap;
+    if (top < 6) top = tip.anchor.bottom + gap;
+    setTipPos({ top, left });
+  }, [tip]);
+  function showTip(e, d) { const r = e.currentTarget.getBoundingClientRect(); setTipPos(null); setTip({ d, anchor: { cx: r.left + r.width / 2, top: r.top, bottom: r.bottom } }); }
+  function hideTip() { setTip(null); setTipPos(null); }
+
   if (!agg) return <OvWidget title={widget?.title || 'Momentum'} meta="stall check"><div /></OvWidget>;
 
   const now = Date.now();
@@ -961,12 +993,24 @@ export function StallDetectionWidget({ widget }) {
       ? { Icon: Coffee, cls: 'slow', head: `Quiet for ${idleDays} day${idleDays > 1 ? 's' : ''}`, sub: 'Nothing urgent — just a nudge.' }
       : { Icon: Moon, cls: 'dormant', head: `Resting — ${idleDays > 30 ? '30+' : idleDays} days`, sub: 'Pick it back up whenever you are ready.' };
 
-  const perDay = (agg.days || []).map(d => d.count);
+  const days = agg.days || [];
+  const perDay = days.map(d => d.count);
   const max = Math.max(...perDay, 1);
   const activeDays = perDay.filter(n => n > 0).length;
-  const busiest = (agg.days || []).reduce((m, d) => (d.count > (m?.count || 0) ? d : m), null);
+  const busiest = days.reduce((m, d) => (d.count > (m?.count || 0) ? d : m), null);
+  const todayIso = days.length ? days[days.length - 1].day : null;
+
+  // Height encodes volume; colour no longer doubles it. Instead one accent
+  // marks days above the *typical* active-day pace (median, robust to spikes),
+  // so the bars read against your own baseline rather than three arbitrary
+  // tiers. The reference line makes that baseline visible. (T-387)
+  const heightPct = (c) => (c ? 18 + (c / max) * 78 : 8);
+  const activeSorted = perDay.filter(n => n > 0).slice().sort((a, b) => a - b);
+  const median = activeSorted.length ? activeSorted[Math.floor((activeSorted.length - 1) / 2)] : 0;
+  const showMedian = activeSorted.length >= 3 && median > 0 && median < max;
 
   return (
+    <>
     <OvWidget title={widget?.title || 'Momentum'} meta="stall check">
       <div className="sd-wrap">
         <div className="sd-status">
@@ -978,15 +1022,19 @@ export function StallDetectionWidget({ widget }) {
         </div>
         <div className="sd-strip-block">
           <div className="sd-strip">
-            {(agg.days || []).map(d => {
-              const label = new Date(d.day).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' });
-              const lvl = d.count > max * 0.6 ? 3 : d.count > max * 0.25 ? 2 : d.count > 0 ? 1 : 0;
-              return <i key={d.day} className={lvl ? 'a' + lvl : ''}
-                title={`${label} — ${d.count} event${d.count === 1 ? '' : 's'}`}
-                style={{ height: (d.count ? 18 + (d.count / max) * 78 : 8) + '%' }}></i>;
+            {showMedian && <span className="sd-median" style={{ bottom: heightPct(median) + '%' }} aria-hidden="true" />}
+            {days.map(d => {
+              const cls = d.count === 0 ? 'sd-bar' : d.count > median ? 'sd-bar a-peak' : 'sd-bar a-on';
+              return <i key={d.day}
+                className={cls + (d.day === todayIso ? ' is-today' : '')}
+                tabIndex={0} role="img"
+                aria-label={`${sdDayLabel(d.day)}: ${d.count} event${d.count === 1 ? '' : 's'}`}
+                style={{ height: heightPct(d.count) + '%' }}
+                onMouseEnter={e => showTip(e, d)} onMouseLeave={hideTip}
+                onFocus={e => showTip(e, d)} onBlur={hideTip}></i>;
             })}
           </div>
-          <div className="sd-strip-lbl">Activity · last 14 days</div>
+          <div className="sd-strip-lbl">Activity · last 14 days{showMedian ? ` · typical ${median}/day` : ''}</div>
         </div>
         <div className="sd-stats">
           <span><b>{agg.total}</b> events · 14d</span>
@@ -995,6 +1043,33 @@ export function StallDetectionWidget({ widget }) {
         </div>
       </div>
     </OvWidget>
+    {tip && createPortal(
+      <div ref={tipRef} role="tooltip" className="sd-tip"
+        style={{ top: tipPos ? tipPos.top : -9999, left: tipPos ? tipPos.left : -9999, visibility: tipPos ? 'visible' : 'hidden' }}>
+        <div className="sd-tip-head">
+          <span className="sd-tip-date">{sdDayLabel(tip.d.day)}</span>
+          {tip.d.day === todayIso && <span className="sd-tip-today">today</span>}
+        </div>
+        <div className="sd-tip-total"><b>{tip.d.count}</b> event{tip.d.count === 1 ? '' : 's'}</div>
+        {tip.d.count > 0 ? (
+          <ul className="sd-tip-rows">
+            {SD_TYPE_ORDER.filter(t => tip.d.byType?.[t]).map(t => (
+              <li key={t}><span className="sd-tip-dot" aria-hidden="true" /><b>{tip.d.byType[t]}</b> {SD_TYPE_LABEL[t]}</li>
+            ))}
+            {Object.keys(tip.d.byType || {}).filter(t => !SD_TYPE_ORDER.includes(t)).map(t => (
+              <li key={t}><span className="sd-tip-dot" aria-hidden="true" /><b>{tip.d.byType[t]}</b> {t.replace(/_/g, ' ')}</li>
+            ))}
+          </ul>
+        ) : <div className="sd-tip-empty">No activity</div>}
+        {median > 0 && (
+          <div className="sd-tip-foot">
+            typical ≈ <b>{median}</b>/day · {tip.d.count === 0 ? 'quiet day' : tip.d.count > median ? 'busier than usual' : 'around your usual pace'}
+          </div>
+        )}
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
 

@@ -2250,13 +2250,19 @@ function getProjectActivityDaily(project, days = 14) {
   // recalcs, internal writes) that would otherwise dwarf real work by ~100x
   // and make the momentum strip read tens-of-thousands on busy dev days.
   const rows = _eventsDb.prepare(
-    "SELECT substr(timestamp, 1, 10) AS day, task_id FROM events WHERE timestamp > ? AND type != 'task_updated' ORDER BY id DESC"
+    "SELECT substr(timestamp, 1, 10) AS day, type, task_id FROM events WHERE timestamp > ? AND type != 'task_updated' ORDER BY id DESC"
   ).all(cutoff);
   const counts = new Map();
+  // day -> Map(type -> count); powers the Momentum tooltip's action breakdown
+  // (T-387). Same events the count already includes, just kept per type.
+  const byTypeByDay = new Map();
   for (const r of rows) {
     const mapKey = _ulidToFb.get(r.task_id);
     if (!mapKey || !mapKey.startsWith(project + ':')) continue;
     counts.set(r.day, (counts.get(r.day) || 0) + 1);
+    let perType = byTypeByDay.get(r.day);
+    if (!perType) { perType = new Map(); byTypeByDay.set(r.day, perType); }
+    perType.set(r.type, (perType.get(r.type) || 0) + 1);
   }
   // latest event independent of the window — idle detection needs it even
   // when the project slept longer than the aggregation span
@@ -2264,7 +2270,8 @@ function getProjectActivityDaily(project, days = 14) {
   const out = [];
   for (let i = span - 1; i >= 0; i--) {
     const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    out.push({ day, count: counts.get(day) || 0 });
+    const perType = byTypeByDay.get(day);
+    out.push({ day, count: counts.get(day) || 0, byType: perType ? Object.fromEntries(perType) : {} });
   }
   return { days: out, latest, total: out.reduce((a, b) => a + b.count, 0) };
 }
