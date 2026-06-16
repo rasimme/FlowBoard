@@ -618,6 +618,11 @@
   .ms-roadmap { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; width: auto; max-height: 52px; }
   .ms-roadmap .ms-up { flex: 0 1 auto; min-width: 100px; }
   .ms-top { flex-direction: column; gap: 8px; }
+  /* T-393: in column mode .ms-top keeps align-items:flex-start (needed for the
+     row layout), which shrank .ms-focus to its content width — so the focus
+     name and the progress bar tracked the milestone-name length. Stretch it to
+     full card width so the bar is always full-width, independent of the text. */
+  .ms-focus { align-self: stretch; }
 }
 .ms-up .nm { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text); min-width: 0; }
 .ms-up .nm .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

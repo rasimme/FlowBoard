@@ -15,8 +15,9 @@ async function run() {
     await api('POST', '/projects', { name: PROJECT });
     const t1 = (await api('POST', `/projects/${PROJECT}/tasks`, { title: 'a' })).body.task.id;
     const t2 = (await api('POST', `/projects/${PROJECT}/tasks`, { title: 'b' })).body.task.id;
-    await api('PUT', `/projects/${PROJECT}/tasks/${t1}`, { tags: ['milestone:Alpha'] });
-    await api('PUT', `/projects/${PROJECT}/tasks/${t2}`, { tags: ['milestone:Beta'] });
+    // very different name lengths so a text-width-dependent layout would show
+    await api('PUT', `/projects/${PROJECT}/tasks/${t1}`, { tags: ['milestone:Hi'] });
+    await api('PUT', `/projects/${PROJECT}/tasks/${t2}`, { tags: ['milestone:A-Very-Long-Milestone-Name-Indeed'] });
     await api('PUT', `/projects/${PROJECT}/overview`, {
       version: 1, layout: 'grid', widgets: [{ type: 'milestones', id: 'm', grid: { x: 0, y: 0, w: 3, h: 2 } }],
     });
@@ -36,11 +37,19 @@ async function run() {
     });
     r.ok(switchVisible, 'switcher is visible on a 3x2 card with 2 active milestones');
 
-    const before = await page.evaluate(() => document.querySelector('.ms-focus .ms-name')?.textContent || '');
+    const snap = () => page.evaluate(() => ({
+      name: document.querySelector('.ms-focus .ms-name')?.textContent || '',
+      barW: Math.round(document.querySelector('.ms-bar').getBoundingClientRect().width),
+      switchX: Math.round(document.querySelector('.ms-switch').getBoundingClientRect().left),
+    }));
+    const before = await snap();
     await page.evaluate(() => { const btns = document.querySelectorAll('.ms-switch-btn'); btns[btns.length - 1]?.click(); });
     await new Promise(res2 => setTimeout(res2, 200));
-    const after = await page.evaluate(() => document.querySelector('.ms-focus .ms-name')?.textContent || '');
-    r.ok(before && after && before !== after, `next button switches the shown milestone (${before.trim()} -> ${after.trim()})`);
+    const after = await snap();
+    r.ok(before.name && after.name && before.name !== after.name, `next button switches the shown milestone (${before.name.trim()} -> ${after.name.trim()})`);
+    // the progress bar must be full-width, NOT sized to the milestone-name text
+    r.ok(before.barW === after.barW, `progress bar width is constant across milestones (${before.barW} vs ${after.barW}px)`);
+    r.ok(before.switchX === after.switchX, `switcher does not jump when switching (x=${before.switchX})`);
 
     // create view: the name input must keep its natural height (was a tall field)
     await page.evaluate(() => { const b = document.querySelector('.ms-add-head'); b && b.click(); });
