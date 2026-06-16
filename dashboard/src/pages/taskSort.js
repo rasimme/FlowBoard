@@ -21,9 +21,17 @@ export function sortTasks(tasks, sortMode) {
     const ao = typeof a.order === 'number';
     const bo = typeof b.order === 'number';
     if (ao && bo) return a.order - b.order;
-    // Unranked (freshly created) tasks come first so new tasks land at the top.
+    // Unranked tasks come first so freshly created/moved tasks land at the top.
     if (ao) return 1;
     if (bo) return -1;
+    // Among unranked: most recently entered THIS column first (T-379) — a task
+    // moved in via status change/approve carries a fresh `enteredStatusAt`, so
+    // it rises above older ones regardless of id. ISO strings compare
+    // chronologically; missing timestamps fall back to newest-id-first.
+    const at = a.enteredStatusAt, bt = b.enteredStatusAt;
+    if (at && bt && at !== bt) return at < bt ? 1 : -1;
+    if (at && !bt) return -1;
+    if (bt && !at) return 1;
     return byNum(a, b, -1);
   });
 }

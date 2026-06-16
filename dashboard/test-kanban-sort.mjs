@@ -53,6 +53,30 @@ const withNew = [...ranked, { id: 'T-300' }]; // T-300 = newest, unranked
   ok(ids(out).join(',') === 'T-010,T-011,T-012,T-300', 'oldest: strict ascending by number, ranks ignored');
 }
 
+// T-379: unranked tasks sort by `enteredStatusAt` (when they entered the column)
+// DESC — most recently moved/created on top — NOT by task number. So an OLDER
+// task just moved into a column lands above newer ones already sitting there.
+{
+  const out = sortTasks([
+    { id: 'T-050', enteredStatusAt: '2026-06-16T09:00:00.000Z' }, // newer id, entered earlier
+    { id: 'T-010', enteredStatusAt: '2026-06-16T10:00:00.000Z' }, // older id, entered just now
+  ], 'custom');
+  ok(out[0].id === 'T-010', 'custom: most recently entered task is on top, even with a lower id');
+  ok(ids(out).join(',') === 'T-010,T-050', 'custom: unranked order follows enteredStatusAt desc, not id');
+}
+
+// Fallback: unranked tasks without enteredStatusAt still order newest-id-first.
+{
+  const out = sortTasks([{ id: 'T-010' }, { id: 'T-050' }], 'custom');
+  ok(ids(out).join(',') === 'T-050,T-010', 'custom: no enteredStatusAt → falls back to newest id');
+}
+
+// A task WITH a timestamp sorts above one without (a moved task beats a legacy one).
+{
+  const out = sortTasks([{ id: 'T-099' }, { id: 'T-001', enteredStatusAt: '2026-06-16T08:00:00.000Z' }], 'custom');
+  ok(out[0].id === 'T-001', 'custom: a task with enteredStatusAt ranks above one without');
+}
+
 if (fail === 0) console.log(`\n✅ All ${pass} checks passed`);
 else { console.log(`\n❌ ${fail} failed, ${pass} passed`); failures.forEach(f => console.log(`  - ${f}`)); }
 process.exit(fail > 0 ? 1 : 0);

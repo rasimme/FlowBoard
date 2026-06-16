@@ -111,6 +111,9 @@ function _toFbTask(hzlTask, project) {
     subtaskIds: [], // populated by _populateSubtaskIds after full build
     specFile: null, // populated from specs index
     created: fb.created || null,
+    // T-379: when the task entered its current status (recency sort). Falls back
+    // to created for legacy tasks predating the field.
+    enteredStatusAt: fb.enteredStatusAt || fb.created || null,
     completed: fb.completed || null,
     // Claim/Lease fields from HZL native columns
     agent: hzlTask.agent || null,
@@ -340,6 +343,15 @@ function _updateMetadata(ulid, newMetadata) {
   const current = _taskService.getTaskById(ulid);
   if (!current) throw new Error(`[hzl-service] Task not found: ${ulid}`);
   const oldMeta = current.metadata || {};
+  // T-379: central status-transition stamp. Every status change routes its
+  // metadata write through here (updateTask, completeTask, claimTask, release,
+  // restore, archive…), so stamping enteredStatusAt when the flowboard status
+  // actually changes covers all paths in one place. Non-status updates keep the
+  // existing value (carried in via the caller's `...prev` spread).
+  if (newMetadata?.flowboard && typeof newMetadata.flowboard.status === 'string'
+      && newMetadata.flowboard.status !== oldMeta?.flowboard?.status) {
+    newMetadata.flowboard.enteredStatusAt = new Date().toISOString();
+  }
   const event = _eventStore.append({
     task_id: ulid,
     type: _EventType.TaskUpdated,
@@ -769,6 +781,8 @@ function createTask(project, opts) {
 
   const hzlStatus = FB_TO_HZL[status] || 'ready';
   const created = new Date().toISOString().slice(0, 10);
+  // T-379: full-ISO timestamp of entering the current status (for recency sort).
+  const enteredStatusAt = new Date().toISOString();
 
   // Ensure project exists in HZL (lazy creation on first task)
   if (!_projectService.projectExists(project)) {
@@ -783,6 +797,7 @@ function createTask(project, opts) {
         id: newId,
         status,
         created,
+        enteredStatusAt,
         completed: null,
         parentId: parentId || null,
         ...(staleAfterMinutes !== null ? { staleAfterMinutes } : {}),
@@ -811,6 +826,7 @@ function createTask(project, opts) {
     subtaskIds: [],
     specFile: null,
     created,
+    enteredStatusAt,
     completed: null,
     agent: null,
     claimedAt: null,
