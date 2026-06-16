@@ -175,9 +175,11 @@
    overlap the KPI text; the trend itself clips rather than overflow upward. */
 .ts-wrap > .ov-statbar, .ts-wrap > .ov-legend, .ts-wrap > .ov-kpis { flex-shrink: 0; }
 .ts-trend { display: none; flex: 1; min-height: 0; overflow: hidden; flex-direction: column; justify-content: flex-end; margin-top: 12px; }
-/* T-389: only show the 7-day trend when there's genuinely room — at smaller
-   (mobile) heights the bars (min-height:24px) used to overlap the KPIs. */
-@container widget (min-height: 200px) { .ts-trend { display: flex; } }
+/* T-389: show the 7-day trend only when there's genuinely room — needs both
+   height AND width. A wide desktop card at h=2 (~554×188) has room; the same
+   widget on mobile (~329 wide) wraps the legend/KPIs and has none, so the bars
+   would overlap the text — hide it there. Measured widths drive the 420px gate. */
+@container widget (min-width: 420px) and (min-height: 160px) { .ts-trend { display: flex; } }
 /* h1 task-stats: only the distribution bar + headline KPIs fit — drop the
    (wrapping) legend and tighten so nothing clips at the minimum size */
 @container widget (max-height: 120px) {
