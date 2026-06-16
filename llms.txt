@@ -52,6 +52,8 @@
 - [ADR-0023](docs/adr/0023-overview-sdui-trusted-registry.md) — Overview landing page: server-driven UI, trusted widget registry, flat agent-editable layout schema
 - [ADR-0024](docs/adr/0024-canvas-react-migration.md) — Canvas migrated to React — logic-preserving port, no vanilla runtime left
 - [ADR-0025](docs/adr/0025-canvas-state-in-db.md) — Canvas state in relational DB tables — gated migration off `canvas.json`, still not event-sourced
+- [ADR-0026](docs/adr/0026-frontend-architecture-invariants.md) — Frontend architecture invariants — no reintroduced `window.*` globals, single task-state path; enforced by the runtime-guardrails test
+- [ADR-0027](docs/adr/0027-agent-doc-separation.md) — Agent-facing docs split by home — trigger vs project dev-rules vs repo conventions
 
 ## Reference
 
