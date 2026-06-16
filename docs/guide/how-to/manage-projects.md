@@ -11,19 +11,18 @@ Each project is an isolated workspace with its own goal, tasks, specs, and conte
 
 ## Archive vs. delete — know the difference
 
-These look similar in the menu but do very different things. Read this before clicking.
+Deletion is a deliberate **two-step** flow, and both steps are reversible — by design, so a project can't be destroyed by reflex.
 
-| Action | What it does | Reversible? |
+| Step | What it does | Reversible? |
 |---|---|---|
-| **Archive (deactivate)** | Hides the project from the active list and deactivates it. All tasks, specs, and files are kept untouched. | **Yes** — unarchive any time. |
-| **Delete** | Removes the project from your board into *Deleted projects*. | Restorable from there — until it is permanently removed. |
-| **Permanent delete** | Destroys the project and its data for good. Requires typing the project name to confirm, plus an explicit acknowledgement. | **No** — cannot be undone. |
+| **1. Deactivate (archive)** | Hides and deactivates the project; all tasks, specs, and files are kept. This is a **required first step** — a project must be deactivated before it can be deleted. | **Yes** — reactivate any time. |
+| **2. Delete** | Allowed only on an already-deactivated project, and only with an explicit confirmation (typing the project name) plus a separate delete acknowledgement. Moves the project folder into a server-side trash and tombstones it. | **Yes** — see *Restore* below. |
 
-> ⚠️ **Use Archive when you just want a project out of the way.** Reach for Delete only when you truly mean to remove it. Permanent deletion is irreversible and is intentionally harder to trigger (name confirmation + explicit acknowledgement) so it can't be done by reflex.
+> ⚠️ **Archive and Delete are intentionally hard to confuse.** Delete won't run on an active project, and won't run on the project name alone — it needs the extra acknowledgement. Even after deleting, the data isn't gone: it sits in the server-side trash until an operator clears it manually.
 
 ## Restore a deleted project
 
-Open **Deleted projects** in the sidebar, find the project, and **Restore** it. This brings back the project and its data — as long as it hasn't been permanently deleted.
+Open **Deleted projects**, find the project, and **Restore** it — this brings the project and its tasks back from the trash. A deleted project stays restorable until the server's trash is emptied manually on disk; that final cleanup is the only step that can't be undone from the dashboard.
 
 ## See also
 
