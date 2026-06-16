@@ -29,6 +29,11 @@ Task-oriented answers to "how do I …?":
 - [Update FlowBoard](how-to/update-flowboard.md) — apply a new version from the dashboard or CLI.
 - [Troubleshooting](how-to/troubleshooting.md) — hook not registered, context not ready, remote auth.
 
+## Reference
+
+- [Keyboard shortcuts](reference/keyboard-shortcuts.md) — every shortcut at a glance.
+- [Widget catalog](reference/widget-catalog.md) — every overview widget and its `type`.
+
 ## See also
 
 - [README](../../README.md) — install and quick start
