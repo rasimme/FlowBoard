@@ -400,8 +400,13 @@ export function ProjectGoalsWidget({ widget, editing, onRemove }) {
         </div>
       ) : (
         <>
-          <div className="ov-goal-text">{goal}</div>
-          <div className="ov-wfoot" onClick={editing ? undefined : () => openSpec('PROJECT.md')}>PROJECT.md →</div>
+          <ScrollArea className="flex-1 min-h-0" innerClassName="ov-goal-view"
+            title="Open PROJECT.md"
+            onClick={editing ? undefined : () => openSpec('PROJECT.md')}
+            innerStyle={{ cursor: editing ? undefined : 'pointer' }}>
+            <div className="ov-goal-text">{goal}</div>
+          </ScrollArea>
+          <div className="ov-wfoot ov-goal-foot" onClick={editing ? undefined : () => openSpec('PROJECT.md')}>PROJECT.md →</div>
         </>
       )}
     </OvWidget>

@@ -261,10 +261,11 @@
   .ov-empty svg { width: 16px; height: 16px; margin-bottom: 0; }
   .ov-empty-title { font-size: 11.5px; }
   .ov-empty-hint { display: none; }
-  .ov-goal-text {
-    font-size: 12px; line-height: 1.45;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
-  }
+  .ov-goal-text { font-size: 12px; line-height: 1.45; }
+  /* T-383: at h=1 (≈88px) the footer ate the only goal line. Drop it — the goal
+     area itself is clickable to open PROJECT.md, and overflow now scroll+fades.
+     Scoped to the goal footer so the decisions footer is unaffected. */
+  .ov-goal-foot { display: none; }
 }
 
 /* ---------- quick-links ---------- */
@@ -1034,7 +1035,7 @@
 
 /* (1) consistent fade on every widget scroll area where rows can get cut */
 .ov-agents, .ov-tasks, .ov-decs, .gh-rows, .ci-list, .lk-list, .tl-spine,
-.ov-kbars, .msp-list, .ms-roadmap, .nt-view, .fv-body {
+.ov-kbars, .msp-list, .ms-roadmap, .nt-view, .fv-body, .ov-goal-view {
   mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
 }
 
