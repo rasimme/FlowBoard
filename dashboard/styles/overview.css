@@ -712,8 +712,10 @@
   background: var(--bg-hover); border-radius: var(--radius-sm);
   opacity: 0; transition: opacity var(--duration-fast);
 }
-.lk-row-wrap:hover .lk-row-actions { opacity: 1; }
-@media (any-pointer: coarse) { .lk-row-actions { opacity: 1; } }
+.lk-row-wrap:hover .lk-row-actions, .lk-row-wrap:focus-within .lk-row-actions { opacity: 1; }
+/* Permanently visible only on real touch devices (no hover to reveal them);
+   hover-capable devices — incl. touch+trackpad hybrids — get hover-reveal. */
+@media (hover: none) { .lk-row-actions { opacity: 1; } }
 .lk-act {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border: none; background: transparent; cursor: pointer;
