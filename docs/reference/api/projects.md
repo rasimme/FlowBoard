@@ -75,15 +75,30 @@ Update metadata: `displayName`, `archived`, `group`, `order`.
 
 ## `DELETE /api/projects/:name?confirm=:name`
 
-Hard-delete with double confirmation. The query parameter must equal the path parameter.
+Hard-delete a project — a deliberately two-step, guarded operation (T-357/T-358):
+
+1. The project must already be **archived** (`PUT { "archived": true }`, reversible). Deleting an active project returns **409** `NOT_ARCHIVED`.
+2. `?confirm=<name>` must equal the path parameter, **and** an explicit acknowledgement is required — `?hardDelete=true` (or `{ "hardDelete": true }` in the body). Without it: **400** `HARD_DELETE_NOT_ACKNOWLEDGED`. (The project name alone is trivially known, so it isn't treated as proof of destructive intent — this stops "deactivate" from being one-shot-confused with permanent deletion.)
 
 **Response 200:** `{"ok": true, "archivedTaskCount": <n>, "warnings"?: [...]}`
-**400** if `?confirm=<name>` is missing or doesn't match.
-**404** project not found.
+**400** missing/mismatched `confirm`, or missing `hardDelete` ack. **404** project not found. **409** not archived.
 
 **Side effects:**
-- Tombstones the project name; folder moves to `.trash/<name>-<timestamp>/`.
+- Tombstones the project name; the folder moves to `.trash/<name>-<timestamp>/` — **recoverable** via restore below.
 - Every `flowboard_agents` row pointing at this project is cleared (`active_project = null`).
+
+## `GET /api/projects/deleted`
+
+Lists tombstoned (hard-deleted) projects so the UI can offer restore.
+
+**Response 200:** `{"projects": [{ "name", "deletedAt", ... }]}`
+
+## `POST /api/projects/:name/restore`
+
+Reverses a hard-delete: untombstones the project and moves its folder back from `.trash/`; tasks reappear from the HZL projection. A deleted project stays restorable until the `.trash/` directory is cleared manually on disk.
+
+**Response 200:** `{"ok": true, "restoredFrom": "<trash path>", "warnings"?: [...]}`
+**404** no tombstoned project by that name.
 
 ## `GET /api/projects/:name/bootstrap`
 
@@ -112,7 +127,9 @@ Lists available rule sections.
     { "name": "specify",        "label": "Specify workflow — spec generation lifecycle" },
     { "name": "agent-bridge",   "label": "Agent bridge — claim/checkpoint/complete, handoff, multi-agent" },
     { "name": "error-handling", "label": "Error handling — missing files, corrupt state, migration leftovers" },
-    { "name": "key-principles", "label": "Key principles — API-first, DB-canonical, context-loading semantics" }
+    { "name": "key-principles", "label": "Key principles — API-first, DB-canonical, context-loading semantics" },
+    { "name": "overview",       "label": "Overview — modular landing page, widget catalog, layout API" },
+    { "name": "compliance",     "label": "Compliance — stuck/stale + routed-unclaimed detection, health metrics" }
   ]
 }
 ```
@@ -152,8 +169,18 @@ stored file no longer validates.
 Body is either `{ preset: "default" | "coding" | "knowledge" | "mission" }` (materializes the
 preset) or a full config:
 `{ version: 1, layout: "grid", widgets: [{ id, type, title?, props?, grid: {x,y,w,h} }] }`.
+A `{ layout: "flow", widgets: [...] }` body is also accepted — the server packs the
+widgets into the grid for you (no hand-placed coordinates).
 **200** `{ ok, overview }` — **400** `{ error, errors[] }` on validation
 failure (unknown type, grid overflow, duplicate id, …).
+
+### POST /api/projects/:name/overview/ops
+Incremental patch-ops (T-365-2) — refine a layout without rewriting it. Body:
+`{ ops: [...] }` of small, coordinate-free operations (add / remove / resize /
+reorder a widget). The current layout is loaded, the ops applied and re-packed
+into a clean grid, then run through the same trusted validator as a full write.
+**200** `{ ok, overview }` — **400** `{ error }` (bad op) or `{ error, errors[] }`
+(validation) — **404** project not found.
 
 ### GET /api/github/repo-status
 Query: `repo=owner/name` (required). Feeds the `repo-status` overview

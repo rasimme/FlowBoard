@@ -68,7 +68,8 @@ Service metadata + the bundled `external-trigger.md` snippet so an external agen
     "rules":     "/api/projects/:name/rules/:section",
     "tasks":     "/api/projects/:name/tasks"
   },
-  "agent_id_convention": "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. Auto-registered in flowboard_agents on first PUT /api/status.",
+  "agent_id_convention": "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. Do not use generated cwd/session names like 'codex-workspace'. Stable external ids are auto-registered in flowboard_agents on first PUT /api/status.",
+  "anti_trust_rule": "Always pass agentId on per-agent calls (?agentId= or x-openclaw-agent-id header for GET, body for POST/PUT). Distrust responses where response.agentId differs from yours.",
   "trigger_snippet": "<contents of snippets/external-trigger.md>"
 }
 ```
