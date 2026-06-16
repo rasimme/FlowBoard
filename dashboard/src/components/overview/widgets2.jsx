@@ -284,14 +284,24 @@ export function MilestonesWidget({ widget, editing }) {
   // local override so the pin shows immediately — the stored overview only
   // refreshes on reload
   const [localFocus, setLocalFocus] = useState(undefined);
-  useEffect(() => { setLocalFocus(undefined); }, [widget?.id]);
+  // T-393: transient view selection for the compact switcher (NOT a pin) —
+  // lets you flip between active milestones at small sizes where the roadmap
+  // is hidden. Reset when the widget changes.
+  const [viewName, setViewName] = useState(null);
+  useEffect(() => { setLocalFocus(undefined); setViewName(null); }, [widget?.id]);
   const _pinWanted = localFocus !== undefined ? localFocus : widget?.props?.focus;
-  const focusName = _pinWanted && groups.has(_pinWanted) && pct(groups.get(_pinWanted)) < 100
-    ? _pinWanted
-    : (active[0]?.[0] ?? null);
+  const _isActiveName = (n) => Boolean(n) && groups.has(n) && pct(groups.get(n)) < 100;
+  const focusName = _isActiveName(viewName) ? viewName
+    : (_isActiveName(_pinWanted) ? _pinWanted : (active[0]?.[0] ?? null));
   const list = active; // roadmap source
 
   const pinned = Boolean(_pinWanted) && _pinWanted === focusName;
+  // switcher position + cycling through the active milestones
+  const focusIdx = active.findIndex(([n]) => n === focusName);
+  const cycleFocus = (dir) => {
+    if (active.length < 2 || focusIdx < 0) return;
+    setViewName(active[(focusIdx + dir + active.length) % active.length][0]);
+  };
 
   async function pinFocus(name) {
     if (!project || !widget?.id) return;
@@ -346,7 +356,7 @@ export function MilestonesWidget({ widget, editing }) {
     return (
       <OvWidget title={widget?.title || 'Milestones'} meta="new milestone">
         <div className="ms-create">
-          <input className="lk-in" placeholder="Milestone name — e.g. v5.1 or launch" value={draftName}
+          <input className="lk-in" placeholder="Milestone name — e.g. Launch or v1.0" value={draftName}
             autoFocus onChange={e => setDraftName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setView({ mode: 'list' }); }} />
           {clean ? (
@@ -450,6 +460,15 @@ export function MilestonesWidget({ widget, editing }) {
                       )}
                     </span>
                     <span className="ms-meta"><span className="w-mono">{items.filter(t => t.status === 'done').length}/{items.length}</span> tasks done</span>
+                    {active.length > 1 && (
+                      <span className="ms-switch" title="Switch active milestone">
+                        <button type="button" className="ms-switch-btn" aria-label="Previous active milestone"
+                          onClick={e => { e.stopPropagation(); cycleFocus(-1); }}>‹</button>
+                        <span className="ms-switch-pos">{focusIdx + 1}/{active.length}</span>
+                        <button type="button" className="ms-switch-btn" aria-label="Next active milestone"
+                          onClick={e => { e.stopPropagation(); cycleFocus(1); }}>›</button>
+                      </span>
+                    )}
                   </span>
                 </div>
                 <div className="ms-bar"><span style={{ width: p100 + '%' }}></span></div>

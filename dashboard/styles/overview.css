@@ -954,9 +954,21 @@
 .ms-st.st-review { color: var(--status-review); border-color: var(--status-review); }
 .ms-agent { font-family: "JetBrains Mono", monospace; font-size: 9.5px; color: var(--muted); flex-shrink: 0; }
 
-/* create flow at small sizes: keep the action row reachable */
-.ms-create .lk-in { flex-shrink: 0; }
+/* create flow: the name input must keep its natural height — `.lk-in` is
+   `flex:1` (grows to fill horizontal rows elsewhere), which in this flex COLUMN
+   grew it vertically into a tall field with a centred placeholder that hid the
+   task picker below. `flex:0 0 auto` pins it to content height (T-393). */
+.ms-create .lk-in { flex: 0 0 auto; }
 .msp-foot { padding-top: 2px; }
+
+/* T-393: compact active-milestone switcher in the focus header. Shown only at
+   small sizes where the roadmap (the other active milestones) is hidden, so a
+   3x2 card can still flip between active milestones. */
+.ms-switch { display: none; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; }
+.ms-switch-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; border-radius: var(--radius-sm); }
+.ms-switch-btn:hover { color: var(--text); background: var(--bg-hover); }
+.ms-switch-pos { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); min-width: 22px; text-align: center; }
+@container widget (max-height: 230px) { .ms-switch { display: inline-flex; } }
 @container widget (max-height: 220px) {
   .msp-list { min-height: 24px; }
   .msp-row { padding: 1px 5px; }
