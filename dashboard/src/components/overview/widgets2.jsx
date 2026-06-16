@@ -342,7 +342,18 @@ export function MilestonesWidget({ widget, editing }) {
   const metaText = all.length ? `${active.length} active${completed.length ? ` · ${completed.length} done` : ''}` : null;
   const meta = view.mode === 'detail' || view.mode === 'add' ? null : (
     <>
-      {metaText}
+      {/* T-393: with >1 active milestone the header carries the switcher (stable
+         full-width spot — doesn't shift with the milestone name); otherwise the
+         plain active/done count. */}
+      {active.length > 1 ? (
+        <span className="ms-switch" title="Switch active milestone">
+          <button type="button" className="ms-switch-btn" aria-label="Previous active milestone"
+            onClick={() => cycleFocus(-1)}>‹</button>
+          <span className="ms-switch-pos">{focusIdx + 1}/{active.length}</span>
+          <button type="button" className="ms-switch-btn" aria-label="Next active milestone"
+            onClick={() => cycleFocus(1)}>›</button>
+        </span>
+      ) : metaText}
       {!editing && (
         <button type="button" className="ms-add-head" title="New milestone"
           onClick={() => setView({ mode: 'create' })}>+</button>
@@ -460,15 +471,6 @@ export function MilestonesWidget({ widget, editing }) {
                       )}
                     </span>
                     <span className="ms-meta"><span className="w-mono">{items.filter(t => t.status === 'done').length}/{items.length}</span> tasks done</span>
-                    {active.length > 1 && (
-                      <span className="ms-switch" title="Switch active milestone">
-                        <button type="button" className="ms-switch-btn" aria-label="Previous active milestone"
-                          onClick={e => { e.stopPropagation(); cycleFocus(-1); }}>‹</button>
-                        <span className="ms-switch-pos">{focusIdx + 1}/{active.length}</span>
-                        <button type="button" className="ms-switch-btn" aria-label="Next active milestone"
-                          onClick={e => { e.stopPropagation(); cycleFocus(1); }}>›</button>
-                      </span>
-                    )}
                   </span>
                 </div>
                 <div className="ms-bar"><span style={{ width: p100 + '%' }}></span></div>

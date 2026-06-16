@@ -606,7 +606,7 @@
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font-family: "JetBrains Mono", monospace; font-size: 13px; font-weight: 600; color: var(--text-strong);
 }
-.ms-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .ms-name { font-size: 13px; font-weight: 600; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ms-meta { font-size: 11px; color: var(--muted); }
 .ms-bar { height: 6px; border-radius: var(--radius-full); background: var(--secondary); overflow: hidden; }
@@ -961,14 +961,14 @@
 .ms-create .lk-in { flex: 0 0 auto; }
 .msp-foot { padding-top: 2px; }
 
-/* T-393: compact active-milestone switcher in the focus header. Shown only at
-   small sizes where the roadmap (the other active milestones) is hidden, so a
-   3x2 card can still flip between active milestones. */
-.ms-switch { display: none; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; }
+/* T-393: compact active-milestone switcher. Lives in the widget HEADER (the
+   meta slot) so it sits in a stable, full-width spot and doesn't shift with the
+   focus milestone's name; cycles the shown milestone. JSX renders it only with
+   >1 active milestone. */
+.ms-switch { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; }
 .ms-switch-btn { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; border-radius: var(--radius-sm); }
 .ms-switch-btn:hover { color: var(--text); background: var(--bg-hover); }
 .ms-switch-pos { font-family: "JetBrains Mono", monospace; font-size: 10px; color: var(--muted); min-width: 22px; text-align: center; }
-@container widget (max-height: 230px) { .ms-switch { display: inline-flex; } }
 @container widget (max-height: 220px) {
   .msp-list { min-height: 24px; }
   .msp-row { padding: 1px 5px; }
