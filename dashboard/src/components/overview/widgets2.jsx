@@ -895,7 +895,7 @@ export function LinksWidget({ widget, editing }) {
     try {
       const next = await persistWidgetProps(project, widget.id, props => ({
         ...props,
-        links: (props.links || []).map((l, i) => i === idx ? { label: editLabel.trim() || cleanUrl, url: cleanUrl } : l),
+        links: (props.links || []).map((l, i) => i === idx ? { ...l, label: editLabel.trim() || cleanUrl, url: cleanUrl } : l),
       }));
       if (next) { setLinks(next.links); cancelEdit(); window.showToast?.('Link updated', 'success'); }
       else window.showToast?.('Updating link failed — save the layout first?', 'error');

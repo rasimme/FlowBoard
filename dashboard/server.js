@@ -1305,19 +1305,24 @@ function nextSubtaskId(parentId, existingSubtaskIds) {
 }
 
 // T-366: recalc a subtask's parent after a lifecycle change and describe the
-// result for the API response. claim/release/reject/complete/approve all set
-// the subtask status outside the generic updateTask path (which is what
-// normally triggers parent aggregation, T-299), so each of those endpoints must
-// call this explicitly — otherwise e.g. claiming a subtask (→ in-progress)
-// leaves the parent sitting in backlog/open. The aggregation rule itself lives
-// in hzlService.recalcParentStatus. Returns { id, status, progress } or null.
+// resulting parent state for the API response. claim/release/complete set the
+// subtask status OUTSIDE the generic updateTask path, so the explicit recalc
+// here performs the aggregation; approve/reject go THROUGH updateTask (which
+// already recalcs the parent, T-299), so this call is then a no-op.
+// T-409 (review): recalcParentStatus only returns a row when IT changed the
+// status, so for approve/reject (already recalced) it returned null and
+// response.parentUpdated was always dropped — even when the parent genuinely
+// changed. Read the parent's CURRENT state and report it whenever a parent
+// exists; the client merges it (mergeParentUpdated) idempotently.
+// Returns { id, status, progress } or null (no parent / not found).
 function recalcParentForResponse(project, parentId) {
   if (!parentId) return null;
   try {
-    const updated = hzlService.recalcParentStatus(project, parentId);
-    if (!updated) return null;
-    updated.progress = getSubtaskProgress(hzlService.listTasks(project), parentId);
-    return updated;
+    const changed = hzlService.recalcParentStatus(project, parentId);
+    const tasks = hzlService.listTasks(project);
+    const parent = changed || tasks.find(t => t.id === parentId);
+    if (!parent) return null;
+    return { id: parent.id, status: parent.status, progress: getSubtaskProgress(tasks, parentId) };
   } catch (e) { console.warn('[recalcParent]', e); return null; }
 }
 

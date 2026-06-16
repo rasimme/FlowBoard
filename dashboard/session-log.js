@@ -20,22 +20,32 @@ function formatSessionEntry({ date, agent, summary, title }) {
 /**
  * Insert an entry newest-first. Robust across both SESSIONS.md shapes in the
  * wild (`## Session Log` marker, or scaffolded `# Sessions — X` with entries
- * directly below): insert before the first existing `### ` entry; else after
- * the marker; else append.
+ * directly below).
+ *
+ * T-409 (review of T-375-3): when the `## Session Log` marker exists, only look
+ * for the first `### ` entry AFTER the marker — a `### ` sub-heading inside an
+ * earlier entry's body or in pre-marker prose must not pull the insertion point
+ * above the Session Log section. Falls back to right-after-marker, then (no
+ * marker) before the first `### `, then append.
  */
 function insertEntry(content, block) {
   const text = String(content || '');
-  const h3 = text.match(/^### /m);
-  if (h3 && h3.index !== undefined) {
-    return text.slice(0, h3.index) + block + '\n' + text.slice(h3.index);
+  const markerIdx = text.indexOf(MARKER);
+  if (markerIdx !== -1) {
+    const lineEnd = text.indexOf('\n', markerIdx);
+    const scanFrom = lineEnd === -1 ? text.length : lineEnd + 1;
+    const rel = text.slice(scanFrom).search(/^### /m);
+    if (rel !== -1) {
+      const at = scanFrom + rel;
+      return text.slice(0, at) + block + '\n' + text.slice(at);
+    }
+    return text.slice(0, scanFrom) + '\n' + block + text.slice(scanFrom);
   }
-  const idx = text.indexOf(MARKER);
-  if (idx !== -1) {
-    const lineEnd = text.indexOf('\n', idx);
-    const insertAt = lineEnd === -1 ? text.length : lineEnd + 1;
-    return text.slice(0, insertAt) + '\n' + block + text.slice(insertAt);
+  const h3 = text.search(/^### /m);
+  if (h3 !== -1) {
+    return text.slice(0, h3) + block + '\n' + text.slice(h3);
   }
   return text + (text.endsWith('\n') || text === '' ? '' : '\n') + '\n' + block;
 }
 
-module.exports = { formatSessionEntry, insertEntry, MARKER };
+module.exports = { formatSessionEntry, insertEntry };

@@ -168,6 +168,10 @@ async function run() {
     const rj = await api('POST', `/projects/prop/tasks/${A}/reject`, { actor: 'human', reason: 'redo', target: 'in-progress' });
     ok(rj.status === 200, 'subtask A rejected back to in-progress');
     ok((await pStatus()) === 'in-progress', 'rejecting a subtask pulls the parent back out of review (T-366)');
+    // T-409: reject goes through updateTask (which already recalcs the parent),
+    // so the response must still report the parent's resulting state — it used
+    // to be dropped because the second recalc was a no-op.
+    ok(rj.body?.parentUpdated?.status === 'in-progress', 'reject response reports the parent state (T-409)');
   } catch (err) {
     fail++;
     failures.push(err.message);

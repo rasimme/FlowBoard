@@ -1141,14 +1141,6 @@ export default function TasksView() {
   const handleDragHint = useCallback((status, index) => {
     setDropHint(prev => (prev && prev.status === status && prev.index === index) ? prev : { status, index });
   }, []);
-  // The drop indicator is cleared centrally when any drag ends (the source card's
-  // dragend bubbles to window) — robust against the browser's noisy per-card
-  // dragleave events, which otherwise made the line flicker mid-drag.
-  useEffect(() => {
-    const clear = () => setDropHint(null);
-    window.addEventListener('dragend', clear);
-    return () => window.removeEventListener('dragend', clear);
-  }, []);
 
   const handleSetSortMode = useCallback((mode) => {
     setSortMode(mode);
