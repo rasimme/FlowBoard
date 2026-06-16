@@ -48,6 +48,32 @@ unstaged or new files into your commit — often under a misleading message.
   `package.json`), build in your own `git worktree` and fast-forward onto the
   target branch instead of editing the shared checkout.
 
+## Testing & local verification
+
+- **Run the gate:** `cd dashboard && npm test` runs the full suite (unit + API
+  integration + browser E2E). Keep it green before committing. A few
+  Edge/puppeteer canvas tests are timing-flaky — re-run a failing browser test
+  once in isolation before treating it as a real failure.
+- **Browser render tests (does the React app actually render it?):** use the
+  shared harness `dashboard/test-support/browser-harness.js`. It boots the built
+  dashboard on a temp DB + headless Microsoft Edge and hands you `{ api, page,
+  base }`. Reference: `dashboard/test-kanban-sort-e2e.js`.
+  ```js
+  const { withDashboard, reporter } = require('./test-support/browser-harness.js');
+  const r = reporter('My feature');
+  const res = await withDashboard(async ({ api, page, base }) => {
+    await api('POST', '/projects', { name: 'p' });
+    await page.goto(`${base}/?agentId=e2e`, { waitUntil: 'networkidle2' });
+    r.ok(await page.$('.app'), 'app shell mounts');
+  });
+  if (res?.skipped) r.skip(res.reason); // Edge/dist missing → skip, exit 0
+  r.done();
+  ```
+  Requires a prior `npx vite build` (dist/). Name new render tests
+  `test-<feature>-e2e.js` and wire them into the `npm test` script. Prefer this
+  harness for any UI-behaviour claim — logic/unit tests alone don't prove what
+  the board renders.
+
 ## Delegation (for parent agents)
 
 When you spawn a child agent for FlowBoard work, do not write a custom prompt from memory. Use `buildSpawnPrompt()` in `dashboard/hzl-service.js`:
