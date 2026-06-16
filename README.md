@@ -29,7 +29,24 @@ Your agent loses context every session. What was I building? What decisions did 
 - **📋 Kanban you both use** — Your agent creates tasks, writes specs, claims work, checkpoints progress, and moves cards through review. You see the full multi-agent workflow live.
 - **💡 Idea Canvas** — Brainstorm together visually. One click turns connected ideas into tasks with specs and subtasks.
 
-![FlowBoard Kanban](docs/screenshot-kanban.png)
+![FlowBoard — context-aware project workspaces for AI agents](docs/demo.gif)
+
+---
+
+## Why FlowBoard?
+
+The real problem isn't a missing task board — it's that your agent starts every session blank. Across several projects, you re-explain the goal, the decisions, and where things stand, again and again.
+
+FlowBoard is a **context layer for your projects.** Each project keeps its goal, decisions, live task state, and specs in one place, and your agent pulls in exactly the slice it needs, when it needs it — **lazy-loaded, so token usage stays low.** Switch projects and the right context follows; nothing to re-explain.
+
+Everything else builds on that layer:
+
+- **Agent-native Kanban** — tasks, specs, claims, checkpoints, and review, so "where things stand" is always live instead of narrated.
+- **Idea Canvas** — brainstorm visually, then promote connected notes straight into tasks and specs.
+- **Modular Overview** — a per-project dashboard that surfaces the context that matters at a glance.
+- **Built for many agents** — stable identity, claims, and a live multi-agent view, for OpenClaw and external agents alike.
+
+It's local-first: everything runs on your machine, event-sourced in SQLite — no SaaS, no account, and your project names stay on your box.
 
 ---
 
@@ -61,6 +78,8 @@ PUT /api/projects/:name/overview   { version: 1, layout: "grid", widgets: [...] 
 PUT /api/projects/:name/overview   { "preset": "coding" }
 ```
 
+![FlowBoard Overview — a per-project widget dashboard](docs/screenshot-overview.png)
+
 ### 📋 Agent-Native Kanban
 
 Your agent operates the board through the same REST API as the dashboard. It creates tasks, sets priorities, writes specs with acceptance criteria, claims work with leases, checkpoints progress, and hands completed work to review.
@@ -69,6 +88,8 @@ Your agent operates the board through the same REST API as the dashboard. It cre
 - Parent tasks with subtasks, progress tracking, and automatic parent status updates
 - Spec files with acceptance criteria and logs
 - Multi-agent visibility: active agents, claimed cards, checkpoints, comments, and review approvals
+
+![FlowBoard Kanban — agents and you on the same board](docs/screenshot-kanban.png)
 
 ### 💡 Idea Canvas
 
@@ -96,7 +117,18 @@ Access FlowBoard remotely from Telegram. Secure authentication via HMAC-SHA256, 
 
 ## Quick Start
 
-### Installed as an OpenClaw plugin?
+**Two commands, then open the dashboard:**
+
+```bash
+openclaw plugins install flowboard   # wires the project-context hook
+node scripts/setup.mjs               # build the UI + run the dashboard as a per-user service
+```
+
+Open **http://localhost:18790**, click the **Finish setup** chip in the header, then tell your agent *“New project: my-app”*. Done — the rest of this section is detail.
+
+> **Prerequisites:** Node.js ≥ 18 and `npm` on your `PATH`. The `openclaw plugins install` path also needs **OpenClaw ≥ 2026.6.6** — the dashboard runs standalone, but the project-context hook requires OpenClaw.
+
+### Already installed as an OpenClaw plugin?
 
 `openclaw plugins install flowboard` wires the project-context hook. To bring
 up the dashboard in one step — install deps, build the UI, register a
@@ -123,6 +155,13 @@ the running dashboard still serves the previous build. Two ways to apply it:
   `GET /api/update/status` and `POST /api/update/run`.
 - **From the CLI.** `node scripts/setup.mjs --update` from the FlowBoard checkout
   does the same rebuild + restart.
+
+> **Custom service or supervisor?** The in-UI update manages the standard per-user service — `ai.openclaw.flowboard-dashboard` (launchd) / `flowboard-dashboard` (systemd `--user`). If you run the dashboard under your own supervisor or a different label, don't use the in-UI update (it would collide on port 18790) — update with `node scripts/setup.mjs --update` from the checkout, or move your service to the standard label.
+
+> **Upgrading to 5.0.0:** the canvas DB schema is created automatically, but importing existing `canvas.json` data is operator-triggered — via the in-app banner, `POST /api/migrations/canvas/run`, or `node dashboard/scripts/migrate-canvas-to-db.mjs --run`. Non-blocking; see the [migrations reference](docs/reference/api/migrations.md).
+
+<details>
+<summary><strong>Manual install (without the plugin)</strong></summary>
 
 ### 1. Clone & install (manual)
 
@@ -224,6 +263,8 @@ Once the chip disappears, tell your agent:
 
 The agent creates the project through `POST /api/projects`, registers it in
 FlowBoard metadata/HZL, and uses the Tasks API for operational task state.
+
+</details>
 
 ---
 
@@ -399,6 +440,19 @@ systemctl --user restart dashboard
 ---
 
 ## Architecture
+
+How the pieces fit — you and your agents drive the same server, the single writer of an event-sourced task store, which feeds project context back to agents on demand:
+
+```mermaid
+flowchart LR
+  A["AI agents<br/>Claude Code · Cursor · Codex · OpenClaw"] -->|REST API| S["FlowBoard server (Express)"]
+  U["You"] -->|browser · Telegram| D["React dashboard<br/>Kanban · Canvas · Overview"]
+  D -->|REST API| S
+  S --> DB[("Event-sourced task store<br/>HZL · SQLite")]
+  S -. project context on demand .-> A
+```
+
+Directory layout:
 
 ```
 ~/.openclaw/workspace-<agent>/

@@ -1,6 +1,81 @@
 # Changelog
 
-### Unreleased — v5 Release Hardening (T-288)
+### v5.0.0 (2026-06-16) — React Rebuild, Event-Sourced Backend & Multi-Agent Workspaces
+
+FlowBoard v5 is a ground-up rebuild: a full React frontend, an event-sourced
+task backend (HZL), first-class multi-agent support, a customizable project
+Overview, a reworked Idea Board + Specify workflow, and installation as an
+OpenClaw/ClawHub plugin. Upgrading from 4.0.1 runs automatic migrations plus a
+few manual steps — see **Breaking changes & upgrade notes** below.
+
+#### Highlights
+
+- **React + Tailwind rebuild** of the entire dashboard — the last vanilla
+  surface (the Idea Canvas) is React too; no vanilla runtime remains.
+- **Event-sourced task store (HZL)** — tasks live in an embedded, append-only
+  SQLite event log with recomputable projections and a full audit trail,
+  replacing per-project `tasks.json`.
+- **Multi-agent, first-class** — stable per-action agent identity, external
+  (non-OpenClaw) agent discovery & self-onboarding, idle auto-deactivation,
+  and a full claim/release/handoff/route task lifecycle over REST.
+- **Modular Project Overview** — a server-driven widget dashboard composed from
+  a trusted registry; arrange it by agent (REST) or via a drag/resize editor.
+- **Idea Board + Specify** — a React canvas plus an iterative
+  ANALYZE → CLARIFY → GENERATE workflow driven by a stateless OpenClaw CLI
+  worker, with complexity tiers and transactional rollback.
+- **ClawHub plugin packaging** — the project-context hook ships as a packaged
+  plugin (`openclaw plugins install`) with one-command dashboard bring-up.
+
+#### ⚠️ Breaking changes & upgrade notes (4.0.1 → 5.0.0)
+
+- **Task store is HZL-only.** Existing `tasks.json` boards are auto-migrated to
+  the SQLite event store on first launch; the legacy dual-mode store and
+  `HZL_ENABLED` guards are gone.
+- **Project metadata moved to the database** (`flowboard_projects`), replacing
+  the `_index.md` registry (migrated automatically at startup).
+- **Canvas state moved to the database** (`canvas_notes` / `canvas_connections`).
+  This migration is **gated, never automatic** — run it from the in-app update
+  window, the migration API, or the headless script; `canvas.json` is renamed to
+  `.pre-db.bak` (never deleted) only after a verified import. See *Canvas state
+  moved into the DB* below for operator/backup notes.
+- **Agent identity overhaul.** The `AGENT_ID` service default is removed; actions
+  route by caller-supplied `agentId`. `GET`/`PUT /api/status` now require an
+  explicit `agentId` (400 if omitted); the implicit `"main"` default is gone. See
+  *Per-Agent API Hardening* below for the migration steps.
+- **Workspace files are no longer written or authoritative.** `BOOTSTRAP.md`,
+  `ACTIVE-PROJECT.md`, and `PROJECT-RULES.md` are replaced by API-served,
+  lazy-loaded bootstrap/rules (`GET /api/projects/:name/bootstrap`,
+  `…/rules/:section`). Delete stale files; read state via the API.
+- **Agent notification hook payload** field renamed `text` → `message`
+  (`/hooks/agent`); update any custom hook payloads.
+- **Frontend integration surfaces removed.** `window.appState` is now a
+  read-through Proxy over a React-owned store; the command/navigation `window._*`
+  bridges and the `__showSpecifyStepper` global no longer exist — use
+  `useDashboard()` / `useNavigation()`. All `/api` calls must go through
+  `apiFetch`/`apiJson`.
+- **Epics require an explicit approve.** A parent reaches `review` only when all
+  subtasks are review/done and never auto-completes; `review → done` is a manual
+  approve action.
+- **Idle auto-deactivation.** Agent project activations expire after a
+  configurable idle window (default 48h, `FLOWBOARD_AGENT_IDLE_TTL_HOURS`);
+  `GET /api/status` is now the per-run liveness heartbeat (no longer
+  side-effect-free). An agent holding a live task claim is never deactivated.
+- **Single-writer database** (by convention). Exactly one dashboard process may
+  write to the task DB; stop the dashboard before migrating/restoring it.
+  Read-only access is fully supported.
+- **`PROJECT.md` is now a load-bearing project marker** — directories without it
+  are ignored by drift detection; scaffolding tools must write it first.
+- **Default landing screen is the Overview** (above the Kanban board).
+- **Hook install path changed.** Install via `openclaw plugins install`
+  (replaces `install-hooks.sh`); run `snippets-doctor --apply` (byte-identical
+  legacy blocks) or `--apply --migrate` (force-replace divergent blocks). The
+  long always-on trigger is replaced by a ~20-line minimal trigger.
+- **Deployment/security:** `dashboard-data.json` is kept out of the repo; review
+  auth/CORS/host-binding config after upgrade. **CI runs on Node 22.**
+
+The detailed, batch-by-batch record of the v5 cycle follows.
+
+#### v5 Release Hardening (T-288)
 
 - **Safer project deletion + restore (T-357, T-358).** Hard-deleting a project
   now needs an explicit `hardDelete` acknowledgement on top of `?confirm=<name>`
@@ -112,7 +187,7 @@
 - **Dependencies clean.** `npm audit` reports zero vulnerabilities (was 2 high
   / 2 moderate). Agent-facing wake-event strings are English.
 
-### Unreleased — Specify Clarify Loop (T-262)
+#### Specify Clarify Loop (T-262)
 
 - **Real iterative clarification for Canvas → Create Task.** The Dashboard
   Specify Stepper now runs a genuine ANALYZE → CLARIFY → GENERATE loop:
@@ -143,7 +218,7 @@
 - **Migration hardening.** m004 now skips symlinked or physically identical
   project roots instead of crashing (fixes CI with test-spawned servers).
 
-### Unreleased — Agent Identity Guardrails (T-206)
+#### Agent Identity Guardrails (T-206)
 
 - **Stable agent identity validation.** `/api/status`, task claim/release/complete/checkpoint/route, and canvas promote now share one agent-id validator. Known OpenClaw ids and stable external ids still work; placeholders and generated workspace/replay ids are rejected.
 - **External agents remain first-class.** Unknown stable lowercase kebab-case ids are accepted and marked as external, so Codex/Cursor/Claude-style tools can still self-onboard without pre-registration.
@@ -151,13 +226,13 @@
 - **Task activity authors are less anonymous.** Checkpoint reads now preserve their agent id, UI comments use the authenticated dashboard author, and unowned status events render as `flowboard` instead of the generic `system`.
 - **Snippets and docs tightened.** OpenClaw-managed agents must use the bootstrap-provided id; external agents must choose one stable runtime id instead of deriving names from cwd/session state.
 
-### Unreleased — Legacy Project-State Hardening (T-205)
+#### Legacy Project-State Hardening (T-205)
 
 - **Legacy `ACTIVE-PROJECT.md` fallback is opt-in**. The project-context hook now emits projectless context when the FlowBoard API is unreachable unless `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` is set for an explicit migration recovery window.
 - **HZL/API state stays authoritative**. Under HZL, server-side active-project resolution no longer falls back to `ACTIVE-PROJECT.md` when an agent row is missing.
 - **Upgrade visibility for stale state files**. The snippets doctor/dashboard now surfaces `SESSION-STATE.md`, `BOOTSTRAP.md`, and `ACTIVE-PROJECT.md` as manual cleanup advisories instead of mutating them automatically.
 
-### Unreleased — Per-Agent API Hardening (T-177)
+#### Per-Agent API Hardening (T-177)
 
 **Breaking change for installs that set `OPENCLAW_AGENT_ID` on the dashboard service.**
 

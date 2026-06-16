@@ -186,8 +186,8 @@ async function openDashboard(client) {
   await waitFor(client, `document.readyState === 'complete'`, 'document ready');
   await waitFor(
     client,
-    `document.body.innerText.includes('Website Launch Demo') && document.body.innerText.includes('${demo.parentId}')`,
-    'demo project tasks'
+    `document.body.innerText.includes('Website Launch Demo')`,
+    'demo project loaded'
   );
 }
 
@@ -251,6 +251,15 @@ async function anonymizeSidebar(client) {
   })()`);
 }
 
+async function captureOverview(client) {
+  await clickText(client, 'Overview');
+  await waitFor(client, `!!document.querySelector('.ov-grid')`, 'overview grid', 15000);
+  await sleep(3800); // allow GitHub widgets to fetch public data
+  await anonymizeSidebar(client);
+  await sleep(500);
+  await capture(client, 'docs/screenshot-overview.png');
+}
+
 async function captureKanban(client) {
   await clickText(client, 'Tasks');
   await waitFor(client, `document.body.innerText.includes('Launch landing page for Atelier Nova')`, 'kanban content');
@@ -297,6 +306,7 @@ await client.connect();
 try {
   await preparePage(client);
   await openDashboard(client);
+  await captureOverview(client);
   await captureKanban(client);
   await captureFiles(client);
   await captureCanvas(client);

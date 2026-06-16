@@ -162,26 +162,22 @@ async function seedTasks() {
   await completeTask(done.id, 'design-agent');
   await approveTask(done.id, 'Visual direction signed off for screenshot fixture.');
 
+  // Milestones are tasks tagged milestone:<name> (T-315) — mixed statuses give
+  // the widget partial-progress rings.
+  await updateTask(parent.id, { tags: ['milestone:Public Launch'] });
+  await updateTask(design.id, { tags: ['milestone:Public Launch'] });
+  await updateTask(qa.id, { tags: ['milestone:Public Launch'] });
+  await updateTask(done.id, { tags: ['milestone:Public Launch'] });
+  await updateTask(content.id, { tags: ['milestone:Brand & Content'] });
+  await updateTask(review.id, { tags: ['milestone:Brand & Content'] });
+  await updateTask(privacy.id, { tags: ['milestone:Brand & Content'] });
+
   return { parentId: parent.id, editorTaskId: editor.id, reviewTaskId: review.id, contentTaskId: content.id };
 }
 
 async function seedFiles(taskIds) {
-  await writeProjectFile('PROJECT.md', [
-    '# Website Launch Demo',
-    '',
-    '## Goal',
-    'Launch a polished marketing site for Atelier Nova and coordinate design, content, QA, and release work in FlowBoard.',
-    '',
-    '## Operational State',
-    'Current work, claims, review state, and next tasks live in FlowBoard tasks, not in this file.',
-    '',
-    '## Screenshot Focus',
-    '- Kanban: parent task, subtasks, claims, review, done, blocked, and multi-agent activity',
-    '- Files: Markdown editor with launch playbook content',
-    '- Canvas: connected brainstorm map for website launch planning',
-    '',
-  ].join('\n'));
-
+  // PROJECT.md is scaffolded at project creation; the hardened file endpoint
+  // only accepts context/ and specs/ writes (T-355), so we don't rewrite it here.
   await writeProjectFile('context/launch-playbook.md', [
     '# Atelier Nova Launch Playbook',
     '',
@@ -255,39 +251,90 @@ async function seedFiles(taskIds) {
 }
 
 async function seedCanvas() {
-  const canvas = {
-    notes: [
-      { id: 1, text: 'Hero direction: one concrete promise, one primary CTA', x: 80, y: 95, color: 'red', size: 'large', created: '2026-06-07' },
-      { id: 2, text: 'Proof block: short customer quote plus launch metric', x: 370, y: 95, color: 'red', size: 'medium', created: '2026-06-07' },
-      { id: 3, text: 'CTA hierarchy: hero, pricing, footer use same wording', x: 660, y: 95, color: 'red', size: 'medium', created: '2026-06-07' },
-      { id: 4, text: 'Pricing copy: highlight one offer, reduce comparison noise', x: 110, y: 315, color: 'red', size: 'medium', created: '2026-06-07' },
-      { id: 5, text: 'FAQ friction: answer objections before the handoff call', x: 405, y: 315, color: 'red', size: 'medium', created: '2026-06-07' },
-      { id: 6, text: 'Content handoff: owners, deadlines, review notes in playbook', x: 700, y: 315, color: 'red', size: 'medium', created: '2026-06-07' },
-      { id: 7, text: 'Analytics plan: track CTA, pricing, scroll depth, and form start', x: 1035, y: 100, color: 'green', size: 'large', created: '2026-06-07' },
-      { id: 8, text: 'Event schema: stable names for release dashboard and QA', x: 1310, y: 100, color: 'green', size: 'medium', created: '2026-06-07' },
-      { id: 9, text: 'Consent review: privacy wording checked before tracking ships', x: 1040, y: 330, color: 'green', size: 'medium', created: '2026-06-07' },
-      { id: 10, text: 'Mobile smoke: CTA visible, forms usable, no layout breaks', x: 1310, y: 330, color: 'green', size: 'medium', created: '2026-06-07' },
-      { id: 11, text: 'Launch gate: publish only after QA and analytics agree', x: 1175, y: 565, color: 'green', size: 'large', created: '2026-06-07' },
-      { id: 12, text: 'Post-launch roadmap: save ideas that are not needed for v1', x: 430, y: 640, color: 'grey', size: 'small', created: '2026-06-07' },
-      { id: 13, text: 'Localization later: keep copy adaptable, but out of launch scope', x: 720, y: 640, color: 'grey', size: 'small', created: '2026-06-07' },
-    ],
-    connections: [
-      { from: 1, to: 2, fromPort: 'right', toPort: 'left' },
-      { from: 2, to: 3, fromPort: 'right', toPort: 'left' },
-      { from: 1, to: 4, fromPort: 'bottom', toPort: 'top' },
-      { from: 2, to: 5, fromPort: 'bottom', toPort: 'top' },
-      { from: 3, to: 6, fromPort: 'bottom', toPort: 'top' },
-      { from: 4, to: 5, fromPort: 'right', toPort: 'left' },
-      { from: 5, to: 6, fromPort: 'right', toPort: 'left' },
-      { from: 7, to: 8, fromPort: 'right', toPort: 'left' },
-      { from: 7, to: 9, fromPort: 'bottom', toPort: 'top' },
-      { from: 8, to: 10, fromPort: 'bottom', toPort: 'top' },
-      { from: 9, to: 11, fromPort: 'bottom', toPort: 'left' },
-      { from: 10, to: 11, fromPort: 'bottom', toPort: 'right' },
-      { from: 12, to: 13, fromPort: 'right', toPort: 'left' },
-    ],
-  };
-  await writeProjectFile('canvas.json', JSON.stringify(canvas, null, 2));
+  // Canvas is DB-backed since ADR-0025 — seed via the canvas API, not canvas.json.
+  // The backend assigns note ids (monotonic), so we map logical numbers → real ids.
+  const existing = await request(`/api/projects/${PROJECT}/canvas`).catch(() => null);
+  for (const note of existing?.notes || []) {
+    await request(`/api/projects/${PROJECT}/canvas/notes/${note.id}`, { method: 'DELETE' }).catch(() => null);
+  }
+
+  const defs = [
+    { n: 1, text: 'Hero direction: one concrete promise, one primary CTA', x: 80, y: 95, color: 'red', size: 'large' },
+    { n: 2, text: 'Proof block: short customer quote plus launch metric', x: 370, y: 95, color: 'red', size: 'medium' },
+    { n: 3, text: 'CTA hierarchy: hero, pricing, footer use same wording', x: 660, y: 95, color: 'red', size: 'medium' },
+    { n: 4, text: 'Pricing copy: highlight one offer, reduce comparison noise', x: 110, y: 315, color: 'red', size: 'medium' },
+    { n: 5, text: 'FAQ friction: answer objections before the handoff call', x: 405, y: 315, color: 'red', size: 'medium' },
+    { n: 6, text: 'Content handoff: owners, deadlines, review notes in playbook', x: 700, y: 315, color: 'red', size: 'medium' },
+    { n: 7, text: 'Analytics plan: track CTA, pricing, scroll depth, and form start', x: 1035, y: 100, color: 'green', size: 'large' },
+    { n: 8, text: 'Event schema: stable names for release dashboard and QA', x: 1310, y: 100, color: 'green', size: 'medium' },
+    { n: 9, text: 'Consent review: privacy wording checked before tracking ships', x: 1040, y: 330, color: 'green', size: 'medium' },
+    { n: 10, text: 'Mobile smoke: CTA visible, forms usable, no layout breaks', x: 1310, y: 330, color: 'green', size: 'medium' },
+    { n: 11, text: 'Launch gate: publish only after QA and analytics agree', x: 1175, y: 565, color: 'green', size: 'large' },
+    { n: 12, text: 'Post-launch roadmap: save ideas that are not needed for v1', x: 430, y: 640, color: 'grey', size: 'small' },
+    { n: 13, text: 'Localization later: keep copy adaptable, but out of launch scope', x: 720, y: 640, color: 'grey', size: 'small' },
+  ];
+  const idMap = {};
+  for (const d of defs) {
+    const created = await request(`/api/projects/${PROJECT}/canvas/notes`, {
+      method: 'POST',
+      body: JSON.stringify({ text: d.text, x: d.x, y: d.y, color: d.color, size: d.size }),
+    });
+    idMap[d.n] = created?.id ?? created?.note?.id ?? created?.note;
+  }
+
+  const conns = [
+    { from: 1, to: 2, fromPort: 'right', toPort: 'left' },
+    { from: 2, to: 3, fromPort: 'right', toPort: 'left' },
+    { from: 1, to: 4, fromPort: 'bottom', toPort: 'top' },
+    { from: 2, to: 5, fromPort: 'bottom', toPort: 'top' },
+    { from: 3, to: 6, fromPort: 'bottom', toPort: 'top' },
+    { from: 4, to: 5, fromPort: 'right', toPort: 'left' },
+    { from: 5, to: 6, fromPort: 'right', toPort: 'left' },
+    { from: 7, to: 8, fromPort: 'right', toPort: 'left' },
+    { from: 7, to: 9, fromPort: 'bottom', toPort: 'top' },
+    { from: 8, to: 10, fromPort: 'bottom', toPort: 'top' },
+    { from: 9, to: 11, fromPort: 'bottom', toPort: 'left' },
+    { from: 10, to: 11, fromPort: 'bottom', toPort: 'right' },
+    { from: 12, to: 13, fromPort: 'right', toPort: 'left' },
+  ];
+  for (const c of conns) {
+    if (idMap[c.from] == null || idMap[c.to] == null) continue;
+    await request(`/api/projects/${PROJECT}/canvas/connections`, {
+      method: 'POST',
+      body: JSON.stringify({ from: idMap[c.from], to: idMap[c.to], fromPort: c.fromPort, toPort: c.toPort }),
+    }).catch(() => null);
+  }
+}
+
+async function seedOverview() {
+  // Bind the public FlowBoard repo so the GitHub widgets render real public data.
+  await request(`/api/projects/${PROJECT}/github`, {
+    method: 'PUT',
+    body: JSON.stringify({ repo: 'rasimme/FlowBoard' }),
+  }).catch((e) => console.warn('github bind failed:', e.message));
+
+  const repo = { repo: 'rasimme/FlowBoard' };
+  // Repo-first overview: GitHub status/CI/PRs on top, focus/blocked/approvals,
+  // releases/issues/milestones, then the board preview — a full, representative view.
+  await request(`/api/projects/${PROJECT}/overview`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      version: 1,
+      layout: 'grid',
+      widgets: [
+        { id: 'w-repo', type: 'repo-status', grid: { x: 0, y: 0, w: 5, h: 2 }, props: repo },
+        { id: 'w-ci', type: 'gh-ci', grid: { x: 5, y: 0, w: 4, h: 2 }, props: repo },
+        { id: 'w-pulls', type: 'gh-pulls', grid: { x: 9, y: 0, w: 3, h: 2 }, props: repo },
+        { id: 'w-focus', type: 'current-focus', grid: { x: 0, y: 2, w: 5, h: 2 } },
+        { id: 'w-blocked', type: 'blocked', grid: { x: 5, y: 2, w: 4, h: 2 } },
+        { id: 'w-approvals', type: 'approvals', grid: { x: 9, y: 2, w: 3, h: 2 } },
+        { id: 'w-releases', type: 'gh-releases', grid: { x: 0, y: 4, w: 4, h: 2 }, props: repo },
+        { id: 'w-issues', type: 'gh-issues', grid: { x: 4, y: 4, w: 4, h: 2 }, props: repo },
+        { id: 'w-milestones', type: 'milestones', grid: { x: 8, y: 4, w: 4, h: 2 } },
+        { id: 'w-board', type: 'kanban-mini', grid: { x: 0, y: 6, w: 12, h: 2 } },
+      ],
+    }),
+  }).catch((e) => console.warn('overview seed failed:', e.message));
 }
 
 async function activateAgents() {
@@ -313,6 +360,7 @@ async function seed() {
   const taskIds = await seedTasks();
   await seedFiles(taskIds);
   await seedCanvas();
+  await seedOverview();
   await activateAgents();
   writeFileSync(
     join(repoRoot, '.flowboard-v5-demo.json'),
