@@ -122,4 +122,6 @@ git push origin feat/my-change
 
 ## Documentation discipline
 
-If your patch introduces or changes an architectural decision (new endpoint, new convention, default-behaviour change, new agent type, new hook event, removed concept), write an ADR under `docs/adr/` and update the relevant concept doc under `docs/concepts/`. Bug fixes, refactors, test additions, and dependency bumps do not require documentation updates. When in doubt, ask.
+If your patch introduces or changes an architectural decision (new endpoint, new convention, default-behaviour change, new agent type, new hook event, removed concept), write an ADR under `docs/adr/` and update the relevant concept doc under `docs/concepts/`. If it changes user-visible behaviour, update the affected guide under `docs/guide/`. Bug fixes, refactors, test additions, and dependency bumps do not require documentation updates. When in doubt, ask.
+
+Structural consistency is enforced by drift tests in `npm test`: `test-docs-drift.js` (API manifest + env vars), `test-adr-index-drift.js` (every ADR appears in the index and `llms.txt`), and `test-concepts-index-drift.js` (concept docs are linked and resolve). A red drift test names exactly what to update.
