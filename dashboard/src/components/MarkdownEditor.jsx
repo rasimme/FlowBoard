@@ -111,25 +111,47 @@ function insertTable(view) {
  * numberedList, link, focus }`. Each runs the same wrapSelection/
  * prefixSelectedLines commands the built-in toolbar uses, on the live view.
  */
-// T-380: place the cursor/selection + scroll when opening the editor from a
-// click/selection in the rendered preview. `loc` = { from, to, anchorY? }
+// T-380/T-385: place the cursor/selection + scroll when opening the editor from
+// a click/selection in the rendered preview. `loc` = { from, to, anchorY? }
 // (document offsets; anchorY = px from the top of the source scroller).
+//
+// T-385: opening the editor must NOT scroll the surrounding page. We therefore
+// (a) do not use EditorView.scrollIntoView — it scrolls every scrollable
+// ancestor (incl. the overview page) to reveal the position; (b) scroll only
+// CM's own scroller; (c) focus with preventScroll; (d) snapshot + restore
+// ancestor scroll offsets around focus as a guard (covers browsers where
+// focus({preventScroll}) is ignored, e.g. Safari).
 function applyInitialLocation(view, loc) {
   if (!loc) return;
   const len = view.state.doc.length;
   const from = Math.max(0, Math.min(loc.from ?? 0, len));
   const to = Math.max(from, Math.min(loc.to ?? from, len));
-  view.dispatch({
-    selection: { anchor: from, head: to },
-    effects: EditorView.scrollIntoView(from, { y: 'start' }),
-  });
-  if (typeof loc.anchorY === 'number') {
-    // best-effort: drop the target line to roughly where the click was
-    requestAnimationFrame(() => {
-      try { view.scrollDOM.scrollTop = Math.max(0, view.scrollDOM.scrollTop - loc.anchorY); } catch { /* ignore */ }
-    });
+
+  view.dispatch({ selection: { anchor: from, head: to } });
+
+  // Snapshot scroll offsets of every scrollable ancestor (CM's own scroller is
+  // a descendant of view.dom, so it is never in this list) + the document.
+  const guards = [];
+  for (let el = view.dom.parentElement; el; el = el.parentElement) {
+    if (el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) {
+      guards.push([el, el.scrollTop, el.scrollLeft]);
+    }
   }
-  view.focus();
+  const se = view.dom.ownerDocument?.scrollingElement;
+  if (se) guards.push([se, se.scrollTop, se.scrollLeft]);
+  const restore = () => { for (const [el, t, l] of guards) { el.scrollTop = t; el.scrollLeft = l; } };
+
+  try { view.contentDOM.focus({ preventScroll: true }); } catch { view.focus(); }
+  restore();
+
+  // Scroll ONLY CM's scroller so the target line sits ~anchorY from its top.
+  requestAnimationFrame(() => {
+    try {
+      const top = view.lineBlockAt(from).top;
+      view.scrollDOM.scrollTop = Math.max(0, top - (typeof loc.anchorY === 'number' ? loc.anchorY : 0));
+    } catch { /* ignore */ }
+    restore();
+  });
 }
 
 const MarkdownEditor = forwardRef(function MarkdownEditor({
