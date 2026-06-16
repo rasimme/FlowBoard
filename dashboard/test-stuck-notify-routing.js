@@ -12,7 +12,7 @@ const { buildStuckNotifications } = require('./stuck-notify.js');
 let pass = 0, fail = 0; const failures = [];
 function ok(cond, msg) { if (cond) { pass++; console.log(`  ok - ${msg}`); } else { fail++; failures.push(msg); console.log(`  not ok - ${msg}`); } }
 
-const operatorDelivery = { channel: 'telegram', target: '15707748', to: '15707748' };
+const operatorDelivery = { channel: 'telegram', target: 'op-chat-id', to: 'op-chat-id' };
 
 // --- owned tasks: wake the owner, never the operator ---
 {
@@ -28,7 +28,7 @@ const operatorDelivery = { channel: 'telegram', target: '15707748', to: '1570774
   ok(devb && !devb.to && !devb.target, 'owner wake carries no operator target');
   ok(devb && devb.sessionKey === 'agent:dev-botti:main' && devb.wakeMode === 'now', 'owner wake targets agent session with wakeMode now');
   ok(payloads.some(p => p.agentId === 'design-botti'), 'each distinct owner gets its own wake payload');
-  ok(!payloads.some(p => p.to === '15707748' || p.channel === 'telegram'), 'owned-only round sends nothing to the operator');
+  ok(!payloads.some(p => p.to === 'op-chat-id' || p.channel === 'telegram'), 'owned-only round sends nothing to the operator');
 }
 
 // --- unowned tasks: a single throttled operator escalation ---
@@ -39,7 +39,7 @@ const operatorDelivery = { channel: 'telegram', target: '15707748', to: '1570774
       routedUnclaimed: [{ id: 'T-10', project: 'p', title: 'routed' }] },        // no routedAgent
     { operatorDelivery, wakeChannel: 'none' });
 
-  const esc = payloads.filter(p => p.to === '15707748');
+  const esc = payloads.filter(p => p.to === 'op-chat-id');
   ok(esc.length === 1, 'unowned tasks produce exactly one operator escalation');
   ok(esc[0] && esc[0].channel === 'telegram', 'operator escalation uses the configured delivery channel');
   ok(esc[0] && /T-9/.test(esc[0].message) && /T-10/.test(esc[0].message), 'escalation lists the unowned tasks');
@@ -54,7 +54,7 @@ const operatorDelivery = { channel: 'telegram', target: '15707748', to: '1570774
       expired: [], routedUnclaimed: [] },
     { operatorDelivery, wakeChannel: 'none' });
   ok(payloads.some(p => p.agentId === 'dev-botti' && p.channel === 'none'), 'mixed: owner woken silently');
-  ok(payloads.filter(p => p.to === '15707748').length === 1, 'mixed: one operator escalation for the orphan');
+  ok(payloads.filter(p => p.to === 'op-chat-id').length === 1, 'mixed: one operator escalation for the orphan');
 }
 
 // --- empty input: no payloads ---
