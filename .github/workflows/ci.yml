@@ -22,8 +22,15 @@ jobs:
         working-directory: dashboard
       - name: Privacy scan
         run: npm run privacy:scan
-      - name: Package dry run
-        run: npm pack --dry-run
+      - name: Install OpenClaw CLI for package canary
+        run: npm install -g openclaw@2026.6.6
+      - name: Plugin lint
+        run: npm run plugin:lint
+      - name: Release install canary
+        run: npm run release:install-canary
+      - name: Dashboard build
+        run: npm run build
+        working-directory: dashboard
       - name: Prepare dashboard integration fixture
         run: |
           mkdir -p ~/.openclaw/workspace/projects
@@ -62,6 +69,3 @@ jobs:
           FLOWBOARD_PROJECTS_DIR: /tmp/flowboard-ci-projects
           FLOWBOARD_API: http://localhost:18790
           FLOWBOARD_REPO: ${{ github.workspace }}
-      - name: Dashboard build
-        run: npm run build
-        working-directory: dashboard

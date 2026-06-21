@@ -7,6 +7,7 @@ const REQUIRED_PACKAGE_FILES = [
   'README.md',
   'LICENSE',
   'llms.txt',
+  'openclaw/**',
   'hooks/**',
   'dashboard/**'
 ];
@@ -59,6 +60,17 @@ if (pkg.openclaw?.release?.publishToClawHub !== true) {
 if (pkg.openclaw?.release?.publishToNpm !== false) {
   fail('package.json openclaw.release.publishToNpm must be false unless intentionally changed');
 }
+if (!Array.isArray(pkg.openclaw?.extensions) || pkg.openclaw.extensions.length === 0) {
+  fail('package.json openclaw.extensions must declare the native plugin entry used by ClawHub installs');
+} else {
+  for (const [index, entry] of pkg.openclaw.extensions.entries()) {
+    if (typeof entry !== 'string' || !entry.trim()) {
+      fail(`package.json openclaw.extensions[${index}] must be a non-empty string`);
+      continue;
+    }
+    if (entry.includes('..')) fail(`package.json openclaw.extensions[${index}] must not contain '..'`);
+  }
+}
 
 const pack = spawnSync('npm', ['pack', '--dry-run', '--json'], {
   cwd: process.cwd(),
@@ -80,6 +92,16 @@ if (pack.status !== 0) {
 
   for (const required of ['openclaw.plugin.json', 'package.json', 'README.md', 'llms.txt']) {
     if (!files.includes(required)) fail(`package artifact missing ${required}`);
+  }
+  for (const entry of pkg.openclaw?.extensions || []) {
+    const normalized = entry.replace(/^\.\//, '');
+    if (!files.includes(normalized)) fail(`package artifact missing openclaw.extensions entry: ${entry}`);
+  }
+  for (const entry of pkg.openclaw?.hooks || []) {
+    const normalized = entry.replace(/^\.\//, '').replace(/\/$/, '');
+    if (!files.some(path => path === normalized || path.startsWith(`${normalized}/`))) {
+      fail(`package artifact missing openclaw.hooks entry: ${entry}`);
+    }
   }
 
   for (const path of files) {

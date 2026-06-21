@@ -57,7 +57,7 @@ Service metadata + the bundled `external-trigger.md` snippet so an external agen
 {
   "service": "FlowBoard",
   "version": "<package.json version>",
-  "api_base": "http://localhost:18790",
+  "api_base": "http://localhost:<FLOWBOARD_PORT>",
   "endpoints": {
     "health":    "/api/health",
     "info":      "/api/info",
@@ -74,7 +74,9 @@ Service metadata + the bundled `external-trigger.md` snippet so an external agen
 }
 ```
 
-The `trigger_snippet` field is read fresh from disk per request — editing `snippets/external-trigger.md` takes effect without dashboard restart.
+The `trigger_snippet` field is read fresh from disk per request and rendered with
+the currently configured `FLOWBOARD_PORT` — editing `snippets/external-trigger.md`
+takes effect without dashboard restart.
 
 ## See also
 

@@ -15,13 +15,15 @@
  */
 
 import { readFileSync, existsSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 const OPENCLAW_HOME = join(homedir(), ".openclaw");
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
-const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || join(homedir(), "repos", "FlowBoard");
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || PACKAGE_ROOT;
 const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
 const ALLOW_LEGACY_FILE_FALLBACK = process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK === "true";
 const BOOTSTRAP_FILENAME = "BOOTSTRAP.md";

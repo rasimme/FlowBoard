@@ -43,6 +43,8 @@ async function run() {
       NODE_ENV: 'test',
       TELEGRAM_BOT_TOKEN: '',
       TELEGRAM_BOT_TOKENS: '',
+      FLOWBOARD_GITHUB_TOKEN: '',
+      GITHUB_TOKEN: '',
     },
     stdio: 'ignore',
   });

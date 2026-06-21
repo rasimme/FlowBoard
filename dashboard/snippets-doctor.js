@@ -408,6 +408,20 @@ function replaceLegacyBlock(content, legacyBlock, newBlock) {
   return content.replace(legacyBlock, newBlock);
 }
 
+function normalizeSnippetPortsForComparison(content) {
+  return String(content || '')
+    .replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://127.0.0.1:18790')
+    .replace(/http:\/\/localhost:\d+/g, 'http://localhost:18790');
+}
+
+function containsCurrentSnippetBlock(content, newBlock) {
+  if (typeof newBlock !== 'string' || newBlock.length === 0) return false;
+  const expected = newBlock.trimEnd();
+  if (content.includes(expected)) return true;
+  return normalizeSnippetPortsForComparison(content)
+    .includes(normalizeSnippetPortsForComparison(expected));
+}
+
 function auditFile(filePath, { legacyBlock, newBlock }) {
   let content = '';
   try { content = fs.readFileSync(filePath, 'utf8'); } catch {
@@ -559,7 +573,7 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
   // partially edited/stale contract can still contain all critical marker
   // phrases while missing the canonical runtime wording. Treat that as drifted
   // so the migration path can force-replace it safely.
-  if (typeof newBlock === 'string' && newBlock.length > 0 && content.includes(newBlock.trimEnd())) {
+  if (containsCurrentSnippetBlock(content, newBlock)) {
     return { state: 'current', content, confidence: 1 };
   }
   if (content.includes('flowboard-snippet-contract: v3-command-startup-response')) {
@@ -923,6 +937,8 @@ module.exports = {
   collectBootstrapDocAdvisories,
   collectConfigAdvisories,
   matchesLegacyBlockExactly,
+  normalizeSnippetPortsForComparison,
+  containsCurrentSnippetBlock,
   replaceLegacyBlock,
   replaceDriftedBlock,
   auditFile,

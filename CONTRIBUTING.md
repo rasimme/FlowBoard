@@ -104,6 +104,26 @@ git push origin feat/my-change
 - Mention what platform you tested on (desktop / mobile / both)
 - Reference related issues: `Closes #123`
 
+## Release gates
+
+Before publishing a release, run:
+
+```bash
+npm run release:check
+```
+
+That gate includes privacy scanning, plugin packaging lint, the built-artifact
+OpenClaw install canary, dashboard tests, and the dashboard build.
+
+After publishing to ClawHub, run the live registry canary once:
+
+```bash
+npm run release:postpublish-canary -- flowboard@x.y.z
+```
+
+This installs the published ClawHub artifact into a temporary `OPENCLAW_HOME`
+and catches registry/install-path drift that local package checks cannot see.
+
 ## Code style
 
 - No semicolons (project convention)

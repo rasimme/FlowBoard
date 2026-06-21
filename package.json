@@ -9,6 +9,8 @@
     "setup": "node scripts/setup.mjs",
     "plugin:lint": "node scripts/plugin-lint.mjs",
     "privacy:scan": "node scripts/privacy-scan.mjs",
+    "release:install-canary": "node scripts/release-install-canary.mjs",
+    "release:postpublish-canary": "node scripts/release-install-canary.mjs --clawhub",
     "release:check": "node scripts/release-check.mjs"
   },
   "homepage": "https://github.com/rasimme/FlowBoard",
@@ -39,6 +41,9 @@
       "publishToClawHub": true,
       "publishToNpm": false
     },
+    "extensions": [
+      "./openclaw/flowboard-plugin.js"
+    ],
     "hooks": [
       "./hooks/project-context"
     ]
@@ -51,6 +56,7 @@
     "SECURITY.md",
     "CONTRIBUTING.md",
     "llms.txt",
+    "openclaw/**",
     "hooks/**",
     "scripts/**",
     "snippets/**",

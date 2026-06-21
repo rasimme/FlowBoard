@@ -1166,10 +1166,17 @@ try {
   _packageVersion = require('./package.json').version;
 } catch { /* version stays 'unknown' */ }
 
+function renderExternalTriggerSnippet(content) {
+  const port = String(PORT);
+  return String(content || '')
+    .replace(/http:\/\/localhost:18790/g, `http://localhost:${port}`)
+    .replace(/http:\/\/127\.0\.0\.1:18790/g, `http://127.0.0.1:${port}`);
+}
+
 app.get('/api/info', (req, res) => {
   let triggerSnippet = '';
   try {
-    triggerSnippet = fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8');
+    triggerSnippet = renderExternalTriggerSnippet(fs.readFileSync(EXTERNAL_TRIGGER_PATH, 'utf8'));
   } catch (e) {
     // Per-request read failed — serve empty snippet but warn so the operator
     // can investigate (file deleted, permissions changed, etc.). Not fatal.

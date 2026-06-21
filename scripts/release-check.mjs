@@ -5,8 +5,9 @@ const steps = [
   ['git', ['diff', '--check']],
   ['node', ['scripts/privacy-scan.mjs']],
   ['node', ['scripts/plugin-lint.mjs']],
-  ['npm', ['test'], { cwd: 'dashboard' }],
-  ['npm', ['run', 'build'], { cwd: 'dashboard' }]
+  ['node', ['scripts/release-install-canary.mjs']],
+  ['npm', ['run', 'build'], { cwd: 'dashboard' }],
+  ['npm', ['test'], { cwd: 'dashboard' }]
 ];
 
 for (const [command, args, options = {}] of steps) {
