@@ -393,6 +393,8 @@ attribution.
 
 ---
 
+<a id="remote-access-telegram-mini-app"></a>
+
 <details>
 <summary><h2>Remote Access (Telegram Mini App)</h2></summary>
 
