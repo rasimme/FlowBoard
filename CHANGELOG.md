@@ -1,5 +1,17 @@
 # Changelog
 
+### v5.0.2 (2026-06-22) — Custom Ports & ClawPack Publishing
+
+- **Fixed AGENTS snippet migration for custom dashboard URLs.** The snippet
+  doctor now renders the canonical current block from configured
+  `FLOWBOARD_BASE_URL` / `FLOWBOARD_PORT` values, so custom-port installs no
+  longer drift back to the default `18790` URL.
+- **Published from ClawPack artifacts.** The release gate now packs a `.tgz`,
+  validates the source package, and dry-runs publish with the exact packed
+  tarball so ClawHub releases do not regress to legacy ZIP artifacts.
+- **Documentation polish.** The remote-access README anchor is now explicit, so
+  links jump reliably into the collapsed details section.
+
 ### v5.0.1 (2026-06-22) — ClawHub Plugin Install Fix
 
 - **Fixed ClawHub plugin installs.** The packaged artifact now carries the
