@@ -112,13 +112,14 @@ Before publishing a release, run:
 npm run release:check
 ```
 
-That gate includes privacy scanning, plugin packaging lint, the built-artifact
-ClawPack pack/validate/dry-run check, OpenClaw install canary, dashboard tests,
-and the dashboard build.
+That gate includes privacy scanning, plugin packaging lint, ClawPack
+pack/source-validate/tarball-dry-run checks, OpenClaw install canary, dashboard
+tests, and the dashboard build.
 
 Publish the ClawPack tarball produced by `clawhub package pack`, not the local
-folder or GitHub source directly. The release gate validates that packed path so
-the latest ClawHub version does not regress to a legacy ZIP artifact.
+folder or GitHub source directly. The release gate validates the source package,
+then dry-runs publish with the packed tarball so the latest ClawHub version does
+not regress to a legacy ZIP artifact.
 
 After publishing to ClawHub, run the live registry canary once:
 

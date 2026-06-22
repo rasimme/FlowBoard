@@ -2,9 +2,11 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const root = path.resolve(import.meta.dirname, '..');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, '..');
 const keepTemp = process.env.FLOWBOARD_KEEP_CLAWHUB_TEMP === '1';
 const tmp = mkdtempSync(path.join(tmpdir(), 'flowboard-clawpack-gate-'));
 
@@ -121,6 +123,15 @@ try {
       currentRef(),
     ]).stdout
   );
+  if (dryRun.name !== pack.name || dryRun.version !== pack.version) {
+    throw new Error(`publish dry-run resolved ${dryRun.name}@${dryRun.version}, expected ${pack.name}@${pack.version}`);
+  }
+  if (dryRun.commit !== sha) {
+    throw new Error(`publish dry-run resolved commit ${dryRun.commit}, expected ${sha}`);
+  }
+  if (dryRun.files !== pack.files || dryRun.totalBytes !== pack.size) {
+    throw new Error('publish dry-run did not use the ClawPack artifact produced by package pack');
+  }
 
   console.log([
     'clawpack gate ok',
