@@ -94,7 +94,7 @@ async function run() {
       path.join(workspace, 'AGENTS.md'),
       current.replace('http://127.0.0.1:18790', `http://127.0.0.1:${PORT}`)
     );
-    const status = doctor.collectStatus(tempRoot);
+    const status = doctor.collectStatus(tempRoot, { env });
     ok(status.counts.current === 1, 'snippets-doctor treats port-customized current snippet as current');
     ok(status.files.length === 0, 'port-customized current snippet is not surfaced as drift');
 

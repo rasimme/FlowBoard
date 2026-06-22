@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const childProcess = require('child_process');
+const { renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -417,9 +418,7 @@ function normalizeSnippetPortsForComparison(content) {
 function containsCurrentSnippetBlock(content, newBlock) {
   if (typeof newBlock !== 'string' || newBlock.length === 0) return false;
   const expected = newBlock.trimEnd();
-  if (content.includes(expected)) return true;
-  return normalizeSnippetPortsForComparison(content)
-    .includes(normalizeSnippetPortsForComparison(expected));
+  return content.includes(expected);
 }
 
 function auditFile(filePath, { legacyBlock, newBlock }) {
@@ -475,6 +474,11 @@ function readVendored(name) {
 function readCurrent(name) {
   const p = path.join(REPO_ROOT, 'snippets', name);
   return fs.readFileSync(p, 'utf8');
+}
+function readRenderedCurrent(name, env = process.env) {
+  const current = readCurrent(name);
+  const baseUrl = resolveDashboardBaseUrl({}, env, { includeLegacyApi: false });
+  return renderSnippetBaseUrl(current, baseUrl);
 }
 
 function formatBytes(n) {
@@ -616,14 +620,15 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
 // Chip variants: "Migration required" when any legacy remains; "FlowBoard setup"
 // when existing AGENTS.md files can be onboarded. Hidden only when there is
 // nothing actionable left.
-function collectStatus(openclawHome) {
+function collectStatus(openclawHome, options = {}) {
+  const env = options.env || process.env;
   const files = [];
   const counts = { identical: 0, drifted: 0, missing: 0, current: 0, total: 0 };
   for (const target of TARGETS) {
     let legacyBlock, newBlock, insertBody;
     try {
       legacyBlock = readVendored(target.vendored);
-      newBlock = readCurrent(target.current);
+      newBlock = readRenderedCurrent(target.current, env);
       insertBody = extractInsertBody(target, newBlock);
     } catch {
       continue;
@@ -725,10 +730,11 @@ function collectStatus(openclawHome) {
 //
 // Every action writes a `.bak-<timestamp>` before modifying. Unknown IDs,
 // state mismatches, and filesystem errors are reported in `skipped`.
-function applyActions(openclawHome, actions) {
+function applyActions(openclawHome, actions, options = {}) {
+  const env = options.env || process.env;
   const applied = [];
   const skipped = [];
-  const status = collectStatus(openclawHome);
+  const status = collectStatus(openclawHome, { env });
   const byId = new Map(status.files.map(f => [f.id, f]));
 
   for (const { id, action } of Array.isArray(actions) ? actions : []) {
@@ -749,7 +755,7 @@ function applyActions(openclawHome, actions) {
     let legacyBlock, newBlock, insertBody;
     try {
       legacyBlock = readVendored(target.vendored);
-      newBlock = readCurrent(target.current);
+      newBlock = readRenderedCurrent(target.current, env);
       insertBody = extractInsertBody(target, newBlock);
     } catch (err) {
       skipped.push({ id, reason: `snippet-unavailable: ${err.message}` });
@@ -839,7 +845,7 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
     let legacyBlock, newBlock;
     try {
       legacyBlock = readVendored(t.vendored);
-      newBlock = readCurrent(t.current);
+      newBlock = readRenderedCurrent(t.current);
     } catch (err) {
       stderr.write(`[snippets-doctor] Could not read snippets for ${t.name}: ${err.message}\n`);
       continue;
@@ -949,6 +955,7 @@ module.exports = {
   runCli,
   readVendored,
   readCurrent,
+  readRenderedCurrent,
   extractInsertBody,
   formatBytes,
   computeSimpleDiff,

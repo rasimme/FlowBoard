@@ -608,6 +608,106 @@ section('collectStatus() — chip variants');
   }
 }
 
+section('custom dashboard URL — apply/preview uses rendered AGENTS trigger');
+{
+  const env = {
+    FLOWBOARD_PORT: '18843',
+    FLOWBOARD_BASE_URL: '',
+    FLOWBOARD_API: 'http://localhost:19999',
+  };
+
+  function assertRenderedCurrent(filePath, dir, expectedUrl, msg) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    assert(content.includes(expectedUrl), `${msg}: writes rendered dashboard URL`);
+    assert(!content.includes('http://127.0.0.1:18790'), `${msg}: does not write default 127 URL`);
+    assert(!content.includes('http://localhost:18790'), `${msg}: does not write default localhost URL`);
+    const status = doctor.collectStatus(dir, { env });
+    assertEqual(status.counts.current, 1, `${msg}: post-apply status is current`);
+    assertEqual(status.chip, null, `${msg}: post-apply chip hidden`);
+  }
+
+  let dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const filePath = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(filePath, `${doctor.readVendored('AGENTS-trigger.v2.md')}\n`);
+
+    const status = doctor.collectStatus(dir, { env });
+    assertEqual(status.files.length, 1, 'custom port upgrade: one row surfaced');
+    const adds = status.files[0].diff.filter(row => row.t === 'add').map(row => row.text).join('\n');
+    assert(adds.includes('http://127.0.0.1:18843'), 'custom port upgrade: preview shows rendered port');
+    assert(!adds.includes('http://127.0.0.1:18790'), 'custom port upgrade: preview omits default port');
+
+    const result = doctor.applyActions(dir, [{ id: status.files[0].id, action: 'upgrade' }], { env });
+    assertEqual(result.applied.length, 1, 'custom port upgrade: action applied');
+    assertRenderedCurrent(filePath, dir, 'http://127.0.0.1:18843', 'custom port upgrade');
+  } finally {
+    cleanupTmp();
+  }
+
+  dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const filePath = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(filePath, `${doctor.readCurrent('AGENTS-trigger.md')}\n`);
+
+    const status = doctor.collectStatus(dir, { env });
+    assertEqual(status.files[0].state, 'drifted', 'custom port migrate: default-port current block is drifted');
+    const result = doctor.applyActions(dir, [{ id: status.files[0].id, action: 'migrate' }], { env });
+    assertEqual(result.applied.length, 1, 'custom port migrate: default-port current block migrated');
+    assertRenderedCurrent(filePath, dir, 'http://127.0.0.1:18843', 'custom port migrate');
+  } finally {
+    cleanupTmp();
+  }
+
+  dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const filePath = path.join(dir, 'workspace', 'AGENTS.md');
+    const stale = doctor.readCurrent('AGENTS-trigger.md').replace(
+      'This file is only the trigger. Do not add workflow/API detail here.',
+      'This file includes detailed runtime contracts, HTTP parsing, and task workflow steps.'
+    );
+    fs.writeFileSync(filePath, `${stale}\n`);
+
+    const baseEnv = {
+      FLOWBOARD_PORT: '18844',
+      FLOWBOARD_BASE_URL: 'https://flowboard.example.local/custom/',
+      FLOWBOARD_API: 'http://localhost:19999',
+    };
+    const status = doctor.collectStatus(dir, { env: baseEnv });
+    assertEqual(status.files[0].state, 'drifted', 'custom base migrate: stale current is drifted');
+    const result = doctor.applyActions(dir, [{ id: status.files[0].id, action: 'migrate' }], { env: baseEnv });
+    assertEqual(result.applied.length, 1, 'custom base migrate: action applied');
+    const content = fs.readFileSync(filePath, 'utf8');
+    assert(content.includes('https://flowboard.example.local/custom'), 'custom base migrate: writes FLOWBOARD_BASE_URL');
+    assert(!content.includes('http://localhost:19999'), 'custom base migrate: ignores legacy FLOWBOARD_API');
+    const after = doctor.collectStatus(dir, { env: baseEnv });
+    assertEqual(after.counts.current, 1, 'custom base migrate: post-apply status is current');
+    assertEqual(after.chip, null, 'custom base migrate: post-apply chip hidden');
+  } finally {
+    cleanupTmp();
+  }
+
+  dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const filePath = path.join(dir, 'workspace', 'AGENTS.md');
+    fs.writeFileSync(filePath, '# Project instructions\n');
+
+    const status = doctor.collectStatus(dir, { env });
+    assertEqual(status.files[0].state, 'missing', 'custom port add: missing row surfaced');
+    const adds = status.files[0].diff.filter(row => row.t === 'add').map(row => row.text).join('\n');
+    assert(adds.includes('http://127.0.0.1:18843'), 'custom port add: preview shows rendered port');
+
+    const result = doctor.applyActions(dir, [{ id: status.files[0].id, action: 'add' }], { env });
+    assertEqual(result.applied.length, 1, 'custom port add: action applied');
+    assertRenderedCurrent(filePath, dir, 'http://127.0.0.1:18843', 'custom port add');
+  } finally {
+    cleanupTmp();
+  }
+}
+
 section('collectStatus() — legacy project-state advisories');
 {
   const dir = mkTmp();
