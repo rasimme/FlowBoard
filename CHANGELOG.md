@@ -1,5 +1,18 @@
 # Changelog
 
+### v5.0.1 (2026-06-22) — ClawHub Plugin Install Fix
+
+- **Fixed ClawHub plugin installs.** The packaged artifact now carries the
+  native OpenClaw extension entry, and the release install canary verifies that
+  the plugin imports and registers the `agent:bootstrap` project-context hook.
+- **Custom dashboard URLs are wired end-to-end.** `/api/info`, the external
+  trigger installer, and the project-context hook now share base-URL resolution
+  via `FLOWBOARD_BASE_URL`, `FLOWBOARD_API`, `FLOWBOARD_PORT`, and plugin
+  config (`dashboardBaseUrl` / `dashboardPort`).
+- **Release gates hardened.** The custom-port smoke now covers installer output,
+  docs drift tracks the URL helper, and hook integration tests assert plugin
+  dashboard URL config behavior.
+
 ### v5.0.0 (2026-06-17) — React Rebuild, Event-Sourced Backend & Multi-Agent Workspaces
 
 FlowBoard v5 is a ground-up rebuild: a full React frontend, an event-sourced

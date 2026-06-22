@@ -21,10 +21,8 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const OPENCLAW_HOME = join(homedir(), ".openclaw");
-const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || PACKAGE_ROOT;
-const FLOWBOARD_PORT = process.env.FLOWBOARD_PORT || 18790;
 const ALLOW_LEGACY_FILE_FALLBACK = process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK === "true";
 const BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 
@@ -41,6 +39,7 @@ const FETCH_BACKOFF_MS = [150, 400, 800];
 // so the bootstrap manifest matches the server's. Fall back to an inline
 // minimal manifest if the repo module can't be resolved.
 const require = createRequire(import.meta.url);
+const { joinApiPath, resolveDashboardBaseUrl } = require(join(PACKAGE_ROOT, "dashboard", "flowboard-url.cjs"));
 let rulesApi = null;
 try {
   rulesApi = require(join(FLOWBOARD_REPO, "dashboard", "rules-api.js"));
@@ -131,6 +130,18 @@ function buildRulesManifest() {
   return rulesApi ? rulesApi.buildRulesManifest() : buildInlineManifestFallback();
 }
 
+function mergePluginConfig(defaultPluginConfig, eventPluginConfig) {
+  return {
+    ...(defaultPluginConfig && typeof defaultPluginConfig === "object" ? defaultPluginConfig : {}),
+    ...(eventPluginConfig && typeof eventPluginConfig === "object" ? eventPluginConfig : {}),
+  };
+}
+
+function resolveProjectsDir(workspaceDir, pluginConfig = {}) {
+  const sharedProjectsDir = pluginConfig.projectsDir || process.env.FLOWBOARD_PROJECTS_DIR || join(OPENCLAW_HOME, "projects");
+  return existsSync(sharedProjectsDir) ? sharedProjectsDir : join(workspaceDir, "projects");
+}
+
 // T-230: fetch with retry + backoff. Retries thrown errors (connection
 // refused during a restart) and 5xx responses (a still-starting server); a
 // 4xx is a definitive answer and returned immediately. `fetchImpl`/`sleep`
@@ -156,9 +167,9 @@ export async function fetchWithRetry(url, { fetchImpl = fetch, sleep = (ms) => n
 
 // Discriminated result so callers can distinguish authoritative null
 // (no project active) from a network failure.
-async function resolveActiveProjectFromApi(agentId) {
+async function resolveActiveProjectFromApi(agentId, dashboardBaseUrl) {
   try {
-    const url = `http://localhost:${FLOWBOARD_PORT}/api/status?agentId=${encodeURIComponent(agentId)}`;
+    const url = joinApiPath(dashboardBaseUrl, `/api/status?agentId=${encodeURIComponent(agentId)}`);
     const res = await fetchWithRetry(url);
     if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
     const data = await res.json();
@@ -201,9 +212,9 @@ function buildTaskStateUnavailableMarkdown(url, reason) {
   return rulesApi?.buildOperationalTaskStateMarkdown?.(null, { transient: { url, reason } }) || fallback;
 }
 
-async function getTaskStatusSummary(projectName) {
+async function getTaskStatusSummary(projectName, dashboardBaseUrl) {
   let data;
-  const url = `http://localhost:${FLOWBOARD_PORT}/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`;
+  const url = joinApiPath(dashboardBaseUrl, `/api/projects/${encodeURIComponent(projectName)}/tasks?includeArchived=false`);
   try {
     const res = await fetchWithRetry(url);
     if (!res.ok) return { ok: false, markdown: buildTaskStateUnavailableMarkdown(url, `HTTP ${res.status}`) };
@@ -225,12 +236,13 @@ async function getTaskStatusSummary(projectName) {
   };
 }
 
-async function buildBootstrapContent(workspaceDir, agentId) {
+async function buildBootstrapContent(workspaceDir, agentId, pluginConfig = {}) {
   const identitySection = buildIdentitySection(agentId);
+  const dashboardBaseUrl = resolveDashboardBaseUrl(pluginConfig);
 
   // Resolve active project: DB canonical via API. Legacy file fallback is
   // opt-in only and never runs after an authoritative API null.
-  const apiResult = await resolveActiveProjectFromApi(agentId);
+  const apiResult = await resolveActiveProjectFromApi(agentId, dashboardBaseUrl);
   let projectName = null;
   // T-230: distinguish an authoritative null (API said no project) from a
   // transient API failure (status unknown). They must produce different
@@ -256,7 +268,7 @@ async function buildBootstrapContent(workspaceDir, agentId) {
   }
 
   const rulesManifest = buildRulesManifest();
-  const projectRoot = existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : join(workspaceDir, "projects");
+  const projectRoot = resolveProjectsDir(workspaceDir, pluginConfig);
 
   const projectMdPath = join(projectRoot, projectName, "PROJECT.md");
   let projectContent = "";
@@ -270,7 +282,7 @@ async function buildBootstrapContent(workspaceDir, agentId) {
     `${rulesManifest}\n`,
   ];
 
-  const taskSummary = await getTaskStatusSummary(projectName);
+  const taskSummary = await getTaskStatusSummary(projectName, dashboardBaseUrl);
   sections.push(`${taskSummary.markdown}\n`);
 
   if (projectContent) {
@@ -288,7 +300,7 @@ async function buildBootstrapContent(workspaceDir, agentId) {
   return sections.join("\n");
 }
 
-const handler = async (event) => {
+async function handleProjectContextEvent(event, defaultPluginConfig = {}) {
   // Only react to agent:bootstrap. Replaces the four legacy subscriptions
   // (command:new, command:reset, gateway:startup, session:compact:after) —
   // agent:bootstrap fires before every agent run, so it covers all session
@@ -300,6 +312,7 @@ const handler = async (event) => {
   if (!context || !Array.isArray(context.bootstrapFiles)) return;
 
   const workspaceDir = context.workspaceDir;
+  const pluginConfig = mergePluginConfig(defaultPluginConfig, context.pluginConfig);
   // T-168 review fix: workspace-derived agentId wins over event.context.agentId.
   // The workspace directory is the canonical filesystem-routed identity that
   // OpenClaw bound this run to; context.agentId is best-effort metadata that
@@ -310,7 +323,7 @@ const handler = async (event) => {
 
   let content;
   try {
-    content = await buildBootstrapContent(workspaceDir, agentId);
+    content = await buildBootstrapContent(workspaceDir, agentId, pluginConfig);
   } catch (err) {
     console.warn(`[project-context] build failed for ${agentId}: ${err?.message ?? err}`);
     // Fail safe: do not strip the existing BOOTSTRAP.md; let whatever the
@@ -340,6 +353,12 @@ const handler = async (event) => {
   } else {
     context.bootstrapFiles.push(newEntry);
   }
-};
+}
+
+export function createProjectContextHandler(pluginConfig = {}) {
+  return (event) => handleProjectContextEvent(event, pluginConfig);
+}
+
+const handler = createProjectContextHandler();
 
 export default handler;

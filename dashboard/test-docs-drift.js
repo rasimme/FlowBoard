@@ -25,6 +25,7 @@ const HOOK_PATH      = path.join(REPO_ROOT, 'hooks', 'project-context', 'handler
 const TOOL_PATHS     = [
   path.join(REPO_ROOT, 'dashboard', 'snippets-doctor.js'),
   path.join(REPO_ROOT, 'dashboard', 'install-trigger.mjs'),
+  path.join(REPO_ROOT, 'dashboard', 'flowboard-url.cjs'),
   path.join(REPO_ROOT, 'dashboard', 'migrate-tasks.js'),
   path.join(REPO_ROOT, 'dashboard', 'hzl-service.js'),
   path.join(REPO_ROOT, 'dashboard', 'flowboard-metadata.js'),
@@ -117,14 +118,20 @@ const NODE_BUILTINS = new Set(['HOME', 'NODE_ENV', 'PATH', 'USER']);
 // Empty for now — every var the server/hook reads should be documented.
 const ALLOW_UNDOCUMENTED = new Set([]);
 
-function extractEnvVarsFromSource(source) {
-  // Match process.env.NAME — the dot form. NAME is uppercase letters, digits,
-  // underscores, starts with a letter or underscore, length > 1.
+function extractEnvVarsFromSource(source, options = {}) {
+  // Match process.env.NAME. For the small URL helper, also allow the
+  // dependency-injected env.NAME form that exists specifically for tests.
   const re = /\bprocess\.env\.([A-Z_][A-Z0-9_]*)/g;
   const found = new Set();
   let m;
   while ((m = re.exec(source)) !== null) {
     found.add(m[1]);
+  }
+  if (options.allowInjectedEnv) {
+    const injectedRe = /(^|[^\w.])env\.([A-Z_][A-Z0-9_]*)/g;
+    while ((m = injectedRe.exec(source)) !== null) {
+      found.add(m[2]);
+    }
   }
   return found;
 }
@@ -149,13 +156,20 @@ section('env-var coverage — server.js + handler.js + tooling ↔ env-vars.md')
   const hook     = fs.readFileSync(HOOK_PATH, 'utf8');
   const toolSrcs = TOOL_PATHS
     .filter(p => fs.existsSync(p))
-    .map(p => fs.readFileSync(p, 'utf8'));
+    .map(p => ({
+      path: p,
+      source: fs.readFileSync(p, 'utf8'),
+    }));
   const docs     = fs.readFileSync(ENV_DOCS_PATH, 'utf8');
 
   const codeVars = new Set([
     ...extractEnvVarsFromSource(server),
     ...extractEnvVarsFromSource(hook),
-    ...toolSrcs.flatMap(s => [...extractEnvVarsFromSource(s)]),
+    ...toolSrcs.flatMap(({ path: sourcePath, source }) => [
+      ...extractEnvVarsFromSource(source, {
+        allowInjectedEnv: path.basename(sourcePath) === 'flowboard-url.cjs',
+      }),
+    ]),
   ]);
   const docVars  = extractDocumentedEnvVars(docs);
 

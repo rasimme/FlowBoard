@@ -21,17 +21,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { joinApiPath, renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
 const SNIPPET_PATH = path.resolve(__dirname, '..', 'snippets', 'external-trigger.md');
 const MARKER_START = '<!-- BEGIN FlowBoard external trigger -->';
 const MARKER_END = '<!-- END FlowBoard external trigger -->';
 
 function parseArgs(argv) {
-  const args = { repo: null, noSymlink: false, uninstall: false };
+  const args = { repo: null, noSymlink: false, uninstall: false, apiBase: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--repo') { args.repo = argv[++i]; }
+    else if (a === '--api-base') { args.apiBase = argv[++i]; }
     else if (a === '--no-symlink') { args.noSymlink = true; }
     else if (a === '--uninstall') { args.uninstall = true; }
     else if (a === '-h' || a === '--help') { args.help = true; }
@@ -47,6 +51,8 @@ and (by default) symlinks <repo>/CLAUDE.md -> AGENTS.md so Claude Code reads
 it too. Idempotent: safe to re-run after the snippet evolves.
 
   --repo <path>    target repository directory (required)
+  --api-base <url> dashboard API base URL to write into the snippet
+                   (default: FLOWBOARD_BASE_URL, FLOWBOARD_API, or FLOWBOARD_PORT)
   --no-symlink     do not create or update CLAUDE.md; copy AGENTS.md content
                    into CLAUDE.md instead (use on filesystems without symlinks)
   --uninstall      remove the FlowBoard block from AGENTS.md (and CLAUDE.md
@@ -105,7 +111,7 @@ function removeBlock(existing) {
   return before + sep + after;
 }
 
-function setupClaudeMd(claudePath, agentsPath, agentsContent, useSymlink) {
+function setupClaudeMd(claudePath, agentsPath, agentsContent, useSymlink, snippet) {
   // If CLAUDE.md exists and is NOT a symlink owned by us, leave it alone.
   let existingIsSymlink = false;
   try { existingIsSymlink = fs.lstatSync(claudePath).isSymbolicLink(); } catch {}
@@ -120,7 +126,7 @@ function setupClaudeMd(claudePath, agentsPath, agentsContent, useSymlink) {
     // CLAUDE.md is a regular file we previously installed via --no-symlink.
     // Update it in place.
     backup(claudePath);
-    fs.writeFileSync(claudePath, upsertBlock(existing, fs.readFileSync(SNIPPET_PATH, 'utf8')));
+    fs.writeFileSync(claudePath, upsertBlock(existing, snippet));
     console.log(`✓ Updated ${claudePath} (copy mode — already a regular file)`);
     return true;
   }
@@ -194,6 +200,8 @@ function main() {
     console.error(`! Could not read ${SNIPPET_PATH}: ${e.message}`);
     process.exit(2);
   }
+  const apiBase = resolveDashboardBaseUrl({ dashboardBaseUrl: args.apiBase });
+  snippet = renderSnippetBaseUrl(snippet, apiBase);
 
   // 1) AGENTS.md — install or refresh the block
   const existing = readOrEmpty(agentsPath);
@@ -208,11 +216,11 @@ function main() {
 
   // 2) CLAUDE.md — symlink (default) or copy
   const finalAgents = fs.readFileSync(agentsPath, 'utf8');
-  setupClaudeMd(claudePath, agentsPath, finalAgents, !args.noSymlink);
+  setupClaudeMd(claudePath, agentsPath, finalAgents, !args.noSymlink, snippet);
 
   console.log('');
   console.log('Done. Restart your agent (Claude Code / Codex / Cursor) so it picks up the new instructions.');
-  console.log(`Discovery URL: ${process.env.FLOWBOARD_API || 'http://localhost:18790'}/api/info`);
+  console.log(`Discovery URL: ${joinApiPath(apiBase, '/api/info')}`);
 }
 
 main();

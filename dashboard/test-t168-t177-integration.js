@@ -234,6 +234,11 @@ async function loadFreshHandler() {
   return mod.default;
 }
 
+async function loadFreshHandlerModule() {
+  const url = pathToFileURL(HOOK_HANDLER_PATH).href + `?cache=${Date.now()}-${Math.random()}`;
+  return import(url);
+}
+
 function makeBootstrapEvent({ agentId, workspaceDir, existingFiles = [] }) {
   return {
     type: 'agent',
@@ -685,6 +690,77 @@ async function testHookStatusApiTransientFailureIsUnknownNotNone() {
   }
 }
 
+async function testHookUsesPluginDashboardConfig() {
+  section('T-414: plugin dashboardBaseUrl/dashboardPort config drives hook API calls');
+
+  const originalFetch = global.fetch;
+  const originalBaseUrl = process.env.FLOWBOARD_BASE_URL;
+  const originalApi = process.env.FLOWBOARD_API;
+  const calls = [];
+  try {
+    process.env.FLOWBOARD_BASE_URL = '';
+    process.env.FLOWBOARD_API = '';
+    global.fetch = async (url) => {
+      calls.push(String(url));
+      const textUrl = String(url);
+      if (textUrl.includes('/api/status')) {
+        return { ok: true, json: async () => ({ activeProject: PROJECT_FOR_TESTS }) };
+      }
+      if (textUrl.includes('/tasks')) {
+        return { ok: true, json: async () => ({ tasks: [] }) };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+
+    const { createProjectContextHandler } = await loadFreshHandlerModule();
+    const handler = createProjectContextHandler({ dashboardBaseUrl: 'http://127.0.0.1:18843/' });
+    const event = makeBootstrapEvent({
+      agentId: 't414-config-probe',
+      workspaceDir: '/home/jetson/.openclaw/workspace-t414-config-probe',
+      existingFiles: [],
+    });
+    await handler(event);
+    const bs = getBootstrapEntry(event);
+
+    ok(bs && bs.content.startsWith(`# Active Project: ${PROJECT_FOR_TESTS}`),
+      'configured handler still produces active-project bootstrap content');
+    ok(calls.length >= 2, 'hook made status and tasks API calls');
+    ok(calls.every(url => url.startsWith('http://127.0.0.1:18843/')),
+      'all hook API calls use configured dashboardBaseUrl');
+    ok(calls.some(url => url.includes('/api/status?agentId=t414-config-probe')),
+      'status call keeps the expected agentId query');
+
+    calls.length = 0;
+    const portHandler = createProjectContextHandler({ dashboardPort: 18844 });
+    const portEvent = makeBootstrapEvent({
+      agentId: 't414-port-probe',
+      workspaceDir: '/home/jetson/.openclaw/workspace-t414-port-probe',
+      existingFiles: [],
+    });
+    await portHandler(portEvent);
+    ok(calls.length >= 2 && calls.every(url => url.startsWith('http://localhost:18844/')),
+      'dashboardPort config is used when dashboardBaseUrl is absent');
+
+    calls.length = 0;
+    const defaultHandler = createProjectContextHandler({ dashboardBaseUrl: 'http://127.0.0.1:18843' });
+    const overrideEvent = makeBootstrapEvent({
+      agentId: 't414-override-probe',
+      workspaceDir: '/home/jetson/.openclaw/workspace-t414-override-probe',
+      existingFiles: [],
+    });
+    overrideEvent.context.pluginConfig = { dashboardBaseUrl: 'http://127.0.0.1:18845' };
+    await defaultHandler(overrideEvent);
+    ok(calls.length >= 2 && calls.every(url => url.startsWith('http://127.0.0.1:18845/')),
+      'event pluginConfig overrides register-time pluginConfig');
+  } finally {
+    global.fetch = originalFetch;
+    if (originalBaseUrl === undefined) delete process.env.FLOWBOARD_BASE_URL;
+    else process.env.FLOWBOARD_BASE_URL = originalBaseUrl;
+    if (originalApi === undefined) delete process.env.FLOWBOARD_API;
+    else process.env.FLOWBOARD_API = originalApi;
+  }
+}
+
 async function testContextFilePostRejectsOverwrite() {
   section('T-237: POST /files/context rejects overwrite');
 
@@ -796,6 +872,7 @@ async function main() {
     await testHookTaskStateComesFromTasksApi();
     await testHookTasksApiFailureBlocksTaskInference();
     await testHookStatusApiTransientFailureIsUnknownNotNone();
+    await testHookUsesPluginDashboardConfig();
     await testContextFilePostRejectsOverwrite();
   } finally {
     await cleanup();

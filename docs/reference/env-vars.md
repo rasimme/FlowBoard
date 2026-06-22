@@ -9,7 +9,8 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_PORT` | `18790` | server, hook | TCP port the dashboard binds to. Hook reads it to call the local API. |
 | `PORT` | `18790` | hzl-service | **Legacy fallback** in `hzl-service.js` for the on-complete hook callback URL. `FLOWBOARD_PORT` takes precedence. Kept for backwards compatibility with environments that pre-date the rename; new deployments should set `FLOWBOARD_PORT` only. |
 | `FLOWBOARD_HOST` | `127.0.0.1` | server | Bind address. Loopback-only by default. |
-| `FLOWBOARD_API` | `http://localhost:18790` | install-trigger, tests | Base URL consumers use to reach the dashboard. |
+| `FLOWBOARD_BASE_URL` | `http://localhost:<FLOWBOARD_PORT>` | server, hook, install-trigger | Full dashboard API base URL. Takes precedence over `FLOWBOARD_API` and port-only defaults for discovery snippets and the project-context hook. |
+| `FLOWBOARD_API` | `http://localhost:18790` | hook, install-trigger, tests | Legacy/full base URL consumers use to reach the dashboard. `FLOWBOARD_BASE_URL` takes precedence for new deployments; `/api/info` ignores this legacy variable and only advertises `FLOWBOARD_BASE_URL` or the runtime port. |
 | `FLOWBOARD_GITHUB_TOKEN` | empty | github | GitHub token for the gh-* overview widgets (private repos, higher rate limit). Takes precedence over `GITHUB_TOKEN` and over a token stored via `PUT /api/settings/github-token`. |
 | `GITHUB_TOKEN` | empty | github | Fallback GitHub token (same purpose, conventional name). |
 | `OPENCLAW_GATEWAY_PORT` (alias `GATEWAY_PORT`) | `18789` | server | Port of the OpenClaw gateway used for outbound wake events. |

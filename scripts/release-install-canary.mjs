@@ -2,7 +2,7 @@
 import { mkdtempSync, readFileSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +127,30 @@ function validateArtifact(packageDir, packedFiles) {
   }
 }
 
+function validatePluginRegistration(packageDir, extensions) {
+  const entryPath = path.join(packageDir, extensions[0].replace(/^\.\//, ''));
+  const script = `
+    const mod = await import(${JSON.stringify(pathToFileURL(entryPath).href)});
+    const plugin = mod.default;
+    if (!plugin || typeof plugin.register !== 'function') {
+      throw new Error('native plugin entry must default-export an object with register(api)');
+    }
+    const hooks = [];
+    plugin.register({
+      pluginConfig: { dashboardPort: 18844 },
+      registerHook(events, handler, opts) {
+        hooks.push({ events, handlerType: typeof handler, name: opts?.name });
+      },
+    });
+    const hook = hooks.find(h => h.events === 'agent:bootstrap' && h.name === 'project-context');
+    if (!hook) throw new Error('native plugin entry did not register project-context agent:bootstrap hook');
+    if (hook.handlerType !== 'function') throw new Error('project-context hook handler must be a function');
+  `;
+  run(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: packageDir,
+  });
+}
+
 function installArtifact(openclaw, tarball) {
   run(openclaw, ['plugins', 'install', tarball, '--force'], {
     env: createCanaryEnv('artifact-home'),
@@ -172,6 +196,7 @@ try {
   const { tarball, files } = packArtifact();
   const packageDir = extractArtifact(tarball);
   validateArtifact(packageDir, files);
+  validatePluginRegistration(packageDir, readJson(path.join(packageDir, 'package.json')).openclaw.extensions);
   installArtifact(openclaw, tarball);
   console.log('release install canary ok');
 } finally {

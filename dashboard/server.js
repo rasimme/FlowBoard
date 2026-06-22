@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
+const { renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
 
 const app = express();
 const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
@@ -1167,10 +1168,7 @@ try {
 } catch { /* version stays 'unknown' */ }
 
 function renderExternalTriggerSnippet(content) {
-  const port = String(PORT);
-  return String(content || '')
-    .replace(/http:\/\/localhost:18790/g, `http://localhost:${port}`)
-    .replace(/http:\/\/127\.0\.0\.1:18790/g, `http://127.0.0.1:${port}`);
+  return renderSnippetBaseUrl(content, resolveDashboardBaseUrl({ dashboardPort: PORT }, process.env, { includeLegacyApi: false }));
 }
 
 app.get('/api/info', (req, res) => {
@@ -1185,7 +1183,7 @@ app.get('/api/info', (req, res) => {
   res.json({
     service: 'FlowBoard',
     version: _packageVersion,
-    api_base: `http://localhost:${PORT}`,
+    api_base: resolveDashboardBaseUrl({ dashboardPort: PORT }, process.env, { includeLegacyApi: false }),
     endpoints: {
       health:    '/api/health',
       info:      '/api/info',

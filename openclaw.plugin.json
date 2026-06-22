@@ -1,7 +1,7 @@
 {
   "id": "flowboard",
   "name": "FlowBoard",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "Project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "enabledByDefault": false,
   "activation": {
@@ -20,7 +20,12 @@
         "type": "number",
         "minimum": 1,
         "maximum": 65535,
-        "description": "Optional dashboard port when FlowBoard is launched by an external supervisor."
+        "description": "Optional dashboard port the project-context hook uses when dashboardBaseUrl is not set."
+      },
+      "dashboardBaseUrl": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Optional dashboard API base URL for the project-context hook, for example http://localhost:18843."
       }
     }
   },
@@ -32,7 +37,12 @@
     },
     "dashboardPort": {
       "label": "Dashboard Port",
-      "help": "Optional dashboard port metadata for local deployments. FlowBoard still reads its runtime port from the service environment.",
+      "help": "Optional local dashboard port for the project-context hook when the service does not run on 18790.",
+      "advanced": true
+    },
+    "dashboardBaseUrl": {
+      "label": "Dashboard Base URL",
+      "help": "Optional full base URL for the project-context hook. Prefer this for proxy, tunnel, or non-localhost setups.",
       "advanced": true
     }
   },
