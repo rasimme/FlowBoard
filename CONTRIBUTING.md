@@ -113,7 +113,12 @@ npm run release:check
 ```
 
 That gate includes privacy scanning, plugin packaging lint, the built-artifact
-OpenClaw install canary, dashboard tests, and the dashboard build.
+ClawPack pack/validate/dry-run check, OpenClaw install canary, dashboard tests,
+and the dashboard build.
+
+Publish the ClawPack tarball produced by `clawhub package pack`, not the local
+folder or GitHub source directly. The release gate validates that packed path so
+the latest ClawHub version does not regress to a legacy ZIP artifact.
 
 After publishing to ClawHub, run the live registry canary once:
 

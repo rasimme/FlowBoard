@@ -9,6 +9,7 @@
     "setup": "node scripts/setup.mjs",
     "plugin:lint": "node scripts/plugin-lint.mjs",
     "privacy:scan": "node scripts/privacy-scan.mjs",
+    "release:clawpack-gate": "node scripts/clawpack-gate.mjs",
     "release:install-canary": "node scripts/release-install-canary.mjs",
     "release:postpublish-canary": "node scripts/release-install-canary.mjs --clawhub",
     "release:check": "node scripts/release-check.mjs"

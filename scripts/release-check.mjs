@@ -5,6 +5,7 @@ const steps = [
   ['git', ['diff', '--check']],
   ['node', ['scripts/privacy-scan.mjs']],
   ['node', ['scripts/plugin-lint.mjs']],
+  ['node', ['scripts/clawpack-gate.mjs']],
   ['node', ['scripts/release-install-canary.mjs']],
   ['npm', ['run', 'build'], { cwd: 'dashboard' }],
   ['npm', ['test'], { cwd: 'dashboard' }]
