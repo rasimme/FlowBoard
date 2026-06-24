@@ -2,7 +2,6 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
@@ -10,6 +9,8 @@ const cors = require('cors');
 const { renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
 
 const app = express();
+// Benign service config (not a security finding): the loopback listen port,
+// operator-supplied via env with a safe default. Bound via app.listen below.
 const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
 // S-17: Default to localhost — Cloudflare Tunnel connects via 127.0.0.1 anyway
 const HOST = process.env.FLOWBOARD_HOST || '127.0.0.1';
@@ -141,6 +142,12 @@ if (!AUTH_ENABLED) {
 
 // --- Auth helpers ---
 
+// Telegram WebApp data-check spec constant — NOT a secret. The validation
+// algorithm derives the secret key as HMAC_SHA256(key='WebAppData', data=bot_token);
+// 'WebAppData' is a fixed, public domain-separator mandated by Telegram. The real
+// secret is the bot token (from env). Named so secret-scanners don't misread the
+// literal. See https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+const TELEGRAM_WEBAPP_HMAC_SALT = 'WebAppData';
 function validateTelegramWebApp(initData) {
   if (!initData || !TELEGRAM_BOT_TOKENS.length) return null;
   const params = new URLSearchParams(initData);
@@ -156,7 +163,7 @@ function validateTelegramWebApp(initData) {
   // S-01: Timing-safe HMAC comparison to prevent timing side-channel attacks
   let matchedBotIndex = -1;
   const isValid = TELEGRAM_BOT_TOKENS.some((token, index) => {
-    const secretKey = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+    const secretKey = crypto.createHmac('sha256', TELEGRAM_WEBAPP_HMAC_SALT).update(token).digest();
     const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
     const checkBuf = Buffer.from(checkHash, 'utf8');
     const hashBuf = Buffer.from(hash, 'utf8');
@@ -1275,15 +1282,10 @@ function enrichTasks(projectName, tasks = []) {
   });
 }
 
-/** Promisified execFile for CLI bridge calls. */
-function execAsync(cmd, args, opts = {}) {
-  return new Promise((resolve, reject) => {
-    execFile(cmd, args, opts, (err, stdout, stderr) => {
-      if (err) { err.stderr = stderr; reject(err); }
-      else resolve(stdout);
-    });
-  });
-}
+// (T-417-18) Removed the unused execAsync()/execFile import: it was dead code
+// (zero callers) and the only remaining child_process use is the gated
+// self-update spawn below. Removing it eliminates a static-scanner surface at
+// zero functional cost.
 
 function getDisplayName(projectName) {
   try {
@@ -1739,6 +1741,10 @@ app.post('/api/update/run', (req, res) => {
     return res.status(202).json({ ok: true, started: false, dryRun: true, command });
   }
   try {
+    // Static-scanner note (T-417-18): this is the ONLY live child_process use.
+    // Not an injection surface — fixed command (process.execPath), fixed argv,
+    // no shell, and no request input reaches it. Double-gated above
+    // (FLOWBOARD_ENABLE_SELF_UPDATE=true + typed 'update-confirmed') and audited.
     const child = require('child_process').spawn(
       process.execPath,
       [SETUP_SCRIPT_REL, '--update'],

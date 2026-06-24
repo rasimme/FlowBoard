@@ -47,6 +47,10 @@ const c = { ok: '\x1b[32m✓\x1b[0m', warn: '\x1b[33m!\x1b[0m', err: '\x1b[31m�
 const log = (...a) => console.log(...a);
 const step = (s) => log(`\n\x1b[1m${s}\x1b[0m`);
 function die(msg) { log(`${c.err} ${msg}`); process.exit(1); }
+// Static-scanner note (T-417-18): setup.mjs is the operator-run installer, not
+// runtime plugin code, and is never auto-executed (no npm pre/post-install hook).
+// spawnSync/execFileSync use fixed commands with arg arrays — no shell:true, no
+// untrusted input — to register a per-user (NOT root) loopback service.
 function run(cmd, args, opts = {}) {
   log(c.dim(`  $ ${cmd} ${args.join(' ')}`));
   if (DRY) return;

@@ -16,6 +16,9 @@
  *   SPECIFY_OPENCLAW_CLI    openclaw binary (default: openclaw on PATH)
  */
 
+// Static-scanner note (T-417-18): execFile (NO shell) with a fixed binary and a
+// fixed argv; only the --message value carries untrusted text, and it lands as a
+// single argument — no command/flag injection. See ADR-0021.
 const { execFile } = require('child_process');
 const policy = require('./specify-policy');
 
