@@ -87,6 +87,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `STUCK_NOTIFICATION_CHANNEL` | `telegram` | Legacy alias for `FLOWBOARD_NOTIFICATION_CHANNEL`, kept for existing stuck-task notification deployments. |
 | `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |
 | `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback. |
+| `FLOWBOARD_ENABLE_SELF_UPDATE` | `false` | Server only. When `true`, enables the in-dashboard self-update via `POST /api/update/run` (which requires typed confirmation from the UI). Defaults to disabled for safety; operators should explicitly set this to allow published installs to self-update. The CLI path (`node scripts/setup.mjs --update`) remains available regardless. See README § Updates (T-417-6). |
 | `FLOWBOARD_UPDATE_DRY` | unset | When set, `POST /api/update/run` returns 202 without spawning `setup.mjs --update` (no rebuild/restart). Used by tests for the in-dashboard self-update flow (T-353). |
 
 ## Hook-only

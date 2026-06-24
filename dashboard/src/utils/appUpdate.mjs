@@ -7,7 +7,7 @@
  * via the server, then waits for the new build to come back up.
  *
  * Server contract (server.js, T-353):
- *   GET  /api/update/status → { ok, running, installed, updateAvailable }
+ *   GET  /api/update/status → { ok, running, installed, updateAvailable, selfUpdateEnabled }
  *   POST /api/update/run    → 202 { ok, started, command } (rebuild+restart)
  *   GET  /api/info          → { version, ... }   (used to detect the new build)
  *   GET  /api/health        → { ok }             (used to detect "back up")
@@ -37,6 +37,7 @@ export async function fetchUpdateStatus({ fetchImpl = apiFetch } = {}) {
       running: data.running,
       installed: typeof data.installed === 'string' ? data.installed : null,
       updateAvailable: !!data.updateAvailable,
+      selfUpdateEnabled: data.selfUpdateEnabled !== false,
     };
   } catch {
     return null;
@@ -46,10 +47,14 @@ export async function fetchUpdateStatus({ fetchImpl = apiFetch } = {}) {
 /**
  * Trigger the rebuild+restart. Returns { ok, started, command } on success, or
  * { ok:false, error } on failure (network or non-2xx). Never throws.
+ * Requires { confirmation: 'update-confirmed' } in request body (T-417-6).
  */
 export async function runUpdate({ fetchImpl = apiFetch } = {}) {
   try {
-    const res = await fetchImpl(UPDATE_RUN_PATH, { method: 'POST', body: {} });
+    const res = await fetchImpl(UPDATE_RUN_PATH, {
+      method: 'POST',
+      body: { confirmation: 'update-confirmed' },
+    });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data?.ok === false) {
       return { ok: false, error: data?.error || `HTTP ${res.status}` };

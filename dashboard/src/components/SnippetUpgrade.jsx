@@ -96,7 +96,8 @@ export default function SnippetUpgrade() {
  *   - snippet chip + canvas pending → warn chip with a combined count
  *   - snippet chip only            → server chip unchanged
  *   - canvas pending only          → synthetic "Migration required" (warn)
- *   - app update available         → info chip "Update available · vX → vY"
+ *   - app update available         → info chip "Update available · vX -> vY"
+ *     only when FLOWBOARD_ENABLE_SELF_UPDATE=true
  *     (when migration work also exists, the warn chip keeps visual priority and
  *      gains a "· update available" suffix; the update section lives in the modal)
  *   - none of the above            → null (chip hidden)
@@ -104,7 +105,7 @@ export default function SnippetUpgrade() {
 export function resolveChip(snippetChip, canvasStatus, updateStatus) {
   const canvasCount = pendingProjects(canvasStatus).length;
   const conflictCount = conflictProjects(canvasStatus).length;
-  const updateAvailable = !!updateStatus?.updateAvailable;
+  const updateAvailable = !!updateStatus?.updateAvailable && updateStatus?.selfUpdateEnabled !== false;
 
   let base = null;
   if (snippetChip && canvasCount === 0) {

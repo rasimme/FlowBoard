@@ -10,9 +10,14 @@ After `openclaw plugins update flowboard` (or a `git pull`), the new source is o
 
 ## How it works
 
-- `GET /api/update/status` reports `{ running, installed, updateAvailable }` by comparing the running version against the on-disk package. It is **fail-silent**: if it can't determine status, it reports "no update" rather than erroring, so a detection hiccup never blocks the dashboard.
+- `GET /api/update/status` reports `{ running, installed, updateAvailable, selfUpdateEnabled }` by comparing the running version against the on-disk package and exposing whether the operator opted into in-dashboard updates. It is **fail-silent**: if it can't determine status, it reports "no update" rather than erroring, so a detection hiccup never blocks the dashboard.
 - `POST /api/update/run` shells out to a **fixed command** — `node scripts/setup.mjs --update` — not an arbitrary string, so the endpoint can't be coerced into running something else. `setup.mjs --update` reinstalls dependencies, rebuilds the UI, and restarts the service, leaving `.env` and data untouched.
-- The header **SnippetUpgrade** panel surfaces the "vX → vY" chip and drives the flow; the same `setup.mjs --update` is available from the CLI.
+- **Safety mechanism (T-417-6):** The endpoint requires two explicit signals:
+  1. **Environment variable:** `FLOWBOARD_ENABLE_SELF_UPDATE=true` must be set (defaults to disabled for safety).
+  2. **Request confirmation:** The request body must include `{ "confirmation": "update-confirmed" }`, so a bare POST cannot start an update.
+  - Without both signals, the endpoint returns 403 (disabled) or 400 (missing confirmation).
+  - The CLI path (`node scripts/setup.mjs --update`) bypasses both checks and remains available for operators.
+- The header **SnippetUpgrade** panel surfaces the "vX -> vY" chip and drives the flow only when self-update is enabled; the same `setup.mjs --update` is available from the CLI.
 
 ## Consequences
 

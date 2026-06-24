@@ -1677,14 +1677,29 @@ app.get('/api/update/status', (req, res) => {
   const running = _packageVersion;
   const installed = readInstalledVersion();
   const updateAvailable = !!installed && versionCheck.isNewer(installed, running);
-  res.json({ ok: true, running, installed, updateAvailable });
+  const selfUpdateEnabled = process.env.FLOWBOARD_ENABLE_SELF_UPDATE === 'true';
+  res.json({ ok: true, running, installed, updateAvailable, selfUpdateEnabled });
 });
 
 // POST /api/update/run — rebuild + restart via setup.mjs --update. Fixed command,
 // no request input. Detached so it survives this process being killed by the
 // restart; responds 202 immediately (the caller then polls /api/health +
 // /api/info for the new version). FLOWBOARD_UPDATE_DRY=1 skips the spawn (tests).
+// T-417-6: Self-update requires explicit intent: FLOWBOARD_ENABLE_SELF_UPDATE=true
+// environment variable plus typed confirmation in request body (confirmation field).
+// Defaults to disabled for safety; operators use setup.mjs --update CLI.
 app.post('/api/update/run', (req, res) => {
+  const enableUpdate = process.env.FLOWBOARD_ENABLE_SELF_UPDATE === 'true';
+  const confirmation = req.body?.confirmation;
+
+  if (!enableUpdate) {
+    return res.status(403).json({ ok: false, error: 'Self-update is disabled', hint: 'Enable via FLOWBOARD_ENABLE_SELF_UPDATE=true environment variable. For operator action, use: node scripts/setup.mjs --update' });
+  }
+
+  if (!confirmation || confirmation !== 'update-confirmed') {
+    return res.status(400).json({ ok: false, error: 'Missing or invalid confirmation', hint: 'Provide { "confirmation": "update-confirmed" } in request body' });
+  }
+
   const command = [process.execPath, SETUP_SCRIPT_REL, '--update'];
   if (process.env.FLOWBOARD_UPDATE_DRY) {
     return res.status(202).json({ ok: true, started: false, dryRun: true, command });

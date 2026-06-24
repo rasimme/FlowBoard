@@ -19,9 +19,13 @@ const jsonRes = (status, body) => ({ ok: status >= 200 && status < 300, status, 
 
 console.log('# fetchUpdateStatus');
 {
-  const f = async () => jsonRes(200, { ok: true, running: '5.0.0', installed: '5.1.0', updateAvailable: true });
+  const f = async () => jsonRes(200, { ok: true, running: '5.0.0', installed: '5.1.0', updateAvailable: true, selfUpdateEnabled: true });
   const s = await fetchUpdateStatus({ fetchImpl: f });
   ok(s && s.running === '5.0.0' && s.installed === '5.1.0' && s.updateAvailable === true, 'parses status');
+  ok(s && s.selfUpdateEnabled === true, 'parses selfUpdateEnabled=true');
+
+  const disabled = await fetchUpdateStatus({ fetchImpl: async () => jsonRes(200, { ok: true, running: '5.0.0', installed: '5.1.0', updateAvailable: true, selfUpdateEnabled: false }) });
+  ok(disabled && disabled.updateAvailable === true && disabled.selfUpdateEnabled === false, 'parses disabled self-update status');
 
   const noUpdate = await fetchUpdateStatus({ fetchImpl: async () => jsonRes(200, { ok: true, running: '5.0.0', installed: '5.0.0', updateAvailable: false }) });
   ok(noUpdate && noUpdate.updateAvailable === false, 'no-update status');
@@ -33,8 +37,16 @@ console.log('# fetchUpdateStatus');
 
 console.log('\n# runUpdate');
 {
-  const okRun = await runUpdate({ fetchImpl: async () => jsonRes(202, { ok: true, started: true, command: ['node', 'scripts/setup.mjs', '--update'] }) });
+  // T-417-6: Verify confirmation is sent in request body
+  let capturedBody = null;
+  const captureFetch = async (path, opts) => {
+    capturedBody = opts?.body;
+    return jsonRes(202, { ok: true, started: true, command: ['node', 'scripts/setup.mjs', '--update'] });
+  };
+
+  const okRun = await runUpdate({ fetchImpl: captureFetch });
   ok(okRun.ok === true && okRun.started === true && okRun.command.length === 3, '202 → ok/started/command');
+  ok(capturedBody && capturedBody.confirmation === 'update-confirmed', 'sends { confirmation: "update-confirmed" } in request body');
 
   const dry = await runUpdate({ fetchImpl: async () => jsonRes(202, { ok: true, started: false, dryRun: true, command: [] }) });
   ok(dry.ok === true && dry.started === false, 'dry-run → ok, not started');
@@ -44,6 +56,10 @@ console.log('\n# runUpdate');
 
   const netErr = await runUpdate({ fetchImpl: async () => { throw new Error('offline'); } });
   ok(netErr.ok === false && /offline/.test(netErr.error), 'network throw → {ok:false}');
+
+  // 400 response when server rejects confirmation (should be handled)
+  const confErr = await runUpdate({ fetchImpl: async () => jsonRes(400, { ok: false, error: 'Missing or invalid confirmation' }) });
+  ok(confErr.ok === false && /confirmation/.test(confErr.error), '400 confirmation error → {ok:false,error}');
 }
 
 console.log('\n# pollUntilUpdated');

@@ -150,14 +150,26 @@ Prefer the manual path? It's below.
 After `openclaw plugins update flowboard` the new plugin source is on disk but
 the running dashboard still serves the previous build. Two ways to apply it:
 
-- **From the dashboard (recommended).** The header **Update** panel
-  (SnippetUpgrade) detects the version mismatch and shows an *“Update available ·
-  vX → vY”* chip. Click **Update & restart** — it runs `setup.mjs --update`
+- **From the dashboard.** The header **Update** panel
+  (SnippetUpgrade) detects the version mismatch and shows an *"Update available -
+  vX -> vY"* chip only when self-update is explicitly enabled. Click
+  **Update & restart** — it sends an explicit request confirmation to
+  `POST /api/update/run`, which runs `setup.mjs --update`
   (reinstall deps + rebuild UI + restart the service, leaving your `.env` and
-  data untouched), then reloads the page onto the new build. Backed by
-  `GET /api/update/status` and `POST /api/update/run`.
-- **From the CLI.** `node scripts/setup.mjs --update` from the FlowBoard checkout
-  does the same rebuild + restart.
+  data untouched), then reloads the page onto the new build. **Safety:** The API
+  requires `FLOWBOARD_ENABLE_SELF_UPDATE=true` to be set
+  explicitly in the service configuration before the UI update button is active;
+  see below.
+- **From the CLI (operator action).** `node scripts/setup.mjs --update` from the
+  FlowBoard checkout does the same rebuild + restart without additional confirmation.
+  Recommended for automated deployments or operator-initiated updates.
+
+**Self-Update Safety (T-417-6).** In-dashboard updates are **disabled by default**
+for published installs. To enable them, set `FLOWBOARD_ENABLE_SELF_UPDATE=true` in
+your service environment (e.g., in `~/.openclaw/config/.env` or your systemd
+unit). The dashboard UI will then show the update button and send a typed
+request confirmation token with each update request. The CLI path (`setup.mjs --update`)
+requires no additional configuration and remains available as the direct operator action.
 
 > **Custom service or supervisor?** The in-UI update manages the standard per-user service — `ai.openclaw.flowboard-dashboard` (launchd) / `flowboard-dashboard` (systemd `--user`). If you run the dashboard under your own supervisor or a different label, don't use the in-UI update (it would collide on port 18790) — update with `node scripts/setup.mjs --update` from the checkout, or move your service to the standard label.
 

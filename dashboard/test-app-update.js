@@ -80,6 +80,7 @@ async function run() {
       OPENCLAW_WORKSPACE: path.join(tmp, 'workspace'), FLOWBOARD_PROJECTS_DIR: path.join(tmp, 'projects'),
       HZL_DB_PATH: path.join(tmp, 'fb.db'), NODE_ENV: 'test', TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_TOKENS: '',
       FLOWBOARD_UPDATE_DRY: '1', // never actually rebuild/restart during the test
+      FLOWBOARD_ENABLE_SELF_UPDATE: 'true', // enable for authorized path tests
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -96,11 +97,22 @@ async function run() {
       'updateAvailable matches isNewer(installed, running)');
     ok(st.body?.running === st.body?.installed && st.body?.updateAvailable === false,
       'fresh checkout: running == installed, no update available');
+    ok(st.body?.selfUpdateEnabled === true, 'status reports self-update enabled when env is true');
 
-    // run: dry-run returns 202 with the exact fixed command, no rebuild.
-    const rn = await fetchJson(base, 'POST', '/api/update/run', {});
+    // T-417-6: safety checks — missing confirmation returns 400
+    const noConf = await fetchJson(base, 'POST', '/api/update/run', {});
+    ok(noConf.status === 400 && noConf.body?.ok === false,
+      'POST /api/update/run without confirmation -> 400 (missing confirmation)');
+
+    // wrong confirmation returns 400
+    const wrongConf = await fetchJson(base, 'POST', '/api/update/run', { confirmation: 'wrong' });
+    ok(wrongConf.status === 400 && wrongConf.body?.ok === false,
+      'POST /api/update/run with wrong confirmation -> 400 (invalid confirmation)');
+
+    // correct confirmation + dry-run returns 202 with the exact fixed command, no rebuild.
+    const rn = await fetchJson(base, 'POST', '/api/update/run', { confirmation: 'update-confirmed' });
     ok(rn.status === 202 && rn.body?.ok === true && rn.body?.dryRun === true && rn.body?.started === false,
-      'POST /api/update/run (dry) -> 202 dryRun, not started');
+      'POST /api/update/run (confirmed, dry-run) -> 202 dryRun, not started');
     const cmd = rn.body?.command || [];
     ok(Array.isArray(cmd) && cmd[cmd.length - 2] === path.join('scripts', 'setup.mjs') && cmd[cmd.length - 1] === '--update',
       'run command is setup.mjs --update');
@@ -114,7 +126,45 @@ async function run() {
   }
 }
 
-run().then(() => {
+// T-417-6: Test disabled scenario (env var not set, should return 403)
+async function runDisabled() {
+  console.log('\n# /api/update/run — disabled (safety default)');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-update-disabled-'));
+  fs.mkdirSync(path.join(tmp, 'workspace/projects'), { recursive: true });
+  fs.mkdirSync(path.join(tmp, 'projects'), { recursive: true });
+  const base = `http://127.0.0.1:${PORT + 1}`;
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT,
+    env: {
+      ...process.env, FLOWBOARD_PORT: String(PORT + 1), FLOWBOARD_HOST: '127.0.0.1',
+      OPENCLAW_WORKSPACE: path.join(tmp, 'workspace'), FLOWBOARD_PROJECTS_DIR: path.join(tmp, 'projects'),
+      HZL_DB_PATH: path.join(tmp, 'fb.db'), NODE_ENV: 'test', TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_TOKENS: '',
+      FLOWBOARD_UPDATE_DRY: '1',
+      FLOWBOARD_ENABLE_SELF_UPDATE: '', // explicit false even if parent shell has it set
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await waitForServer(base, child);
+
+    const st = await fetchJson(base, 'GET', '/api/update/status');
+    ok(st.status === 200 && st.body?.selfUpdateEnabled === false,
+      'GET /api/update/status reports selfUpdateEnabled=false by default');
+
+    // disabled: returns 403 regardless of confirmation
+    const noEnv = await fetchJson(base, 'POST', '/api/update/run', { confirmation: 'update-confirmed' });
+    ok(noEnv.status === 403 && noEnv.body?.ok === false,
+      'POST /api/update/run without FLOWBOARD_ENABLE_SELF_UPDATE -> 403 (disabled)');
+    ok(noEnv.body?.error?.includes('disabled'), 'error message mentions disabled');
+    ok(typeof noEnv.body?.hint === 'string' && noEnv.body.hint.length > 0, 'provides remediation hint');
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise(r => setTimeout(r, 300));
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+run().then(() => runDisabled()).then(() => {
   console.log(`\n# results: ${pass} passed, ${fail} failed`);
   if (fail > 0) { console.log('# failures:'); failures.forEach(f => console.log(`#   - ${f}`)); process.exitCode = 1; }
 }).catch(e => { console.error('# fatal:', e.message); process.exitCode = 1; });

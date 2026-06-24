@@ -1,5 +1,6 @@
 node_modules/
 dashboard/node_modules/
+dashboard/node_modules
 
 # Runtime data — contains private project/task names
 dashboard/dashboard-data.json
