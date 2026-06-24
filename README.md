@@ -424,6 +424,9 @@ allowed user ids, and the public dashboard origin. For non-Cloudflare tunnels
 or any setup that does not add a trusted proxy header, set `AUTH_ALWAYS=true`
 so loopback-only development bypasses cannot apply to remote traffic.
 
+> See [`SECURITY.md`](SECURITY.md) for the full threat model and trust boundary
+> before exposing FlowBoard beyond localhost.
+
 ### Set up a tunnel
 
 Any tunnel works. Recommended: **Cloudflare Tunnel** (free, stable).
