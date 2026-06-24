@@ -105,6 +105,6 @@ The first two are pre-decided by environment variables: a request that passes th
 
 ## See also
 
-- [Agent Identity](agent-identity.md) — `agentId` is attribution within the auth boundary, not the auth boundary itself
+- [Agent Identity](agent-identity.md) — `agentId` is attribution within the auth boundary, not the auth boundary itself. Note that while *which* agent-id a local caller asserts is trust-on-write, **lease ownership of lifecycle operations is enforced server-side** (`NOT_OWNER` / `ALREADY_CLAIMED`): asserting another agent's id does not let a caller override that agent's active claim.
 - [ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md) — the dashboard's no-identity decision is what makes trust-on-write of `agentId` acceptable here
 - [Environment Variables](../reference/env-vars.md#authentication) — the auth-related env vars in one table
