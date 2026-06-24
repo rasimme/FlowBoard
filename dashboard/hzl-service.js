@@ -393,6 +393,14 @@ async function init(dbPath) {
     cache:  { path: cacheDbPath },
   });
 
+  // T-417-21: the cache DB holds the GitHub token and other settings at rest.
+  // Restrict the DB files to owner-only (0600) so a secret never sits world/
+  // group-readable. Best-effort: a no-op on filesystems without POSIX modes,
+  // and it never blocks startup.
+  for (const f of [eventsDbPath, cacheDbPath, `${eventsDbPath}-wal`, `${eventsDbPath}-shm`, `${cacheDbPath}-wal`, `${cacheDbPath}-shm`]) {
+    try { if (fs.existsSync(f)) fs.chmodSync(f, 0o600); } catch { /* best-effort */ }
+  }
+
   _eventStore       = new EventStore(datastore.eventsDb);
   _projectionEngine = new ProjectionEngine(datastore.cacheDb, datastore.eventsDb);
   _projectionEngine.register(new TasksCurrentProjector());

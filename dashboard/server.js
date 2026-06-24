@@ -3505,7 +3505,10 @@ app.put('/api/settings/github-token', (req, res) => {
   }
   fbMeta.setSetting('github_token', token.trim());
   github.clearCache(); // drop rate-limited/stale entries so the token applies now
-  res.json({ ok: true });
+  // T-417-21: be explicit that DB storage is plaintext-at-rest (owner-only file,
+  // but not encrypted) and that the env var is the preferred, higher-precedence
+  // path. The full secret store / encrypt-at-rest is v5.1.
+  res.json({ ok: true, warning: 'Stored unencrypted in the local FlowBoard database (owner-only file, 0600). For stronger at-rest protection, prefer the FLOWBOARD_GITHUB_TOKEN or GITHUB_TOKEN environment variable, which takes precedence over this stored value.' });
 });
 
 app.delete('/api/settings/github-token', (req, res) => {
