@@ -18,6 +18,12 @@ const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.join(process.env.HOME, 
 const OPENCLAW_HOME = path.resolve(WORKSPACE, '..');
 const SHARED_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(OPENCLAW_HOME, 'projects');
 const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : path.join(WORKSPACE, 'projects');
+// T-417-16: append-only destructive-action audit trail (ClawHub Excessive
+// Agency). Lives in a dot-dir under PROJECTS_DIR — outside any project dir,
+// skipped by the file tree/drift, and unreachable via the file read route.
+const { auditDestructive, resolveActor } = require('./audit-log.js');
+const AUDIT_DIR = path.join(PROJECTS_DIR, '.audit');
+const audit = (entry, req) => auditDestructive({ ...entry, actor: resolveActor(req) }, { dir: AUDIT_DIR });
 // LEGACY (T-161): file read by m003-active-project-to-db migration only;
 // flowboard_agents table is now the source of truth. No code writes this.
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
@@ -1488,6 +1494,9 @@ app.put('/api/projects/:name', (req, res) => {
   const lifecycle = require('./project-lifecycle.js');
   try {
     const project = lifecycle.updateProject(req.params.name, req.body || {}, { hzlService, fbMeta });
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'archived')) {
+      audit({ action: req.body.archived ? 'project.archive' : 'project.unarchive', project: req.params.name, target: req.params.name }, req);
+    }
     return res.json({ project });
   } catch (e) {
     if (e.code === 'VALIDATION_ERROR') return res.status(400).json({ error: e.message });
@@ -1546,6 +1555,7 @@ app.delete('/api/projects/:name', (req, res) => {
     } catch (e) { console.warn('[projects] clear-agent-refs:', e.message); }
     const response = { ok: true, archivedTaskCount: result.archivedTaskCount };
     if (result.warnings && result.warnings.length > 0) response.warnings = result.warnings;
+    audit({ action: 'project.hard-delete', project: req.params.name, target: req.params.name }, req);
     return res.json(response);
   } catch (e) {
     if (e.code === 'NOT_FOUND')      return res.status(404).json({ error: e.message });
@@ -1574,6 +1584,7 @@ app.post('/api/projects/:name/restore', (req, res) => {
     const result = lifecycle.restoreProject(req.params.name, { fbMeta, projectsDir: PROJECTS_DIR });
     const response = { ok: true, restoredFrom: result.restoredFrom };
     if (result.warnings && result.warnings.length > 0) response.warnings = result.warnings;
+    audit({ action: 'project.restore', project: req.params.name, target: req.params.name }, req);
     return res.json(response);
   } catch (e) {
     if (e.code === 'NOT_FOUND') return res.status(404).json({ error: e.message });
@@ -1713,6 +1724,7 @@ app.post('/api/update/run', (req, res) => {
       { cwd: REPO_ROOT, detached: true, stdio: 'ignore', env: updateSpawnEnv(process.env, process.execPath) }
     );
     child.unref();
+    audit({ action: 'self-update.run', project: null, target: 'setup.mjs --update' }, req);
     res.status(202).json({ ok: true, started: true, command });
   } catch (err) {
     console.error('[update/run]', err);
@@ -2071,6 +2083,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 app.delete('/api/projects/:name/tasks/trash', (req, res) => {
   try {
     const result = hzlService.emptyTrash(req.params.name);
+    audit({ action: 'trash.empty', project: req.params.name, target: `removed:${result.removed}` }, req);
     return res.json({ ok: true, removed: result.removed, failed: result.failed });
   } catch (err) {
     console.error('[api]', err);
@@ -2119,6 +2132,7 @@ app.delete('/api/projects/:name/tasks/:id', (req, res) => {
     hzlService.setSpecLink(req.params.name, id, null);
   }
 
+  audit({ action: req.query.mode === 'all' ? 'task.hard-delete-cascade' : 'task.hard-delete', project: req.params.name, target: req.params.id }, req);
   return res.json({ ok: true });
 });
 
@@ -2599,7 +2613,9 @@ app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
 // DELETE /api/projects/:name/canvas/notes/batch (MUST be before :id route)
 app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
   try {
-    canvasBackend(req.params.name).canvasDeleteNotesBatch(req.params.name, (req.body || {}).noteIds);
+    const noteIds = (req.body || {}).noteIds;
+    canvasBackend(req.params.name).canvasDeleteNotesBatch(req.params.name, noteIds);
+    audit({ action: 'canvas.notes-batch-delete', project: req.params.name, target: `count:${Array.isArray(noteIds) ? noteIds.length : 0}` }, req);
     res.status(204).end();
   } catch (err) {
     sendCanvasError(res, err);
@@ -2610,6 +2626,7 @@ app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
 app.delete('/api/projects/:name/canvas/notes/:id', (req, res) => {
   try {
     canvasBackend(req.params.name).canvasDeleteNote(req.params.name, req.params.id);
+    audit({ action: 'canvas.note-delete', project: req.params.name, target: req.params.id }, req);
     res.json({ ok: true });
   } catch (err) {
     sendCanvasError(res, err);
@@ -2629,6 +2646,7 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
 app.delete('/api/projects/:name/canvas/connections', (req, res) => {
   try {
     canvasBackend(req.params.name).canvasDeleteConnection(req.params.name, req.body);
+    audit({ action: 'canvas.connection-delete', project: req.params.name, target: null }, req);
     res.json({ ok: true });
   } catch (err) {
     sendCanvasError(res, err);
