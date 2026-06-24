@@ -117,6 +117,11 @@ function flowboardNotificationDelivery() {
   };
 }
 const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
+// S-13 (T-417-20): the LOCAL_HOSTNAME LAN bypass is opt-in. Even on a 0.0.0.0
+// bind it stays OFF unless the operator explicitly accepts unauthenticated LAN
+// access via FLOWBOARD_ALLOW_LAN=true — so "local-first" stays loopback-only by
+// default and the bypass can never be reached by setting LOCAL_HOSTNAME alone.
+const ALLOW_LAN = process.env.FLOWBOARD_ALLOW_LAN === 'true';
 const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
 
 // S-03: Reject weak JWT secrets when auth is active
@@ -232,7 +237,7 @@ function telegramAuthMiddleware(req, res, next) {
   // be aware that LOCAL_HOSTNAME enables clear-text unauthenticated access from LAN IPs.
   const cfHost = (req.headers['host'] || '').split(':')[0];
   const localHostname = process.env.LOCAL_HOSTNAME || '';
-  if (localHostname && cfHost === localHostname) {
+  if (ALLOW_LAN && localHostname && cfHost === localHostname) {
     const srcIp = req.ip || req.connection?.remoteAddress || '';
     if (srcIp === '127.0.0.1' || srcIp === '::1' || srcIp.startsWith('192.168.') || srcIp.startsWith('10.') || srcIp.startsWith('::ffff:192.168.') || srcIp.startsWith('::ffff:10.')) {
       return next();
@@ -302,8 +307,26 @@ if (DASHBOARD_ORIGIN) {
     allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With']
   }));
 } else {
-  // No auth, local-only — permissive CORS for development
-  app.use(cors());
+  // No auth, local-first (S-13/T-417-20): restrict CORS to loopback origins so a
+  // malicious web page cannot drive the unauthenticated local API from a
+  // victim's browser. Non-browser callers (curl/agents) send no Origin and are
+  // unaffected; the dashboard itself is same-origin (loopback).
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      return cb(null, /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin));
+    },
+    credentials: true,
+  }));
+}
+
+// S-13 (T-417-20): make the LAN-bypass posture loud at boot — never silent.
+if (process.env.LOCAL_HOSTNAME) {
+  if (ALLOW_LAN) {
+    console.warn(`⚠️  S-13: LAN auth bypass ENABLED (FLOWBOARD_ALLOW_LAN=true) for host "${process.env.LOCAL_HOSTNAME}" — unauthenticated LAN access is permitted. Use only on a fully trusted LAN; prefer AUTH_ALWAYS=true.`);
+  } else {
+    console.warn(`⚠️  S-13: LOCAL_HOSTNAME="${process.env.LOCAL_HOSTNAME}" is set but the LAN auth bypass is DISABLED (set FLOWBOARD_ALLOW_LAN=true to enable). LAN clients must authenticate.`);
+  }
 }
 
 // Rate Limiting — max 60 Requests/Minute pro IP auf API-Routen
