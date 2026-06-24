@@ -1,6 +1,5 @@
 import { lazy } from 'react';
 
-const DesignTest = lazy(() => import('../pages/DesignTest.jsx'));
 const CanvasView = lazy(() => import('../pages/CanvasView.jsx'));
 const TasksView = lazy(() => import('../pages/TasksView.jsx'));
 const OverviewView = lazy(() => import('../pages/OverviewView.jsx'));
@@ -16,7 +15,6 @@ export const VIEWS = [
   { id: 'ideas', label: 'Ideas', component: CanvasView },
   { id: 'tasks', label: 'Tasks', component: TasksView },
   { id: 'files', label: 'Files', component: FilesView },
-  { id: 'design', label: 'Design', component: DesignTest, hidden: true },
 ];
 
 export function getView(id) {
