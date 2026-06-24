@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { renderNoteMarkdown } from '../../utils/canvasMarkdown.mjs';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, createElement } from 'react';
+import { renderNoteMarkdown, parseMarkdownHtml, renderParsedMarkdown } from '../../utils/canvasMarkdown.mjs';
 import MarkdownEditor from '../MarkdownEditor.jsx';
 
-const EMPTY_HINT = '<span style="opacity:0.3;font-size:11px">Double-click to add text…</span>';
+function EmptyHint() {
+  return createElement('span', {
+    style: { opacity: 0.3, fontSize: '11px' },
+  }, 'Double-click to add text…');
+}
 
 // T-345-9: scoped overrides for the inline (compact) MarkdownEditor on a card.
 // The global .markdown-editor / .cm-editor rules (styles/dashboard.css) force
@@ -86,7 +90,13 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
   // doesn't re-parse every note's text — only re-runs when this note's text
   // changes (T-355). The component still re-renders so live ports/position stay
   // correct during drag; only the parse is skipped.
-  const rendered = useMemo(() => renderNoteMarkdown(note.text || ''), [note.text]);
+  const parsedElements = useMemo(() => {
+    const html = renderNoteMarkdown(note.text || '');
+    if (!html) return null;
+    const parsed = parseMarkdownHtml(html);
+    return renderParsedMarkdown(createElement, parsed);
+  }, [note.text]);
+
   const classes = [
     'note',
     `color-${note.color || 'grey'}`,
@@ -157,9 +167,9 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
             // long notes), not from the card. The textarea editor is
             // unaffected (it is rendered in the other branch, fully interactive).
             style={{ pointerEvents: 'none' }}
-            // eslint-disable-next-line react/no-danger
-            dangerouslySetInnerHTML={{ __html: rendered || EMPTY_HINT }}
-          />
+          >
+            {parsedElements || createElement(EmptyHint)}
+          </div>
         )}
       </div>
       <div className="note-overflow-fade" aria-hidden="true" />

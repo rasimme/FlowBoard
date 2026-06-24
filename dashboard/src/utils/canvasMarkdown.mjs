@@ -72,3 +72,158 @@ export function renderNoteMarkdown(text) {
   if (inList === 'ul') out.push('</ul>'); if (inList === 'ol') out.push('</ol>');
   return out.join('');
 }
+
+const MARKDOWN_ELEMENT_TAGS = new Set(['strong', 'em', 'a', 'ul', 'ol', 'li']);
+const MARKDOWN_ATTRS_BY_TAG = {
+  a: new Set(['href', 'target', 'rel']),
+};
+
+function decodeHtmlEntities(s) {
+  return String(s)
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
+}
+
+function safeParsedHref(rawHref) {
+  if (!rawHref) return '';
+  return /^https?:\/\//i.test(rawHref) ? rawHref : 'https://' + rawHref;
+}
+
+// Parse the limited HTML string produced by renderNoteMarkdown into a structured
+// representation for React rendering. Unknown tags are treated as text so this
+// parser is not another generic HTML injection surface.
+export function parseMarkdownHtml(html) {
+  if (!html) return [];
+
+  const elements = [];
+  let i = 0;
+  let elementKey = 0;
+
+  // Simple HTML parser that builds React-compatible structure
+  function parseNode() {
+    if (i >= html.length) return null;
+
+    // Text node
+    if (html[i] !== '<') {
+      const nextTag = html.indexOf('<', i);
+      const text = nextTag === -1 ? html.slice(i) : html.slice(i, nextTag);
+      i += text.length;
+      return text.length > 0 ? decodeHtmlEntities(text) : null;
+    }
+
+    // Tag
+    const tagEnd = html.indexOf('>', i);
+    if (tagEnd === -1) {
+      i = html.length;
+      return null;
+    }
+
+    const tagContent = html.slice(i + 1, tagEnd);
+
+    // Self-closing <br>
+    if (tagContent === 'br') {
+      i = tagEnd + 1;
+      return { type: 'br', key: `mk-${elementKey++}` };
+    }
+
+    // Opening tag with optional attributes
+    const tagMatch = tagContent.match(/^([a-z]+)([\s\S]*)$/i);
+    if (!tagMatch) {
+      i = tagEnd + 1;
+      return null;
+    }
+
+    const tagName = tagMatch[1].toLowerCase();
+    const attrStr = tagMatch[2].trim();
+
+    if (!MARKDOWN_ELEMENT_TAGS.has(tagName)) {
+      const rawStart = i;
+      i = tagEnd + 1;
+      const closingTag = `</${tagName}>`;
+      const closeIdx = html.toLowerCase().indexOf(closingTag, i);
+      if (closeIdx !== -1) {
+        i = closeIdx + closingTag.length;
+        return decodeHtmlEntities(html.slice(rawStart, i));
+      }
+      return decodeHtmlEntities(html.slice(rawStart, tagEnd + 1));
+    }
+
+    // Parse only the attributes emitted by renderNoteMarkdown.
+    const attrs = {};
+    const allowedAttrs = MARKDOWN_ATTRS_BY_TAG[tagName] || new Set();
+    if (attrStr) {
+      const attrRegex = /(\w+)="([^"]*)"/g;
+      let match;
+      while ((match = attrRegex.exec(attrStr)) !== null) {
+        const attrName = match[1];
+        if (!allowedAttrs.has(attrName)) continue;
+        attrs[attrName] = decodeHtmlEntities(match[2]);
+      }
+    }
+    if (tagName === 'a' && attrs.href) {
+      attrs.href = safeParsedHref(attrs.href);
+      attrs.target = attrs.target || '_blank';
+      attrs.rel = attrs.rel || 'noopener';
+    }
+
+    i = tagEnd + 1;
+
+    // Find closing tag and collect children
+    const children = [];
+    const closingTag = `</${tagName}>`;
+    while (i < html.length) {
+      if (html.slice(i, i + closingTag.length) === closingTag) {
+        i += closingTag.length;
+        break;
+      }
+      const child = parseNode();
+      if (child !== null) {
+        children.push(child);
+      }
+    }
+
+    return {
+      type: 'element',
+      tagName,
+      attrs,
+      children,
+      key: `mk-${elementKey++}`,
+    };
+  }
+
+  while (i < html.length) {
+    const node = parseNode();
+    if (node !== null) elements.push(node);
+  }
+
+  return elements;
+}
+
+// Render parsed markdown nodes to React elements.
+// Pass React.createElement as the first argument.
+export function renderParsedMarkdown(createElement, nodes) {
+  if (!nodes || !nodes.length) return null;
+
+  function renderNode(node) {
+    if (typeof node === 'string') {
+      return node;
+    }
+
+    if (node.type === 'br') {
+      return createElement('br', { key: node.key });
+    }
+
+    if (node.type === 'element') {
+      const { tagName, attrs, children, key } = node;
+      const renderedChildren = children.map(renderNode);
+      return createElement(tagName, { key, ...attrs }, ...renderedChildren);
+    }
+
+    return null;
+  }
+
+  const rendered = nodes.map(renderNode).filter(Boolean);
+  return rendered.length === 1 ? rendered[0] : rendered;
+}

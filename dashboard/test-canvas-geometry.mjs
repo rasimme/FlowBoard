@@ -25,7 +25,7 @@ import {
   panToCenterWorld, centerViewOnNote,
 } from './src/utils/canvasGeometry.mjs';
 import { getConnectedComponent, getAllClusters } from './src/utils/canvasGraph.mjs';
-import { escHtml, renderNoteMarkdown } from './src/utils/canvasMarkdown.mjs';
+import { escHtml, renderNoteMarkdown, parseMarkdownHtml, renderParsedMarkdown } from './src/utils/canvasMarkdown.mjs';
 
 let pass = 0;
 let fail = 0;
@@ -329,6 +329,122 @@ ok(renderNoteMarkdown('- a\n1. b') === '<ul><li>a</li></ul><ol><li>b</li></ol>',
   'switching list type closes the previous list');
 ok(renderNoteMarkdown('x\n\ny') === 'x<br><br>y', 'blank line renders as <br>');
 ok(renderNoteMarkdown('only') === 'only', 'single plain line has no trailing <br>');
+
+// =============================================================================
+section('markdown HTML parsing and React rendering (T-417-1 security hardening)');
+
+// Mock React.createElement for testing parsed markdown rendering
+function mockCreateElement(type, props, ...children) {
+  return {
+    type,
+    props: { ...props, children: children.length > 1 ? children : children[0] },
+  };
+}
+
+{
+  // Test that parseMarkdownHtml correctly parses the HTML
+  const html = '<strong>bold</strong>';
+  const parsed = parseMarkdownHtml(html);
+  ok(Array.isArray(parsed) && parsed.length === 1, 'parseMarkdownHtml returns an array');
+  ok(parsed[0].type === 'element' && parsed[0].tagName === 'strong', 'correctly parses strong tag');
+  ok(parsed[0].children.includes('bold'), 'correctly captures text content');
+}
+
+{
+  // Test rendering parsed markdown with mock createElement
+  const html = '<strong>bold</strong> and <em>italic</em>';
+  const parsed = parseMarkdownHtml(html);
+  const rendered = renderParsedMarkdown(mockCreateElement, parsed);
+  ok(Array.isArray(rendered), 'renderParsedMarkdown returns array for multiple elements');
+  ok(rendered.length === 3, 'correctly renders multiple elements');
+  ok(rendered[0].type === 'strong', 'first element is strong');
+  ok(rendered[2].type === 'em', 'third element is em');
+}
+
+{
+  // Test that links are properly parsed with attributes
+  const html = '<a href="https://example.com" target="_blank" rel="noopener">link</a>';
+  const parsed = parseMarkdownHtml(html);
+  const link = parsed[0];
+  ok(link.tagName === 'a', 'parses anchor tag');
+  ok(link.attrs.href === 'https://example.com', 'preserves href attribute');
+  ok(link.attrs.target === '_blank', 'preserves target attribute');
+  ok(link.attrs.rel === 'noopener', 'preserves rel attribute');
+}
+
+{
+  const html = renderNoteMarkdown('[site](example.com/a&b)');
+  const parsed = parseMarkdownHtml(html);
+  ok(parsed[0].attrs.href === 'https://example.com/a&b', 'decodes href entities before React rendering');
+}
+
+{
+  // Test that lists are properly parsed
+  const html = '<ul><li>item 1</li><li>item 2</li></ul>';
+  const parsed = parseMarkdownHtml(html);
+  ok(parsed[0].tagName === 'ul', 'parses ul tag');
+  ok(parsed[0].children.length === 2, 'correctly parses list items');
+  ok(parsed[0].children[0].tagName === 'li', 'list items are parsed as elements');
+}
+
+{
+  // Test that br tags are correctly parsed
+  const html = 'text<br>more text';
+  const parsed = parseMarkdownHtml(html);
+  ok(parsed.length === 3, 'parses text and br as separate nodes');
+  ok(parsed[1].type === 'br', 'br tag is parsed correctly');
+}
+
+{
+  // Verify XSS protection: malicious content remains escaped
+  const html = renderNoteMarkdown('[x](javascript:alert(1))');
+  ok(!/href="javascript:/i.test(html), 'renderNoteMarkdown does not emit javascript: hrefs');
+  const parsed = parseMarkdownHtml(html);
+  const link = parsed[0];
+  ok(link.attrs.href.startsWith('https://'), 'parsed link href is neutralized');
+}
+
+{
+  // Verify that dangerous HTML tags don't appear in parsed structure
+  const html = renderNoteMarkdown('<script>alert(1)</script>');
+  ok(!html.includes('<script'), 'renderNoteMarkdown escapes script tags');
+  const parsed = parseMarkdownHtml(html);
+  const hasScript = parsed.some(n => n.tagName === 'script');
+  ok(!hasScript, 'parseMarkdownHtml does not contain script tags');
+  ok(parsed[0] === '<script>alert(1)</script>', 'escaped script tag remains visible as text');
+}
+
+{
+  const parsed = parseMarkdownHtml('<script>alert(1)</script>');
+  const rendered = renderParsedMarkdown(mockCreateElement, parsed);
+  ok(rendered === '<script>alert(1)</script>', 'raw unknown tags render as text, not React elements');
+}
+
+{
+  const parsed = parseMarkdownHtml('<a href="javascript:alert(1)" onclick="alert(2)">link</a>');
+  const rendered = renderParsedMarkdown(mockCreateElement, parsed);
+  ok(rendered.type === 'a', 'raw anchor is still constrained to a link element');
+  ok(rendered.props.href === 'https://javascript:alert(1)', 'raw unsafe href is neutralized in parser');
+  ok(!Object.prototype.hasOwnProperty.call(rendered.props, 'onclick'), 'parser strips unallowlisted link attributes');
+}
+
+{
+  const parsed = parseMarkdownHtml('<span onmouseover="alert(1)">hover</span>');
+  const rendered = renderParsedMarkdown(mockCreateElement, parsed);
+  ok(rendered === '<span onmouseover="alert(1)">hover</span>', 'raw unknown element with handler renders as text');
+}
+
+{
+  // Round-trip test: markdown -> HTML -> parsed -> rendered should maintain content
+  const text = '**bold** and *italic* with [link](https://example.com)';
+  const html = renderNoteMarkdown(text);
+  const parsed = parseMarkdownHtml(html);
+  const rendered = renderParsedMarkdown(mockCreateElement, parsed);
+  ok(rendered.length > 0, 'round-trip produces rendered elements');
+  ok(rendered.some(r => r.type === 'strong'), 'round-trip preserves strong');
+  ok(rendered.some(r => r.type === 'em'), 'round-trip preserves em');
+  ok(rendered.some(r => r.type === 'a'), 'round-trip preserves links');
+}
 
 // =============================================================================
 section('centerViewOnNote (T-351 search-navigation)');
