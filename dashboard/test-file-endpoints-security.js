@@ -95,6 +95,13 @@ async function run() {
       'GET non-knowledge backup file with ?includeHidden=true → 200');
     ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('context/note.md')}`)).status === 200,
       'GET knowledge-layer .md still → 200 without includeHidden');
+    // A traversal that ends in a visible-looking name must NOT slip the allow-list
+    // (isEditorVisible runs on the raw path before resolution). Both plain and
+    // %2f-encoded forms must be rejected even without includeHidden.
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('context/../overview.json')}`)).status !== 200,
+      'GET traversal context/../overview.json → not 200 (allow-list not slipped)');
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/context%2f..%2foverview.json`)).status !== 200,
+      'GET %2f-encoded traversal → not 200 (allow-list not slipped)');
 
     // Legit in-repo symlink (PROJECT-RULES.md pattern) is non-knowledge → it now
     // requires includeHidden, but remains reachable (read capability preserved).

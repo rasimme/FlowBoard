@@ -141,8 +141,9 @@ secret value is written to logs.
 
 **At-rest note (honest):** if no env GitHub token is set, a token saved via
 `PUT /api/settings/github-token` is stored **unencrypted** in the local
-metadata DB (the same DB as project/task data). The DB files are created
-owner-only (`0600`), and the env var takes precedence, but the value is not
+metadata DB (the same DB as project/task data). The DB files are restricted to
+owner-only (`0600`) immediately after open (best-effort — a no-op on filesystems
+without POSIX modes), and the env var takes precedence, but the value is not
 encrypted at rest. A dedicated secret store / keychain is on the roadmap; the
 PUT endpoint returns this warning explicitly.
 

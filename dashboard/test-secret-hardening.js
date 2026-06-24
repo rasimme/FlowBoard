@@ -43,6 +43,16 @@ async function run() {
     const mode = fs.statSync(f).mode & 0o777;
     ok(mode === 0o600, `${path.basename(f)} is owner-only 0600 (got ${mode.toString(8)})`);
   }
+  // WAL/SHM siblings hold freshly-written secrets before checkpoint — they must
+  // also be 0600 (skip-if-absent: a clean checkpoint can remove them).
+  let walChecked = 0;
+  for (const f of [`${dbPath}-wal`, `${dbPath}-shm`, `${cacheDbPath}-wal`, `${cacheDbPath}-shm`]) {
+    if (!fs.existsSync(f)) continue;
+    walChecked++;
+    const mode = fs.statSync(f).mode & 0o777;
+    ok(mode === 0o600, `${path.basename(f)} is owner-only 0600 (got ${mode.toString(8)})`);
+  }
+  ok(walChecked > 0, `at least one WAL/SHM sibling existed and was checked (checked ${walChecked})`);
 
   // --- Part B: PUT github-token warns about unencrypted storage + env ---
   const tmpB = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-sectok-'));

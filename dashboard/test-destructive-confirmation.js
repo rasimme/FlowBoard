@@ -65,8 +65,14 @@ async function run() {
     await api(base, 'POST', `${P}/tasks`, { title: 'child', parentId: parent.id, status: 'open' });
     let r = await api(base, 'DELETE', `${P}/tasks/${parent.id}?mode=all`);
     ok(r.status === 400 && r.body?.code === 'CONFIRMATION_REQUIRED', 'tasks mode=all without confirmation → 400');
+    // typed: a VALID token for a DIFFERENT endpoint must NOT pass
+    r = await api(base, 'DELETE', `${P}/tasks/${parent.id}?mode=all`, { confirmation: 'empty-trash' });
+    ok(r.status === 400 && r.body?.code === 'CONFIRMATION_REQUIRED', 'tasks mode=all with WRONG token (empty-trash) → 400');
+    // token in the query string (not the body) must NOT pass
+    r = await api(base, 'DELETE', `${P}/tasks/${parent.id}?mode=all&confirmation=delete-task-cascade`);
+    ok(r.status === 400 && r.body?.code === 'CONFIRMATION_REQUIRED', 'tasks mode=all with token in query string → 400');
     r = await api(base, 'DELETE', `${P}/tasks/${parent.id}?mode=all`, { confirmation: 'delete-task-cascade' });
-    ok(r.status === 200, 'tasks mode=all with confirmation → 200');
+    ok(r.status === 200, 'tasks mode=all with correct confirmation → 200 (proves the wrong token did NOT delete)');
 
     // single-item delete stays UNGATED
     const solo = (await api(base, 'POST', `${P}/tasks`, { title: 'solo', status: 'open' })).body.task;
@@ -96,6 +102,19 @@ async function run() {
     ok(r.status === 400 && r.body?.code === 'CONFIRMATION_REQUIRED', 'connections delete without confirmation → 400');
     r = await api(base, 'DELETE', `${P}/canvas/connections`, { from: a.id, to: b.id, confirmation: 'delete-connections' });
     ok(r.status === 200, 'connections delete with confirmation → 200');
+
+    // Audit-log integration: the four gated deletes above must each have written
+    // a line to <PROJECTS_DIR>/.audit/destructive.log with the right action+actor.
+    const auditLog = path.join(tmp, 'projects', '.audit', 'destructive.log');
+    const entries = fs.existsSync(auditLog)
+      ? fs.readFileSync(auditLog, 'utf8').trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return {}; } })
+      : [];
+    const actions = new Set(entries.map(e => e.action));
+    ok(actions.has('task.hard-delete-cascade'), 'audit log recorded task.hard-delete-cascade');
+    ok(actions.has('trash.empty'), 'audit log recorded trash.empty');
+    ok(actions.has('canvas.notes-batch-delete'), 'audit log recorded canvas.notes-batch-delete');
+    ok(actions.has('canvas.connection-delete'), 'audit log recorded canvas.connection-delete');
+    ok(entries.length > 0 && entries.every(e => e.actor && e.ts), 'every audit entry has actor + ts');
   } finally {
     child.kill('SIGTERM');
     await new Promise(r => setTimeout(r, 300));

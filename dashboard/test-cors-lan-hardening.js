@@ -63,11 +63,17 @@ async function run() {
     const acaoEvil = evilRes.headers.get('access-control-allow-origin');
     ok(acaoEvil !== '*' && acaoEvil !== evil, `no-auth CORS does not allow a cross-site origin (acao=${acaoEvil})`);
 
-    // CORS: a loopback origin is still allowed (the dashboard itself).
-    const loop = 'http://127.0.0.1:9999';
-    const loopRes = await fetch(base + '/api/health', { headers: { Origin: loop } });
-    const acaoLoop = loopRes.headers.get('access-control-allow-origin');
-    ok(acaoLoop === loop, `no-auth CORS allows a loopback origin (acao=${acaoLoop})`);
+    // CORS: all three loopback origin forms are allowed (the dashboard itself).
+    for (const loop of ['http://127.0.0.1:9999', 'http://localhost:3000', 'http://[::1]:9999']) {
+      const acao = (await fetch(base + '/api/health', { headers: { Origin: loop } })).headers.get('access-control-allow-origin');
+      ok(acao === loop, `no-auth CORS allows loopback origin ${loop} (acao=${acao})`);
+    }
+
+    // CORS: near-miss look-alike origins an unanchored/substring check would wrongly allow must be DENIED.
+    for (const bad of ['http://127.0.0.1.evil.com', 'http://localhost.evil.com', 'http://evil.com']) {
+      const acao = (await fetch(base + '/api/health', { headers: { Origin: bad } })).headers.get('access-control-allow-origin');
+      ok(acao !== '*' && acao !== bad, `no-auth CORS denies look-alike origin ${bad} (acao=${acao})`);
+    }
 
     // Non-browser request (no Origin) still works.
     ok((await fetch(base + '/api/health')).status === 200, 'no-Origin request still served');

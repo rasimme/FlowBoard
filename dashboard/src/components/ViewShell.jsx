@@ -14,15 +14,6 @@ export default function ViewShell() {
     if (el) setContainer(el);
   }, []);
 
-  useLayoutEffect(() => {
-    const path = window.location.pathname;
-    if (path === '/design-test') {
-      window.dispatchEvent(new CustomEvent('appstate:change', {
-        detail: { currentTab: 'design' }
-      }));
-    }
-  }, []);
-
   // Telegram theme: apply once on mount and re-apply on themeChanged events.
   useEffect(() => {
     applyTelegramTheme();

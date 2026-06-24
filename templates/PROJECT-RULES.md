@@ -52,12 +52,13 @@ Dashboard server manages all data. **Always use API for mutations:**
 |--------|----------|
 | Create task | `POST /api/projects/:name/tasks` `{title, priority}` |
 | Update task | `PUT /api/projects/:name/tasks/:id` `{status, priority, ...}` |
-| Delete task | `DELETE /api/projects/:name/tasks/:id[?mode=all\|keep-children]` |
+| Delete task | `DELETE /api/projects/:name/tasks/:id[?mode=all\|keep-children]` — `?mode=all` needs body `{confirmation:"delete-task-cascade"}` |
+| Empty trash | `DELETE /api/projects/:name/tasks/trash` `{confirmation:"empty-trash"}` |
 | Create spec | `POST /api/projects/:name/specs/:taskId` `{content?}` |
 | Read tasks | `GET /api/projects/:name/tasks` |
 | Canvas notes | `GET/POST/PUT/DELETE /api/projects/:name/canvas/notes[/:id]` |
-| Canvas connections | `GET/POST/DELETE /api/projects/:name/canvas/connections[/:id]` |
-| Batch delete notes | `DELETE /api/projects/:name/canvas/notes/batch` `{noteIds:[...]}` |
+| Canvas connections | `GET/POST /api/projects/:name/canvas/connections`; `DELETE` needs `{from, to, confirmation:"delete-connections"}` |
+| Batch delete notes | `DELETE /api/projects/:name/canvas/notes/batch` `{noteIds:[...], confirmation:"delete-notes"}` |
 | Promote notes | `POST /api/projects/:name/canvas/promote` `{notes, connections, mode}` |
 
 **Reading tasks:** Use `GET /api/projects/:name/tasks`. Bootstrap may include an `Operational Task State` section from the same API, but the API is canonical. Never read `tasks.json` directly and never derive current task work from `PROJECT.md` or `SESSIONS.md`.

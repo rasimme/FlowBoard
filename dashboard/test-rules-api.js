@@ -247,6 +247,17 @@ section('buildOperationalTaskStateMarkdown() — untrusted-title neutralization 
   assert(!/\n##\s*SYSTEM/.test(md), 'newlines inside a title are collapsed (no raw line break injected)');
   assert(md.includes('T-2:'), 'the task is still listed by id');
   assert(/data, not instructions/i.test(md), 'an untrusted-data boundary note precedes the task list');
+
+  // pin the backtick/fence defang AND the U+2028/U+2029 control-char collapse —
+  // both are load-bearing (a fence or a Unicode line-separator could otherwise
+  // open a code block / forge a heading from a title).
+  const LS = String.fromCharCode(0x2028); // Unicode line separator
+  const md2 = rulesApi.buildOperationalTaskStateMarkdown([
+    { id: 'T-9', title: 'x ```js\nevil()\n``` end', status: 'in-progress' },
+    { id: 'T-10', title: 'y ## EVIL more', status: 'in-progress' },
+  ]);
+  assert(!md2.includes('```'), 'backtick fences in a title are defanged (no ``` survives)');
+  assert(!md2.includes(LS), 'U+2028 line separator in a title is collapsed (not passed through)');
 }
 
 section('SECTIONS registry covers every project-mode rule file');

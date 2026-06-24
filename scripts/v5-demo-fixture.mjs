@@ -98,12 +98,13 @@ async function clearProjectTasks(project) {
   const children = tasks.filter((task) => task.parentId);
 
   for (const task of parents) {
-    await request(`/api/projects/${project}/tasks/${task.id}?mode=all`, { method: 'DELETE' }).catch(() => null);
+    // T-417-23: cascade delete requires the typed confirmation token.
+    await request(`/api/projects/${project}/tasks/${task.id}?mode=all`, { method: 'DELETE', body: JSON.stringify({ confirmation: 'delete-task-cascade' }) }).catch(() => null);
   }
   for (const task of children) {
     await request(`/api/projects/${project}/tasks/${task.id}`, { method: 'DELETE' }).catch(() => null);
   }
-  await request(`/api/projects/${project}/tasks/trash`, { method: 'DELETE' }).catch(() => null);
+  await request(`/api/projects/${project}/tasks/trash`, { method: 'DELETE', body: JSON.stringify({ confirmation: 'empty-trash' }) }).catch(() => null);
 }
 
 async function createTask({ title, priority = 'medium', status = 'backlog', parentId = null }) {
