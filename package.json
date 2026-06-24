@@ -69,6 +69,7 @@
     "!docs/plans/**",
     "!docs/reviews/**",
     "!docs/dev/**",
+    "!docs/project-mode/legacy/**",
     "!dashboard/projects/**",
     "!dashboard/tools/**",
     "!dashboard/test-workspace*/**",

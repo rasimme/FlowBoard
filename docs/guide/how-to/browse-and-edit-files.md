@@ -4,11 +4,11 @@ The Files page lets you read and edit a project's knowledge without dropping to 
 
 ## Browse
 
-The file tree shows the project's Markdown by default — `PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, and the `specs/` and `context/` folders. Select a file to preview it (Markdown is rendered). The view auto-refreshes; if a file changed underneath you while editing, a conflict banner warns you before you overwrite.
+The file tree shows the project's canonical knowledge Markdown by default — `PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, plus one-level `specs/*.md` and `context/*.md` files. Select a file to preview it (Markdown is rendered). The view auto-refreshes; if a file changed underneath you while editing, a conflict banner warns you before you overwrite.
 
 ### Show hidden / operational files
 
-Non-Markdown and operational files (JSON, `.bak-*` backups, etc.) are **hidden by default** so the tree stays readable. Use the **Show hidden** toggle to reveal them — handy when you're inspecting state, but you usually don't need them.
+Operational files (JSON, `.bak-*` backups, migration leftovers, custom root Markdown, and nested archives) are **hidden by default** so the tree stays readable and focused on the knowledge layer. Use the **Show hidden** toggle to reveal them — handy when you're inspecting state or opening older custom `.md` files, but you usually don't need it.
 
 ## Edit
 

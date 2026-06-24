@@ -66,6 +66,8 @@ async function run() {
     fs.mkdirSync(path.join(dir, 'context'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'specs'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'PROJECT.md'), '# alpha');
+    fs.writeFileSync(path.join(dir, 'DECISIONS.md'), '# decisions');
+    fs.writeFileSync(path.join(dir, 'DEPLOYMENT.md'), '# deployment');
     fs.writeFileSync(path.join(dir, 'overview.json'), '{}');
     fs.writeFileSync(path.join(dir, 'tasks.tmp'), '');
     fs.writeFileSync(path.join(dir, 'tasks.json.migrated'), '{}');
@@ -78,8 +80,10 @@ async function run() {
     ok(r.status === 200, 'files endpoint 200');
     let names = flatten((r.body && r.body.tree) || []).filter(n => n.type === 'file').map(n => n.path);
     ok(names.includes('PROJECT.md'), 'PROJECT.md visible');
+    ok(names.includes('DECISIONS.md'), 'DECISIONS.md visible');
     ok(names.includes('context/note.md'), 'context/note.md visible');
     ok(names.includes('specs/T-1-x.md'), 'specs/T-1-x.md visible');
+    ok(!names.includes('DEPLOYMENT.md'), 'custom root Markdown hidden by default');
     ok(!names.includes('overview.json'), 'overview.json hidden by default');
     ok(!names.includes('tasks.tmp'), 'tasks.tmp hidden by default');
     ok(!names.includes('tasks.json.migrated'), 'tasks.json.migrated hidden');
@@ -91,6 +95,7 @@ async function run() {
     const byPath = Object.fromEntries(all.map(n => [n.path, n]));
     ok(!!byPath['overview.json'] && byPath['overview.json'].hidden === true, 'includeHidden reveals overview.json with hidden:true');
     ok(!!byPath['PROJECT.md'] && byPath['PROJECT.md'].hidden === false, 'PROJECT.md flagged hidden:false');
+    ok(!!byPath['DEPLOYMENT.md'] && byPath['DEPLOYMENT.md'].hidden === true, 'includeHidden reveals custom root Markdown with hidden:true');
     ok(!!byPath['specs/_index.json'] && byPath['specs/_index.json'].hidden === true, 'includeHidden reveals specs/_index.json');
   } catch (err) {
     fail++; failures.push(err.message); console.log(`  not ok - ${err.message}`);

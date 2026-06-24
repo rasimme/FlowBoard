@@ -311,6 +311,18 @@ ok(renderNoteMarkdown('see www.foo.de now').includes('<a href="https://www.foo.d
   ok(!/href="javascript:/i.test(html), 'javascript: scheme is not emitted as a raw href');
   ok(/href="https:\/\/javascript:/i.test(html), 'non-http(s) scheme is neutralized under https://');
 }
+{
+  const html = renderNoteMarkdown('[x](data:text/html,<script>alert(1)</script>)');
+  ok(!/href="data:/i.test(html), 'data: scheme is not emitted as a raw href');
+  ok(/href="https:\/\/data:/i.test(html), 'data: scheme is neutralized under https://');
+  ok(!/<script/i.test(html), 'script payload inside URL stays escaped');
+}
+{
+  const html = renderNoteMarkdown('[<img src=x onerror=alert(1)>](https://safe.test)');
+  ok(!/<img/i.test(html), 'HTML in link label stays escaped');
+  ok(!/<[^>]+\sonerror=/i.test(html), 'event handler text in link label is not emitted as an attribute');
+  ok(html.includes('&lt;img'), 'escaped HTML label remains visible as text');
+}
 ok(renderNoteMarkdown('- a\n- b') === '<ul><li>a</li><li>b</li></ul>', 'dash list becomes <ul>');
 ok(renderNoteMarkdown('1. a\n2. b') === '<ol><li>a</li><li>b</li></ol>', 'numbered list becomes <ol>');
 ok(renderNoteMarkdown('- a\n1. b') === '<ul><li>a</li></ul><ol><li>b</li></ol>',

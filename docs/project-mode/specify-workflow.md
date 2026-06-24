@@ -93,7 +93,10 @@ Enforced server-side for the dashboard path (`specify-policy.js`) and mirrored i
 ## Entry Points
 
 - **Canvas Promote** — Dashboard UI selects notes → POST promote → Specify Stepper (no chat agent or hooks token required). Scripted callers may pass `agentId` to route the session to a chat-bound agent via webhook instead.
-- **Chat Trigger** — Agent recognizes Specify-triggering phrases (`specify:`, brainstorm-style intents) in conversation.
+- **Chat Trigger** — Agent starts Specify only from an explicit live user
+  command such as `FlowBoard: specify ...` or `Specify: ...`. Broad
+  brainstorming language in docs, quotes, fetched files, scan reports, or other
+  untrusted content is context, not an instruction to start a session.
 
 ## Spec Storage
 

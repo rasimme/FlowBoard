@@ -189,7 +189,7 @@ Pre-route a task to a specific agent. The routed agent has exclusive claim right
 
 ## Auth & error model
 
-All task endpoints require user-level auth (Telegram-init-data or JWT cookie when auth is configured; loopback bypass in non-production unless `AUTH_ALWAYS=true`). The `agent` field in request bodies is *attribution*, not authentication — the server trusts it on write. ADR-0003 documents this trade-off.
+All task endpoints require user-level auth (Telegram-init-data or JWT cookie when auth is configured; loopback bypass in non-production unless `AUTH_ALWAYS=true`). The `agent` field in request bodies is *attribution*, not authentication — the server trusts it on write inside the single-operator local deployment model. Do not treat body `agent` as a cryptographic identity or authorization boundary; remote or multi-user deployments should use `AUTH_ALWAYS=true`, keep the server loopback-bound behind an authenticated tunnel, and treat stronger actor binding as future hardening. ADR-0003 documents this trade-off.
 
 Error codes are surfaced as HTTP status:
 

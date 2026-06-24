@@ -30,7 +30,8 @@ const FORBIDDEN_PACKED_FILES = [
   /^dashboard\/tools\//,
   /^docs\/dev\//,
   /^docs\/plans\//,
-  /^docs\/reviews\//
+  /^docs\/reviews\//,
+  /^docs\/project-mode\/legacy\//
 ];
 
 const TEXT_PACK_EXTENSIONS = new Set([
@@ -42,6 +43,7 @@ const TEXT_PACK_EXTENSIONS = new Set([
   '.jsx',
   '.md',
   '.mjs',
+  '.plist',
   '.service',
   '.sh',
   '.txt',
@@ -68,6 +70,16 @@ const PACKED_SUSPICIOUS_PATTERNS = [
       'dashboard/server.js',
       'dashboard/snippets-doctor.js',
       'dashboard/specify-worker-openclaw.js'
+    ])
+  },
+  {
+    name: 'broad natural-language FlowBoard trigger',
+    pattern: /(?:Recognize project commands.*any natural phrasing|New project:|Neues Projekt:|brainstorm-style intents|"\s*Projekte\s*")/is,
+    allow: new Set([
+      // Vendored legacy snapshots are needed by snippets-doctor for byte-match
+      // migration of older AGENTS.md blocks. Active snippets/docs/templates must
+      // not teach these broad triggers.
+      'snippets/legacy/AGENTS-trigger.v2.md'
     ])
   }
 ];

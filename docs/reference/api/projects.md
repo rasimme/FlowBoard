@@ -35,7 +35,7 @@ Create a new project.
 
 ## `GET /api/projects/drift`
 
-Read-only listing of names that exist in the `flowboard_projects` metadata table or as a `projects/<name>/` filesystem dir but have no canonical HZL `project_created` event. An empty array means the system is consistent. See [ADR-0017](../../adr/0017-project-drift-and-heal.md) for the architectural context.
+Read-only operator listing of names that exist in the `flowboard_projects` metadata table or as a `projects/<name>/` filesystem dir but have no canonical HZL `project_created` event. An empty array means the system is consistent. This endpoint follows FlowBoard's normal auth model: loopback is trusted for the single-operator local deployment, and exposed deployments should use Telegram/JWT auth with `AUTH_ALWAYS=true`. See [ADR-0017](../../adr/0017-project-drift-and-heal.md) for the architectural context.
 
 **Response 200:** `{"drift": [{"name": "<slug>", "sources": ["metadata"|"filesystem", ...]}, ...]}`
 

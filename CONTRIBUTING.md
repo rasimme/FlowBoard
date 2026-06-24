@@ -130,6 +130,19 @@ node scripts/release-install-canary.mjs --clawhub flowboard@x.y.z
 This installs the published ClawHub artifact into a temporary `OPENCLAW_HOME`
 and catches registry/install-path drift that local package checks cannot see.
 
+For releases intended to change the ClawHub security-audit verdict, run a
+manual stored-report comparison before and after publishing:
+
+```bash
+node scripts/clawhub-scan-summary.mjs 5.0.3 x.y.z
+```
+
+The summary maps SkillSpector/ClawScan findings to the FlowBoard hardening
+phase meant to address them, so changes can be judged against the actual report
+instead of scanner folklore. It is intentionally a manual audit helper rather
+than a CI gate: stored ClawHub reports only exist after a submitted version has
+been scanned server-side.
+
 ## Code style
 
 - No semicolons (project convention)

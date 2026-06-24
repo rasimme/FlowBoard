@@ -103,7 +103,7 @@ function buildRulesManifest() {
   lines.push('- On any API error or when blocked → `error-handling`.');
   lines.push('- For activate/deactivate/list project commands → `commands`.');
   lines.push('');
-  lines.push('Legacy reference: the full monolithic ruleset is archived at `docs/project-mode/legacy/PROJECT-RULES.md` in the FlowBoard repo. Prefer the lazy-load sections above for targeted context.');
+  lines.push('Legacy reference: the old monolithic ruleset is archived in the source repo only, outside the install artifact. Prefer the lazy-load sections above for targeted context.');
   return lines.join('\n');
 }
 

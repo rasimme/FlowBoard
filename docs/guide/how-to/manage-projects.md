@@ -4,8 +4,8 @@ Each project is an isolated workspace with its own goal, tasks, specs, and conte
 
 ## Create, switch, rename
 
-- **Create:** use the sidebar's add control, or tell your agent “New project: my-app”.
-- **Switch / activate:** click a project in the sidebar, or say “Project: my-app”. Activating loads that project's context for agents. “End project” deactivates it.
+- **Create:** use the sidebar's add control, or tell your agent “FlowBoard: create project my-app”.
+- **Switch / activate:** click a project in the sidebar, or tell your agent “FlowBoard: activate project my-app”. Activating loads that project's context for agents. “FlowBoard: end project” deactivates it.
 - **Rename:** from the project's actions menu in the sidebar.
 - **Organize:** group projects into folders, and reorder them by dragging — or with the keyboard (focus a project, then move it; the dashboard announces the new position for screen readers).
 

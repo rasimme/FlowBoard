@@ -12,7 +12,7 @@ If a **Finish setup** or **Migration required** chip appears in the header, clic
 
 A *project* is a workspace with its own goal, tasks, specs, and context. Two ways to create one:
 
-- **Tell your agent:** “New project: my-app”. The agent calls the API, scaffolds the project files (`PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, `specs/`, `context/`), and registers it.
+- **Tell your agent:** “FlowBoard: create project my-app”. The agent calls the API, scaffolds the project files (`PROJECT.md`, `SESSIONS.md`, `DECISIONS.md`, `specs/`, `context/`), and registers it.
 - **From the dashboard:** use the project switcher in the sidebar.
 
 Activating a project is what loads its context for an agent — see [Manage projects](how-to/manage-projects.md).

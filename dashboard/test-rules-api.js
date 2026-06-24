@@ -138,7 +138,8 @@ section('buildRulesManifest()');
   }
 
   assert(manifest.includes('GET /api/projects'), 'manifest documents endpoint usage');
-  assert(manifest.includes('PROJECT-RULES.md'), 'manifest includes legacy pointer');
+  assert(manifest.includes('source repo only'), 'manifest marks legacy rules as source-only');
+  assert(!manifest.includes('docs/project-mode/legacy/PROJECT-RULES.md'), 'manifest does not point install artifacts at legacy rules');
 
   // T-296: action→section mapping so agents know what to load before acting.
   assert(manifest.includes('When to load what'), 'manifest carries the action→section mapping');

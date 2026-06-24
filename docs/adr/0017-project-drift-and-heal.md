@@ -54,7 +54,7 @@ The route surface is:
 - **`PROJECT.md` is now load-bearing as a marker.** Any dir under `projects/` without it will be ignored by the drift detector. This codifies an existing implicit convention from `_scaffoldFilesystem()` (which always writes `PROJECT.md`) into a system-level invariant. Tools and scripts that create project-shaped directories should write `PROJECT.md` first, then content — otherwise their dir is treated as "not a project."
 - **Heal does not undo deletions.** If `flowboard_deleted_projects` tombstones a name, heal throws `NOT_FOUND` rather than reviving it. Restoring a deleted project remains a manual operation (move from `projects/.trash/`, clear the tombstone, then `POST /api/projects`).
 - **A future change could fold heal back into createProject** as a `mode: "heal"` flag, but the current split keeps semantics legible: `POST /api/projects` always means "from nothing", `POST /api/projects/:name/heal` always means "from partial state." Mixing them would reintroduce the ambiguity this ADR exists to remove.
-- **The drift endpoint is intentionally read-only and unauthenticated like the other GETs.** Operators can poll it from monitoring. Writing the actual heal requires a POST, which is subject to the same auth as `POST /api/projects`.
+- **The drift endpoint is read-only operator metadata, not a public discovery API.** It follows FlowBoard's normal auth model: loopback is trusted for the single-operator local deployment, and non-loopback/production access should be behind Telegram/JWT auth (`AUTH_ALWAYS=true` when exposed). Writing the actual heal requires a POST, which is subject to the same auth as `POST /api/projects`.
 
 ## See also
 

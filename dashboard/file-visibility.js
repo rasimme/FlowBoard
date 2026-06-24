@@ -14,7 +14,11 @@
  * @returns {boolean} true if the file should appear in the editor by default
  */
 function isEditorVisible(relPath) {
-  return /\.md$/i.test(String(relPath || ''));
+  const normalized = String(relPath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (/^(PROJECT|SESSIONS|DECISIONS)\.md$/i.test(normalized)) return true;
+  if (/^context\/[^/]+\.md$/i.test(normalized)) return true;
+  if (/^specs\/[^/]+\.md$/i.test(normalized)) return true;
+  return false;
 }
 
 module.exports = { isEditorVisible };

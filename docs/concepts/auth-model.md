@@ -14,7 +14,11 @@ Auth on FlowBoard solves three problems with three different mechanisms, by desi
 
 **Mobile access via Telegram Mini App needs identity.** The dashboard works as a Telegram Mini App: the user opens it inside Telegram, Telegram embeds an HMAC-signed `initData` payload, FlowBoard verifies the HMAC against the bot's secret token and admits the request if the embedded user-id is in `ALLOWED_USER_IDS`. This gives strong identity proof — only Telegram can produce a valid HMAC for a given bot — without FlowBoard running its own auth UI.
 
-**External agents trust each other.** Agents on the same machine talking to each other (the project-context hook, cron sweepers, CLI tools) all hit `localhost` and need no credentials. Trust-on-write of the `agentId` field is acceptable in this deployment model — see ADR-0003 for the explicit reasoning.
+**External agents trust each other inside the local operator boundary.** Agents on
+the same machine talking to each other (the project-context hook, cron sweepers,
+CLI tools) all hit `localhost` and need no credentials. Trust-on-write of the
+`agentId` field is acceptable only in this single-operator deployment model —
+see ADR-0003 for the explicit reasoning.
 
 The system is *not* designed for multi-tenant deployment, untrusted networks, or hostile environments. It is appropriate for a single operator's machine plus a Cloudflare Tunnel.
 
@@ -77,7 +81,14 @@ The first two are pre-decided by environment variables: a request that passes th
 ## Consequences
 
 - **Localhost is trusted by default.** A process running on the same machine as the dashboard can hit any endpoint without credentials. The project-context hook, cron jobs, and ad-hoc `curl` from the terminal all rely on this. The trade-off is that any local process — *any* — can act as any agent. This is acceptable for a single-operator machine and would not be acceptable for multi-tenant.
-- **`agentId` is attribution, not identity.** Auth admits the request; the `agentId` in the request body identifies *who is doing what*. There is no check that the authenticated user is allowed to act as `agentId=X`. ADR-0003 documents this explicitly. If you need to know who *really* did something, the auth log + the HZL event log give a probabilistic answer, not a cryptographic one.
+- **`agentId` is attribution, not identity.** Auth admits the request; the
+  `agentId` in request bodies, headers, and query parameters routes per-agent
+  state and records *who the caller says is doing what*. There is no check that
+  an authenticated user is allowed to act as `agentId=X`. ADR-0003 documents
+  this explicitly. This is an accepted local-first trade-off, not a
+  cryptographic identity boundary; remote/multi-user deployments should use
+  `AUTH_ALWAYS=true`, keep the server loopback-bound behind an authenticated
+  tunnel, and treat full agent-identity binding as future hardening.
 - **External access without Telegram is hard.** The Mini App is the *only* supported client identity outside of loopback. CLI tools running on a different machine can use the API only via Cloudflare Tunnel + a valid Telegram init-data once (then cookie-based). There is no API key, no service account, no per-tool credential.
 - **JWT cookies cannot be revoked.** Once issued, an 8-hour JWT is valid until expiry. There is no allowlist check on cookie validation — only signature + expiry. Removing a Telegram user id from `ALLOWED_USER_IDS` does not invalidate their existing cookies. Workaround: rotate `JWT_SECRET`, which invalidates *every* outstanding cookie.
 - **Auth-disabled is a hard production failure.** Booting in `NODE_ENV=production` without a fully-configured auth stack exits the process. This is the right safety net but means production environments must always have all three vars set, even on a single-user deployment.
