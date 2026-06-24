@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/rasimme/FlowBoard/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="https://github.com/rasimme/FlowBoard/releases"><img src="https://img.shields.io/badge/version-v5.0.2-orange.svg" alt="Version"></a>
+  <a href="https://github.com/rasimme/FlowBoard/releases"><img src="https://img.shields.io/badge/version-v5.0.3-orange.svg" alt="Version"></a>
   <a href="https://github.com/rasimme/FlowBoard"><img src="https://img.shields.io/github/stars/rasimme/FlowBoard?style=social" alt="Stars"></a>
 </p>
 
@@ -205,10 +205,11 @@ openclaw hooks info project-context
 Versions before this change shipped a `scripts/install-hooks.sh` script
 that symlinked or copied the hook into `~/.openclaw/hooks/project-context/`.
 The new install path replaces that — remove the legacy hook directory once
-before running the commands above:
+before running the commands above. Prefer moving it aside first so you can
+inspect or restore local edits:
 
 ```bash
-rm -rf ~/.openclaw/hooks/project-context
+mv ~/.openclaw/hooks/project-context ~/.openclaw/hooks/project-context.legacy-backup
 ```
 
 If you previously edited `~/.openclaw/openclaw.json` to register the hook
@@ -399,6 +400,12 @@ attribution.
 <summary><h2>Remote Access (Telegram Mini App)</h2></summary>
 
 FlowBoard can be accessed remotely as a Telegram Mini App through a secure tunnel.
+
+Remote access exposes your local FlowBoard instance beyond localhost. Do not
+start a tunnel until authentication is configured with a bot token, JWT secret,
+allowed user ids, and the public dashboard origin. For non-Cloudflare tunnels
+or any setup that does not add a trusted proxy header, set `AUTH_ALWAYS=true`
+so loopback-only development bypasses cannot apply to remote traffic.
 
 ### Set up a tunnel
 

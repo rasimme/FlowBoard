@@ -1,18 +1,11 @@
 {
   "name": "flowboard",
-  "version": "5.0.2",
+  "version": "5.0.3",
   "description": "FlowBoard project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "screenshots:v5": "sh -c 'node scripts/v5-demo-fixture.mjs seed && node scripts/capture-v5-screenshots.mjs; status=$?; node scripts/v5-demo-fixture.mjs cleanup; exit $status'",
-    "setup": "node scripts/setup.mjs",
-    "plugin:lint": "node scripts/plugin-lint.mjs",
-    "privacy:scan": "node scripts/privacy-scan.mjs",
-    "release:clawpack-gate": "node scripts/clawpack-gate.mjs",
-    "release:install-canary": "node scripts/release-install-canary.mjs",
-    "release:postpublish-canary": "node scripts/release-install-canary.mjs --clawhub",
-    "release:check": "node scripts/release-check.mjs"
+    "setup": "node scripts/setup.mjs"
   },
   "homepage": "https://github.com/rasimme/FlowBoard",
   "keywords": [
@@ -59,7 +52,7 @@
     "llms.txt",
     "openclaw/**",
     "hooks/**",
-    "scripts/**",
+    "scripts/setup.mjs",
     "snippets/**",
     "templates/**",
     "docs/**",
@@ -75,7 +68,9 @@
     "!**/*.log",
     "!docs/plans/**",
     "!docs/reviews/**",
+    "!docs/dev/**",
     "!dashboard/projects/**",
+    "!dashboard/tools/**",
     "!dashboard/test-workspace*/**",
     "!dashboard/test-*.js",
     "!dashboard/test-*.mjs",

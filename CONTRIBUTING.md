@@ -109,7 +109,7 @@ git push origin feat/my-change
 Before publishing a release, run:
 
 ```bash
-npm run release:check
+node scripts/release-check.mjs
 ```
 
 That gate includes privacy scanning, plugin packaging lint, ClawPack
@@ -124,7 +124,7 @@ not regress to a legacy ZIP artifact.
 After publishing to ClawHub, run the live registry canary once:
 
 ```bash
-npm run release:postpublish-canary -- flowboard@x.y.z
+node scripts/release-install-canary.mjs --clawhub flowboard@x.y.z
 ```
 
 This installs the published ClawHub artifact into a temporary `OPENCLAW_HOME`

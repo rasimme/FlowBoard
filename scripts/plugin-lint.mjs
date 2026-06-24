@@ -9,7 +9,8 @@ const REQUIRED_PACKAGE_FILES = [
   'llms.txt',
   'openclaw/**',
   'hooks/**',
-  'dashboard/**'
+  'dashboard/**',
+  'scripts/setup.mjs'
 ];
 
 const FORBIDDEN_PACK_PATTERNS = [
@@ -22,6 +23,53 @@ const FORBIDDEN_PACK_PATTERNS = [
   /(^|\/)node_modules\//,
   /(^|\/)dist\//,
   /\.(db|sqlite|log)$/i
+];
+
+const FORBIDDEN_PACKED_FILES = [
+  /^scripts\/(?:capture-|release-|privacy-scan|clawpack-gate|plugin-lint|v5-demo-fixture)/,
+  /^dashboard\/tools\//,
+  /^docs\/dev\//,
+  /^docs\/plans\//,
+  /^docs\/reviews\//
+];
+
+const TEXT_PACK_EXTENSIONS = new Set([
+  '.cjs',
+  '.css',
+  '.html',
+  '.js',
+  '.json',
+  '.jsx',
+  '.md',
+  '.mjs',
+  '.service',
+  '.sh',
+  '.txt',
+  '.yml',
+  '.yaml'
+]);
+
+const PACKED_SUSPICIOUS_PATTERNS = [
+  {
+    name: 'destructive shell removal',
+    pattern: /\brm\s+-rf\b/,
+    allow: new Set()
+  },
+  {
+    name: 'CDP Runtime.evaluate helper',
+    pattern: /Runtime\.evaluate/,
+    allow: new Set()
+  },
+  {
+    name: 'child_process runtime bridge',
+    pattern: /(?:node:child_process|require\(['"]child_process['"]\)|from ['"]child_process['"])/,
+    allow: new Set([
+      'scripts/setup.mjs',
+      'dashboard/server.js',
+      'dashboard/snippets-doctor.js',
+      'dashboard/specify-worker-openclaw.js'
+    ])
+  }
 ];
 
 function readJson(path) {
@@ -41,6 +89,14 @@ if (!pkg.version) fail('package.json must define version');
 if (!pkg.description) fail('package.json must define description');
 if (!Array.isArray(pkg.files) || pkg.files.length === 0) {
   fail('package.json must define a publish allowlist in files');
+}
+
+const packageScripts = Object.keys(pkg.scripts || {});
+const allowedPublishedScripts = new Set(['setup']);
+for (const scriptName of packageScripts) {
+  if (!allowedPublishedScripts.has(scriptName)) {
+    fail(`package.json script ${scriptName} is dev/release-only; run scripts directly so package metadata stays install-focused`);
+  }
 }
 
 for (const expected of REQUIRED_PACKAGE_FILES) {
@@ -107,6 +163,28 @@ if (pack.status !== 0) {
   for (const path of files) {
     if (FORBIDDEN_PACK_PATTERNS.some((pattern) => pattern.test(path))) {
       fail(`package artifact includes forbidden path: ${path}`);
+    }
+    if (FORBIDDEN_PACKED_FILES.some((pattern) => pattern.test(path))) {
+      fail(`package artifact includes dev/release-only path: ${path}`);
+    }
+  }
+
+  for (const path of files) {
+    const extension = path.match(/(\.[^./]+)$/)?.[1] || '';
+    if (!TEXT_PACK_EXTENSIONS.has(extension)) continue;
+
+    let content = '';
+    try {
+      content = readFileSync(path, 'utf8');
+    } catch {
+      continue;
+    }
+
+    for (const rule of PACKED_SUSPICIOUS_PATTERNS) {
+      if (rule.pattern.test(content) && !rule.allow.has(path)) {
+        fail(`package artifact suspicious pattern (${rule.name}) in ${path}`);
+      }
+      rule.pattern.lastIndex = 0;
     }
   }
 }

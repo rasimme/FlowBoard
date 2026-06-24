@@ -21,13 +21,13 @@ jobs:
         run: npm ci
         working-directory: dashboard
       - name: Privacy scan
-        run: npm run privacy:scan
+        run: node scripts/privacy-scan.mjs
       - name: Install OpenClaw CLI for package canary
         run: npm install -g openclaw@2026.6.6
       - name: Plugin lint
-        run: npm run plugin:lint
+        run: node scripts/plugin-lint.mjs
       - name: Release install canary
-        run: npm run release:install-canary
+        run: node scripts/release-install-canary.mjs
       - name: Dashboard build
         run: npm run build
         working-directory: dashboard
