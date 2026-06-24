@@ -36,7 +36,7 @@ export default function TrashPanel({ open, project, trashedTasks, onClose, onRes
     if (busy) return;
     setBusy(true);
     try {
-      const res = await apiFetch(`/api/projects/${project}/tasks/trash`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/projects/${project}/tasks/trash`, { method: 'DELETE', body: { confirmation: 'empty-trash' } });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to empty trash');
       if (window.showToast) {

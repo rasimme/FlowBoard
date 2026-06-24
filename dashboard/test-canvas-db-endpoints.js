@@ -173,9 +173,9 @@ async function exerciseEndpoints(base, project, label) {
     `${label}: GET shows the connection`);
 
   // DELETE connection (reverse direction works)
-  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/connections`, { from: n2.id, to: n1.id });
+  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/connections`, { from: n2.id, to: n1.id, confirmation: 'delete-connections' });
   ok(res.status === 200 && res.body?.ok === true, `${label}: DELETE connection (reversed) -> ok`);
-  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/connections`, { to: n1.id });
+  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/connections`, { to: n1.id, confirmation: 'delete-connections' });
   ok(res.status === 400 && res.body?.error === 'from and to required', `${label}: DELETE connection missing "from" -> 400`);
 
   // DELETE note :id — also cascades connections (recreate one first)
@@ -189,9 +189,9 @@ async function exerciseEndpoints(base, project, label) {
     `${label}: deleting a note cascades its connections`);
 
   // batch delete: 400 without ids, 204 with ids (unknown ids ignored)
-  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/notes/batch`, {});
+  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/notes/batch`, { confirmation: 'delete-notes' });
   ok(res.status === 400 && res.body?.error === 'noteIds array required', `${label}: batch delete without noteIds -> 400`);
-  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/notes/batch`, { noteIds: [n2.id, 'N-999'] });
+  res = await fetchJson(base, 'DELETE', `/api/projects/${project}/canvas/notes/batch`, { noteIds: [n2.id, 'N-999'], confirmation: 'delete-notes' });
   ok(res.status === 204 && res.body === null, `${label}: batch delete -> 204 without body`);
   res = await fetchJson(base, 'GET', `/api/projects/${project}/canvas`);
   ok(res.body?.notes?.length === baseCount && !res.body.notes.some(n => n.id === n2.id),

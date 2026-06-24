@@ -174,9 +174,9 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 |--------|----------|--------|
 | **Trash** | `PUT /api/projects/:name/tasks/:id` `{ trashedAt: "<ISO>" }` | Moves to trash (soft delete) |
 | **Restore** | `PUT /api/projects/:name/tasks/:id` `{ trashedAt: null }` | Restores from trash |
-| **Empty trash** | `DELETE /api/projects/:name/tasks/trash` | Permanently deletes all trashed tasks |
-| **Hard delete** | `DELETE /api/projects/:name/tasks/:id` | Immediate permanent deletion. Requires `?mode=all` if task has subtasks. |
-| **Hard delete + subtasks** | `DELETE /api/projects/:name/tasks/:id?mode=all` | Hard-deletes task and all subtasks |
+| **Empty trash** | `DELETE /api/projects/:name/tasks/trash` | Permanently deletes all trashed tasks. **Requires body `{ "confirmation": "empty-trash" }`** (T-417-23). |
+| **Hard delete** | `DELETE /api/projects/:name/tasks/:id` | Immediate permanent deletion of a single task (no confirmation). Requires `?mode=all` if task has subtasks. |
+| **Hard delete + subtasks** | `DELETE /api/projects/:name/tasks/:id?mode=all` | Hard-deletes task and all subtasks. **Requires body `{ "confirmation": "delete-task-cascade" }`** (T-417-23). |
 
 ### Archive vs Trash vs Delete
 - **Archive** (`status: archived`): task is cleanly filed away and doesn't appear in default queries. Only possible when all subtasks are done/archived. Subtasks are archived along with it.

@@ -114,10 +114,17 @@ audited and, for the highest-blast-radius ones, gated:
 - **Project hard-delete** requires `?confirm=<name>`, an explicit `hardDelete`
   acknowledgement, and that the project is already archived (a reversible
   two-step, so "deactivate" can never be one-shot-confused with "delete").
-- **Reversible / lower-blast-radius operations** (archive/unarchive, heal,
-  restore, single-item task and note deletes) are loopback-trusted and audited;
-  deleted tasks/notes are recoverable from trash/archive. They are not gated by a
-  typed confirmation today — honest statement, by design under the trust model.
+- **High-blast-radius bulk deletes require a typed confirmation** in the request
+  body: task cascade hard-delete (`?mode=all` → `delete-task-cascade`),
+  empty-trash (`empty-trash`), canvas batch-note delete (`delete-notes`), and
+  canvas connection delete (`delete-connections`). Missing/wrong token → `400`
+  with no effect. This is accident-prevention (and answers the audit's
+  "batch-delete lacks confirmation" finding), not access control.
+- **Reversible / single-item operations** (archive/unarchive, heal, restore,
+  single-item task and note deletes) are loopback-trusted and audited; deleted
+  tasks/notes are recoverable from trash/archive, so they stay ungated to keep
+  the common flow frictionless — an honest statement, by design under the trust
+  model.
 
 ## Secrets
 

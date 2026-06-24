@@ -56,9 +56,9 @@ Base: `http://localhost:18790/api`
 | `POST` | `/projects/:name/canvas/notes` | Create note. Body: `{ text, x?, y?, color?, size?, near? }`. Omit **both** `x` and `y` for collision-free auto-placement near the existing note cluster (or beside `near: <noteId>`) — ideal for agents that just want to drop a note. Explicit coordinates (incl. an explicit `0`) are always honored (T-352). |
 | `PUT` | `/projects/:name/canvas/notes/:id` | Update note fields |
 | `DELETE` | `/projects/:name/canvas/notes/:id` | Delete single note |
-| `DELETE` | `/projects/:name/canvas/notes/batch` | Batch delete. Body: `{ noteIds: [...] }` |
+| `DELETE` | `/projects/:name/canvas/notes/batch` | Batch delete. Body: `{ noteIds: [...], confirmation: "delete-notes" }` — typed confirmation required (T-417-23) |
 | `POST` | `/projects/:name/canvas/connections` | Create/update connection. Body: `{ from, to, fromPort?, toPort? }` |
-| `DELETE` | `/projects/:name/canvas/connections` | Delete connection. Body: `{ from, to }` |
+| `DELETE` | `/projects/:name/canvas/connections` | Delete connection. Body: `{ from, to, confirmation: "delete-connections" }` — typed confirmation required (T-417-23) |
 
 ## Promote (Canvas → Specify)
 

@@ -219,7 +219,7 @@ export async function deleteConnection(project, dispatch, from, to) {
   if (!project) return;
   try {
     await api(`/projects/${project}/canvas/connections`, {
-      method: 'DELETE', body: { from, to },
+      method: 'DELETE', body: { from, to, confirmation: 'delete-connections' }, // T-417-23
     });
     dispatch({ type: 'connection-deleted', from, to });
   } catch {

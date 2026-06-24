@@ -25,6 +25,19 @@ const PROJECTS_DIR = fs.existsSync(SHARED_PROJECTS_DIR) ? SHARED_PROJECTS_DIR : 
 const { auditDestructive, resolveActor } = require('./audit-log.js');
 const AUDIT_DIR = path.join(PROJECTS_DIR, '.audit');
 const audit = (entry, req) => auditDestructive({ ...entry, actor: resolveActor(req) }, { dir: AUDIT_DIR });
+// T-417-23: typed-confirmation guard for the highest-blast-radius destructive
+// endpoints (ClawHub #7b + the accident class that hard-deleted a live project).
+// Returns true when the caller supplied the exact token; otherwise writes a 400
+// and returns false. This is accident-prevention, not access control.
+function requireConfirmation(req, res, token) {
+  if (req.body && req.body.confirmation === token) return true;
+  res.status(400).json({
+    error: 'This destructive action requires explicit confirmation.',
+    hint: `Resend with { "confirmation": "${token}" } in the request body.`,
+    code: 'CONFIRMATION_REQUIRED',
+  });
+  return false;
+}
 // LEGACY (T-161): file read by m003-active-project-to-db migration only;
 // flowboard_agents table is now the source of truth. No code writes this.
 const ACTIVE_PROJECT_FILE = path.join(WORKSPACE, 'ACTIVE-PROJECT.md');
@@ -2110,6 +2123,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 // server trusts the caller. Must be registered before the :id variant so
 // Express does not match the literal "trash" as a task id.
 app.delete('/api/projects/:name/tasks/trash', (req, res) => {
+  if (!requireConfirmation(req, res, 'empty-trash')) return; // T-417-23
   try {
     const result = hzlService.emptyTrash(req.params.name);
     audit({ action: 'trash.empty', project: req.params.name, target: `removed:${result.removed}` }, req);
@@ -2122,6 +2136,9 @@ app.delete('/api/projects/:name/tasks/trash', (req, res) => {
 
 // DELETE /api/projects/:name/tasks/:id
 app.delete('/api/projects/:name/tasks/:id', (req, res) => {
+  // T-417-23: cascade delete (parent + all subtasks, incl. unlinking spec files)
+  // is high-blast-radius — require typed confirmation. Single-task delete stays ungated.
+  if (req.query.mode === 'all' && !requireConfirmation(req, res, 'delete-task-cascade')) return;
   const task = hzlService.getTask(req.params.name, req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
@@ -2642,6 +2659,7 @@ app.put('/api/projects/:name/canvas/notes/:id', (req, res) => {
 // DELETE /api/projects/:name/canvas/notes/batch (MUST be before :id route)
 app.delete('/api/projects/:name/canvas/notes/batch', (req, res) => {
   try {
+    if (!requireConfirmation(req, res, 'delete-notes')) return; // T-417-23
     const noteIds = (req.body || {}).noteIds;
     canvasBackend(req.params.name).canvasDeleteNotesBatch(req.params.name, noteIds);
     audit({ action: 'canvas.notes-batch-delete', project: req.params.name, target: `count:${Array.isArray(noteIds) ? noteIds.length : 0}` }, req);
@@ -2674,6 +2692,7 @@ app.post('/api/projects/:name/canvas/connections', (req, res) => {
 // DELETE /api/projects/:name/canvas/connections
 app.delete('/api/projects/:name/canvas/connections', (req, res) => {
   try {
+    if (!requireConfirmation(req, res, 'delete-connections')) return; // T-417-23
     canvasBackend(req.params.name).canvasDeleteConnection(req.params.name, req.body);
     audit({ action: 'canvas.connection-delete', project: req.params.name, target: null }, req);
     res.json({ ok: true });
