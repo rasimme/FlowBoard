@@ -81,6 +81,11 @@ const PACKED_SUSPICIOUS_PATTERNS = [
       // not teach these broad triggers.
       'snippets/legacy/AGENTS-trigger.v2.md'
     ])
+  },
+  {
+    name: 'legacy canvas promote trigger',
+    pattern: /(?:\[CANVAS_PROMOTE\]|When Agent Receives|agent session decides task structure|Agent does NOT ask follow-up questions|batch-delete endpoint)/i,
+    allow: new Set()
   }
 ];
 

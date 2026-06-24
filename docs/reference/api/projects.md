@@ -126,7 +126,7 @@ Lists available rule sections.
     { "name": "files",          "label": "Project file roles — PROJECT.md, SESSIONS.md, context/, specs/" },
     { "name": "specify",        "label": "Specify workflow — spec generation lifecycle" },
     { "name": "agent-bridge",   "label": "Agent bridge — claim/checkpoint/complete, handoff, multi-agent" },
-    { "name": "error-handling", "label": "Error handling — missing files, corrupt state, migration leftovers" },
+    { "name": "error-handling", "label": "Error handling — missing files, inconsistency resolution, migration leftovers" },
     { "name": "key-principles", "label": "Key principles — API-first, DB-canonical, context-loading semantics" },
     { "name": "overview",       "label": "Overview — modular landing page, widget catalog, layout API" },
     { "name": "compliance",     "label": "Compliance — stuck/stale + routed-unclaimed detection, health metrics" }

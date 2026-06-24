@@ -70,6 +70,7 @@
     "!docs/reviews/**",
     "!docs/dev/**",
     "!docs/project-mode/legacy/**",
+    "!snippets/legacy/**",
     "!dashboard/projects/**",
     "!dashboard/tools/**",
     "!dashboard/test-workspace*/**",

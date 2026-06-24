@@ -28,7 +28,7 @@ const SECTIONS = [
   { name: 'specify',         file: 'specify-workflow.md', label: 'Specify workflow — spec generation lifecycle' },
   { name: 'agent-bridge',    file: 'agent-bridge.md',     label: 'Agent bridge — claim/checkpoint/complete, handoff, multi-agent' },
   { name: 'compliance',      file: 'compliance.md',       label: 'Compliance — stuck/stale + routed-unclaimed detection, health metrics' },
-  { name: 'error-handling',  file: 'error-handling.md',   label: 'Error handling — missing files, corrupt state, migration leftovers' },
+  { name: 'error-handling',  file: 'error-handling.md',   label: 'Error handling — missing files, inconsistency resolution, migration leftovers' },
   { name: 'key-principles',  file: 'key-principles.md',   label: 'Key principles — API-first, DB-canonical, context-loading semantics' },
   { name: 'overview',        file: 'overview.md',         label: 'Overview — modular landing page, widget catalog, layout API' },
 ];
