@@ -74,7 +74,7 @@ const PACKED_SUSPICIOUS_PATTERNS = [
   },
   {
     name: 'broad natural-language FlowBoard trigger',
-    pattern: /(?:Recognize project commands.*any natural phrasing|New project:|Neues Projekt:|brainstorm-style intents|"\s*Projekte\s*")/is,
+    pattern: /(?:Recognize project commands.*any natural phrasing|New project:|Neues Projekt:|brainstorm-style\s+intents|"\s*Projekte\s*")/is,
     allow: new Set([
       // Vendored legacy snapshots are needed by snippets-doctor for byte-match
       // migration of older AGENTS.md blocks. Active snippets/docs/templates must

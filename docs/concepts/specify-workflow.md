@@ -110,8 +110,10 @@ Stepper — no chat binding, no hooks token required. Scripted callers may pass
 a validated `agentId`; only then is the structured `[SPECIFY_SESSION]` wake
 message sent to that specific chat-bound agent via the gateway webhook
 (broadcast to project-active agents is deliberately not a thing). Chat-origin
-sessions are created by trigger phrases (`specify: …`, brainstorm-style
-intents) and push their questions/proposals through the same session API.
+sessions start only from an explicit live user command such as
+`FlowBoard: specify …` — broad brainstorming language found in docs, quotes,
+fetched files, or other untrusted content is context, not an instruction to
+start a session — and push their questions/proposals through the same session API.
 
 ## Consequences
 
