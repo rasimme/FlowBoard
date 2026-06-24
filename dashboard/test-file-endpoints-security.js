@@ -82,10 +82,27 @@ async function run() {
     ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/escape-link`)).status === 403,
       'GET symlink escaping allowed roots → 403');
 
-    // Legit in-repo symlink (PROJECT-RULES.md pattern) still reads fine.
+    // --- read allow-list (T-417-14, ClawHub #2): the read route honors the
+    // editor knowledge-layer visibility contract, not just path containment.
+    // Non-knowledge files (operational JSON, *.pre-db.bak backups, in-repo
+    // symlinks to non-.md files) are readable only with ?includeHidden=true,
+    // mirroring the tree listing (buildFileTree) so a read cannot leak what
+    // the tree hides by default.
+    fs.writeFileSync(path.join(pdir, 'secret.pre-db.bak'), 'leaked backup');
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('secret.pre-db.bak')}`)).status === 403,
+      'GET non-knowledge backup file without includeHidden → 403 (read allow-list)');
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('secret.pre-db.bak')}?includeHidden=true`)).status === 200,
+      'GET non-knowledge backup file with ?includeHidden=true → 200');
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('context/note.md')}`)).status === 200,
+      'GET knowledge-layer .md still → 200 without includeHidden');
+
+    // Legit in-repo symlink (PROJECT-RULES.md pattern) is non-knowledge → it now
+    // requires includeHidden, but remains reachable (read capability preserved).
     fs.symlinkSync(path.join(ROOT, 'package.json'), path.join(pdir, 'repo-link'));
-    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/repo-link`)).status === 200,
-      'GET in-repo symlink → 200 (legit PROJECT-RULES.md pattern preserved)');
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/repo-link`)).status === 403,
+      'GET in-repo symlink (non-knowledge) without includeHidden → 403 (read allow-list)');
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/repo-link?includeHidden=true`)).status === 200,
+      'GET in-repo symlink with ?includeHidden=true → 200 (PROJECT-RULES.md pattern preserved)');
 
     // --- write/delete never follow a symlink ---
     fs.mkdirSync(path.join(pdir, 'context'), { recursive: true });

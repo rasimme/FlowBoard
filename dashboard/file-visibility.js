@@ -10,6 +10,11 @@
  * by default so the tree stays clean and the root doesn't accumulate clutter.
  * Hidden files remain reachable via `?includeHidden=true`.
  *
+ * This contract governs BOTH the file tree listing AND the file read route
+ * (GET /api/projects/:name/files/{*filePath}); a read of a non-visible file
+ * without `?includeHidden=true` is rejected (T-417-14 / ClawHub #2), so reads
+ * cannot leak content the tree deliberately hides.
+ *
  * @param {string} relPath project-relative path
  * @returns {boolean} true if the file should appear in the editor by default
  */

@@ -594,7 +594,11 @@ export default function FilesView() {
     setLastOpenedFile(filePath);
 
     try {
-      const res = await apiFetch(`/api/projects/${viewedProject}/files/${filePath}`, { signal: controller.signal });
+      // The read route now enforces the knowledge-layer allow-list (T-417-14);
+      // hidden files are readable only with ?includeHidden=true, so mirror the
+      // tree's showHidden toggle here or opening a hidden file would 403.
+      const readQs = showHidden ? '?includeHidden=true' : '';
+      const res = await apiFetch(`/api/projects/${viewedProject}/files/${filePath}${readQs}`, { signal: controller.signal });
       if (res.status === 404) {
         clearLastOpenedFile(filePath);
         setSelectedFile(null);
@@ -621,7 +625,7 @@ export default function FilesView() {
     } finally {
       if (!opts.background) setLoading(false);
     }
-  }, [clearLastOpenedFile, setLastOpenedFile, viewedProject]);
+  }, [clearLastOpenedFile, setLastOpenedFile, viewedProject, showHidden]);
 
   const handleUpload = useCallback(async (file) => {
     if (!viewedProject) return;

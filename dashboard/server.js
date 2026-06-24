@@ -2280,6 +2280,17 @@ app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 
+  // Read allow-list (T-417-14, ClawHub #2): the read route honors the same
+  // knowledge-layer visibility contract as the tree listing (buildFileTree),
+  // not just path containment. Without this, the route served ANY contained
+  // file — operational JSON, *.pre-db.bak backups, and (via in-repo symlinks)
+  // arbitrary install files — leaking content the editor deliberately hides.
+  // Non-knowledge files remain reachable with ?includeHidden=true.
+  const includeHidden = req.query.includeHidden === 'true';
+  if (!includeHidden && !isEditorVisible(filePath)) {
+    return res.status(403).json({ error: 'File not readable via this endpoint (knowledge-layer only; retry with ?includeHidden=true)' });
+  }
+
   const safe = resolveProjectFile(projectDir, filePath, { forWrite: false });
   if (!safe.ok) return res.status(safe.code).json({ error: safe.error });
   const resolved = safe.resolved;
