@@ -78,6 +78,16 @@ default** (all three conditions are required) and the server prints a loud boot
 warning whenever `LOCAL_HOSTNAME` is set. Only enable it on a fully trusted LAN;
 prefer `AUTH_ALWAYS=true` instead.
 
+### Fail-closed boot bind guard (S-24)
+
+When auth is disabled, the server **refuses to start** if `FLOWBOARD_HOST` is a
+non-loopback interface (`0.0.0.0`, `::`, or a routable address) — binding the
+unauthenticated control surface to the network is treated as a fail-closed boot
+error, not a silent default. The operator must configure auth, bind a loopback
+host, or explicitly accept the risk with `FLOWBOARD_ALLOW_LAN=true` (which then
+boots with a loud warning). Host classification (incl. IPv6 and bind-all forms)
+is unit-tested in `dashboard/host-utils.js` / `dashboard/test-boot-bind-guard.js`.
+
 ## Agent identity (attribution, not authentication)
 
 Agent-id is a plain string passed on every call (see
@@ -88,11 +98,17 @@ bots, Codex, Cursor, Claude Code, cron, `curl`) stay first-class.
 
 However, **lease ownership of lifecycle operations is enforced server-side**: a
 caller asserting agent `X` cannot `complete`, `checkpoint`, or `release` a task
-that agent `Y` currently holds (`NOT_OWNER`), nor steal an actively-leased task
-(`ALREADY_CLAIMED`) — see `dashboard/hzl-service.js` and the regression test
-`dashboard/test-lease-ownership.js`. So "assert any agent-id" lets a local caller
-*attribute new work* to a name; it does not let it override another agent's
-active claim. Hard, authenticated identity is on the roadmap (see *Roadmap*).
+that agent `Y` actively holds — nor change its status via the generic
+`PUT /api/projects/:name/tasks/:id` path — (`NOT_OWNER`, HTTP `403`), nor steal an
+actively-leased task (`ALREADY_CLAIMED`) — see `dashboard/hzl-service.js`,
+`dashboard/server.js`, and the regression tests `dashboard/test-lease-ownership.js`
+and `dashboard/test-update-lease-ownership.js`. The PUT guard keys on a *live*
+lease (an active claim), so it never blocks reopening a finished task, and an
+actor-less caller is the trusted operator. Review actions (`/approve`, `/reject`),
+routing, move, and reparent are intentionally reviewer/operator-scoped and not
+owner-gated. So "assert any agent-id" lets a local caller *attribute new work* to
+a name; it does not let it override another agent's active claim. Hard,
+authenticated identity is on the roadmap (see *Roadmap*).
 
 ## Capabilities & destructive actions
 
@@ -102,9 +118,11 @@ audited and, for the highest-blast-radius ones, gated:
 
 - **Append-only audit log.** Every destructive/privileged handler (project
   archive/delete/restore, self-update, task hard-delete and trash-empty, canvas
-  note/batch/connection delete) writes one JSON line to
-  `<projects-dir>/.audit/destructive.log` recording timestamp, action, project,
-  target, and actor (`dashboard/audit-log.js`). The actor is the self-asserted
+  note/batch/connection delete, and agent delete/force-delete) writes one JSON
+  line to `<projects-dir>/.audit/destructive.log` recording timestamp, action
+  (e.g. `agent.force-delete`), project, target, and actor (`dashboard/audit-log.js`).
+  Force-delete is labeled by intent (it yanked live claims) and records the
+  attempted/released claim counts. The actor is the self-asserted
   agent-id (or `localhost-unauth`) — attribution, consistent with the trust
   model above. Logging is fail-soft and never blocks a request.
 - **Self-update** (`POST /api/update/run`) is **off by default**: it requires
@@ -116,10 +134,12 @@ audited and, for the highest-blast-radius ones, gated:
   two-step, so "deactivate" can never be one-shot-confused with "delete").
 - **High-blast-radius bulk deletes require a typed confirmation** in the request
   body: task cascade hard-delete (`?mode=all` → `delete-task-cascade`),
-  empty-trash (`empty-trash`), canvas batch-note delete (`delete-notes`), and
-  canvas connection delete (`delete-connections`). Missing/wrong token → `400`
-  with no effect. This is accident-prevention (and answers the audit's
-  "batch-delete lacks confirmation" finding), not access control.
+  empty-trash (`empty-trash`), canvas batch-note delete (`delete-notes`),
+  canvas connection delete (`delete-connections`), and force-deleting an agent
+  that still holds live claims (`?force=true` → `force-delete-agent`; a
+  claim-less agent delete is reversible stale-row cleanup and stays ungated).
+  Missing/wrong token → `400` with no effect. This is accident-prevention (and
+  answers the audit's "batch-delete lacks confirmation" finding), not access control.
 - **Reversible / single-item operations** (archive/unarchive, heal, restore,
   single-item task and note deletes) are loopback-trusted and audited; deleted
   tasks/notes are recoverable from trash/archive, so they stay ungated to keep
