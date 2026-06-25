@@ -101,6 +101,18 @@ async function run() {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
+  // Case 2b (REFUSE IPv6 bind-all): '::' is non-loopback → same fail-closed refusal.
+  {
+    const tmp = makeTmp();
+    const { child, getOut } = spawnServer(noAuthEnv(tmp, 18846, { FLOWBOARD_HOST: '::' }));
+    const code = await waitForExit(child, 6000);
+    const out = getOut();
+    if (child.exitCode === null) child.kill('SIGKILL');
+    ok(code !== null && code !== 0, `IPv6 bind-all '::' + auth-off refuses to start (exit code=${code})`);
+    ok(/FATAL/.test(out), 'IPv6 bind-all refusal is a FATAL message');
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+
   // Case 3 (DEFAULT loopback): auth off + loopback bind → starts normally, no false refusal.
   {
     const tmp = makeTmp();

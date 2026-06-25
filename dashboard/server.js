@@ -82,6 +82,7 @@ const { updateSpawnEnv } = require('./update-env.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 const { isEditorVisible } = require('./file-visibility.js');
+const { isLoopbackHost } = require('./host-utils.js');
 const { buildStuckNotifications } = require('./stuck-notify.js');
 const { formatSessionEntry, insertEntry } = require('./session-log.js');
 
@@ -155,11 +156,7 @@ if (!AUTH_ENABLED && process.env.NODE_ENV === 'production') {
 // control surface to the network — a co-resident-on-the-LAN escalation, not
 // just same-OS-user. Refuse to start in that configuration unless the operator
 // explicitly accepts the risk via FLOWBOARD_ALLOW_LAN=true (then warn loudly).
-function isLoopbackHost(host) {
-  const h = (host || '').trim().toLowerCase();
-  return h === '' || h === 'localhost' || h === '127.0.0.1' || h === '::1'
-    || h === '::ffff:127.0.0.1' || h.startsWith('127.');
-}
+// isLoopbackHost lives in host-utils.js (unit-tested for all host forms).
 if (!AUTH_ENABLED && !isLoopbackHost(HOST)) {
   if (!ALLOW_LAN) {
     console.error(
@@ -1174,7 +1171,12 @@ app.delete('/api/agents/:id', (req, res) => {
     // another principal's active leases — a privileged, high-blast-radius act.
     // Require explicit typed confirmation for exactly that case (a force-delete
     // of a claim-less agent is just stale-row cleanup and stays ungated).
-    if (force && activeClaims.length > 0 && !requireConfirmation(req, res, 'force-delete-agent')) return;
+    // T-422-5: `forcedLiveClaims` is the privileged condition; it drives BOTH the
+    // confirmation gate AND the audit label/target, so the audit can never
+    // mislabel a confirmed live-claim force-delete as benign — even if every
+    // releaseTask throws (releasedCount would be 0 while the intent stands).
+    const forcedLiveClaims = force && activeClaims.length > 0;
+    if (forcedLiveClaims && !requireConfirmation(req, res, 'force-delete-agent')) return;
 
     let releasedCount = 0;
     if (force && activeClaims.length > 0) {
@@ -1191,10 +1193,12 @@ app.delete('/api/agents/:id', (req, res) => {
     const removed = fbMeta.deleteAgentRow(agentId);
     // T-422-2: record who deleted which agent (and how many live claims were
     // yanked) so the act is answerable after the fact, per the audit-log model.
+    // Labeled by INTENT (forcedLiveClaims), not by outcome (releasedCount), so a
+    // forced live-claim deletion is recorded as such even when releases fail.
     audit({
-      action: releasedCount > 0 ? 'agent.force-delete' : 'agent.delete',
+      action: forcedLiveClaims ? 'agent.force-delete' : 'agent.delete',
       project: null,
-      target: releasedCount > 0 ? `${agentId} releasedClaims:${releasedCount}` : agentId,
+      target: forcedLiveClaims ? `${agentId} claims:${activeClaims.length} released:${releasedCount}` : agentId,
     }, req);
     res.json({
       ok: true,
@@ -2089,12 +2093,20 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     // An actor-LESS caller is the trusted local operator / dashboard UI (the
     // Status-Picker auto-release flow is preserved), and the explicit
     // adminOverride back-door is honoured for deliberate operator cleanup.
-    if (toStatus && toStatus !== fromStatus && task.agent) {
+    //
+    // T-422-5: gate on a LIVE lease (claimedAt/leaseUntil), NOT on task.agent.
+    // task.agent is preserved as a historical "soft chip" after a claim is
+    // released (T-161), so a review/done task still reports its old agent with
+    // no live lease — there is nothing to protect, and reopening it by another
+    // actor must not be blocked. 403 mirrors ERROR_CODE_STATUS.NOT_OWNER used by
+    // the workflow endpoints.
+    const hasLiveLease = !!(task.agent && (task.claimedAt || task.leaseUntil));
+    if (toStatus && toStatus !== fromStatus && hasLiveLease) {
       const actor = updates.actor && String(updates.actor).trim();
       const override = updates.adminOverride === true;
       if (actor && actor !== task.agent && !override) {
-        return res.status(409).json({
-          error: `Only the owning agent "${task.agent}" can change the status of a task it has claimed. Use the workflow endpoint as the owner, release the claim first, or pass adminOverride with a reason.`,
+        return res.status(403).json({
+          error: `Only the owning agent "${task.agent}" can change the status of a task it actively holds. Complete/release it as the owner, or pass adminOverride to force the change.`,
           code: 'NOT_OWNER',
         });
       }

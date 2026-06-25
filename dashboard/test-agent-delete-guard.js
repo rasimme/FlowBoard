@@ -85,8 +85,8 @@ async function run() {
     r = await api(base, 'DELETE', '/api/agents/worker-one?force=true&confirmation=force-delete-agent');
     ok(r.status === 400 && r.body?.code === 'CONFIRMATION_REQUIRED', 'force-delete with token in query string → 400');
 
-    // 4. correct token → 200, deletes + releases the claim
-    r = await api(base, 'DELETE', '/api/agents/worker-one?force=true', { confirmation: 'force-delete-agent' });
+    // 4. correct token + asserted actor → 200, deletes + releases the claim
+    r = await api(base, 'DELETE', '/api/agents/worker-one?force=true', { confirmation: 'force-delete-agent', actor: 'operator-x' });
     ok(r.status === 200 && r.body?.deleted === true && r.body?.releasedClaims === 1, 'force-delete with correct confirmation → 200, releasedClaims:1');
 
     // 5. force-delete of an agent with NO live claims stays ungated.
@@ -107,6 +107,12 @@ async function run() {
     ok(actions.has('agent.delete'), 'audit log recorded agent.delete (claim-less)');
     const forceEntry = entries.find(e => e.action === 'agent.force-delete');
     ok(forceEntry && /worker-one/.test(forceEntry.target || ''), 'force-delete audit names the agent');
+    // Attribution must be a real, falsifiable value (not just "truthy" — resolveActor never returns falsy).
+    ok(forceEntry && forceEntry.actor === 'operator-x', 'force-delete audit records the asserted actor VALUE (operator-x)');
+    // Audit label keyed on INTENT (force + live claims), recording attempted + released counts —
+    // so a force-delete that yanked live claims is never mislabeled, even if releases fail.
+    ok(forceEntry && /claims:1/.test(forceEntry.target || '') && /released:1/.test(forceEntry.target || ''),
+      'force-delete audit records attempted (claims:1) and released (released:1) counts');
     ok(entries.length > 0 && entries.every(e => e.actor && e.ts), 'every audit entry has actor + ts');
   } finally {
     child.kill('SIGTERM');
