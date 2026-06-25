@@ -2113,6 +2113,9 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     } catch (e) { console.warn('[reminder]', e); }
     return res.json(response);
   } catch (err) {
+    // T-419: surface tagged validation errors (e.g. archive rules) as the real
+    // client error instead of masking every throw as a generic 500.
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -888,18 +888,18 @@ function updateTask(project, flowboardId, updates) {
   if (updates.description !== undefined) hzlUpdates.description = updates.description; // T-396
 
   if (updates.status !== undefined) {
-    if (!VALID_STATUSES.has(updates.status)) throw new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`);
+    if (!VALID_STATUSES.has(updates.status)) throw Object.assign(new Error(`Invalid status: "${updates.status}". Must be one of: ${[...VALID_STATUSES].join(', ')}`), { status: 400 });
 
     // Archive validation
     if (updates.status === 'archived') {
       // Subtasks cannot be archived individually — only via parent
-      if (cached.parentId) throw new Error('Cannot archive subtasks individually. Archive the parent task instead.');
+      if (cached.parentId) throw Object.assign(new Error('Cannot archive subtasks individually. Archive the parent task instead.'), { status: 400 });
       // All children must be done (or already archived)
       if (cached.subtaskIds && cached.subtaskIds.length > 0) {
         const children = cached.subtaskIds.map(id => _cache.get(`${project}:${id}`)).filter(Boolean);
         const blocking = children.filter(c => c.status !== 'done' && c.status !== 'archived');
         if (blocking.length > 0) {
-          throw new Error(`Cannot archive: ${blocking.length} subtask(s) not done (${blocking.map(c => c.id).join(', ')})`);
+          throw Object.assign(new Error(`Cannot archive: ${blocking.length} subtask(s) not done (${blocking.map(c => c.id).join(', ')})`), { status: 409 });
         }
         // Auto-archive all children
         for (const child of children) {
