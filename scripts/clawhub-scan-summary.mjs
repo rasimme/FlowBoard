@@ -55,10 +55,16 @@ function summarize(version) {
   const clawhub = clawhubCommand();
   const zipPath = path.join(tmp, `${packageName}-${version}-scan.zip`);
   run(clawhub, ['scan', 'download', packageName, '--kind', 'plugin', '--version', version, '--output', zipPath]);
-  const clawscan = zipJson(zipPath, 'clawscan.json');
-  const skillspector = zipJson(zipPath, 'skillspector.json');
-  const staticScan = zipJson(zipPath, 'static-analysis.json');
-  const vt = zipJson(zipPath, 'virustotal.json');
+  const clawscanRaw = zipJson(zipPath, 'clawscan.json');
+  const skillspectorRaw = zipJson(zipPath, 'skillspector.json');
+  const clawscan = clawscanRaw || {};
+  const skillspector = skillspectorRaw || {};
+  const staticScan = zipJson(zipPath, 'static-analysis.json') || {};
+  const vt = zipJson(zipPath, 'virustotal.json') || {};
+  // A freshly-published version may still be mid-scan: clawscan/skillspector
+  // come back as JSON null until the verdict/LLM pass completes. Report that as
+  // `pending` instead of crashing on a null read.
+  const pending = clawscanRaw === null || skillspectorRaw === null;
   const issues = skillspector.issues || [];
   const phaseCounts = {};
   const issueCounts = {};
@@ -70,6 +76,7 @@ function summarize(version) {
   }
   return {
     version,
+    pending,
     clawscan: {
       status: clawscan.status,
       verdict: clawscan.verdict,
