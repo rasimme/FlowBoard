@@ -1,5 +1,25 @@
 # Changelog
 
+### v5.0.4 (2026-06-25) — ClawHub Security Hardening
+
+- **Hardened dashboard file and task mutation surfaces.** Project file reads now
+  use a Markdown allow-list, destructive handlers write append-only audit
+  records, and high-blast delete paths require typed confirmation tokens.
+- **Tightened local network and secret handling defaults.** LAN access is now
+  opt-in via `FLOWBOARD_ALLOW_LAN`, CORS defaults to loopback-only, and database
+  files holding GitHub tokens are created with stricter permissions plus a
+  plaintext-at-rest warning.
+- **Reduced packaged and scanner-facing surface.** Legacy scanner triggers,
+  dead routes, the DesignTest dev view, and non-runtime artifacts stay out of
+  the published package; `SECURITY.md` now states the current threat model
+  honestly.
+- **Validated by release gates and adversarial review.** The hardening range was
+  reviewed for bypasses across read allow-lists, confirmations, CORS, audit
+  logging, S-13 LAN behavior, and chmod handling before release.
+- **Fixed task archive error reporting.** Invalid archive transitions now return
+  actionable 400/409 responses instead of a generic 500 while keeping the
+  existing archive rules intact.
+
 ### v5.0.2 (2026-06-22) — Custom Ports & ClawPack Publishing
 
 - **Fixed AGENTS snippet migration for custom dashboard URLs.** The snippet
