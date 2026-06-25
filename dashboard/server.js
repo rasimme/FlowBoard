@@ -149,7 +149,34 @@ if (!AUTH_ENABLED && process.env.NODE_ENV === 'production') {
   console.error('FATAL: Auth not configured in production. Set TELEGRAM_BOT_TOKEN, JWT_SECRET, and ALLOWED_USER_IDS.');
   process.exit(1);
 }
-if (!AUTH_ENABLED) {
+// S-24 (T-422-3): boot bind guard. The local-first trust model is
+// "loopback == the operator". Binding a non-loopback interface (0.0.0.0 or a
+// routable host) while auth is OFF would expose the full unauthenticated
+// control surface to the network — a co-resident-on-the-LAN escalation, not
+// just same-OS-user. Refuse to start in that configuration unless the operator
+// explicitly accepts the risk via FLOWBOARD_ALLOW_LAN=true (then warn loudly).
+function isLoopbackHost(host) {
+  const h = (host || '').trim().toLowerCase();
+  return h === '' || h === 'localhost' || h === '127.0.0.1' || h === '::1'
+    || h === '::ffff:127.0.0.1' || h.startsWith('127.');
+}
+if (!AUTH_ENABLED && !isLoopbackHost(HOST)) {
+  if (!ALLOW_LAN) {
+    console.error(
+      `FATAL: refusing to bind non-loopback host '${HOST}' with auth disabled — ` +
+      `this would expose the unauthenticated FlowBoard control surface to the network. ` +
+      `Configure auth (TELEGRAM_BOT_TOKEN + JWT_SECRET + ALLOWED_USER_IDS), bind a ` +
+      `loopback host (FLOWBOARD_HOST=127.0.0.1), or explicitly accept the risk with ` +
+      `FLOWBOARD_ALLOW_LAN=true.`
+    );
+    process.exit(1);
+  }
+  console.warn(
+    `⚠️  S-24: binding non-loopback host '${HOST}' with auth DISABLED and ` +
+    `FLOWBOARD_ALLOW_LAN=true — the unauthenticated control surface is reachable from the LAN.`
+  );
+}
+if (!AUTH_ENABLED && isLoopbackHost(HOST)) {
   console.warn('⚠️  AUTH DISABLED — only localhost access permitted');
 }
 
@@ -1143,6 +1170,12 @@ app.delete('/api/agents/:id', (req, res) => {
       });
     }
 
+    // T-422-2 (5.0.5): force-deleting an agent that holds LIVE claims yanks
+    // another principal's active leases — a privileged, high-blast-radius act.
+    // Require explicit typed confirmation for exactly that case (a force-delete
+    // of a claim-less agent is just stale-row cleanup and stays ungated).
+    if (force && activeClaims.length > 0 && !requireConfirmation(req, res, 'force-delete-agent')) return;
+
     let releasedCount = 0;
     if (force && activeClaims.length > 0) {
       for (const t of activeClaims) {
@@ -1156,6 +1189,13 @@ app.delete('/api/agents/:id', (req, res) => {
     }
 
     const removed = fbMeta.deleteAgentRow(agentId);
+    // T-422-2: record who deleted which agent (and how many live claims were
+    // yanked) so the act is answerable after the fact, per the audit-log model.
+    audit({
+      action: releasedCount > 0 ? 'agent.force-delete' : 'agent.delete',
+      project: null,
+      target: releasedCount > 0 ? `${agentId} releasedClaims:${releasedCount}` : agentId,
+    }, req);
     res.json({
       ok: true,
       agent_id: agentId,
@@ -2040,6 +2080,26 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     // the activity feed reflects who took the back-door path.
     const fromStatus = prevStatus;
     const toStatus = hzlUpdates.status;
+
+    // T-422-1 (5.0.5): lease ownership on the generic update path. Changing the
+    // status of a task another agent actively holds releases/disrupts its claim
+    // (hzl-service updateTask auto-releases on review/done). A caller that
+    // asserts an `actor` distinct from the claim holder must not do this via the
+    // generic PUT — mirrors the NOT_OWNER guard on complete/checkpoint/release.
+    // An actor-LESS caller is the trusted local operator / dashboard UI (the
+    // Status-Picker auto-release flow is preserved), and the explicit
+    // adminOverride back-door is honoured for deliberate operator cleanup.
+    if (toStatus && toStatus !== fromStatus && task.agent) {
+      const actor = updates.actor && String(updates.actor).trim();
+      const override = updates.adminOverride === true;
+      if (actor && actor !== task.agent && !override) {
+        return res.status(409).json({
+          error: `Only the owning agent "${task.agent}" can change the status of a task it has claimed. Use the workflow endpoint as the owner, release the claim first, or pass adminOverride with a reason.`,
+          code: 'NOT_OWNER',
+        });
+      }
+    }
+
     if (taskTransitionGuard.isSensitiveTransition(fromStatus, toStatus)) {
       const override = updates.adminOverride === true;
       if (!override) {
