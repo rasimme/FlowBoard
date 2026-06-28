@@ -28,6 +28,9 @@ import { get } from 'node:http';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DASH = join(ROOT, 'dashboard');
 const PORT = Number(process.env.FLOWBOARD_PORT) || 18790;
+const PLATFORM = process.env.NODE_ENV === 'test' && process.env.FLOWBOARD_SETUP_TEST_PLATFORM
+  ? process.env.FLOWBOARD_SETUP_TEST_PLATFORM
+  : platform();
 const DRY = process.argv.includes('--dry-run');
 // --update: rebuild + restart an existing install (e.g. after
 // `openclaw plugins update`). Like --force but semantically "refresh". The
@@ -56,6 +59,11 @@ function run(cmd, args, opts = {}) {
   if (DRY) return;
   const r = spawnSync(cmd, args, { stdio: 'inherit', ...opts });
   if (r.status !== 0) die(`command failed: ${cmd} ${args.join(' ')}`);
+}
+function runStatus(cmd, args, opts = {}) {
+  log(c.dim(`  $ ${cmd} ${args.join(' ')}`));
+  if (DRY) return 0;
+  return spawnSync(cmd, args, { stdio: 'inherit', ...opts }).status ?? 1;
 }
 function tryExec(cmd, args) {
   try { return execFileSync(cmd, args, { encoding: 'utf8' }).trim(); } catch { return null; }
@@ -122,7 +130,7 @@ log(c.dim('  To enable it later, add TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS to th
 // ── 5. Service registration (launchd / systemd --user) ──────────────────────
 step('4. Register the dashboard service');
 const node = process.execPath;
-if (platform() === 'darwin') {
+if (PLATFORM === 'darwin') {
   const label = 'ai.openclaw.flowboard-dashboard';
   const plistDir = join(homedir(), 'Library', 'LaunchAgents');
   const plistPath = join(plistDir, `${label}.plist`);
@@ -154,7 +162,7 @@ ${envXml}
     run('launchctl', ['bootstrap', `gui/${uid}`, plistPath]);
   }
   log(`${c.ok} launchd service ${label} registered`);
-} else if (platform() === 'linux') {
+} else if (PLATFORM === 'linux') {
   const unitDir = join(homedir(), '.config', 'systemd', 'user');
   const unitPath = join(unitDir, 'flowboard-dashboard.service');
   const envLines = Object.entries(serviceEnv)
@@ -176,16 +184,39 @@ WantedBy=default.target
 `;
   if (DRY) {
     log(c.dim(`  would write ${unitPath}`));
-    log(c.dim('  would: systemctl --user daemon-reload && systemctl --user enable --now flowboard-dashboard'));
+    log(c.dim('  would: systemctl --user daemon-reload'));
+    if (UPDATE) {
+      log(c.dim('  would: systemctl --user enable flowboard-dashboard'));
+      log(c.dim('  would: systemctl --user restart flowboard-dashboard'));
+    } else {
+      log(c.dim('  would: systemctl --user enable --now flowboard-dashboard'));
+    }
   } else {
     mkdirSync(unitDir, { recursive: true });
     writeFileSync(unitPath, unit);
     run('systemctl', ['--user', 'daemon-reload']);
-    run('systemctl', ['--user', 'enable', '--now', 'flowboard-dashboard']);
+    if (UPDATE) {
+      run('systemctl', ['--user', 'enable', 'flowboard-dashboard']);
+      // Try restart first; if it fails and the unit is in a recoverable state
+      // (inactive/dead), fallback to start with a warning.
+      const restartStatus = runStatus('systemctl', ['--user', 'restart', 'flowboard-dashboard']);
+      if (restartStatus !== 0) {
+        const activeStatus = runStatus('systemctl', ['--user', 'is-active', '--quiet', 'flowboard-dashboard']);
+        const isInactive = activeStatus !== 0; // is-active returns non-zero if not active
+        if (isInactive) {
+          log(`${c.warn} restart failed; unit is inactive, trying start instead`);
+          run('systemctl', ['--user', 'start', 'flowboard-dashboard']);
+        } else {
+          die(`systemctl --user restart flowboard-dashboard failed`);
+        }
+      }
+    } else {
+      run('systemctl', ['--user', 'enable', '--now', 'flowboard-dashboard']);
+    }
   }
   log(`${c.ok} systemd --user service flowboard-dashboard registered`);
 } else {
-  log(`${c.warn} Unsupported platform (${platform()}) for automatic service registration.`);
+  log(`${c.warn} Unsupported platform (${PLATFORM}) for automatic service registration.`);
   log(c.dim(`  Start manually: cd ${DASH} && FLOWBOARD_PORT=${PORT} node server.js`));
 }
 
