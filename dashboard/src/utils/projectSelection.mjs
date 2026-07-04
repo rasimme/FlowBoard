@@ -23,6 +23,8 @@ export function resolveDashboardAgentId({ urlSearch = '', telegramWebApp = null,
 
 export function resolveDashboardAgentIdentity({ urlSearch = '', telegramWebApp = null, authAgentId = null, storedAgentId = null } = {}) {
   const params = new URLSearchParams(urlSearch || '');
+  // T-428-5: a server-confirmed auth identity is authoritative. Client-controlled
+  // sources (Telegram start_param, URL params, local storage) cannot override it.
   const candidates = [
     ['auth', normalizeAgentId(authAgentId)],
     ['stored', normalizeAgentId(storedAgentId)],

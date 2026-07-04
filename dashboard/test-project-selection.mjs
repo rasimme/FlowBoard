@@ -14,12 +14,22 @@ assert.equal(selection.agentIdFromStartParam(''), null)
 
 assert.equal(
   selection.resolveDashboardAgentId({
-    urlSearch: '?agentId=dev-botti',
+    urlSearch: '?agentId=url-agent',
     telegramWebApp: { initDataUnsafe: { start_param: 'agent=main' } },
     authAgentId: 'design-botti',
   }),
   'design-botti',
-  'authAgentId wins over URL and Telegram'
+  'T-428-5: auth agentId wins over Telegram start_param and URL'
+)
+
+assert.equal(
+  selection.resolveDashboardAgentId({
+    urlSearch: '?agentId=url-agent',
+    telegramWebApp: null,
+    authAgentId: 'design-botti',
+  }),
+  'design-botti',
+  'T-428-5: auth agentId cannot be overridden by URL query param'
 )
 
 assert.equal(
@@ -28,7 +38,7 @@ assert.equal(
     authAgentId: 'main',
   }),
   'main',
-  'authAgentId takes priority over Telegram start_param'
+  'T-428-5: auth agentId cannot be overridden by Telegram start_param'
 )
 
 assert.equal(

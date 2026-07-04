@@ -10,6 +10,7 @@ import { refreshTasks } from '../../state/appStateBridge.mjs';
 import { apiFetch } from '../../utils/apiFetch.js';
 import { sortContextFiles } from '../../utils/contextSort.js';
 import { posToOffset, resolveSelection, estimateColumn } from '../../utils/notesLocate.mjs';
+import { safeExternalHttpUrl } from '../../utils/safeExternalUrl.mjs';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
 const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
@@ -856,9 +857,8 @@ export function NotesWidget({ editing }) {
 }
 
 /* ---------- links: pinned externals from props ---------- */
-// a bare "example.com" would resolve relative to the dashboard origin
 function absoluteUrl(url) {
-  return /^[a-z][a-z0-9+.-]*:/i.test(url || '') ? url : `https://${url}`;
+  return safeExternalHttpUrl(url);
 }
 
 export function LinksWidget({ widget, editing }) {

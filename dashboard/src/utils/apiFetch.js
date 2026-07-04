@@ -19,12 +19,31 @@ export function apiFetch(path, opts = {}) {
   // is offered for confirmation in the UI but auto-applied for agents — T-365).
   if (!headers['X-FlowBoard-Client']) headers['X-FlowBoard-Client'] = 'dashboard';
 
-  // Always send credentials (cookies) for cross-origin auth via tunnel
-  const credentials = 'include';
+  // T-428-3: only attach credentials to same-origin /api paths, not external URLs
+  let credentials = 'omit';
+  let isSameOriginApi = false;
+  if (path.startsWith('/api/')) {
+    // relative path starting with /api/ is same-origin
+    isSameOriginApi = true;
+    credentials = 'include';
+  } else {
+    try {
+      const origin = window.location?.origin;
+      if (origin) {
+        const url = new URL(path, origin);
+        if (url.origin === origin && url.pathname.startsWith('/api/')) {
+          isSameOriginApi = true;
+          credentials = 'include';
+        }
+      }
+    } catch {
+      // Invalid absolute URL — drop credentials
+    }
+  }
 
-  // If Telegram WebApp is available, send initData for auth
+  // If Telegram WebApp is available and this is a same-origin /api request, send initData
   const tg = window.Telegram?.WebApp;
-  if (tg?.initData) {
+  if (isSameOriginApi && tg?.initData) {
     headers['X-Telegram-Init-Data'] = tg.initData;
   }
 

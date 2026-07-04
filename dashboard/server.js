@@ -191,7 +191,8 @@ function validateTelegramWebApp(initData) {
   const hash = params.get('hash');
   if (!hash) return null;
   const authDate = parseInt(params.get('auth_date'), 10);
-  if (!authDate || Date.now() / 1000 - authDate > 300) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (!authDate || now - authDate > 300 || authDate > now) return null;
   params.delete('hash');
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -211,7 +212,8 @@ function validateTelegramWebApp(initData) {
   });
 
   if (!isValid) return null;
-  const user = JSON.parse(params.get('user') || 'null');
+  let user = null;
+  try { user = JSON.parse(params.get('user') || 'null'); } catch { return null; }
   if (!user || !ALLOWED_USER_IDS.includes(user.id)) return null;
   const mappedAgentId = TELEGRAM_AGENT_IDS[matchedBotIndex] || null;
   if (mappedAgentId) user.agentId = mappedAgentId;
@@ -321,10 +323,23 @@ app.use('/api/', (req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     const origin = req.headers['origin'];
     if (origin) {
-      const localHostname = process.env.LOCAL_HOSTNAME || '';
-      const isLocalOrigin = origin.startsWith('http://localhost:')
-        || origin.startsWith('http://127.0.0.1:')
-        || (localHostname && origin.includes(localHostname));
+      let isLocalOrigin = false;
+      try {
+        const url = new URL(origin);
+        const hostname = url.hostname;
+        isLocalOrigin = hostname === 'localhost'
+          || hostname === '127.0.0.1'
+          || hostname === '[::1]'
+          || hostname === '::1';
+        // T-428-1: exact LOCAL_HOSTNAME match, not substring
+        const localHostname = process.env.LOCAL_HOSTNAME || '';
+        if (localHostname && hostname === localHostname) {
+          isLocalOrigin = true;
+        }
+      } catch {
+        // Invalid origin URL format — deny
+        isLocalOrigin = false;
+      }
       const allowedOrigins = DASHBOARD_ORIGIN
         ? [DASHBOARD_ORIGIN, 'https://web.telegram.org']
         : ['https://web.telegram.org'];
