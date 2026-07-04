@@ -138,6 +138,38 @@ const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
 // default and the bypass can never be reached by setting LOCAL_HOSTNAME alone.
 const ALLOW_LAN = process.env.FLOWBOARD_ALLOW_LAN === 'true';
 const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
+const TELEGRAM_WEB_ORIGIN = 'https://web.telegram.org';
+const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'DELETE'];
+const CORS_ALLOWED_HEADERS = ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With'];
+
+function isLoopbackOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    return isLoopbackHost(url.hostname.replace(/^\[|\]$/g, ''));
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true;
+  if (!AUTH_ENABLED) {
+    return process.env.NODE_ENV !== 'production' && isLoopbackOrigin(origin);
+  }
+  if (DASHBOARD_ORIGIN && origin === DASHBOARD_ORIGIN) return true;
+  if (origin === TELEGRAM_WEB_ORIGIN) return true;
+  if (process.env.NODE_ENV !== 'production' && isLoopbackOrigin(origin)) return true;
+  return false;
+}
+
+const corsOptions = {
+  origin: (origin, cb) => cb(null, isAllowedCorsOrigin(origin) ? (origin || true) : false),
+  credentials: true,
+  methods: CORS_ALLOWED_METHODS,
+  allowedHeaders: CORS_ALLOWED_HEADERS,
+  optionsSuccessStatus: 204,
+};
 
 // S-03: Reject weak JWT secrets when auth is active
 if (AUTH_ENABLED && JWT_SECRET.trim().length < 32) {
@@ -327,10 +359,7 @@ app.use('/api/', (req, res, next) => {
       try {
         const url = new URL(origin);
         const hostname = url.hostname;
-        isLocalOrigin = hostname === 'localhost'
-          || hostname === '127.0.0.1'
-          || hostname === '[::1]'
-          || hostname === '::1';
+        isLocalOrigin = isLoopbackHost(hostname.replace(/^\[|\]$/g, ''));
         // T-428-1: exact LOCAL_HOSTNAME match, not substring
         const localHostname = process.env.LOCAL_HOSTNAME || '';
         if (localHostname && hostname === localHostname) {
@@ -341,8 +370,8 @@ app.use('/api/', (req, res, next) => {
         isLocalOrigin = false;
       }
       const allowedOrigins = DASHBOARD_ORIGIN
-        ? [DASHBOARD_ORIGIN, 'https://web.telegram.org']
-        : ['https://web.telegram.org'];
+        ? [DASHBOARD_ORIGIN, TELEGRAM_WEB_ORIGIN]
+        : [TELEGRAM_WEB_ORIGIN];
       if (!isLocalOrigin && !allowedOrigins.includes(origin)) {
         return res.status(403).json({ error: 'Origin not allowed' });
       }
@@ -353,30 +382,16 @@ app.use('/api/', (req, res, next) => {
 
 // S-23: CORS — restrict origins when auth is active, no wildcard fallback
 if (DASHBOARD_ORIGIN) {
-  app.use(cors({
-    origin: DASHBOARD_ORIGIN,
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With']
-  }));
+  app.use(cors(corsOptions));
 } else if (AUTH_ENABLED) {
   console.warn('⚠️  DASHBOARD_ORIGIN not set with AUTH_ENABLED — restricting CORS to Telegram origins');
-  app.use(cors({
-    origin: ['https://web.telegram.org'],
-    credentials: true,
-    allowedHeaders: ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With']
-  }));
+  app.use(cors(corsOptions));
 } else {
   // No auth, local-first (S-13/T-417-20): restrict CORS to loopback origins so a
   // malicious web page cannot drive the unauthenticated local API from a
   // victim's browser. Non-browser callers (curl/agents) send no Origin and are
   // unaffected; the dashboard itself is same-origin (loopback).
-  app.use(cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      return cb(null, /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin));
-    },
-    credentials: true,
-  }));
+  app.use(cors(corsOptions));
 }
 
 // S-13 (T-417-20): make the LAN-bypass posture loud at boot — never silent.

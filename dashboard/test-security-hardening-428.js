@@ -25,6 +25,12 @@ const SECONDARY_BOT_TOKEN = '654321:secondary-bot-secret-test';
 let pass = 0, fail = 0;
 const failures = [];
 function ok(c, m) { if (c) { pass++; console.log(`  ok - ${m}`); } else { fail++; failures.push(m); console.log(`  not ok - ${m}`); } }
+function methods(res) {
+  return (res.headers.get('access-control-allow-methods') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
 
 async function waitForServer(base, child) {
   const t = Date.now();
@@ -84,6 +90,27 @@ async function run() {
   });
   try {
     await waitForServer(base, child);
+
+    // --- T-430: CORS preflight method advertising ---
+    console.log('\n# T-430: CORS preflight method advertising');
+
+    const evilPreflight = await fetch(base + '/api/projects', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'PATCH' },
+    });
+    ok(!evilPreflight.headers.get('access-control-allow-origin'), 'unknown origin preflight omits allow-origin');
+    ok(methods(evilPreflight).length === 0, 'unknown origin preflight does not advertise allowed methods');
+
+    const telegramPreflight = await fetch(base + '/api/projects', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://web.telegram.org', 'Access-Control-Request-Method': 'PUT' },
+    });
+    const allowedMethods = methods(telegramPreflight);
+    ok(telegramPreflight.headers.get('access-control-allow-origin') === 'https://web.telegram.org',
+      'Telegram origin preflight is allowed');
+    ok(allowedMethods.includes('GET') && allowedMethods.includes('POST') && allowedMethods.includes('PUT') && allowedMethods.includes('DELETE'),
+      `Telegram preflight advertises required methods (${allowedMethods.join(',')})`);
+    ok(!allowedMethods.includes('PATCH'), 'Telegram preflight does not advertise unused PATCH method');
 
     // --- T-428-1: CSRF Origin exact hostname matching ---
     console.log('\n# T-428-1: CSRF Origin exact hostname matching');

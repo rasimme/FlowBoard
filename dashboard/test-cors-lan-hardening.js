@@ -21,6 +21,12 @@ const PORT = 18837;
 let pass = 0, fail = 0;
 const failures = [];
 function ok(c, m) { if (c) { pass++; console.log(`  ok - ${m}`); } else { fail++; failures.push(m); console.log(`  not ok - ${m}`); } }
+function methods(res) {
+  return (res.headers.get('access-control-allow-methods') || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
 
 async function waitForServer(base, child) {
   const t = Date.now();
@@ -63,11 +69,27 @@ async function run() {
     const acaoEvil = evilRes.headers.get('access-control-allow-origin');
     ok(acaoEvil !== '*' && acaoEvil !== evil, `no-auth CORS does not allow a cross-site origin (acao=${acaoEvil})`);
 
+    const evilPreflight = await fetch(base + '/api/health', {
+      method: 'OPTIONS',
+      headers: { Origin: evil, 'Access-Control-Request-Method': 'PATCH' },
+    });
+    ok(!evilPreflight.headers.get('access-control-allow-origin'), 'no-auth preflight omits allow-origin for cross-site origin');
+    ok(methods(evilPreflight).length === 0, 'no-auth preflight does not advertise methods to cross-site origin');
+
     // CORS: all three loopback origin forms are allowed (the dashboard itself).
     for (const loop of ['http://127.0.0.1:9999', 'http://localhost:3000', 'http://[::1]:9999']) {
       const acao = (await fetch(base + '/api/health', { headers: { Origin: loop } })).headers.get('access-control-allow-origin');
       ok(acao === loop, `no-auth CORS allows loopback origin ${loop} (acao=${acao})`);
     }
+
+    const loopbackPreflight = await fetch(base + '/api/health', {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://127.0.0.1:9999', 'Access-Control-Request-Method': 'PUT' },
+    });
+    const allowed = methods(loopbackPreflight);
+    ok(allowed.includes('GET') && allowed.includes('POST') && allowed.includes('PUT') && allowed.includes('DELETE'),
+      `loopback preflight advertises required methods (${allowed.join(',')})`);
+    ok(!allowed.includes('PATCH'), 'loopback preflight does not advertise unused PATCH method');
 
     // CORS: near-miss look-alike origins an unanchored/substring check would wrongly allow must be DENIED.
     for (const bad of ['http://127.0.0.1.evil.com', 'http://localhost.evil.com', 'http://evil.com']) {
