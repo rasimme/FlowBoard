@@ -24,17 +24,17 @@ export function resolveDashboardAgentId({ urlSearch = '', telegramWebApp = null,
 export function resolveDashboardAgentIdentity({ urlSearch = '', telegramWebApp = null, authAgentId = null, storedAgentId = null } = {}) {
   const params = new URLSearchParams(urlSearch || '');
   const candidates = [
+    ['auth', normalizeAgentId(authAgentId)],
+    ['stored', normalizeAgentId(storedAgentId)],
     ['url', normalizeAgentId(params.get('agentId'))],
     ['url', normalizeAgentId(params.get('agent'))],
     ['telegram-start', agentIdFromStartParam(telegramWebApp?.initDataUnsafe?.start_param)],
-    ['auth', normalizeAgentId(authAgentId)],
-    ['stored', normalizeAgentId(storedAgentId)],
   ];
   const found = candidates.find(([, agentId]) => agentId);
   return {
     agentId: found?.[1] || null,
     source: found?.[0] || null,
-    chatBound: !!found && found[0] !== 'stored',
+    chatBound: !!found && found[0] !== 'stored' && found[0] !== 'auth',
   };
 }
 

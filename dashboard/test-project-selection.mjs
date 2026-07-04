@@ -18,8 +18,8 @@ assert.equal(
     telegramWebApp: { initDataUnsafe: { start_param: 'agent=main' } },
     authAgentId: 'design-botti',
   }),
-  'dev-botti',
-  'URL agentId wins'
+  'design-botti',
+  'authAgentId wins over URL and Telegram'
 )
 
 assert.equal(
@@ -27,8 +27,8 @@ assert.equal(
     telegramWebApp: { initDataUnsafe: { start_param: 'agent=dev-botti' } },
     authAgentId: 'main',
   }),
-  'dev-botti',
-  'Telegram start_param wins over auth fallback'
+  'main',
+  'authAgentId takes priority over Telegram start_param'
 )
 
 assert.equal(
@@ -46,10 +46,29 @@ assert.deepEqual(
 assert.deepEqual(
   selection.resolveDashboardAgentIdentity({
     telegramWebApp: { initDataUnsafe: { start_param: 'agent=dev-botti' } },
-    storedAgentId: 'old-agent',
   }),
   { agentId: 'dev-botti', source: 'telegram-start', chatBound: true },
-  'telegram start_param is chat-bound'
+  'telegram start_param is chat-bound when auth and stored are absent'
+)
+
+assert.deepEqual(
+  selection.resolveDashboardAgentIdentity({
+    urlSearch: '?agentId=url-agent',
+    telegramWebApp: { initDataUnsafe: { start_param: 'agent=tg-agent' } },
+    storedAgentId: 'stored-agent',
+  }),
+  { agentId: 'stored-agent', source: 'stored', chatBound: false },
+  'stored agent takes priority over URL and Telegram when auth is absent'
+)
+
+assert.deepEqual(
+  selection.resolveDashboardAgentIdentity({
+    urlSearch: '?agentId=url-agent',
+    authAgentId: 'auth-agent',
+    storedAgentId: 'stored-agent',
+  }),
+  { agentId: 'auth-agent', source: 'auth', chatBound: false },
+  'authAgentId takes priority over stored and URL'
 )
 
 const projects = [{ name: 'alpha' }, { name: 'flowboard' }, { name: 'zeta' }]
