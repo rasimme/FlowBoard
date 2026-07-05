@@ -19,25 +19,31 @@ export function apiFetch(path, opts = {}) {
   // is offered for confirmation in the UI but auto-applied for agents — T-365).
   if (!headers['X-FlowBoard-Client']) headers['X-FlowBoard-Client'] = 'dashboard';
 
-  // T-428-3: only attach credentials to same-origin /api paths, not external URLs
+  // T-432: reject explicit external URLs before fetch can leave the dashboard origin.
   let credentials = 'omit';
   let isSameOriginApi = false;
+  const isExplicitAbsoluteUrl = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(path) || path.startsWith('//');
   if (path.startsWith('/api/')) {
     // relative path starting with /api/ is same-origin
     isSameOriginApi = true;
     credentials = 'include';
   } else {
     try {
-      const origin = window.location?.origin;
+      const origin = globalThis.window?.location?.origin;
       if (origin) {
         const url = new URL(path, origin);
         if (url.origin === origin && url.pathname.startsWith('/api/')) {
           isSameOriginApi = true;
           credentials = 'include';
+        } else if (isExplicitAbsoluteUrl && url.origin !== origin) {
+          throw new Error('apiFetch: external URLs are not allowed');
         }
+      } else if (isExplicitAbsoluteUrl) {
+        throw new Error('apiFetch: absolute URLs require a browser origin');
       }
-    } catch {
-      // Invalid absolute URL — drop credentials
+    } catch (error) {
+      if (error?.message?.startsWith('apiFetch:')) throw error;
+      if (isExplicitAbsoluteUrl) throw new Error('apiFetch: invalid absolute URL');
     }
   }
 

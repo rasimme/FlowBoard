@@ -39,9 +39,16 @@ await apiFetch('/static/file.js');
 assert.equal(calls.at(-1).opts.credentials, 'omit');
 assert.equal(calls.at(-1).opts.headers['X-Telegram-Init-Data'], undefined);
 
-await apiFetch('https://attacker.example/api/steal');
-assert.equal(calls.at(-1).opts.credentials, 'omit');
-assert.equal(calls.at(-1).opts.headers['X-Telegram-Init-Data'], undefined);
+const callCountBeforeExternal = calls.length;
+assert.throws(
+  () => apiFetch('https://attacker.example/api/steal'),
+  /external URLs are not allowed/
+);
+assert.throws(
+  () => apiFetch('//attacker.example/api/steal'),
+  /external URLs are not allowed/
+);
+assert.equal(calls.length, callCountBeforeExternal);
 
 assert.deepEqual(
   resolveDashboardAgentIdentity({
