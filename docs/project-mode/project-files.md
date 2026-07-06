@@ -66,6 +66,21 @@ Decisions persist across sessions. They're the "institutional memory" of the pro
 
 Context docs are **lazy-loaded** - agents read them when relevant, not on every session start.
 
+## Content Encoding
+
+Project files are UTF-8 text. Human-readable content keeps the natural
+orthography of the user, project and source material: accents, umlauts,
+typographic punctuation, CJK characters and other Unicode text are preserved.
+FlowBoard does not force any language, and agents must not apply generic
+ASCII-only defaults to notes, specs, PROJECT.md, SESSIONS.md, DECISIONS.md or
+context Markdown.
+
+ASCII-oriented text is still correct for technical surfaces that require it:
+slugs, filenames, URLs, JSON keys, environment variables, code, shell commands
+and protocol identifiers. Do not blindly replace `ae`, `oe`, `ue` or `ss` in
+existing content; report suspicious transliteration or mojibake first and let a
+human or a scoped migration decide the fix.
+
 ## File API (read/write)
 
 Agents can read and write project files through the API instead of the shell:

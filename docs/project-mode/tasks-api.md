@@ -36,6 +36,18 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 
 FlowBoard assigns human-readable IDs (e.g. `T-042`) stored in `metadata.flowboard.id`. The API accepts both FlowBoard IDs and ULIDs.
 
+### Human-Readable Text Encoding
+
+Task titles and descriptions are user-facing UTF-8 content. Preserve Unicode
+characters supplied by the user, project or source material; do not transliterate
+natural language to ASCII just because an agent default prefers ASCII. FlowBoard
+does not enforce German, English or any other language.
+
+Keep ASCII where it is a technical identifier: FlowBoard IDs, slugs, filenames,
+URLs, JSON keys, environment variables, code and shell commands. Suspicious
+legacy transliteration or mojibake belongs in a content-hygiene report, not in a
+blind mass rewrite.
+
 ## Endpoints
 
 Base: `http://localhost:18790/api`

@@ -4,6 +4,28 @@
 
 Monitoring and enforcement mechanisms for FlowBoard contract adherence. This covers agent handoff contracts, snippet size constraints, and task execution compliance.
 
+## Content Hygiene
+
+Human-readable FlowBoard content is UTF-8 and language-neutral. Compliance
+checks may report two classes of suspicious content:
+
+- **Mojibake**: encoding damage such as `Ã¼`, `Ã¶`, `ÃŸ` or replacement
+  characters.
+- **ASCII transliteration**: likely natural-language text flattened to ASCII
+  where Unicode should have been preserved, for example German words like
+  `fuer`, `Pruefung` or `Koerperschaftsteuer` in project notes, specs or task
+  descriptions.
+
+The doctor is intentionally report-first. It skips code fences, inline code,
+URLs, JSON-like lines and slug-like technical identifiers, and it does not apply
+blind global replacements. Review the findings before editing content.
+
+```bash
+node dashboard/content-hygiene-doctor.js --root ~/.openclaw/projects/<project>
+curl -s http://127.0.0.1:18790/api/projects/<project>/tasks > /tmp/tasks.json
+node dashboard/content-hygiene-doctor.js --root ~/.openclaw/projects/<project> --tasks-json /tmp/tasks.json
+```
+
 ## Snippet Size Compliance
 
 ### Minimal-Snippet Contract
