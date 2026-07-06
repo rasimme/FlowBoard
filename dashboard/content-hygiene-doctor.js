@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const MOJIBAKE_RE = /(?:Ã(?:[\u0080-\u00bf]|Ÿ)|Â[\u0020-\u007e]|â(?:€|„|œ|€œ|€™|€“|€”|€¦)|�)/g;
+const MOJIBAKE_RE = /(?:Ã(?:[\u0080-\u00bf]|[„–œŸ])|Â[\u0020-\u00bf]|â(?:€œ|€™|€“|€”|€¦|€|„|œ)|�)/g;
 
 const TRANSLITERATION_PATTERNS = [
   /\bfuer\b/gi,

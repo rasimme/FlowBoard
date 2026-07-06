@@ -19,8 +19,9 @@ section('scanText()');
 {
   const findings = doctor.scanText([
     'Natürlicher Content bleibt Unicode.',
+    'Korrektes Unicode bleibt Ä, Ö und Ü.',
     'Dogfooding zeigte Pruefung, fuer und Koerperschaftsteuer.',
-    'Mojibake sieht aus wie Ã¼, Ã¶ oder ÃŸ.',
+    'Mojibake sieht aus wie Ã¼, Ã¶, ÃŸ, Ã„, Ã–, Ãœ, Â© oder â€œ.',
     '`fuer` inside inline code is ignored.',
     '```',
     'waere inside fenced code is ignored',
@@ -33,6 +34,12 @@ section('scanText()');
   ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ã¼'), 'reports mojibake');
   ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ã¶'), 'reports common mojibake for ö');
   ok(findings.some(f => f.type === 'mojibake' && f.match === 'ÃŸ'), 'reports common mojibake for ß');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ã„'), 'reports common mojibake for Ä');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ã–'), 'reports common mojibake for Ö');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ãœ'), 'reports common mojibake for Ü');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'Â©'), 'reports common mojibake for ©');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'â€œ'), 'reports common mojibake for opening quote');
+  ok(!findings.some(f => /Korrektes Unicode/.test(f.excerpt)), 'does not flag correct uppercase Unicode umlauts');
   ok(!findings.some(f => /inline code/.test(f.excerpt)), 'ignores inline code');
   ok(!findings.some(f => /fenced code/.test(f.excerpt)), 'ignores fenced code');
   ok(!findings.some(f => /example\.test/.test(f.excerpt)), 'ignores URLs');
