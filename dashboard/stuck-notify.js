@@ -1,88 +1,115 @@
 'use strict';
 
 /**
- * T-400 — routing for the 5-minute stuck-check notification.
+ * T-434 — session-safe routing for the 5-minute stuck-check notification.
  *
- * Splits the "wake a hung agent" concern from the "ping the operator" concern,
- * which the old code conflated (every stuck round was delivered to the operator
- * via Telegram, including a blanket fallback to the `main` agent).
+ * Hard rule: a gateway request may NEVER target a live main session key
+ * (`agent:<x>:main`). The gateway's `/hooks/agent` endpoint always runs an
+ * isolated agent turn and force-rolls whatever session key it is pointed at,
+ * wiping that conversation's context. Pointing it at the operator's (or any
+ * agent's) main session reset the live conversation every scheduler round
+ * and injected unrelated project context into it (incident 2026-07-06).
  *
- *  - A task WITH a responsible agent wakes only THAT agent's session. The wake
- *    payload uses channel `'none'` so the gateway runs/nudges the agent
- *    (`message` is its inbound prompt) without any outbound Telegram delivery —
- *    the operator stays quiet.
- *  - Tasks WITHOUT a responsible agent (orphaned stale/expired, routed-but-never
- *    -claimed with no routedAgent) escalate to the operator in ONE message,
- *    using the configured operator delivery. The 60-min notification window in
- *    getNotifiableStuckTasks() already throttles repeats.
+ * Routing (replaces the T-400 owner-wake/agent-turn design):
+ *  - Tasks owned by the gateway DEFAULT agent (`opts.wakeAgent`, default
+ *    `'main'`) are bundled into one `/hooks/wake` payload — a system event
+ *    the gateway enqueues into the existing main session WITHOUT resetting
+ *    it; `mode: 'now'` asks for an immediate heartbeat so the reminder is
+ *    processed in-context.
+ *  - Tasks owned by ANY OTHER agent (other gateway agents, external agents
+ *    such as Claude Code) get no push: `/hooks/wake` cannot address them and
+ *    `/hooks/agent` must not. Their reminder is board state — the scheduler
+ *    posts a task comment and `/api/status` serves `attention.stuckTasks`
+ *    (see T-434 spec), which every agent reads on its next FlowBoard touch.
+ *  - Tasks WITHOUT a responsible agent escalate to the operator in ONE
+ *    `/hooks/agent` triage turn on a dedicated throwaway session key
+ *    (`opts.escalationSessionKey`, default `agent:main:flowboard-stuck-check`)
+ *    that is nobody's conversation, delivered via the configured operator
+ *    channel. The 60-min window in getNotifiableStuckTasks() throttles repeats.
  *
- * Pure function: returns the array of gateway `/hooks/agent` request bodies, so
- * the scheduler's routing is unit-testable without touching the live gateway.
+ * Pure function: returns `[{ endpoint: 'wake'|'agent', body }]` so the
+ * scheduler's routing is unit-testable without touching the live gateway.
  *
  * @param {{stale?:Array, expired?:Array, routedUnclaimed?:Array}} lists
- * @param {{operatorDelivery?:object, wakeChannel?:string}} [opts]
+ * @param {{operatorDelivery?:object, wakeAgent?:string, escalationSessionKey?:string}} [opts]
  *   operatorDelivery — delivery fields for the operator escalation
  *     (e.g. { channel:'telegram', target, to } from flowboardNotificationDelivery()).
- *   wakeChannel — channel for owner wake payloads. Default 'none' (no outbound).
- * @returns {Array<object>} gateway request bodies
+ *   wakeAgent — gateway default agent reachable via /hooks/wake. Default 'main'.
+ *   escalationSessionKey — throwaway session key for the escalation turn.
+ * @returns {Array<{endpoint:'wake'|'agent', body:object}>} gateway requests
  */
+
+// Live interactive session keys — never a valid notification target.
+const LIVE_MAIN_SESSION_KEY_RE = /^agent:[^:]+:main$/;
+
+const DEFAULT_ESCALATION_SESSION_KEY = 'agent:main:flowboard-stuck-check';
+
 function buildStuckNotifications(lists = {}, opts = {}) {
   const stale = Array.isArray(lists.stale) ? lists.stale : [];
   const expired = Array.isArray(lists.expired) ? lists.expired : [];
   const routedUnclaimed = Array.isArray(lists.routedUnclaimed) ? lists.routedUnclaimed : [];
-  const wakeChannel = opts.wakeChannel || 'none';
+  const wakeAgent = opts.wakeAgent || 'main';
+  const escalationSessionKey = opts.escalationSessionKey || DEFAULT_ESCALATION_SESSION_KEY;
   const operatorDelivery = opts.operatorDelivery || {};
 
-  const byAgent = {}; // owner agent → entries (silent wake)
-  const unowned = []; // no responsible agent → operator escalation
-  const pushOwned = (agent, entry) => { (byAgent[agent] = byAgent[agent] || []).push(entry); };
+  if (LIVE_MAIN_SESSION_KEY_RE.test(escalationSessionKey)) {
+    throw new Error(`escalationSessionKey must not target a live main session key: ${escalationSessionKey}`);
+  }
+
+  const defaultAgentTasks = []; // owned by the gateway default agent → /hooks/wake
+  const unowned = [];           // no responsible agent → operator escalation
+
+  const route = (agent, entry) => {
+    if (!agent) unowned.push(entry);
+    else if (agent === wakeAgent) defaultAgentTasks.push(entry);
+    // other owners: no push — board state (comment + status attention) reminds them
+  };
 
   for (const t of stale) {
-    const entry = { type: 'stale', id: t.id, project: t.project, title: t.title, staleSinceMinutes: t.staleSinceMinutes };
-    if (t.agent) pushOwned(t.agent, entry); else unowned.push(entry);
+    route(t.agent, { type: 'stale', id: t.id, project: t.project, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
   }
   for (const t of expired) {
-    const entry = { type: 'lease_expired', id: t.id, project: t.project, title: t.title };
-    if (t.agent) pushOwned(t.agent, entry); else unowned.push(entry);
+    route(t.agent, { type: 'lease_expired', id: t.id, project: t.project, title: t.title });
   }
   for (const t of routedUnclaimed) {
-    const entry = { type: 'routed_unclaimed', id: t.id, project: t.project, title: t.title };
-    if (t.routedAgent) pushOwned(t.routedAgent, entry); else unowned.push(entry);
+    route(t.routedAgent, { type: 'routed_unclaimed', id: t.id, project: t.project, title: t.title });
   }
 
   const fmt = (t) =>
-    t.type === 'stale' ? `⚠️ ${t.id} "${t.title}" — ${t.staleSinceMinutes}min without checkpoint`
-    : t.type === 'lease_expired' ? `🔴 ${t.id} "${t.title}" — lease expired`
-    : `📨 ${t.id} "${t.title}" — routed to you, never claimed`;
+    t.type === 'stale' ? `⚠️ ${t.project}/${t.id} "${t.title}" — ${t.staleSinceMinutes}min without checkpoint`
+    : t.type === 'lease_expired' ? `🔴 ${t.project}/${t.id} "${t.title}" — lease expired`
+    : `📨 ${t.project}/${t.id} "${t.title}" — routed, never claimed`;
 
   const payloads = [];
 
-  // Owner wakes — no operator delivery (channel 'none').
-  for (const agent of Object.keys(byAgent)) {
-    const tasks = byAgent[agent];
+  // Default-agent nudge — one bundled system event, session preserved.
+  if (defaultAgentTasks.length) {
     payloads.push({
-      message: `🔍 Stuck-Check (${agent}):\n${tasks.map(fmt).join('\n')}`,
-      name: 'FlowBoard Stuck-Check',
-      channel: wakeChannel,
-      wakeMode: 'now',
-      stuck: tasks,
-      agentId: agent,
-      sessionKey: `agent:${agent}:main`,
+      endpoint: 'wake',
+      body: {
+        text: `🔍 FlowBoard stuck reminder (${wakeAgent}):\n${defaultAgentTasks.map(fmt).join('\n')}\nWrite a checkpoint or release each task.`,
+        mode: 'now',
+      },
     });
   }
 
-  // Orphaned tasks — a single operator escalation.
+  // Orphaned tasks — a single operator escalation on a throwaway key.
   if (unowned.length) {
     payloads.push({
-      message: `🔍 Stuck-Check (unowned):\n${unowned.map(fmt).join('\n')}`,
-      name: 'FlowBoard Stuck-Check',
-      ...operatorDelivery,
-      wakeMode: 'now',
-      stuck: unowned,
+      endpoint: 'agent',
+      body: {
+        message: `🔍 Stuck-Check (unowned):\n${unowned.map(fmt).join('\n')}`,
+        name: 'FlowBoard Stuck-Check',
+        ...operatorDelivery,
+        wakeMode: 'now',
+        stuck: unowned,
+        agentId: wakeAgent,
+        sessionKey: escalationSessionKey,
+      },
     });
   }
 
   return payloads;
 }
 
-module.exports = { buildStuckNotifications };
+module.exports = { buildStuckNotifications, LIVE_MAIN_SESSION_KEY_RE };

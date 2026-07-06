@@ -113,6 +113,19 @@ Tasks with infrequent checkpoints indicate potential stalling or agent disconnec
 curl -s http://127.0.0.1:18790/api/tasks/stuck | jq '.stuck'
 ```
 
+### Stuck Notification Routing (T-434)
+
+Stuck reminders are **session-safe**: the stuck-check pipeline (and the opt-in completion notifier) never points `/hooks/agent` at a live `agent:<x>:main` session key. The gateway runs `/hooks/agent` as an isolated turn and force-rolls the targeted key, which resets that conversation's context — pointing it at an interactive session wiped the operator's main session every scheduler round (incident 2026-07-06).
+
+| Audience | Channel | Mechanism |
+|----------|---------|-----------|
+| Every stuck task | Board state | `⚠️ Stuck reminder:` task comment, throttled by the notification window |
+| The owning agent (any type) | Pull | `GET /api/status` returns `attention.stuckTasks` for the requesting agent |
+| Gateway default agent (`FLOWBOARD_WAKE_AGENT`) | Push, non-destructive | `/hooks/wake` system event — enqueued into the existing session, never resets it |
+| Operator (unowned tasks only) | Isolated triage turn | `/hooks/agent` on the dedicated throwaway key `agent:main:flowboard-stuck-check` |
+
+Other gateway agents get no push: the public gateway hook surface has no per-agent, non-destructive wake primitive. Their reminder channel is the board state above.
+
 ## Compliance Reporting
 
 ### Dashboard Status Endpoint

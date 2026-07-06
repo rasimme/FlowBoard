@@ -1,5 +1,20 @@
 # Changelog
 
+### Unreleased
+
+- **Made stuck-task notifications session-safe (T-434).** The stuck-check
+  scheduler no longer runs `/hooks/agent` turns against live
+  `agent:<x>:main` session keys — the gateway force-rolls the targeted key,
+  which reset the operator's interactive main session every round and
+  injected unrelated project context into it. Reminders are now durable
+  board state (a throttled `⚠️ Stuck reminder:` task comment) plus a per-agent
+  `attention.stuckTasks` block on `GET /api/status`; the gateway default
+  agent (`FLOWBOARD_WAKE_AGENT`, default `main`) is nudged via a
+  non-destructive `/hooks/wake` system event, and unowned tasks escalate
+  once per window on the dedicated throwaway key
+  `agent:main:flowboard-stuck-check`. The opt-in completion notifier uses
+  `/hooks/wake` as well. `FLOWBOARD_STUCK_WAKE_CHANNEL` is removed.
+
 ### v5.0.4 (2026-06-25) — ClawHub Security Hardening
 
 - **Hardened dashboard file and task mutation surfaces.** Project file reads now

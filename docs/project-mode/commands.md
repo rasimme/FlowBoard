@@ -118,23 +118,25 @@ This rule is only active when a project is loaded (lazy-loaded via bootstrap). I
 
 ## Stale notification handling
 
-The dashboard runs a 5-minute interval stale check (`GET /api/tasks/stuck`). When stuck tasks are found, it posts a notification to the gateway, which reaches the agent as a chat message starting with `🔍 Stuck-Check (`.
+The dashboard runs a 5-minute interval stale check (`GET /api/tasks/stuck`). Since T-434 the reminder is **session-safe**: stuck reminders and completion notifications never run an agent turn against a live `agent:<x>:main` session key (the gateway force-rolls whatever key `/hooks/agent` targets, which would wipe that conversation's context). Stuck reminders reach agents through four channels:
 
-The notification body **already contains** a `stuck[]` array with task IDs and types — the agent MUST use this embedded data rather than re-fetching, because the embed matches the exact threshold that triggered the alert.
+1. **Board state (every stuck task):** the scheduler posts a `⚠️ Stuck reminder:` comment on the task, throttled by the notification window (default 60 min).
+2. **Status attention (every agent):** `GET /api/status?agentId=<you>` returns `attention.stuckTasks` listing *your* stale claims, expired leases, and routed-but-never-claimed tasks. The bootstrap hook calls this endpoint before every run, so you see your stuck work on your next FlowBoard touch — this is the channel that reaches external agents (e.g. Claude Code) too.
+3. **Gateway default-agent nudge:** tasks owned by the gateway default agent (`FLOWBOARD_WAKE_AGENT`, default `main`) additionally trigger a `/hooks/wake` system event — a `🔍 FlowBoard stuck reminder` note enqueued into the existing session without resetting it.
+4. **Operator escalation (unowned only):** tasks without a responsible agent escalate once per window as a `🔍 Stuck-Check (unowned)` triage turn on the dedicated throwaway session key `agent:main:flowboard-stuck-check`, delivered via `FLOWBOARD_NOTIFICATION_TARGET`.
 
-**When the agent receives a Stuck-Check notification:**
-1. Read the embedded `stuck[]` array from the notification body.
-2. Filter for tasks assigned to *this* agent (`agentId` matches).
+**When you see a stuck reminder (any channel):**
+1. Determine the affected tasks: from `attention.stuckTasks`, the reminder comment, or the `stuck[]` array embedded in an escalation body.
+2. Filter for tasks assigned to *this* agent; ignore other agents' tasks.
 3. For each matching task:
    - If stale (no recent checkpoint): review progress, write a checkpoint, or complete if done.
    - If stale but legitimately paused: write a checkpoint with a `paused` message to reset the timer.
    - If truly stuck (can't progress): release back to `open` so another agent can pick it up.
-4. For tasks assigned to other agents: ignore.
-5. Report summary back to the user: "X stale tasks, Y handled, Z released."
+4. Report summary back to the user: "X stale tasks, Y handled, Z released."
 
-Fallback: if the notification body has no `stuck` array, re-fetch via `GET /api/tasks/stuck?staleThreshold=30`.
+Fallback: re-fetch via `GET /api/tasks/stuck?staleThreshold=30`.
 
-The agent MUST NOT ignore Stuck-Check notifications when a project is active. This is the primary feedback loop for workflow health.
+The agent MUST NOT ignore stuck reminders when a project is active. This is the primary feedback loop for workflow health.
 
 ## Task status & lifecycle
 

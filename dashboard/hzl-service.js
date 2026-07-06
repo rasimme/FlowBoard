@@ -2592,6 +2592,22 @@ function getStuckTasks(opts = {}) {
 }
 
 /**
+ * T-434: Stuck items that need THIS agent's attention — its own stale or
+ * lease-expired claims plus tasks routed to it that it never claimed.
+ * Side-effect free (no notification-window consumption); served by
+ * GET /api/status as `attention.stuckTasks`, the pull channel that reaches
+ * every agent type (OpenClaw and external) on its next FlowBoard touch.
+ */
+function getAgentAttention(agentId, opts = {}) {
+  if (!agentId) return { stuckTasks: [] };
+  const stuck = getStuckTasks(opts);
+  const stuckTasks = (stuck.combined || []).filter(e =>
+    e.reason === 'routed-unclaimed' ? e.routedAgent === agentId : e.agent === agentId
+  );
+  return { stuckTasks };
+}
+
+/**
  * T-248: Get stuck tasks that should trigger a notification.
  * Filters getStuckTasks() result through notification guards to prevent
  * duplicate alerts within the notification window (default 60 minutes).
@@ -3645,6 +3661,7 @@ module.exports = {
   addComment,
   getComments,
   getStuckTasks,
+  getAgentAttention,       // T-434: per-agent stuck claims for /api/status
   getNotifiableStuckTasks, // T-248: notification-aware stuck-task filter
   getCheckpointHealth, // T-263-4: checkpoint health monitoring
   getComplianceStatus, // T-263-4: handoff contract compliance audit

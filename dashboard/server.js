@@ -1078,6 +1078,15 @@ app.get('/api/status', (req, res) => {
   // T-296: surface the rules pointer on activation so external agents learn
   // the /rules endpoint and the action→section mapping.
   if (activeProject) statusBody.rules = rulesApi.buildRulesPointer(activeProject);
+  // T-434: pull channel for stuck reminders — the bootstrap hook calls this
+  // endpoint before every run, so any agent (OpenClaw or external) sees its
+  // own stale/expired/never-claimed work here without any session push.
+  try {
+    const attention = hzlService.getAgentAttention(agentId, {
+      staleThreshold: parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30,
+    });
+    if (attention.stuckTasks.length > 0) statusBody.attention = attention;
+  } catch { /* attention is best-effort; status must stay available */ }
   res.json(statusBody);
 });
 
@@ -4113,17 +4122,13 @@ async function startServer() {
         const gatewayUrl = GATEWAY_URL;
         const token = HOOKS_TOKEN;
         const msg = `✅ Task ${taskId} "${title}" completed by ${agent || 'unknown'} (${project})`;
-        fetch(`${gatewayUrl}/hooks/agent`, {
+        // T-434: informational only → /hooks/wake system event. The old
+        // /hooks/agent call with sessionKey agent:<x>:main force-rolled the
+        // target agent's live main session (same defect as the stuck-check).
+        fetch(`${gatewayUrl}/hooks/wake`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({
-            message: msg,
-            name: 'FlowBoard',
-            ...flowboardNotificationDelivery(),
-            wakeMode: 'now',
-            agentId: agent || undefined,
-            sessionKey: agent ? `agent:${agent}:main` : undefined,
-          }),
+          body: JSON.stringify({ text: msg, mode: 'next-heartbeat' }),
         }).catch(e => console.warn('[notify] Gateway unreachable:', e.message));
       });
     }
@@ -4157,28 +4162,47 @@ async function startServer() {
         const routedList  = (notifiable && Array.isArray(notifiable.routedUnclaimed)) ? notifiable.routedUnclaimed : [];
 
         if (staleList.length > 0 || expiredList.length > 0 || routedList.length > 0) {
-          // T-400: owned stuck tasks wake ONLY their own agent's session
-          // (channel 'none' → no operator Telegram); tasks without a responsible
-          // agent escalate to the operator in one message. Replaces the old
-          // blanket fallback to the `main` agent that spammed the operator.
+          // T-434: the durable reminder is BOARD STATE — a comment on each
+          // notifiable task (throttled by the same 60-min window). It reaches
+          // every agent type through the activity feed and /api/status
+          // attention, with no session involvement at all.
+          for (const t of [...staleList, ...expiredList, ...routedList]) {
+            const detail = t.reason === 'stale'
+              ? `no checkpoint for ${t.staleSinceMinutes ?? t.staleMinutes}min`
+              : t.reason === 'expired' ? 'lease expired'
+              : `routed to ${t.routedAgent || 'unknown'}, never claimed`;
+            try {
+              hzlService.addComment(t.project, t.id, {
+                message: `⚠️ Stuck reminder: ${detail}. Write a checkpoint, release, or claim the task.`,
+                author: 'flowboard',
+              });
+            } catch (e) { console.warn(`[stale-check] comment failed (${t.project}/${t.id}):`, e.message); }
+          }
+
+          // T-434: push is session-safe only — /hooks/wake system event for
+          // the gateway default agent, one /hooks/agent triage turn on a
+          // dedicated throwaway key for unowned tasks. NEVER /hooks/agent on
+          // a live `agent:<x>:main` key: the gateway force-rolls that key and
+          // wipes the conversation (incident 2026-07-06). Other owners get no
+          // push — the board state above is their reminder channel.
           const payloads = buildStuckNotifications(
             { stale: staleList, expired: expiredList, routedUnclaimed: routedList },
             {
               operatorDelivery: flowboardNotificationDelivery(),
-              wakeChannel: process.env.FLOWBOARD_STUCK_WAKE_CHANNEL || 'none',
+              wakeAgent: process.env.FLOWBOARD_WAKE_AGENT || 'main',
             }
           );
 
           const gatewayUrl = GATEWAY_URL;
           const token = HOOKS_TOKEN;
-          for (const body of payloads) {
-            const who = body.agentId || 'unowned';
-            fetch(`${gatewayUrl}/hooks/agent`, {
+          for (const p of payloads) {
+            const who = p.endpoint === 'wake' ? 'default-agent wake' : 'operator escalation';
+            fetch(`${gatewayUrl}/hooks/${p.endpoint}`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-              body: JSON.stringify(body),
+              body: JSON.stringify(p.body),
             }).then(r => {
-              console.log(`[stale-check] notified ${who}: ${(body.stuck || []).length} task(s) (gateway ${r.status})`);
+              console.log(`[stale-check] ${who} sent (gateway ${r.status})`);
             }).catch(e => console.warn(`[stale-check] Gateway unreachable (${who}):`, e.message));
           }
         }

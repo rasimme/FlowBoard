@@ -94,6 +94,24 @@ async function run() {
   stuck = hzlService.getStuckTasks({ staleThreshold: 0 });
   ok(stuckIds(stuck.stale).includes(claimed.id), 'GET /tasks/stuck view is unaffected by notification consumption');
 
+  // --- T-434: per-agent attention (pull channel for /api/status) ---
+  console.log('# Agent attention (T-434)');
+  const att = hzlService.getAgentAttention('agent-d', { staleThreshold: 0 });
+  ok(att.stuckTasks.some(t => t.taskId === claimed.id && t.reason === 'stale'),
+    'attention lists the agent\'s own stale claim');
+  ok(!att.stuckTasks.some(t => t.taskId === routedOpen.id),
+    'attention excludes tasks routed to other agents');
+  const attRouted = hzlService.getAgentAttention('agent-a', { staleThreshold: 0 });
+  ok(attRouted.stuckTasks.some(t => t.taskId === routedOpen.id && t.reason === 'routed-unclaimed'),
+    'attention lists routed-but-never-claimed work for the routed agent');
+  ok(hzlService.getAgentAttention('nobody', { staleThreshold: 0 }).stuckTasks.length === 0,
+    'attention for an uninvolved agent is empty');
+  ok(hzlService.getAgentAttention(null).stuckTasks.length === 0,
+    'attention without agentId is empty, not an error');
+  const attAgain = hzlService.getAgentAttention('agent-d', { staleThreshold: 0 });
+  ok(attAgain.stuckTasks.some(t => t.taskId === claimed.id),
+    'attention is side-effect free — repeated reads keep reporting');
+
   fs.rmSync(WORKDIR, { recursive: true, force: true });
   if (fail === 0) {
     console.log(`\n✅ All ${pass} checks passed`);

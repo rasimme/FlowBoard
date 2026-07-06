@@ -47,7 +47,13 @@ Returns one agent's row. **`agentId` is required** — there is no server-side d
 
 **Query / Header:** `?agentId=<id>` *or* `x-openclaw-agent-id: <id>`.
 
-**Response 200:** `{"activeProject": "<name>" | null, "agentId": "<id>"}`
+**Response 200:** `{"activeProject": "<name>" | null, "agentId": "<id>", "contextReady": <bool>, "agentIdentity": {...}}` — plus `rules` (the lazy-load rules pointer, T-296) when a project is active, and `attention` when the agent has stuck work:
+
+```json
+"attention": { "stuckTasks": [ { "project": "...", "id": "T-1", "title": "...", "reason": "stale|expired|routed-unclaimed", "agent": "...", "staleSinceMinutes": 45 } ] }
+```
+
+`attention.stuckTasks` (T-434) lists this agent's own stale claims, expired leases, and tasks routed to it but never claimed. It is the pull channel for stuck reminders: the bootstrap hook calls `GET /api/status` before every run, and external agents (e.g. Claude Code) see their stuck work here on the next FlowBoard touch. Reads are side-effect free.
 
 **400** if `agentId` is missing in both the query and the header.
 
