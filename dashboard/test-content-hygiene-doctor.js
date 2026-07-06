@@ -20,7 +20,7 @@ section('scanText()');
   const findings = doctor.scanText([
     'Natürlicher Content bleibt Unicode.',
     'Dogfooding zeigte Pruefung, fuer und Koerperschaftsteuer.',
-    'Mojibake sieht aus wie Ã¼ oder ÃŸ.',
+    'Mojibake sieht aus wie Ã¼, Ã¶ oder ÃŸ.',
     '`fuer` inside inline code is ignored.',
     '```',
     'waere inside fenced code is ignored',
@@ -31,6 +31,8 @@ section('scanText()');
 
   ok(findings.some(f => f.type === 'ascii-transliteration' && f.match === 'Pruefung'), 'reports suspicious German-style ASCII transliteration');
   ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ã¼'), 'reports mojibake');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'Ã¶'), 'reports common mojibake for ö');
+  ok(findings.some(f => f.type === 'mojibake' && f.match === 'ÃŸ'), 'reports common mojibake for ß');
   ok(!findings.some(f => /inline code/.test(f.excerpt)), 'ignores inline code');
   ok(!findings.some(f => /fenced code/.test(f.excerpt)), 'ignores fenced code');
   ok(!findings.some(f => /example\.test/.test(f.excerpt)), 'ignores URLs');
