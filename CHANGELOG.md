@@ -15,6 +15,30 @@
   `agent:main:flowboard-stuck-check`. The opt-in completion notifier uses
   `/hooks/wake` as well. `FLOWBOARD_STUCK_WAKE_CHANNEL` is removed.
 
+### T-441 Security Review Findings
+
+- **Legacy-cookie migration security (T-441-1).** Old or malformed session
+  cookies are now strictly validated before use. Invalid cookies are rejected
+  immediately with HTTP 403; they cannot mask fresh Telegram init-data validation
+  errors (fresh credentials are authoritative).
+
+- **Verified EXPIRED fallback (T-441-2).** The `/api/auth` endpoint treats
+  init-data expiration strictly: even with a valid session cookie present,
+  aged init-data (>5 minutes old) is rejected. Steady-state API calls may use
+  an established valid cookie with aged init-data, preserving the 8-hour
+  session contract; `/api/auth` is a strict credential exchange.
+
+- **Auth-endpoint rate limiting (T-441-3).** The `/api/auth` POST endpoint
+  enforces a sliding-window rate limit: 60 requests per minute per source IP.
+  This defends against brute-force attempts. Rejected requests return HTTP 429
+  with a `Retry-After` header. The check is at the application level;
+  production deployments may add reverse-proxy rate limiting as well.
+
+- **Privacy-filter for logs (T-441-4).** Console warnings, errors, and logs
+  are sanitized to prevent accidental token leaks. Telegram bot tokens, JWT
+  tokens, bearer tokens, and secret/password strings are redacted from all
+  output while preserving the event identity. This prevents secrets from
+  reaching logs even if an unguarded error path includes them.
 ### v5.0.4 (2026-06-25) — ClawHub Security Hardening
 
 - **Hardened dashboard file and task mutation surfaces.** Project file reads now

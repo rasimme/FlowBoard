@@ -222,3 +222,12 @@ designed rather than rushed: a per-endpoint **capability model**, an
 (authenticated principals instead of self-asserted ids), a **dedicated secret
 store / keychain** for the GitHub token, and a package split that ships a minimal
 hook + installer separately from the runtime service.
+
+## Recent hardening (T-441)
+
+### Auth-endpoint rate limiting (T-441-3)
+The `/api/auth` endpoint enforces a sliding-window rate limit of 60 requests per minute per source IP. This defends against brute-force attempts to guess or cycle through credentials. The limit is checked in-app; additional reverse-proxy rate limiting is recommended in production. Rejected requests return HTTP 429 with a `Retry-After` header.
+
+### Privacy-filter for logs (T-441-4)
+All console output (warnings, errors, logs) passes through a sanitization layer that redacts common patterns: Telegram bot tokens, JWT tokens, bearer tokens, and secret/password strings. This prevents accidental token leaks from reaching logs. The filter is identity-preserving (it records that *something* happened) but removes the secret values themselves.
+

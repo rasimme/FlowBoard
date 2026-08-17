@@ -76,6 +76,8 @@ const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegram-auth.js');
+const { RateLimiter } = require('./rate-limiter.js');
+const { installPrivacyFilter } = require('./privacy-filter.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
 const versionCheck = require('./version-check.js');
@@ -241,6 +243,13 @@ function issueSession(res, user) {
   );
   res.cookie('flowboard_session', sessionToken, SESSION_COOKIE_OPTS);
 }
+
+// Auth endpoint rate limiter (T-441-3): 60 requests per minute per IP
+const authRateLimiter = new RateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 60,
+});
+
 function clearSession(res) {
   res.clearCookie('flowboard_session', SESSION_CLEAR_COOKIE_OPTS);
 }
@@ -1355,6 +1364,16 @@ app.get('/api/info', (req, res) => {
 
 // Auth-Endpoint (vor dem generellen API-Auth)
 app.post('/api/auth', (req, res) => {
+  // Rate limit check (T-441-3): guard against brute-force credential attempts
+  const rateLimitCheck = authRateLimiter.check(req);
+  if (!rateLimitCheck.ok) {
+    res.set('Retry-After', String(rateLimitCheck.resetSeconds));
+    return res.status(rateLimitCheck.status).json({ 
+      error: rateLimitCheck.message, 
+      code: 'RATE_LIMIT_EXCEEDED' 
+    });
+  }
+
   // The global auth middleware has already preferred and verified any fresh
   // init-data, and reissued the cookie for that bot identity.
   const agentId = req.user?.agentId || null;
