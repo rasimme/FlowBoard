@@ -10,6 +10,8 @@
 // fingerprint watchdog existed. React reads an IMMUTABLE snapshot that is
 // replaced on each change, so identity/memo stay meaningful.
 
+import { INITIAL_CONNECTION_STATE } from './connectionState.mjs';
+
 const INITIAL = {
   projects: [],
   activeProject: null,
@@ -20,6 +22,7 @@ const INITIAL = {
   agentId: null,
   agentIdSource: null,
   agentIdChatBound: false,
+  connection: INITIAL_CONNECTION_STATE,
 };
 
 // `base` is the live, mutable object the Proxy wraps (stable identity → no Proxy

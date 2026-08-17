@@ -4,26 +4,27 @@ import { selectViewedProject } from '../utils/projectSelection.mjs';
 import * as bridge from '../state/appStateBridge.mjs';
 import { apiJson } from '../utils/apiFetch.js';
 import { installGlobalToast, showToast } from '../utils/toast.js';
+import {
+  INITIAL_CONNECTION_STATE,
+  connectionFailure,
+  connectionLoading,
+  connectionSuccess,
+} from '../state/connectionState.mjs';
 
 const DashboardContext = createContext(null);
 
 const POLL_INTERVAL_MS = 5000;
 
 async function fetchAgentsList() {
-  try {
-    const data = await apiJson('/agents');
-    return Array.isArray(data?.agents) ? data.agents : [];
-  } catch {
-    return [];
-  }
+  const data = await apiJson('/agents');
+  return Array.isArray(data?.agents) ? data.agents : [];
 }
 
 async function fetchActiveProjectForAgent(agentId) {
   if (!agentId) return null;
   const data = await apiJson(`/status?agentId=${encodeURIComponent(agentId)}`);
   if (data?.agentId !== agentId) {
-    console.warn('[status] agentId mismatch', { requested: agentId, received: data?.agentId });
-    return null;
+    throw new Error(`Status agentId mismatch (${data?.agentId || 'missing'})`);
   }
   return data.activeProject || null;
 }
@@ -54,6 +55,14 @@ function hapticNotification(type = 'success') {
   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type);
 }
 
+function sameConnection(a, b) {
+  return a?.status === b?.status
+    && a?.hasData === b?.hasData
+    && a?.retrying === b?.retrying
+    && a?.error === b?.error
+    && a?.httpStatus === b?.httpStatus;
+}
+
 export function DashboardProvider({ children }) {
   const { state, dispatch } = useAppState();
   const initRef = useRef(false);
@@ -61,12 +70,77 @@ export function DashboardProvider({ children }) {
   const prevProjectsRef = useRef('');
   const prevAgentsRef = useRef('');
   const prevActiveRef = useRef(null);
+  const connectionRef = useRef(state?.connection || INITIAL_CONNECTION_STATE);
+  const loadInFlightRef = useRef(null);
+
+  const publishConnection = useCallback((next) => {
+    if (sameConnection(connectionRef.current, next)) return;
+    connectionRef.current = next;
+    dispatch({ connection: next });
+  }, [dispatch]);
+
+  const markConnectionFailure = useCallback((error, label) => {
+    console.error(`${label}:`, error);
+    publishConnection(connectionFailure(connectionRef.current, error));
+  }, [publishConnection]);
+
+  const markConnectionSuccess = useCallback((projects) => {
+    publishConnection(connectionSuccess(projects));
+  }, [publishConnection]);
 
   const fetchTasksForProject = useCallback(async (project) => {
     if (!project) return [];
     const data = await apiJson(`/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`);
     return data?.tasks || [];
   }, []);
+
+  const loadDashboardSnapshot = useCallback(({ showRetrying = false } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
+    if (showRetrying) publishConnection(connectionLoading(connectionRef.current));
+
+    const request = (async () => {
+      try {
+        // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
+        // very first /projects + /status calls see a populated agentId.
+        if (window.__flowboardBootstrap) await window.__flowboardBootstrap;
+        const data = await apiJson('/projects');
+        const projects = Array.isArray(data?.projects) ? data.projects : [];
+        const [agents, activeProject] = await Promise.all([
+          fetchAgentsList(),
+          fetchActiveProjectForAgent(window.appState?.agentId),
+        ]);
+        const viewedProject = selectViewedProject({
+          projects,
+          agents,
+          activeProject,
+          currentViewedProject: window.appState?.viewedProject || null,
+        });
+        const tasks = viewedProject ? await fetchTasksForProject(viewedProject) : [];
+
+        prevProjectsRef.current = JSON.stringify(projects);
+        prevAgentsRef.current = JSON.stringify(agents);
+        prevActiveRef.current = activeProject;
+        prevTasksRef.current = JSON.stringify(tasks);
+
+        const connection = connectionSuccess(projects);
+        connectionRef.current = connection;
+        dispatch({ projects, agents, activeProject, viewedProject, tasks, connection });
+        return true;
+      } catch (error) {
+        markConnectionFailure(error, 'Dashboard load error');
+        return false;
+      } finally {
+        loadInFlightRef.current = null;
+      }
+    })();
+
+    loadInFlightRef.current = request;
+    return request;
+  }, [dispatch, fetchTasksForProject, markConnectionFailure, publishConnection]);
+
+  const retryConnection = useCallback(() => (
+    loadDashboardSnapshot({ showRetrying: true })
+  ), [loadDashboardSnapshot]);
 
   const refreshProjectsOnly = useCallback(async () => {
     try {
@@ -98,20 +172,27 @@ export function DashboardProvider({ children }) {
       prevActiveRef.current = newActive;
 
       dispatch(updates);
+      markConnectionSuccess(newProjects);
+      return true;
     } catch (err) {
-      console.error('refreshProjectsOnly error:', err);
+      markConnectionFailure(err, 'refreshProjectsOnly error');
+      return false;
     }
-  }, [dispatch]);
+  }, [dispatch, markConnectionFailure, markConnectionSuccess]);
 
   const viewProject = useCallback(async (name) => {
     if (!name) return;
-    const tasks = await fetchTasksForProject(name);
-    prevTasksRef.current = JSON.stringify(tasks);
-    dispatch({
-      viewedProject: name,
-      tasks,
-    });
-  }, [dispatch, fetchTasksForProject]);
+    try {
+      const tasks = await fetchTasksForProject(name);
+      prevTasksRef.current = JSON.stringify(tasks);
+      dispatch({ viewedProject: name, tasks });
+      markConnectionSuccess(window.appState?.projects || []);
+      return tasks;
+    } catch (error) {
+      markConnectionFailure(error, 'viewProject error');
+      return null;
+    }
+  }, [dispatch, fetchTasksForProject, markConnectionFailure, markConnectionSuccess]);
 
   const activateProject = useCallback(async () => {
     const agentId = window.appState?.agentId;
@@ -179,10 +260,16 @@ export function DashboardProvider({ children }) {
     const installed = bridge.installRefreshBridge(async () => {
       const project = window.appState?.viewedProject || window.appState?.activeProject;
       if (!project) return null;
-      const tasks = await fetchTasksForProject(project);
-      bridge.replaceTasks(tasks);
-      prevTasksRef.current = JSON.stringify(tasks);
-      return tasks;
+      try {
+        const tasks = await fetchTasksForProject(project);
+        bridge.replaceTasks(tasks);
+        prevTasksRef.current = JSON.stringify(tasks);
+        markConnectionSuccess(window.appState?.projects || []);
+        return tasks;
+      } catch (error) {
+        markConnectionFailure(error, 'Board refresh error');
+        return null;
+      }
     });
 
     return () => {
@@ -192,58 +279,22 @@ export function DashboardProvider({ children }) {
         delete window.appState._refreshBoard;
       }
     };
-  }, [toggleSidebar, fetchTasksForProject]);
+  }, [toggleSidebar, fetchTasksForProject, markConnectionFailure, markConnectionSuccess]);
 
   // Initial fetch — runs once after window.appState bootstrap is in place.
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
 
-    (async () => {
-      try {
-        // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
-        // very first /projects + /status calls see a populated agentId.
-        if (window.__flowboardBootstrap) await window.__flowboardBootstrap;
-        const data = await apiJson('/projects');
-        const projects = data?.projects || [];
-        const agents = await fetchAgentsList();
-        const agentId = window.appState?.agentId;
-        const activeProject = await fetchActiveProjectForAgent(agentId);
-        const viewedProject = selectViewedProject({
-          projects,
-          agents,
-          activeProject,
-          currentViewedProject: window.appState?.viewedProject || null,
-        });
-
-        let tasks = [];
-        if (viewedProject) {
-          tasks = await fetchTasksForProject(viewedProject);
-        }
-
-        prevProjectsRef.current = JSON.stringify(projects);
-        prevAgentsRef.current = JSON.stringify(agents);
-        prevActiveRef.current = activeProject;
-        prevTasksRef.current = JSON.stringify(tasks);
-
-        dispatch({
-          projects,
-          agents,
-          activeProject,
-          viewedProject,
-          tasks,
-        });
-      } catch (err) {
-        console.error('Dashboard init error:', err);
-      }
-    })();
-  }, [dispatch, fetchTasksForProject]);
+    loadDashboardSnapshot();
+  }, [loadDashboardSnapshot]);
 
   // Background refresh poll — same cadence as legacy app.js (5s).
   // Skips re-renders when user is interacting unless projects-level changes
   // happened, mirroring the legacy isUserInteracting() guard.
   useEffect(() => {
     const tick = async () => {
+      if (loadInFlightRef.current) return;
       try {
         const agentId = window.appState?.agentId;
         const data = await apiJson('/projects');
@@ -282,6 +333,10 @@ export function DashboardProvider({ children }) {
           }
         }
 
+        // A complete successful snapshot clears a previous degraded banner.
+        // The data updates below remain guarded while the user is interacting.
+        markConnectionSuccess(newProjects);
+
         // T-246-7: commit the "seen" refs only when we actually dispatch.
         // The old code updated the refs first and then bailed on the
         // interaction guard — the change was marked as seen and the kanban
@@ -297,13 +352,13 @@ export function DashboardProvider({ children }) {
           dispatch(updates);
         }
       } catch (err) {
-        console.error('Refresh error:', err);
+        markConnectionFailure(err, 'Refresh error');
       }
     };
 
     const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [dispatch, fetchTasksForProject]);
+  }, [dispatch, fetchTasksForProject, markConnectionFailure, markConnectionSuccess]);
 
   const value = useMemo(() => ({
     state,
@@ -313,11 +368,12 @@ export function DashboardProvider({ children }) {
     switchTab,
     toggleSidebar,
     refreshProjectsOnly,
+    retryConnection,
     openSpec,
     applyTelegramTheme: applyTelegramThemeImpl,
     haptic,
     hapticNotification,
-  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, openSpec]);
+  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, retryConnection, openSpec]);
 
   return (
     <DashboardContext.Provider value={value}>

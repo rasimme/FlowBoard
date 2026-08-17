@@ -70,12 +70,37 @@ export function apiFetch(path, opts = {}) {
   });
 }
 
+export class ApiError extends Error {
+  constructor(message, { status = null, kind = 'http', path = null, cause = null } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.kind = kind;
+    this.path = path;
+    if (cause) this.cause = cause;
+  }
+}
+
 export async function apiJson(path, opts = {}) {
   const normalizedPath = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
-  const res = await apiFetch(normalizedPath, opts);
+  let res;
+  try {
+    res = await apiFetch(normalizedPath, opts);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('Unable to reach the FlowBoard service.', {
+      kind: 'network',
+      path: normalizedPath,
+      cause: error,
+    });
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+    throw new ApiError(data?.error || `HTTP ${res.status}`, {
+      status: res.status,
+      kind: 'http',
+      path: normalizedPath,
+    });
   }
   return data;
 }

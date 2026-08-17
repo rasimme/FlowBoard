@@ -29,6 +29,8 @@ You can reach FlowBoard remotely as a Telegram Mini App through a secure tunnel:
 
 Opened outside Telegram, the Mini App URL shows an "open via Telegram" notice — that's expected; use the normal `http://localhost:18790` (or your tunnel URL in a browser) instead.
 
+If Telegram authentication expires, the dashboard shows a full-screen **Sign-in required** message rather than an empty board. Reopen the Mini App from the bot and tap the touch-sized **Retry** button. Temporary connection or server failures keep the last valid board on screen with a retry banner.
+
 ## See also
 
 - [Getting started](../getting-started.md)

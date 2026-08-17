@@ -809,7 +809,7 @@ export default function Sidebar() {
       {/* T-378: announces keyboard project-reorder steps to screen readers */}
       <div role="status" aria-live="polite" className="sr-only">{projLive}</div>
       <div className="sidebar-scroll">
-        {projects.length === 0 && folders.length === 0 && (
+        {state?.connection?.status === 'empty' && projects.length === 0 && folders.length === 0 && (
           <div className="sidebar-empty">No projects</div>
         )}
 
