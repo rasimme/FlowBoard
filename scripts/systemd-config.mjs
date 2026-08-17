@@ -535,20 +535,3 @@ export function formatSystemdUnsetEnvironment(entries) {
     ? `UnsetEnvironment=${entries.map(quoteSystemdUnsetEnvironmentEntry).join(' ')}`
     : '';
 }
-
-/** All values, including overridden values, are useful for diagnostics redaction. */
-export function collectSystemdEnvironmentValues(parsed) {
-  const values = [];
-  for (const event of parsed?.events || []) {
-    if (event.type === 'environment') {
-      for (const assignment of event.assignments) values.push(assignment.value);
-    }
-    if (event.type === 'unset-environment') {
-      for (const entry of event.entries) {
-        const separator = entry.indexOf('=');
-        if (separator >= 0) values.push(entry.slice(separator + 1));
-      }
-    }
-  }
-  return values;
-}

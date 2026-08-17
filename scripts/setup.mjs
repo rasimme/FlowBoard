@@ -42,9 +42,7 @@ import { get } from 'node:http';
 import {
   applySystemdEvents,
   applySystemdUnsetEnvironment,
-  collectSystemdEnvironmentValues,
   decodeSystemdEnvironmentFile,
-  escapeSystemdUnitString,
   expandSupportedSystemdSpecifiers,
   formatSystemdUnsetEnvironment,
   parseSystemdEnvironment,
@@ -391,8 +389,6 @@ function readSystemdEnvironmentFiles(entries) {
   const env = {};
   const owners = {};
   const unresolved = [];
-  const values = [];
-  const paths = [];
   const uid = typeof process.getuid === 'function' ? String(process.getuid()) : null;
   for (const entry of entries) {
     const origin = entry.origin || entry.source || 'systemd unit';
@@ -410,7 +406,6 @@ function readSystemdEnvironmentFiles(entries) {
       unresolved.push(origin);
       continue;
     }
-    paths.push(parsed.path);
     if (!existsSync(parsed.path)) {
       if (parsed.optional) continue;
       throw new Error(`required EnvironmentFile is missing (${origin})`);
@@ -426,17 +421,15 @@ function readSystemdEnvironmentFiles(entries) {
     for (const [key, value] of Object.entries(fileEnv)) {
       env[key] = value;
       owners[key] = origin;
-      values.push(value);
     }
   }
-  return { env, owners, unresolved, values, paths };
+  return { env, owners, unresolved };
 }
 
 function emptyServiceConfig() {
   return {
     found: false,
     baseEnv: {},
-    dropInEnv: {},
     dropInEvents: [],
     dropInKeys: new Set(),
     baseUnsetEnvironment: [],
@@ -446,10 +439,7 @@ function emptyServiceConfig() {
     unresolvedEnvironmentFiles: [],
     effectiveEnv: {},
     environmentFiles: [],
-    effectiveEnvironmentFiles: [],
     externalSources: [],
-    allEnvironmentValues: [],
-    environmentFilePaths: [],
     suspiciousSections: [],
   };
 }
@@ -470,7 +460,6 @@ function readExistingServiceConfig() {
       found: true,
       baseEnv: env,
       effectiveEnv: env,
-      allEnvironmentValues: Object.values(env),
     };
   }
   if (PLATFORM !== 'linux') return emptyServiceConfig();
@@ -507,7 +496,6 @@ function readExistingServiceConfig() {
   const dropInEvents = [];
   const dropInKeys = new Set();
   const externalSources = [];
-  const allEnvironmentValues = [...collectSystemdEnvironmentValues(main)];
   const dropIns = collectSystemdDropIns(searchPaths);
   for (const dropIn of dropIns) {
     const parsed = parseSystemdEnvironment(readUtf8File(dropIn.path, 'systemd drop-in'));
@@ -516,7 +504,6 @@ function readExistingServiceConfig() {
     }
     const source = `drop-in ${dropIn.path}`;
     externalSources.push(source);
-    allEnvironmentValues.push(...collectSystemdEnvironmentValues(parsed));
     for (const event of parsed.events) {
       const sourcedEvent = { ...event, source };
       dropInEvents.push(sourcedEvent);
@@ -530,7 +517,6 @@ function readExistingServiceConfig() {
   const environmentFileEntries = state.environmentFiles;
   const externalFileConfig = readSystemdEnvironmentFiles(environmentFileEntries);
   externalSources.push(...environmentFileEntries.map(entry => `EnvironmentFile ${entry.origin || entry.source || 'systemd unit'}`));
-  allEnvironmentValues.push(...externalFileConfig.values);
   const effectiveEnv = applySystemdUnsetEnvironment(
     { ...state.env, ...externalFileConfig.env },
     state.unsetEnvironment,
@@ -538,7 +524,6 @@ function readExistingServiceConfig() {
   return {
     found,
     baseEnv: baseState.env,
-    dropInEnv: state.env,
     dropInEvents,
     dropInKeys,
     baseUnsetEnvironment: baseState.unsetEnvironment,
@@ -548,10 +533,7 @@ function readExistingServiceConfig() {
     unresolvedEnvironmentFiles: externalFileConfig.unresolved,
     effectiveEnv,
     environmentFiles: baseState.environmentFiles.map(entry => entry.value),
-    effectiveEnvironmentFiles: environmentFileEntries.map(entry => entry.value),
     externalSources,
-    allEnvironmentValues,
-    environmentFilePaths: externalFileConfig.paths,
     suspiciousSections: [],
   };
 }
@@ -880,49 +862,6 @@ if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   die(`FLOWBOARD_PORT must be an integer between 1 and 65535 (received ${JSON.stringify(effectiveServiceEnv.FLOWBOARD_PORT)})`);
 }
 
-function buildSystemdDiagnosticCorpus() {
-  const values = new Set();
-  const keys = new Set();
-  const addValue = value => {
-    if (typeof value !== 'string' || value.length === 0) return;
-    values.add(value);
-    values.add(escapeSystemdUnitString(value));
-    values.add(JSON.stringify(value));
-    // systemd-analyze versions differ in whether control characters are shown
-    // literally or as C-style escapes. Keep both representations secret-safe.
-    values.add(value.replace(/\t/g, '\\t').replace(/\n/g, '\\n').replace(/\r/g, '\\r'));
-  };
-  const addMap = map => {
-    for (const [key, value] of Object.entries(map || {})) {
-      keys.add(key);
-      addValue(value);
-      if (typeof value === 'string' && value.length > 0) {
-        addValue(`${key}=${value}`);
-        addValue(`${key}=${escapeSystemdUnitString(value)}`);
-      }
-    }
-  };
-  addMap(existingConfig.baseEnv);
-  addMap(existingConfig.dropInEnv);
-  addMap(existingConfig.environmentFileEnv);
-  addMap(serviceEnv);
-  addMap(effectiveServiceEnv);
-  for (const value of existingConfig.allEnvironmentValues || []) {
-    addValue(value);
-  }
-  // EnvironmentFile paths can contain operator-controlled names. They are not
-  // normally secrets, but redacting them costs little and closes the same
-  // diagnostic channel for a path such as /run/credentials/<token>.
-  for (const value of existingConfig.environmentFiles || []) addValue(value);
-  for (const value of existingConfig.effectiveEnvironmentFiles || []) addValue(value);
-  for (const value of existingConfig.environmentFilePaths || []) {
-    addValue(value);
-  }
-  return { values: [...values].sort((a, b) => b.length - a.length), keys };
-}
-
-const systemdDiagnosticCorpus = buildSystemdDiagnosticCorpus();
-
 function remoteConfigurationGaps() {
   const hasRemoteIntent = [
     'TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_TOKENS', 'ALLOWED_USER_IDS',
@@ -947,20 +886,6 @@ function healthy() {
   });
 }
 
-function redactSystemdDiagnostics(text, corpus) {
-  let redacted = String(text);
-  for (const value of corpus?.values || []) redacted = redacted.split(value).join('<redacted>');
-  const sensitiveKeys = [...(corpus?.keys || [])]
-    .filter(key => /(?:secret|token|credential|password|passwd|private|api[_-]?key|auth|cookie|signature|webhook|cert)/i.test(key))
-    .sort((a, b) => b.length - a.length)
-    .map(key => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  if (sensitiveKeys.length > 0) {
-    const keyPattern = new RegExp(`(^|[^A-Za-z0-9_])(${sensitiveKeys.join('|')})\\s*=\\s*("(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|[^\\s,;)}\\]]+)`, 'gi');
-    redacted = redacted.replace(keyPattern, '$1$2=<redacted>');
-  }
-  return redacted.trim().slice(0, 2400);
-}
-
 function verifySystemdUnit(unit) {
   if (DRY || PLATFORM !== 'linux') return;
   const verifyPath = `${systemdUnitPath}.verify-${process.pid}.service`;
@@ -968,21 +893,20 @@ function verifySystemdUnit(unit) {
   let failure = null;
   try {
     const result = spawnSync('systemd-analyze', ['--user', 'verify', verifyPath], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // systemd-analyze can echo complete Environment= assignments, including
+      // C-escaped secrets and arbitrary custom key names. Do not capture or
+      // relay either stream: a successful verifier is silent, and failures get
+      // only the structural summary below.
+      stdio: 'ignore',
     });
     if (result.error?.code === 'ENOENT') return;
-    const diagnostics = [result.stdout, result.stderr]
-      .filter(value => typeof value === 'string' && value.trim())
-      .join('\n');
-    // A zero exit code is not sufficient: systemd-analyze can report a unit
-    // diagnostic on stdout/stderr while still accepting the process exit.
-    if (result.error || result.status !== 0 || diagnostics.trim()) {
-      const detail = redactSystemdDiagnostics(
-        diagnostics || result.error?.message || 'unknown diagnostic',
-        systemdDiagnosticCorpus,
-      );
-      failure = new Error(`systemd-analyze rejected the generated unit${detail ? `: ${detail}` : ''}`);
+    if (result.error) {
+      failure = new Error('systemd-analyze could not be executed; diagnostic output suppressed for secret safety');
+    } else if (result.status !== 0) {
+      const outcome = result.signal
+        ? `terminated by ${result.signal}`
+        : `exit status ${Number.isInteger(result.status) ? result.status : 'unknown'}`;
+      failure = new Error(`systemd-analyze verification failed (${outcome}; diagnostic output suppressed for secret safety)`);
     }
   } finally {
     rmSync(verifyPath, { force: true });

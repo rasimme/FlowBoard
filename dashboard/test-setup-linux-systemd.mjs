@@ -810,15 +810,60 @@ for (const [label, assignment] of [
       '20-credentials.conf': '[Service]\nEnvironment="CUSTOM_CREDENTIAL=drop-in-credential"\nEnvironment="CUSTOM_OVERRIDDEN=overridden-credential"\n',
     },
   }, {
-    FAKE_SYSTEMD_ANALYZE_STDOUT: 'Environment="JWT_SECRET=test-analyzer-secret" Environment="CUSTOM_CREDENTIAL=main-unit-credential"',
-    FAKE_SYSTEMD_ANALYZE_STDERR: 'systemd-analyze: warning: malformed generated unit abc CUSTOM_CREDENTIAL=drop-in-credential CUSTOM_OVERRIDDEN=overridden-credential',
+    FAKE_SYSTEMD_ANALYZE_STATUS: '1',
+    FAKE_SYSTEMD_ANALYZE_STDOUT: [
+      'Environment="JWT_SECRET=test-analyzer-secret"',
+      'Environment="CUSTOM_CREDENTIAL=main-unit-credential"',
+      'Environment="CUSTOM_MODE=prefix\\asecret"',
+      'Environment="CUSTOM_BACKSPACE=prefix\\bsecret"',
+      'Environment="CUSTOM_FORMFEED=prefix\\fsecret"',
+      'Environment="CUSTOM_VERTICAL=prefix\\vsecret"',
+      'Environment="CUSTOM_NEWLINE=prefix\\nsecret"',
+      'Environment="CUSTOM_OCTAL=prefix\\001secret"',
+    ].join(' '),
+    FAKE_SYSTEMD_ANALYZE_STDERR: [
+      'systemd-analyze: warning: malformed generated unit abc',
+      'CUSTOM_CREDENTIAL=drop-in-credential CUSTOM_OVERRIDDEN=overridden-credential',
+      `CUSTOM_LITERAL_BELL=prefix${String.fromCharCode(0x07)}secret`,
+      `CUSTOM_LITERAL_TAB=prefix\tsecret`,
+      `CUSTOM_LITERAL_CR=prefix\rsecret`,
+    ].join(' '),
   });
-  ok(result.code === 1, 'systemd-analyze diagnostics fail setup even with a zero exit status');
-  ok(result.stdout.includes('malformed generated unit'), 'systemd-analyze diagnostic is surfaced');
-  ok(!result.stdout.includes('test-analyzer-secret'), 'systemd-analyze diagnostics never expose service secrets');
-  ok(!result.stdout.includes('abc'), 'short custom service values are also redacted from diagnostics');
-  ok(!result.stdout.includes('main-unit-credential') && !result.stdout.includes('drop-in-credential') && !result.stdout.includes('overridden-credential'), 'systemd-analyze diagnostics redact main, overridden, and custom credential values');
+  const output = `${result.stdout}\n${result.stderr}`;
+  ok(result.code === 1, 'systemd-analyze verification failure stops setup');
+  ok(output.includes('systemd-analyze verification failed (exit status 1'), 'systemd-analyze failure emits a structural summary');
+  ok(output.includes('diagnostic output suppressed for secret safety'), 'systemd-analyze failure explains why raw diagnostics are suppressed');
+  for (const secret of [
+    'test-analyzer-secret',
+    'abc',
+    'main-unit-credential',
+    'drop-in-credential',
+    'overridden-credential',
+    'prefix\\asecret',
+    'prefix\\bsecret',
+    'prefix\\fsecret',
+    'prefix\\vsecret',
+    'prefix\\nsecret',
+    'prefix\\001secret',
+    `prefix${String.fromCharCode(0x07)}secret`,
+    `prefix\tsecret`,
+    `prefix\rsecret`,
+  ]) {
+    ok(!output.includes(secret), `systemd-analyze failure never exposes ${JSON.stringify(secret)}`);
+  }
   ok(!result.commands.some(line => line.startsWith('systemctl ')), 'systemd-analyze diagnostics abort before daemon reload or service restart');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: preservedUnit,
+  }, {
+    FAKE_SYSTEMD_ANALYZE_STDOUT: 'Environment="CUSTOM_MODE=prefix\\asecret"',
+    FAKE_SYSTEMD_ANALYZE_STDERR: 'CUSTOM_ANY_KEY=prefix\\bsecret',
+  });
+  const output = `${result.stdout}\n${result.stderr}`;
+  ok(result.code === 0, 'successful systemd-analyze output does not fail setup');
+  ok(!output.includes('prefix\\asecret') && !output.includes('prefix\\bsecret'), 'successful systemd-analyze stdout/stderr are fully suppressed');
 }
 
 {
