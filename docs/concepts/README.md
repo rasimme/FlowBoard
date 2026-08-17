@@ -54,11 +54,11 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | HZL Event Sourcing | Event store + `tasks_current` materialization; why event-sourced | ✅ [hzl-event-sourcing.md](hzl-event-sourcing.md) | ✅ ADR-0007 | — |
 | Specify Workflow | Spec generation lifecycle; sessions; abort/complete | ✅ [specify-workflow.md](specify-workflow.md) | ✅ ADR-0015, ADR-0016 | — |
 | Modular Project Overview | Server-driven widget grid; trusted registry; presets; GitHub binding | ✅ [overview-widgets.md](overview-widgets.md) | ✅ ADR-0023 | — |
-| Auth Model | Telegram init-data; JWT; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | ✅ ADR-0028 | — |
+| Auth Model | Telegram init-data; ordered bot→agent mapping; JWT rebinding; loopback bypass; `ALLOWED_USER_IDS` | ✅ [auth-model.md](auth-model.md) | ✅ ADR-0028, ADR-0030 | — |
 | External-Agent Discovery | `/api/info`; self-onboarding snippet; lazy registration | ✅ [external-agent-discovery.md](external-agent-discovery.md) | ✅ ADR-0011 | — |
 | Snippet / Doctor | Drift detection; install-trigger marker injection; legacy advisory | ✅ [snippet-doctor.md](snippet-doctor.md) | ✅ ADR-0006 | — |
 | Project File Structure | `PROJECT.md`, `SESSIONS.md`, `specs/`, `context/` roles | ✅ [project-file-structure.md](project-file-structure.md) | ⬜ none (predates ADRs) | — |
-| Telegram Mini App | Mobile UI shell; HMAC-SHA256 verification; tunnel options | ✅ [telegram-mini-app.md](telegram-mini-app.md) | ✅ ADR-0028 | — |
+| Telegram Mini App | Mobile UI shell; multi-bot HMAC-SHA256 verification; tunnel options | ✅ [telegram-mini-app.md](telegram-mini-app.md) | ✅ ADR-0028, ADR-0030 | — |
 | Smart Search | Cross-project palette; query parser + operators; typo-tolerant | ✅ [smart-search.md](smart-search.md) | ⬜ none yet | — |
 | Mobile & Touch | Responsive UI; Pointer-Events DnD; full-screen sheets; safe-area | ✅ [mobile-and-touch.md](mobile-and-touch.md) | ⬜ none yet | — |
 | Accessibility | Keyboard DnD; `aria-live`; focusable cards (not buttons) | ✅ [accessibility.md](accessibility.md) | ⬜ none yet | — |

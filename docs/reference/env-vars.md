@@ -56,12 +56,25 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 |---|---|---|
 | `JWT_SECRET` | empty | HMAC secret for issuing/verifying JWTs at `/api/auth`. Empty = auth disabled. |
 | `ALLOWED_USER_IDS` | empty | Comma-separated Telegram user IDs allowed to authenticate. |
-| `TELEGRAM_BOT_TOKEN` | empty | Primary bot token for Telegram-init-data verification. |
-| `TELEGRAM_BOT_TOKENS` | empty | Additional bot tokens, comma-separated. Server accepts any matching token. |
-| `FLOWBOARD_TELEGRAM_AGENT_IDS` | empty | Optional comma-separated agent IDs matching `TELEGRAM_BOT_TOKEN` followed by `TELEGRAM_BOT_TOKENS`; lets the dashboard infer the caller agent from the bot that signed Telegram init data. |
+| `TELEGRAM_BOT_TOKEN` | empty | Primary bot token for Telegram-init-data verification (ordered position 1). Required before any additional token. |
+| `TELEGRAM_BOT_TOKENS` | empty | Additional bot tokens, comma-separated (ordered positions 2+). Empty entries and duplicate tokens are startup errors. |
+| `FLOWBOARD_TELEGRAM_AGENT_IDS` | empty | Required to enable auth: ordered 1:1 mapping for every configured token, primary agent first and then one per `TELEGRAM_BOT_TOKENS` entry. With the other auth prerequisites present, a missing/count-mismatched mapping stops startup; gaps, duplicates, and invalid agent IDs are always rejected without logging token values. |
 | `DASHBOARD_ORIGIN` | empty | Allowed CORS origin for browser clients. |
 | `OPENCLAW_HOOKS_TOKEN` (alias `HOOKS_TOKEN`) | empty | Shared secret required on `POST /api/hooks/task-complete`. Empty disables the endpoint. |
 | `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server logs a warning. |
+
+The three ordered lists form one bot-identity configuration. For example,
+`TELEGRAM_BOT_TOKEN=<PRIMARY>`, `TELEGRAM_BOT_TOKENS=<SECOND>,<THIRD>`, and
+`FLOWBOARD_TELEGRAM_AGENT_IDS=main,dev-agent,design-agent` map each signing bot
+to the server-confirmed agent ID at the same position. Values shown here are
+placeholders; keep real tokens in the service environment or credential store.
+
+`POST /api/auth` treats supplied fresh Telegram init-data as authoritative even
+when a session cookie exists. A valid payload reissues/rebinds the cookie to the
+matched agent. Invalid, unsupported-bot, future-dated, or expired exchange data
+returns a typed error and clears the old cookie rather than inheriting another
+bot's session. Steady-state non-auth API calls may keep using an established
+cookie after their originally valid WebApp init-data ages beyond five minutes.
 
 ## Telemetry
 

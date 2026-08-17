@@ -60,9 +60,14 @@ middleware fails closed:
   arbitrary hosts).
 - **Direct loopback (`127.0.0.1`/`::1`)** → allowed without a token *unless*
   `AUTH_ALWAYS=true`. This is the local-first operator path.
-- **Authentication** auto-enables when `TELEGRAM_BOT_TOKEN`, `JWT_SECRET`
-  (≥ 32 chars, HS256 pinned) and `ALLOWED_USER_IDS` are all set. `AUTH_ALWAYS=true`
-  forces auth even for loopback. See `docs/concepts/auth-model.md` and ADR-0028.
+- **Authentication** auto-enables when the ordered bot-token →
+  `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping is valid, `JWT_SECRET` (≥ 32 chars,
+  HS256 pinned) is set, and `ALLOWED_USER_IDS` is set. Ambiguous mappings fail
+  startup without echoing token values. `AUTH_ALWAYS=true` forces auth even for
+  loopback. See `docs/concepts/auth-model.md`, ADR-0028, and ADR-0030.
+- **Fresh Telegram credentials outrank cookies.** Valid fresh init-data issues or
+  rebinds the JWT to the matched agent; invalid fresh data cannot inherit a
+  session from another bot on the same origin.
 - **CORS:** when auth is off (local-first), CORS is restricted to loopback
   origins — a cross-site web page cannot drive the API from a victim's browser.
   When auth is on, CORS is restricted to the configured/Telegram origins.
@@ -151,7 +156,8 @@ audited and, for the highest-blast-radius ones, gated:
 | Secret | Source | Handling |
 |--------|--------|----------|
 | `JWT_SECRET` | env only | ≥ 32 chars enforced; never persisted, never returned. |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_TOKENS` | env only | Used only for Telegram WebApp HMAC validation; never echoed. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_TOKENS` | env only | Ordered Telegram WebApp HMAC secrets; validated for gaps/duplicates and never echoed. |
+| `FLOWBOARD_TELEGRAM_AGENT_IDS` | env only (non-secret) | Ordered 1:1 agent mapping for bot tokens; count, uniqueness, and agent-id syntax validated at startup. |
 | `OPENCLAW_HOOKS_TOKEN` | env only | Outbound bearer; inbound timing-safe compare; never echoed. |
 | `INTEGRITY_WEBHOOK_TOKEN` | env only | Outbound bearer; never echoed. |
 | GitHub token | `FLOWBOARD_GITHUB_TOKEN` / `GITHUB_TOKEN` (preferred), else local DB | Used only for read-only `api.github.com` calls. The settings API is **write-only** (GET returns only `{set, source}`); the value is never logged or returned. |

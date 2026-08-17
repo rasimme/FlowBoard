@@ -23,7 +23,15 @@ The running service serves the last build. Apply the update (rebuild + restart) 
 
 ## Remote access returns 401 / blank screen
 
-On localhost the dashboard is trusted and open. Over a tunnel or LAN it **fails closed** unless authentication is fully configured: `TELEGRAM_BOT_TOKEN`, `JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see the README [Remote Access](../../../README.md#remote-access-telegram-mini-app) section). A missing value means no one is allowed in.
+On localhost the dashboard is trusted and open. Over a tunnel or LAN it **fails closed** unless authentication is fully configured: `TELEGRAM_BOT_TOKEN`, the exact ordered `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping, `JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see the README [Remote Access](../../../README.md#remote-access-telegram-mini-app) section). Additional tokens in `TELEGRAM_BOT_TOKENS` need additional agent IDs at the same positions. A missing value means no one is allowed in.
+
+Startup errors such as `TELEGRAM_AGENT_MAPPING_COUNT`,
+`TELEGRAM_AGENT_MAPPING_DUPLICATE`, or `TELEGRAM_AGENT_ID_INVALID` identify the
+configuration field and list position without printing bot tokens. During a
+Mini App exchange, `TELEGRAM_BOT_NOT_SUPPORTED` means no configured bot signed
+the supplied fresh init-data; `TELEGRAM_INIT_DATA_EXPIRED` means the Mini App
+must be reopened. FlowBoard clears an existing cross-bot session on these
+`/api/auth` failures so an old cookie cannot hide the configuration problem.
 
 ## See also
 

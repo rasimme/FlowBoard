@@ -20,6 +20,7 @@ const INITIAL = {
   agentId: null,
   agentIdSource: null,
   agentIdChatBound: false,
+  authError: null,
 };
 
 // `base` is the live, mutable object the Proxy wraps (stable identity → no Proxy

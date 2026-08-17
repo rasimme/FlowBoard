@@ -125,7 +125,7 @@ const serviceEnv = {
 };
 log(`${c.ok} env prepared (FLOWBOARD_PORT, OPENCLAW_WORKSPACE, fresh JWT_SECRET) — injected into the service`);
 log(c.dim('  Telegram Mini App / remote access is optional (loopback needs no auth).'));
-log(c.dim('  To enable it later, add TELEGRAM_BOT_TOKEN / ALLOWED_USER_IDS to the service definition — see docs/.'));
+log(c.dim('  To enable it later, add TELEGRAM_BOT_TOKEN / FLOWBOARD_TELEGRAM_AGENT_IDS / ALLOWED_USER_IDS to the service definition — see docs/.'));
 
 // ── 5. Service registration (launchd / systemd --user) ──────────────────────
 step('4. Register the dashboard service');

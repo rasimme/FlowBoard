@@ -419,8 +419,9 @@ attribution.
 FlowBoard can be accessed remotely as a Telegram Mini App through a secure tunnel.
 
 Remote access exposes your local FlowBoard instance beyond localhost. Do not
-start a tunnel until authentication is configured with a bot token, JWT secret,
-allowed user ids, and the public dashboard origin. For non-Cloudflare tunnels
+start a tunnel until authentication is configured with bot token(s), an exact
+ordered bot-to-agent mapping, a JWT secret, allowed user ids, and the public
+dashboard origin. For non-Cloudflare tunnels
 or any setup that does not add a trusted proxy header, set `AUTH_ALWAYS=true`
 so loopback-only development bypasses cannot apply to remote traffic.
 
@@ -449,7 +450,9 @@ mkdir -p ~/.config/systemd/user/dashboard.service.d
 cp templates/systemd-auth.conf.example \
    ~/.config/systemd/user/dashboard.service.d/auth.conf
 # Edit with your values:
-# - TELEGRAM_BOT_TOKEN (from @BotFather)
+# - TELEGRAM_BOT_TOKEN (primary token from @BotFather)
+# - TELEGRAM_BOT_TOKENS (optional additional tokens, in stable order)
+# - FLOWBOARD_TELEGRAM_AGENT_IDS (one agent id per token, in the same order)
 # - JWT_SECRET
 # - ALLOWED_USER_IDS (comma-separated allowed user ids)
 # - DASHBOARD_ORIGIN (your public URL)
@@ -457,6 +460,25 @@ cp templates/systemd-auth.conf.example \
 systemctl --user daemon-reload
 systemctl --user restart dashboard
 ```
+
+For three bots, the ordered mapping looks like this (placeholders only — never
+commit real tokens):
+
+```ini
+Environment="TELEGRAM_BOT_TOKEN=<PRIMARY_BOT_TOKEN>"
+Environment="TELEGRAM_BOT_TOKENS=<DEVELOPMENT_BOT_TOKEN>,<DESIGN_BOT_TOKEN>"
+Environment="FLOWBOARD_TELEGRAM_AGENT_IDS=main,dev-agent,design-agent"
+Environment="JWT_SECRET=<GENERATED_JWT_SECRET>"
+Environment="ALLOWED_USER_IDS=<TELEGRAM_USER_ID>"
+Environment="DASHBOARD_ORIGIN=https://flowboard.example.com"
+```
+
+Position 1 always maps `TELEGRAM_BOT_TOKEN`; positions 2+ map the comma-separated
+entries in `TELEGRAM_BOT_TOKENS`. `FLOWBOARD_TELEGRAM_AGENT_IDS` must have the
+same number and order of unique, valid agent IDs. Empty entries, duplicate
+tokens/agent IDs, or a count mismatch stop startup with a diagnostic that never
+prints token values. Open each Mini App once without another bot's cookie to
+verify that `/api/auth` returns its server-confirmed `agentId`.
 
 ### Register Telegram button
 

@@ -42,6 +42,12 @@ document.addEventListener('click', (e) => {
           credentials: 'include',
         });
         const authData = await authRes.json().catch(() => null);
+        if (!authRes.ok) {
+          const authError = new Error(authData?.error || `Authentication failed (HTTP ${authRes.status})`);
+          authError.code = authData?.code || 'AUTH_REQUEST_FAILED';
+          throw authError;
+        }
+        window.appState.authError = null;
         if (authData?.user?.username) window.appState.authUser = authData.user.username;
         const identity = resolveDashboardAgentIdentity({
           urlSearch: window.location.search,
@@ -53,7 +59,14 @@ document.addEventListener('click', (e) => {
         window.appState.agentIdSource = identity.source;
         window.appState.agentIdChatBound = identity.chatBound;
       } catch (e) {
-        console.warn('Auth failed:', e);
+        window.appState.authError = {
+          code: e?.code || 'AUTH_REQUEST_FAILED',
+          message: e?.message || 'Authentication failed.',
+        };
+        window.appState.agentId = null;
+        window.appState.agentIdSource = null;
+        window.appState.agentIdChatBound = false;
+        console.warn(`Auth failed (${window.appState.authError.code}):`, window.appState.authError.message);
       }
     } else {
       const identity = resolveDashboardAgentIdentity({
