@@ -113,6 +113,7 @@ process.exit(0);
         mode: statSync(plistPath).mode & 0o777,
         logMode: logStat && !logStat.isSymbolicLink() ? logStat.mode & 0o777 : null,
         logIsSymlink: Boolean(logStat?.isSymbolicLink()),
+        logIsFifo: Boolean(logStat?.isFIFO?.()),
         logDirMode: existsSync(logDir) ? statSync(logDir).mode & 0o777 : null,
         legacyExists: Boolean(legacyStat),
         legacyIsSymlink: Boolean(legacyStat?.isSymbolicLink()),
@@ -154,16 +155,29 @@ async function runSetup(args, initialPlist, extraEnv = {}, options = {}) {
       });
       let stdout = '';
       let stderr = '';
+      let timedOut = false;
+      let timeout;
       child.stdout.on('data', data => { stdout += data; });
       child.stderr.on('data', data => { stderr += data; });
       child.on('error', reject);
-      child.on('close', code => resolve({
-        code,
-        stdout,
-        stderr,
-        ...harness.artifact(),
-        ...(options.capture ? options.capture(harness) : {}),
-      }));
+      const finish = code => {
+        if (timeout) clearTimeout(timeout);
+        resolve({
+          code,
+          timedOut,
+          stdout,
+          stderr,
+          ...harness.artifact(),
+          ...(options.capture ? options.capture(harness) : {}),
+        });
+      };
+      if (options.timeoutMs) {
+        timeout = setTimeout(() => {
+          timedOut = true;
+          child.kill('SIGKILL');
+        }, options.timeoutMs);
+      }
+      child.on('close', finish);
     });
   } finally {
     harness.cleanup();
@@ -306,6 +320,22 @@ let generatedLaunchdPlist = '';
   ok(result.logIsSymlink, 'unsafe secure-log symlink is not replaced or followed');
   ok(result.victimContent === 'must remain untouched\n' && result.victimMode === 0o644, 'secure-log symlink target is not modified');
   ok(!result.commands.some(line => line.startsWith('launchctl ')), 'unsafe log pre-creation aborts before stopping or bootstrapping launchd');
+}
+
+{
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    timeoutMs: 1500,
+    prepare(harness) {
+      mkdirSync(harness.logDir, { recursive: true, mode: 0o700 });
+      const fifo = spawnSync('mkfifo', [harness.logPath], { stdio: 'ignore' });
+      if (fifo.status !== 0) throw new Error('mkfifo is required for the FIFO regression test');
+    },
+  });
+  ok(result.timedOut === false, 'pre-created FIFO log inspection never blocks');
+  ok(result.code === 1, 'pre-created FIFO at the secure log path fails closed');
+  ok(result.logIsFifo, 'the FIFO remains a FIFO and is not replaced or opened for writing');
+  ok(result.stdout.includes('not a regular file'), 'special-file rejection is explicit');
+  ok(!result.commands.some(line => line.startsWith('launchctl ')), 'FIFO rejection aborts before stopping or bootstrapping launchd');
 }
 
 {

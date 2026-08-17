@@ -61,6 +61,12 @@ refuses an override or JWT rotation that would still be removed. Existing unit
 specifier handling is deliberately fail-safe: only `%%`, `%h`, and `%U` are
 accepted by the normalizer, and literal percent signs in rewritten
 `Environment=` values are emitted as `%%`.
+The reader decodes valid systemd escapes exactly once (`\\xHH`, `\\s`, `\\t`,
+one-to-three-digit octal escapes such as `\\040`, and escaped backslashes or
+quotes). Unclosed quotes, trailing backslashes, malformed escapes, and invalid
+octal values abort before dependencies, the build, or service registration are
+touched. Backslashes in Windows-style values therefore need the usual doubled
+unit-file spelling (for example `C:\\\\Users\\\\FlowBoard`).
 
 On macOS, launchd stdout/stderr goes to
 `~/Library/Logs/FlowBoard/flowboard-dashboard.log`. Setup creates the directory
@@ -68,7 +74,10 @@ as `0700`, pre-creates the file as `0600` without following symlinks, and writes
 umask `077` into the plist. A current-user regular legacy
 `/tmp/flowboard-dashboard.log` is secured and moved to
 `flowboard-dashboard.legacy.log`; unsafe pre-created links or foreign files are
-left untouched and never followed.
+left untouched and never followed. The secure-log check uses `lstat` +
+`O_NOFOLLOW|O_NONBLOCK` + `fstat`, so FIFOs, sockets, devices, and concurrent
+special-file replacements fail closed without blocking before launchd is
+stopped.
 
 After registration, setup verifies that launchd loaded the service or that the
 systemd unit is enabled, then polls the local `/api/health` endpoint. If remote

@@ -267,6 +267,26 @@ const preservedUnit = port => existingUnit([
 }
 
 {
+  const escapedUnit = port => existingUnit([
+    `Environment="FLOWBOARD_PORT=${port}"`,
+    'Environment="OPENCLAW_WORKSPACE=/Users/test\\x20workspace"',
+    'Environment="FLOWBOARD_RULES_TELEMETRY=left\\sright"',
+    'Environment="FLOWBOARD_HOOK_TELEMETRY=tab\\tvalue"',
+    'Environment="FLOWBOARD_PROJECTS_DIR=/srv/flowboard\\040projects"',
+    'Environment="FLOWBOARD_BASE_URL=C:\\\\Users\\\\FlowBoard\\\\bin"',
+    'Environment="FLOWBOARD_REPO=/srv/flowboard\\\\s-cache"',
+  ]);
+  const result = await runSetup(['--update'], { initialUnit: escapedUnit });
+  ok(result.code === 0, 'systemd Environment escape sequences round-trip without double-unescaping');
+  ok(result.unit.includes('Environment="OPENCLAW_WORKSPACE=/Users/test workspace"'), '\\x20 decodes to one space');
+  ok(result.unit.includes('Environment="FLOWBOARD_RULES_TELEMETRY=left right"'), '\\s decodes to one space');
+  ok(result.unit.includes('Environment="FLOWBOARD_HOOK_TELEMETRY=tab\tvalue"'), '\\t decodes to one tab');
+  ok(result.unit.includes('Environment="FLOWBOARD_PROJECTS_DIR=/srv/flowboard projects"'), 'octal \\040 decodes to one space');
+  ok(result.unit.includes('Environment="FLOWBOARD_BASE_URL=C:\\\\Users\\\\FlowBoard\\\\bin"'), 'escaped backslashes preserve a Windows-style path');
+  ok(result.unit.includes('Environment="FLOWBOARD_REPO=/srv/flowboard\\\\s-cache"'), 'a literal backslash is not decoded a second time');
+}
+
+{
   const result = await runSetup(['--force'], { initialUnit: preservedUnit });
   ok(result.code === 0, 'forced re-registration succeeds with an existing service');
   ok(result.unit.includes('JWT_SECRET=test-secret-v1'), 'forced re-registration preserves the existing JWT secret');
@@ -469,6 +489,23 @@ const preservedUnit = port => existingUnit([
   ok(result.unit.includes('UnsetEnvironment="FLOWBOARD_PORT=9"'), 'exact-assignment UnsetEnvironment is preserved without semantic broadening');
 }
 
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit([
+      'EnvironmentFile=%h/.config/flowboard/escaped.env',
+    ]),
+    environmentFiles: {
+      '.config/flowboard/escaped.env': port => {
+        const octalPort = String(port).split('').map(digit => `\\06${digit}`).join('');
+        return `FLOWBOARD_PORT=${octalPort}\nOPENCLAW_WORKSPACE="/Users/file\\x20workspace"\n`;
+      },
+    },
+    injectPort: false,
+  });
+  ok(result.code === 0, 'EnvironmentFile escape decoding resolves the health-check port before mutation');
+  ok(result.unit.includes('EnvironmentFile=%h/.config/flowboard/escaped.env'), 'escaped EnvironmentFile source remains owner-controlled');
+}
+
 for (const invalidSpecifier of ['%1', '%x', '%/', '%']) {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([
@@ -503,6 +540,35 @@ for (const invalidSpecifier of ['%1', '%x', '%/', '%']) {
   ok(result.code === 1, 'invalid specifiers in Environment assignment keys fail safe');
   ok(result.stdout.includes('unsupported or incomplete systemd specifier'), 'Environment-key specifier failure is diagnosed explicitly');
   ok(result.commands.length === 0, 'invalid Environment-key specifier aborts before build/service commands');
+}
+
+for (const [label, assignment] of [
+  ['an unclosed quote', 'Environment="OPENCLAW_WORKSPACE=/tmp/unclosed'],
+  ['an unknown escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\q"'],
+  ['a short hexadecimal escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\x2"'],
+  ['an invalid octal escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\09"'],
+]) {
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      assignment,
+    ]),
+  });
+  ok(result.code === 1, `${label} fails closed`);
+  ok(result.commands.length === 0, `${label} is rejected before build or service commands`);
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
+    environmentFiles: {
+      '.config/flowboard/invalid.env': 'OPENCLAW_WORKSPACE="/tmp/bad\\q"\n',
+    },
+    injectPort: false,
+  });
+  ok(result.code === 1, 'invalid EnvironmentFile escapes fail closed');
+  ok(result.stdout.includes('could not read EnvironmentFile'), 'invalid EnvironmentFile diagnostics identify the source without its value');
+  ok(result.commands.length === 0, 'invalid EnvironmentFile content is rejected before build or service commands');
 }
 
 {

@@ -213,9 +213,14 @@ function splitSystemdWords(value) {
   let quote = null;
   let escaping = false;
   let started = false;
-  for (const char of value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
     if (escaping) {
-      word += char;
+      // Keep the escape marker for the semantic decoder below. The previous
+      // implementation consumed it here and then decoded the already
+      // modified word a second time, turning e.g. `\\\\` into ` ` when the
+      // second character happened to be `s`.
+      word += `\\${char}`;
       escaping = false;
       started = true;
     } else if (char === '\\') {
@@ -239,7 +244,8 @@ function splitSystemdWords(value) {
       started = true;
     }
   }
-  if (escaping) word += '\\';
+  if (escaping) throw new Error(`unterminated systemd escape at position ${value.length - 1}`);
+  if (quote) throw new Error(`unterminated systemd ${quote} quote`);
   if (started) words.push(word);
   return words;
 }
@@ -253,27 +259,32 @@ function unescapeSystemdString(value) {
       switch (next) {
         case '\\': result += '\\'; i += 2; break;
         case '"': result += '"'; i += 2; break;
+        case "'": result += "'"; i += 2; break;
+        case ' ': result += ' '; i += 2; break;
         case 'n': result += '\n'; i += 2; break;
         case 'r': result += '\r'; i += 2; break;
         case 't': result += '\t'; i += 2; break;
         case 's': result += ' '; i += 2; break;
+        case 'a': result += '\x07'; i += 2; break;
+        case 'b': result += '\b'; i += 2; break;
+        case 'f': result += '\f'; i += 2; break;
+        case 'v': result += '\v'; i += 2; break;
         case 'x': {
-          if (i + 3 < value.length) {
-            const hex = value.slice(i + 2, i + 4);
-            const byte = parseInt(hex, 16);
-            if (!Number.isNaN(byte) && byte >= 0 && byte <= 255) {
-              result += String.fromCharCode(byte);
-              i += 4;
-              break;
-            }
+          const hex = value.slice(i + 2, i + 4);
+          if (hex.length === 2 && /^[0-9a-f]{2}$/i.test(hex)) {
+            const byte = Number.parseInt(hex, 16);
+            if (byte === 0) throw new Error(`invalid NUL escape at position ${i}`);
+            result += String.fromCharCode(byte);
+            i += 4;
+            break;
           }
           throw new Error(`invalid escape sequence \\x at position ${i}; expected \\xHH`);
         }
         case 'u': {
-          if (i + 5 < value.length) {
-            const hex = value.slice(i + 2, i + 6);
-            const codepoint = parseInt(hex, 16);
-            if (!Number.isNaN(codepoint) && codepoint >= 0 && codepoint <= 0x10FFFF) {
+          const hex = value.slice(i + 2, i + 6);
+          if (hex.length === 4 && /^[0-9a-f]{4}$/i.test(hex)) {
+            const codepoint = Number.parseInt(hex, 16);
+            if (codepoint > 0 && codepoint <= 0x10FFFF) {
               result += String.fromCodePoint(codepoint);
               i += 6;
               break;
@@ -282,10 +293,10 @@ function unescapeSystemdString(value) {
           throw new Error(`invalid escape sequence \\u at position ${i}; expected \\uHHHH`);
         }
         case 'U': {
-          if (i + 9 < value.length) {
-            const hex = value.slice(i + 2, i + 10);
-            const codepoint = parseInt(hex, 16);
-            if (!Number.isNaN(codepoint) && codepoint >= 0 && codepoint <= 0x10FFFF) {
+          const hex = value.slice(i + 2, i + 10);
+          if (hex.length === 8 && /^[0-9a-f]{8}$/i.test(hex)) {
+            const codepoint = Number.parseInt(hex, 16);
+            if (codepoint > 0 && codepoint <= 0x10FFFF) {
               result += String.fromCodePoint(codepoint);
               i += 10;
               break;
@@ -293,8 +304,20 @@ function unescapeSystemdString(value) {
           }
           throw new Error(`invalid escape sequence \\U at position ${i}; expected \\UHHHHHHHH`);
         }
-        default:
+        default: {
+          // Systemd accepts one-to-three octal digits as a character escape.
+          if (/^[0-7]$/.test(next)) {
+            let end = i + 2;
+            while (end < value.length && end < i + 4 && /^[0-7]$/.test(value[end])) end += 1;
+            const code = Number.parseInt(value.slice(i + 1, end), 8);
+            if (code === 0) throw new Error(`invalid NUL escape at position ${i}`);
+            if (code > 0xFF) throw new Error(`invalid octal escape at position ${i}; expected a byte`);
+            result += String.fromCharCode(code);
+            i = end;
+            break;
+          }
           throw new Error(`unsupported escape sequence \\${next} at position ${i}`);
+        }
       }
     } else {
       result += value[i];
@@ -302,6 +325,35 @@ function unescapeSystemdString(value) {
     }
   }
   return result;
+}
+
+// EnvironmentFile values use the same quoting/escape grammar, but each
+// assignment is one value rather than a whitespace-separated list of words.
+// Decode quotes here and run the semantic escape decoder exactly once.
+function decodeSystemdValue(value) {
+  let raw = '';
+  let quote = null;
+  let escaping = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (escaping) {
+      raw += char;
+      escaping = false;
+    } else if (char === '\\') {
+      raw += '\\';
+      escaping = true;
+    } else if (quote) {
+      if (char === quote) quote = null;
+      else raw += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else {
+      raw += char;
+    }
+  }
+  if (escaping) throw new Error(`unterminated systemd escape at position ${value.length - 1}`);
+  if (quote) throw new Error(`unterminated systemd ${quote} quote`);
+  return unescapeSystemdString(raw);
 }
 
 function expandSupportedSystemdSpecifiers(value) {
@@ -347,6 +399,11 @@ function parseSystemdEnvironment(content) {
         environmentFiles.length = 0;
         events.push({ type: 'environment-file-reset' });
       } else {
+        // Keep the original spelling for a lossless rewrite, but parse every
+        // token now so malformed quotes/escapes fail before setup mutates the
+        // service. readSystemdEnvironmentFiles() decodes the same token once
+        // when resolving the path.
+        for (const entry of splitSystemdWords(value)) unescapeSystemdString(entry);
         environmentFiles.push(value);
         events.push({ type: 'environment-file', value });
       }
@@ -436,9 +493,10 @@ function parseSystemdEnvironmentFile(content) {
     if (separator <= 0) continue;
     const key = line.slice(0, separator).trim();
     if (!VALID_ENV_KEY.test(key)) continue;
-    // EnvironmentFile is not a shell file: quotes/backslashes group and escape
-    // characters, but variable expansion is intentionally not performed.
-    env[key] = splitSystemdWords(line.slice(separator + 1).trim()).join(' ');
+    // EnvironmentFile is not a shell file: quotes/backslashes group and
+    // escape characters, but variable expansion is intentionally not
+    // performed. Keep all value whitespace and decode escapes exactly once.
+    env[key] = decodeSystemdValue(line.slice(separator + 1).trim());
   }
   return env;
 }
@@ -456,7 +514,8 @@ function readSystemdEnvironmentFiles(entries) {
   for (const entry of entries) {
     for (const token of splitSystemdWords(entry.value)) {
       const optional = token.startsWith('-');
-      const configuredPath = optional ? token.slice(1) : token;
+      const escapedPath = optional ? token.slice(1) : token;
+      const configuredPath = unescapeSystemdString(escapedPath);
       const resolvedPath = expandSystemdEnvironmentFilePath(configuredPath);
       if (!resolvedPath) {
         unresolved.push(`${entry.origin}: ${configuredPath}`);
@@ -652,15 +711,41 @@ function noFollowFlag() {
   return constants.O_NOFOLLOW;
 }
 
+function nonBlockingFlag() {
+  if (!Number.isInteger(constants.O_NONBLOCK)) throw new Error('this platform cannot open files with O_NONBLOCK');
+  return constants.O_NONBLOCK;
+}
+
 function ensureOwnerOnlyRegularFile(path) {
   const noFollow = noFollowFlag();
+  const nonBlocking = nonBlockingFlag();
+  let initialStats;
   let fd;
   try {
-    fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | noFollow, 0o600);
+    // Reject pre-existing special files before opening them. O_NONBLOCK is
+    // still required for the TOCTOU window between lstat() and open(): a
+    // replaced FIFO/socket/device must fail quickly rather than hanging setup.
+    try {
+      initialStats = lstatSync(path);
+      if (initialStats.isSymbolicLink() || !initialStats.isFile()) {
+        throw new Error(`${path} is not a regular file`);
+      }
+      if (initialStats.uid !== currentUid()) throw new Error(`${path} is not owned by the current user`);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    fd = openSync(
+      path,
+      constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | noFollow | nonBlocking,
+      0o600,
+    );
     const stats = fstatSync(fd);
     if (!stats.isFile()) throw new Error(`${path} is not a regular file`);
     if (stats.uid !== currentUid()) throw new Error(`${path} is not owned by the current user`);
     if (stats.nlink !== 1) throw new Error(`${path} has unexpected hard links`);
+    if (initialStats && (stats.dev !== initialStats.dev || stats.ino !== initialStats.ino)) {
+      throw new Error(`${path} changed during inspection`);
+    }
     fchmodSync(fd, 0o600);
   } catch (error) {
     throw new Error(`refusing unsafe launchd log path ${path}: ${error.message}`);
@@ -693,9 +778,13 @@ function migrateLegacyLaunchdLog() {
   }
 
   const noFollow = noFollowFlag();
+  const nonBlocking = nonBlockingFlag();
   let fd;
   try {
-    fd = openSync(launchdLegacyLogPath, constants.O_RDWR | noFollow);
+    // The lstat() check above handles the normal special-file case. Keep the
+    // open non-blocking as well so a concurrent replacement cannot turn this
+    // legacy-log migration into a FIFO/socket/device hang.
+    fd = openSync(launchdLegacyLogPath, constants.O_RDWR | noFollow | nonBlocking);
     const openedStats = fstatSync(fd);
     if (!openedStats.isFile() || openedStats.uid !== currentUid() || openedStats.nlink !== 1) {
       throw new Error('ownership, file type, or link count changed during inspection');
