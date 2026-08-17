@@ -87,6 +87,10 @@ async function main() {
     let oldPollStartedResolve;
     let oldPollStarted = Promise.resolve();
     let oldPollRequestFailed = false;
+    let releaseSwitchTaskLoad;
+    let switchTaskLoadStartedResolve;
+    let switchTaskLoadStarted = Promise.resolve();
+    let retryCoreSnapshotCount = 0;
 
     const respond = (request, status, body) => request.respond({
       status,
@@ -138,6 +142,15 @@ async function main() {
           }
         }
 
+        if (request.method() === 'GET' && url.pathname === '/api/projects' && mode === 'server') {
+          await respond(request, 500, { error: 'Synthetic poll failure before project-switch Retry' });
+          return;
+        }
+
+        if (request.method() === 'GET' && url.pathname === '/api/projects' && mode === 'switch-retry-pass') {
+          retryCoreSnapshotCount += 1;
+        }
+
         if ((mode === 'late-agents' || mode === 'late-malformed-agents')
           && request.method() === 'GET'
           && url.pathname === '/api/agents'
@@ -158,6 +171,18 @@ async function main() {
           && url.pathname === '/api/projects/switch-old/tasks') {
           oldPollStartedResolve();
           await new Promise((resolve) => { releaseOldPoll = resolve; });
+          await respond(request, 200, {
+            ok: true,
+            tasks: [validTask({ id: oldTask, title: 'Old project task' })],
+          });
+          return;
+        }
+
+        if (mode === 'hold-switch-task-load'
+          && request.method() === 'GET'
+          && url.pathname === '/api/projects/switch-old/tasks') {
+          switchTaskLoadStartedResolve();
+          await new Promise((resolve) => { releaseSwitchTaskLoad = resolve; });
           await respond(request, 200, {
             ok: true,
             tasks: [validTask({ id: oldTask, title: 'Old project task' })],
@@ -270,6 +295,34 @@ async function main() {
     r.ok(projectAfterRace.taskTitles.includes('New project task')
       && !projectAfterRace.taskTitles.includes('Old project task'),
     'late old override cannot overwrite the new project task snapshot');
+
+    // Retry pressed while a project switch owns the task lane must remain
+    // visible and launch a fresh complete core snapshot after navigation. The
+    // old implementation returned the switch promise here and silently lost
+    // the Retry, leaving the error banner/retrying state stuck.
+    mode = 'server';
+    await page.waitForSelector('.connection-banner[data-connection-state="server-error"]', { timeout: 8000 });
+    mode = 'hold-switch-task-load';
+    switchTaskLoadStarted = new Promise((resolve) => { switchTaskLoadStartedResolve = resolve; });
+    const switchWithQueuedRetry = page.click('[data-project="switch-old"]');
+    await switchTaskLoadStarted;
+    await page.click('.connection-banner [data-action="retry-connection"]');
+    await page.waitForFunction(() => window.appState?.connection?.retrying === true);
+    const retryWhileSwitching = await page.$eval(
+      '.connection-banner [data-action="retry-connection"]',
+      (el) => ({ disabled: el.disabled, text: el.textContent }),
+    );
+    r.ok(retryWhileSwitching.disabled && /Retrying/i.test(retryWhileSwitching.text),
+      'Retry during project switch stays visibly queued and disabled while pending');
+    mode = 'switch-retry-pass';
+    releaseSwitchTaskLoad();
+    await switchWithQueuedRetry;
+    await page.waitForFunction(() => window.appState?.viewedProject === 'switch-old'
+      && window.appState?.connection?.status === 'ready'
+      && window.appState?.connection?.retrying === false);
+    r.ok(retryCoreSnapshotCount > 0,
+      'queued Retry starts a new complete core snapshot after the project switch');
+    r.ok(!(await page.$('.connection-banner')), 'queued Retry clears the stale error banner after core recovery');
   }, { port, viewport: { width: 1400, height: 900 } });
 
   if (res?.skipped) r.skip(res.reason);

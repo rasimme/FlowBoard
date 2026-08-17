@@ -29,6 +29,10 @@ function isNonNegativeInteger(value) {
   return Number.isInteger(value) && value >= 0;
 }
 
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value > 0;
+}
+
 function isStringArray(value) {
   return Array.isArray(value) && value.every(isNonEmptyString);
 }
@@ -119,9 +123,9 @@ function validateTask(task, index, path) {
     `${at}.lastCheckpointAt to be a string or null`);
   require(
     hasOwn(task, 'staleAfterMinutes')
-      && (task.staleAfterMinutes === null || isNonNegativeInteger(task.staleAfterMinutes)),
+      && (task.staleAfterMinutes === null || isPositiveInteger(task.staleAfterMinutes)),
     path,
-    `${at}.staleAfterMinutes to be a non-negative integer or null`,
+    `${at}.staleAfterMinutes to be a positive integer or null`,
   );
   require(isNonNegativeInteger(task.checkpointCount), path, `${at}.checkpointCount to be a non-negative integer`);
   require(isNullableFiniteNumber(task.order), path, `${at}.order to be a finite number or null`);

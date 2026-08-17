@@ -86,9 +86,16 @@ async function run() {
   stuck = hzlService.getStuckTasks({ staleThreshold: 0 });
   ok(stuckIds(stuck.stale).includes(patient.id), 'clearing staleAfterMinutes falls back to the global threshold');
   ok(hzlService.getTask(PROJECT, patient.id).staleAfterMinutes === null, 'staleAfterMinutes exposed on the public task');
-  let threw = false;
-  try { hzlService.updateTask(PROJECT, patient.id, { staleAfterMinutes: -5 }); } catch { threw = true; }
-  ok(threw, 'invalid staleAfterMinutes is rejected');
+  for (const invalidThreshold of [0, -5]) {
+    let threw = false;
+    try { hzlService.updateTask(PROJECT, patient.id, { staleAfterMinutes: invalidThreshold }); } catch { threw = true; }
+    ok(threw, `invalid staleAfterMinutes ${invalidThreshold} is rejected`);
+  }
+  let invalidCreateRejected = false;
+  try {
+    hzlService.createTask(PROJECT, { title: 'Invalid zero threshold', staleAfterMinutes: 0 });
+  } catch { invalidCreateRejected = true; }
+  ok(invalidCreateRejected, 'create rejects staleAfterMinutes zero');
 
   // raw stuck list is unaffected by consumption (monitoring keeps full view)
   stuck = hzlService.getStuckTasks({ staleThreshold: 0 });

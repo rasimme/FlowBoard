@@ -59,7 +59,6 @@ function sameConnection(a, b) {
 
 export function DashboardProvider({ children }) {
   const { state, dispatch } = useAppState();
-  const initRef = useRef(false);
   const prevTasksRef = useRef('');
   const prevProjectsRef = useRef('');
   const prevAgentsRef = useRef('');
@@ -68,6 +67,8 @@ export function DashboardProvider({ children }) {
   const snapshotRequestRef = useRef({ generation: 0, active: null });
   const taskRequestRef = useRef({ generation: 0, active: null });
   const projectSwitchRef = useRef(null);
+  const queuedRetryRef = useRef(null);
+  const unmountedRef = useRef(false);
 
   const publishConnection = useCallback((next) => {
     if (sameConnection(connectionRef.current, next)) return;
@@ -214,13 +215,14 @@ export function DashboardProvider({ children }) {
     }
   }, [dispatch, markConnectionSuccess]);
 
-  const startSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
-    if (projectSwitchRef.current) {
-      return projectSwitchRef.current.promise || Promise.resolve(false);
-    }
-
+  const runSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
     const running = snapshotRequestRef.current.active;
-    if (running && kind !== 'retry') return running.promise;
+    // React StrictMode deliberately replays mount effects in development. A
+    // replayed initial load must replace the rehearsal request instead of
+    // reusing it; otherwise an aborted/slow first request can hold the real
+    // mount hostage until the response or poll interval arrives. Polls and
+    // other non-retry callers still deduplicate against the active snapshot.
+    if (running && kind !== 'retry' && kind !== 'initial') return running.promise;
 
     const generation = snapshotRequestRef.current.generation + 1;
     snapshotRequestRef.current.generation = generation;
@@ -280,6 +282,40 @@ export function DashboardProvider({ children }) {
       return request;
     })();
   }, [commitFullSnapshot, commitPollSnapshot, fetchDashboardSnapshot, markConnectionFailure, publishConnection]);
+
+  const startSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
+    const projectSwitch = projectSwitchRef.current;
+    if (!projectSwitch) return runSnapshotRequest(kind, { showRetrying });
+
+    // A project switch owns the task lane, but it must not swallow a Retry.
+    // Keep the visible retry state immediately and queue one complete core
+    // snapshot behind the switch. The queued operation also follows a later
+    // switch instead of starting a request against an obsolete project.
+    if (kind === 'retry') {
+      if (showRetrying) publishConnection(connectionLoading(connectionRef.current));
+      if (queuedRetryRef.current) return queuedRetryRef.current;
+
+      const queued = (async () => {
+        let observedSwitch = projectSwitch;
+        while (observedSwitch) {
+          await observedSwitch.promise?.catch(() => false);
+          if (unmountedRef.current) return false;
+          observedSwitch = projectSwitchRef.current;
+        }
+        if (unmountedRef.current) return false;
+        return runSnapshotRequest('retry');
+      })().finally(() => {
+        if (queuedRetryRef.current === queued) queuedRetryRef.current = null;
+      });
+      queuedRetryRef.current = queued;
+      return queued;
+    }
+
+    // Polling and task-only refreshes are already represented by the switch;
+    // reusing its promise avoids a second task request while navigation owns
+    // the lane.
+    return projectSwitch.promise || Promise.resolve(false);
+  }, [publishConnection, runSnapshotRequest]);
 
   const invalidateSnapshotRequest = useCallback(async (reason) => {
     const running = snapshotRequestRef.current.active;
@@ -445,9 +481,6 @@ export function DashboardProvider({ children }) {
 
   // Initial fetch — runs once after window.appState bootstrap is in place.
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
     loadDashboardSnapshot();
   }, [loadDashboardSnapshot]);
 
@@ -461,14 +494,19 @@ export function DashboardProvider({ children }) {
     return () => clearInterval(id);
   }, [startSnapshotRequest]);
 
-  useEffect(() => () => {
-    projectSwitchRef.current = null;
-    snapshotRequestRef.current.generation += 1;
-    snapshotRequestRef.current.active?.controller.abort(new DOMException('Dashboard unmounted', 'AbortError'));
-    snapshotRequestRef.current.active = null;
-    taskRequestRef.current.generation += 1;
-    taskRequestRef.current.active?.controller.abort(new DOMException('Dashboard unmounted', 'AbortError'));
-    taskRequestRef.current.active = null;
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      projectSwitchRef.current = null;
+      queuedRetryRef.current = null;
+      snapshotRequestRef.current.generation += 1;
+      snapshotRequestRef.current.active?.controller.abort(new DOMException('Dashboard unmounted', 'AbortError'));
+      snapshotRequestRef.current.active = null;
+      taskRequestRef.current.generation += 1;
+      taskRequestRef.current.active?.controller.abort(new DOMException('Dashboard unmounted', 'AbortError'));
+      taskRequestRef.current.active = null;
+    };
   }, []);
 
   const value = useMemo(() => ({

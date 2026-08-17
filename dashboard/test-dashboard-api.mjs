@@ -135,6 +135,12 @@ await expectProtocol(() => fetchActiveProjectForAgent('main'), 'status activePro
 // Tasks: all fields consumed by the board are validated before publication.
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask()] });
 assert.deepEqual(await fetchTasksForProject('demo'), [validTask()]);
+globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask({ staleAfterMinutes: 1 })] });
+assert.deepEqual(
+  await fetchTasksForProject('demo'),
+  [validTask({ staleAfterMinutes: 1 })],
+  'tasks accept a positive staleAfterMinutes override',
+);
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: { malformed: true } });
 await expectProtocol(() => fetchTasksForProject('demo'), 'tasks requires an array');
 for (const [label, payload] of [
@@ -143,6 +149,14 @@ for (const [label, payload] of [
   ['tasks rejects an unknown priority enum', { ok: true, tasks: [validTask({ priority: 'critical' })] }],
   ['tasks validates subtaskIds as strings', { ok: true, tasks: [validTask({ subtaskIds: ['T-001-1', null] })] }],
   ['tasks validates tags as strings', { ok: true, tasks: [validTask({ tags: ['frontend', 42] })] }],
+  ['tasks rejects staleAfterMinutes zero', {
+    ok: true,
+    tasks: [validTask({ staleAfterMinutes: 0 })],
+  }],
+  ['tasks rejects negative staleAfterMinutes', {
+    ok: true,
+    tasks: [validTask({ staleAfterMinutes: -1 })],
+  }],
   ['tasks validates optional progress shape', {
     ok: true,
     tasks: [validTask({ progress: { done: 0, inProgress: '0', total: 1 } })],
