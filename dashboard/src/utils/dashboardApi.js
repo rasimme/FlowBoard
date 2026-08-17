@@ -106,25 +106,51 @@ function validateAgent(agent, index, path) {
     `${at}.last_seen to be a string or null`);
 }
 
-function validateTask(task, index, path) {
+export function validateTask(task, index = 0, path = '/projects/tasks') {
   const at = `tasks[${index}]`;
   require(isRecord(task), path, `${at} to be an object`);
   require(isNonEmptyString(task.id), path, `${at}.id to be a non-empty string`);
   require(isNonEmptyString(task.title), path, `${at}.title to be a non-empty string`);
   require(TASK_STATUSES.has(task.status), path, `${at}.status to match the task status enum`);
   require(typeof task.blocked === 'boolean', path, `${at}.blocked to be a boolean`);
-  if (hasOwn(task, 'workState')) {
-    require(WORK_STATE_OPTIONS.includes(task.workState), path,
-      `${at}.workState to match the canonical work-state enum`);
-    require(task.blocked === (task.workState === 'blocked'), path,
-      `${at}.blocked to match the read-only workState projection`);
-  }
-  if (hasOwn(task, 'workStateDetails')) {
-    validateWorkStateDetails(task.workStateDetails, path, at);
-  }
-  if (hasOwn(task, 'stuckIndicator')) {
-    require(task.stuckIndicator === null || isRecord(task.stuckIndicator) || Array.isArray(task.stuckIndicator), path,
-      `${at}.stuckIndicator to be an object, array, or null when present`);
+  // Canonical work-state fields are an atomic integration contract.  A
+  // response that omits them is rejected before it can reach appState; the UI
+  // must not manufacture local `working`/empty-details success from a legacy
+  // response during a partial backend rollout.
+  require(hasOwn(task, 'workState') && WORK_STATE_OPTIONS.includes(task.workState), path,
+    `${at}.workState to be present and match the canonical work-state enum`);
+  require(task.blocked === (task.workState === 'blocked'), path,
+    `${at}.blocked to match the read-only workState projection`);
+  require(hasOwn(task, 'workStateDetails'), path,
+    `${at}.workStateDetails to be present as part of the canonical contract`);
+  validateWorkStateDetails(task.workStateDetails, path, at);
+  // Exactly one transient indicator is returned by the backend.  Arrays are
+  // ambiguous and must fail closed rather than being reduced client-side.
+  require(hasOwn(task, 'stuckIndicator')
+    && (task.stuckIndicator === null || isRecord(task.stuckIndicator)), path,
+  `${at}.stuckIndicator to be exactly one object or null`);
+  if (isRecord(task.stuckIndicator) && hasOwn(task.stuckIndicator, 'actions')) {
+    require(isRecord(task.stuckIndicator.actions), path,
+      `${at}.stuckIndicator.actions to be an action map when present`);
+    for (const [name, descriptor] of Object.entries(task.stuckIndicator.actions)) {
+      require(['clear', 'retry'].includes(name) && isRecord(descriptor), path,
+        `${at}.stuckIndicator.actions to contain explicit clear/retry descriptors`);
+      require((descriptor.action === undefined || descriptor.action === name)
+        && (descriptor.name === undefined || descriptor.name === name), path,
+      `${at}.stuckIndicator.actions.${name} to identify the mapped action consistently`);
+      require(String(descriptor.method || 'POST').toUpperCase() === 'POST'
+        && typeof (descriptor.path || descriptor.href) === 'string'
+        && String(descriptor.path || descriptor.href).startsWith('/api/'), path,
+      `${at}.stuckIndicator.actions.${name} to be a same-origin POST API descriptor`);
+      if (descriptor.body !== undefined) require(isRecord(descriptor.body), path,
+        `${at}.stuckIndicator.actions.${name}.body to be an object when present`);
+      if (descriptor.payload !== undefined) require(isRecord(descriptor.payload), path,
+        `${at}.stuckIndicator.actions.${name}.payload to be an object when present`);
+      const actionBody = descriptor.body || descriptor.payload || {};
+      require(!['status', 'blocked', 'workState', 'workStateDetails']
+        .some((field) => hasOwn(actionBody, field)), path,
+      `${at}.stuckIndicator.actions.${name} to remain non-destructive`);
+    }
   }
   require(TASK_PRIORITIES.has(task.priority), path, `${at}.priority to match the priority enum`);
   require(hasOwn(task, 'parentId') && isNullableString(task.parentId), path,
@@ -169,6 +195,18 @@ function validateTask(task, index, path) {
         `${at}.progress.${field} to be a non-negative integer`);
     }
   }
+}
+
+export function validateTaskPayload(task, path = '/projects/tasks') {
+  validateTask(task, 0, path);
+  return task;
+}
+
+export function validateTaskMutationResponse(data, path = '/projects/tasks') {
+  require(isRecord(data) && data.ok === true, path, 'a mutation response with ok=true');
+  require(isRecord(data.task), path, 'a canonical task in mutation response');
+  validateTaskPayload(data.task, path);
+  return data;
 }
 
 export async function fetchProjectsList(signal, options = {}) {

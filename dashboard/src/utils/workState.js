@@ -23,6 +23,11 @@ export const EMPTY_WORK_STATE_DETAILS = Object.freeze({
   setAt: null,
 });
 
+// The backend owns the transient-indicator action routes.  The UI may render
+// only these named, explicit POST actions when the response supplies a
+// descriptor for them; it must never invent a task PUT fallback.
+export const TRANSIENT_INDICATOR_ACTIONS = Object.freeze(['clear', 'retry']);
+
 const TERMINAL_LIFECYCLE_STATES = new Set(['review', 'done', 'archived']);
 
 function isRecord(value) {
@@ -41,7 +46,9 @@ function nullableText(value) {
 }
 
 function nullableTimestamp(value) {
-  return nullableText(value);
+  const text = nullableText(value);
+  if (!text) return null;
+  return Number.isNaN(new Date(text).getTime()) ? null : text;
 }
 
 export function normalizeWorkState(value, legacyBlocked = false) {
@@ -105,12 +112,16 @@ export function buildWorkStateUpdate(workState, details = EMPTY_WORK_STATE_DETAI
 
 function candidateIndicator(task) {
   if (!isRecord(task)) return null;
-  return task.stuckIndicator
+  const candidate = task.stuckIndicator
     ?? task.stuck_indicator
     ?? task.attention?.stuckIndicator
     ?? task.attention?.stuck_indicator
     ?? task.workStateDetails?.stuckIndicator
     ?? null;
+  // Exactly one indicator is part of the API contract.  Arrays are not
+  // reduced by picking an arbitrary entry because that creates a local
+  // phantom success when the backend has returned an incompatible shape.
+  return isRecord(candidate) ? candidate : null;
 }
 
 function indicatorIsInactive(indicator) {
@@ -125,33 +136,50 @@ function indicatorIsInactive(indicator) {
     || indicator.resolvedAt != null;
 }
 
-function actionName(value) {
-  if (typeof value === 'string') return value;
-  if (!isRecord(value)) return null;
-  return value.action || value.name || value.type || null;
+function normalizeActionDescriptor(name, value) {
+  if (!TRANSIENT_INDICATOR_ACTIONS.includes(name) || !isRecord(value)) return null;
+  const action = value.action || value.name || name;
+  if (action !== name || !TRANSIENT_INDICATOR_ACTIONS.includes(action)) return null;
+  const method = String(value.method || 'POST').toUpperCase();
+  const path = value.path || value.href;
+  // Only same-origin API paths are accepted.  A descriptor is data, not a
+  // permission to call arbitrary URLs or to turn an action into a PUT.
+  if (method !== 'POST' || typeof path !== 'string' || !path.startsWith('/api/')) return null;
+  const hasBody = Object.prototype.hasOwnProperty.call(value, 'body');
+  const hasPayload = Object.prototype.hasOwnProperty.call(value, 'payload');
+  if ((hasBody && !isRecord(value.body)) || (hasPayload && !isRecord(value.payload))) return null;
+  if (hasBody && hasPayload) return null;
+  const body = hasBody
+    ? clone(value.body)
+    : hasPayload ? clone(value.payload) : undefined;
+  // Explicit indicator actions are non-destructive.  Reject descriptors that
+  // smuggle lifecycle/work-state writes into the action body.
+  if (body && ['status', 'blocked', 'workState', 'workStateDetails'].some((field) => Object.prototype.hasOwnProperty.call(body, field))) {
+    return null;
+  }
+  return {
+    action,
+    method,
+    path,
+    ...(body ? { body } : {}),
+  };
 }
 
 function normalizedActionEntries(rawActions, indicator) {
   const entries = [];
   if (Array.isArray(rawActions)) {
-    for (const action of rawActions) {
-      const name = actionName(action);
-      if (name) entries.push({ name, value: action });
+    for (const value of rawActions) {
+      if (!isRecord(value)) continue;
+      const name = value.action || value.name;
+      const descriptor = normalizeActionDescriptor(name, value);
+      if (descriptor) entries.push({ name, value: descriptor });
     }
-  } else if (isRecord(rawActions)) {
-    for (const [name, value] of Object.entries(rawActions)) {
-      if (value === true || isRecord(value)) entries.push({ name, value });
-    }
+    return entries;
   }
-  for (const name of ['clear', 'retry']) {
-    const capitalized = name[0].toUpperCase() + name.slice(1);
-    if ((indicator?.[`can${capitalized}`] === true
-      || indicator?.[`${name}able`] === true
-      || indicator?.[name] === true
-      || isRecord(indicator?.[name]))
-      && !entries.some((entry) => entry.name === name)) {
-      entries.push({ name, value: indicator?.[name] === true ? true : indicator?.[name] || true });
-    }
+  if (!isRecord(rawActions)) return entries;
+  for (const name of TRANSIENT_INDICATOR_ACTIONS) {
+    const descriptor = normalizeActionDescriptor(name, rawActions[name]);
+    if (descriptor) entries.push({ name, value: descriptor });
   }
   return entries;
 }
@@ -163,10 +191,7 @@ function normalizedActionEntries(rawActions, indicator) {
  */
 export function getStuckIndicator(task) {
   if (!isRecord(task) || TERMINAL_LIFECYCLE_STATES.has(task.status)) return null;
-  let indicator = candidateIndicator(task);
-  if (Array.isArray(indicator)) {
-    indicator = indicator.find((item) => !indicatorIsInactive(item)) || null;
-  }
+  const indicator = candidateIndicator(task);
   if (indicatorIsInactive(indicator)) return null;
   return {
     ...indicator,
@@ -175,10 +200,14 @@ export function getStuckIndicator(task) {
       || nullableText(indicator.reason)
       || 'Task needs attention',
     reason: nullableText(indicator.reason),
-    createdAt: nullableTimestamp(indicator.createdAt || indicator.setAt),
+    detectedAt: nullableTimestamp(indicator.detectedAt || indicator.createdAt || indicator.setAt),
+    // Keep createdAt as a read-compatibility alias for older renderers, but
+    // detectedAt is the canonical monitoring timestamp.
+    createdAt: nullableTimestamp(indicator.createdAt || indicator.detectedAt || indicator.setAt),
     updatedAt: nullableTimestamp(indicator.updatedAt),
     checkAgainAt: nullableTimestamp(indicator.checkAgainAt),
-    actions: normalizedActionEntries(indicator.actions || indicator.availableActions, indicator).map(({ name }) => name),
+    actions: normalizedActionEntries(indicator.actions || indicator.availableActions, indicator)
+      .map(({ value }) => value),
   };
 }
 
@@ -188,44 +217,25 @@ export function hasStuckAction(indicator, action) {
     .some((entry) => entry.name === action);
 }
 
-function suppliedActionUpdate(indicator, action) {
+function suppliedActionDescriptor(indicator, action) {
   const entries = normalizedActionEntries(indicator?.actions || indicator?.availableActions, indicator);
   const entry = entries.find((candidate) => candidate.name === action);
-  const value = entry?.value;
-  if (isRecord(value?.update)) return clone(value.update);
-  if (isRecord(value?.payload)) return clone(value.payload);
-  if (isRecord(indicator?.[`${action}Update`])) return clone(indicator[`${action}Update`]);
-  if (isRecord(indicator?.[`${action}Action`]?.update)) return clone(indicator[`${action}Action`].update);
-  if (isRecord(indicator?.[`${action}Action`]?.payload)) return clone(indicator[`${action}Action`].payload);
-  return null;
+  return entry?.value ? clone(entry.value) : null;
 }
 
 /**
- * Clear/retry never mutate the indicator locally. They produce a canonical
- * task update which the caller must send through the API; the server response
- * decides whether/when the living indicator disappears.
+ * Clear/retry never mutate the indicator or work-state locally. They return
+ * only an explicit, backend-supplied non-destructive action descriptor. When
+ * the backend branch is not integrated yet this returns null, so the UI has
+ * no phantom-success path.
  */
 export function buildStuckIndicatorActionUpdate(task, indicator, action) {
-  const supplied = suppliedActionUpdate(indicator, action);
-  if (supplied) return supplied;
-
-  const details = normalizeWorkStateDetails(task?.workStateDetails);
-  if (action === 'retry') {
-    return {
-      workState: 'working',
-      workStateDetails: {
-        reason: details.reason,
-        waitingFor: details.waitingFor,
-        responsible: details.responsible,
-        checkAgainAt: null,
-      },
-    };
-  }
-  if (action === 'clear') {
-    return buildWorkStateUpdate('working', EMPTY_WORK_STATE_DETAILS);
-  }
-  return null;
+  void task;
+  const supplied = suppliedActionDescriptor(indicator, action);
+  return supplied ? { ...supplied, action } : null;
 }
+
+export const buildStuckIndicatorActionRequest = buildStuckIndicatorActionUpdate;
 
 export function formatDateTimeLocal(timestamp) {
   if (!timestamp) return '';
@@ -238,7 +248,26 @@ export function formatDateTimeLocal(timestamp) {
 
 export function parseDateTimeLocal(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+
+  // Construct in local time and demand a lossless round-trip.  JS otherwise
+  // silently normalizes invalid calendar dates and DST spring-forward gaps.
+  const date = new Date(0);
+  date.setHours(0, 0, 0, 0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(hour, minute, 0, 0);
+  if (date.getFullYear() !== year
+    || date.getMonth() !== month - 1
+    || date.getDate() !== day
+    || date.getHours() !== hour
+    || date.getMinutes() !== minute) return null;
   return date.toISOString();
 }

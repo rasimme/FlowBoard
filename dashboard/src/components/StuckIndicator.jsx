@@ -12,14 +12,16 @@ function displayTime(timestamp) {
 /**
  * Render the current transient attention signal. It deliberately has no
  * historical-feed shape and never offers a client-only dismiss operation.
- * Clearing/retrying is delegated to the parent, which must issue the API PUT.
+ * Clearing/retrying is delegated to the parent, which may issue only the
+ * backend-supplied same-origin POST descriptor and must publish its canonical
+ * task response.
  */
 export default function StuckIndicator({ task, onAction, busyAction = null }) {
   const indicator = getStuckIndicator(task);
   if (!indicator) return null;
 
   const checkAgainAt = displayTime(indicator.checkAgainAt);
-  const createdAt = displayTime(indicator.createdAt);
+  const detectedAt = displayTime(indicator.detectedAt);
 
   async function handleAction(action) {
     if (busyAction) return;
@@ -46,7 +48,7 @@ export default function StuckIndicator({ task, onAction, busyAction = null }) {
             <p className="m-0 mt-1 text-[11px] text-muted break-words">Reason: {indicator.reason}</p>
           )}
           <div className="mt-2 space-y-0.5 text-[11px] text-muted">
-            {createdAt && <div>Detected {createdAt}</div>}
+            {detectedAt && <div>Detected {detectedAt}</div>}
             {checkAgainAt && <div>Check again at {checkAgainAt}</div>}
           </div>
           {(hasStuckAction(indicator, 'retry') || hasStuckAction(indicator, 'clear')) && (
@@ -57,7 +59,7 @@ export default function StuckIndicator({ task, onAction, busyAction = null }) {
                   data-stuck-action="retry"
                   onClick={() => handleAction('retry')}
                   disabled={!!busyAction}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[32px] rounded-md border border-solid border-warn bg-transparent px-2.5 text-[11px] font-medium text-text cursor-pointer hover:bg-warn disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] rounded-md border border-solid border-warn bg-transparent px-2.5 text-[11px] font-medium text-text cursor-pointer hover:bg-warn disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Retry attention check"
                 >
                   <RefreshCw size={13} aria-hidden="true" />
@@ -70,7 +72,7 @@ export default function StuckIndicator({ task, onAction, busyAction = null }) {
                   data-stuck-action="clear"
                   onClick={() => handleAction('clear')}
                   disabled={!!busyAction}
-                  className="inline-flex items-center justify-center gap-1.5 min-h-[32px] rounded-md border border-solid border-border bg-transparent px-2.5 text-[11px] font-medium text-muted cursor-pointer hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] rounded-md border border-solid border-border bg-transparent px-2.5 text-[11px] font-medium text-muted cursor-pointer hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
                   aria-label="Clear attention indicator"
                 >
                   <X size={13} aria-hidden="true" />

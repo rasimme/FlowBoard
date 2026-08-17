@@ -5,7 +5,12 @@
 import * as bridge from './appStateBridge.mjs'
 import * as state from './taskState.mjs'
 import { apiJson } from '../utils/apiFetch.js'
-import { buildWorkStateUpdate, normalizeTaskWorkState } from '../utils/workState.js'
+import { validateTaskMutationResponse, validateTaskPayload } from '../utils/dashboardApi.js'
+import {
+  buildWorkStateUpdate,
+  normalizeTaskWorkState,
+  TRANSIENT_INDICATOR_ACTIONS,
+} from '../utils/workState.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,11 +20,15 @@ function currentAgent() {
   return bridge.getAppState()?.agentId || 'human'
 }
 
+function isJsonObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
 async function apiRequest(url, method, body) {
   return apiJson(url, { method, body })
 }
 
-async function mutate(project, taskId, optimisticPatch, mutationFn) {
+async function mutate(project, taskId, optimisticPatch, mutationFn, { requireCanonicalTask = false } = {}) {
   if (!project) return { ok: false, error: 'No active project' }
 
   // Snapshot for rollback
@@ -31,6 +40,17 @@ async function mutate(project, taskId, optimisticPatch, mutationFn) {
 
   try {
     const result = await mutationFn()
+    if (!result || result.ok !== true) {
+      throw new Error(result?.error || 'FlowBoard returned an unsuccessful mutation response')
+    }
+    if (requireCanonicalTask) {
+      validateTaskMutationResponse(result, `/projects/${project}/tasks/${taskId}`)
+    } else if (result.task) {
+      // When an endpoint returns a task, never publish a partial/legacy task
+      // object.  Endpoints such as release intentionally return only {ok} and
+      // are refreshed by the caller instead.
+      validateTaskPayload(result.task, `/projects/${project}/tasks/${taskId}`)
+    }
 
     // Merge server response
     const currentTasks = bridge.getTasks()
@@ -39,9 +59,11 @@ async function mutate(project, taskId, optimisticPatch, mutationFn) {
 
     return { ok: true, task: result.task }
   } catch (err) {
-    // Rollback
+    // Field-aware rollback: a poll or another agent may have published a
+    // newer value while this request was in flight.  Restoring the complete
+    // snapshot would erase that external state.
     const currentTasks = bridge.getTasks()
-    const next = state.rollbackSnapshot(currentTasks, snap)
+    const next = state.rollbackOptimisticFields(currentTasks, snap, optimisticPatch)
     bridge.replaceTasks(next)
 
     return { ok: false, error: err.message }
@@ -161,9 +183,9 @@ export async function updateTaskWorkState(project, taskId, workState, details) {
 }
 
 /**
- * Send a canonical work-state update supplied by a structured server action
- * (for example a living stuck-indicator retry/clear action). This remains a
- * task PUT; no client-only indicator state is changed.
+ * Send an explicit canonical work-state update from the picker. Transient
+ * stuck-indicator actions use runTransientIndicatorAction instead; they never
+ * enter this task PUT path.
  */
 export async function updateTaskWorkStatePayload(project, taskId, body) {
   const current = normalizeTaskWorkState(
@@ -183,6 +205,31 @@ export async function updateTaskWorkStatePayload(project, taskId, body) {
       'PUT',
       canonicalBody,
     ),
+    { requireCanonicalTask: true },
+  )
+}
+
+/**
+ * Execute a backend-provided transient indicator action.  The action is a
+ * same-origin POST descriptor; it never becomes a work-state PUT fallback.
+ * The endpoint must return the complete canonical task so integration cannot
+ * report a local phantom success during a partial backend rollout.
+ */
+export async function runTransientIndicatorAction(project, taskId, descriptor) {
+  if (!descriptor
+      || !TRANSIENT_INDICATOR_ACTIONS.includes(descriptor.action)
+      || descriptor.method !== 'POST'
+      || typeof descriptor.path !== 'string'
+      || !descriptor.path.startsWith('/api/')
+      || (descriptor.body !== undefined && !isJsonObject(descriptor.body))) {
+    return { ok: false, error: 'Transient indicator action is not integrated.' }
+  }
+  return mutate(
+    project,
+    taskId,
+    null,
+    () => apiRequest(descriptor.path, 'POST', descriptor.body),
+    { requireCanonicalTask: true },
   )
 }
 

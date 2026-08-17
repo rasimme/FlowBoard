@@ -44,6 +44,15 @@ const validTask = (overrides = {}) => ({
   title: 'Test task',
   status: 'open',
   blocked: false,
+  workState: 'working',
+  workStateDetails: {
+    reason: null,
+    waitingFor: null,
+    responsible: null,
+    checkAgainAt: null,
+    setAt: null,
+  },
+  stuckIndicator: null,
   priority: 'medium',
   parentId: null,
   subtaskIds: [],
@@ -144,7 +153,7 @@ const canonicalTask = validTask({
     checkAgainAt: '2026-08-18T09:00:00.000Z',
     setAt: '2026-08-17T17:00:00.000Z',
   },
-  stuckIndicator: { id: 'si-1', message: 'Needs attention', actions: ['retry'] },
+  stuckIndicator: { id: 'si-1', message: 'Needs attention', actions: {} },
 });
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [canonicalTask] });
 assert.deepEqual(await fetchTasksForProject('demo'), [canonicalTask],
@@ -174,6 +183,36 @@ for (const [label, payload] of [
   ['tasks rejects malformed workStateDetails', {
     ok: true,
     tasks: [validTask({ workState: 'paused', workStateDetails: { responsible: 42 } })],
+  }],
+  ['tasks rejects missing canonical workState', {
+    ok: true,
+    tasks: [validTask({ workState: undefined })],
+  }],
+  ['tasks rejects missing canonical workStateDetails', {
+    ok: true,
+    tasks: [validTask({ workStateDetails: undefined })],
+  }],
+  ['tasks rejects indicator arrays', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: [{ id: 'phantom' }] })],
+  }],
+  ['tasks rejects destructive indicator actions', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-destructive',
+      actions: {
+        retry: { method: 'POST', path: '/api/tasks/T-001/stuck/retry', body: { workState: 'working' } },
+      },
+    } })],
+  }],
+  ['tasks rejects external indicator action paths', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-external',
+      actions: {
+        clear: { method: 'POST', path: 'https://evil.example/clear' },
+      },
+    } })],
   }],
   ['tasks rejects staleAfterMinutes zero', {
     ok: true,

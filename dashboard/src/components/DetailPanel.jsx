@@ -23,8 +23,7 @@ import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 import { apiJson as apiFetch } from '../utils/apiFetch.js';
 import { fetchTasksForProject } from '../utils/dashboardApi.js';
 import {
-  buildStuckIndicatorActionUpdate,
-  buildWorkStateUpdate,
+  buildStuckIndicatorActionRequest,
   normalizeTaskWorkState,
 } from '../utils/workState.js';
 
@@ -519,26 +518,18 @@ export default function DetailPanel() {
   async function handleWorkStateChange(nextWorkState, nextDetails) {
     const t = taskRef.current;
     if (!t) return false;
-    const previous = t;
-    const update = buildWorkStateUpdate(nextWorkState, nextDetails);
-    const optimistic = normalizeTaskWorkState({
-      ...t,
-      ...update,
-      // Preserve the server-owned timestamp in the local optimistic view.
-      workStateDetails: {
-        ...normalizeTaskWorkState(t).workStateDetails,
-        ...update.workStateDetails,
-      },
-    });
-    syncPanelTask(optimistic);
     try {
       const result = await taskActions.updateWorkState(t.id, nextWorkState, nextDetails);
-      await syncActionResult(result, taskRef.current || previous);
+      await syncActionResult(result, taskRef.current || t);
       loadActivity();
       showToast(`Work state: ${nextWorkState}`, 'success');
       return result;
     } catch (err) {
-      syncPanelTask(previous);
+      // taskMutations performs a field-aware rollback.  Re-select the current
+      // shared value instead of restoring this handler's stale snapshot; a
+      // newer external state may have arrived while the PUT was pending.
+      const current = getTasks().find((candidate) => candidate.id === t.id);
+      if (current) syncPanelTask(current);
       showToast('Work-state update failed: ' + (err.message || 'Unknown'), 'error');
       throw err;
     }
@@ -547,28 +538,17 @@ export default function DetailPanel() {
   async function handleStuckIndicatorAction(action, indicator) {
     const t = taskRef.current;
     if (!t || busyStuckAction) return false;
-    const update = buildStuckIndicatorActionUpdate(t, indicator, action);
-    if (!update?.workState) return false;
-    const previous = t;
-    const optimistic = normalizeTaskWorkState({
-      ...t,
-      ...update,
-      workStateDetails: {
-        ...normalizeTaskWorkState(t).workStateDetails,
-        ...(update.workStateDetails || {}),
-      },
-    });
-    // Do not remove/clear stuckIndicator here. Only the authoritative API
-    // response may clear the living signal.
-    syncPanelTask(optimistic);
+    const request = buildStuckIndicatorActionRequest(t, indicator, action);
+    if (!request) return false;
     setBusyStuckAction(action);
     try {
-      const result = await taskActions.updateWorkStatePayload(t.id, update);
-      await syncActionResult(result, taskRef.current || previous);
+      const result = await taskActions.runTransientIndicatorAction(t.id, request);
+      await syncActionResult(result, taskRef.current || t);
       loadActivity();
       return result;
     } catch (err) {
-      syncPanelTask(previous);
+      const current = getTasks().find((candidate) => candidate.id === t.id);
+      if (current) syncPanelTask(current);
       showToast(`${action === 'retry' ? 'Retry' : 'Clear'} failed: ${err.message || 'Unknown'}`, 'error');
       throw err;
     } finally {

@@ -18,7 +18,7 @@ Break a task into subtasks (one level deep — a subtask can't have its own subt
 - Write **checkpoints** as you progress — short notes, optionally with a progress percentage.
 - **Complete** sends the task to **review**. A human (or another reviewer) then **approves** it to *done* or **rejects** it back. Owners don't approve their own work.
 - Set the task's **work state** separately from its lifecycle status in the detail panel: *Working*, *Waiting*, *Blocked*, or *Paused*. Waiting/blocked/paused states can include a reason, who/what is next, a responsible person, and a check-again time. The legacy `blocked` flag shown on cards is a read-only projection of the canonical *Blocked* state.
-- If monitoring needs attention, the detail panel shows one **live stuck indicator** above Activity/Checkpoints. It is updated in place rather than added as a comment. Use its Retry/Clear actions when offered; both go through the task API.
+- If monitoring needs attention, the detail panel shows one **live stuck indicator** above Activity/Checkpoints, including its detected time. It is updated in place rather than added as a comment. Retry/Clear appear only when the backend provides explicit non-destructive action descriptors; they never change work state/details through a client fallback. During backend rollout, the controls may be absent until that contract is available.
 
 ## Trash, restore, archive
 

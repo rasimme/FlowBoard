@@ -71,6 +71,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0028](0028-auth-model-middleware.md) — Auth model: one `/api/` middleware gated on origin + credentials + config; loopback-trusted, production fail-closed (2026-06-16)
 - [ADR-0029](0029-local-first-single-operator-security-boundary.md) — Local-first single-operator security boundary: loopback == operator, attribution-not-authorization; multi-user/RBAC out-of-scope (OpenClaw is single-user); enforce accidental-damage invariants + audit instead (2026-06-25)
 - [ADR-0030](0030-multi-bot-identity-and-session-rebinding.md) — Multi-bot identities are ordered and fresh init-data rebinds sessions (2026-08-17)
+- [ADR-0031](0031-canonical-work-state-and-transient-indicator.md) — Canonical work state, one transient indicator, and explicit non-destructive actions (2026-08-17; supersedes the execution-context portion of ADR-0009)
 
 ## See also
 

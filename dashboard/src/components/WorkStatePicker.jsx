@@ -49,13 +49,19 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
   ]);
   const [draftState, setDraftState] = useState(canonicalState);
   const [draftDetails, setDraftDetails] = useState(canonicalDetails);
+  const [draftCheckAgainAtInput, setDraftCheckAgainAtInput] = useState(
+    formatDateTimeLocal(canonicalDetails.checkAgainAt),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [dateError, setDateError] = useState('');
 
   useEffect(() => {
     setDraftState(canonicalState);
     setDraftDetails(canonicalDetails);
+    setDraftCheckAgainAtInput(formatDateTimeLocal(canonicalDetails.checkAgainAt));
     setError('');
+    setDateError('');
     // The detail key changes only when the server/parent task changes; it does
     // not change while a user edits this local draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,6 +75,7 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
 
   async function commit(nextState, nextDetails) {
     setError('');
+    if (dateError && nextState !== 'working') return false;
     setSaving(true);
     try {
       const result = await onChange?.(nextState, nextDetails);
@@ -78,8 +85,9 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
       return result;
     } catch (err) {
       setError(err?.message || 'The work state could not be saved.');
-      setDraftState(canonicalState);
-      setDraftDetails(canonicalDetails);
+      // Do not restore the render-time snapshot here.  A rejected request may
+      // race with a newer external task update; the parent task prop and its
+      // canonical response/refetch own the eventual draft convergence.
       return false;
     } finally {
       setSaving(false);
@@ -90,7 +98,28 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
     const nextState = event.target.value;
     const nextDetails = nextState === 'working' ? EMPTY_WORK_STATE_DETAILS : draftDetails;
     setDraftState(nextState);
+    if (nextState === 'working') {
+      setDateError('');
+      setDraftCheckAgainAtInput('');
+    }
     await commit(nextState, nextDetails);
+  }
+
+  function handleCheckAgainAtChange(event) {
+    const raw = event.target.value;
+    setDraftCheckAgainAtInput(raw);
+    if (!raw) {
+      setDateError('');
+      updateDetail('checkAgainAt', null);
+      return;
+    }
+    const parsed = parseDateTimeLocal(raw);
+    if (!parsed) {
+      setDateError('Choose a real local time. DST gap times are not valid.');
+      return;
+    }
+    setDateError('');
+    updateDetail('checkAgainAt', parsed);
   }
 
   async function handleSaveDetails(event) {
@@ -106,6 +135,7 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
   return (
     <section
       data-work-state-picker="true"
+      data-canonical-work-state={canonicalState}
       className="mt-3 rounded-lg border border-border bg-bg-accent px-3 py-3"
       aria-labelledby="work-state-label"
       aria-busy={saving}
@@ -129,7 +159,7 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
         value={draftState}
         onChange={handleStateChange}
         disabled={disabled || saving}
-        className="mt-2 w-full min-h-[36px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
+        className="mt-2 w-full min-h-[44px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
         aria-describedby="work-state-help"
       >
         {WORK_STATE_OPTIONS.map((state) => (
@@ -151,7 +181,7 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
                 value={draftDetails.reason || ''}
                 onChange={(event) => updateDetail('reason', event.target.value)}
                 disabled={disabled || saving}
-                className="mt-1 w-full min-h-[36px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
+                className="mt-1 w-full min-h-[44px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
                 placeholder="What is the current context?"
               />
             </label>
@@ -162,7 +192,7 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
                 value={draftDetails.waitingFor || ''}
                 onChange={(event) => updateDetail('waitingFor', event.target.value)}
                 disabled={disabled || saving}
-                className="mt-1 w-full min-h-[36px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
+                className="mt-1 w-full min-h-[44px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
                 placeholder="Person, team, or dependency"
               />
             </label>
@@ -173,7 +203,7 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
                 value={draftDetails.responsible || ''}
                 onChange={(event) => updateDetail('responsible', event.target.value)}
                 disabled={disabled || saving}
-                className="mt-1 w-full min-h-[36px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
+                className="mt-1 w-full min-h-[44px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
                 placeholder="Who should act next?"
               />
             </label>
@@ -182,11 +212,14 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
               <input
                 type="datetime-local"
                 name="workStateCheckAgainAt"
-                value={formatDateTimeLocal(draftDetails.checkAgainAt)}
-                onChange={(event) => updateDetail('checkAgainAt', parseDateTimeLocal(event.target.value))}
+                value={draftCheckAgainAtInput}
+                onChange={handleCheckAgainAtChange}
                 disabled={disabled || saving}
-                className="mt-1 w-full min-h-[36px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
+                aria-invalid={dateError ? 'true' : 'false'}
+                aria-describedby="work-state-check-again-error"
+                className="mt-1 w-full min-h-[44px] rounded-md border border-solid border-border bg-bg text-text px-2.5 text-sm outline-none focus:border-accent disabled:opacity-60"
               />
+              {dateError && <span id="work-state-check-again-error" className="mt-1 block text-[11px] text-danger" role="alert">{dateError}</span>}
             </label>
           </div>
           <div className="flex items-center justify-between gap-2 pt-1">
@@ -198,7 +231,8 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
               size="xs"
               variant="secondary"
               data-work-state-save="true"
-              disabled={disabled || saving || !detailsChanged}
+              className="min-h-[44px]"
+              disabled={disabled || saving || !!dateError || !detailsChanged}
             >
               Save details
             </Button>

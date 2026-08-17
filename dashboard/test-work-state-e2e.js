@@ -46,8 +46,19 @@ function taskShape(id) {
       id: 'stuck-1',
       message: 'No checkpoint recently',
       reason: 'stale',
-      createdAt: '2026-08-17T16:00:00.000Z',
-      actions: ['clear', 'retry'],
+      detectedAt: '2026-08-17T16:00:00.000Z',
+      actions: {
+        retry: {
+          method: 'POST',
+          path: `/api/projects/${PROJECT}/tasks/${id}/stuck-indicator/retry`,
+          body: { indicatorId: 'stuck-1', revision: 'r1' },
+        },
+        clear: {
+          method: 'POST',
+          path: `/api/projects/${PROJECT}/tasks/${id}/stuck-indicator/clear`,
+          body: { indicatorId: 'stuck-1', revision: 'r1' },
+        },
+      },
     },
   };
 }
@@ -79,7 +90,9 @@ async function main() {
 
     let currentTask = taskShape(taskId);
     let lastWorkStateUpdate = null;
+    let lastIndicatorAction = null;
     let commentPosts = 0;
+    let raceMode = false;
 
     await page.setRequestInterception(true);
     page.on('request', async (request) => {
@@ -95,6 +108,28 @@ async function main() {
       if (url.pathname === `/api/projects/${PROJECT}/tasks/${taskId}` && request.method() === 'PUT') {
         const body = JSON.parse(request.postData() || '{}');
         lastWorkStateUpdate = body;
+        if (raceMode && body.workState === 'waiting') {
+          currentTask = {
+            ...currentTask,
+            workState: 'paused',
+            workStateDetails: {
+              ...currentTask.workStateDetails,
+              reason: 'newer external state',
+            },
+          };
+          await page.evaluate((task) => {
+            window.appState.tasks = window.appState.tasks.map((candidate) => candidate.id === task.id ? task : candidate);
+            if (typeof window._notifyReact === 'function') window._notifyReact();
+            else window.dispatchEvent(new CustomEvent('appstate:change'));
+          }, currentTask);
+          raceMode = false;
+          await request.respond({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'stale revision' }),
+          });
+          return;
+        }
         currentTask = {
           ...currentTask,
           ...(body.workState ? { workState: body.workState } : {}),
@@ -104,6 +139,17 @@ async function main() {
         // The backend's authoritative response clears the transient signal
         // after a retry/clear update; the client never does this locally.
         if (body.workState === 'working') currentTask.stuckIndicator = null;
+        await request.respond({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ ok: true, task: currentTask }),
+        });
+        return;
+      }
+      if (url.pathname === `/api/projects/${PROJECT}/tasks/${taskId}/stuck-indicator/retry`
+          || url.pathname === `/api/projects/${PROJECT}/tasks/${taskId}/stuck-indicator/clear`) {
+        lastIndicatorAction = { path: url.pathname, body: JSON.parse(request.postData() || '{}') };
+        currentTask = { ...currentTask, stuckIndicator: null };
         await request.respond({
           status: 200,
           contentType: 'application/json',
@@ -129,6 +175,8 @@ async function main() {
     r.ok(await page.$('[data-stuck-indicator="true"]'), 'living stuck indicator renders in activity area');
     r.ok((await page.$eval('[data-stuck-indicator="true"]', (el) => el.textContent)).includes('No checkpoint recently'),
       'stuck indicator renders current message, not a comment');
+    r.ok((await page.$eval('[data-stuck-indicator="true"]', (el) => el.textContent)).includes('Detected'),
+      'stuck indicator renders the canonical detectedAt timestamp');
 
     await page.select('#work-state-select', 'waiting');
     await waitFor(() => lastWorkStateUpdate?.workState === 'waiting');
@@ -145,12 +193,67 @@ async function main() {
       'details form persists reason through canonical task PUT');
     r.ok(lastWorkStateUpdate?.workStateDetails?.waitingFor === 'Release manager',
       'details form persists waitingFor through canonical task PUT');
+    const pickerControlSizes = await page.$$eval(
+      '#work-state-select, input[name^="workState"], button[data-work-state-save]',
+      (elements) => elements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return { name: element.getAttribute('name') || element.id, width: box.width, height: box.height };
+      }),
+    );
+    r.ok(pickerControlSizes.length === 6 && pickerControlSizes.every((box) => box.width >= 44 && box.height >= 44),
+      'work-state picker controls have 44px touch targets');
 
+    // No executable action is invented from a string/boolean hint.  The
+    // backend must provide an explicit non-destructive descriptor first; this
+    // synthetic response includes exactly that agreed descriptor.
+    const actionBoxes = await page.$$eval('[data-stuck-action]', (elements) => elements.map((el) => {
+      const box = el.getBoundingClientRect();
+      return { action: el.getAttribute('data-stuck-action'), width: box.width, height: box.height };
+    }));
+    r.ok(actionBoxes.length === 2 && actionBoxes.every((box) => box.width >= 44 && box.height >= 44),
+      'Retry and Clear actions have 44px touch targets');
     await page.click('[data-stuck-action="retry"]');
-    await waitFor(() => lastWorkStateUpdate?.workState === 'working');
-    r.ok(lastWorkStateUpdate?.workState === 'working', 'retry affordance uses a canonical API update');
+    await waitFor(() => lastIndicatorAction?.path.endsWith('/stuck-indicator/retry'));
+    r.ok(lastIndicatorAction?.body?.indicatorId === 'stuck-1',
+      'retry uses the backend-provided explicit action payload');
+    r.ok(!lastWorkStateUpdate || lastWorkStateUpdate.workState === 'waiting',
+      'retry does not issue a destructive workState PUT');
     r.ok(commentPosts === 0, 'retry/indicator lifecycle does not append a comment');
     await page.waitForSelector('[data-stuck-indicator="true"]', { hidden: true, timeout: 3000 });
+
+    // Browser race: an external canonical update lands while an optimistic
+    // work-state request is still pending and then the request fails.  The
+    // newer external value must not be restored from the stale local snapshot.
+    currentTask = {
+      ...currentTask,
+      workState: 'working',
+      blocked: false,
+      workStateDetails: {
+        reason: null,
+        waitingFor: null,
+        responsible: null,
+        checkAgainAt: null,
+        setAt: currentTask.workStateDetails.setAt,
+      },
+      stuckIndicator: null,
+    };
+    await page.evaluate((task) => {
+      window.appState.tasks = window.appState.tasks.map((candidate) => candidate.id === task.id ? task : candidate);
+      if (typeof window._notifyReact === 'function') window._notifyReact();
+      else window.dispatchEvent(new CustomEvent('appstate:change'));
+    }, currentTask);
+    raceMode = true;
+    await page.select('#work-state-select', 'waiting');
+    await page.waitForFunction(() => window.appState?.tasks?.[0]?.workState === 'paused', { timeout: 3000 });
+    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'paused', { timeout: 3000 });
+    await page.waitForFunction(
+      () => document.querySelector('input[name="workStateReason"]')?.value === 'newer external state',
+      { timeout: 3000 },
+    );
+    r.ok(await page.$eval('#work-state-select', (el) => el.value) === 'paused',
+      'failed optimistic mutation does not overwrite a newer external work state');
+    r.ok(await page.$eval('input[name="workStateReason"]', (el) => el.value) === 'newer external state',
+      'newer external details survive the rejected optimistic mutation');
 
     await page.setViewport({ width: 390, height: 844 });
     const mobile = await page.evaluate(() => ({
