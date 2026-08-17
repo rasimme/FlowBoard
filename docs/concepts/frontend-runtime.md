@@ -8,7 +8,7 @@ It sits between React views, the legacy `window.appState` shell bridge, and the 
 
 The ownership boundary is explicit. `dashboard/src/bootstrap.js` is bootstrap-only: it creates the initial `window.appState` shape and resolves Telegram auth/agent identity. React's `DashboardContext` owns shell refresh, project actions, tab switching, and the remaining compatibility bridge. Task-list reads and writes go through `appStateBridge`, and mutation wrappers live under `src/state/`.
 
-`appStore` also carries one connection state for the shell: `loading`, `ready`, `empty`, `auth-error`, `offline`, `timeout`, or `server-error`. `empty` is produced only by a successful, schema-valid projects response. Initial failures block the shell with remediation; failures after a valid snapshot leave that snapshot intact and surface a persistent retry banner.
+`appStore` also carries one connection state for the shell: `loading`, `ready`, `empty`, `auth-error`, `offline`, `timeout`, or `server-error`. `empty` is produced only by a successful, schema-valid projects response. Initial failures block the shell with a visible, typed state and **Retry** action — **Sign-in required**, **FlowBoard is offline**, **FlowBoard took too long to respond**, or **Dashboard service error** — rather than presenting a misleading empty board. Failures after a valid snapshot leave that snapshot intact and surface a persistent retry banner.
 
 ## Why
 

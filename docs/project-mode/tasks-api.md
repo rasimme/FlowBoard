@@ -154,6 +154,8 @@ Primitive endpoints are used by the dashboard UI and for explicit edge cases. Ag
 | `GET` | `/projects/:name/tasks/:id/checkpoints` | List checkpoints |
 | `GET` | `/projects/:name/tasks/:id/comments` | List comments |
 | `GET` | `/projects/:name/tasks/:id/handoff` | Get handoff context for agent spawning |
+| `POST` | `/projects/:name/tasks/:id/stuck-indicator/retry` | Re-evaluate this task's transient indicator without changing lifecycle, work state, details, comments, or notification backoff |
+| `POST` | `/projects/:name/tasks/:id/stuck-indicator/clear` | Clear this task's transient indicator and reset notification/backoff metadata without changing lifecycle or work-state details |
 
 ### Cross-Project
 
@@ -181,6 +183,12 @@ contradictory `blocked` and `workState` values is rejected with HTTP 400 and
 per task, deduplicates delivery with backoff, and clears it after checkpoints,
 recovery/work-state edits, release, review, or completion; it never changes a
 task's lifecycle or work state automatically.
+
+The indicator actions above are non-destructive and return a complete canonical
+task. They require the exact project/task binding; clients must use the backend
+action descriptors rather than inventing a generic PUT fallback. `setAt` is
+server-owned: client values (including malformed ones) are ignored on create
+and update, and reads expose the server timestamp or `null`.
 
 ## Project & Agent State
 

@@ -54,33 +54,47 @@ journalctl --user -u flowboard-dashboard.service -n 100 --no-pager
 `http://127.0.0.1:<FLOWBOARD_PORT>/api/health`. It does not print service
 environment values; inspect configuration locally with appropriate care.
 
-## Remote access returns 401 / blank screen
+## Remote access returns 401 / a sign-in error
 
-On localhost the dashboard is trusted and open. Over a tunnel or LAN it **fails closed** unless authentication is fully configured: `TELEGRAM_BOT_TOKEN`, the exact ordered `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping, `JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see the README [Remote Access](../../../README.md#remote-access-telegram-mini-app) section). Additional tokens in `TELEGRAM_BOT_TOKENS` need additional agent IDs at the same positions. A missing value means no one is allowed in.
+On localhost the dashboard is trusted and open. Over a tunnel or LAN it
+**fails closed** unless authentication is fully configured:
+`TELEGRAM_BOT_TOKEN`, the exact ordered `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping,
+`JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see
+the README [Remote Access](../../../README.md#remote-access-telegram-mini-app)
+section). Additional tokens in `TELEGRAM_BOT_TOKENS` need additional agent IDs
+at the same positions. A missing value means no one is allowed in.
+For ngrok, Tailscale, or another non-Cloudflare tunnel, set `AUTH_ALWAYS=true`:
+those proxies do not provide FlowBoard's `cf-ray` routing marker, so the
+loopback shortcut must be disabled explicitly.
 
 Startup errors such as `TELEGRAM_AGENT_MAPPING_COUNT`,
 `TELEGRAM_AGENT_MAPPING_DUPLICATE`, or `TELEGRAM_AGENT_ID_INVALID` identify the
 configuration field and list position without printing bot tokens. During a
 Mini App exchange, `TELEGRAM_BOT_NOT_SUPPORTED` means no configured bot signed
 the supplied fresh init-data; `TELEGRAM_INIT_DATA_EXPIRED` means the Mini App
-must be reopened. FlowBoard clears an existing cross-bot session on these
-`/api/auth` failures so an old cookie cannot hide the configuration problem.
+must be reopened. Fresh init-data is checked before a cookie: invalid or
+cross-bot data cannot inherit another bot's session, and FlowBoard clears both
+session-cookie paths on rejected `/api/auth` exchanges.
+
+The dashboard distinguishes this from an empty installation: HTTP 401/403 shows
+a blocking **Sign-in required** screen instead of `No projects`. Open FlowBoard
+from the Telegram bot again to refresh its signed init-data and session cookie,
+then use **Retry**. If the error remains, verify the ordered bot mapping,
+allowed user ID, and tunnel URL on the server.
 
 During setup/update, a partial remote configuration emits a warning naming only
 the missing variables. Existing launchd/systemd auth and custom variables are
 merged into the replacement service definition; `JWT_SECRET` is not rotated
-unless `--rotate-secret` is passed explicitly.
+unless `--rotate-secret` is passed explicitly. If a shell variable conflicts
+with persisted service configuration, update preserves the persisted value.
+Use `--override-env NAME` only for a deliberate main-unit change. For systemd
+drop-ins and `EnvironmentFile=` sources, edit the owner file instead.
 
-If a shell variable conflicts with persisted service configuration, update
-preserves the persisted value. Use `--override-env NAME` only for a deliberate
-main-unit change. For systemd drop-ins and `EnvironmentFile=` sources, edit the
-owner file instead.
-
-## Remote access returns 401 / a sign-in error
-
-On localhost the dashboard is trusted and open. Over a tunnel or LAN it **fails closed** unless authentication is fully configured: `TELEGRAM_BOT_TOKEN`, `JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see the README [Remote Access](../../../README.md#remote-access-telegram-mini-app) section). A missing value means no one is allowed in.
-
-The dashboard now distinguishes this from an empty installation: HTTP 401/403 shows a blocking **Sign-in required** screen instead of `No projects`. Open FlowBoard from the Telegram bot again to refresh its signed init-data and session cookie, then use **Retry**. If the error remains, verify the bot token, allowed user ID, and tunnel URL on the server.
+`FLOWBOARD_TRUSTED_PROXY_IPS` is only for rate-limit identity. Set it to the
+immediate, exclusively trusted proxy peer (for local `cloudflared`, usually
+`127.0.0.1`/`::1`); an unset or invalid value safely falls back to the socket
+address. It never grants authentication, and a routable client network must
+never be listed.
 
 ## The dashboard is offline or reports a server error
 

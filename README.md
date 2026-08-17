@@ -254,12 +254,30 @@ accepted for older installs and for the HZL DB default.
 node server.js
 # Optional custom locations:
 # OPENCLAW_HOME=/path/to/.openclaw FLOWBOARD_PROJECTS_DIR=/path/to/projects node server.js
+```
 
-# Or with systemd (auto-start on boot):
+For automatic start instead, stop the foreground process and run the supported
+cross-platform setup command from the repository root. It registers the
+standard per-user service (launchd on macOS, systemd --user on Linux):
+
+```bash
+cd ..
+node scripts/setup.mjs
+```
+
+Linux-only manual alternative (if you do not use `setup.mjs`):
+
+```bash
 mkdir -p ~/.config/systemd/user
 cp templates/flowboard-dashboard.service ~/.config/systemd/user/flowboard-dashboard.service
 systemctl --user enable --now flowboard-dashboard
 ```
+
+On macOS, `setup.mjs` writes and loads
+`~/Library/LaunchAgents/ai.openclaw.flowboard-dashboard.plist` with
+`RunAtLoad` and `KeepAlive`; do not copy the Linux systemd unit. The generated
+plist and its service environment are owner-only. See [Update FlowBoard](docs/guide/how-to/update-flowboard.md)
+for the preservation and verification behavior.
 
 ### 4. Finish setup in the dashboard
 
@@ -454,8 +472,18 @@ cloudflared tunnel run flowboard
 
 ### Configure authentication
 
+The standard service owns the authentication environment. On a first install,
+provide the variables below to `node scripts/setup.mjs`; on an existing
+standard service, change only explicitly named values with
+`--override-env=KEY[,KEY...]`. Updates preserve the existing `JWT_SECRET` and
+other service values unless you deliberately rotate or override them. Keep
+real tokens and user IDs out of shell history, repositories, and chat.
+
+#### Linux (systemd --user)
+
 ```bash
-JWT_SECRET=$(openssl rand -hex 32)
+# Generate once, then place the output in the owner-only auth configuration.
+openssl rand -hex 32
 
 mkdir -p ~/.config/systemd/user/flowboard-dashboard.service.d
 cp templates/systemd-auth.conf.example \
@@ -473,6 +501,35 @@ chmod 600 ~/.config/systemd/user/flowboard-dashboard.service.d/auth.conf
 
 systemctl --user daemon-reload
 systemctl --user restart flowboard-dashboard
+```
+
+#### macOS (launchd)
+
+`node scripts/setup.mjs` creates and loads the standard LaunchAgent at
+`~/Library/LaunchAgents/ai.openclaw.flowboard-dashboard.plist`. On first
+install, set the same ordered bot/auth variables in the setup environment.
+For an existing service, use explicit `--override-env` keys or edit that
+owner-only plist with a plist-aware editor; do not replace it with a Linux
+unit. After a direct plist edit, reload the job:
+
+```bash
+PLIST="$HOME/Library/LaunchAgents/ai.openclaw.flowboard-dashboard.plist"
+launchctl kickstart -k "gui/$(id -u)/ai.openclaw.flowboard-dashboard"
+launchctl print "gui/$(id -u)/ai.openclaw.flowboard-dashboard" >/dev/null
+```
+
+The generated plist keeps `RunAtLoad` and `KeepAlive`, stores logs at
+`~/Library/Logs/FlowBoard/flowboard-dashboard.log`, and uses owner-only
+permissions. Its `EnvironmentVariables` dictionary must contain the same
+one-to-one ordered mapping as the Linux example below:
+
+```xml
+<key>TELEGRAM_BOT_TOKEN</key><string>&lt;PRIMARY_BOT_TOKEN&gt;</string>
+<key>TELEGRAM_BOT_TOKENS</key><string>&lt;DEVELOPMENT_BOT_TOKEN&gt;,&lt;DESIGN_BOT_TOKEN&gt;</string>
+<key>FLOWBOARD_TELEGRAM_AGENT_IDS</key><string>main,dev-agent,design-agent</string>
+<key>JWT_SECRET</key><string>&lt;GENERATED_JWT_SECRET&gt;</string>
+<key>ALLOWED_USER_IDS</key><string>&lt;TELEGRAM_USER_ID&gt;</string>
+<key>DASHBOARD_ORIGIN</key><string>https://flowboard.example.com</string>
 ```
 
 `setup.mjs --update` reads the existing standard service, ordered
@@ -503,8 +560,9 @@ prints token values. Open each Mini App once without another bot's cookie to
 verify that `/api/auth` returns its server-confirmed `agentId`.
 
 Cloudflare forwarding headers are not trusted solely because `cf-ray` is
-present. Set `FLOWBOARD_TRUSTED_PROXY_IPS` to the immediate socket peer(s) that
-are exclusively trusted to forward requests (for a local `cloudflared`, its
+present. `FLOWBOARD_TRUSTED_PROXY_IPS` affects only rate-limit identity; it is
+not an authentication bypass. Set it to the immediate socket peer(s) that are
+exclusively trusted to forward requests (for a local `cloudflared`, its
 loopback address). If it is unset or contains invalid entries, rate-limit keys
 fall back to the transport socket address; this is fail-safe but aggregates
 remote tunnel clients behind the local proxy. Never list a routable client

@@ -1,6 +1,8 @@
 # Tasks Endpoints
 
-Task CRUD + lifecycle (claim, release, complete, checkpoint, comment, route, handoff). HZL is always enabled in current FlowBoard releases.
+Task CRUD + lifecycle (claim, release, complete, checkpoint, comment, route,
+handoff, approve/reject), canonical work state, and transient stuck-indicator
+actions. HZL is always enabled in current FlowBoard releases.
 
 ## CRUD
 

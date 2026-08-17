@@ -22,6 +22,9 @@
 - [HZL Event Sourcing](docs/concepts/hzl-event-sourcing.md) — event log + projections; brain/muscle split; single-writer constraint
 - [Specify Workflow](docs/concepts/specify-workflow.md) — 6-step agent process; session lifecycle; RAM-only sessions
 - [Auth Model](docs/concepts/auth-model.md) — middleware decision tree; ordered multi-bot identities; fresh-initData JWT rebinding; loopback/tunnel/LAN bypasses
+- [In-App Update](docs/concepts/app-update.md) — version detection; service-preserving rebuild/restart; launchd/systemd autostart
+- [Stuck Detection & Notifications](docs/concepts/stuck-notifications.md) — canonical work state; one transient indicator; retry/clear; backoff and session-safe routing
+- [Telegram Mini App](docs/concepts/telegram-mini-app.md) — ordered multi-bot HMAC auth; secure sessions; tunnel access
 
 ## Decisions (ADRs)
 
@@ -73,9 +76,13 @@
 
 ## How to
 
-<!-- How-tos are added on-demand. -->
+Human-facing how-to guides live under the user guide:
 
-(none yet — see [docs/how-to/README.md](docs/how-to/README.md))
+- [Getting started](docs/guide/getting-started.md) — first project and first task
+- [Work the Kanban](docs/guide/how-to/work-the-kanban.md) — lifecycle, work state, stuck indicators, review
+- [Update FlowBoard](docs/guide/how-to/update-flowboard.md) — service-preserving update and autostart verification
+- [Troubleshooting](docs/guide/how-to/troubleshooting.md) — visible auth/API failures and remote access recovery
+- [Use FlowBoard on a phone or in Telegram](docs/guide/how-to/work-on-mobile.md) — Mini App and multi-bot sessions
 
 ## Operational rules (NOT for human reading)
 

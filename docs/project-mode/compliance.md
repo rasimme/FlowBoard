@@ -104,9 +104,13 @@ The endpoint is cross-project; filter by `project` in the response if needed.
 Tasks with infrequent checkpoints indicate potential stalling or agent disconnection.
 
 **Thresholds:**
-- **Stale**: ≥30 minutes since last checkpoint (default threshold)
-- **Stuck**: ≥60 minutes, no recent activity
-- **Expired lease**: Lease end-time in the past
+- **General stuck-list read**: 10 minutes by default (`GET /api/tasks/stuck`;
+  retained for compatibility)
+- **Scheduler/notifiable check and manual Retry**: 30 minutes by default,
+  configurable via `STALE_THRESHOLD_MINUTES`
+- **Per-task override**: positive `staleAfterMinutes` replaces the applicable
+  global stale threshold
+- **Expired lease**: lease end-time in the past
 
 **Monitoring:**
 ```bash

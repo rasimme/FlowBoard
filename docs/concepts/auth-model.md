@@ -2,7 +2,7 @@
 
 ## What
 
-FlowBoard's auth model is a single middleware on `/api/` that decides per-request: *block, pass, or require credentials*. The decision uses three signals — request origin (loopback / Cloudflare-tunnel / LAN), credentials presented (Telegram init-data or JWT cookie), and configuration state (`AUTH_ENABLED`, `AUTH_ALWAYS`, `LOCAL_HOSTNAME`). There is no user database, no role model, no per-endpoint authorization. Once a request is admitted, every endpoint trusts the caller equally.
+FlowBoard's auth model is a single middleware on `/api/` that decides per-request: *block, pass, or require credentials*. The decision uses three signals — request origin (loopback / Cloudflare-tunnel / LAN), credentials presented (Telegram init-data or JWT cookie), and configuration state (`AUTH_ENABLED`, `AUTH_ALWAYS`, `LOCAL_HOSTNAME`, `FLOWBOARD_ALLOW_LAN`). There is no user database, no role model, no per-endpoint authorization. Once a request is admitted, every endpoint trusts the caller equally.
 
 The model is designed for a *personal coordination tool* — one operator (the human), zero or more ordered Telegram bot identities (token + server-confirmed FlowBoard agent ID), zero or more other agent identities (per ADR-0003) — running on a single machine, optionally exposed via a Cloudflare Tunnel for mobile access.
 
@@ -48,7 +48,7 @@ incoming request to /api/<path>
   ├─ AUTH_ENABLED is true, AUTH_ALWAYS is false:
   │     ├─ source IP is loopback?
   │     │     yes → pass (local ops access)
-  │     ├─ LOCAL_HOSTNAME bypass:
+  │     ├─ FLOWBOARD_ALLOW_LAN=true and LOCAL_HOSTNAME bypass:
   │     │   request Host header equals LOCAL_HOSTNAME AND
   │     │   source IP is in private range (192.168.x, 10.x, loopback)?
   │     │     yes → pass (LAN access via friendly hostname)
@@ -75,7 +75,15 @@ The first two are pre-decided by environment variables: a request that passes th
 
 **`AUTH_ALWAYS` overrides the loopback bypass.** Default false: loopback always passes. Setting `AUTH_ALWAYS=true` removes the loopback shortcut so even local requests must authenticate. Use case: exposing the dashboard via a non-Cloudflare tunnel where the operator wants every request authenticated.
 
-**`LOCAL_HOSTNAME` enables LAN bypass.** Setting `LOCAL_HOSTNAME=flowboard.lan` allows requests where `Host: flowboard.lan` is sent *and* the source IP is in `192.168.0.0/16`, `10.0.0.0/8`, or loopback. This is a deliberately narrow bypass for trusted home-LAN access via a friendly hostname. **Only effective when the server binds `0.0.0.0`** — the default `FLOWBOARD_HOST=127.0.0.1` makes the bypass unreachable from LAN clients.
+**`LOCAL_HOSTNAME` enables LAN bypass only by explicit opt-in.** Setting
+`LOCAL_HOSTNAME=flowboard.lan` is not enough: `FLOWBOARD_ALLOW_LAN=true` is also
+required. When auth is otherwise enabled, both settings allow requests where
+`Host: flowboard.lan` is sent and the source IP is in `192.168.0.0/16`,
+`10.0.0.0/8`, or loopback to bypass Telegram auth. This is a deliberately
+narrow bypass for trusted home-LAN access via a friendly hostname. **Only
+effective when the server binds a non-loopback interface** — the default
+`FLOWBOARD_HOST=127.0.0.1` makes the bypass unreachable from LAN clients.
+Prefer `AUTH_ALWAYS=true` when exposing the dashboard beyond loopback.
 
 **Cloudflare Tunnel auth routing uses `cf-ray`, but the header is not proof.** The tunnel client (`cloudflared`) connects from `127.0.0.1`, so source IP cannot distinguish "local" from "tunneled-in." A `cf-ray` marker therefore flips the middleware from "loopback bypass eligible" to "must authenticate"; a forged marker only makes the request stricter. For rate-limit identity, FlowBoard accepts `cf-connecting-ip` only when the socket peer matches an explicit `FLOWBOARD_TRUSTED_PROXY_IPS` address/CIDR. Direct or unconfigured requests always use the transport socket address, so rotating either Cloudflare header cannot evade the limiter. Configure the local cloudflared loopback peer to retain per-client tunnel buckets; leaving the setting empty is fail-safe but aggregates tunnel traffic by proxy socket.
 
@@ -104,6 +112,9 @@ The first two are pre-decided by environment variables: a request that passes th
 - `dashboard/server.js` — auth environment loading, session issue/rebind/clear behavior, middleware mount, `POST /api/auth` exchange, and the independent hooks-token endpoint.
 - `dashboard/src/bootstrap.js` — performs the typed exchange before the first dashboard fetch and forwards failures to the application bootstrap/connection state.
 - `templates/flowboard-dashboard.service` — example systemd unit; expects auth env vars set per operator.
+- `scripts/setup.mjs` — generates the equivalent owner-only macOS LaunchAgent at
+  `~/Library/LaunchAgents/ai.openclaw.flowboard-dashboard.plist` and preserves
+  its environment on update.
 - `~/.openclaw/credentials/` (per ADR-0003 / convention) — where bot tokens live on the operator's machine.
 
 ## See also

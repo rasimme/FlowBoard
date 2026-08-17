@@ -25,6 +25,14 @@ environment + restart the service. Persisted service values win over conflicting
 shell variables. The command intentionally fails if no standard service exists;
 run `node scripts/setup.mjs` (without `--update`) for a first install.
 
+The service manager's autostart contract is restored and verified on every
+registration: macOS uses the standard
+`ai.openclaw.flowboard-dashboard` LaunchAgent with `RunAtLoad` and `KeepAlive`;
+Linux uses the `flowboard-dashboard.service` user unit and runs
+`systemctl --user enable` plus `is-enabled`. Setup preserves the existing
+service environment and custom values while keeping those standard autostart
+properties. A custom supervisor or label is never rewritten by this command.
+
 To intentionally replace an allowlisted value stored in the main launchd plist
 or systemd unit, name it explicitly:
 

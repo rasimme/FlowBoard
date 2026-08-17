@@ -35,7 +35,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `INTEGRITY_WEBHOOK_URL` | empty | Optional. On integrity regression at boot, the server `POST`s a JSON body to this URL: `{ message, regression, current, stored, host }`. The `message` field matches the OpenClaw gateway `/hooks/agent` contract; the structured fields ride alongside for monitoring tools. Empty disables the push channel — the stderr WARN block and `GET /api/health/integrity` remain the only signal. Adopters running Slack / Discord / PagerDuty wire a small relay (those surfaces expect `text` / `content` / `payload.summary` respectively). |
 | `INTEGRITY_WEBHOOK_TOKEN` | empty | Bearer token sent with `Authorization: Bearer <token>` on the `INTEGRITY_WEBHOOK_URL` `POST`. Empty = unauthenticated request. |
 | `AUTH_ALWAYS` | unset (off) | Forces auth middleware on every request (otherwise loopback bypass applies in non-production). |
-| `FLOWBOARD_ALLOW_LAN` | unset (off) | S-13 opt-in. When `LOCAL_HOSTNAME` is set and the server is bound to a non-loopback interface, this must be `true` to allow unauthenticated LAN clients (192.168.*/10.*) through the auth middleware. Default-off: setting `LOCAL_HOSTNAME` alone no longer enables the LAN bypass. Only enable on a fully trusted LAN; prefer `AUTH_ALWAYS=true`. |
+| `FLOWBOARD_ALLOW_LAN` | unset (off) | S-13 opt-in. When auth is enabled, `LOCAL_HOSTNAME` is set, and the server is bound to a non-loopback interface, this must be `true` to allow unauthenticated LAN clients (192.168.*/10.*) through the auth middleware. Default-off: setting `LOCAL_HOSTNAME` alone no longer enables the LAN bypass. Only enable on a fully trusted LAN; prefer `AUTH_ALWAYS=true`. |
 | `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset (off) | Hook-only migration escape hatch. Set to `true` only during explicit legacy recovery if the FlowBoard API is unreachable and `ACTIVE-PROJECT.md` must be read once. Normal installs must leave this off so stale files cannot resurrect old project state during bootstrap or compaction. |
 
 ## Specify worker (T-262)
@@ -62,7 +62,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_TRUSTED_PROXY_IPS` | empty | Comma-separated IP addresses or CIDRs for immediate proxy/tunnel peers whose `cf-ray` + `cf-connecting-ip` pair may be used for rate-limit identity. For local `cloudflared`, configure its loopback peer (`127.0.0.1,::1`) only when that listener is trusted; empty or invalid entries fail safe to the transport socket IP. |
 | `DASHBOARD_ORIGIN` | empty | Allowed CORS origin for browser clients. |
 | `OPENCLAW_HOOKS_TOKEN` (alias `HOOKS_TOKEN`) | empty | Shared secret required on `POST /api/hooks/task-complete`. Empty disables the endpoint. |
-| `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server logs a warning. |
+| `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server fails closed at boot (`FATAL`) instead of serving an unauthenticated dashboard. |
 
 The three ordered lists form one bot-identity configuration. For example,
 `TELEGRAM_BOT_TOKEN=<PRIMARY>`, `TELEGRAM_BOT_TOKENS=<SECOND>,<THIRD>`, and
@@ -102,7 +102,7 @@ cookie after their originally valid WebApp init-data ages beyond five minutes.
 | `FLOWBOARD_NOTIFICATION_TO` | empty | Legacy alias / recipient override for `FLOWBOARD_NOTIFICATION_TARGET`. |
 | `STUCK_NOTIFICATION_CHANNEL` | `telegram` | Legacy alias for `FLOWBOARD_NOTIFICATION_CHANNEL`, kept for existing stuck-task notification deployments. |
 | `FLOWBOARD_AGENT_IDLE_TTL_HOURS` | `48` | Hours an agent can be idle before its `active_project` is auto-cleared on read (`GET /api/agents`). An agent holding an active task claim is never auto-deactivated, and `GET`/`PUT /api/status` refresh the agent's heartbeat. Set very high to effectively disable. |
-| `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback. |
+| `LOCAL_HOSTNAME` | empty | Hostname the dashboard advertises in `/api/info` for self-discovery from outside loopback; with `FLOWBOARD_ALLOW_LAN=true` and a non-loopback bind, an exact matching private-LAN `Host` can use the explicit LAN bypass. |
 | `FLOWBOARD_ENABLE_SELF_UPDATE` | `false` | Server only. When `true`, enables the in-dashboard self-update via `POST /api/update/run` (which requires typed confirmation from the UI). Defaults to disabled for safety; operators should explicitly set this to allow published installs to self-update. The CLI path (`node scripts/setup.mjs --update`) remains available regardless. See README § Updates (T-417-6). |
 | `FLOWBOARD_UPDATE_DRY` | unset | When set, `POST /api/update/run` returns 202 without spawning `setup.mjs --update` (no rebuild/restart). Used by tests for the in-dashboard self-update flow (T-353). |
 
