@@ -57,7 +57,11 @@ function makeHarness(initialPlist) {
   for (const command of ['npm', 'launchctl']) {
     const body = command === 'npm'
       ? `if (process.argv[2] === '--version') console.log('10.0.0');`
-      : '';
+      : `if (process.argv[2] === 'print') {
+  if (process.env.FAKE_LAUNCHCTL_PRINT_STDOUT) process.stdout.write(process.env.FAKE_LAUNCHCTL_PRINT_STDOUT);
+  if (process.env.FAKE_LAUNCHCTL_PRINT_STDERR) process.stderr.write(process.env.FAKE_LAUNCHCTL_PRINT_STDERR);
+  if (process.env.FAKE_LAUNCHCTL_PRINT_STATUS) process.exit(Number(process.env.FAKE_LAUNCHCTL_PRINT_STATUS));
+}`;
     writeFileSync(join(bin, command), `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs');
 appendFileSync(process.env.FAKE_COMMAND_LOG, '${command} ' + process.argv.slice(2).join(' ') + '\\n');
@@ -89,7 +93,7 @@ process.exit(0);
   };
 }
 
-async function runSetup(args, initialPlist) {
+async function runSetup(args, initialPlist, extraEnv = {}) {
   const server = createServer((req, res) => {
     if (req.url === '/api/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -101,7 +105,7 @@ async function runSetup(args, initialPlist) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
-  const harness = makeHarness(initialPlist);
+  const harness = makeHarness(initialPlist.replaceAll('__FLOWBOARD_PORT__', String(port)));
 
   try {
     return await new Promise((resolve, reject) => {
@@ -109,7 +113,7 @@ async function runSetup(args, initialPlist) {
         cwd: ROOT,
         env: {
           ...harness.env,
-          FLOWBOARD_PORT: String(port),
+          ...extraEnv,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -143,6 +147,7 @@ const existingPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <key>ALLOWED_USER_IDS</key><string>100</string>
     <key>DASHBOARD_ORIGIN</key><string>https://flowboard.example.invalid</string>
     <key>FLOWBOARD_ENABLE_SELF_UPDATE</key><string>true</string>
+    <key>FLOWBOARD_PORT</key><string>__FLOWBOARD_PORT__</string>
     <key>CUSTOM_PROXY_LABEL</key><string>blue &amp; green</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -153,7 +158,14 @@ const existingPlist = `<?xml version="1.0" encoding="UTF-8"?>
 console.log('# setup.mjs macOS launchd configuration');
 
 {
-  const result = await runSetup(['--update'], existingPlist);
+  const launchctlStdoutSecret = 'adversarial-launchctl-stdout-secret';
+  const launchctlStderrSecret = 'adversarial-launchctl-stderr-secret';
+  const result = await runSetup(['--update'], existingPlist, {
+    DASHBOARD_ORIGIN: 'https://shell-override.example.invalid',
+    JWT_SECRET: 'test-shell-secret-must-not-win',
+    FAKE_LAUNCHCTL_PRINT_STDOUT: launchctlStdoutSecret,
+    FAKE_LAUNCHCTL_PRINT_STDERR: launchctlStderrSecret,
+  });
   ok(result.code === 0, 'launchd update exits successfully');
   assert.deepEqual(result.commands.map(line => line.replace(/gui\/\d+/g, 'gui/UID')), [
     'npm --version',
@@ -179,7 +191,33 @@ console.log('# setup.mjs macOS launchd configuration');
   ok(result.mode === 0o600, 'launchd plist is tightened to owner-only permissions');
   ok(!result.stdout.includes('test-launchd-secret'), 'launchd JWT secret is not printed');
   ok(!result.stdout.includes('test-launchd-bot'), 'launchd bot token is not printed');
+  ok(!result.plist.includes('shell-override.example.invalid'), 'update ignores an implicit shell override of persistent config');
+  ok(!result.plist.includes('test-shell-secret-must-not-win'), 'update ignores an implicit shell JWT replacement');
+  ok(!result.stdout.includes(launchctlStdoutSecret) && !result.stderr.includes(launchctlStdoutSecret), 'launchctl print stdout is never relayed');
+  ok(!result.stdout.includes(launchctlStderrSecret) && !result.stderr.includes(launchctlStderrSecret), 'launchctl print stderr is never relayed');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'launchd remote configuration is diagnosed');
+}
+
+{
+  const result = await runSetup(['--update', '--override-env=DASHBOARD_ORIGIN'], existingPlist, {
+    DASHBOARD_ORIGIN: 'https://explicit-override.example.invalid',
+  });
+  ok(result.code === 0, 'explicit launchd environment override succeeds');
+  ok(result.plist.includes('<key>DASHBOARD_ORIGIN</key><string>https://explicit-override.example.invalid</string>'), 'named --override-env change is persisted');
+  ok(result.stdout.includes('explicit service environment override requested for: DASHBOARD_ORIGIN'), 'explicit override is reported by key without its value');
+}
+
+{
+  const leakedStdout = 'failed-launchctl-stdout-secret';
+  const leakedStderr = 'failed-launchctl-stderr-secret';
+  const result = await runSetup(['--update'], existingPlist, {
+    FAKE_LAUNCHCTL_PRINT_STDOUT: leakedStdout,
+    FAKE_LAUNCHCTL_PRINT_STDERR: leakedStderr,
+    FAKE_LAUNCHCTL_PRINT_STATUS: '1',
+  });
+  ok(result.code === 1, 'launchctl print failure aborts setup');
+  ok(!result.stdout.includes(leakedStdout) && !result.stderr.includes(leakedStdout), 'failed launchctl print stdout remains suppressed');
+  ok(!result.stdout.includes(leakedStderr) && !result.stderr.includes(leakedStderr), 'failed launchctl print stderr remains suppressed');
 }
 
 {

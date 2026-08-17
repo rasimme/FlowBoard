@@ -36,8 +36,10 @@ On macOS, verify that the standard launchd job is loaded:
 launchctl print gui/$(id -u)/ai.openclaw.flowboard-dashboard
 ```
 
-Its plist keeps both `RunAtLoad` and `KeepAlive`. On Linux, verify and restart
-the user unit:
+This direct operator command can display the job environment, including
+secrets; do not paste its raw output into tickets or chat. Setup itself discards
+all `launchctl print` output and reports only success/failure. The plist keeps
+both `RunAtLoad` and `KeepAlive`. On Linux, verify and restart the user unit:
 
 ```bash
 systemctl --user is-enabled flowboard-dashboard
@@ -57,6 +59,11 @@ During setup/update, a partial remote configuration emits a warning naming only
 the missing variables. Existing launchd/systemd auth and custom variables are
 merged into the replacement service definition; `JWT_SECRET` is not rotated
 unless `--rotate-secret` is passed explicitly.
+
+If a shell variable conflicts with persisted service configuration, update
+preserves the persisted value. Use `--override-env NAME` only for a deliberate
+main-unit change. For systemd drop-ins and `EnvironmentFile=` sources, edit the
+owner file instead.
 
 ## See also
 

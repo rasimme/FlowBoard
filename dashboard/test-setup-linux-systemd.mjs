@@ -48,7 +48,7 @@ function quoteScript(script) {
   return `#!/usr/bin/env node\n${script}\n`;
 }
 
-function makeHarness({ initialUnit = '', dropIns = {} } = {}) {
+function makeHarness({ initialUnit = '', dropIns = {}, environmentFiles = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fb-setup-systemd-'));
   const bin = join(dir, 'bin');
   const home = join(dir, 'home');
@@ -67,6 +67,11 @@ function makeHarness({ initialUnit = '', dropIns = {} } = {}) {
     for (const [name, content] of Object.entries(dropIns)) {
       writeFileSync(join(dropInDir, name), content, { mode: 0o600 });
     }
+  }
+  for (const [relativePath, content] of Object.entries(environmentFiles)) {
+    const path = join(home, relativePath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, { mode: 0o600 });
   }
 
   const commandLog = join(dir, 'commands.log');
@@ -146,15 +151,15 @@ async function withHealthServer(fn) {
   }
 }
 
-async function spawnSetup(harness, port, args, extraEnv = {}) {
+async function spawnSetup(harness, port, args, extraEnv = {}, { injectPort = true } = {}) {
   const before = readLines(harness.commandLog).length;
   return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(ROOT, 'scripts', 'setup.mjs'), ...args], {
       cwd: ROOT,
       env: {
         ...harness.env,
+        ...(injectPort ? { FLOWBOARD_PORT: String(port) } : {}),
         ...extraEnv,
-        FLOWBOARD_PORT: String(port),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -173,9 +178,21 @@ async function spawnSetup(harness, port, args, extraEnv = {}) {
 
 async function runSetup(args, options = {}, extraEnv = {}) {
   return await withHealthServer(async port => {
-    const harness = makeHarness(options);
+    const resolvedOptions = {
+      ...options,
+      initialUnit: typeof options.initialUnit === 'function' ? options.initialUnit(port) : options.initialUnit,
+      dropIns: Object.fromEntries(Object.entries(options.dropIns || {}).map(([name, content]) => [
+        name,
+        typeof content === 'function' ? content(port) : content,
+      ])),
+      environmentFiles: Object.fromEntries(Object.entries(options.environmentFiles || {}).map(([path, content]) => [
+        path,
+        typeof content === 'function' ? content(port) : content,
+      ])),
+    };
+    const harness = makeHarness(resolvedOptions);
     try {
-      return await spawnSetup(harness, port, args, extraEnv);
+      return await spawnSetup(harness, port, args, extraEnv, { injectPort: options.injectPort !== false });
     } finally {
       harness.cleanup();
     }
@@ -206,7 +223,8 @@ console.log('# setup.mjs Linux systemd configuration');
   ok(!/[a-f0-9]{64}/i.test(result.stdout), 'generated secret is not printed');
 }
 
-const preservedUnit = existingUnit([
+const preservedUnit = port => existingUnit([
+  `Environment="FLOWBOARD_PORT=${port}"`,
   'Environment="JWT_SECRET=test-secret-v1"',
   'Environment="TELEGRAM_BOT_TOKENS=test-bot-a,test-bot-b"',
   'Environment="ALLOWED_USER_IDS=100,200"',
@@ -250,12 +268,44 @@ const preservedUnit = existingUnit([
   ok(result.code === 0, 'forced re-registration succeeds with an existing service');
   ok(result.unit.includes('JWT_SECRET=test-secret-v1'), 'forced re-registration preserves the existing JWT secret');
   ok(result.unit.includes('CUSTOM_TUNNEL_MODE=enabled'), 'forced re-registration preserves custom variables');
-  ok(result.commands.includes('systemctl --user enable --now flowboard-dashboard'), 'forced re-registration keeps systemd autostart enabled');
+  ok(result.commands.includes('systemctl --user enable flowboard-dashboard'), 'forced re-registration keeps systemd autostart enabled');
+  ok(result.commands.includes('systemctl --user restart flowboard-dashboard'), '--force restarts an already-running Linux service');
+  ok(!result.commands.includes('systemctl --user enable --now flowboard-dashboard'), '--force does not mistake enable --now for a restart');
+}
+
+{
+  const result = await runSetup(['--update'], { initialUnit: preservedUnit }, {
+    DASHBOARD_ORIGIN: 'https://implicit-shell.example.invalid',
+    JWT_SECRET: 'implicit-shell-jwt-must-not-win',
+  });
+  ok(result.code === 0, 'update with conflicting shell configuration still succeeds safely');
+  ok(result.unit.includes('DASHBOARD_ORIGIN=https://flowboard.example.invalid'), 'persistent allowlist configuration wins over implicit shell input');
+  ok(!result.unit.includes('implicit-shell.example.invalid'), 'implicit shell value is not persisted');
+  ok(result.unit.includes('JWT_SECRET=test-secret-v1') && !result.unit.includes('implicit-shell-jwt-must-not-win'), 'JWT replacement requires explicit rotation');
+}
+
+{
+  const result = await runSetup(['--update', '--override-env=DASHBOARD_ORIGIN'], { initialUnit: preservedUnit }, {
+    DASHBOARD_ORIGIN: 'https://explicit-shell.example.invalid',
+  });
+  ok(result.code === 0, 'named Linux service environment override succeeds');
+  ok(result.unit.includes('DASHBOARD_ORIGIN=https://explicit-shell.example.invalid'), '--override-env persists only the named operator value');
+  ok(result.unit.includes('JWT_SECRET=test-secret-v1'), 'explicit non-secret override preserves JWT_SECRET');
+}
+
+{
+  const result = await runSetup(['--update', '--override-env=JWT_SECRET'], { initialUnit: preservedUnit }, {
+    JWT_SECRET: 'forbidden-explicit-jwt',
+  });
+  ok(result.code === 1, 'JWT_SECRET is rejected by generic environment override');
+  ok(result.stdout.includes('use --rotate-secret'), 'JWT override error names the dedicated rotation operation');
+  ok(result.commands.length === 0, 'invalid JWT override fails before build or service commands');
+  ok(!result.stdout.includes('forbidden-explicit-jwt'), 'rejected JWT override value is not printed');
 }
 
 {
   const result = await withHealthServer(async port => {
-    const harness = makeHarness({ initialUnit: preservedUnit });
+    const harness = makeHarness({ initialUnit: preservedUnit(port) });
     try {
       const first = await spawnSetup(harness, port, ['--update']);
       const second = await spawnSetup(harness, port, ['--update']);
@@ -270,29 +320,64 @@ const preservedUnit = existingUnit([
 }
 
 {
-  const rotationUnit = existingUnit([
+  const rotationUnit = port => existingUnit([
+    `Environment="FLOWBOARD_PORT=${port}"`,
     'Environment="JWT_SECRET=test-secret-v1"',
     'Environment="CUSTOM_TUNNEL_MODE=enabled"',
   ]);
-  const result = await runSetup(['--update', '--rotate-secret'], { initialUnit: rotationUnit });
-  ok(result.code === 0, 'explicit secret rotation succeeds');
+  const result = await runSetup(['--rotate-secret'], { initialUnit: rotationUnit });
+  ok(result.code === 0, 'standalone explicit secret rotation succeeds');
   ok(!result.unit.includes('JWT_SECRET=test-secret-v1'), '--rotate-secret replaces the prior JWT secret');
   ok(/Environment="JWT_SECRET=[a-f0-9]{64}"/i.test(result.unit), 'rotation writes a new generated JWT secret');
   ok(!/[a-f0-9]{64}/i.test(result.stdout), 'rotated secret is not printed');
+  ok(result.commands.includes('systemctl --user restart flowboard-dashboard'), '--rotate-secret restarts the service to activate the new secret');
 }
 
 {
-  const result = await runSetup(['--update', '--rotate-secret'], { initialUnit: preservedUnit });
+  const result = await runSetup(['--update', '--rotate-secret'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'EnvironmentFile=%h/.config/flowboard/secret.env',
+    ]),
+    environmentFiles: {
+      '.config/flowboard/secret.env': 'JWT_SECRET=test-environment-file-secret\n',
+    },
+    injectPort: false,
+  });
   ok(result.code === 1, 'rotation refuses to override an external EnvironmentFile source');
   ok(result.stdout.includes('Rotate it in that owner-only source'), 'rotation error points to the owning secret source');
   ok(result.commands.length === 0, 'unsafe external-source rotation fails before build/service commands');
-  ok(!result.stdout.includes('test-secret-v1'), 'rotation refusal does not print the existing secret');
+  ok(!result.stdout.includes('test-environment-file-secret'), 'rotation refusal does not print the existing secret');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit([
+      'Environment="FLOWBOARD_PORT=9"',
+      'Environment="DASHBOARD_ORIGIN=https://inline.example.invalid"',
+      'EnvironmentFile=%h/.config/flowboard/first.env',
+      'EnvironmentFile=-%h/.config/flowboard/second.env',
+    ]),
+    environmentFiles: {
+      '.config/flowboard/first.env': 'FLOWBOARD_PORT=8\nJWT_SECRET=test-first-file-secret\nDASHBOARD_ORIGIN=https://first.example.invalid\n',
+      '.config/flowboard/second.env': port => `FLOWBOARD_PORT=${port}\nJWT_SECRET=test-second-file-secret\nTELEGRAM_BOT_TOKEN=test-file-bot\nALLOWED_USER_IDS=400\nDASHBOARD_ORIGIN=https://second.example.invalid\n`,
+    },
+    injectPort: false,
+  });
+  ok(result.code === 0, 'EnvironmentFile-only port update succeeds without injected FLOWBOARD_PORT');
+  const firstIndex = result.unit.indexOf('EnvironmentFile=%h/.config/flowboard/first.env');
+  const secondIndex = result.unit.indexOf('EnvironmentFile=-%h/.config/flowboard/second.env');
+  ok(firstIndex >= 0 && secondIndex > firstIndex, 'EnvironmentFile order is preserved in the generated unit');
+  ok(result.unit.includes('Environment="FLOWBOARD_PORT=9"'), 'inline port remains intact while EnvironmentFile keeps runtime precedence');
+  ok(!result.unit.includes('test-first-file-secret') && !result.unit.includes('test-second-file-secret'), 'EnvironmentFile secrets remain in their owner-only files');
+  ok(!result.stdout.includes('test-first-file-secret') && !result.stdout.includes('test-second-file-secret') && !result.stdout.includes('test-file-bot'), 'EnvironmentFile values are never printed');
+  ok(result.stdout.includes('remote auth configuration has all required variables'), 'later EnvironmentFile values drive effective diagnostics');
 }
 
 {
   const dropIn = `[Service]\nEnvironment="JWT_SECRET=test-dropin-secret"\nEnvironment="TELEGRAM_BOT_TOKEN=test-dropin-bot"\nEnvironment="ALLOWED_USER_IDS=300"\nEnvironment="DASHBOARD_ORIGIN=https://dropin.example.invalid"\nEnvironment="CUSTOM_DROPIN_MODE=enabled"\n`;
   const result = await runSetup(['--update'], {
-    initialUnit: existingUnit([]),
+    initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
     dropIns: { 'auth.conf': dropIn },
   });
   ok(result.code === 0, 'update preserves systemd drop-in configuration');
@@ -311,7 +396,8 @@ const preservedUnit = existingUnit([
 }
 
 {
-  const partialUnit = existingUnit([
+  const partialUnit = port => existingUnit([
+    `Environment="FLOWBOARD_PORT=${port}"`,
     'Environment="JWT_SECRET=test-secret-v1"',
     'Environment="TELEGRAM_BOT_TOKEN=test-bot-only"',
   ]);

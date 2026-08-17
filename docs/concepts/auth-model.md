@@ -100,7 +100,7 @@ The first two are pre-decided by environment variables: a request that passes th
 - `dashboard/server.js` lines 55–204 — the entire auth surface: env-var parsing, `validateTelegramWebApp()`, `telegramAuthMiddleware()`, the `/api/` middleware mount.
 - `dashboard/server.js` line 640 — `POST /api/auth` endpoint (explicit credential exchange path).
 - `dashboard/server.js` line 2228 — `POST /api/hooks/task-complete` and its independent token check.
-- `templates/dashboard.service` — example systemd unit; expects auth env vars set per operator.
+- `templates/flowboard-dashboard.service` — example systemd unit; expects auth env vars set per operator.
 - `~/.openclaw/credentials/` (per ADR-0003 / convention) — where bot tokens live on the operator's machine.
 
 ## See also

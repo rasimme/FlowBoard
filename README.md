@@ -144,9 +144,12 @@ node scripts/setup.mjs --dry-run   # preview, change nothing
 
 Re-run with `--update` after `openclaw plugins update` to rebuild & restart.
 `--update` requires the standard FlowBoard service to exist and preserves its
-current environment (including auth/tunnel variables and `JWT_SECRET`). A new
-secret is generated only for a first install or an explicit
-`--update --rotate-secret`.
+persisted environment (including auth/tunnel variables and `JWT_SECRET`). Shell
+variables never replace persisted update values implicitly. Persist a named,
+allowlisted shell value by adding `--override-env=VARIABLE` to the update
+command. Rotate `JWT_SECRET` only with
+`node scripts/setup.mjs --rotate-secret`; rotation re-registers and restarts the
+service immediately.
 Prefer the manual path? It's below.
 
 ### Updating
@@ -251,8 +254,9 @@ node server.js
 # OPENCLAW_HOME=/path/to/.openclaw FLOWBOARD_PROJECTS_DIR=/path/to/projects node server.js
 
 # Or with systemd (auto-start on boot):
-cp templates/dashboard.service ~/.local/share/systemd/user/
-systemctl --user enable --now dashboard
+mkdir -p ~/.config/systemd/user
+cp templates/flowboard-dashboard.service ~/.config/systemd/user/flowboard-dashboard.service
+systemctl --user enable --now flowboard-dashboard
 ```
 
 ### 4. Finish setup in the dashboard
@@ -464,13 +468,13 @@ systemctl --user daemon-reload
 systemctl --user restart flowboard-dashboard
 ```
 
-`setup.mjs --update` reads the existing standard service and its systemd
-drop-ins, merges all environment entries without printing their values, and
-writes the generated service definition owner-only. Re-running it therefore
-keeps the auth configuration above. Rotate the JWT only when intended with
-`node scripts/setup.mjs --update --rotate-secret`. If `JWT_SECRET` is owned by
-a systemd drop-in or `EnvironmentFile`, edit that owner-only source instead;
-setup refuses to shadow it in the generated unit.
+`setup.mjs --update` reads the existing standard service, ordered
+`EnvironmentFile=` sources, and systemd drop-ins without printing their values,
+then writes the generated service definition owner-only. Persisted values win
+over the caller's shell unless a key is explicitly named with `--override-env`.
+Rotate the JWT only when intended with `node scripts/setup.mjs --rotate-secret`.
+If a setting is owned by a systemd drop-in or `EnvironmentFile`, edit that
+owner-only source instead; setup refuses to shadow it in the generated unit.
 
 ### Register Telegram button
 

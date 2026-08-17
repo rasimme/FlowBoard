@@ -20,23 +20,42 @@ From the FlowBoard checkout:
 node scripts/setup.mjs --update
 ```
 
-Same effect: reinstall deps + rebuild UI + preserve/merge the standard service environment + restart the service. The command intentionally fails if no standard service exists; run `node scripts/setup.mjs` (without `--update`) for a first install.
+Same effect: reinstall deps + rebuild UI + preserve the standard service
+environment + restart the service. Persisted service values win over conflicting
+shell variables. The command intentionally fails if no standard service exists;
+run `node scripts/setup.mjs` (without `--update`) for a first install.
+
+To intentionally replace an allowlisted value stored in the main launchd plist
+or systemd unit, name it explicitly:
+
+```bash
+DASHBOARD_ORIGIN=https://flowboard.example.com \
+  node scripts/setup.mjs --update --override-env DASHBOARD_ORIGIN
+```
+
+Settings owned by a systemd drop-in or `EnvironmentFile=` must be changed in
+that owner-only source instead; setup refuses a competing main-unit override.
 
 `JWT_SECRET` is generated once on first install. Updates and forced
 re-registration preserve it. Rotate it only when intended:
 
 ```bash
-node scripts/setup.mjs --update --rotate-secret
+node scripts/setup.mjs --rotate-secret
 ```
 
 If `JWT_SECRET` is owned by a systemd drop-in or `EnvironmentFile`, rotate it
 in that owner-only source and run plain `--update`; setup refuses to create a
-competing override.
+competing override. `--rotate-secret` bypasses the healthy-service no-op guard,
+re-registers the service, and restarts an existing service so the new key takes
+effect immediately.
 
 The generated launchd plist or systemd unit is written with mode `0600` because
 it can contain secrets. Setup never prints environment values. On Linux,
 existing `EnvironmentFile=` directives and
-`flowboard-dashboard.service.d/*.conf` drop-ins are retained.
+`flowboard-dashboard.service.d/*.conf` drop-ins are retained. Readable
+EnvironmentFiles are evaluated in declared order for diagnostics and health
+port resolution; later files keep systemd precedence over earlier files and
+inline `Environment=` values.
 
 After registration, setup verifies that launchd loaded the service or that the
 systemd unit is enabled, then polls the local `/api/health` endpoint. If remote

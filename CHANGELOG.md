@@ -6,8 +6,11 @@
   launchd/systemd installer now securely merges existing auth, tunnel, custom,
   and operational environment values instead of regenerating `JWT_SECRET` on
   every update. First install and update are distinct, secret rotation is
-  explicit, generated service files are owner-only, and setup verifies
-  autostart plus local health while diagnosing incomplete remote auth safely.
+  explicit and restart-backed, shell overrides require named `--override-env`
+  keys, and ordered systemd `EnvironmentFile=` sources retain runtime
+  precedence (including health-check port resolution). Generated service files
+  are owner-only, launchctl inspection output is suppressed, and the Linux
+  template now consistently uses `flowboard-dashboard.service`.
 
 - **Made stuck-task notifications session-safe (T-434).** The stuck-check
   scheduler no longer runs `/hooks/agent` turns against live
@@ -319,7 +322,7 @@ systemctl --user restart flowboard-dashboard
 
 If your custom bots/scripts call `/api/status` or `PUT /api/status` without `agentId`, they will now get `400`. Update them to pass `agentId` (recommended) or use `?agentId=<id>` / `x-openclaw-agent-id` header. The bundled snippet (`snippets/AGENTS-trigger.md`) reflects the new contract — re-install with `flowboard plugins install --link` or via the doctor.
 
-The bundled `templates/dashboard.service` was already correct (no `OPENCLAW_AGENT_ID`); only fresh installs that copied it manually after editing need attention.
+The bundled `templates/flowboard-dashboard.service` was already correct (no `OPENCLAW_AGENT_ID`); only fresh installs that copied it manually after editing need attention.
 
 ### v4.0.0 (2026-03-05) — Agent-Native Workflows + Idea Canvas
 - **Idea Canvas (sticky notes + connections + clusters)** — Visual ideation space with auto-framing for connected notes

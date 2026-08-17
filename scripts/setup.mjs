@@ -13,7 +13,7 @@
 //   node scripts/setup.mjs            # do it
 //   node scripts/setup.mjs --dry-run  # print the plan, change nothing
 //   node scripts/setup.mjs --force    # re-register the service even if up
-//   node scripts/setup.mjs --update --rotate-secret  # explicit JWT rotation
+//   node scripts/setup.mjs --rotate-secret  # explicit JWT rotation + restart
 //
 // No external dependencies — Node builtins only.
 
@@ -28,7 +28,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, delimiter } from 'node:path';
+import { dirname, isAbsolute, join, delimiter } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { get } from 'node:http';
@@ -43,14 +43,17 @@ const DRY = process.argv.includes('--dry-run');
 // `openclaw plugins update`). Like --force but semantically "refresh". The
 // in-dashboard upgrade panel can shell out to `setup.mjs --update`.
 const UPDATE = process.argv.includes('--update');
-const FORCE = process.argv.includes('--force') || UPDATE;
 const ROTATE_SECRET = process.argv.includes('--rotate-secret');
+// Rotation is itself a mutating service operation. It must never be skipped by
+// the healthy-service idempotency guard.
+const FORCE = process.argv.includes('--force') || UPDATE || ROTATE_SECRET;
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
-  console.log('Usage: node scripts/setup.mjs [--dry-run] [--force] [--update] [--rotate-secret]');
+  console.log('Usage: node scripts/setup.mjs [--dry-run] [--force] [--update] [--rotate-secret] [--override-env KEY[,KEY...]]');
   console.log('  (no flag)       first-time bring-up: deps, build, service, health check');
   console.log('  --update        rebuild + restart an existing standard service; preserves its environment');
-  console.log('  --force    re-register the service even if the dashboard is already up');
+  console.log('  --force         re-register and restart an existing service even if the dashboard is already up');
   console.log('  --rotate-secret explicitly replace JWT_SECRET (never implied by --update/--force)');
+  console.log('  --override-env  persist named allowlisted shell variables; JWT_SECRET requires --rotate-secret');
   console.log('  --dry-run  print the plan, change nothing');
   process.exit(0);
 }
@@ -73,6 +76,14 @@ function runStatus(cmd, args, opts = {}) {
   log(c.dim(`  $ ${cmd} ${args.join(' ')}`));
   if (DRY) return 0;
   return spawnSync(cmd, args, { stdio: 'inherit', ...opts }).status ?? 1;
+}
+function runQuiet(cmd, args, opts = {}) {
+  log(c.dim(`  $ ${cmd} ${args.join(' ')}`));
+  if (DRY) return;
+  // Service-manager inspection can include the complete environment. Never
+  // inherit or relay it, even when the command exits non-zero.
+  const r = spawnSync(cmd, args, { stdio: 'ignore', ...opts });
+  if (r.status !== 0) die(`command failed: ${cmd} ${args.join(' ')}`);
 }
 function tryExec(cmd, args) {
   try { return execFileSync(cmd, args, { encoding: 'utf8' }).trim(); } catch { return null; }
@@ -113,6 +124,41 @@ const CONFIGURABLE_ENV_KEYS = [
 ];
 
 const VALID_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function parseOverrideEnvKeys(argv) {
+  const keys = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    let value = null;
+    if (arg === '--override-env') {
+      value = argv[index + 1];
+      index += 1;
+    } else if (arg.startsWith('--override-env=')) {
+      value = arg.slice('--override-env='.length);
+    }
+    if (value === null) continue;
+    if (!value || value.startsWith('--')) {
+      die('--override-env requires one or more comma-separated environment variable names.');
+    }
+    keys.push(...value.split(',').map(key => key.trim()).filter(Boolean));
+  }
+
+  const uniqueKeys = [...new Set(keys)];
+  for (const key of uniqueKeys) {
+    if (!CONFIGURABLE_ENV_KEYS.includes(key)) {
+      die(`--override-env does not allow ${JSON.stringify(key)}; use a documented FlowBoard service variable.`);
+    }
+    if (key === 'JWT_SECRET') {
+      die('JWT_SECRET cannot be set with --override-env; use --rotate-secret for an explicit generated rotation.');
+    }
+    if (!Object.hasOwn(process.env, key)) {
+      die(`--override-env requested ${key}, but that variable is not set in the operator environment.`);
+    }
+  }
+  return new Set(uniqueKeys);
+}
+
+const OVERRIDE_ENV_KEYS = parseOverrideEnvKeys(process.argv.slice(2));
 
 function decodeXml(value) {
   return value
@@ -186,30 +232,141 @@ function splitSystemdWords(value) {
 function parseSystemdEnvironment(content) {
   const env = {};
   const environmentFiles = [];
+  const events = [];
   const logicalLines = content.replace(/\\\r?\n/g, ' ').split(/\r?\n/);
+  let section = null;
   for (const rawLine of logicalLines) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    const sectionMatch = line.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      section = sectionMatch[1].toLowerCase();
+      continue;
+    }
+    if (section !== 'service') continue;
     if (line.startsWith('EnvironmentFile=')) {
       const value = line.slice('EnvironmentFile='.length).trim();
-      if (value && !environmentFiles.includes(value)) environmentFiles.push(value);
+      if (!value) {
+        environmentFiles.length = 0;
+        events.push({ type: 'environment-file-reset' });
+      } else {
+        environmentFiles.push(value);
+        events.push({ type: 'environment-file', value });
+      }
       continue;
     }
     if (!line.startsWith('Environment=')) continue;
-    for (const assignment of splitSystemdWords(line.slice('Environment='.length).trim())) {
+    const value = line.slice('Environment='.length).trim();
+    if (!value) {
+      for (const key of Object.keys(env)) delete env[key];
+      events.push({ type: 'environment-reset' });
+      continue;
+    }
+    const assignments = [];
+    for (const assignment of splitSystemdWords(value)) {
       const separator = assignment.indexOf('=');
       if (separator <= 0) continue;
       const key = assignment.slice(0, separator);
-      if (VALID_ENV_KEY.test(key)) env[key] = assignment.slice(separator + 1);
+      if (!VALID_ENV_KEY.test(key)) continue;
+      const entry = { key, value: assignment.slice(separator + 1) };
+      env[key] = entry.value;
+      assignments.push(entry);
     }
+    if (assignments.length > 0) events.push({ type: 'environment', assignments });
+  }
+  return { env, environmentFiles, events };
+}
+
+function applySystemdEvents(initialEnv, initialEnvironmentFiles, events) {
+  let env = { ...initialEnv };
+  let environmentFiles = [...initialEnvironmentFiles];
+  for (const event of events) {
+    if (event.type === 'environment-reset') env = {};
+    if (event.type === 'environment') {
+      for (const assignment of event.assignments) env[assignment.key] = assignment.value;
+    }
+    if (event.type === 'environment-file-reset') environmentFiles = [];
+    if (event.type === 'environment-file') environmentFiles.push(event.value);
   }
   return { env, environmentFiles };
+}
+
+function parseSystemdEnvironmentFile(content) {
+  const env = {};
+  const logicalLines = content.replace(/\\\r?\n/g, '').split(/\r?\n/);
+  for (const rawLine of logicalLines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
+    const separator = line.indexOf('=');
+    if (separator <= 0) continue;
+    const key = line.slice(0, separator).trim();
+    if (!VALID_ENV_KEY.test(key)) continue;
+    // EnvironmentFile is not a shell file: quotes/backslashes group and escape
+    // characters, but variable expansion is intentionally not performed.
+    env[key] = splitSystemdWords(line.slice(separator + 1).trim()).join(' ');
+  }
+  return env;
+}
+
+function expandSystemdEnvironmentFilePath(value) {
+  const literalPercent = '\u0000';
+  const expanded = value
+    .replace(/%%/g, literalPercent)
+    .replace(/%h/g, homedir())
+    .replace(/%U/g, typeof process.getuid === 'function' ? String(process.getuid()) : '')
+    .replace(new RegExp(literalPercent, 'g'), '%');
+  if (/%[A-Za-z]/.test(expanded) || /[*?\[]/.test(expanded) || !isAbsolute(expanded)) return null;
+  return expanded;
+}
+
+function readSystemdEnvironmentFiles(entries) {
+  const env = {};
+  const owners = {};
+  const unresolved = [];
+  for (const entry of entries) {
+    for (const token of splitSystemdWords(entry.value)) {
+      const optional = token.startsWith('-');
+      const configuredPath = optional ? token.slice(1) : token;
+      const resolvedPath = expandSystemdEnvironmentFilePath(configuredPath);
+      if (!resolvedPath) {
+        unresolved.push(`${entry.origin}: ${configuredPath}`);
+        continue;
+      }
+      if (!existsSync(resolvedPath)) {
+        if (optional) continue;
+        throw new Error(`required EnvironmentFile is missing: ${configuredPath}`);
+      }
+      let fileEnv;
+      try {
+        fileEnv = parseSystemdEnvironmentFile(readFileSync(resolvedPath, 'utf8'));
+      } catch (error) {
+        throw new Error(`could not read EnvironmentFile ${configuredPath}: ${error.message}`);
+      }
+      for (const [key, value] of Object.entries(fileEnv)) {
+        env[key] = value;
+        owners[key] = `${entry.origin}: ${configuredPath}`;
+      }
+    }
+  }
+  return { env, owners, unresolved };
 }
 
 function readExistingServiceConfig() {
   if (PLATFORM === 'darwin') {
     if (!existsSync(launchdPlistPath)) {
-      return { found: false, baseEnv: {}, dropInEnv: {}, effectiveEnv: {}, environmentFiles: [], externalSources: [] };
+      return {
+        found: false,
+        baseEnv: {},
+        dropInEnv: {},
+        dropInEvents: [],
+        dropInKeys: new Set(),
+        environmentFileEnv: {},
+        environmentFileOwners: {},
+        unresolvedEnvironmentFiles: [],
+        effectiveEnv: {},
+        environmentFiles: [],
+        externalSources: [],
+      };
     }
     const env = parseLaunchdEnvironment(readFileSync(launchdPlistPath, 'utf8'));
     if (!env) throw new Error(`existing launchd plist has no readable EnvironmentVariables dictionary: ${launchdPlistPath}`);
@@ -217,6 +374,11 @@ function readExistingServiceConfig() {
       found: true,
       baseEnv: env,
       dropInEnv: {},
+      dropInEvents: [],
+      dropInKeys: new Set(),
+      environmentFileEnv: {},
+      environmentFileOwners: {},
+      unresolvedEnvironmentFiles: [],
       effectiveEnv: env,
       environmentFiles: [],
       externalSources: [],
@@ -225,35 +387,65 @@ function readExistingServiceConfig() {
   if (PLATFORM === 'linux') {
     let baseEnv = {};
     let environmentFiles = [];
-    const dropInEnv = {};
+    let mergedState = { env: {}, environmentFiles: [] };
+    const dropInEvents = [];
+    const dropInKeys = new Set();
     const externalSources = [];
     const found = existsSync(systemdUnitPath);
     if (existsSync(systemdUnitPath)) {
       const parsed = parseSystemdEnvironment(readFileSync(systemdUnitPath, 'utf8'));
       baseEnv = parsed.env;
       environmentFiles = parsed.environmentFiles;
-      externalSources.push(...parsed.environmentFiles.map(value => `EnvironmentFile ${value}`));
+      mergedState = applySystemdEvents({}, [], parsed.events);
     }
     const dropInDir = `${systemdUnitPath}.d`;
     if (existsSync(dropInDir)) {
       const files = readdirSync(dropInDir).filter(name => name.endsWith('.conf')).sort();
       for (const file of files) {
         const parsed = parseSystemdEnvironment(readFileSync(join(dropInDir, file), 'utf8'));
-        Object.assign(dropInEnv, parsed.env);
         externalSources.push(`drop-in ${file}`);
-        externalSources.push(...parsed.environmentFiles.map(value => `EnvironmentFile ${value}`));
+        for (const event of parsed.events) {
+          dropInEvents.push(event);
+          if (event.type === 'environment') {
+            for (const assignment of event.assignments) dropInKeys.add(assignment.key);
+          }
+        }
+        mergedState = applySystemdEvents(mergedState.env, mergedState.environmentFiles, parsed.events);
       }
     }
+    const environmentFileEntries = mergedState.environmentFiles.map(value => ({
+      value,
+      origin: environmentFiles.includes(value) ? 'main unit' : 'drop-in',
+    }));
+    const externalFileConfig = readSystemdEnvironmentFiles(environmentFileEntries);
+    externalSources.push(...environmentFileEntries.map(entry => `EnvironmentFile ${entry.value}`));
     return {
       found,
       baseEnv,
-      dropInEnv,
-      effectiveEnv: { ...baseEnv, ...dropInEnv },
+      dropInEnv: mergedState.env,
+      dropInEvents,
+      dropInKeys,
+      environmentFileEnv: externalFileConfig.env,
+      environmentFileOwners: externalFileConfig.owners,
+      unresolvedEnvironmentFiles: externalFileConfig.unresolved,
+      effectiveEnv: { ...mergedState.env, ...externalFileConfig.env },
       environmentFiles,
       externalSources,
     };
   }
-  return { found: false, baseEnv: {}, dropInEnv: {}, effectiveEnv: {}, environmentFiles: [], externalSources: [] };
+  return {
+    found: false,
+    baseEnv: {},
+    dropInEnv: {},
+    dropInEvents: [],
+    dropInKeys: new Set(),
+    environmentFileEnv: {},
+    environmentFileOwners: {},
+    unresolvedEnvironmentFiles: [],
+    effectiveEnv: {},
+    environmentFiles: [],
+    externalSources: [],
+  };
 }
 
 function mergePath(...values) {
@@ -289,72 +481,83 @@ if (UPDATE && !existingConfig.found) {
 }
 
 const serviceEnv = { ...existingConfig.baseEnv };
-const inheritedExternalEnv = {};
 const hasEnvironmentFile = existingConfig.externalSources.some(source => source.startsWith('EnvironmentFile '));
-const hasMainEnvironmentFile = existingConfig.environmentFiles.length > 0;
+const ignoredShellEnvKeys = [];
 for (const key of CONFIGURABLE_ENV_KEYS) {
   if (!Object.hasOwn(process.env, key)) continue;
-  if (Object.hasOwn(existingConfig.dropInEnv, key)) {
-    if (process.env[key] !== existingConfig.dropInEnv[key]) {
-      die(`${key} is managed by a systemd drop-in. Update that owner-only drop-in instead of overriding it from setup.`);
-    }
-    continue;
-  }
-  if (hasEnvironmentFile && !Object.hasOwn(existingConfig.effectiveEnv, key)) {
-    // A running service passes EnvironmentFile values to the in-dashboard
-    // updater. Use them for health/diagnostics, but leave ownership in the
-    // file instead of copying them into the generated unit permanently.
-    inheritedExternalEnv[key] = process.env[key];
-    continue;
-  }
-  // The in-dashboard updater inherits the service environment. Do not copy an
-  // unchanged inherited value out of its original EnvironmentFile/drop-in and
-  // into the generated main unit, where it would become sticky after removal.
-  if (!existingConfig.found || process.env[key] !== existingConfig.effectiveEnv[key]) {
+  if (!existingConfig.found) {
     serviceEnv[key] = process.env[key];
+    continue;
   }
-}
-const currentlyEffective = { ...serviceEnv, ...inheritedExternalEnv, ...existingConfig.dropInEnv };
-// A main-unit EnvironmentFile may own these values even when setup cannot read
-// it. Do not add a later default that would silently override that source.
-if (!currentlyEffective.FLOWBOARD_PORT && !hasMainEnvironmentFile) serviceEnv.FLOWBOARD_PORT = '18790';
-if (!currentlyEffective.FLOWBOARD_HOST && !hasMainEnvironmentFile) serviceEnv.FLOWBOARD_HOST = '127.0.0.1';
-if (!currentlyEffective.OPENCLAW_WORKSPACE && !hasMainEnvironmentFile) serviceEnv.OPENCLAW_WORKSPACE = join(homedir(), '.openclaw', 'workspace');
-if (!hasMainEnvironmentFile || Object.hasOwn(existingConfig.baseEnv, 'PATH')) {
-  serviceEnv.PATH = mergePath(dirname(process.execPath), existingConfig.effectiveEnv.PATH, process.env.PATH);
-} else {
-  delete serviceEnv.PATH;
+  if (!OVERRIDE_ENV_KEYS.has(key)) {
+    if (process.env[key] !== existingConfig.effectiveEnv[key]) ignoredShellEnvKeys.push(key);
+    continue;
+  }
+  if (existingConfig.dropInKeys.has(key)) {
+    die(`${key} is managed by a systemd drop-in. Update that owner-only drop-in instead of overriding it from setup.`);
+  }
+  if (Object.hasOwn(existingConfig.environmentFileOwners, key)) {
+    die(`${key} is managed by an EnvironmentFile. Update that owner-only source instead of overriding it from setup.`);
+  }
+  if (existingConfig.unresolvedEnvironmentFiles.length > 0) {
+    die(`${key} cannot be overridden safely because an EnvironmentFile path could not be resolved. Update that source directly.`);
+  }
+  serviceEnv[key] = process.env[key];
 }
 
-const explicitSecret = Object.hasOwn(process.env, 'JWT_SECRET');
+// Defaults are seeded only on a fresh install. An update keeps the persistent
+// service definition byte-for-value at the environment layer unless the
+// operator names an explicit --override-env key.
+if (!existingConfig.found) {
+  if (!serviceEnv.FLOWBOARD_PORT) serviceEnv.FLOWBOARD_PORT = '18790';
+  if (!serviceEnv.FLOWBOARD_HOST) serviceEnv.FLOWBOARD_HOST = '127.0.0.1';
+  if (!serviceEnv.OPENCLAW_WORKSPACE) serviceEnv.OPENCLAW_WORKSPACE = join(homedir(), '.openclaw', 'workspace');
+  serviceEnv.PATH = mergePath(dirname(process.execPath), serviceEnv.PATH, process.env.PATH);
+}
+
 let secretStatus;
 if (ROTATE_SECRET) {
-  if (Object.hasOwn(existingConfig.dropInEnv, 'JWT_SECRET') || hasEnvironmentFile) {
+  if (existingConfig.dropInKeys.has('JWT_SECRET') || Object.hasOwn(existingConfig.environmentFileOwners, 'JWT_SECRET')) {
     die('JWT_SECRET is managed by a systemd drop-in/EnvironmentFile. Rotate it in that owner-only source, then run --update without --rotate-secret.');
+  }
+  if (existingConfig.unresolvedEnvironmentFiles.length > 0) {
+    die('JWT_SECRET cannot be rotated safely because an EnvironmentFile path could not be resolved. Rotate it in that owner-only source.');
   }
   serviceEnv.JWT_SECRET = randomBytes(32).toString('hex');
   secretStatus = 'rotation requested explicitly';
-} else if (explicitSecret) {
-  secretStatus = Object.hasOwn(inheritedExternalEnv, 'JWT_SECRET')
-    ? 'existing value preserved in its EnvironmentFile'
-    : 'value supplied explicitly by the operator environment';
 } else if (existingConfig.found) {
   if (Object.hasOwn(existingConfig.baseEnv, 'JWT_SECRET')) {
     serviceEnv.JWT_SECRET = existingConfig.baseEnv.JWT_SECRET;
     secretStatus = 'existing value preserved';
-  } else if (Object.hasOwn(existingConfig.dropInEnv, 'JWT_SECRET')) {
+  } else if (existingConfig.dropInKeys.has('JWT_SECRET')) {
     delete serviceEnv.JWT_SECRET;
     secretStatus = 'existing value preserved in its systemd drop-in';
+  } else if (Object.hasOwn(existingConfig.environmentFileOwners, 'JWT_SECRET')) {
+    delete serviceEnv.JWT_SECRET;
+    secretStatus = 'existing value preserved in its EnvironmentFile';
   } else {
     delete serviceEnv.JWT_SECRET;
     secretStatus = 'not configured in the existing service; left unset';
   }
+} else if (serviceEnv.JWT_SECRET) {
+  secretStatus = 'value supplied explicitly for the first install';
 } else {
   serviceEnv.JWT_SECRET = randomBytes(32).toString('hex');
   secretStatus = 'generated once for the first install';
 }
 
-const effectiveServiceEnv = { ...serviceEnv, ...inheritedExternalEnv, ...existingConfig.dropInEnv };
+if (PLATFORM === 'linux' && existingConfig.unresolvedEnvironmentFiles.length > 0) {
+  die('could not resolve all EnvironmentFile paths safely; use absolute paths or supported %h/%U specifiers before updating.');
+}
+const effectiveInlineState = PLATFORM === 'linux'
+  ? applySystemdEvents(serviceEnv, existingConfig.environmentFiles, existingConfig.dropInEvents)
+  : { env: serviceEnv };
+const effectiveServiceEnv = {
+  ...effectiveInlineState.env,
+  ...existingConfig.environmentFileEnv,
+};
+if (!effectiveServiceEnv.FLOWBOARD_HOST) effectiveServiceEnv.FLOWBOARD_HOST = '127.0.0.1';
+if (!effectiveServiceEnv.OPENCLAW_WORKSPACE) effectiveServiceEnv.OPENCLAW_WORKSPACE = join(homedir(), '.openclaw', 'workspace');
 const PORT = Number(effectiveServiceEnv.FLOWBOARD_PORT || 18790);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   die(`FLOWBOARD_PORT must be an integer between 1 and 65535 (received ${JSON.stringify(effectiveServiceEnv.FLOWBOARD_PORT)})`);
@@ -423,6 +626,12 @@ if (existingConfig.found) {
 } else {
   log(`${c.ok} first-install service environment prepared`);
 }
+if (OVERRIDE_ENV_KEYS.size > 0) {
+  log(`${c.ok} explicit service environment override requested for: ${[...OVERRIDE_ENV_KEYS].join(', ')}`);
+}
+if (ignoredShellEnvKeys.length > 0) {
+  log(c.dim(`  Ignored non-persistent shell values for: ${ignoredShellEnvKeys.join(', ')}. Use --override-env to persist an intentional change.`));
+}
 log(`${c.ok} JWT_SECRET: ${secretStatus}`);
 const remoteGaps = remoteConfigurationGaps();
 if (remoteGaps === null) {
@@ -430,7 +639,7 @@ if (remoteGaps === null) {
 } else if (remoteGaps.length > 0) {
   log(`${c.warn} remote access configuration is incomplete; missing: ${remoteGaps.join(', ')}`);
   if (hasEnvironmentFile) {
-    log(c.dim('  EnvironmentFile directives are preserved but not opened by setup; verify the missing values there.'));
+    log(c.dim('  EnvironmentFile directives were evaluated without printing values; verify missing settings in those owner-only files.'));
   }
 } else {
   log(`${c.ok} remote auth configuration has all required variables`);
@@ -467,7 +676,7 @@ ${envXml}
     writeOwnerOnly(launchdPlistPath, plist);
     spawnSync('launchctl', ['bootout', `gui/${uid}/${SERVICE_LABEL}`], { stdio: 'ignore' }); // ignore if not loaded
     run('launchctl', ['bootstrap', `gui/${uid}`, launchdPlistPath]);
-    run('launchctl', ['print', `gui/${uid}/${SERVICE_LABEL}`]);
+    runQuiet('launchctl', ['print', `gui/${uid}/${SERVICE_LABEL}`]);
   }
   log(`${c.ok} launchd service ${SERVICE_LABEL} registered with RunAtLoad + KeepAlive`);
 } else if (PLATFORM === 'linux') {
@@ -493,7 +702,7 @@ WantedBy=default.target
   if (DRY) {
     log(c.dim(`  would write ${systemdUnitPath} (mode 0600)`));
     log(c.dim('  would: systemctl --user daemon-reload'));
-    if (UPDATE) {
+    if (existingConfig.found && FORCE) {
       log(c.dim('  would: systemctl --user enable flowboard-dashboard'));
       log(c.dim('  would: systemctl --user restart flowboard-dashboard'));
     } else {
@@ -504,7 +713,7 @@ WantedBy=default.target
     mkdirSync(systemdUnitDir, { recursive: true });
     writeOwnerOnly(systemdUnitPath, unit);
     run('systemctl', ['--user', 'daemon-reload']);
-    if (UPDATE) {
+    if (existingConfig.found && FORCE) {
       run('systemctl', ['--user', 'enable', 'flowboard-dashboard']);
       // Try restart first; if it fails and the unit is in a recoverable state
       // (inactive/dead), fallback to start with a warning.
