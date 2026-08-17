@@ -5,11 +5,24 @@
 // interception controls only GET /api/projects; the rest of the shell talks to
 // the throwaway real dashboard from browser-harness.
 
+const net = require('net');
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
 
 const r = reporter('Dashboard connection states (T-440)');
 
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
 async function main() {
+  const port = await getFreePort();
   const res = await withDashboard(async ({ api, page, base }) => {
     let mode = 'pass';
     let releaseDelayedProjects;
@@ -24,6 +37,20 @@ async function main() {
       status,
       contentType,
       body: typeof body === 'string' ? body : JSON.stringify(body),
+  }, { port });
+
+    await page.evaluateOnNewDocument(() => {
+      const realFetch = window.fetch.bind(window);
+      window.__flowboardProjectFetchProbe = { active: 0, overlapped: false };
+      window.fetch = (...args) => {
+        let pathname = '';
+        try { pathname = new URL(typeof args[0] === 'string' ? args[0] : args[0]?.url, location.href).pathname; } catch {}
+        if (pathname !== '/api/projects') return realFetch(...args);
+        const probe = window.__flowboardProjectFetchProbe;
+        if (probe.active > 0) probe.overlapped = true;
+        probe.active += 1;
+        return realFetch(...args).finally(() => { probe.active -= 1; });
+      };
     });
 
     await page.setRequestInterception(true);
@@ -175,6 +202,10 @@ async function main() {
     // stale empty response later must not overwrite the retry result.
     mode = 'race';
     raceRequestCount = 0;
+    await page.evaluate(() => {
+      window.__flowboardProjectFetchProbe.active = 0;
+      window.__flowboardProjectFetchProbe.overlapped = false;
+    });
     racePollStarted = new Promise((resolve) => { notifyRacePollStarted = resolve; });
     staleRaceResponse = new Promise((resolve) => { releaseStaleRace = resolve; });
     await racePollStarted;
@@ -183,10 +214,12 @@ async function main() {
     releaseStaleRace();
     await new Promise((resolve) => setTimeout(resolve, 500));
     r.ok(await state() === 'ready', 'a stale poll cannot replace the newer retry connection state');
+    r.ok(!(await page.evaluate(() => window.__flowboardProjectFetchProbe.overlapped)),
+      'Retry starts network work only after the aborted poll fetch promise has settled');
     r.ok(!!(await page.$('[data-project="preserved-board"]')),
       'a stale poll cannot overwrite the project snapshot recovered by Retry');
     r.ok(!(await page.$('.connection-banner')), 'serialized retry returns the shell to ready');
-  }, { port: 18869, viewport: { width: 1400, height: 900 } });
+  }, { port, viewport: { width: 1400, height: 900 } });
 
   if (res?.skipped) r.skip(res.reason);
   r.done();

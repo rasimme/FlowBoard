@@ -93,13 +93,17 @@ Every task mutation should follow the same sequence:
 Polling is reconciliation. It is not the primary state propagation mechanism for a local action.
 
 Polling is also transactional at the shell-snapshot boundary: projects, agents,
-active project, and tasks are fetched before updates are committed. Polls and
-manual retries share one generation/abort coordinator, so an older response
-cannot overwrite a newer retry. Any failed request changes only the connection
-state; it cannot turn the last successful project/task snapshot into an empty
-array. Core failures are cleared only by a complete successful core snapshot —
-a task-only refresh cannot hide them. A later successful poll or manual retry
-clears the degraded state.
+active project, and tasks are schema-validated before updates are committed.
+Parallel core requests form one abort group, so one failure cancels its still-
+running siblings. Polls and manual retries share one network-serial generation/
+abort coordinator: replacement work starts only after the aborted request has
+settled. Project navigation invalidates that coordinator and uses a separate
+latest-wins task lane, so an older poll or task response cannot reset the viewed
+project. Any failed request changes only the connection state; it cannot turn
+the last successful project/task snapshot into an empty array. Bootstrap auth
+failures outrank successful core responses until `/api/auth` itself recovers;
+core failures are cleared only by a complete successful core snapshot, and a
+task-only refresh cannot hide them.
 
 ## File Runtime
 
@@ -125,6 +129,9 @@ The intended module boundary is:
 - `dashboard/src/state/connectionState.mjs`
   - classifies auth, network, timeout, protocol, and server failures
   - derives loading/ready/empty/degraded shell states without mutating data
+- `dashboard/src/utils/dashboardApi.js`
+  - owns schema-validated projects, agents, status, tasks, and auth loaders
+  - applies the shared API deadline and caller abort contract to every loader
 - `dashboard/src/state/taskState.*`
   - pure operations for patch, merge, rollback, snapshots, and parent updates
 - `dashboard/src/state/taskMutations.*`

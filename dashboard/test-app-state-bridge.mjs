@@ -152,15 +152,65 @@ const bridge = await import('./src/state/appStateBridge.mjs')
   })
   await assert.rejects(
     () => bridge.refreshTasks(),
-    err => /500/.test(err.message) && /boom/.test(err.message),
-    'rejects with a message that surfaces status and server error',
+    err => err?.status === 500 && /boom/.test(err.message),
+    'rejects with typed status and the server error',
   )
   assert.deepEqual(win.appState.tasks.map(t => t.id), ['keep-me'], 'tasks unchanged on API error')
   assert.equal(win._events.length, 0, 'no notify on API error')
   console.log('✅ refreshTasks rejects on API error and preserves state')
 }
 
-// 9. installRefreshBridge: exposes the legacy _refreshBoard compatibility hook.
+// 9. refreshTasks: malformed 2xx never erases the last valid task snapshot.
+{
+  const win = createFakeWindow({ viewedProject: 'demo', activeProject: 'demo', tasks: [{ id: 'T-KEEP' }] })
+  setWindow(win)
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ tasks: { malformed: true } }),
+  })
+  await assert.rejects(
+    () => bridge.refreshTasks(),
+    err => err?.kind === 'protocol',
+    'schema-invalid task 2xx rejects as a protocol error',
+  )
+  assert.deepEqual(win.appState.tasks, [{ id: 'T-KEEP' }], 'T-KEEP survives a malformed 2xx response')
+  assert.equal(win._events.length, 0, 'malformed 2xx does not notify a false empty state')
+  console.log('✅ refreshTasks preserves T-KEEP on malformed 2xx')
+}
+
+// 10. refreshTasks: caller abort is forwarded and leaves data untouched.
+{
+  const win = createFakeWindow({ viewedProject: 'demo', activeProject: 'demo', tasks: [{ id: 'T-KEEP' }] })
+  setWindow(win)
+  globalThis.fetch = async (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason || new DOMException('Aborted', 'AbortError')), { once: true })
+  })
+  const controller = new AbortController()
+  const request = bridge.refreshTasks(null, { signal: controller.signal })
+  controller.abort(new DOMException('Navigation changed', 'AbortError'))
+  await assert.rejects(request, err => err?.kind === 'aborted', 'caller abort becomes a typed aborted error')
+  assert.deepEqual(win.appState.tasks, [{ id: 'T-KEEP' }], 'T-KEEP survives an aborted refresh')
+  console.log('✅ refreshTasks forwards abort without clearing data')
+}
+
+// 11. refreshTasks: a late response for the former viewed project is ignored.
+{
+  const win = createFakeWindow({ viewedProject: 'old-project', activeProject: 'old-project', tasks: [{ id: 'T-KEEP' }] })
+  setWindow(win)
+  let release
+  globalThis.fetch = async () => new Promise((resolve) => {
+    release = () => resolve({ ok: true, status: 200, json: async () => ({ tasks: [{ id: 'T-OLD' }] }) })
+  })
+  const request = bridge.refreshTasks()
+  win.appState.viewedProject = 'new-project'
+  release()
+  assert.equal(await request, null, 'late former-project response is discarded')
+  assert.deepEqual(win.appState.tasks, [{ id: 'T-KEEP' }], 'former-project tasks never overwrite the current snapshot')
+  console.log('✅ refreshTasks discards late former-project response')
+}
+
+// 12. installRefreshBridge: exposes the legacy _refreshBoard compatibility hook.
 {
   const win = createFakeWindow({ viewedProject: 'demo', activeProject: 'demo' })
   setWindow(win)

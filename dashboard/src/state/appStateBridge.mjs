@@ -2,7 +2,7 @@
 // and the only place that owns React notification + project task refresh.
 // See ADR-0019 and docs/concepts/frontend-runtime.md.
 
-import { apiFetch } from '../utils/apiFetch.js'
+import { fetchTasksForProject } from '../utils/dashboardApi.js'
 
 function getWindow() {
   if (typeof globalThis !== 'undefined' && globalThis.window) return globalThis.window
@@ -54,20 +54,16 @@ export function replaceTasks(tasks) {
   notify()
 }
 
-export async function refreshTasks(projectOverride = null) {
+export async function refreshTasks(projectOverride = null, options = {}) {
   const project = projectOverride || getCurrentProject()
   if (!project || typeof globalThis.fetch !== 'function') return null
 
-  const res = await apiFetch(`/api/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`)
+  const tasks = await fetchTasksForProject(project, options.signal, options)
+  // A refresh started for the formerly viewed project must never publish after
+  // navigation selected another project. Explicit overrides retain their
+  // historical force-refresh semantics for compatibility callers.
+  if (!projectOverride && getCurrentProject() !== project) return null
 
-  if (!res.ok) {
-    let detail = ''
-    try { detail = (await res.json())?.error || '' } catch { /* ignore */ }
-    throw new Error(`Refresh tasks failed (${res.status}${detail ? ': ' + detail : ''})`)
-  }
-
-  const data = await res.json()
-  const tasks = Array.isArray(data?.tasks) ? data.tasks : []
   replaceTasks(tasks)
   return tasks
 }

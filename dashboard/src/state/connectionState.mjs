@@ -42,8 +42,16 @@ export function connectionSuccess(projects) {
   };
 }
 
+const ERROR_SCOPE_PRIORITY = Object.freeze({ tasks: 1, agents: 1, core: 2, auth: 3 });
+
+function scopePriority(scope) {
+  return ERROR_SCOPE_PRIORITY[scope] || 0;
+}
+
 export function connectionFailure(previous, error, errorScope = 'core') {
-  if (errorScope !== 'core' && previous?.errorScope === 'core') return previous;
+  if (previous?.errorScope && scopePriority(previous.errorScope) > scopePriority(errorScope)) {
+    return previous;
+  }
   const failure = typeof error?.status === 'string' ? error : classifyConnectionError(error);
   return {
     status: failure.status,
@@ -56,8 +64,22 @@ export function connectionFailure(previous, error, errorScope = 'core') {
 }
 
 export function connectionRecovery(previous, projects, recoveredScope = 'core') {
-  if (recoveredScope !== 'core' && previous?.errorScope === 'core') return previous;
+  if (previous?.errorScope && scopePriority(previous.errorScope) > scopePriority(recoveredScope)) {
+    return previous;
+  }
   return connectionSuccess(projects);
+}
+
+// Clear one proven-recovered scope without claiming that a still-pending core
+// request has succeeded. This is used after /api/auth itself succeeds during a
+// Retry: if a following core request fails, that newer failure must replace the
+// stale auth error instead of being hidden by scope priority.
+export function connectionScopeRecovery(previous, projects, recoveredScope) {
+  if (previous?.errorScope !== recoveredScope) return previous;
+  if (previous?.hasData) {
+    return { ...connectionSuccess(projects), retrying: !!previous.retrying };
+  }
+  return { ...INITIAL_CONNECTION_STATE, retrying: !!previous?.retrying };
 }
 
 export function connectionLoading(previous = INITIAL_CONNECTION_STATE) {

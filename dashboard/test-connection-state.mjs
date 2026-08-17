@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 
-import { ApiError, apiJson } from './src/utils/apiFetch.js';
+import { abortableAll, ApiError, apiJson } from './src/utils/apiFetch.js';
 import {
   INITIAL_CONNECTION_STATE,
   classifyConnectionError,
   connectionFailure,
   connectionLoading,
   connectionRecovery,
+  connectionScopeRecovery,
   connectionSuccess,
 } from './src/state/connectionState.mjs';
 
@@ -57,6 +58,22 @@ assert.equal(
 const taskFailure = connectionFailure(connectionSuccess([{ name: 'project' }]), server, 'tasks');
 assert.equal(connectionRecovery(taskFailure, [{ name: 'project' }], 'tasks').status, 'ready');
 
+const bootstrapAuthFailure = connectionFailure(INITIAL_CONNECTION_STATE, new ApiError('Forbidden', { status: 403 }), 'auth');
+assert.equal(bootstrapAuthFailure.status, 'auth-error');
+assert.equal(
+  connectionRecovery(bootstrapAuthFailure, [], 'core'),
+  bootstrapAuthFailure,
+  'successful core 2xx cannot erase an unrecovered bootstrap auth failure',
+);
+const recoveredAuth = connectionScopeRecovery(bootstrapAuthFailure, [], 'auth');
+assert.equal(recoveredAuth.status, 'loading');
+assert.equal(recoveredAuth.errorScope, null, 'a proven /api/auth recovery clears the stale auth scope');
+assert.equal(
+  connectionFailure(recoveredAuth, new ApiError('Core failed', { status: 500 }), 'core').httpStatus,
+  500,
+  'a core failure after auth recovery replaces the stale auth error',
+);
+
 global.window = { location: { origin: 'http://127.0.0.1:18790' }, Telegram: {} };
 
 global.fetch = async () => new Response(JSON.stringify({ error: 'Tunnel auth required' }), {
@@ -99,5 +116,38 @@ await assert.rejects(
   'apiJson enforces a real fetch deadline and reports a typed timeout',
 );
 assert.equal(timeoutAbortedFetch, true, 'the deadline aborts the underlying fetch');
+
+let releaseCallerAbort;
+global.fetch = async (_url, { signal }) => new Promise((_resolve, reject) => {
+  signal.addEventListener('abort', () => {
+    setTimeout(() => reject(signal.reason || new DOMException('Aborted', 'AbortError')), 20);
+    releaseCallerAbort = true;
+  }, { once: true });
+});
+const callerController = new AbortController();
+const callerAbortedRequest = apiJson('/projects', { signal: callerController.signal, timeoutMs: 5 });
+callerController.abort(new DOMException('Caller cancelled', 'AbortError'));
+await assert.rejects(
+  callerAbortedRequest,
+  (error) => error instanceof ApiError && error.kind === 'aborted',
+  'caller abort remains an abort even when fetch rejection settles after the deadline',
+);
+assert.equal(releaseCallerAbort, true, 'caller abort reaches the underlying fetch');
+
+let siblingAborted = false;
+await assert.rejects(
+  () => abortableAll([
+    async () => { throw new ApiError('agents payload failed', { kind: 'protocol', path: '/api/agents' }); },
+    async (signal) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => {
+        siblingAborted = true;
+        reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    }),
+  ]),
+  (error) => error instanceof ApiError && error.path === '/api/agents',
+  'the request group preserves the first partial failure',
+);
+assert.equal(siblingAborted, true, 'a partial failure aborts its still-running sibling request');
 
 console.log('dashboard connection state tests passed');

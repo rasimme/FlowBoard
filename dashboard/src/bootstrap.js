@@ -8,7 +8,8 @@
 
 import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
 import { installAppStateProxy } from './state/appStore.mjs';
-import { apiFetch, DEFAULT_API_TIMEOUT_MS } from './utils/apiFetch.js';
+import { connectionFailure } from './state/connectionState.mjs';
+import { authenticateTelegram } from './utils/dashboardApi.js';
 
 // window.appState is now a Proxy over the React-owned store (appStore.mjs). The
 // auth/agentId writes below go through it and notify React automatically.
@@ -30,51 +31,53 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function applyDashboardIdentity(authAgentId = null) {
+  const identity = resolveDashboardAgentIdentity({
+    urlSearch: window.location.search,
+    telegramWebApp: tg,
+    authAgentId,
+    storedAgentId: localStorage.getItem('flowboard_agent_id'),
+  });
+  window.appState.agentId = identity.agentId;
+  window.appState.agentIdSource = identity.source;
+  window.appState.agentIdChatBound = identity.chatBound;
+  if (identity.agentId) {
+    try { localStorage.setItem('flowboard_agent_id', identity.agentId); } catch { /* ignore */ }
+  }
+  return identity;
+}
+
+async function authenticateDashboard(signal) {
+  if (!tg?.initData) return applyDashboardIdentity();
+
+  const authData = await authenticateTelegram(tg.initData, signal);
+  window.appState.bootstrapAuthError = null;
+  window.appState.authUser = authData.user.username || null;
+  applyDashboardIdentity(authData.agentId);
+  return authData;
+}
+
+// DashboardContext uses the same function for an explicit Retry after an auth
+// failure. This keeps /api/auth validation and identity writes in one owner.
+window.__flowboardAuthenticate = authenticateDashboard;
+
 (async () => {
   try {
     if (tg?.initData) {
       tg.ready();
       tg.expand();
       tg.disableVerticalSwipes?.();
-      try {
-        const authRes = await apiFetch('/api/auth', {
-          method: 'POST',
-          headers: { 'X-Telegram-Init-Data': tg.initData },
-          credentials: 'include',
-          timeoutMs: DEFAULT_API_TIMEOUT_MS,
-        });
-        const authData = await authRes.json().catch(() => null);
-        if (authData?.user?.username) window.appState.authUser = authData.user.username;
-        const identity = resolveDashboardAgentIdentity({
-          urlSearch: window.location.search,
-          telegramWebApp: tg,
-          authAgentId: authData?.agentId,
-          storedAgentId: localStorage.getItem('flowboard_agent_id'),
-        });
-        window.appState.agentId = identity.agentId;
-        window.appState.agentIdSource = identity.source;
-        window.appState.agentIdChatBound = identity.chatBound;
-      } catch (e) {
-        console.warn('Auth failed:', e);
-      }
-    } else {
-      const identity = resolveDashboardAgentIdentity({
-        urlSearch: window.location.search,
-        telegramWebApp: tg,
-        storedAgentId: localStorage.getItem('flowboard_agent_id'),
-      });
-      window.appState.agentId = identity.agentId;
-      window.appState.agentIdSource = identity.source;
-      window.appState.agentIdChatBound = identity.chatBound;
     }
-    if (window.appState.agentId) {
-      try { localStorage.setItem('flowboard_agent_id', window.appState.agentId); } catch { /* ignore */ }
-    }
+    await authenticateDashboard();
+  } catch (error) {
+    console.warn('Auth failed:', error);
+    window.appState.bootstrapAuthError = error;
+    window.appState.connection = connectionFailure(window.appState.connection, error, 'auth');
+    // Resolve a safe fallback identity without pretending authentication worked.
+    applyDashboardIdentity();
   } finally {
-    // Notify React explicitly so authUser/agentId propagate without relying on a
-    // polling watchdog (T-356). These writes happen after React mounts, so an
-    // event is the propagation path; DashboardContext's first post-bootstrap
-    // dispatch also picks them up, this just makes it intentional + immediate.
+    // Notify React explicitly so authUser/agentId/connection propagate without
+    // relying on a polling watchdog (T-356).
     try { window.dispatchEvent(new CustomEvent('appstate:change')); } catch { /* non-DOM env */ }
     resolveBootstrap();
   }

@@ -73,7 +73,13 @@ export function apiFetch(path, opts = {}) {
   let removeAbortForwarder = null;
 
   if (controller && callerSignal) {
-    const forwardAbort = () => controller.abort(callerSignal.reason);
+    const forwardAbort = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      controller.abort(callerSignal.reason);
+    };
     if (callerSignal.aborted) forwardAbort();
     else {
       callerSignal.addEventListener('abort', forwardAbort, { once: true });
@@ -81,8 +87,9 @@ export function apiFetch(path, opts = {}) {
     }
   }
 
-  if (controller) {
+  if (controller && !controller.signal.aborted) {
     timeoutId = setTimeout(() => {
+      if (controller.signal.aborted) return;
       timedOut = true;
       controller.abort(new DOMException('FlowBoard API request timed out', 'TimeoutError'));
     }, timeoutMs);
@@ -126,6 +133,32 @@ export class ApiError extends Error {
     this.kind = kind;
     this.path = path;
     if (cause) this.cause = cause;
+  }
+}
+
+/**
+ * Run related API calls as one failure domain. The first rejection aborts every
+ * still-running sibling and waits for their abort handlers to settle before the
+ * group rejects, so callers cannot start a replacement while old network work
+ * is still alive.
+ */
+export async function abortableAll(requestFactories, { signal: parentSignal } = {}) {
+  const controller = new AbortController();
+  const forwardParentAbort = () => controller.abort(parentSignal.reason);
+  if (parentSignal?.aborted) forwardParentAbort();
+  else parentSignal?.addEventListener('abort', forwardParentAbort, { once: true });
+
+  const requests = requestFactories.map((request) => Promise.resolve().then(() => request(controller.signal)));
+  try {
+    return await Promise.all(requests);
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      controller.abort(new DOMException('Sibling FlowBoard request failed', 'AbortError'));
+    }
+    await Promise.allSettled(requests);
+    throw error;
+  } finally {
+    parentSignal?.removeEventListener('abort', forwardParentAbort);
   }
 }
 
