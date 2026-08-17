@@ -8,10 +8,13 @@
 #   JWT_SECRET                  — generate with: openssl rand -hex 32
 #   ALLOWED_USER_IDS            — comma-separated Telegram user IDs
 #   DASHBOARD_ORIGIN            — your public URL (for CORS)
+#   FLOWBOARD_TRUSTED_PROXY_IPS — immediate trusted proxy/tunnel peers for
+#                                 Cloudflare client-IP rate-limit keys
 #
 # Optional:
 #   TELEGRAM_BOT_TOKENS  — additional bot tokens, comma-separated and ordered
 #   AUTH_ALWAYS          — set to "true" for non-Cloudflare tunnels (ngrok, Tailscale)
+#   FLOWBOARD_TRUSTED_PROXY_IPS — for local cloudflared, e.g. 127.0.0.1,::1
 
 [Service]
 Environment="TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN>"
@@ -19,6 +22,7 @@ Environment="FLOWBOARD_TELEGRAM_AGENT_IDS=<YOUR_AGENT_ID>"
 Environment="JWT_SECRET=<YOUR_JWT_SECRET>"
 Environment="ALLOWED_USER_IDS=<YOUR_TELEGRAM_USER_ID>"
 Environment="DASHBOARD_ORIGIN=https://<YOUR_DOMAIN>"
+# Environment="FLOWBOARD_TRUSTED_PROXY_IPS=127.0.0.1,::1"
 # Three-bot example (replace all placeholders; order must match agent IDs):
 # Environment="TELEGRAM_BOT_TOKENS=<SECOND_BOT_TOKEN>,<THIRD_BOT_TOKEN>"
 # Environment="FLOWBOARD_TELEGRAM_AGENT_IDS=<PRIMARY_AGENT_ID>,<SECOND_AGENT_ID>,<THIRD_AGENT_ID>"

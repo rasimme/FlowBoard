@@ -59,8 +59,9 @@ from steady-state requests after the original WebApp payload naturally ages.
    clear the session.
 8. Clear both the current root-path `flowboard_session` cookie and the legacy
    `/api`-path variant on rejected sessions. Rate-limit keys trust
-   `cf-connecting-ip` only when the existing `cf-ray` Cloudflare Tunnel marker
-   is present; direct requests use the transport socket address.
+   `cf-connecting-ip` only when the socket peer matches an explicit
+   `FLOWBOARD_TRUSTED_PROXY_IPS` entry and both Cloudflare headers are present;
+   direct, forged, or unconfigured requests use the transport socket address.
 
 ## Consequences
 

@@ -456,6 +456,8 @@ cp templates/systemd-auth.conf.example \
 # - JWT_SECRET
 # - ALLOWED_USER_IDS (comma-separated allowed user ids)
 # - DASHBOARD_ORIGIN (your public URL)
+# - FLOWBOARD_TRUSTED_PROXY_IPS (optional: immediate proxy/tunnel peer IPs or CIDRs;
+#   for local cloudflared, typically 127.0.0.1,::1)
 
 systemctl --user daemon-reload
 systemctl --user restart dashboard
@@ -479,6 +481,14 @@ same number and order of unique, valid agent IDs. Empty entries, duplicate
 tokens/agent IDs, or a count mismatch stop startup with a diagnostic that never
 prints token values. Open each Mini App once without another bot's cookie to
 verify that `/api/auth` returns its server-confirmed `agentId`.
+
+Cloudflare forwarding headers are not trusted solely because `cf-ray` is
+present. Set `FLOWBOARD_TRUSTED_PROXY_IPS` to the immediate socket peer(s) that
+are exclusively trusted to forward requests (for a local `cloudflared`, its
+loopback address). If it is unset or contains invalid entries, rate-limit keys
+fall back to the transport socket address; this is fail-safe but aggregates
+remote tunnel clients behind the local proxy. Never list a routable client
+network as a trusted proxy.
 
 ### Register Telegram button
 

@@ -76,7 +76,11 @@ const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegram-auth.js');
-const { RateLimiter, getClientIp } = require('./rate-limiter.js');
+const {
+  RateLimiter,
+  getClientIp,
+  parseTrustedProxyConfig,
+} = require('./rate-limiter.js');
 const { installPrivacyFilter } = require('./privacy-filter.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
@@ -131,6 +135,18 @@ const FLOWBOARD_NOTIFICATION_TARGET = process.env.FLOWBOARD_NOTIFICATION_TARGET
     ? String(ALLOWED_USER_IDS[0])
     : '');
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
+// Cloudflare's forwarding headers are not cryptographic proof: a direct
+// client can send the same names. Only accept cf-connecting-ip for rate-limit
+// identity when the transport peer is an explicitly configured proxy/tunnel.
+// An empty/invalid configuration deliberately falls back to the socket key.
+const TRUSTED_PROXY_CONFIG = parseTrustedProxyConfig(process.env.FLOWBOARD_TRUSTED_PROXY_IPS);
+const TRUSTED_PROXY_IPS = TRUSTED_PROXY_CONFIG.entries;
+if (TRUSTED_PROXY_CONFIG.invalid.length > 0) {
+  console.warn(
+    `[TRUSTED_PROXY_CONFIG] Ignoring invalid proxy peer entries; ` +
+    `Cloudflare forwarding trust remains disabled for those entries.`
+  );
+}
 
 function flowboardNotificationDelivery() {
   return {
@@ -253,6 +269,7 @@ function issueSession(res, user) {
 const authRateLimiter = new RateLimiter({
   windowMs: 60 * 1000,
   maxRequests: 60,
+  trustedProxyIps: TRUSTED_PROXY_IPS,
 });
 
 function clearSession(res) {
@@ -271,7 +288,7 @@ function sameSessionIdentity(sessionUser, telegramIdentity) {
 function rejectTelegramAuth(req, res, failure, { clearExistingSession = false } = {}) {
   if (clearExistingSession || failure.code === 'INVALID_SESSION') clearSession(res);
   console.warn(
-    `[auth] ${failure.code} from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`
+    `[auth] ${failure.code} from ${getClientIp(req, TRUSTED_PROXY_IPS)} — ${new Date().toISOString()}`
   );
   return res.status(failure.status || 403).json({ error: failure.error, code: failure.code });
 }
@@ -325,11 +342,9 @@ function authenticateOrChallenge(req, res, next) {
 }
 
 function telegramAuthMiddleware(req, res, next) {
-  // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so IP check can't distinguish
-  // local vs external. cf-ray is ONLY set by Cloudflare edge — if present, request is external.
-  // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so the IP
-  // check can't distinguish local vs external. cf-ray is ONLY set by the
-  // Cloudflare edge — if present, the request is external and must authenticate.
+  // A cf-ray marker raises the auth requirement because cloudflared connects
+  // from loopback. The marker is fail-closed routing only; it is not trusted
+  // as proof of the client IP (the rate limiter verifies the socket peer).
   if (req.headers['cf-ray']) {
     if (!AUTH_ENABLED) {
       // Auth not configured but request is external via tunnel — block it
@@ -469,13 +484,12 @@ app.use('/api/', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
-  // Skip ONLY genuinely-local requests. cloudflared connects from 127.0.0.1, so
-  // without excluding the tunnel marker (cf-ray) every external request would be
-  // treated as local and skip the limit entirely (T-355). Tunneled requests are
-  // keyed by their verified Cloudflare client IP below; direct requests use the
-  // transport socket address and cannot rotate cf-connecting-ip to evade it.
+  // Skip only requests without a tunnel marker that arrive from loopback.
+  // cloudflared also connects from loopback, so a marker must never skip the
+  // limiter. Its client-IP header is used only when the socket peer matches
+  // TRUSTED_PROXY_IPS; otherwise getClientIp() uses the socket address.
   skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),
-  keyGenerator: getClientIp,
+  keyGenerator: (req) => getClientIp(req, TRUSTED_PROXY_IPS),
   message: { error: 'Too many requests, please slow down.' }
 }));
 

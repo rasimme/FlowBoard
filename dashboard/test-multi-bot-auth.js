@@ -47,6 +47,7 @@ function testEnv(tmp, overrides = {}) {
     TELEGRAM_BOT_TOKEN: '',
     TELEGRAM_BOT_TOKENS: '',
     FLOWBOARD_TELEGRAM_AGENT_IDS: '',
+    FLOWBOARD_TRUSTED_PROXY_IPS: '127.0.0.1,::1',
     JWT_SECRET: '',
     ALLOWED_USER_IDS: '',
     ...overrides,

@@ -52,6 +52,7 @@ async function run() {
       // Turn AUTH_ENABLED on.
       TELEGRAM_BOT_TOKEN: '123456:dummy', JWT_SECRET: SECRET, ALLOWED_USER_IDS: '42',
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      FLOWBOARD_TRUSTED_PROXY_IPS: '127.0.0.1,::1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

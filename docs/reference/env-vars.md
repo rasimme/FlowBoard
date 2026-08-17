@@ -59,6 +59,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `TELEGRAM_BOT_TOKEN` | empty | Primary bot token for Telegram-init-data verification (ordered position 1). Required before any additional token. |
 | `TELEGRAM_BOT_TOKENS` | empty | Additional bot tokens, comma-separated (ordered positions 2+). Empty entries and duplicate tokens are startup errors. |
 | `FLOWBOARD_TELEGRAM_AGENT_IDS` | empty | Required to enable auth: ordered 1:1 mapping for every configured token, primary agent first and then one per `TELEGRAM_BOT_TOKENS` entry. With the other auth prerequisites present, a missing/count-mismatched mapping stops startup; gaps, duplicates, and invalid agent IDs are always rejected without logging token values. |
+| `FLOWBOARD_TRUSTED_PROXY_IPS` | empty | Comma-separated IP addresses or CIDRs for immediate proxy/tunnel peers whose `cf-ray` + `cf-connecting-ip` pair may be used for rate-limit identity. For local `cloudflared`, configure its loopback peer (`127.0.0.1,::1`) only when that listener is trusted; empty or invalid entries fail safe to the transport socket IP. |
 | `DASHBOARD_ORIGIN` | empty | Allowed CORS origin for browser clients. |
 | `OPENCLAW_HOOKS_TOKEN` (alias `HOOKS_TOKEN`) | empty | Shared secret required on `POST /api/hooks/task-complete`. Empty disables the endpoint. |
 | `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server logs a warning. |
