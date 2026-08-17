@@ -11,8 +11,8 @@ When `FLOWBOARD_RULES_TELEMETRY=1` is set in the server env, every hit on
 either rules endpoint writes one line to stdout. The log path depends on the
 service manager:
 
-- systemd user service: usually `/tmp/dashboard.log`
-- macOS launchd service: currently `/tmp/flowboard-dashboard.log`
+- systemd user service: `journalctl --user -u flowboard-dashboard.service`
+- macOS launchd service: `~/Library/Logs/FlowBoard/flowboard-dashboard.log`
 
 ```
 [rules-telemetry] section=<name>|_manifest|<name>[404] agent=<id> project=<name>
@@ -49,24 +49,29 @@ Verify the flag is picked up:
 
 ```bash
 curl -s http://localhost:18790/api/projects/flowboard/rules >/dev/null
-grep "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | tail -5
+grep "rules-telemetry" ~/Library/Logs/FlowBoard/flowboard-dashboard.log | tail -5
 # Expect: one new line with section=_manifest
 ```
 
 ## Reading the results
 
 ```bash
+# macOS
+LOG=~/Library/Logs/FlowBoard/flowboard-dashboard.log
+# Linux equivalent input:
+# journalctl --user -u flowboard-dashboard.service --no-pager | grep "rules-telemetry"
+
 # Total hits since instrumentation was enabled
-grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | wc -l
+grep "rules-telemetry" "$LOG" | wc -l
 
 # Hits per section
-grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^section=/) print $i}' | sort | uniq -c | sort -rn
+grep "rules-telemetry" "$LOG" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^section=/) print $i}' | sort | uniq -c | sort -rn
 
 # Hits per agent
-grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^agent=/) print $i}' | sort | uniq -c | sort -rn
+grep "rules-telemetry" "$LOG" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^agent=/) print $i}' | sort | uniq -c | sort -rn
 
 # Hits per day
-grep -h "rules-telemetry" /tmp/dashboard.log /tmp/flowboard-dashboard.log 2>/dev/null | awk '{print $1}' | cut -d'T' -f1 | sort | uniq -c
+grep "rules-telemetry" "$LOG" | awk '{print $1}' | cut -d'T' -f1 | sort | uniq -c
 ```
 
 ## Interpreting outcomes

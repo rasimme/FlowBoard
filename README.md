@@ -143,6 +143,15 @@ node scripts/setup.mjs --dry-run   # preview, change nothing
 ```
 
 Re-run with `--update` after `openclaw plugins update` to rebuild & restart.
+`--update` requires the standard FlowBoard service to exist and preserves its
+persisted environment (including auth/tunnel variables and `JWT_SECRET`). Shell
+variables never replace persisted update values implicitly. Persist a named,
+allowlisted shell value by adding `--override-env=VARIABLE` to the update
+command. Rotate `JWT_SECRET` only with
+`node scripts/setup.mjs --rotate-secret`; rotation re-registers and restarts the
+service immediately. On macOS, setup writes launchd output to the owner-only
+`~/Library/Logs/FlowBoard/flowboard-dashboard.log` (directory `0700`, file
+`0600`, service umask `077`) rather than a shared `/tmp` path.
 Prefer the manual path? It's below.
 
 ### Updating
@@ -155,8 +164,9 @@ the running dashboard still serves the previous build. Two ways to apply it:
   vX -> vY"* chip only when self-update is explicitly enabled. Click
   **Update & restart** — it sends an explicit request confirmation to
   `POST /api/update/run`, which runs `setup.mjs --update`
-  (reinstall deps + rebuild UI + restart the service, leaving your `.env` and
-  data untouched), then reloads the page onto the new build. **Safety:** The API
+  (reinstall deps + rebuild UI + merge the existing standard service
+  environment + restart, leaving project data untouched), then reloads the
+  page onto the new build. **Safety:** The API
   requires `FLOWBOARD_ENABLE_SELF_UPDATE=true` to be set
   explicitly in the service configuration before the UI update button is active;
   see below.
@@ -166,12 +176,12 @@ the running dashboard still serves the previous build. Two ways to apply it:
 
 **Self-Update Safety (T-417-6).** In-dashboard updates are **disabled by default**
 for published installs. To enable them, set `FLOWBOARD_ENABLE_SELF_UPDATE=true` in
-your service environment (e.g., in `~/.openclaw/config/.env` or your systemd
-unit). The dashboard UI will then show the update button and send a typed
+your standard service environment (the launchd plist on macOS or a systemd
+drop-in for `flowboard-dashboard.service` on Linux). The dashboard UI will then show the update button and send a typed
 request confirmation token with each update request. The CLI path (`setup.mjs --update`)
 requires no additional configuration and remains available as the direct operator action.
 
-> **Custom service or supervisor?** The in-UI update manages the standard per-user service — `ai.openclaw.flowboard-dashboard` (launchd) / `flowboard-dashboard` (systemd `--user`). If you run the dashboard under your own supervisor or a different label, don't use the in-UI update (it would collide on port 18790) — update with `node scripts/setup.mjs --update` from the checkout, or move your service to the standard label.
+> **Custom service or supervisor?** Setup and in-UI update manage only the standard per-user service — `ai.openclaw.flowboard-dashboard` (launchd) / `flowboard-dashboard` (systemd `--user`). If you use a different supervisor or label, update dependencies/build manually and restart that supervisor, or migrate to the standard label. Do not run `setup.mjs --update`; it intentionally refuses when the standard service is absent.
 
 > **Upgrading to 5.0.0:** the canvas DB schema is created automatically, but importing existing `canvas.json` data is operator-triggered — via the in-app banner, `POST /api/migrations/canvas/run`, or `node dashboard/scripts/migrate-canvas-to-db.mjs --run`. Non-blocking; see the [migrations reference](docs/reference/api/migrations.md).
 
@@ -246,8 +256,9 @@ node server.js
 # OPENCLAW_HOME=/path/to/.openclaw FLOWBOARD_PROJECTS_DIR=/path/to/projects node server.js
 
 # Or with systemd (auto-start on boot):
-cp templates/dashboard.service ~/.local/share/systemd/user/
-systemctl --user enable --now dashboard
+mkdir -p ~/.config/systemd/user
+cp templates/flowboard-dashboard.service ~/.config/systemd/user/flowboard-dashboard.service
+systemctl --user enable --now flowboard-dashboard
 ```
 
 ### 4. Finish setup in the dashboard
@@ -445,9 +456,10 @@ cloudflared tunnel run flowboard
 ```bash
 JWT_SECRET=$(openssl rand -hex 32)
 
-mkdir -p ~/.config/systemd/user/dashboard.service.d
+mkdir -p ~/.config/systemd/user/flowboard-dashboard.service.d
 cp templates/systemd-auth.conf.example \
-   ~/.config/systemd/user/dashboard.service.d/auth.conf
+   ~/.config/systemd/user/flowboard-dashboard.service.d/auth.conf
+chmod 600 ~/.config/systemd/user/flowboard-dashboard.service.d/auth.conf
 # Edit with your values:
 # - TELEGRAM_BOT_TOKEN (from @BotFather)
 # - JWT_SECRET
@@ -455,8 +467,16 @@ cp templates/systemd-auth.conf.example \
 # - DASHBOARD_ORIGIN (your public URL)
 
 systemctl --user daemon-reload
-systemctl --user restart dashboard
+systemctl --user restart flowboard-dashboard
 ```
+
+`setup.mjs --update` reads the existing standard service, ordered
+`EnvironmentFile=` sources, and systemd drop-ins without printing their values,
+then writes the generated service definition owner-only. Persisted values win
+over the caller's shell unless a key is explicitly named with `--override-env`.
+Rotate the JWT only when intended with `node scripts/setup.mjs --rotate-secret`.
+If a setting is owned by a systemd drop-in or `EnvironmentFile`, edit that
+owner-only source instead; setup refuses to shadow it in the generated unit.
 
 ### Register Telegram button
 

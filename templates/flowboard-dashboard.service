@@ -1,6 +1,6 @@
 # Systemd user service for FlowBoard dashboard
-# Copy to ~/.local/share/systemd/user/dashboard.service
-# Then: systemctl --user daemon-reload && systemctl --user enable --now dashboard
+# Copy to ~/.config/systemd/user/flowboard-dashboard.service
+# Then: systemctl --user daemon-reload && systemctl --user enable --now flowboard-dashboard
 
 [Unit]
 Description=FlowBoard Project Dashboard
