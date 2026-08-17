@@ -44,6 +44,15 @@ const validTask = (overrides = {}) => ({
   title: 'Test task',
   status: 'open',
   blocked: false,
+  workState: 'working',
+  workStateDetails: {
+    reason: null,
+    waitingFor: null,
+    responsible: null,
+    checkAgainAt: null,
+    setAt: null,
+  },
+  stuckIndicator: null,
   priority: 'medium',
   parentId: null,
   subtaskIds: [],
@@ -135,6 +144,37 @@ await expectProtocol(() => fetchActiveProjectForAgent('main'), 'status activePro
 // Tasks: all fields consumed by the board are validated before publication.
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask()] });
 assert.deepEqual(await fetchTasksForProject('demo'), [validTask()]);
+const canonicalTask = validTask({
+  workState: 'waiting',
+  workStateDetails: {
+    reason: 'Need approval',
+    waitingFor: 'reviewer',
+    responsible: 'human',
+    checkAgainAt: '2026-08-18T09:00:00.000Z',
+    setAt: '2026-08-17T17:00:00.000Z',
+  },
+  stuckIndicator: { id: 'si-1', message: 'Needs attention', actions: {} },
+});
+globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [canonicalTask] });
+assert.deepEqual(await fetchTasksForProject('demo'), [canonicalTask],
+  'tasks accept canonical workState, details, and transient indicator');
+const contractTask = validTask({
+  stuckIndicator: {
+    id: 'si-contract',
+    message: 'Needs attention',
+    actions: {
+      clear: {
+        action: 'clear',
+        method: 'POST',
+        path: '/api/projects/demo/tasks/T-001/stuck-indicator/clear',
+        body: { indicatorId: 'si-contract', revision: 'r1' },
+      },
+    },
+  },
+});
+globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [contractTask] });
+assert.deepEqual(await fetchTasksForProject('demo'), [contractTask],
+  'tasks accept only the exact project/task-bound action contract');
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask({ staleAfterMinutes: 1 })] });
 assert.deepEqual(
   await fetchTasksForProject('demo'),
@@ -149,6 +189,66 @@ for (const [label, payload] of [
   ['tasks rejects an unknown priority enum', { ok: true, tasks: [validTask({ priority: 'critical' })] }],
   ['tasks validates subtaskIds as strings', { ok: true, tasks: [validTask({ subtaskIds: ['T-001-1', null] })] }],
   ['tasks validates tags as strings', { ok: true, tasks: [validTask({ tags: ['frontend', 42] })] }],
+  ['tasks rejects contradictory blocked projection', {
+    ok: true,
+    tasks: [validTask({ workState: 'waiting', blocked: true })],
+  }],
+  ['tasks rejects unknown canonical workState', {
+    ok: true,
+    tasks: [validTask({ workState: 'stalled' })],
+  }],
+  ['tasks rejects malformed workStateDetails', {
+    ok: true,
+    tasks: [validTask({ workState: 'paused', workStateDetails: { responsible: 42 } })],
+  }],
+  ['tasks rejects missing canonical workState', {
+    ok: true,
+    tasks: [validTask({ workState: undefined })],
+  }],
+  ['tasks rejects missing canonical workStateDetails', {
+    ok: true,
+    tasks: [validTask({ workStateDetails: undefined })],
+  }],
+  ['tasks rejects indicator arrays', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: [{ id: 'phantom' }] })],
+  }],
+  ['tasks rejects destructive indicator actions', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-destructive',
+      actions: {
+        retry: { method: 'POST', path: '/api/tasks/T-001/stuck/retry', body: { workState: 'working' } },
+      },
+    } })],
+  }],
+  ['tasks rejects external indicator action paths', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-external',
+      actions: {
+        clear: { method: 'POST', path: 'https://evil.example/clear' },
+      },
+    } })],
+  }],
+  ['tasks rejects generic same-origin indicator action paths', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-generic',
+      actions: {
+        clear: { action: 'clear', method: 'POST', path: '/api/tasks/T-001/stuck/clear', body: { note: 'generic' } },
+      },
+    } })],
+  }],
+  ['tasks requires explicit method and action fields', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-implicit',
+      actions: {
+        retry: { path: '/api/projects/demo/tasks/T-001/stuck-indicator/retry' },
+      },
+    } })],
+  }],
   ['tasks rejects staleAfterMinutes zero', {
     ok: true,
     tasks: [validTask({ staleAfterMinutes: 0 })],

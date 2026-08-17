@@ -1,7 +1,7 @@
 # ADR-0009: `blocked` is a flag, not a status
 
 ## Status
-Accepted
+Superseded by [ADR-0031](0031-canonical-work-state-and-transient-indicator.md)
 
 ## Date
 2026-04-01
@@ -38,6 +38,10 @@ The status enum (`VALID_STATUSES` in `dashboard/hzl-service.js`) deliberately ex
 - **Counterintuitive for newcomers.** Anyone familiar with Trello-style Kanban will look for a Blocked column. A short note in the Kanban concept doc and the in-app filter UI makes the pattern discoverable. New contributors should be referred to this ADR if they propose adding a Blocked column.
 - **Counts on per-project task summaries are two-axis.** "5 in-progress" and "2 blocked" can overlap (a task can be both). UIs and reports must clarify whether "in-progress" includes blocked or excludes it. The task-status-summary in the bootstrap document lists them separately.
 - **Migration from Blocked-as-column would be schema work.** If a future redesign decides to reverse this (e.g. for compliance reasons), the migration path is well-defined: enumerate all `task.blocked === true` rows, set their status to a new `blocked` value, and clear the flag. No data is lost.
+
+ADR-0031 keeps the lifecycle/column decision intact but amends the execution
+context: `blocked` remains a compatibility projection while the canonical
+four-value `workState` carries the additional context and timestamps.
 
 ## See also
 

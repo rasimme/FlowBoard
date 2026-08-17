@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, Lock, Unlock, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw, FolderInput } from 'lucide-react';
+import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw, FolderInput } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import Button from './Button.jsx';
-import Badge from './Badge.jsx';
 import Input from './Input.jsx';
 import Textarea from './Textarea.jsx';
 import Popover from './Popover.jsx';
@@ -15,12 +14,18 @@ import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
+import WorkStatePicker from './WorkStatePicker.jsx';
+import StuckIndicator from './StuckIndicator.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 import { apiJson as apiFetch } from '../utils/apiFetch.js';
 import { fetchTasksForProject } from '../utils/dashboardApi.js';
+import {
+  buildStuckIndicatorActionRequest,
+  normalizeTaskWorkState,
+} from '../utils/workState.js';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
 // critical parts are the resets (`border-0 outline-none`) — without
@@ -190,10 +195,9 @@ export default function DetailPanel() {
   const [headerPopover, setHeaderPopover] = useState({ type: null, rect: null });
   // T-161-4 Zone 2: Quick-Action state
   const [routePopover, setRoutePopover] = useState({ open: false, rect: null });
-  const [blockReasonOpen, setBlockReasonOpen] = useState(false);
-  const [blockReasonText, setBlockReasonText] = useState('');
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [busyStuckAction, setBusyStuckAction] = useState(null);
   // T-161-4 Zone 3: description inline-edit
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescription, setEditDescription] = useState('');
@@ -223,13 +227,12 @@ export default function DetailPanel() {
   const resetPanelOverlays = useCallback(() => {
     setIsEditingTitle(false);
     setIsEditingDescription(false);
-    setBlockReasonOpen(false);
     setArchiveConfirmOpen(false);
     setHeaderPopover({ type: null, rect: null });
     setRoutePopover({ open: false, rect: null });
     setEditTitle('');
     setEditDescription('');
-    setBlockReasonText('');
+    setBusyStuckAction(null);
     stickToBottomRef.current = true;
   }, []);
 
@@ -290,7 +293,10 @@ export default function DetailPanel() {
       if (!prev) return prev; // initial load owns the first set
       // Cheap change check on the fields the panel renders.
       const same = prev.status === live.status && prev.priority === live.priority
-        && prev.blocked === live.blocked && prev.agent === live.agent
+        && prev.blocked === live.blocked && prev.workState === live.workState
+        && JSON.stringify(prev.workStateDetails || null) === JSON.stringify(live.workStateDetails || null)
+        && JSON.stringify(prev.stuckIndicator || null) === JSON.stringify(live.stuckIndicator || null)
+        && prev.agent === live.agent
         && prev.routedAgent === live.routedAgent && prev.title === live.title
         && prev.specFile === live.specFile && prev.completed === live.completed
         && (prev.subtaskIds || []).join(',') === (live.subtaskIds || []).join(',');
@@ -428,7 +434,8 @@ export default function DetailPanel() {
   async function syncActionResult(result, fallbackTask = taskRef.current) {
     if (!result?.ok) throw new Error(result?.error || 'Unknown error');
     if (result.task) {
-      return syncPanelTask({ ...(fallbackTask || {}), ...result.task });
+      const merged = { ...(fallbackTask || {}), ...result.task };
+      return syncPanelTask(merged.workState ? normalizeTaskWorkState(merged) : merged);
     }
     await refreshSharedTasks();
     return taskRef.current;
@@ -508,6 +515,51 @@ export default function DetailPanel() {
     }
   }
 
+  async function handleWorkStateChange(nextWorkState, nextDetails) {
+    const t = taskRef.current;
+    if (!t) return false;
+    try {
+      const result = await taskActions.updateWorkState(t.id, nextWorkState, nextDetails);
+      await syncActionResult(result, taskRef.current || t);
+      loadActivity();
+      showToast(`Work state: ${nextWorkState}`, 'success');
+      return result;
+    } catch (err) {
+      // Work-state mutations do not patch shared state optimistically. Re-select
+      // the current shared value instead of restoring this handler's stale
+      // snapshot; a newer external state may have arrived while the PUT was
+      // pending.
+      const current = getTasks().find((candidate) => candidate.id === t.id);
+      if (current) syncPanelTask(current);
+      showToast('Work-state update failed: ' + (err.message || 'Unknown'), 'error');
+      throw err;
+    }
+  }
+
+  async function handleStuckIndicatorAction(action, indicator) {
+    const t = taskRef.current;
+    if (!t || busyStuckAction) return false;
+    // Project-scoped task list responses do not repeat the project name. Add
+    // the authoritative panel context for exact action-route validation; the
+    // builder must derive its expected path from this passed task identity.
+    const request = buildStuckIndicatorActionRequest({ ...t, project }, indicator, action);
+    if (!request) return false;
+    setBusyStuckAction(action);
+    try {
+      const result = await taskActions.runTransientIndicatorAction(t.id, request);
+      await syncActionResult(result, taskRef.current || t);
+      loadActivity();
+      return result;
+    } catch (err) {
+      const current = getTasks().find((candidate) => candidate.id === t.id);
+      if (current) syncPanelTask(current);
+      showToast(`${action === 'retry' ? 'Retry' : 'Clear'} failed: ${err.message || 'Unknown'}`, 'error');
+      throw err;
+    } finally {
+      setBusyStuckAction(null);
+    }
+  }
+
   function openHeaderPopover(e, type) {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
@@ -571,68 +623,6 @@ export default function DetailPanel() {
       }
     } catch (err) {
       showToast('Failed to create spec: ' + (err.message || 'Unknown'), 'error');
-    }
-  }
-
-  // Block-with-reason (design doc §4.2 / Z2b).
-  function startBlock() {
-    setBlockReasonText('');
-    setBlockReasonOpen(true);
-  }
-  async function confirmBlock() {
-    const t = taskRef.current;
-    if (!t) return;
-    const reason = blockReasonText.trim();
-    setBlockReasonOpen(false);
-    const oldBlocked = t.blocked;
-    // Optimistic update plus authoritative merge from server response so
-    // state.tasks and the local view agree — without this the app-state
-    // poll can race and re-paint the old blocked=true.
-    syncPanelTask({ ...t, blocked: true });
-    try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
-        method: 'PUT',
-        body: { blocked: true },
-      });
-      if (res?.error) throw new Error(res.error);
-      if (res.task) {
-        mergeTaskResponse(res, t);
-      }
-      if (reason) {
-        try {
-          await apiFetch(`/projects/${project}/tasks/${t.id}/comment`, {
-            method: 'POST',
-            body: { message: `Blocked: ${reason}`, author: currentAgent() },
-          });
-          loadActivity();
-        } catch { /* comment is optional */ }
-      }
-      addSyntheticItem('status', reason ? `Blocked - ${reason}` : 'Blocked');
-    } catch (err) {
-      syncPanelTask({ ...t, blocked: oldBlocked });
-      showToast('Block failed: ' + (err.message || 'Unknown'), 'error');
-    }
-  }
-  async function handleUnblock() {
-    const t = taskRef.current;
-    if (!t) return;
-    const oldBlocked = t.blocked;
-    syncPanelTask({ ...t, blocked: false });
-    try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
-        method: 'PUT',
-        body: { blocked: false },
-      });
-      if (res?.error) throw new Error(res.error);
-      if (res.task) {
-        mergeTaskResponse(res, t);
-      }
-      // hzl-core emits a task_updated event for the blocked flag
-      // change; /events picks it up. Refresh now for immediate feedback.
-      loadActivity();
-    } catch (err) {
-      syncPanelTask({ ...t, blocked: oldBlocked });
-      showToast('Unblock failed: ' + (err.message || 'Unknown'), 'error');
     }
   }
 
@@ -708,33 +698,6 @@ export default function DetailPanel() {
       close();
     } catch (err) {
       showToast('Delete failed: ' + (err.message || 'Unknown'), 'error');
-    }
-  }
-
-  async function handleToggleBlocked() {
-    const t = taskRef.current;
-    if (!t) return;
-    const oldBlocked = t.blocked;
-
-    const updated = { ...t, blocked: !t.blocked };
-    syncPanelTask(updated);
-
-    try {
-      const res = await apiFetch(`/projects/${project}/tasks/${t.id}`, {
-        method: 'PUT',
-        body: { blocked: updated.blocked },
-      });
-      if (res?.error && !res.ok) throw new Error(res.error || 'Update failed');
-      mergeTaskResponse(res, updated);
-      addSyntheticItem('status', updated.blocked ? 'Task blocked' : 'Task unblocked');
-      showToast(updated.blocked ? 'Task blocked' : 'Task unblocked', 'success');
-    } catch (err) {
-      const reverted = { ...t, blocked: oldBlocked };
-      syncPanelTask(reverted);
-      if (err.message?.includes('503') || err.message?.includes('HZL not enabled')) {
-        setHzlAvailable(false);
-      }
-      showToast('Failed to update blocked status: ' + (err.message || 'Unknown error'), 'error');
     }
   }
 
@@ -1010,6 +973,12 @@ export default function DetailPanel() {
               )}
             </div>
           )}
+          {task && hzlAvailable && showStatusRail(task) && (
+            <WorkStatePicker
+              task={task}
+              onChange={handleWorkStateChange}
+            />
+          )}
           {taskProgress !== null && (
             <div className="mt-3 rounded-md border border-border bg-bg-accent px-3 py-2">
               <div className="flex items-center justify-between gap-3 mb-1.5">
@@ -1059,7 +1028,7 @@ export default function DetailPanel() {
           </Popover>
         </div>
 
-        {/* T-161-4 Zone 2 — Quick Actions: Route / Spec / Block on the
+        {/* T-161-4 Zone 2 — Quick Actions: Route / Spec on the
             left, Archive / Delete on the right. Only rendered for
             non-trashed tasks; trashed tasks (opened from the Trash panel
             or via direct link) shouldn't expose these admin actions. */}
@@ -1098,26 +1067,6 @@ export default function DetailPanel() {
                   aria-label={task.specFile && task.specExists !== false ? 'Open spec' : 'Create spec'}
                 >
                   {task.specFile && task.specExists !== false ? <FileText size={14} /> : <FilePlus size={14} />}
-                </button>
-              </Tooltip>
-              {/* Block / Unblock — active state mirrors the accent/danger
-                  bg+border treatment used by the Spec button. */}
-              <Tooltip content={task.blocked ? 'Unblock' : 'Block (with optional reason)'}>
-                <button
-                  type="button"
-                  onClick={task.blocked ? handleUnblock : startBlock}
-                  className={[
-                    ICON_BTN_BASE,
-                    // Active state uses the same accent tinting as the
-                    // Spec button so all "active / engaged" icon buttons
-                    // in the panel share the red family.
-                    task.blocked
-                      ? 'text-accent bg-accent-subtle border-accent-subtle hover:brightness-125'
-                      : 'border-transparent bg-transparent text-muted hover:text-text hover:bg-bg-hover',
-                  ].join(' ')}
-                  aria-label={task.blocked ? 'Unblock' : 'Block'}
-                >
-                  {task.blocked ? <Unlock size={14} /> : <Lock size={14} />}
                 </button>
               </Tooltip>
             </div>
@@ -1215,31 +1164,6 @@ export default function DetailPanel() {
             </Popover.Option>
           )}
         </Popover>
-
-        {/* Block-with-reason inline input. Uses the shared Input + Button
-            primitives in their compact size so the row stays consistent
-            with the rest of the app and doesn't dominate the panel. */}
-        {blockReasonOpen && (
-          <div className="px-4 py-3 border-b border-border bg-bg-accent">
-            <div className="text-xs text-muted mb-2">Why is this blocked? (optional)</div>
-            <div className="flex gap-2 items-center">
-              <Input
-                size="sm"
-                type="text"
-                autoFocus
-                value={blockReasonText}
-                onChange={(e) => setBlockReasonText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') confirmBlock();
-                  if (e.key === 'Escape') setBlockReasonOpen(false);
-                }}
-                placeholder="e.g. waiting for API keys"
-              />
-              <Button size="xs" variant="ghost" onClick={() => setBlockReasonOpen(false)}>Cancel</Button>
-              <Button size="xs" variant="accent" onClick={confirmBlock}>Block</Button>
-            </div>
-          </div>
-        )}
 
         {/* Archive confirmation — lightweight inline confirm (reversible). */}
         {archiveConfirmOpen && (
@@ -1431,6 +1355,12 @@ export default function DetailPanel() {
 
           {/* Zone 4 - Activity Feed */}
           <div className="px-4 py-3">
+            <StuckIndicator
+              task={task}
+              project={project}
+              onAction={handleStuckIndicatorAction}
+              busyAction={busyStuckAction}
+            />
             <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Activity</div>
             {loading && (
               <div className="text-sm text-muted py-4 text-center">Loading...</div>

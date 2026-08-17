@@ -25,11 +25,19 @@ Without a single client mutation path, the same task can be represented differen
 
 The frontend runtime exists to make those actions boring:
 
-1. patch locally for immediate feedback
+1. patch locally for immediate feedback where the mutation has a safe
+   optimistic representation
 2. call the API
 3. merge the canonical response
-4. roll back if the request fails
+4. roll back only fields that still carry this mutation's optimistic values if
+   the request fails; newer external fields win
 5. notify every React surface through one bridge
+
+Canonical work-state updates are the explicit exception: they do not patch the
+shared task list optimistically. This prevents a rejected request from erasing
+an external update that happens to use the same work-state value but newer
+details; the canonical response or the next authoritative refresh converges
+the UI instead.
 
 ## Responsibility Split
 
@@ -82,12 +90,13 @@ The bootstrap module should not gain task mutation semantics.
 Every task mutation should follow the same sequence:
 
 1. Read the current task snapshot from the runtime bridge.
-2. Apply an optimistic patch to the shared local task list.
+2. Apply an optimistic patch to the shared local task list when the mutation
+   contract allows it. Work-state PUTs deliberately skip this step.
 3. Notify React immediately.
 4. Send the API request.
 5. Merge the canonical server response into shared state.
 6. Merge related records such as `parentUpdated`.
-7. Roll back the snapshot if the request fails.
+7. On failure, roll back only unchanged optimistic fields (or perform an authoritative refresh); never restore a whole stale snapshot over a newer external task update. Work-state failures leave the shared task list untouched by the failed mutation.
 8. Let background polling reconcile later as a safety net.
 
 Polling is reconciliation. It is not the primary state propagation mechanism for a local action.
@@ -132,11 +141,13 @@ The intended module boundary is:
 - `dashboard/src/utils/dashboardApi.js`
   - owns schema-validated projects, agents, status, tasks, and auth loaders
   - applies the shared API deadline and caller abort contract to every loader
+  - rejects task responses missing canonical work-state fields or returning an indicator array before publication
 - `dashboard/src/state/taskState.*`
   - pure operations for patch, merge, rollback, snapshots, and parent updates
 - `dashboard/src/state/taskMutations.*`
   - API-backed mutation wrappers for task actions
-  - applies optimistic patch first, then merges or rolls back
+  - applies optimistic patch first, then merges canonical responses or performs field-aware rollback
+  - executes only explicit backend-provided transient-indicator POST actions; it never falls back to a work-state PUT
 - `dashboard/src/hooks/useTaskActions.*`
   - React-facing API used by `TasksView`, `DetailPanel`, and later React-owned task surfaces
 

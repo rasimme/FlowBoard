@@ -320,4 +320,26 @@ const state = await import('./src/state/taskState.mjs')
   console.log('✅ patchTask tolerates non-array input')
 }
 
+// 28. A rejected optimistic mutation only rolls back fields that still carry
+// its optimistic value.  A newer external update must survive the rejection.
+{
+  const baseline = [{ id: 'A', workState: 'working', workStateDetails: { reason: null }, title: 'old' }]
+  const snap = state.snapshotTask(baseline, 'A')
+  const optimistic = state.patchTask(baseline, 'A', {
+    workState: 'waiting',
+    workStateDetails: { reason: 'optimistic' },
+  })
+  const external = state.patchTask(optimistic, 'A', {
+    workState: 'paused',
+    workStateDetails: { reason: 'newer external state' },
+  })
+  const rolled = state.rollbackOptimisticFields(external, snap, {
+    workState: 'waiting',
+    workStateDetails: { reason: 'optimistic' },
+  })
+  assert.equal(rolled[0].workState, 'paused')
+  assert.equal(rolled[0].workStateDetails.reason, 'newer external state')
+  console.log('✅ optimistic rollback preserves newer external fields')
+}
+
 console.log('✅ all task-state tests passed')
