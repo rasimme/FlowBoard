@@ -2,14 +2,18 @@
 // Regression coverage for scripts/setup.mjs macOS launchd configuration.
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import {
+  chmodSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
+  lstatSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,6 +53,10 @@ function makeHarness(initialPlist) {
   const home = join(dir, 'home');
   const plistDir = join(home, 'Library', 'LaunchAgents');
   const plistPath = join(plistDir, `${LABEL}.plist`);
+  const logDir = join(home, 'Library', 'Logs', 'FlowBoard');
+  const logPath = join(logDir, 'flowboard-dashboard.log');
+  const legacyArchivePath = join(logDir, 'flowboard-dashboard.legacy.log');
+  const legacyLogPath = join(dir, 'legacy-flowboard-dashboard.log');
   mkdirSync(bin, { recursive: true });
   mkdirSync(plistDir, { recursive: true });
   writeFileSync(plistPath, initialPlist, { mode: 0o644 });
@@ -84,8 +92,33 @@ process.exit(0);
       HOME: home,
       NODE_ENV: 'test',
       FLOWBOARD_SETUP_TEST_PLATFORM: 'darwin',
+      FLOWBOARD_SETUP_TEST_LEGACY_LOG_PATH: legacyLogPath,
       FAKE_COMMAND_LOG: commandLog,
       PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter),
+    },
+    logDir,
+    logPath,
+    legacyArchivePath,
+    legacyLogPath,
+    artifact() {
+      const safeStat = path => {
+        try { return lstatSync(path); } catch { return null; }
+      };
+      const logStat = safeStat(logPath);
+      const legacyStat = safeStat(legacyLogPath);
+      const archiveStat = safeStat(legacyArchivePath);
+      return {
+        commands: readLines(commandLog),
+        plist: readFileSync(plistPath, 'utf8'),
+        mode: statSync(plistPath).mode & 0o777,
+        logMode: logStat && !logStat.isSymbolicLink() ? logStat.mode & 0o777 : null,
+        logIsSymlink: Boolean(logStat?.isSymbolicLink()),
+        logDirMode: existsSync(logDir) ? statSync(logDir).mode & 0o777 : null,
+        legacyExists: Boolean(legacyStat),
+        legacyIsSymlink: Boolean(legacyStat?.isSymbolicLink()),
+        legacyArchiveMode: archiveStat && !archiveStat.isSymbolicLink() ? archiveStat.mode & 0o777 : null,
+        legacyArchiveContent: archiveStat && !archiveStat.isSymbolicLink() ? readFileSync(legacyArchivePath, 'utf8') : null,
+      };
     },
     cleanup() {
       rmSync(dir, { recursive: true, force: true });
@@ -93,11 +126,12 @@ process.exit(0);
   };
 }
 
-async function runSetup(args, initialPlist, extraEnv = {}) {
+async function runSetup(args, initialPlist, extraEnv = {}, options = {}) {
   const server = createServer((req, res) => {
     if (req.url === '/api/health') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end('{"ok":true}');
+      const statusCode = options.healthStatus || 200;
+      res.writeHead(statusCode, { 'content-type': 'application/json' });
+      res.end(statusCode === 200 ? '{"ok":true}' : '{"ok":false}');
       return;
     }
     res.writeHead(404);
@@ -106,6 +140,7 @@ async function runSetup(args, initialPlist, extraEnv = {}) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   const harness = makeHarness(initialPlist.replaceAll('__FLOWBOARD_PORT__', String(port)));
+  if (options.prepare) options.prepare(harness);
 
   try {
     return await new Promise((resolve, reject) => {
@@ -126,9 +161,8 @@ async function runSetup(args, initialPlist, extraEnv = {}) {
         code,
         stdout,
         stderr,
-        commands: readLines(harness.commandLog),
-        plist: readFileSync(harness.plistPath, 'utf8'),
-        mode: statSync(harness.plistPath).mode & 0o777,
+        ...harness.artifact(),
+        ...(options.capture ? options.capture(harness) : {}),
       }));
     });
   } finally {
@@ -157,6 +191,8 @@ const existingPlist = `<?xml version="1.0" encoding="UTF-8"?>
 
 console.log('# setup.mjs macOS launchd configuration');
 
+let generatedLaunchdPlist = '';
+
 {
   const launchctlStdoutSecret = 'adversarial-launchctl-stdout-secret';
   const launchctlStderrSecret = 'adversarial-launchctl-stderr-secret';
@@ -166,6 +202,7 @@ console.log('# setup.mjs macOS launchd configuration');
     FAKE_LAUNCHCTL_PRINT_STDOUT: launchctlStdoutSecret,
     FAKE_LAUNCHCTL_PRINT_STDERR: launchctlStderrSecret,
   });
+  generatedLaunchdPlist = result.plist;
   ok(result.code === 0, 'launchd update exits successfully');
   assert.deepEqual(result.commands.map(line => line.replace(/gui\/\d+/g, 'gui/UID')), [
     'npm --version',
@@ -196,6 +233,12 @@ console.log('# setup.mjs macOS launchd configuration');
   ok(!result.stdout.includes(launchctlStdoutSecret) && !result.stderr.includes(launchctlStdoutSecret), 'launchctl print stdout is never relayed');
   ok(!result.stdout.includes(launchctlStderrSecret) && !result.stderr.includes(launchctlStderrSecret), 'launchctl print stderr is never relayed');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'launchd remote configuration is diagnosed');
+  const expectedLogPath = join(result.plist.match(/<key>StandardOutPath<\/key><string>(.*?)<\/string>/)?.[1] || '');
+  ok(expectedLogPath.endsWith('/Library/Logs/FlowBoard/flowboard-dashboard.log'), 'launchd writes to the owner-scoped Library log path');
+  ok(!result.plist.includes('/tmp/flowboard-dashboard.log'), 'launchd no longer uses the predictable shared /tmp log');
+  ok(result.plist.includes('<key>Umask</key><integer>63</integer>'), 'launchd service enforces owner-only file creation via umask 077');
+  ok(result.logDirMode === 0o700, 'launchd log directory is owner-only');
+  ok(result.logMode === 0o600, 'launchd log file is pre-created owner-only');
 }
 
 {
@@ -227,6 +270,95 @@ console.log('# setup.mjs macOS launchd configuration');
   ok(result.stdout.includes('launchctl bootstrap'), 'launchd dry-run shows service bootstrap');
   ok(result.stdout.includes('launchctl print'), 'launchd dry-run shows loaded-service verification');
   ok(!result.stdout.includes('test-launchd-secret'), 'launchd dry-run never prints preserved secrets');
+}
+
+{
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    prepare(harness) {
+      mkdirSync(harness.logDir, { recursive: true, mode: 0o777 });
+      writeFileSync(harness.logPath, 'pre-created log\n', { mode: 0o666 });
+      chmodSync(harness.logDir, 0o777);
+      chmodSync(harness.logPath, 0o666);
+    },
+  });
+  ok(result.code === 0, 'same-owner pre-created launchd log is secured before use');
+  ok(result.logDirMode === 0o700 && result.logMode === 0o600, 'pre-created log path permissions are tightened to owner-only');
+}
+
+{
+  let victimPath;
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    prepare(harness) {
+      victimPath = join(harness.home, 'victim.log');
+      mkdirSync(harness.logDir, { recursive: true, mode: 0o700 });
+      writeFileSync(victimPath, 'must remain untouched\n', { mode: 0o644 });
+      chmodSync(victimPath, 0o644);
+      symlinkSync(victimPath, harness.logPath);
+    },
+    capture() {
+      return {
+        victimContent: readFileSync(victimPath, 'utf8'),
+        victimMode: statSync(victimPath).mode & 0o777,
+      };
+    },
+  });
+  ok(result.code === 1, 'pre-created symlink at the secure log path fails closed');
+  ok(result.logIsSymlink, 'unsafe secure-log symlink is not replaced or followed');
+  ok(result.victimContent === 'must remain untouched\n' && result.victimMode === 0o644, 'secure-log symlink target is not modified');
+  ok(!result.commands.some(line => line.startsWith('launchctl ')), 'unsafe log pre-creation aborts before stopping or bootstrapping launchd');
+}
+
+{
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    prepare(harness) {
+      writeFileSync(harness.legacyLogPath, 'legacy private output\n', { mode: 0o644 });
+      chmodSync(harness.legacyLogPath, 0o644);
+    },
+  });
+  ok(result.code === 0, 'owner-owned legacy /tmp-style log migrates safely');
+  ok(!result.legacyExists, 'migrated legacy log is removed from the shared path');
+  ok(result.legacyArchiveMode === 0o600, 'migrated legacy log archive is owner-only');
+  ok(result.legacyArchiveContent === 'legacy private output\n', 'legacy log migration preserves existing diagnostics');
+}
+
+{
+  let victimPath;
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    prepare(harness) {
+      victimPath = join(harness.home, 'legacy-victim.log');
+      writeFileSync(victimPath, 'legacy victim\n', { mode: 0o644 });
+      chmodSync(victimPath, 0o644);
+      symlinkSync(victimPath, harness.legacyLogPath);
+    },
+    capture() {
+      return {
+        victimContent: readFileSync(victimPath, 'utf8'),
+        victimMode: statSync(victimPath).mode & 0o777,
+      };
+    },
+  });
+  ok(result.code === 0, 'legacy shared-path symlink does not block migration to the secure log');
+  ok(result.legacyExists && result.legacyIsSymlink, 'legacy shared-path symlink is left untouched instead of followed');
+  ok(result.victimContent === 'legacy victim\n' && result.victimMode === 0o644, 'legacy symlink target remains untouched and world-readable mode is not changed');
+  ok(result.logMode === 0o600, 'secure owner-only log is used despite hostile legacy pre-creation');
+}
+
+{
+  const result = await runSetup(['--update'], existingPlist, {
+    FLOWBOARD_SETUP_TEST_HEALTH_ATTEMPTS: '1',
+  }, {
+    healthStatus: 503,
+  });
+  ok(result.code === 1, 'macOS health-check failure is surfaced');
+  ok(result.stdout.includes('Library/Logs/FlowBoard/flowboard-dashboard.log'), 'macOS failure points to the secure launchd log');
+  ok(result.stdout.includes(`launchctl print gui/`) && result.stdout.includes(LABEL), 'macOS failure identifies the launchd job');
+  ok(!result.stdout.includes('journalctl --user') && !result.stdout.includes('/tmp/flowboard-dashboard.log'), 'macOS failure does not mention systemd or the obsolete shared log');
+}
+
+{
+  const plutil = spawnSync('plutil', ['-lint', '-'], { input: generatedLaunchdPlist, encoding: 'utf8' });
+  if (plutil.error?.code === 'ENOENT') console.log('  # plutil unavailable; launchd plist lint skipped');
+  else ok(plutil.status === 0, 'generated launchd plist passes plutil -lint');
 }
 
 console.log(`\n# results: ${pass} passed, ${fail} failed`);

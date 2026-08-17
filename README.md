@@ -149,7 +149,9 @@ variables never replace persisted update values implicitly. Persist a named,
 allowlisted shell value by adding `--override-env=VARIABLE` to the update
 command. Rotate `JWT_SECRET` only with
 `node scripts/setup.mjs --rotate-secret`; rotation re-registers and restarts the
-service immediately.
+service immediately. On macOS, setup writes launchd output to the owner-only
+`~/Library/Logs/FlowBoard/flowboard-dashboard.log` (directory `0700`, file
+`0600`, service umask `077`) rather than a shared `/tmp` path.
 Prefer the manual path? It's below.
 
 ### Updating

@@ -22,7 +22,7 @@ After `openclaw plugins update flowboard` (or a `git pull`), the new source is o
 ## Consequences
 
 - The update path is intentionally narrow (fixed command, fail-silent status) — a safety property, not a limitation.
-- First install and update are intentionally distinct: `--update` refuses to create a missing standard service. Generated service files are owner-only, autostart is verified after registration, and values are never logged.
+- First install and update are intentionally distinct: `--update` refuses to create a missing standard service. Generated service files are owner-only, autostart is verified after registration, and values are never logged. The systemd merge applies `UnsetEnvironment=` after all inline/file sources and fails on unsupported specifiers; macOS service output lives in a no-follow, owner-only `~/Library/Logs/FlowBoard` path with umask `077`.
 - A restart briefly bumps the live service; in a shared/multi-agent install, do it when the checkout is clean.
 - Documented for users in [Update FlowBoard](../guide/how-to/update-flowboard.md).
 

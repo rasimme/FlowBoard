@@ -39,12 +39,15 @@ launchctl print gui/$(id -u)/ai.openclaw.flowboard-dashboard
 This direct operator command can display the job environment, including
 secrets; do not paste its raw output into tickets or chat. Setup itself discards
 all `launchctl print` output and reports only success/failure. The plist keeps
-both `RunAtLoad` and `KeepAlive`. On Linux, verify and restart the user unit:
+both `RunAtLoad` and `KeepAlive`. Its owner-only log is
+`~/Library/Logs/FlowBoard/flowboard-dashboard.log`; setup no longer points
+launchd at a shared `/tmp` file. On Linux, verify and restart the user unit:
 
 ```bash
 systemctl --user is-enabled flowboard-dashboard
 systemctl --user restart flowboard-dashboard
 systemctl --user status flowboard-dashboard
+journalctl --user -u flowboard-dashboard.service -n 100 --no-pager
 ```
 
 `setup.mjs` checks the loaded/enabled state and then polls

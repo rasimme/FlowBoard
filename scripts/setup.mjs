@@ -20,8 +20,14 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  closeSync,
+  constants,
   existsSync,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -47,6 +53,9 @@ const ROTATE_SECRET = process.argv.includes('--rotate-secret');
 // Rotation is itself a mutating service operation. It must never be skipped by
 // the healthy-service idempotency guard.
 const FORCE = process.argv.includes('--force') || UPDATE || ROTATE_SECRET;
+const HEALTH_ATTEMPTS = process.env.NODE_ENV === 'test' && /^\d+$/.test(process.env.FLOWBOARD_SETUP_TEST_HEALTH_ATTEMPTS || '')
+  ? Math.max(1, Number(process.env.FLOWBOARD_SETUP_TEST_HEALTH_ATTEMPTS))
+  : 20;
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   console.log('Usage: node scripts/setup.mjs [--dry-run] [--force] [--update] [--rotate-secret] [--override-env KEY[,KEY...]]');
   console.log('  (no flag)       first-time bring-up: deps, build, service, health check');
@@ -93,6 +102,12 @@ const SERVICE_LABEL = 'ai.openclaw.flowboard-dashboard';
 const SERVICE_NAME = 'flowboard-dashboard';
 const launchdPlistDir = join(homedir(), 'Library', 'LaunchAgents');
 const launchdPlistPath = join(launchdPlistDir, `${SERVICE_LABEL}.plist`);
+const launchdLogDir = join(homedir(), 'Library', 'Logs', 'FlowBoard');
+const launchdLogPath = join(launchdLogDir, 'flowboard-dashboard.log');
+const launchdLegacyLogPath = process.env.NODE_ENV === 'test' && process.env.FLOWBOARD_SETUP_TEST_LEGACY_LOG_PATH
+  ? process.env.FLOWBOARD_SETUP_TEST_LEGACY_LOG_PATH
+  : '/tmp/flowboard-dashboard.log';
+const launchdLegacyArchivePath = join(launchdLogDir, 'flowboard-dashboard.legacy.log');
 const systemdUnitDir = join(homedir(), '.config', 'systemd', 'user');
 const systemdUnitPath = join(systemdUnitDir, `${SERVICE_NAME}.service`);
 
@@ -227,6 +242,88 @@ function splitSystemdWords(value) {
   if (escaping) word += '\\';
   if (started) words.push(word);
   return words;
+
+function unescapeSystemdString(value) {
+  let result = '';
+  let i = 0;
+  while (i < value.length) {
+    if (value[i] === '\\' && i + 1 < value.length) {
+      const next = value[i + 1];
+      switch (next) {
+        case '\\': result += '\\'; i += 2; break;
+        case '"': result += '"'; i += 2; break;
+        case 'n': result += '\n'; i += 2; break;
+        case 'r': result += '\r'; i += 2; break;
+        case 't': result += '\t'; i += 2; break;
+        case 's': result += ' '; i += 2; break;
+        case 'x': {
+          if (i + 3 < value.length) {
+            const hex = value.slice(i + 2, i + 4);
+            const byte = parseInt(hex, 16);
+            if (!Number.isNaN(byte) && byte >= 0 && byte <= 255) {
+              result += String.fromCharCode(byte);
+              i += 4;
+              break;
+            }
+          }
+          throw new Error(`invalid escape sequence \\x at position ${i}; expected \\xHH`);
+        }
+        case 'u': {
+          if (i + 5 < value.length) {
+            const hex = value.slice(i + 2, i + 6);
+            const codepoint = parseInt(hex, 16);
+            if (!Number.isNaN(codepoint) && codepoint >= 0 && codepoint <= 0x10FFFF) {
+              result += String.fromCodePoint(codepoint);
+              i += 6;
+              break;
+            }
+          }
+          throw new Error(`invalid escape sequence \\u at position ${i}; expected \\uHHHH`);
+        }
+        case 'U': {
+          if (i + 9 < value.length) {
+            const hex = value.slice(i + 2, i + 10);
+            const codepoint = parseInt(hex, 16);
+            if (!Number.isNaN(codepoint) && codepoint >= 0 && codepoint <= 0x10FFFF) {
+              result += String.fromCodePoint(codepoint);
+              i += 10;
+              break;
+            }
+          }
+          throw new Error(`invalid escape sequence \\U at position ${i}; expected \\UHHHHHHHH`);
+        }
+        default:
+          throw new Error(`unsupported escape sequence \\${next} at position ${i}`);
+      }
+    } else {
+      result += value[i];
+      i += 1;
+    }
+  }
+  return result;
+}
+}
+
+function expandSupportedSystemdSpecifiers(value) {
+  const uid = typeof process.getuid === 'function' ? String(process.getuid()) : null;
+  let expanded = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char !== '%') {
+      expanded += char;
+      continue;
+    }
+    const specifier = value[index + 1];
+    if (specifier === '%') expanded += '%';
+    else if (specifier === 'h') expanded += homedir();
+    else if (specifier === 'U' && uid !== null) expanded += uid;
+    else {
+      const token = specifier === undefined ? '%' : `%${specifier}`;
+      throw new Error(`unsupported or incomplete systemd specifier ${JSON.stringify(token)}; setup supports only %%, %h and %U`);
+    }
+    index += 1;
+  }
+  return expanded;
 }
 
 function parseSystemdEnvironment(content) {
@@ -255,6 +352,24 @@ function parseSystemdEnvironment(content) {
       }
       continue;
     }
+    if (line.startsWith('UnsetEnvironment=')) {
+      const value = line.slice('UnsetEnvironment='.length).trim();
+      if (!value) {
+        events.push({ type: 'unset-environment-reset' });
+        continue;
+      }
+      const entries = splitSystemdWords(value).map((entry) => {
+        const unescapedEntry = unescapeSystemdString(entry);
+        const expandedEntry = expandSupportedSystemdSpecifiers(unescapedEntry);
+        const separator = expandedEntry.indexOf('=');
+        const key = separator < 0 ? expandedEntry : expandedEntry.slice(0, separator);
+        if (!VALID_ENV_KEY.test(key)) throw new Error(`invalid systemd UnsetEnvironment entry for ${JSON.stringify(key)}`);
+        if (separator < 0) return key;
+        return expandedEntry;
+      });
+      events.push({ type: 'unset-environment', entries });
+      continue;
+    }
     if (!line.startsWith('Environment=')) continue;
     const value = line.slice('Environment='.length).trim();
     if (!value) {
@@ -264,11 +379,13 @@ function parseSystemdEnvironment(content) {
     }
     const assignments = [];
     for (const assignment of splitSystemdWords(value)) {
-      const separator = assignment.indexOf('=');
+      const unescapedAssignment = unescapeSystemdString(assignment);
+      const expandedAssignment = expandSupportedSystemdSpecifiers(unescapedAssignment);
+      const separator = expandedAssignment.indexOf('=');
       if (separator <= 0) continue;
-      const key = assignment.slice(0, separator);
-      if (!VALID_ENV_KEY.test(key)) continue;
-      const entry = { key, value: assignment.slice(separator + 1) };
+      const key = expandedAssignment.slice(0, separator);
+      if (!VALID_ENV_KEY.test(key)) throw new Error(`invalid systemd Environment key ${JSON.stringify(key)}`);
+      const entry = { key, value: expandedAssignment.slice(separator + 1) };
       env[key] = entry.value;
       assignments.push(entry);
     }
@@ -277,9 +394,10 @@ function parseSystemdEnvironment(content) {
   return { env, environmentFiles, events };
 }
 
-function applySystemdEvents(initialEnv, initialEnvironmentFiles, events) {
+function applySystemdEvents(initialEnv, initialEnvironmentFiles, events, initialUnsetEnvironment = []) {
   let env = { ...initialEnv };
   let environmentFiles = [...initialEnvironmentFiles];
+  let unsetEnvironment = [...initialUnsetEnvironment];
   for (const event of events) {
     if (event.type === 'environment-reset') env = {};
     if (event.type === 'environment') {
@@ -287,8 +405,25 @@ function applySystemdEvents(initialEnv, initialEnvironmentFiles, events) {
     }
     if (event.type === 'environment-file-reset') environmentFiles = [];
     if (event.type === 'environment-file') environmentFiles.push(event.value);
+    if (event.type === 'unset-environment-reset') unsetEnvironment = [];
+    if (event.type === 'unset-environment') unsetEnvironment.push(...event.entries);
   }
-  return { env, environmentFiles };
+  return { env, environmentFiles, unsetEnvironment };
+}
+
+function applySystemdUnsetEnvironment(environment, entries) {
+  const env = { ...environment };
+  for (const entry of entries) {
+    const separator = entry.indexOf('=');
+    if (separator < 0) {
+      delete env[entry];
+      continue;
+    }
+    const key = entry.slice(0, separator);
+    const expectedValue = entry.slice(separator + 1);
+    if (env[key] === expectedValue) delete env[key];
+  }
+  return env;
 }
 
 function parseSystemdEnvironmentFile(content) {
@@ -309,13 +444,8 @@ function parseSystemdEnvironmentFile(content) {
 }
 
 function expandSystemdEnvironmentFilePath(value) {
-  const literalPercent = '\u0000';
-  const expanded = value
-    .replace(/%%/g, literalPercent)
-    .replace(/%h/g, homedir())
-    .replace(/%U/g, typeof process.getuid === 'function' ? String(process.getuid()) : '')
-    .replace(new RegExp(literalPercent, 'g'), '%');
-  if (/%[A-Za-z]/.test(expanded) || /[*?\[]/.test(expanded) || !isAbsolute(expanded)) return null;
+  const expanded = expandSupportedSystemdSpecifiers(value);
+  if (/[*?\[]/.test(expanded) || !isAbsolute(expanded)) return null;
   return expanded;
 }
 
@@ -360,6 +490,8 @@ function readExistingServiceConfig() {
         dropInEnv: {},
         dropInEvents: [],
         dropInKeys: new Set(),
+        baseUnsetEnvironment: [],
+        effectiveUnsetEnvironment: [],
         environmentFileEnv: {},
         environmentFileOwners: {},
         unresolvedEnvironmentFiles: [],
@@ -376,6 +508,8 @@ function readExistingServiceConfig() {
       dropInEnv: {},
       dropInEvents: [],
       dropInKeys: new Set(),
+      baseUnsetEnvironment: [],
+      effectiveUnsetEnvironment: [],
       environmentFileEnv: {},
       environmentFileOwners: {},
       unresolvedEnvironmentFiles: [],
@@ -387,16 +521,18 @@ function readExistingServiceConfig() {
   if (PLATFORM === 'linux') {
     let baseEnv = {};
     let environmentFiles = [];
-    let mergedState = { env: {}, environmentFiles: [] };
+    let baseUnsetEnvironment = [];
+    let mergedState = { env: {}, environmentFiles: [], unsetEnvironment: [] };
     const dropInEvents = [];
     const dropInKeys = new Set();
     const externalSources = [];
     const found = existsSync(systemdUnitPath);
     if (existsSync(systemdUnitPath)) {
       const parsed = parseSystemdEnvironment(readFileSync(systemdUnitPath, 'utf8'));
-      baseEnv = parsed.env;
-      environmentFiles = parsed.environmentFiles;
       mergedState = applySystemdEvents({}, [], parsed.events);
+      baseEnv = mergedState.env;
+      environmentFiles = mergedState.environmentFiles;
+      baseUnsetEnvironment = mergedState.unsetEnvironment;
     }
     const dropInDir = `${systemdUnitPath}.d`;
     if (existsSync(dropInDir)) {
@@ -410,7 +546,12 @@ function readExistingServiceConfig() {
             for (const assignment of event.assignments) dropInKeys.add(assignment.key);
           }
         }
-        mergedState = applySystemdEvents(mergedState.env, mergedState.environmentFiles, parsed.events);
+        mergedState = applySystemdEvents(
+          mergedState.env,
+          mergedState.environmentFiles,
+          parsed.events,
+          mergedState.unsetEnvironment,
+        );
       }
     }
     const environmentFileEntries = mergedState.environmentFiles.map(value => ({
@@ -419,16 +560,22 @@ function readExistingServiceConfig() {
     }));
     const externalFileConfig = readSystemdEnvironmentFiles(environmentFileEntries);
     externalSources.push(...environmentFileEntries.map(entry => `EnvironmentFile ${entry.value}`));
+    const effectiveEnv = applySystemdUnsetEnvironment(
+      { ...mergedState.env, ...externalFileConfig.env },
+      mergedState.unsetEnvironment,
+    );
     return {
       found,
       baseEnv,
       dropInEnv: mergedState.env,
       dropInEvents,
       dropInKeys,
+      baseUnsetEnvironment,
+      effectiveUnsetEnvironment: mergedState.unsetEnvironment,
       environmentFileEnv: externalFileConfig.env,
       environmentFileOwners: externalFileConfig.owners,
       unresolvedEnvironmentFiles: externalFileConfig.unresolved,
-      effectiveEnv: { ...mergedState.env, ...externalFileConfig.env },
+      effectiveEnv,
       environmentFiles,
       externalSources,
     };
@@ -439,6 +586,8 @@ function readExistingServiceConfig() {
     dropInEnv: {},
     dropInEvents: [],
     dropInKeys: new Set(),
+    baseUnsetEnvironment: [],
+    effectiveUnsetEnvironment: [],
     environmentFileEnv: {},
     environmentFileOwners: {},
     unresolvedEnvironmentFiles: [],
@@ -453,13 +602,28 @@ function mergePath(...values) {
   return [...new Set(parts)].join(delimiter);
 }
 
-function quoteSystemdEnvironment(key, value) {
-  const assignment = `${key}=${String(value)}`
+function escapeSystemdUnitString(value) {
+  return String(value)
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
+    .replace(/%/g, '%%')
     .replace(/\n/g, '\\n')
     .replace(/\r/g, '\\r');
-  return `Environment="${assignment}"`;
+}
+
+function quoteSystemdEnvironment(key, value) {
+  return `Environment="${escapeSystemdUnitString(`${key}=${String(value)}`)}"`;
+}
+
+function quoteSystemdUnsetEnvironmentEntry(entry) {
+  const escaped = escapeSystemdUnitString(entry);
+  return entry.includes('=') || /\s/.test(entry) ? `"${escaped}"` : escaped;
+}
+
+function formatSystemdUnsetEnvironment(entries) {
+  return entries.length > 0
+    ? `UnsetEnvironment=${entries.map(quoteSystemdUnsetEnvironmentEntry).join(' ')}`
+    : '';
 }
 
 function writeOwnerOnly(path, content) {
@@ -470,6 +634,100 @@ function writeOwnerOnly(path, content) {
   chmodSync(path, 0o600);
 }
 
+function currentUid() {
+  if (typeof process.getuid !== 'function') throw new Error('cannot verify owner without process.getuid()');
+  return process.getuid();
+}
+
+function ensureOwnerOnlyDirectory(path) {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  const stats = lstatSync(path);
+  if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error(`${path} must be a real directory, not a symlink or special file`);
+  if (stats.uid !== currentUid()) throw new Error(`${path} is not owned by the current user`);
+  chmodSync(path, 0o700);
+}
+
+function noFollowFlag() {
+  if (!Number.isInteger(constants.O_NOFOLLOW)) throw new Error('this platform cannot open files with O_NOFOLLOW');
+  return constants.O_NOFOLLOW;
+}
+
+function ensureOwnerOnlyRegularFile(path) {
+  const noFollow = noFollowFlag();
+  let fd;
+  try {
+    fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | noFollow, 0o600);
+    const stats = fstatSync(fd);
+    if (!stats.isFile()) throw new Error(`${path} is not a regular file`);
+    if (stats.uid !== currentUid()) throw new Error(`${path} is not owned by the current user`);
+    if (stats.nlink !== 1) throw new Error(`${path} has unexpected hard links`);
+    fchmodSync(fd, 0o600);
+  } catch (error) {
+    throw new Error(`refusing unsafe launchd log path ${path}: ${error.message}`);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function pathEntryExistsNoFollow(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function migrateLegacyLaunchdLog() {
+  let legacyStats;
+  try {
+    legacyStats = lstatSync(launchdLegacyLogPath);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return;
+    throw error;
+  }
+  if (legacyStats.isSymbolicLink() || !legacyStats.isFile() || legacyStats.uid !== currentUid()) {
+    log(`${c.warn} obsolete shared launchd log is not a current-user regular file; left untouched: ${launchdLegacyLogPath}`);
+    return;
+  }
+
+  const noFollow = noFollowFlag();
+  let fd;
+  try {
+    fd = openSync(launchdLegacyLogPath, constants.O_RDWR | noFollow);
+    const openedStats = fstatSync(fd);
+    if (!openedStats.isFile() || openedStats.uid !== currentUid() || openedStats.nlink !== 1) {
+      throw new Error('ownership, file type, or link count changed during inspection');
+    }
+    fchmodSync(fd, 0o600);
+
+    if (pathEntryExistsNoFollow(launchdLegacyArchivePath)) {
+      log(`${c.warn} obsolete shared launchd log was secured in place because ${launchdLegacyArchivePath} already exists`);
+      return;
+    }
+    const currentStats = lstatSync(launchdLegacyLogPath);
+    if (currentStats.dev !== openedStats.dev || currentStats.ino !== openedStats.ino) {
+      throw new Error('file changed during migration');
+    }
+    try {
+      renameSync(launchdLegacyLogPath, launchdLegacyArchivePath);
+      log(c.dim(`  migrated obsolete shared launchd log to ${launchdLegacyArchivePath}`));
+    } catch (error) {
+      if (error?.code !== 'EXDEV') throw error;
+      log(`${c.warn} obsolete shared launchd log was secured in place but could not be moved across filesystems`);
+    }
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function prepareLaunchdLogging() {
+  ensureOwnerOnlyDirectory(launchdLogDir);
+  migrateLegacyLaunchdLog();
+  ensureOwnerOnlyRegularFile(launchdLogPath);
+}
+
 let existingConfig;
 try {
   existingConfig = readExistingServiceConfig();
@@ -477,7 +735,8 @@ try {
   die(`could not read the existing service configuration safely: ${error.message}`);
 }
 if (UPDATE && !existingConfig.found) {
-  die(`--update requires an existing standard ${PLATFORM === 'darwin' ? 'launchd' : 'systemd'} service. Run setup without --update for a first install.`);
+  const serviceKind = PLATFORM === 'darwin' ? 'launchd' : PLATFORM === 'linux' ? 'systemd' : `${PLATFORM} managed`;
+  die(`--update requires an existing standard ${serviceKind} service. Run setup without --update for a first install.`);
 }
 
 const serviceEnv = { ...existingConfig.baseEnv };
@@ -550,12 +809,34 @@ if (PLATFORM === 'linux' && existingConfig.unresolvedEnvironmentFiles.length > 0
   die('could not resolve all EnvironmentFile paths safely; use absolute paths or supported %h/%U specifiers before updating.');
 }
 const effectiveInlineState = PLATFORM === 'linux'
-  ? applySystemdEvents(serviceEnv, existingConfig.environmentFiles, existingConfig.dropInEvents)
-  : { env: serviceEnv };
-const effectiveServiceEnv = {
+  ? applySystemdEvents(
+      serviceEnv,
+      existingConfig.environmentFiles,
+      existingConfig.dropInEvents,
+      existingConfig.baseUnsetEnvironment,
+    )
+  : { env: serviceEnv, unsetEnvironment: [] };
+const effectiveBeforeUnset = {
   ...effectiveInlineState.env,
   ...existingConfig.environmentFileEnv,
 };
+const effectiveServiceEnv = PLATFORM === 'linux'
+  ? applySystemdUnsetEnvironment(effectiveBeforeUnset, effectiveInlineState.unsetEnvironment)
+  : effectiveBeforeUnset;
+
+for (const key of OVERRIDE_ENV_KEYS) {
+  if (effectiveServiceEnv[key] !== process.env[key]) {
+    die(`${key} is overridden or removed by systemd UnsetEnvironment; update that owning directive instead.`);
+  }
+}
+if (ROTATE_SECRET && PLATFORM === 'linux' && effectiveServiceEnv.JWT_SECRET !== serviceEnv.JWT_SECRET) {
+  die('JWT_SECRET is removed by systemd UnsetEnvironment. Remove or narrow that directive before rotating the secret.');
+}
+if (!ROTATE_SECRET && existingConfig.found && !effectiveServiceEnv.JWT_SECRET) {
+  secretStatus = PLATFORM === 'linux'
+    ? 'not active in the existing systemd service; left unset'
+    : 'not configured in the existing service; left unset';
+}
 if (!effectiveServiceEnv.FLOWBOARD_HOST) effectiveServiceEnv.FLOWBOARD_HOST = '127.0.0.1';
 if (!effectiveServiceEnv.OPENCLAW_WORKSPACE) effectiveServiceEnv.OPENCLAW_WORKSPACE = join(homedir(), '.openclaw', 'workspace');
 const PORT = Number(effectiveServiceEnv.FLOWBOARD_PORT || 18790);
@@ -608,7 +889,10 @@ if (alreadyUp && !FORCE) {
   process.exit(0);
 }
 if (UPDATE) log(c.dim('\n  update mode: rebuilding & restarting an existing install'));
-if (alreadyUp && FORCE) log(`${c.warn} a dashboard already answers on :${PORT}; this manages the '${SERVICE_LABEL}' service — a different supervisor on the same port would conflict.`);
+if (alreadyUp && FORCE) {
+  const managedService = PLATFORM === 'darwin' ? SERVICE_LABEL : PLATFORM === 'linux' ? `${SERVICE_NAME}.service` : `${PLATFORM} service`;
+  log(`${c.warn} a dashboard already answers on :${PORT}; this manages the '${managedService}' service — a different supervisor on the same port would conflict.`);
+}
 
 // ── 3. Dependencies + UI build ──────────────────────────────────────────────
 step('2. Install dependencies & build the dashboard');
@@ -662,25 +946,36 @@ ${envXml}
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardErrorPath</key><string>/tmp/flowboard-dashboard.log</string>
-  <key>StandardOutPath</key><string>/tmp/flowboard-dashboard.log</string>
+  <key>Umask</key><integer>63</integer>
+  <key>StandardErrorPath</key><string>${encodeXml(launchdLogPath)}</string>
+  <key>StandardOutPath</key><string>${encodeXml(launchdLogPath)}</string>
 </dict></plist>
 `;
   const uid = tryExec('id', ['-u']) || '';
   if (DRY) {
     log(c.dim(`  would write ${launchdPlistPath} (mode 0600)`));
+    log(c.dim(`  would prepare ${launchdLogPath} (directory 0700, file 0600) and safely retire ${launchdLegacyLogPath}`));
     log(c.dim(`  would: launchctl bootstrap gui/${uid} ${launchdPlistPath}`));
     log(c.dim(`  would: launchctl print gui/${uid}/${SERVICE_LABEL}`));
   } else {
     mkdirSync(launchdPlistDir, { recursive: true });
-    writeOwnerOnly(launchdPlistPath, plist);
+    // Validate and secure the destination before stopping a healthy existing
+    // job. Renaming an open legacy log is safe on POSIX; launchd keeps its file
+    // descriptor until the immediately following bootout.
+    try {
+      prepareLaunchdLogging();
+    } catch (error) {
+      die(`could not prepare owner-only launchd logging safely: ${error.message}`);
+    }
     spawnSync('launchctl', ['bootout', `gui/${uid}/${SERVICE_LABEL}`], { stdio: 'ignore' }); // ignore if not loaded
+    writeOwnerOnly(launchdPlistPath, plist);
     run('launchctl', ['bootstrap', `gui/${uid}`, launchdPlistPath]);
     runQuiet('launchctl', ['print', `gui/${uid}/${SERVICE_LABEL}`]);
   }
   log(`${c.ok} launchd service ${SERVICE_LABEL} registered with RunAtLoad + KeepAlive`);
 } else if (PLATFORM === 'linux') {
   const environmentFileLines = existingConfig.environmentFiles.map(value => `EnvironmentFile=${value}`).join('\n');
+  const unsetEnvironmentLine = formatSystemdUnsetEnvironment(existingConfig.baseUnsetEnvironment);
   const envLines = Object.entries(serviceEnv).sort(([a], [b]) => a.localeCompare(b))
     .map(([k, v]) => quoteSystemdEnvironment(k, v)).join('\n');
   const unit = `[Unit]
@@ -693,6 +988,7 @@ WorkingDirectory=${DASH}
 ExecStart=${node} ${join(DASH, 'server.js')}
 ${environmentFileLines}
 ${envLines}
+${unsetEnvironmentLine}
 Restart=on-failure
 RestartSec=5
 
@@ -733,7 +1029,7 @@ WantedBy=default.target
     }
     run('systemctl', ['--user', 'is-enabled', '--quiet', 'flowboard-dashboard']);
   }
-  log(`${c.ok} systemd --user service flowboard-dashboard registered and enabled for autostart`);
+  log(`${c.ok} systemd --user service ${SERVICE_NAME}.service registered and enabled for autostart`);
 } else {
   log(`${c.warn} Unsupported platform (${PLATFORM}) for automatic service registration.`);
   log(c.dim(`  Start manually: cd ${DASH} && FLOWBOARD_PORT=${PORT} node server.js`));
@@ -745,9 +1041,16 @@ if (DRY) {
   log(c.dim(`  would poll http://127.0.0.1:${PORT}/api/health`));
 } else {
   let up = false;
-  for (let i = 0; i < 20 && !up; i++) { up = await healthy(); if (!up) await new Promise(r => setTimeout(r, 500)); }
+  for (let i = 0; i < HEALTH_ATTEMPTS && !up; i++) { up = await healthy(); if (!up) await new Promise(r => setTimeout(r, 500)); }
   if (up) log(`${c.ok} dashboard is healthy on http://127.0.0.1:${PORT}`);
-  else die(`dashboard did not come up on port ${PORT} — check /tmp/flowboard-dashboard.log`);
+  else if (PLATFORM === 'darwin') {
+    const uid = tryExec('id', ['-u']) || '<uid>';
+    die(`dashboard did not come up on port ${PORT} — check ${launchdLogPath} and launchctl print gui/${uid}/${SERVICE_LABEL}`);
+  } else if (PLATFORM === 'linux') {
+    die(`dashboard did not come up on port ${PORT} — check systemctl --user status ${SERVICE_NAME}.service and journalctl --user -u ${SERVICE_NAME}.service`);
+  } else {
+    die(`dashboard did not come up on port ${PORT} — inspect the manually started dashboard process output`);
+  }
 }
 
 step('Done.');

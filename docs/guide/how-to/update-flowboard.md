@@ -55,7 +55,20 @@ existing `EnvironmentFile=` directives and
 `flowboard-dashboard.service.d/*.conf` drop-ins are retained. Readable
 EnvironmentFiles are evaluated in declared order for diagnostics and health
 port resolution; later files keep systemd precedence over earlier files and
-inline `Environment=` values.
+inline `Environment=` values. `UnsetEnvironment=` is applied last with systemd's
+name-versus-exact-assignment semantics, including empty-list resets. Setup
+refuses an override or JWT rotation that would still be removed. Existing unit
+specifier handling is deliberately fail-safe: only `%%`, `%h`, and `%U` are
+accepted by the normalizer, and literal percent signs in rewritten
+`Environment=` values are emitted as `%%`.
+
+On macOS, launchd stdout/stderr goes to
+`~/Library/Logs/FlowBoard/flowboard-dashboard.log`. Setup creates the directory
+as `0700`, pre-creates the file as `0600` without following symlinks, and writes
+umask `077` into the plist. A current-user regular legacy
+`/tmp/flowboard-dashboard.log` is secured and moved to
+`flowboard-dashboard.legacy.log`; unsafe pre-created links or foreign files are
+left untouched and never followed.
 
 After registration, setup verifies that launchd loaded the service or that the
 systemd unit is enabled, then polls the local `/api/health` endpoint. If remote

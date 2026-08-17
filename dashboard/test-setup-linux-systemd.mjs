@@ -2,7 +2,7 @@
 // Regression coverage for scripts/setup.mjs Linux service configuration.
 
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import {
   existsSync,
@@ -131,11 +131,11 @@ process.exit(0);
   };
 }
 
-async function withHealthServer(fn) {
+async function withHealthServer(fn, statusCode = 200) {
   const server = createServer((req, res) => {
     if (req.url === '/api/health') {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end('{"ok":true}');
+      res.writeHead(statusCode, { 'content-type': 'application/json' });
+      res.end(statusCode === 200 ? '{"ok":true}' : '{"ok":false}');
       return;
     }
     res.writeHead(404);
@@ -196,7 +196,7 @@ async function runSetup(args, options = {}, extraEnv = {}) {
     } finally {
       harness.cleanup();
     }
-  });
+  }, options.healthStatus || 200);
 }
 
 function existingUnit(lines = []) {
@@ -205,8 +205,11 @@ function existingUnit(lines = []) {
 
 console.log('# setup.mjs Linux systemd configuration');
 
+let generatedFreshUnit = '';
+
 {
   const result = await runSetup(['--force']);
+  generatedFreshUnit = result.unit;
   ok(result.code === 0, 'first install exits successfully with fake systemctl');
   assert.deepEqual(result.commands, [
     'npm --version',
@@ -389,6 +392,151 @@ const preservedUnit = port => existingUnit([
 }
 
 {
+  const result = await runSetup(['--dry-run', '--update'], {
+    initialUnit: existingUnit([
+      'Environment="FLOWBOARD_PORT=9"',
+      'Environment="JWT_SECRET=test-unset-secret"',
+      'UnsetEnvironment=FLOWBOARD_PORT JWT_SECRET',
+    ]),
+    injectPort: false,
+  });
+  ok(result.code === 0, 'UnsetEnvironment names are accepted during a dry-run update');
+  ok(result.stdout.includes('would poll http://127.0.0.1:18790/api/health'), 'UnsetEnvironment removes FLOWBOARD_PORT from effective health-check configuration');
+  ok(result.stdout.includes('JWT_SECRET: not active in the existing systemd service; left unset'), 'UnsetEnvironment removes JWT_SECRET from effective rotation diagnostics');
+}
+
+{
+  const result = await runSetup(['--rotate-secret'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="JWT_SECRET=test-unset-secret"',
+      'UnsetEnvironment=JWT_SECRET',
+    ]),
+  });
+  ok(result.code === 1, 'rotation fails safe when an unconditional UnsetEnvironment removes JWT_SECRET');
+  ok(result.stdout.includes('JWT_SECRET is removed by systemd UnsetEnvironment'), 'rotation failure identifies the effective systemd owner');
+  ok(result.commands.length === 0, 'ineffective JWT rotation aborts before build or service commands');
+  ok(!result.stdout.includes('test-unset-secret'), 'UnsetEnvironment rotation refusal does not print the old secret');
+}
+
+{
+  const result = await runSetup(['--rotate-secret'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="JWT_SECRET=test-exact-rotation-secret"',
+      'UnsetEnvironment="JWT_SECRET=test-exact-rotation-secret"',
+    ]),
+  });
+  ok(result.code === 0, 'rotation succeeds when exact-assignment UnsetEnvironment matches only the old JWT value');
+  ok(!result.unit.split('\n').includes('Environment="JWT_SECRET=test-exact-rotation-secret"'), 'exact-assignment rotation removes the old inline JWT value');
+  ok(/Environment="JWT_SECRET=[a-f0-9]{64}"/i.test(result.unit), 'exact-assignment rotation installs a new active JWT value');
+  ok(result.unit.includes('UnsetEnvironment="JWT_SECRET=test-exact-rotation-secret"'), 'exact-assignment JWT removal remains narrow after rotation');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="JWT_SECRET=test-reset-secret"',
+      'Environment="TELEGRAM_BOT_TOKEN=test-reset-bot"',
+      'Environment="ALLOWED_USER_IDS=500"',
+      'Environment="DASHBOARD_ORIGIN=https://reset.example.invalid"',
+      'UnsetEnvironment=FLOWBOARD_PORT JWT_SECRET',
+    ]),
+    dropIns: {
+      'reset.conf': '[Service]\nUnsetEnvironment=\n',
+    },
+  });
+  ok(result.code === 0, 'an empty later UnsetEnvironment resets earlier removals');
+  ok(result.unit.includes('UnsetEnvironment=FLOWBOARD_PORT JWT_SECRET'), 'main-unit UnsetEnvironment directives survive normalized rewrites');
+  ok(result.stdout.includes('remote auth configuration has all required variables'), 'reset UnsetEnvironment state participates in effective remote diagnostics');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit([
+      'Environment="FLOWBOARD_PORT=9"',
+      'Environment="JWT_SECRET=test-exact-unset-secret"',
+      'EnvironmentFile=%h/.config/flowboard/runtime.env',
+      'UnsetEnvironment="FLOWBOARD_PORT=9"',
+    ]),
+    environmentFiles: {
+      '.config/flowboard/runtime.env': port => `FLOWBOARD_PORT=${port}\n`,
+    },
+    injectPort: false,
+  });
+  ok(result.code === 0, 'exact-assignment UnsetEnvironment does not remove a later different EnvironmentFile value');
+  ok(result.unit.includes('UnsetEnvironment="FLOWBOARD_PORT=9"'), 'exact-assignment UnsetEnvironment is preserved without semantic broadening');
+}
+
+for (const invalidSpecifier of ['%1', '%x', '%/', '%']) {
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      `EnvironmentFile=${invalidSpecifier}/flowboard.env`,
+    ]),
+  });
+  ok(result.code === 1, `invalid EnvironmentFile specifier ${JSON.stringify(invalidSpecifier)} fails safe`);
+  ok(result.stdout.includes('unsupported or incomplete systemd specifier'), `invalid specifier ${JSON.stringify(invalidSpecifier)} is diagnosed explicitly`);
+  ok(result.commands.length === 0, `invalid specifier ${JSON.stringify(invalidSpecifier)} aborts before build/service commands`);
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="CUSTOM_INVALID_SPECIFIER=%1"',
+    ]),
+  });
+  ok(result.code === 1, 'invalid specifiers in Environment values also fail safe');
+  ok(result.stdout.includes('unsupported or incomplete systemd specifier'), 'Environment-value specifier failure is diagnosed explicitly');
+  ok(result.commands.length === 0, 'invalid Environment-value specifier aborts before build/service commands');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="%1=invalid-key"',
+    ]),
+  });
+  ok(result.code === 1, 'invalid specifiers in Environment assignment keys fail safe');
+  ok(result.stdout.includes('unsupported or incomplete systemd specifier'), 'Environment-key specifier failure is diagnosed explicitly');
+  ok(result.commands.length === 0, 'invalid Environment-key specifier aborts before build/service commands');
+}
+
+{
+  const result = await withHealthServer(async port => {
+    const harness = makeHarness({ initialUnit: preservedUnit(port) });
+    try {
+      const first = await spawnSetup(harness, port, ['--update', '--override-env=DASHBOARD_ORIGIN'], {
+        DASHBOARD_ORIGIN: 'https://percent.example.invalid/100%25?label=50%',
+      });
+      const second = await spawnSetup(harness, port, ['--update']);
+      return { first, second };
+    } finally {
+      harness.cleanup();
+    }
+  });
+  const escapedValue = 'DASHBOARD_ORIGIN=https://percent.example.invalid/100%%25?label=50%%';
+  ok(result.first.code === 0 && result.second.code === 0, 'percent-bearing Environment value survives two updates');
+  ok(result.first.unit.includes(escapedValue), 'literal percent signs are doubled when writing Environment values');
+  ok(result.second.unit.includes(escapedValue) && !result.second.unit.includes('100%%%%25'), 'percent escaping round-trips without double-escaping');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: preservedUnit,
+    healthStatus: 503,
+  }, {
+    FLOWBOARD_SETUP_TEST_HEALTH_ATTEMPTS: '1',
+  });
+  ok(result.code === 1, 'Linux health-check failure is surfaced');
+  ok(result.stdout.includes('journalctl --user -u flowboard-dashboard.service'), 'Linux failure points to the systemd unit journal');
+  ok(!result.stdout.includes('ai.openclaw.flowboard-dashboard') && !result.stdout.includes('/tmp/flowboard-dashboard.log'), 'Linux failure does not mention launchd or the obsolete macOS log');
+}
+
+{
   const result = await runSetup(['--update']);
   ok(result.code === 1, '--update refuses to act when the standard service does not exist');
   ok(result.stdout.includes('--update requires an existing standard systemd service'), 'missing-service error explains first install versus update');
@@ -431,6 +579,24 @@ const preservedUnit = port => existingUnit([
   ok(result.stdout.includes('systemctl --user enable flowboard-dashboard'), 'dry-run prints enable without --now');
   ok(result.stdout.includes('systemctl --user restart flowboard-dashboard'), 'dry-run prints restart');
   ok(result.stdout.includes('systemctl --user is-enabled --quiet flowboard-dashboard'), 'dry-run prints autostart verification');
+}
+
+{
+  const analyzeVersion = spawnSync('systemd-analyze', ['--version'], { stdio: 'ignore' });
+  if (analyzeVersion.status === 0) {
+    const verifyDir = mkdtempSync(join(tmpdir(), 'fb-systemd-verify-'));
+    const verifyPath = join(verifyDir, UNIT_NAME);
+    try {
+      writeFileSync(verifyPath, generatedFreshUnit, { mode: 0o600 });
+      const verified = spawnSync('systemd-analyze', ['--user', 'verify', verifyPath], { encoding: 'utf8' });
+      if (verified.status !== 0) process.stderr.write(verified.stderr || verified.stdout || 'systemd-analyze verify failed\n');
+      ok(verified.status === 0, 'generated unit passes systemd-analyze --user verify');
+    } finally {
+      rmSync(verifyDir, { recursive: true, force: true });
+    }
+  } else {
+    console.log('  # systemd-analyze unavailable; static verify skipped');
+  }
 }
 
 console.log(`\n# results: ${pass} passed, ${fail} failed`);

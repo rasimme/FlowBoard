@@ -8,9 +8,12 @@
   every update. First install and update are distinct, secret rotation is
   explicit and restart-backed, shell overrides require named `--override-env`
   keys, and ordered systemd `EnvironmentFile=` sources retain runtime
-  precedence (including health-check port resolution). Generated service files
-  are owner-only, launchctl inspection output is suppressed, and the Linux
-  template now consistently uses `flowboard-dashboard.service`.
+  precedence (including health-check port resolution). `UnsetEnvironment=` and
+  unit specifiers now normalize fail-safe, while literal percent signs
+  round-trip correctly. Generated service files are owner-only, launchctl
+  inspection output is suppressed, macOS logging moved from shared `/tmp` into
+  an owner-only `~/Library/Logs/FlowBoard` path, and the Linux template now
+  consistently uses `flowboard-dashboard.service`.
 
 - **Made stuck-task notifications session-safe (T-434).** The stuck-check
   scheduler no longer runs `/hooks/agent` turns against live
