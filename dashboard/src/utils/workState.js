@@ -23,9 +23,10 @@ export const EMPTY_WORK_STATE_DETAILS = Object.freeze({
   setAt: null,
 });
 
-// The backend owns the transient-indicator action routes.  The UI may render
+// The backend owns the transient-indicator action routes. The UI may render
 // only these named, explicit POST actions when the response supplies a
-// descriptor for them; it must never invent a task PUT fallback.
+// descriptor for the exact project/task-bound endpoint; it must never invent a
+// task PUT or arbitrary /api fallback.
 export const TRANSIENT_INDICATOR_ACTIONS = Object.freeze(['clear', 'retry']);
 
 const TERMINAL_LIFECYCLE_STATES = new Set(['review', 'done', 'archived']);
@@ -49,6 +50,25 @@ function nullableTimestamp(value) {
   const text = nullableText(value);
   if (!text) return null;
   return Number.isNaN(new Date(text).getTime()) ? null : text;
+}
+
+function taskProject(task) {
+  return isRecord(task) && typeof task.project === 'string' && task.project.trim()
+    ? task.project.trim()
+    : null;
+}
+
+/**
+ * The action URL is part of the frontend/backend contract, not an arbitrary
+ * URL supplied by task metadata.  Callers that do not have the project-bound
+ * task identity must fail closed and render no executable action.
+ */
+export function stuckIndicatorActionPath(task, action) {
+  const project = taskProject(task);
+  if (!project || !isRecord(task) || typeof task.id !== 'string' || !task.id
+      || !TRANSIENT_INDICATOR_ACTIONS.includes(action)) return null;
+  return `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(task.id)}`
+    + `/stuck-indicator/${action}`;
 }
 
 export function normalizeWorkState(value, legacyBlocked = false) {
@@ -136,15 +156,19 @@ function indicatorIsInactive(indicator) {
     || indicator.resolvedAt != null;
 }
 
-function normalizeActionDescriptor(name, value) {
+export function normalizeStuckIndicatorActionDescriptor(task, name, value) {
   if (!TRANSIENT_INDICATOR_ACTIONS.includes(name) || !isRecord(value)) return null;
-  const action = value.action || value.name || name;
-  if (action !== name || !TRANSIENT_INDICATOR_ACTIONS.includes(action)) return null;
-  const method = String(value.method || 'POST').toUpperCase();
-  const path = value.path || value.href;
-  // Only same-origin API paths are accepted.  A descriptor is data, not a
-  // permission to call arbitrary URLs or to turn an action into a PUT.
-  if (method !== 'POST' || typeof path !== 'string' || !path.startsWith('/api/')) return null;
+  const expectedPath = stuckIndicatorActionPath(task, name);
+  // The descriptor must identify the mapped action and use the explicit
+  // method/path from the exact project+task-bound contract.  Defaults,
+  // alternate hrefs, and generic /api paths are deliberately not accepted.
+  if (!expectedPath
+      || !Object.prototype.hasOwnProperty.call(value, 'action')
+      || value.action !== name
+      || !Object.prototype.hasOwnProperty.call(value, 'method')
+      || value.method !== 'POST'
+      || !Object.prototype.hasOwnProperty.call(value, 'path')
+      || value.path !== expectedPath) return null;
   const hasBody = Object.prototype.hasOwnProperty.call(value, 'body');
   const hasPayload = Object.prototype.hasOwnProperty.call(value, 'payload');
   if ((hasBody && !isRecord(value.body)) || (hasPayload && !isRecord(value.payload))) return null;
@@ -158,27 +182,27 @@ function normalizeActionDescriptor(name, value) {
     return null;
   }
   return {
-    action,
-    method,
-    path,
+    action: name,
+    method: 'POST',
+    path: expectedPath,
     ...(body ? { body } : {}),
   };
 }
 
-function normalizedActionEntries(rawActions, indicator) {
+function normalizedActionEntries(task, rawActions) {
   const entries = [];
   if (Array.isArray(rawActions)) {
     for (const value of rawActions) {
       if (!isRecord(value)) continue;
       const name = value.action || value.name;
-      const descriptor = normalizeActionDescriptor(name, value);
+      const descriptor = normalizeStuckIndicatorActionDescriptor(task, name, value);
       if (descriptor) entries.push({ name, value: descriptor });
     }
     return entries;
   }
   if (!isRecord(rawActions)) return entries;
   for (const name of TRANSIENT_INDICATOR_ACTIONS) {
-    const descriptor = normalizeActionDescriptor(name, rawActions[name]);
+    const descriptor = normalizeStuckIndicatorActionDescriptor(task, name, rawActions[name]);
     if (descriptor) entries.push({ name, value: descriptor });
   }
   return entries;
@@ -189,10 +213,14 @@ function normalizedActionEntries(rawActions, indicator) {
  * states are treated as clear even when a stale poll briefly returns an old
  * indicator.
  */
-export function getStuckIndicator(task) {
+export function getStuckIndicator(task, project = null) {
   if (!isRecord(task) || TERMINAL_LIFECYCLE_STATES.has(task.status)) return null;
   const indicator = candidateIndicator(task);
   if (indicatorIsInactive(indicator)) return null;
+  // Tasks returned by the project-scoped list need not repeat their project.
+  // The caller may supply that authoritative project context; it is used only
+  // to validate the exact action route, never to loosen validation.
+  const taskContext = project ? { ...task, project } : task;
   return {
     ...indicator,
     message: nullableText(indicator.message)
@@ -206,19 +234,24 @@ export function getStuckIndicator(task) {
     createdAt: nullableTimestamp(indicator.createdAt || indicator.detectedAt || indicator.setAt),
     updatedAt: nullableTimestamp(indicator.updatedAt),
     checkAgainAt: nullableTimestamp(indicator.checkAgainAt),
-    actions: normalizedActionEntries(indicator.actions || indicator.availableActions, indicator)
+    actions: normalizedActionEntries(taskContext, indicator.actions || indicator.availableActions)
       .map(({ value }) => value),
   };
 }
 
 export function hasStuckAction(indicator, action) {
   if (!isRecord(indicator) || !action) return false;
-  return normalizedActionEntries(indicator.actions || indicator.availableActions, indicator)
-    .some((entry) => entry.name === action);
+  return Array.isArray(indicator.actions)
+    && indicator.actions.some((entry) => isRecord(entry)
+      && entry.action === action
+      && entry.method === 'POST');
 }
 
-function suppliedActionDescriptor(indicator, action) {
-  const entries = normalizedActionEntries(indicator?.actions || indicator?.availableActions, indicator);
+function suppliedActionDescriptor(task, indicator, action) {
+  const entries = normalizedActionEntries(
+    task,
+    indicator?.actions || indicator?.availableActions,
+  );
   const entry = entries.find((candidate) => candidate.name === action);
   return entry?.value ? clone(entry.value) : null;
 }
@@ -230,8 +263,7 @@ function suppliedActionDescriptor(indicator, action) {
  * no phantom-success path.
  */
 export function buildStuckIndicatorActionUpdate(task, indicator, action) {
-  void task;
-  const supplied = suppliedActionDescriptor(indicator, action);
+  const supplied = suppliedActionDescriptor(task, indicator, action);
   return supplied ? { ...supplied, action } : null;
 }
 

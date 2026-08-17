@@ -1,5 +1,9 @@
 import { ApiError, apiJson } from './apiFetch.js';
-import { WORK_STATE_OPTIONS, WORK_STATE_DETAIL_FIELDS } from './workState.js';
+import {
+  WORK_STATE_OPTIONS,
+  WORK_STATE_DETAIL_FIELDS,
+  normalizeStuckIndicatorActionDescriptor,
+} from './workState.js';
 
 const PROJECT_STATUSES = new Set(['active', 'closed', 'archived']);
 const TASK_STATUSES = new Set(['backlog', 'open', 'in-progress', 'review', 'done', 'archived']);
@@ -12,6 +16,17 @@ function isRecord(value) {
 
 function hasOwn(record, field) {
   return Object.prototype.hasOwnProperty.call(record, field);
+}
+
+function projectFromTaskPath(path) {
+  if (typeof path !== 'string') return null;
+  const match = /^\/?(?:api\/)?projects\/([^/]+)\/tasks(?:\/|\?|$)/.exec(path);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
 }
 
 function isNonEmptyString(value) {
@@ -106,7 +121,7 @@ function validateAgent(agent, index, path) {
     `${at}.last_seen to be a string or null`);
 }
 
-export function validateTask(task, index = 0, path = '/projects/tasks') {
+export function validateTask(task, index = 0, path = '/projects/tasks', project = null) {
   const at = `tasks[${index}]`;
   require(isRecord(task), path, `${at} to be an object`);
   require(isNonEmptyString(task.id), path, `${at}.id to be a non-empty string`);
@@ -132,24 +147,11 @@ export function validateTask(task, index = 0, path = '/projects/tasks') {
   if (isRecord(task.stuckIndicator) && hasOwn(task.stuckIndicator, 'actions')) {
     require(isRecord(task.stuckIndicator.actions), path,
       `${at}.stuckIndicator.actions to be an action map when present`);
+    const actionProject = project || projectFromTaskPath(path);
     for (const [name, descriptor] of Object.entries(task.stuckIndicator.actions)) {
-      require(['clear', 'retry'].includes(name) && isRecord(descriptor), path,
-        `${at}.stuckIndicator.actions to contain explicit clear/retry descriptors`);
-      require((descriptor.action === undefined || descriptor.action === name)
-        && (descriptor.name === undefined || descriptor.name === name), path,
-      `${at}.stuckIndicator.actions.${name} to identify the mapped action consistently`);
-      require(String(descriptor.method || 'POST').toUpperCase() === 'POST'
-        && typeof (descriptor.path || descriptor.href) === 'string'
-        && String(descriptor.path || descriptor.href).startsWith('/api/'), path,
-      `${at}.stuckIndicator.actions.${name} to be a same-origin POST API descriptor`);
-      if (descriptor.body !== undefined) require(isRecord(descriptor.body), path,
-        `${at}.stuckIndicator.actions.${name}.body to be an object when present`);
-      if (descriptor.payload !== undefined) require(isRecord(descriptor.payload), path,
-        `${at}.stuckIndicator.actions.${name}.payload to be an object when present`);
-      const actionBody = descriptor.body || descriptor.payload || {};
-      require(!['status', 'blocked', 'workState', 'workStateDetails']
-        .some((field) => hasOwn(actionBody, field)), path,
-      `${at}.stuckIndicator.actions.${name} to remain non-destructive`);
+      const actionTask = actionProject ? { ...task, project: actionProject } : task;
+      require(!!normalizeStuckIndicatorActionDescriptor(actionTask, name, descriptor), path,
+        `${at}.stuckIndicator.actions.${name} to use explicit POST ${actionProject || '<project>'}/${task.id} clear/retry contract`);
     }
   }
   require(TASK_PRIORITIES.has(task.priority), path, `${at}.priority to match the priority enum`);
@@ -198,7 +200,7 @@ export function validateTask(task, index = 0, path = '/projects/tasks') {
 }
 
 export function validateTaskPayload(task, path = '/projects/tasks') {
-  validateTask(task, 0, path);
+  validateTask(task, 0, path, projectFromTaskPath(path));
   return task;
 }
 
@@ -243,7 +245,7 @@ export async function fetchTasksForProject(project, signal, options = {}) {
   const path = `/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`;
   const data = await apiJson(path, { ...options, signal });
   const tasks = requireSuccessArray(data, 'tasks', path);
-  tasks.forEach((task, index) => validateTask(task, index, path));
+  tasks.forEach((task, index) => validateTask(task, index, path, project));
   return tasks;
 }
 

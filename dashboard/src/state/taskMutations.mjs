@@ -1,6 +1,8 @@
 // Task mutation wrappers — frontend runtime mutation contract (ADR-0019).
-// Every mutation: snapshot → optimistic patch → API call → merge/rollback.
-// Browser-independent: all window access goes through appStateBridge.
+// Mutations use snapshot → optional optimistic patch → API call → merge/rollback.
+// Canonical work-state updates deliberately omit the shared-state patch to avoid
+// same-value external-update races. Browser-independent: all window access
+// goes through appStateBridge.
 
 import * as bridge from './appStateBridge.mjs'
 import * as state from './taskState.mjs'
@@ -9,6 +11,7 @@ import { validateTaskMutationResponse, validateTaskPayload } from '../utils/dash
 import {
   buildWorkStateUpdate,
   normalizeTaskWorkState,
+  normalizeStuckIndicatorActionDescriptor,
   TRANSIENT_INDICATOR_ACTIONS,
 } from '../utils/workState.js'
 
@@ -18,10 +21,6 @@ import {
 
 function currentAgent() {
   return bridge.getAppState()?.agentId || 'human'
-}
-
-function isJsonObject(value) {
-  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 async function apiRequest(url, method, body) {
@@ -199,7 +198,12 @@ export async function updateTaskWorkStatePayload(project, taskId, body) {
   return mutate(
     project,
     taskId,
-    { ...canonicalBody, blocked: canonicalBody.workState === 'blocked' },
+    // Work-state updates deliberately do not patch the shared task list
+    // optimistically. A same-value external update (for example, another
+    // agent also setting `waiting` with different details) is otherwise
+    // indistinguishable from this mutation's optimistic value and a rejected
+    // 409 would restore the stale snapshot over the newer external state.
+    null,
     () => apiRequest(
       `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
       'PUT',
@@ -216,19 +220,22 @@ export async function updateTaskWorkStatePayload(project, taskId, body) {
  * report a local phantom success during a partial backend rollout.
  */
 export async function runTransientIndicatorAction(project, taskId, descriptor) {
-  if (!descriptor
-      || !TRANSIENT_INDICATOR_ACTIONS.includes(descriptor.action)
-      || descriptor.method !== 'POST'
-      || typeof descriptor.path !== 'string'
-      || !descriptor.path.startsWith('/api/')
-      || (descriptor.body !== undefined && !isJsonObject(descriptor.body))) {
+  const canonicalDescriptor = descriptor
+    && TRANSIENT_INDICATOR_ACTIONS.includes(descriptor.action)
+    ? normalizeStuckIndicatorActionDescriptor(
+      { id: taskId, project },
+      descriptor.action,
+      descriptor,
+    )
+    : null;
+  if (!canonicalDescriptor) {
     return { ok: false, error: 'Transient indicator action is not integrated.' }
   }
   return mutate(
     project,
     taskId,
     null,
-    () => apiRequest(descriptor.path, 'POST', descriptor.body),
+    () => apiRequest(canonicalDescriptor.path, canonicalDescriptor.method, canonicalDescriptor.body),
     { requireCanonicalTask: true },
   )
 }

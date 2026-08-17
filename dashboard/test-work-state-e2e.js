@@ -1,10 +1,12 @@
 'use strict';
 
 // Browser-rendered T-443-4 coverage. The task API response is intercepted with
-// the approved canonical fields so this test runs before/after the backend
-// work-state branch lands while still exercising the real React shell.
+// the expected canonical fields and exact action contract so this test remains
+// deterministic while the backend action routes are still an integration
+// dependency. The real React shell must still fail closed for other shapes.
 
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
+const { expectedStuckIndicatorAction, expectedStuckIndicatorActionPath } = require('./test-fixtures/work-state-contract.cjs');
 
 const PROJECT = 'work-state-ui';
 const r = reporter('Work-state picker and living stuck indicator (T-443-4)');
@@ -12,6 +14,7 @@ const r = reporter('Work-state picker and living stuck indicator (T-443-4)');
 function taskShape(id) {
   return {
     id,
+    project: PROJECT,
     title: 'Canonical work-state task',
     status: 'in-progress',
     blocked: true,
@@ -48,16 +51,8 @@ function taskShape(id) {
       reason: 'stale',
       detectedAt: '2026-08-17T16:00:00.000Z',
       actions: {
-        retry: {
-          method: 'POST',
-          path: `/api/projects/${PROJECT}/tasks/${id}/stuck-indicator/retry`,
-          body: { indicatorId: 'stuck-1', revision: 'r1' },
-        },
-        clear: {
-          method: 'POST',
-          path: `/api/projects/${PROJECT}/tasks/${id}/stuck-indicator/clear`,
-          body: { indicatorId: 'stuck-1', revision: 'r1' },
-        },
+        retry: expectedStuckIndicatorAction(PROJECT, id, 'retry', { indicatorId: 'stuck-1', revision: 'r1' }),
+        clear: expectedStuckIndicatorAction(PROJECT, id, 'clear', { indicatorId: 'stuck-1', revision: 'r1' }),
       },
     },
   };
@@ -111,7 +106,7 @@ async function main() {
         if (raceMode && body.workState === 'waiting') {
           currentTask = {
             ...currentTask,
-            workState: 'paused',
+            workState: 'waiting',
             workStateDetails: {
               ...currentTask.workStateDetails,
               reason: 'newer external state',
@@ -213,7 +208,9 @@ async function main() {
     r.ok(actionBoxes.length === 2 && actionBoxes.every((box) => box.width >= 44 && box.height >= 44),
       'Retry and Clear actions have 44px touch targets');
     await page.click('[data-stuck-action="retry"]');
-    await waitFor(() => lastIndicatorAction?.path.endsWith('/stuck-indicator/retry'));
+    await waitFor(() => lastIndicatorAction?.path === expectedStuckIndicatorActionPath(PROJECT, taskId, 'retry'));
+    r.ok(lastIndicatorAction?.path === expectedStuckIndicatorActionPath(PROJECT, taskId, 'retry'),
+      'retry uses the exact project/task-bound endpoint');
     r.ok(lastIndicatorAction?.body?.indicatorId === 'stuck-1',
       'retry uses the backend-provided explicit action payload');
     r.ok(!lastWorkStateUpdate || lastWorkStateUpdate.workState === 'waiting',
@@ -221,9 +218,9 @@ async function main() {
     r.ok(commentPosts === 0, 'retry/indicator lifecycle does not append a comment');
     await page.waitForSelector('[data-stuck-indicator="true"]', { hidden: true, timeout: 3000 });
 
-    // Browser race: an external canonical update lands while an optimistic
-    // work-state request is still pending and then the request fails.  The
-    // newer external value must not be restored from the stale local snapshot.
+    // Browser race: an external canonical update lands while a work-state
+    // request is pending and then the request fails. The newer same-value
+    // state/details must not be restored from the stale local snapshot.
     currentTask = {
       ...currentTask,
       workState: 'working',
@@ -242,16 +239,17 @@ async function main() {
       if (typeof window._notifyReact === 'function') window._notifyReact();
       else window.dispatchEvent(new CustomEvent('appstate:change'));
     }, currentTask);
+    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'working', { timeout: 3000 });
     raceMode = true;
     await page.select('#work-state-select', 'waiting');
-    await page.waitForFunction(() => window.appState?.tasks?.[0]?.workState === 'paused', { timeout: 3000 });
-    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'paused', { timeout: 3000 });
+    await page.waitForFunction(() => window.appState?.tasks?.[0]?.workState === 'waiting', { timeout: 3000 });
+    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'waiting', { timeout: 3000 });
     await page.waitForFunction(
       () => document.querySelector('input[name="workStateReason"]')?.value === 'newer external state',
       { timeout: 3000 },
     );
-    r.ok(await page.$eval('#work-state-select', (el) => el.value) === 'paused',
-      'failed optimistic mutation does not overwrite a newer external work state');
+    r.ok(await page.$eval('#work-state-select', (el) => el.value) === 'waiting',
+      'failed mutation does not overwrite a newer external work state');
     r.ok(await page.$eval('input[name="workStateReason"]', (el) => el.value) === 'newer external state',
       'newer external details survive the rejected optimistic mutation');
 

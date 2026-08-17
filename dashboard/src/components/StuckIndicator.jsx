@@ -16,8 +16,8 @@ function displayTime(timestamp) {
  * backend-supplied same-origin POST descriptor and must publish its canonical
  * task response.
  */
-export default function StuckIndicator({ task, onAction, busyAction = null }) {
-  const indicator = getStuckIndicator(task);
+export default function StuckIndicator({ task, project = null, onAction, busyAction = null }) {
+  const indicator = getStuckIndicator(task, project);
   if (!indicator) return null;
 
   const checkAgainAt = displayTime(indicator.checkAgainAt);

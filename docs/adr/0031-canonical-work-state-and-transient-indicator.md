@@ -32,17 +32,22 @@ to erase newer state.
    every evaluation; re-evaluation updates the existing object in place.
 4. Retry/Clear are explicit, same-origin `POST` action descriptors supplied by
    the backend, represented as `actions.retry` / `actions.clear` entries with
-   `method: "POST"`, an `/api/` path, and an optional JSON body for the
-   indicator action's own token/revision. The descriptor body must not carry
-   lifecycle or work-state writes (`status`, `blocked`, `workState`, or
+   an explicit `action` field, `method: "POST"`, and the exact project/task
+   route `/api/projects/{project}/tasks/{id}/stuck-indicator/{clear|retry}`.
+   The route suffix must match the action and the descriptor body may carry
+   only the indicator action's own token/revision; it must not carry lifecycle
+   or work-state writes (`status`, `blocked`, `workState`, or
    `workStateDetails`). They are non-destructive indicator actions and must
    return a complete canonical task. The frontend never synthesizes a task
-   PUT, clears the indicator only in local state, or accepts an indicator array.
-   If the endpoint/action descriptor is not integrated, the controls stay
-   hidden and the UI fails closed.
-5. Optimistic task errors roll back only fields that still equal the mutation's
-   optimistic values. A newer external field value wins; canonical task
-   responses are schema-validated before publication.
+   PUT, clears the indicator only in local state, follows arbitrary `/api/`
+   paths, or accepts an indicator array. If the endpoint/action descriptor is
+   not integrated, the controls stay hidden and the UI fails closed.
+5. Ordinary optimistic task errors roll back only fields that still equal the
+   mutation's optimistic values. Canonical work-state PUTs are the deliberate
+   exception: they do not patch shared task state optimistically. This removes
+   the same-value race where an external `waiting` update with newer details
+   could be mistaken for the client's optimistic value and erased after a
+   `409`; canonical task responses are schema-validated before publication.
 
 ## Consequences
 
@@ -56,6 +61,16 @@ to erase newer state.
 - The transient action HTTP endpoints are an integration dependency. Until the
   backend emits explicit descriptors and full canonical responses, no Retry or
   Clear control is rendered.
+
+## Integration blocker
+
+The frontend review worktree is intentionally merge-ready without changing the
+backend worktree. At the reviewed backend `HEAD`, the two action routes are not
+yet registered, so a live task response cannot advertise executable Retry or
+Clear controls. Backend integration must add both exact project/task-bound
+`POST` routes and return the complete canonical task; until then, schema
+validation rejects generic or missing descriptors and the UI remains
+fail-closed.
 
 ## See also
 

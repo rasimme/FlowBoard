@@ -158,6 +158,23 @@ const canonicalTask = validTask({
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [canonicalTask] });
 assert.deepEqual(await fetchTasksForProject('demo'), [canonicalTask],
   'tasks accept canonical workState, details, and transient indicator');
+const contractTask = validTask({
+  stuckIndicator: {
+    id: 'si-contract',
+    message: 'Needs attention',
+    actions: {
+      clear: {
+        action: 'clear',
+        method: 'POST',
+        path: '/api/projects/demo/tasks/T-001/stuck-indicator/clear',
+        body: { indicatorId: 'si-contract', revision: 'r1' },
+      },
+    },
+  },
+});
+globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [contractTask] });
+assert.deepEqual(await fetchTasksForProject('demo'), [contractTask],
+  'tasks accept only the exact project/task-bound action contract');
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask({ staleAfterMinutes: 1 })] });
 assert.deepEqual(
   await fetchTasksForProject('demo'),
@@ -211,6 +228,24 @@ for (const [label, payload] of [
       id: 'si-external',
       actions: {
         clear: { method: 'POST', path: 'https://evil.example/clear' },
+      },
+    } })],
+  }],
+  ['tasks rejects generic same-origin indicator action paths', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-generic',
+      actions: {
+        clear: { action: 'clear', method: 'POST', path: '/api/tasks/T-001/stuck/clear', body: { note: 'generic' } },
+      },
+    } })],
+  }],
+  ['tasks requires explicit method and action fields', {
+    ok: true,
+    tasks: [validTask({ stuckIndicator: {
+      id: 'si-implicit',
+      actions: {
+        retry: { path: '/api/projects/demo/tasks/T-001/stuck-indicator/retry' },
       },
     } })],
   }],

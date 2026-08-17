@@ -525,9 +525,10 @@ export default function DetailPanel() {
       showToast(`Work state: ${nextWorkState}`, 'success');
       return result;
     } catch (err) {
-      // taskMutations performs a field-aware rollback.  Re-select the current
-      // shared value instead of restoring this handler's stale snapshot; a
-      // newer external state may have arrived while the PUT was pending.
+      // Work-state mutations do not patch shared state optimistically. Re-select
+      // the current shared value instead of restoring this handler's stale
+      // snapshot; a newer external state may have arrived while the PUT was
+      // pending.
       const current = getTasks().find((candidate) => candidate.id === t.id);
       if (current) syncPanelTask(current);
       showToast('Work-state update failed: ' + (err.message || 'Unknown'), 'error');
@@ -538,7 +539,10 @@ export default function DetailPanel() {
   async function handleStuckIndicatorAction(action, indicator) {
     const t = taskRef.current;
     if (!t || busyStuckAction) return false;
-    const request = buildStuckIndicatorActionRequest(t, indicator, action);
+    // Project-scoped task list responses do not repeat the project name. Add
+    // the authoritative panel context for exact action-route validation; the
+    // builder must derive its expected path from this passed task identity.
+    const request = buildStuckIndicatorActionRequest({ ...t, project }, indicator, action);
     if (!request) return false;
     setBusyStuckAction(action);
     try {
@@ -1353,6 +1357,7 @@ export default function DetailPanel() {
           <div className="px-4 py-3">
             <StuckIndicator
               task={task}
+              project={project}
               onAction={handleStuckIndicatorAction}
               busyAction={busyStuckAction}
             />
