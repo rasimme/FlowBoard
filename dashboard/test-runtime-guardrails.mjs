@@ -95,6 +95,20 @@ assert.match(tasksView.text, /from '\.\.\/state\/taskState\.mjs'/, 'TasksView im
 assert.match(detailPanel.text, /from '\.\.\/state\/appStateBridge\.mjs'/, 'DetailPanel imports appStateBridge')
 assert.match(detailPanel.text, /from '\.\.\/state\/taskState\.mjs'/, 'DetailPanel imports taskState')
 assert.doesNotMatch(detailPanel.text, /refreshKanban/, 'DetailPanel no longer uses legacy refreshKanban')
+assert.doesNotMatch(
+  tasksView.text,
+  /import\s*\{[^}]*\brefreshTasks\b[^}]*\}\s*from '\.\.\/state\/appStateBridge\.mjs'/s,
+  'TasksView refreshes through DashboardContext coordination',
+)
+assert.doesNotMatch(
+  detailPanel.text,
+  /import\s*\{[^}]*\brefreshTasks\b[^}]*\}\s*from '\.\.\/state\/appStateBridge\.mjs'/s,
+  'DetailPanel refreshes through DashboardContext coordination',
+)
+assert.match(tasksView.text, /\{\s*refreshProjectsOnly,\s*refreshTasks\s*\}\s*=\s*useDashboard\(\)/,
+  'TasksView receives the coordinated task refresh')
+assert.match(detailPanel.text, /\{\s*openSpec,\s*viewProject,\s*refreshTasks\s*\}\s*=\s*useDashboard\(\)/,
+  'DetailPanel receives the coordinated task refresh')
 console.log('✅ runtime guard: task surfaces use runtime modules')
 
 // --- T-356 architecture invariants (keep the React migration from regressing) ---

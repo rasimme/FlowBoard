@@ -60,6 +60,8 @@ assert.equal(connectionRecovery(taskFailure, [{ name: 'project' }], 'tasks').sta
 
 const bootstrapAuthFailure = connectionFailure(INITIAL_CONNECTION_STATE, new ApiError('Forbidden', { status: 403 }), 'auth');
 assert.equal(bootstrapAuthFailure.status, 'auth-error');
+assert.equal(connectionLoading(bootstrapAuthFailure).errorScope, 'auth',
+  'fatal Retry preserves the auth scope needed to rerun /api/auth');
 assert.equal(
   connectionRecovery(bootstrapAuthFailure, [], 'core'),
   bootstrapAuthFailure,

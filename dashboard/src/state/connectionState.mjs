@@ -84,5 +84,12 @@ export function connectionScopeRecovery(previous, projects, recoveredScope) {
 
 export function connectionLoading(previous = INITIAL_CONNECTION_STATE) {
   if (previous?.hasData) return { ...previous, retrying: true };
-  return { ...INITIAL_CONNECTION_STATE, status: 'loading', retrying: true };
+  // A fatal auth retry still needs to know that /api/auth must run before the
+  // core snapshot. Preserve only that scope while clearing the visible error.
+  return {
+    ...INITIAL_CONNECTION_STATE,
+    status: 'loading',
+    retrying: true,
+    errorScope: previous?.errorScope || null,
+  };
 }

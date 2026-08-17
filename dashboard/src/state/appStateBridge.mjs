@@ -4,6 +4,8 @@
 
 import { fetchTasksForProject } from '../utils/dashboardApi.js'
 
+const directRefreshState = { generation: 0, active: null }
+
 function getWindow() {
   if (typeof globalThis !== 'undefined' && globalThis.window) return globalThis.window
   return null
@@ -54,23 +56,71 @@ export function replaceTasks(tasks) {
   notify()
 }
 
-export async function refreshTasks(projectOverride = null, options = {}) {
+async function directRefreshTasks(projectOverride = null, options = {}) {
   const project = projectOverride || getCurrentProject()
   if (!project || typeof globalThis.fetch !== 'function') return null
 
-  const tasks = await fetchTasksForProject(project, options.signal, options)
-  // A refresh started for the formerly viewed project must never publish after
-  // navigation selected another project. Explicit overrides retain their
-  // historical force-refresh semantics for compatibility callers.
-  if (!projectOverride && getCurrentProject() !== project) return null
+  const running = directRefreshState.active
+  const generation = directRefreshState.generation + 1
+  directRefreshState.generation = generation
 
-  replaceTasks(tasks)
-  return tasks
+  return (async () => {
+    if (running) {
+      running.superseded = true
+      running.controller.abort(new DOMException('Superseded task refresh', 'AbortError'))
+      await running.promise.catch(() => null)
+      if (directRefreshState.generation !== generation) return null
+      if (directRefreshState.active === running) directRefreshState.active = null
+    }
+
+    const controller = new AbortController()
+    const callerSignal = options.signal
+    const forwardCallerAbort = () => controller.abort(callerSignal.reason)
+    if (callerSignal?.aborted) forwardCallerAbort()
+    else callerSignal?.addEventListener('abort', forwardCallerAbort, { once: true })
+
+    let active
+    const request = (async () => {
+      try {
+        const tasks = await fetchTasksForProject(project, controller.signal, options)
+        // Overrides choose the request target, never publication ownership. A
+        // response may update the shared board only while that project remains
+        // current and this is still the newest coordinated refresh.
+        if (controller.signal.aborted
+          || directRefreshState.generation !== generation
+          || getCurrentProject() !== project) return null
+
+        replaceTasks(tasks)
+        return tasks
+      } catch (error) {
+        if (active?.superseded || directRefreshState.generation !== generation) return null
+        throw error
+      } finally {
+        callerSignal?.removeEventListener('abort', forwardCallerAbort)
+        if (directRefreshState.active === active) directRefreshState.active = null
+      }
+    })()
+
+    active = { generation, controller, promise: request, project, superseded: false }
+    directRefreshState.active = active
+    return request
+  })()
 }
 
-export function installRefreshBridge(refreshFn = refreshTasks) {
+export async function refreshTasks(projectOverride = null, options = {}) {
+  const installed = getAppState()?._refreshBoard
+  if (typeof installed === 'function') return installed(projectOverride, options)
+  return directRefreshTasks(projectOverride, options)
+}
+
+export function installRefreshBridge(refreshFn = directRefreshTasks) {
   const s = getAppState()
   if (!s) return null
-  s._refreshBoard = () => refreshFn()
+  s._refreshBoard = (projectOverride = null, options = {}) => refreshFn(projectOverride, options)
   return s._refreshBoard
+}
+
+export function uninstallRefreshBridge(installed) {
+  const s = getAppState()
+  if (s && installed && s._refreshBoard === installed) delete s._refreshBoard
 }

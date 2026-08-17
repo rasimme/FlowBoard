@@ -625,6 +625,7 @@ function _publicTask(t) {
   pub.claimedAt = pub.claimedAt || null;
   pub.leaseUntil = pub.leaseUntil || null;
   pub.lastCheckpointAt = pub.lastCheckpointAt || null;
+  pub.staleAfterMinutes = pub.staleAfterMinutes ?? null;
   pub.checkpointCount = pub.checkpointCount || 0;
   pub.routedAgent = pub.routedAgent || null;
   pub.trashedAt = pub.trashedAt || null;

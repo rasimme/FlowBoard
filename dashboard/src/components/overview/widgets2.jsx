@@ -6,7 +6,6 @@ import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
-import { refreshTasks } from '../../state/appStateBridge.mjs';
 import { apiFetch } from '../../utils/apiFetch.js';
 import { sortContextFiles } from '../../utils/contextSort.js';
 import { posToOffset, resolveSelection, estimateColumn } from '../../utils/notesLocate.mjs';
@@ -262,6 +261,7 @@ function MsChecklist({ items, editing, goTab, busy, onRemove }) {
 
 export function MilestonesWidget({ widget, editing }) {
   const { state } = useAppState();
+  const { refreshTasks } = useDashboard();
   const project = state?.viewedProject;
   const goTab = useGoTab();
   const tasks = (state?.tasks || []).filter(t => !t.trashedAt && t.status !== 'archived');

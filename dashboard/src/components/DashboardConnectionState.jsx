@@ -36,7 +36,7 @@ function RetryButton({ retrying, onRetry }) {
       data-action="retry-connection"
       onClick={onRetry}
       disabled={retrying}
-      className="connection-retry min-h-11"
+      className="connection-retry min-h-11 min-w-11"
     >
       {retrying ? <Spinner size="sm" className="text-white" /> : <RefreshCw size={15} />}
       {retrying ? 'Retrying…' : 'Retry'}

@@ -1,12 +1,47 @@
 'use strict';
 
 // T-440 re-review regressions: bootstrap auth priority, AppStateContext's late
-// agents response, and project-switch invalidation of an older poll snapshot.
+// agents response, and project-switch invalidation of a stale override refresh.
 
 const net = require('net');
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
 
 const r = reporter('Dashboard API race regressions (T-440)');
+
+const validAgent = (overrides = {}) => ({
+  agent_id: 'main',
+  active_project: null,
+  activated_at: '2026-08-17T10:00:00.000Z',
+  last_seen: '2026-08-17T10:00:00.000Z',
+  ...overrides,
+});
+
+const validTask = (overrides = {}) => ({
+  id: 'T-001',
+  title: 'Test task',
+  status: 'open',
+  blocked: false,
+  priority: 'medium',
+  parentId: null,
+  subtaskIds: [],
+  specFile: null,
+  created: '2026-08-17',
+  enteredStatusAt: '2026-08-17T10:00:00.000Z',
+  completed: null,
+  agent: null,
+  claimedAt: null,
+  leaseUntil: null,
+  lastCheckpointAt: null,
+  staleAfterMinutes: null,
+  checkpointCount: 0,
+  order: null,
+  tags: [],
+  description: '',
+  routedAgent: null,
+  trashedAt: null,
+  specExists: false,
+  ...overrides,
+});
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -44,6 +79,7 @@ async function main() {
 
     let mode = 'pass';
     let authCoreProjects = 0;
+    let authCallCount = 0;
     let releaseLateAgents;
     let lateAgentsStartedResolve;
     let lateAgentsStarted = Promise.resolve();
@@ -78,6 +114,7 @@ async function main() {
         }
 
         if (request.method() === 'POST' && url.pathname === '/api/auth') {
+          authCallCount += 1;
           if (mode === 'auth-403') {
             await respond(request, 403, { error: 'Synthetic Telegram auth denial' });
             return;
@@ -108,20 +145,23 @@ async function main() {
           lateAgentsStartedResolve();
           await new Promise((resolve) => { releaseLateAgents = resolve; });
           await respond(request, 200, mode === 'late-malformed-agents'
-            ? { ok: true, agents: { malformed: true } }
+            ? { ok: true, agents: [validAgent({ active_project: 42 })] }
             : {
               ok: true,
-              agents: [{ agent_id: 'stale-late-agent', active_project: null }],
+              agents: [validAgent({ agent_id: 'stale-late-agent' })],
             });
           return;
         }
 
-        if (mode === 'hold-old-poll'
+        if (mode === 'hold-old-override'
           && request.method() === 'GET'
           && url.pathname === '/api/projects/switch-old/tasks') {
           oldPollStartedResolve();
           await new Promise((resolve) => { releaseOldPoll = resolve; });
-          await respond(request, 200, { ok: true, tasks: [{ id: oldTask, title: 'Old project task' }] });
+          await respond(request, 200, {
+            ok: true,
+            tasks: [validTask({ id: oldTask, title: 'Old project task' })],
+          });
           return;
         }
 
@@ -181,9 +221,11 @@ async function main() {
     // Once /api/auth itself recovers, a newer core failure must replace the old
     // auth error instead of being hidden by auth scope priority.
     mode = 'auth-recovered-core-500';
+    authCallCount = 0;
     await page.click('.connection-screen [data-action="retry-connection"]');
     await page.waitForFunction(() => window.appState?.connection?.httpStatus === 500);
     const postAuthCoreFailure = await connectionState();
+    r.ok(authCallCount >= 1, 'fatal auth Retry actually calls /api/auth');
     r.ok(postAuthCoreFailure.status === 'server-error' && postAuthCoreFailure.scope === 'core',
       'core failure after successful auth Retry replaces the recovered auth error');
 
@@ -198,34 +240,36 @@ async function main() {
     r.ok(malformedAuth.status === 'server-error' && malformedAuth.scope === 'auth',
       'bootstrap rejects malformed auth 2xx in the central connection state');
 
-    // Hold an old-project poll after it has already selected switch-old. A user
-    // navigation to switch-new must abort/invalidate that snapshot before loading
-    // the new tasks, and releasing the old response must never reset the view.
+    // Hold an explicit override refresh from the same path used by DetailPanel
+    // and TasksView after it selected switch-old. Navigation to switch-new must
+    // centrally abort it, and releasing the response must never reset the view.
     mode = 'pass';
     await goto('project-switch-race');
     await page.waitForFunction(() => window.appState?.connection?.status === 'ready');
     await page.click('[data-project="switch-old"]');
     await page.waitForFunction(() => window.appState?.viewedProject === 'switch-old'
-      && window.appState?.tasks?.some((task) => task.title === 'Old project task')); 
+      && window.appState?.tasks?.some((task) => task.title === 'Old project task'));
 
-    mode = 'hold-old-poll';
+    mode = 'hold-old-override';
     oldPollStarted = new Promise((resolve) => { oldPollStartedResolve = resolve; });
+    const staleOverride = page.evaluate(() => window.appState._refreshBoard('switch-old'));
     await oldPollStarted;
     await page.click('[data-project="switch-new"]');
     await page.waitForFunction(() => window.appState?.viewedProject === 'switch-new'
-      && window.appState?.tasks?.some((task) => task.title === 'New project task')); 
+      && window.appState?.tasks?.some((task) => task.title === 'New project task'));
     releaseOldPoll();
+    await staleOverride;
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     const projectAfterRace = await page.evaluate(() => ({
       viewedProject: window.appState.viewedProject,
       taskTitles: window.appState.tasks.map((task) => task.title),
     }));
-    r.ok(oldPollRequestFailed, 'project switch aborts the in-flight old-project poll request');
-    r.ok(projectAfterRace.viewedProject === 'switch-new', 'late old poll cannot reset viewedProject');
+    r.ok(oldPollRequestFailed, 'project switch aborts the in-flight old-project override refresh');
+    r.ok(projectAfterRace.viewedProject === 'switch-new', 'late old override cannot reset viewedProject');
     r.ok(projectAfterRace.taskTitles.includes('New project task')
       && !projectAfterRace.taskTitles.includes('Old project task'),
-    'late old poll cannot overwrite the new project task snapshot');
+    'late old override cannot overwrite the new project task snapshot');
   }, { port, viewport: { width: 1400, height: 900 } });
 
   if (res?.skipped) r.skip(res.reason);

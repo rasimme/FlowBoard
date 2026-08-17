@@ -32,6 +32,33 @@ function setWindow(w) { globalThis.window = w }
 
 const bridge = await import('./src/state/appStateBridge.mjs')
 
+const validTask = (overrides = {}) => ({
+  id: 'T-001',
+  title: 'Test task',
+  status: 'open',
+  blocked: false,
+  priority: 'medium',
+  parentId: null,
+  subtaskIds: [],
+  specFile: null,
+  created: '2026-08-17',
+  enteredStatusAt: '2026-08-17T10:00:00.000Z',
+  completed: null,
+  agent: null,
+  claimedAt: null,
+  leaseUntil: null,
+  lastCheckpointAt: null,
+  staleAfterMinutes: null,
+  checkpointCount: 0,
+  order: null,
+  tags: [],
+  description: '',
+  routedAgent: null,
+  trashedAt: null,
+  specExists: false,
+  ...overrides,
+})
+
 // 1. No-window safety: every accessor stays silent when window is undefined.
 {
   clearWindow()
@@ -87,7 +114,10 @@ const bridge = await import('./src/state/appStateBridge.mjs')
     return {
       ok: true,
       status: 200,
-      json: async () => ({ tasks: [{ id: 'fresh-1' }, { id: 'fresh-2' }] }),
+      json: async () => ({
+        ok: true,
+        tasks: [validTask({ id: 'fresh-1' }), validTask({ id: 'fresh-2' })],
+      }),
     }
   }
   const tasks = await bridge.refreshTasks()
@@ -102,14 +132,18 @@ const bridge = await import('./src/state/appStateBridge.mjs')
   console.log('✅ refreshTasks success')
 }
 
-// 6. refreshTasks: explicit project override.
+// 6. refreshTasks: an explicit override still targets the current project.
 {
-  const win = createFakeWindow({ viewedProject: 'a', activeProject: 'a', tasks: [] })
+  const win = createFakeWindow({ viewedProject: 'other-project', activeProject: 'a', tasks: [] })
   setWindow(win)
   const seenUrls = []
   globalThis.fetch = async (url) => {
     seenUrls.push(url)
-    return { ok: true, status: 200, json: async () => ({ tasks: [{ id: 'override' }] }) }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, tasks: [validTask({ id: 'override' })] }),
+    }
   }
   await bridge.refreshTasks('other-project')
   assert.match(seenUrls[0], /^\/api\/projects\/other-project\/tasks/, 'override project wins over appState')
@@ -167,7 +201,7 @@ const bridge = await import('./src/state/appStateBridge.mjs')
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ tasks: { malformed: true } }),
+    json: async () => ({ ok: true, tasks: { malformed: true } }),
   })
   await assert.rejects(
     () => bridge.refreshTasks(),
@@ -200,7 +234,11 @@ const bridge = await import('./src/state/appStateBridge.mjs')
   setWindow(win)
   let release
   globalThis.fetch = async () => new Promise((resolve) => {
-    release = () => resolve({ ok: true, status: 200, json: async () => ({ tasks: [{ id: 'T-OLD' }] }) })
+    release = () => resolve({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, tasks: [validTask({ id: 'T-OLD' })] }),
+    })
   })
   const request = bridge.refreshTasks()
   win.appState.viewedProject = 'new-project'
@@ -210,20 +248,57 @@ const bridge = await import('./src/state/appStateBridge.mjs')
   console.log('✅ refreshTasks discards late former-project response')
 }
 
-// 12. installRefreshBridge: exposes the legacy _refreshBoard compatibility hook.
+// 12. refreshTasks: stale explicit override is centrally superseded and may
+// neither publish nor outlive the replacement project's refresh.
+{
+  const win = createFakeWindow({ viewedProject: 'old-project', activeProject: 'old-project', tasks: [{ id: 'T-KEEP' }] })
+  setWindow(win)
+  let oldAborted = false
+  globalThis.fetch = async (url, { signal }) => {
+    if (url.includes('/old-project/')) {
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          oldAborted = true
+          reject(signal.reason || new DOMException('Aborted', 'AbortError'))
+        }, { once: true })
+      })
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, tasks: [validTask({ id: 'T-NEW', title: 'New task' })] }),
+    }
+  }
+
+  const staleOverride = bridge.refreshTasks('old-project')
+  win.appState.viewedProject = 'new-project'
+  const replacement = bridge.refreshTasks('new-project')
+  assert.equal(await staleOverride, null, 'superseded override resolves without publishing')
+  assert.deepEqual((await replacement).map(t => t.id), ['T-NEW'], 'replacement refresh completes')
+  assert.equal(oldAborted, true, 'replacement aborts the stale override request')
+  assert.deepEqual(win.appState.tasks.map(t => t.id), ['T-NEW'], 'only new-project tasks are published')
+  console.log('✅ stale explicit override is coordinated and discarded')
+}
+
+// 13. installRefreshBridge: exposes the legacy _refreshBoard compatibility hook
+// and routes direct refreshTasks callers through the same coordinator.
 {
   const win = createFakeWindow({ viewedProject: 'demo', activeProject: 'demo' })
   setWindow(win)
-  let calls = 0
-  const installed = bridge.installRefreshBridge(() => {
-    calls++
+  const calls = []
+  const installed = bridge.installRefreshBridge((projectOverride, options) => {
+    calls.push({ projectOverride, options })
     return Promise.resolve(['ok'])
   })
   assert.equal(typeof installed, 'function', 'returns installed function')
   assert.equal(typeof win.appState._refreshBoard, 'function', 'sets appState._refreshBoard')
-  const result = await win.appState._refreshBoard()
+  const result = await bridge.refreshTasks('demo', { timeoutMs: 123 })
   assert.deepEqual(result, ['ok'], '_refreshBoard delegates to refresh function')
-  assert.equal(calls, 1, 'refresh function called once')
+  assert.equal(calls.length, 1, 'refresh function called once')
+  assert.deepEqual(calls[0], { projectOverride: 'demo', options: { timeoutMs: 123 } },
+    'direct caller arguments reach the installed coordinator')
+  bridge.uninstallRefreshBridge(installed)
+  assert.equal(win.appState._refreshBoard, undefined, 'coordinator uninstall removes the compatibility hook')
   console.log('✅ installRefreshBridge exposes _refreshBoard')
 }
 

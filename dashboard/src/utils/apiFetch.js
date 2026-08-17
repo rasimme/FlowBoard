@@ -136,6 +136,73 @@ export class ApiError extends Error {
   }
 }
 
+function createRequestAbortScope(callerSignal, timeoutMs) {
+  const controller = new AbortController();
+  const hasDeadline = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  let timedOut = false;
+  let timeoutId = null;
+  let removeCallerAbort = null;
+
+  const abortFromCaller = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (!controller.signal.aborted) controller.abort(callerSignal.reason);
+  };
+
+  if (callerSignal?.aborted) {
+    abortFromCaller();
+  } else if (callerSignal) {
+    callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+    removeCallerAbort = () => callerSignal.removeEventListener('abort', abortFromCaller);
+  }
+
+  if (hasDeadline && !controller.signal.aborted) {
+    timeoutId = setTimeout(() => {
+      if (controller.signal.aborted) return;
+      timedOut = true;
+      controller.abort(new DOMException('FlowBoard API request timed out', 'TimeoutError'));
+    }, timeoutMs);
+  }
+
+  return {
+    signal: controller.signal,
+    didTimeOut: () => timedOut,
+    cleanup() {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      removeCallerAbort?.();
+      removeCallerAbort = null;
+    },
+  };
+}
+
+function normalizeRequestError(error, { callerSignal, deadline, path, timeoutMs }) {
+  if (deadline.didTimeOut()) {
+    return new ApiError(`FlowBoard did not respond within ${timeoutMs} ms.`, {
+      kind: 'timeout',
+      path,
+      cause: error,
+    });
+  }
+  if (callerSignal?.aborted || error?.name === 'AbortError') {
+    return new ApiError('FlowBoard request was cancelled.', {
+      kind: 'aborted',
+      path,
+      cause: error,
+    });
+  }
+  if (error instanceof ApiError) return error;
+  return new ApiError('Unable to reach the FlowBoard service.', {
+    kind: 'network',
+    path,
+    cause: error,
+  });
+}
+
 /**
  * Run related API calls as one failure domain. The first rejection aborts every
  * still-running sibling and waits for their abort handlers to settle before the
@@ -164,51 +231,62 @@ export async function abortableAll(requestFactories, { signal: parentSignal } = 
 
 export async function apiJson(path, opts = {}) {
   const normalizedPath = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
-  let res;
+  const {
+    timeoutMs = DEFAULT_API_TIMEOUT_MS,
+    signal: callerSignal,
+    ...requestOptions
+  } = opts;
+  const deadline = createRequestAbortScope(callerSignal, timeoutMs);
+  const requestContext = {
+    callerSignal,
+    deadline,
+    path: normalizedPath,
+    timeoutMs,
+  };
+
   try {
-    res = await apiFetch(normalizedPath, {
-      ...opts,
-      timeoutMs: opts.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
-    });
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    if (error?.name === 'AbortError') {
-      throw new ApiError('FlowBoard request was cancelled.', {
-        kind: 'aborted',
+    let res;
+    try {
+      // apiJson owns one deadline for the complete operation. Passing only its
+      // linked signal prevents apiFetch from clearing a second timer as soon as
+      // headers arrive; the scope stays alive through response.json().
+      res = await apiFetch(normalizedPath, {
+        ...requestOptions,
+        signal: deadline.signal,
+      });
+    } catch (error) {
+      throw normalizeRequestError(error, requestContext);
+    }
+
+    let data;
+    let parseError = null;
+    try {
+      data = await res.json();
+    } catch (error) {
+      if (deadline.didTimeOut() || callerSignal?.aborted || error?.name === 'AbortError') {
+        throw normalizeRequestError(error, requestContext);
+      }
+      parseError = error;
+    }
+
+    if (!res.ok) {
+      throw new ApiError((!parseError && data?.error) || `HTTP ${res.status}`, {
+        status: res.status,
+        kind: 'http',
         path: normalizedPath,
-        cause: error,
       });
     }
-    throw new ApiError('Unable to reach the FlowBoard service.', {
-      kind: 'network',
-      path: normalizedPath,
-      cause: error,
-    });
-  }
 
-  let data;
-  let parseError = null;
-  try {
-    data = await res.json();
-  } catch (error) {
-    parseError = error;
-  }
+    if (parseError) {
+      throw new ApiError('FlowBoard returned an invalid JSON response.', {
+        kind: 'protocol',
+        path: normalizedPath,
+        cause: parseError,
+      });
+    }
 
-  if (!res.ok) {
-    throw new ApiError((!parseError && data?.error) || `HTTP ${res.status}`, {
-      status: res.status,
-      kind: 'http',
-      path: normalizedPath,
-    });
+    return data;
+  } finally {
+    deadline.cleanup();
   }
-
-  if (parseError) {
-    throw new ApiError('FlowBoard returned an invalid JSON response.', {
-      kind: 'protocol',
-      path: normalizedPath,
-      cause: parseError,
-    });
-  }
-
-  return data;
 }

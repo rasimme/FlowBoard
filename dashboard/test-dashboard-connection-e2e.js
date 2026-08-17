@@ -37,7 +37,7 @@ async function main() {
       status,
       contentType,
       body: typeof body === 'string' ? body : JSON.stringify(body),
-  }, { port });
+    });
 
     await page.evaluateOnNewDocument(() => {
       const realFetch = window.fetch.bind(window);
@@ -64,11 +64,34 @@ async function main() {
 
         if (mode === 'delay-empty') {
           await delayedProjects;
-          await respond(request, 200, { projects: [] });
+          await respond(request, 200, { ok: true, projects: [] });
         } else if (mode === 'malformed') {
           await respond(request, 200, '<html>not JSON</html>', 'text/html');
         } else if (mode === 'invalid-schema') {
-          await respond(request, 200, { projects: { unexpected: true } });
+          await respond(request, 200, {
+            ok: true,
+            projects: [{
+              name: 'malformed-project',
+              displayName: 'Malformed Project',
+              status: 'mystery',
+              archived: false,
+              group: null,
+              github: null,
+              order: null,
+              assignedAgents: [],
+              description: '',
+              createdAt: null,
+              taskCounts: {
+                open: 0,
+                'in-progress': 0,
+                review: 0,
+                done: 0,
+                backlog: 0,
+                archived: 0,
+                blocked: 0,
+              },
+            }],
+          });
         } else if (mode === 'auth') {
           await respond(request, 403, { error: 'Tunnel authentication required' });
         } else if (mode === 'server') {
@@ -83,7 +106,7 @@ async function main() {
           if (raceRequestCount === 1) {
             notifyRacePollStarted();
             await staleRaceResponse;
-            await respond(request, 200, { projects: [] });
+            await respond(request, 200, { ok: true, projects: [] });
           } else {
             await request.continue();
           }
@@ -158,8 +181,8 @@ async function main() {
       const box = el.getBoundingClientRect();
       return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height };
     });
-    r.ok(retryBox.left >= 0 && retryBox.right <= 390 && retryBox.top >= 0 && retryBox.bottom <= 780 && retryBox.height >= 40,
-      'retry is touch-sized and remains inside the Telegram/mobile viewport');
+    r.ok(retryBox.left >= 0 && retryBox.right <= 390 && retryBox.top >= 0 && retryBox.bottom <= 780 && retryBox.height >= 44,
+      'retry is at least 44px tall and remains inside the Telegram/mobile viewport');
     mode = 'pass';
     await page.click('.connection-screen [data-action="retry-connection"]');
     await page.waitForFunction(() => document.querySelector('[data-connection-state]')?.dataset.connectionState === 'empty');

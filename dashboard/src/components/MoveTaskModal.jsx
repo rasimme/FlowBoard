@@ -5,6 +5,7 @@ import Dropdown from './Dropdown.jsx';
 import FormGroup from './FormGroup.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 import { apiFetch } from '../utils/apiFetch.js';
+import { fetchTasksForProject } from '../utils/dashboardApi.js';
 
 /**
  * MoveTaskModal — move a task to another project or change its parent (T-302).
@@ -27,16 +28,19 @@ export default function MoveTaskModal({ open, onClose, task, project, projects =
     setTargetParent('');
     setError(null);
     setSubmitting(false);
+    const controller = new AbortController();
     // top-level tasks of this project are the parent candidates
-    apiFetch(`/api/projects/${project}/tasks`)
-      .then(r => r.json())
-      .then(d => {
-        const opts = (d.tasks || [])
+    fetchTasksForProject(project, controller.signal)
+      .then(tasks => {
+        const opts = tasks
           .filter(t => !t.parentId && t.id !== task?.id && !t.trashedAt && t.status !== 'archived')
           .map(t => ({ value: t.id, label: `${t.id} — ${t.title}` }));
         setParentOptions(opts);
       })
-      .catch(() => setParentOptions([]));
+      .catch((err) => {
+        if (err?.kind !== 'aborted') setError('Failed to load parent tasks.');
+      });
+    return () => controller.abort(new DOMException('Move dialog changed', 'AbortError'));
   }, [open, project, task?.id]);
 
   if (!open || !task) return null;
