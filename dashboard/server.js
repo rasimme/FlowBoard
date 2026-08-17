@@ -352,6 +352,7 @@ function telegramAuthMiddleware(req, res, next) {
 // --- Middleware stack ---
 
 app.use(cookieParser());
+installPrivacyFilter();
 app.use(express.json());
 
 // S-15: Request logger — only in development or when explicitly enabled
@@ -1377,6 +1378,9 @@ app.post('/api/auth', (req, res) => {
   // The global auth middleware has already preferred and verified any fresh
   // init-data, and reissued the cookie for that bot identity.
   const agentId = req.user?.agentId || null;
+  if (!agentId) {
+    return rejectTelegramAuth(req, res, 'AGENTLESS_SESSION', {});
+  }
   const { agentId: _agentId, iat: _iat, exp: _exp, ...user } = req.user || {};
   res.json({ ok: true, user, agentId });
 });
