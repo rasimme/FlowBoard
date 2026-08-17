@@ -68,6 +68,20 @@ preserves the persisted value. Use `--override-env NAME` only for a deliberate
 main-unit change. For systemd drop-ins and `EnvironmentFile=` sources, edit the
 owner file instead.
 
+## Remote access returns 401 / a sign-in error
+
+On localhost the dashboard is trusted and open. Over a tunnel or LAN it **fails closed** unless authentication is fully configured: `TELEGRAM_BOT_TOKEN`, `JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see the README [Remote Access](../../../README.md#remote-access-telegram-mini-app) section). A missing value means no one is allowed in.
+
+The dashboard now distinguishes this from an empty installation: HTTP 401/403 shows a blocking **Sign-in required** screen instead of `No projects`. Open FlowBoard from the Telegram bot again to refresh its signed init-data and session cookie, then use **Retry**. If the error remains, verify the bot token, allowed user ID, and tunnel URL on the server.
+
+## The dashboard is offline or reports a server error
+
+An unreachable service shows **FlowBoard is offline**; an HTTP 5xx or invalid API response shows **Dashboard service error**. A request that does not finish within 10 seconds is aborted and shows **FlowBoard took too long to respond**. Use **Retry** after restoring the connection or service; Retry is also available during the initial loading screen.
+
+If the dashboard had already loaded, FlowBoard keeps the last valid board visible and shows a persistent error banner — a failed poll never replaces projects or tasks with an empty list. Task-only refreshes cannot hide a global projects/agents/status failure.
+
+`No projects` means something different: `/api/projects` completed successfully with HTTP 2xx and returned a schema-valid empty project list.
+
 ## See also
 
 - [Getting started](../getting-started.md)

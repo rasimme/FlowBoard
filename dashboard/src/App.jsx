@@ -7,16 +7,34 @@ import Sidebar from './components/Sidebar.jsx';
 import TabBar from './components/TabBar.jsx';
 import ViewShell from './components/ViewShell.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
+import DashboardConnectionState from './components/DashboardConnectionState.jsx';
+import { useDashboard } from './context/DashboardContext.jsx';
+
+function DashboardShell() {
+  const { state } = useDashboard();
+  const blocksShell = !state?.connection?.hasData;
+
+  return (
+    <>
+      <DashboardConnectionState />
+      {!blocksShell && (
+        <>
+          <Header />
+          <Sidebar />
+          <TabBar />
+          <ViewShell />
+          <DetailPanel />
+        </>
+      )}
+    </>
+  );
+}
 
 function AppWithSpecify() {
   return (
     <AppStateProvider>
       <DashboardProvider>
-        <Header />
-        <Sidebar />
-        <TabBar />
-        <ViewShell />
-        <DetailPanel />
+        <DashboardShell />
       </DashboardProvider>
     </AppStateProvider>
   );

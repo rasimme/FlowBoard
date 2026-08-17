@@ -1728,7 +1728,7 @@ app.get('/api/projects', (req, res) => {
       ...p,
       taskCounts: getTaskCounts(p.name),
     }));
-    return res.json({ projects });
+    return res.json({ ok: true, projects });
   } catch (e) {
     console.error('[projects] Failed to list DB-backed projects:', e.message);
     return res.status(500).json({ error: 'Failed to load projects from HZL/FlowBoard metadata' });
@@ -1939,7 +1939,7 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   const includeArchived = req.query.includeArchived === 'true';
   const tasks = hzlService.listTasks(req.params.name, { includeArchived });
   const result = enrichTasks(req.params.name, tasks);
-  const response = { tasks: result };
+  const response = { ok: true, tasks: result };
 
   // Task status nudge
   try {

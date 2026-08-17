@@ -10,6 +10,7 @@ Lists every project with task counts. Per-agent active-project state is not incl
 
 ```json
 {
+  "ok": true,
   "projects": [
     { "name": "flowboard", "displayName": "FlowBoard", "archived": false, "group": null, "order": 0, "taskCounts": {"backlog": 12, "in-progress": 3, "review": 4, "done": 80} }
   ]

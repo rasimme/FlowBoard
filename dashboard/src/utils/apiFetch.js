@@ -5,12 +5,15 @@
  * - Telegram WebApp authentication (sends initData header if available)
  * - Cookie credentials (for session-based auth via Cloudflare tunnel)
  * - JSON Content-Type for POST/PUT/PATCH
- * - Error extraction from response body
+ * - Optional request deadlines with caller abort propagation
+ * - Error extraction from response body through apiJson
  *
  * @param {string} path - API path (e.g., '/api/projects/myproject/tasks')
- * @param {object} [opts] - Fetch options (method, body, signal, etc.)
+ * @param {object} [opts] - Fetch options plus optional timeoutMs
  * @returns {Promise<Response>} - The fetch Response object
  */
+export const DEFAULT_API_TIMEOUT_MS = 10000;
+
 export function apiFetch(path, opts = {}) {
   const headers = { ...opts.headers };
 
@@ -62,20 +65,239 @@ export function apiFetch(path, opts = {}) {
   }
   if (isJsonObject) body = JSON.stringify(body);
 
-  return fetch(path, {
-    ...opts,
-    headers,
-    credentials,
-    body,
+  const { timeoutMs = null, signal: callerSignal, ...fetchOptions } = opts;
+  const hasDeadline = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  const controller = hasDeadline ? new AbortController() : null;
+  let timedOut = false;
+  let timeoutId = null;
+  let removeAbortForwarder = null;
+
+  if (controller && callerSignal) {
+    const forwardAbort = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      controller.abort(callerSignal.reason);
+    };
+    if (callerSignal.aborted) forwardAbort();
+    else {
+      callerSignal.addEventListener('abort', forwardAbort, { once: true });
+      removeAbortForwarder = () => callerSignal.removeEventListener('abort', forwardAbort);
+    }
+  }
+
+  if (controller && !controller.signal.aborted) {
+    timeoutId = setTimeout(() => {
+      if (controller.signal.aborted) return;
+      timedOut = true;
+      controller.abort(new DOMException('FlowBoard API request timed out', 'TimeoutError'));
+    }, timeoutMs);
+  }
+
+  let request;
+  try {
+    request = fetch(path, {
+      ...fetchOptions,
+      headers,
+      credentials,
+      body,
+      signal: controller?.signal || callerSignal,
+    });
+  } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+    removeAbortForwarder?.();
+    throw error;
+  }
+
+  return request.catch((error) => {
+    if (timedOut) {
+      throw new ApiError(`FlowBoard did not respond within ${timeoutMs} ms.`, {
+        kind: 'timeout',
+        path,
+        cause: error,
+      });
+    }
+    throw error;
+  }).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+    removeAbortForwarder?.();
   });
+}
+
+export class ApiError extends Error {
+  constructor(message, { status = null, kind = 'http', path = null, cause = null } = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.kind = kind;
+    this.path = path;
+    if (cause) this.cause = cause;
+  }
+}
+
+function createRequestAbortScope(callerSignal, timeoutMs) {
+  const controller = new AbortController();
+  const hasDeadline = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  let timedOut = false;
+  let timeoutId = null;
+  let removeCallerAbort = null;
+
+  const abortFromCaller = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (!controller.signal.aborted) controller.abort(callerSignal.reason);
+  };
+
+  if (callerSignal?.aborted) {
+    abortFromCaller();
+  } else if (callerSignal) {
+    callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+    removeCallerAbort = () => callerSignal.removeEventListener('abort', abortFromCaller);
+  }
+
+  if (hasDeadline && !controller.signal.aborted) {
+    timeoutId = setTimeout(() => {
+      if (controller.signal.aborted) return;
+      timedOut = true;
+      controller.abort(new DOMException('FlowBoard API request timed out', 'TimeoutError'));
+    }, timeoutMs);
+  }
+
+  return {
+    signal: controller.signal,
+    didTimeOut: () => timedOut,
+    cleanup() {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      removeCallerAbort?.();
+      removeCallerAbort = null;
+    },
+  };
+}
+
+function normalizeRequestError(error, { callerSignal, deadline, path, timeoutMs }) {
+  if (deadline.didTimeOut()) {
+    return new ApiError(`FlowBoard did not respond within ${timeoutMs} ms.`, {
+      kind: 'timeout',
+      path,
+      cause: error,
+    });
+  }
+  if (callerSignal?.aborted || error?.name === 'AbortError') {
+    return new ApiError('FlowBoard request was cancelled.', {
+      kind: 'aborted',
+      path,
+      cause: error,
+    });
+  }
+  if (error instanceof ApiError) return error;
+  return new ApiError('Unable to reach the FlowBoard service.', {
+    kind: 'network',
+    path,
+    cause: error,
+  });
+}
+
+/**
+ * Run related API calls as one failure domain. The first rejection aborts every
+ * still-running sibling and waits for their abort handlers to settle before the
+ * group rejects, so callers cannot start a replacement while old network work
+ * is still alive.
+ */
+export async function abortableAll(requestFactories, { signal: parentSignal } = {}) {
+  const controller = new AbortController();
+  const forwardParentAbort = () => controller.abort(parentSignal.reason);
+  if (parentSignal?.aborted) forwardParentAbort();
+  else parentSignal?.addEventListener('abort', forwardParentAbort, { once: true });
+
+  // Start every sibling in this turn. Deferring factories to a microtask lets
+  // React StrictMode's mount rehearsal abort the whole initial group before a
+  // single fetch is even issued, making the real mount depend on a poll tick.
+  // Promise.resolve still normalizes synchronous returns, while the try/catch
+  // preserves rejection semantics for a synchronously throwing factory.
+  const requests = requestFactories.map((request) => {
+    try {
+      return Promise.resolve(request(controller.signal));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  });
+  try {
+    return await Promise.all(requests);
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      controller.abort(new DOMException('Sibling FlowBoard request failed', 'AbortError'));
+    }
+    await Promise.allSettled(requests);
+    throw error;
+  } finally {
+    parentSignal?.removeEventListener('abort', forwardParentAbort);
+  }
 }
 
 export async function apiJson(path, opts = {}) {
   const normalizedPath = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
-  const res = await apiFetch(normalizedPath, opts);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+  const {
+    timeoutMs = DEFAULT_API_TIMEOUT_MS,
+    signal: callerSignal,
+    ...requestOptions
+  } = opts;
+  const deadline = createRequestAbortScope(callerSignal, timeoutMs);
+  const requestContext = {
+    callerSignal,
+    deadline,
+    path: normalizedPath,
+    timeoutMs,
+  };
+
+  try {
+    let res;
+    try {
+      // apiJson owns one deadline for the complete operation. Passing only its
+      // linked signal prevents apiFetch from clearing a second timer as soon as
+      // headers arrive; the scope stays alive through response.json().
+      res = await apiFetch(normalizedPath, {
+        ...requestOptions,
+        signal: deadline.signal,
+      });
+    } catch (error) {
+      throw normalizeRequestError(error, requestContext);
+    }
+
+    let data;
+    let parseError = null;
+    try {
+      data = await res.json();
+    } catch (error) {
+      if (deadline.didTimeOut() || callerSignal?.aborted || error?.name === 'AbortError') {
+        throw normalizeRequestError(error, requestContext);
+      }
+      parseError = error;
+    }
+
+    if (!res.ok) {
+      throw new ApiError((!parseError && data?.error) || `HTTP ${res.status}`, {
+        status: res.status,
+        kind: 'http',
+        path: normalizedPath,
+      });
+    }
+
+    if (parseError) {
+      throw new ApiError('FlowBoard returned an invalid JSON response.', {
+        kind: 'protocol',
+        path: normalizedPath,
+        cause: parseError,
+      });
+    }
+
+    return data;
+  } finally {
+    deadline.cleanup();
   }
-  return data;
 }

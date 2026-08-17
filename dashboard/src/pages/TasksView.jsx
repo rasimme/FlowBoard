@@ -14,7 +14,7 @@ import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check, GripVertical } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
-import { getTasks, replaceTasks, refreshTasks, notify } from '../state/appStateBridge.mjs';
+import { getTasks, replaceTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
@@ -1051,7 +1051,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
 
 export default function TasksView() {
   const { state } = useAppState();
-  const { refreshProjectsOnly } = useDashboard();
+  const { refreshProjectsOnly, refreshTasks } = useDashboard();
   const viewedProject = state?.viewedProject;
   const allTasks = state?.tasks || [];
 

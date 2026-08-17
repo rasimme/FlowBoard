@@ -8,7 +8,7 @@ Task CRUD + lifecycle (claim, release, complete, checkpoint, comment, route, han
 
 List tasks for a project.
 
-**Response 200:** `{"tasks": [{"id": "T-197-7", "title": "...", "status": "review", "agent": "claude-code", "claimedAt": "...", "leaseUntil": "...", "lastCheckpointAt": "...", ...}, ...]}`
+**Response 200:** `{"ok": true, "tasks": [{"id": "T-197-7", "title": "...", "status": "review", "agent": "claude-code", "claimedAt": "...", "leaseUntil": "...", "lastCheckpointAt": "...", ...}, ...]}`
 
 ### `POST /api/projects/:name/tasks`
 

@@ -84,6 +84,12 @@ assert.match(dashboardContext.text, /querySelector\('\.sidebar-backdrop'\)/, 'Da
 assert.match(dashboardContext.text, /addEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is installed')
 assert.match(dashboardContext.text, /removeEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is cleaned up')
 assert.match(dashboardContext.text, /installGlobalToast/, 'DashboardContext installs global toast bridge for migrated React surfaces')
+assert.match(dashboardContext.text, /fetchCoordinatedTasks\(viewedProject, 'Dashboard snapshot'/,
+  'full snapshots use the central task-request coordinator')
+assert.equal((dashboardContext.text.match(/fetchTasksForProject\(/g) || []).length, 1,
+  'DashboardContext has exactly one low-level task-list fetch site')
+assert.match(dashboardContext.text, /snapshot\.taskGeneration !== taskRequestRef\.current\.generation/,
+  'a newer task refresh invalidates a fetched but not-yet-committed full snapshot')
 console.log('✅ runtime guard: migrated shell bridge keeps hidden DOM listeners')
 
 const tasksView = sourceFiles.find(file => file.path === 'src/pages/TasksView.jsx')
@@ -95,6 +101,20 @@ assert.match(tasksView.text, /from '\.\.\/state\/taskState\.mjs'/, 'TasksView im
 assert.match(detailPanel.text, /from '\.\.\/state\/appStateBridge\.mjs'/, 'DetailPanel imports appStateBridge')
 assert.match(detailPanel.text, /from '\.\.\/state\/taskState\.mjs'/, 'DetailPanel imports taskState')
 assert.doesNotMatch(detailPanel.text, /refreshKanban/, 'DetailPanel no longer uses legacy refreshKanban')
+assert.doesNotMatch(
+  tasksView.text,
+  /import\s*\{[^}]*\brefreshTasks\b[^}]*\}\s*from '\.\.\/state\/appStateBridge\.mjs'/s,
+  'TasksView refreshes through DashboardContext coordination',
+)
+assert.doesNotMatch(
+  detailPanel.text,
+  /import\s*\{[^}]*\brefreshTasks\b[^}]*\}\s*from '\.\.\/state\/appStateBridge\.mjs'/s,
+  'DetailPanel refreshes through DashboardContext coordination',
+)
+assert.match(tasksView.text, /\{\s*refreshProjectsOnly,\s*refreshTasks\s*\}\s*=\s*useDashboard\(\)/,
+  'TasksView receives the coordinated task refresh')
+assert.match(detailPanel.text, /\{\s*openSpec,\s*viewProject,\s*refreshTasks\s*\}\s*=\s*useDashboard\(\)/,
+  'DetailPanel receives the coordinated task refresh')
 console.log('✅ runtime guard: task surfaces use runtime modules')
 
 // --- T-356 architecture invariants (keep the React migration from regressing) ---

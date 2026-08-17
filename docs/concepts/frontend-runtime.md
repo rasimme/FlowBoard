@@ -2,11 +2,13 @@
 
 ## What
 
-The frontend runtime is the client-side contract for keeping FlowBoard's task UI consistent after local actions.
+The frontend runtime is the client-side contract for keeping FlowBoard's task UI consistent after local actions and for representing dashboard API availability without inventing empty data.
 
 It sits between React views, the legacy `window.appState` shell bridge, and the Express/HZL API. Its job is not to own canonical task truth. Its job is to make local UI state converge quickly and predictably with canonical server responses.
 
 The ownership boundary is explicit. `dashboard/src/bootstrap.js` is bootstrap-only: it creates the initial `window.appState` shape and resolves Telegram auth/agent identity. React's `DashboardContext` owns shell refresh, project actions, tab switching, and the remaining compatibility bridge. Task-list reads and writes go through `appStateBridge`, and mutation wrappers live under `src/state/`.
+
+`appStore` also carries one connection state for the shell: `loading`, `ready`, `empty`, `auth-error`, `offline`, `timeout`, or `server-error`. `empty` is produced only by a successful, schema-valid projects response. Initial failures block the shell with remediation; failures after a valid snapshot leave that snapshot intact and surface a persistent retry banner.
 
 ## Why
 
@@ -61,6 +63,7 @@ React owns interactive dashboard UI state:
 - receive immediate optimistic updates
 - receive canonical server response merges
 - display rollback/error feedback
+- render fatal bootstrap errors and degraded polling without clearing valid data
 
 ### Bootstrap Module
 
@@ -89,6 +92,19 @@ Every task mutation should follow the same sequence:
 
 Polling is reconciliation. It is not the primary state propagation mechanism for a local action.
 
+Polling is also transactional at the shell-snapshot boundary: projects, agents,
+active project, and tasks are schema-validated before updates are committed.
+Parallel core requests form one abort group, so one failure cancels its still-
+running siblings. Polls and manual retries share one network-serial generation/
+abort coordinator: replacement work starts only after the aborted request has
+settled. Project navigation invalidates that coordinator and uses a separate
+latest-wins task lane, so an older poll or task response cannot reset the viewed
+project. Any failed request changes only the connection state; it cannot turn
+the last successful project/task snapshot into an empty array. Bootstrap auth
+failures outrank successful core responses until `/api/auth` itself recovers;
+core failures are cleared only by a complete successful core snapshot, and a
+task-only refresh cannot hide them.
+
 ## File Runtime
 
 Project files are not HZL records. They live on disk under the project directory and may be changed by the dashboard, by agents, or by normal filesystem tools. The Files view therefore uses a smaller convergence contract than task state:
@@ -110,6 +126,12 @@ The intended module boundary is:
   - reads and writes `window.appState` while it still exists
   - emits the React notification event
   - owns refresh bridge functions
+- `dashboard/src/state/connectionState.mjs`
+  - classifies auth, network, timeout, protocol, and server failures
+  - derives loading/ready/empty/degraded shell states without mutating data
+- `dashboard/src/utils/dashboardApi.js`
+  - owns schema-validated projects, agents, status, tasks, and auth loaders
+  - applies the shared API deadline and caller abort contract to every loader
 - `dashboard/src/state/taskState.*`
   - pure operations for patch, merge, rollback, snapshots, and parent updates
 - `dashboard/src/state/taskMutations.*`
@@ -167,6 +189,7 @@ Current relevant files:
 - `dashboard/src/bootstrap.js` - bootstrap-only state shape, Telegram auth, agent id resolution
 - `dashboard/src/context/AppStateContext.jsx` - React bridge over global app state
 - `dashboard/src/context/DashboardContext.jsx` - React-owned shell runtime and compatibility bridge
+- `dashboard/src/components/DashboardConnectionState.jsx` - blocking initial state and degraded retry banner
 - `dashboard/src/pages/TasksView.jsx` - Kanban task UI
 - `dashboard/src/pages/FilesView.jsx` - project file tree, preview, editor, and file-metadata reconciliation
 - `dashboard/src/components/DetailPanel.jsx` - task detail drawer and task actions

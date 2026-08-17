@@ -2,31 +2,25 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef } fr
 import { useAppState } from './AppStateContext.jsx';
 import { selectViewedProject } from '../utils/projectSelection.mjs';
 import * as bridge from '../state/appStateBridge.mjs';
-import { apiJson } from '../utils/apiFetch.js';
+import { abortableAll, apiJson } from '../utils/apiFetch.js';
+import {
+  fetchActiveProjectForAgent,
+  fetchAgentsList,
+  fetchProjectsList,
+  fetchTasksForProject,
+} from '../utils/dashboardApi.js';
 import { installGlobalToast, showToast } from '../utils/toast.js';
+import {
+  INITIAL_CONNECTION_STATE,
+  connectionFailure,
+  connectionLoading,
+  connectionRecovery,
+  connectionScopeRecovery,
+} from '../state/connectionState.mjs';
 
 const DashboardContext = createContext(null);
 
 const POLL_INTERVAL_MS = 5000;
-
-async function fetchAgentsList() {
-  try {
-    const data = await apiJson('/agents');
-    return Array.isArray(data?.agents) ? data.agents : [];
-  } catch {
-    return [];
-  }
-}
-
-async function fetchActiveProjectForAgent(agentId) {
-  if (!agentId) return null;
-  const data = await apiJson(`/status?agentId=${encodeURIComponent(agentId)}`);
-  if (data?.agentId !== agentId) {
-    console.warn('[status] agentId mismatch', { requested: agentId, received: data?.agentId });
-    return null;
-  }
-  return data.activeProject || null;
-}
 
 function isUserInteracting() {
   if (document.getElementById('modalOverlay')) return true;
@@ -54,64 +48,366 @@ function hapticNotification(type = 'success') {
   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type);
 }
 
+function sameConnection(a, b) {
+  return a?.status === b?.status
+    && a?.hasData === b?.hasData
+    && a?.retrying === b?.retrying
+    && a?.error === b?.error
+    && a?.httpStatus === b?.httpStatus
+    && a?.errorScope === b?.errorScope;
+}
+
 export function DashboardProvider({ children }) {
   const { state, dispatch } = useAppState();
-  const initRef = useRef(false);
   const prevTasksRef = useRef('');
   const prevProjectsRef = useRef('');
   const prevAgentsRef = useRef('');
   const prevActiveRef = useRef(null);
+  const connectionRef = useRef(state?.connection || INITIAL_CONNECTION_STATE);
+  const snapshotRequestRef = useRef({ generation: 0, active: null });
+  const taskRequestRef = useRef({ generation: 0, active: null });
+  const projectSwitchRef = useRef(null);
+  const queuedRetryRef = useRef(null);
+  const unmountedRef = useRef(false);
 
-  const fetchTasksForProject = useCallback(async (project) => {
-    if (!project) return [];
-    const data = await apiJson(`/projects/${encodeURIComponent(project)}/tasks?includeArchived=true`);
-    return data?.tasks || [];
-  }, []);
-
-  const refreshProjectsOnly = useCallback(async () => {
-    try {
-      const data = await apiJson('/projects');
-      const newProjects = data?.projects || [];
-      const newAgents = await fetchAgentsList();
-      const newActive = await fetchActiveProjectForAgent(window.appState?.agentId);
-
-      const updates = {
-        projects: newProjects,
-        agents: newAgents,
-        activeProject: newActive,
-      };
-
-      const currentViewed = window.appState?.viewedProject;
-      if (currentViewed && !newProjects.some(p => p.name === currentViewed)) {
-        updates.viewedProject = selectViewedProject({
-          projects: newProjects,
-          agents: newAgents,
-          activeProject: newActive,
-          currentViewedProject: null,
-        });
-        updates.tasks = [];
-        prevTasksRef.current = '';
-      }
-
-      prevProjectsRef.current = JSON.stringify(newProjects);
-      prevAgentsRef.current = JSON.stringify(newAgents);
-      prevActiveRef.current = newActive;
-
-      dispatch(updates);
-    } catch (err) {
-      console.error('refreshProjectsOnly error:', err);
-    }
+  const publishConnection = useCallback((next) => {
+    if (sameConnection(connectionRef.current, next)) return;
+    connectionRef.current = next;
+    dispatch({ connection: next });
   }, [dispatch]);
 
-  const viewProject = useCallback(async (name) => {
-    if (!name) return;
-    const tasks = await fetchTasksForProject(name);
-    prevTasksRef.current = JSON.stringify(tasks);
-    dispatch({
-      viewedProject: name,
-      tasks,
+  const markConnectionFailure = useCallback((error, label, scope = 'core') => {
+    console.error(`${label}:`, error);
+    publishConnection(connectionFailure(connectionRef.current, error, scope));
+  }, [publishConnection]);
+
+  const markConnectionSuccess = useCallback((projects, scope = 'core') => {
+    publishConnection(connectionRecovery(connectionRef.current, projects, scope));
+  }, [publishConnection]);
+
+  // bootstrap.js can publish an auth failure before its promise resolves. Keep
+  // the imperative request coordinator aligned with that central store value.
+  useEffect(() => {
+    connectionRef.current = state?.connection || INITIAL_CONNECTION_STATE;
+  }, [state?.connection]);
+
+  // One task-request lane owns every list fetch that can ultimately publish to
+  // appState.tasks: full snapshots, project navigation, mutation refreshes and
+  // compatibility/override callers. Replacements are network-serial and abort
+  // the old body parser before the next request starts.
+  const fetchCoordinatedTasks = useCallback((project, kind, options = {}) => {
+    const running = taskRequestRef.current.active;
+    const generation = taskRequestRef.current.generation + 1;
+    taskRequestRef.current.generation = generation;
+
+    return (async () => {
+      if (running) {
+        running.superseded = true;
+        running.controller.abort(new DOMException(`Superseded ${running.kind} task load`, 'AbortError'));
+        await running.promise.catch(() => null);
+        if (taskRequestRef.current.generation !== generation) return null;
+        if (taskRequestRef.current.active === running) taskRequestRef.current.active = null;
+      }
+
+      const { signal: callerSignal, ...fetchOptions } = options;
+      const controller = new AbortController();
+      const forwardCallerAbort = () => controller.abort(callerSignal.reason);
+      if (callerSignal?.aborted) forwardCallerAbort();
+      else callerSignal?.addEventListener('abort', forwardCallerAbort, { once: true });
+
+      let active;
+      const request = (async () => {
+        try {
+          const tasks = await fetchTasksForProject(project, controller.signal, fetchOptions);
+          if (controller.signal.aborted || taskRequestRef.current.generation !== generation) return null;
+          return { tasks, generation };
+        } catch (error) {
+          if (active?.superseded || taskRequestRef.current.generation !== generation) return null;
+          throw error;
+        } finally {
+          callerSignal?.removeEventListener('abort', forwardCallerAbort);
+          if (taskRequestRef.current.active === active) taskRequestRef.current.active = null;
+        }
+      })();
+
+      active = { generation, controller, promise: request, kind, project, superseded: false };
+      taskRequestRef.current.active = active;
+      return request;
+    })();
+  }, []);
+
+  const fetchDashboardSnapshot = useCallback(async (signal, {
+    retryAuth = false,
+    onAuthRecovered = null,
+  } = {}) => {
+    // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
+    // very first core calls see a populated agentId. An explicit auth Retry uses
+    // bootstrap's one auth owner again before loading the core snapshot.
+    if (window.__flowboardBootstrap && !window.__flowboardBootstrapReady) {
+      await window.__flowboardBootstrap;
+    }
+    connectionRef.current = window.appState?.connection || connectionRef.current;
+    if (retryAuth && typeof window.__flowboardAuthenticate === 'function') {
+      await window.__flowboardAuthenticate(signal);
+      onAuthRecovered?.();
+    }
+    if (signal.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
+
+    const [projects, agents, activeProject] = await abortableAll([
+      (groupSignal) => fetchProjectsList(groupSignal),
+      (groupSignal) => fetchAgentsList(groupSignal),
+      (groupSignal) => fetchActiveProjectForAgent(window.appState?.agentId, groupSignal),
+    ], { signal });
+    const viewedProject = selectViewedProject({
+      projects,
+      agents,
+      activeProject,
+      currentViewedProject: window.appState?.viewedProject || null,
     });
-  }, [dispatch, fetchTasksForProject]);
+    const taskSnapshot = viewedProject
+      ? await fetchCoordinatedTasks(viewedProject, 'Dashboard snapshot', { signal })
+      : { tasks: [], generation: taskRequestRef.current.generation };
+    if (taskSnapshot === null) throw new DOMException('Superseded dashboard task snapshot', 'AbortError');
+
+    return {
+      projects,
+      agents,
+      activeProject,
+      viewedProject,
+      tasks: taskSnapshot.tasks,
+      taskGeneration: taskSnapshot.generation,
+    };
+  }, [fetchCoordinatedTasks]);
+
+  const commitFullSnapshot = useCallback((snapshot, recoveredScope = 'core') => {
+    const { projects, agents, activeProject, viewedProject, tasks } = snapshot;
+    prevProjectsRef.current = JSON.stringify(projects);
+    prevAgentsRef.current = JSON.stringify(agents);
+    prevActiveRef.current = activeProject;
+    prevTasksRef.current = JSON.stringify(tasks);
+
+    const connection = connectionRecovery(connectionRef.current, projects, recoveredScope);
+    connectionRef.current = connection;
+    dispatch({ projects, agents, activeProject, viewedProject, tasks, connection });
+  }, [dispatch]);
+
+  const commitPollSnapshot = useCallback((snapshot) => {
+    const { projects, agents, activeProject, viewedProject, tasks } = snapshot;
+    const projectsJson = JSON.stringify(projects);
+    const agentsJson = JSON.stringify(agents);
+    const tasksJson = JSON.stringify(tasks);
+    const projectsChanged = projectsJson !== prevProjectsRef.current
+      || activeProject !== prevActiveRef.current
+      || viewedProject !== window.appState?.viewedProject;
+    const agentsChanged = agentsJson !== prevAgentsRef.current;
+    const tasksChanged = tasksJson !== prevTasksRef.current;
+
+    // Only a complete successful core snapshot clears a core failure; bootstrap
+    // auth failures outrank it until /api/auth itself succeeds.
+    markConnectionSuccess(projects, 'core');
+
+    if (isUserInteracting() && !projectsChanged) return;
+
+    if (projectsChanged || tasksChanged || agentsChanged) {
+      prevProjectsRef.current = projectsJson;
+      prevAgentsRef.current = agentsJson;
+      prevActiveRef.current = activeProject;
+      prevTasksRef.current = tasksJson;
+      dispatch({ projects, agents, activeProject, viewedProject, tasks });
+    }
+  }, [dispatch, markConnectionSuccess]);
+
+  const runSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
+    const running = snapshotRequestRef.current.active;
+    // React StrictMode deliberately replays mount effects in development. A
+    // replayed initial load must replace the rehearsal request instead of
+    // reusing it; otherwise an aborted/slow first request can hold the real
+    // mount hostage until the response or poll interval arrives. Polls and
+    // other non-retry callers still deduplicate against the active snapshot.
+    if (running && kind !== 'retry' && kind !== 'initial') return running.promise;
+
+    const generation = snapshotRequestRef.current.generation + 1;
+    snapshotRequestRef.current.generation = generation;
+    if (showRetrying) publishConnection(connectionLoading(connectionRef.current));
+
+    return (async () => {
+      // Replacement is network-serial, not only commit-serial: abort the old
+      // request and wait until every sibling fetch has settled before launching.
+      if (running) {
+        running.controller.abort(new DOMException('Superseded by retry', 'AbortError'));
+        await running.promise.catch(() => false);
+        if (snapshotRequestRef.current.generation !== generation) return false;
+        if (snapshotRequestRef.current.active === running) snapshotRequestRef.current.active = null;
+      }
+
+      const controller = new AbortController();
+      const retryAuth = kind === 'retry'
+        && (window.appState?.connection?.errorScope || connectionRef.current.errorScope) === 'auth';
+      let authRecovered = false;
+      let active;
+      const request = (async () => {
+        try {
+          const snapshot = await fetchDashboardSnapshot(controller.signal, {
+            retryAuth,
+            onAuthRecovered: () => { authRecovered = true; },
+          });
+          if (controller.signal.aborted
+            || snapshotRequestRef.current.generation !== generation
+            || snapshot.taskGeneration !== taskRequestRef.current.generation) return false;
+          if (kind === 'poll') commitPollSnapshot(snapshot);
+          else commitFullSnapshot(snapshot, retryAuth ? 'auth' : 'core');
+          return true;
+        } catch (error) {
+          const superseded = controller.signal.aborted
+            || snapshotRequestRef.current.generation !== generation
+            || error?.kind === 'aborted'
+            || error?.name === 'AbortError';
+          if (!superseded) {
+            const scope = error?.path === '/api/auth' ? 'auth' : 'core';
+            if (authRecovered && scope !== 'auth') {
+              connectionRef.current = connectionScopeRecovery(
+                connectionRef.current,
+                window.appState?.projects || [],
+                'auth',
+              );
+            }
+            markConnectionFailure(error, `${kind === 'poll' ? 'Refresh' : 'Dashboard load'} error`, scope);
+          }
+          return false;
+        } finally {
+          if (snapshotRequestRef.current.active === active) snapshotRequestRef.current.active = null;
+        }
+      })();
+
+      active = { generation, controller, promise: request, kind };
+      snapshotRequestRef.current.active = active;
+      return request;
+    })();
+  }, [commitFullSnapshot, commitPollSnapshot, fetchDashboardSnapshot, markConnectionFailure, publishConnection]);
+
+  const startSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
+    const projectSwitch = projectSwitchRef.current;
+    if (!projectSwitch) return runSnapshotRequest(kind, { showRetrying });
+
+    // A project switch owns the task lane, but it must not swallow a Retry.
+    // Keep the visible retry state immediately and queue one complete core
+    // snapshot behind the switch. The queued operation also follows a later
+    // switch instead of starting a request against an obsolete project.
+    if (kind === 'retry') {
+      if (showRetrying) publishConnection(connectionLoading(connectionRef.current));
+      if (queuedRetryRef.current) return queuedRetryRef.current;
+
+      const queued = (async () => {
+        let observedSwitch = projectSwitch;
+        while (observedSwitch) {
+          await observedSwitch.promise?.catch(() => false);
+          if (unmountedRef.current) return false;
+          observedSwitch = projectSwitchRef.current;
+        }
+        if (unmountedRef.current) return false;
+        return runSnapshotRequest('retry');
+      })().finally(() => {
+        if (queuedRetryRef.current === queued) queuedRetryRef.current = null;
+      });
+      queuedRetryRef.current = queued;
+      return queued;
+    }
+
+    // Polling and task-only refreshes are already represented by the switch;
+    // reusing its promise avoids a second task request while navigation owns
+    // the lane.
+    return projectSwitch.promise || Promise.resolve(false);
+  }, [publishConnection, runSnapshotRequest]);
+
+  const invalidateSnapshotRequest = useCallback(async (reason) => {
+    const running = snapshotRequestRef.current.active;
+    snapshotRequestRef.current.generation += 1;
+    if (!running) return;
+    running.controller.abort(new DOMException(reason, 'AbortError'));
+    await running.promise.catch(() => false);
+    if (snapshotRequestRef.current.active === running) snapshotRequestRef.current.active = null;
+  }, []);
+
+  const loadDashboardSnapshot = useCallback(() => (
+    startSnapshotRequest('initial')
+  ), [startSnapshotRequest]);
+
+  const retryConnection = useCallback(() => (
+    startSnapshotRequest('retry', { showRetrying: true })
+  ), [startSnapshotRequest]);
+
+  const refreshProjectsOnly = useCallback(() => (
+    startSnapshotRequest('retry')
+  ), [startSnapshotRequest]);
+
+  const refreshTasks = useCallback(async (projectOverride = null, options = {}) => {
+    const project = projectOverride
+      || window.appState?.viewedProject
+      || window.appState?.activeProject;
+    if (!project) return null;
+
+    // viewProject owns publication while navigation is pending. Same-target
+    // callers reuse it; stale callbacks captured by the former project vanish.
+    const projectSwitch = projectSwitchRef.current;
+    if (projectSwitch) {
+      return projectSwitch.name === project
+        ? (projectSwitch.promise || null)
+        : null;
+    }
+
+    const currentProject = window.appState?.viewedProject || window.appState?.activeProject;
+    if (currentProject !== project) return null;
+
+    try {
+      const result = await fetchCoordinatedTasks(project, 'Board refresh', options);
+      const latestProject = window.appState?.viewedProject || window.appState?.activeProject;
+      if (result === null
+        || result.generation !== taskRequestRef.current.generation
+        || latestProject !== project
+        || projectSwitchRef.current) return null;
+      bridge.replaceTasks(result.tasks);
+      prevTasksRef.current = JSON.stringify(result.tasks);
+      markConnectionSuccess(window.appState?.projects || [], 'tasks');
+      return result.tasks;
+    } catch (error) {
+      if (error?.kind !== 'aborted' && error?.name !== 'AbortError') {
+        markConnectionFailure(error, 'Board refresh error', 'tasks');
+      }
+      return null;
+    }
+  }, [fetchCoordinatedTasks, markConnectionFailure, markConnectionSuccess]);
+
+  const viewProject = useCallback((name) => {
+    if (!name) return Promise.resolve(null);
+
+    const pending = { name, promise: null };
+    projectSwitchRef.current = pending;
+    pending.promise = (async () => {
+      await invalidateSnapshotRequest(`Project changed to ${name}`);
+      if (projectSwitchRef.current !== pending) return null;
+
+      try {
+        const result = await fetchCoordinatedTasks(name, 'viewProject');
+        if (result === null
+          || result.generation !== taskRequestRef.current.generation
+          || projectSwitchRef.current !== pending) return null;
+        prevTasksRef.current = JSON.stringify(result.tasks);
+        dispatch({ viewedProject: name, tasks: result.tasks });
+        markConnectionSuccess(window.appState?.projects || [], 'tasks');
+        return result.tasks;
+      } catch (error) {
+        if (projectSwitchRef.current === pending
+          && error?.kind !== 'aborted'
+          && error?.name !== 'AbortError') {
+          markConnectionFailure(error, 'viewProject error', 'tasks');
+        }
+        return null;
+      }
+    })().finally(() => {
+      if (projectSwitchRef.current === pending) projectSwitchRef.current = null;
+    });
+    return pending.promise;
+  }, [dispatch, fetchCoordinatedTasks, invalidateSnapshotRequest, markConnectionFailure, markConnectionSuccess]);
 
   const activateProject = useCallback(async () => {
     const agentId = window.appState?.agentId;
@@ -176,134 +472,44 @@ export function DashboardProvider({ children }) {
     const onBackdropClick = () => toggleSidebar();
     backdrop?.addEventListener('click', onBackdropClick);
 
-    const installed = bridge.installRefreshBridge(async () => {
-      const project = window.appState?.viewedProject || window.appState?.activeProject;
-      if (!project) return null;
-      const tasks = await fetchTasksForProject(project);
-      bridge.replaceTasks(tasks);
-      prevTasksRef.current = JSON.stringify(tasks);
-      return tasks;
-    });
+    const installed = bridge.installRefreshBridge(refreshTasks);
 
     return () => {
       uninstallToast();
       backdrop?.removeEventListener('click', onBackdropClick);
-      if (window.appState && installed && window.appState._refreshBoard === installed) {
-        delete window.appState._refreshBoard;
-      }
+      bridge.uninstallRefreshBridge(installed);
     };
-  }, [toggleSidebar, fetchTasksForProject]);
+  }, [toggleSidebar, refreshTasks]);
 
   // Initial fetch — runs once after window.appState bootstrap is in place.
   useEffect(() => {
-    if (initRef.current) return;
-    initRef.current = true;
-
-    (async () => {
-      try {
-        // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
-        // very first /projects + /status calls see a populated agentId.
-        if (window.__flowboardBootstrap) await window.__flowboardBootstrap;
-        const data = await apiJson('/projects');
-        const projects = data?.projects || [];
-        const agents = await fetchAgentsList();
-        const agentId = window.appState?.agentId;
-        const activeProject = await fetchActiveProjectForAgent(agentId);
-        const viewedProject = selectViewedProject({
-          projects,
-          agents,
-          activeProject,
-          currentViewedProject: window.appState?.viewedProject || null,
-        });
-
-        let tasks = [];
-        if (viewedProject) {
-          tasks = await fetchTasksForProject(viewedProject);
-        }
-
-        prevProjectsRef.current = JSON.stringify(projects);
-        prevAgentsRef.current = JSON.stringify(agents);
-        prevActiveRef.current = activeProject;
-        prevTasksRef.current = JSON.stringify(tasks);
-
-        dispatch({
-          projects,
-          agents,
-          activeProject,
-          viewedProject,
-          tasks,
-        });
-      } catch (err) {
-        console.error('Dashboard init error:', err);
-      }
-    })();
-  }, [dispatch, fetchTasksForProject]);
+    loadDashboardSnapshot();
+  }, [loadDashboardSnapshot]);
 
   // Background refresh poll — same cadence as legacy app.js (5s).
   // Skips re-renders when user is interacting unless projects-level changes
   // happened, mirroring the legacy isUserInteracting() guard.
   useEffect(() => {
-    const tick = async () => {
-      try {
-        const agentId = window.appState?.agentId;
-        const data = await apiJson('/projects');
-        const newProjects = data?.projects || [];
-        const newAgents = await fetchAgentsList();
-        const newActive = await fetchActiveProjectForAgent(agentId);
-
-        const projectsJson = JSON.stringify(newProjects);
-        const agentsJson = JSON.stringify(newAgents);
-        const projectsChanged = projectsJson !== prevProjectsRef.current || newActive !== prevActiveRef.current;
-        const agentsChanged = agentsJson !== prevAgentsRef.current;
-
-        const updates = {};
-        if (projectsJson !== prevProjectsRef.current) updates.projects = newProjects;
-        if (agentsChanged) updates.agents = newAgents;
-        if (newActive !== prevActiveRef.current) updates.activeProject = newActive;
-
-        let viewedProject = window.appState?.viewedProject;
-        if (!viewedProject) {
-          viewedProject = selectViewedProject({
-            projects: newProjects,
-            agents: newAgents,
-            activeProject: newActive,
-          });
-          if (viewedProject) updates.viewedProject = viewedProject;
-        }
-
-        let tasksChanged = false;
-        let tasksJson = prevTasksRef.current;
-        if (viewedProject) {
-          const newTasks = await fetchTasksForProject(viewedProject);
-          tasksJson = JSON.stringify(newTasks);
-          if (tasksJson !== prevTasksRef.current) {
-            tasksChanged = true;
-            updates.tasks = newTasks;
-          }
-        }
-
-        // T-246-7: commit the "seen" refs only when we actually dispatch.
-        // The old code updated the refs first and then bailed on the
-        // interaction guard — the change was marked as seen and the kanban
-        // never received it (stale cards until the next real server change
-        // or a reload).
-        if (isUserInteracting() && !projectsChanged) return;
-
-        if (projectsChanged || tasksChanged || agentsChanged) {
-          prevProjectsRef.current = projectsJson;
-          prevAgentsRef.current = agentsJson;
-          prevActiveRef.current = newActive;
-          prevTasksRef.current = tasksJson;
-          dispatch(updates);
-        }
-      } catch (err) {
-        console.error('Refresh error:', err);
-      }
-    };
+    const tick = () => startSnapshotRequest('poll');
 
     const id = setInterval(tick, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [dispatch, fetchTasksForProject]);
+  }, [startSnapshotRequest]);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      projectSwitchRef.current = null;
+      queuedRetryRef.current = null;
+      snapshotRequestRef.current.generation += 1;
+      snapshotRequestRef.current.active?.controller.abort(new DOMException('Dashboard unmounted', 'AbortError'));
+      snapshotRequestRef.current.active = null;
+      taskRequestRef.current.generation += 1;
+      taskRequestRef.current.active?.controller.abort(new DOMException('Dashboard unmounted', 'AbortError'));
+      taskRequestRef.current.active = null;
+    };
+  }, []);
 
   const value = useMemo(() => ({
     state,
@@ -313,11 +519,13 @@ export function DashboardProvider({ children }) {
     switchTab,
     toggleSidebar,
     refreshProjectsOnly,
+    refreshTasks,
+    retryConnection,
     openSpec,
     applyTelegramTheme: applyTelegramThemeImpl,
     haptic,
     hapticNotification,
-  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, openSpec]);
+  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, refreshTasks, retryConnection, openSpec]);
 
   return (
     <DashboardContext.Provider value={value}>

@@ -17,9 +17,10 @@ import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
-import { getTasks, refreshTasks, replaceTasks } from '../state/appStateBridge.mjs';
+import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 import { apiJson as apiFetch } from '../utils/apiFetch.js';
+import { fetchTasksForProject } from '../utils/dashboardApi.js';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
 // critical parts are the resets (`border-0 outline-none`) — without
@@ -171,7 +172,7 @@ function showToast(msg, type = 'info') {
 
 export default function DetailPanel() {
   const { state, version, dispatch } = useAppState();
-  const { openSpec, viewProject } = useDashboard();
+  const { openSpec, viewProject, refreshTasks } = useDashboard();
   const { goToTask } = useNavigation();
   const taskActions = useTaskActions();
   const [taskId, setTaskId] = useState(null);
@@ -252,24 +253,27 @@ export default function DetailPanel() {
   useEffect(() => {
     if (!taskId || !project) return;
     let cancelled = false;
+    const controller = new AbortController();
 
     async function load() {
       try {
-        const data = await apiFetch(`/projects/${project}/tasks?includeArchived=true`);
-        const tasks = Array.isArray(data) ? data : Array.isArray(data?.tasks) ? data.tasks : [];
+        const tasks = await fetchTasksForProject(project, controller.signal);
         const found = tasks.find((t) => t.id === taskId);
         if (cancelled) return;
         if (!found) throw new Error('Task not found');
         setTask(found);
         setLoading(false);
       } catch (err) {
-        if (cancelled) return;
+        if (cancelled || err?.kind === 'aborted') return;
         showToast('Failed to load: ' + err.message, 'danger');
         close();
       }
     }
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      controller.abort(new DOMException('Detail task changed', 'AbortError'));
+    };
   }, [taskId, project]);
 
   // T-295: keep the open panel in sync with live task state. The panel held
