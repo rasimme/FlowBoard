@@ -242,6 +242,7 @@ function splitSystemdWords(value) {
   if (escaping) word += '\\';
   if (started) words.push(word);
   return words;
+}
 
 function unescapeSystemdString(value) {
   let result = '';
@@ -301,7 +302,6 @@ function unescapeSystemdString(value) {
     }
   }
   return result;
-}
 }
 
 function expandSupportedSystemdSpecifiers(value) {
