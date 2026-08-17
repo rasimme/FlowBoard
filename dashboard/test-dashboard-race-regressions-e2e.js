@@ -131,6 +131,11 @@ async function main() {
             await respond(request, 200, { ok: false, user: {} });
             return;
           }
+          // T-441 makes POST /api/auth a strict credential exchange even for
+          // the local test server. Keep the non-auth regression modes explicit
+          // instead of relying on that server's local bypass to mint a session.
+          await respond(request, 200, { ok: true, user: { username: 'e2e' }, agentId: 'e2e' });
+          return;
         }
 
         if (request.method() === 'GET' && url.pathname === '/api/projects'

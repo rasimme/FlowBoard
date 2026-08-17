@@ -7,7 +7,7 @@ const TEXT_EXTENSIONS = new Set([
   '.sh', '.txt', '.ts', '.tsx', '.yml', '.yaml'
 ]);
 
-const SECRET_ASSIGNMENT = /^[ \t]*(?:export[ \t]+)?(?:TELEGRAM_BOT_TOKEN|BOT_TOKEN|JWT_SECRET|OPENCLAW_HOOKS_TOKEN|HOOKS_TOKEN|INTEGRITY_WEBHOOK_TOKEN)[ \t]*=[ \t]*["']?([^"'\s#]*)["']?/gmi;
+const SECRET_ASSIGNMENT = /^[ \t]*(?:export[ \t]+)?(?:Environment=["'])?(?:TELEGRAM_BOT_TOKENS?|BOT_TOKEN|JWT_SECRET|OPENCLAW_HOOKS_TOKEN|HOOKS_TOKEN|INTEGRITY_WEBHOOK_TOKEN)\b["']?[ \t]*=[ \t]*(?<value>"[^"]*"|'[^']*'|\[[^\]\r\n]*\]|[^ \t\r\n#;}]*)(?:[ \t]*(?:#|\/\/).*)?/gmi;
 
 const ALLOWED_PLACEHOLDER_VALUES = new Set([
   '',
@@ -60,6 +60,25 @@ function lineNumber(content, index) {
   return content.slice(0, index).split('\n').length;
 }
 
+function assignmentValues(rawValue) {
+  let value = String(rawValue || '').trim();
+  if (!value || value.startsWith('#') || value.startsWith('//')) return [];
+
+  // Support shell/env, systemd, YAML/JSON, and JS-style comma-separated
+  // lists without ever echoing the captured value in a finding.
+  value = value.replace(/[ \t]+(?:#|\/\/).*$/, '').trim();
+  if ((value.startsWith('[') && value.endsWith(']'))
+    || (value.startsWith('{') && value.endsWith('}'))) {
+    value = value.slice(1, -1).trim();
+  }
+  if (/^(?:process\.env|import\.meta\.env)\.[A-Z0-9_]+(?:\s|$)/.test(value)) return [];
+
+  return value
+    .split(',')
+    .map(entry => entry.trim().replace(/^["'`]+/, '').replace(/["'`;}\]]+$/, '').trim())
+    .filter(Boolean);
+}
+
 const findings = [];
 
 for (const file of gitFiles().filter(shouldScan)) {
@@ -79,15 +98,16 @@ for (const file of gitFiles().filter(shouldScan)) {
   }
 
   for (const match of content.matchAll(SECRET_ASSIGNMENT)) {
-    const value = String(match[1] || '').trim();
-    const normalized = value.toLowerCase();
-    if (
-      !ALLOWED_PLACEHOLDER_VALUES.has(normalized)
-      && !normalized.startsWith('<')
-      && !normalized.includes('placeholder')
-      && !normalized.startsWith('$(')
-    ) {
-      findings.push(`${file}:${lineNumber(content, match.index)} non-placeholder secret value`);
+    for (const value of assignmentValues(match.groups?.value)) {
+      const normalized = value.toLowerCase();
+      if (
+        !ALLOWED_PLACEHOLDER_VALUES.has(normalized)
+        && !normalized.startsWith('<')
+        && !normalized.includes('placeholder')
+        && !normalized.startsWith('$(')
+      ) {
+        findings.push(`${file}:${lineNumber(content, match.index)} non-placeholder secret value`);
+      }
     }
   }
 }

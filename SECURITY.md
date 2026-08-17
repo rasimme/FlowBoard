@@ -60,9 +60,19 @@ middleware fails closed:
   arbitrary hosts).
 - **Direct loopback (`127.0.0.1`/`::1`)** → allowed without a token *unless*
   `AUTH_ALWAYS=true`. This is the local-first operator path.
-- **Authentication** auto-enables when `TELEGRAM_BOT_TOKEN`, `JWT_SECRET`
-  (≥ 32 chars, HS256 pinned) and `ALLOWED_USER_IDS` are all set. `AUTH_ALWAYS=true`
-  forces auth even for loopback. See `docs/concepts/auth-model.md` and ADR-0028.
+- **Authentication** auto-enables when the ordered bot-token →
+  `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping is valid, `JWT_SECRET` (≥ 32 chars,
+  HS256 pinned) is set, and `ALLOWED_USER_IDS` is set. Ambiguous mappings fail
+  startup without echoing token values. `AUTH_ALWAYS=true` forces auth even for
+  loopback. See `docs/concepts/auth-model.md`, ADR-0028, and ADR-0030.
+- **Fresh Telegram credentials outrank cookies.** Valid fresh init-data issues or
+  rebinds the JWT to the matched agent; invalid fresh data cannot inherit a
+  session from another bot on the same origin.
+- **Expired init-data is verified before it is classified.** HMAC, allowed-user,
+  bot, and agent mapping checks all run before `EXPIRED` is returned. A
+  steady-state cookie fallback requires the same Telegram user and bot-agent
+  binding; cross-bot and forged-expired payloads return `403` and clear both
+  the root and legacy `/api` cookie paths.
 - **CORS:** when auth is off (local-first), CORS is restricted to loopback
   origins — a cross-site web page cannot drive the API from a victim's browser.
   When auth is on, CORS is restricted to the configured/Telegram origins.
@@ -151,7 +161,8 @@ audited and, for the highest-blast-radius ones, gated:
 | Secret | Source | Handling |
 |--------|--------|----------|
 | `JWT_SECRET` | env only | ≥ 32 chars enforced; never persisted, never returned. |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_TOKENS` | env only | Used only for Telegram WebApp HMAC validation; never echoed. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_BOT_TOKENS` | env only | Ordered Telegram WebApp HMAC secrets; validated for gaps/duplicates and never echoed. |
+| `FLOWBOARD_TELEGRAM_AGENT_IDS` | env only (non-secret) | Ordered 1:1 agent mapping for bot tokens; count, uniqueness, and agent-id syntax validated at startup. |
 | `OPENCLAW_HOOKS_TOKEN` | env only | Outbound bearer; inbound timing-safe compare; never echoed. |
 | `INTEGRITY_WEBHOOK_TOKEN` | env only | Outbound bearer; never echoed. |
 | GitHub token | `FLOWBOARD_GITHUB_TOKEN` / `GITHUB_TOKEN` (preferred), else local DB | Used only for read-only `api.github.com` calls. The settings API is **write-only** (GET returns only `{set, source}`); the value is never logged or returned. |
@@ -216,3 +227,11 @@ designed rather than rushed: a per-endpoint **capability model**, an
 (authenticated principals instead of self-asserted ids), a **dedicated secret
 store / keychain** for the GitHub token, and a package split that ships a minimal
 hook + installer separately from the runtime service.
+
+## Recent hardening (T-441)
+
+### Auth-endpoint rate limiting (T-441-3)
+The `/api/auth` endpoint enforces a sliding-window rate limit of 60 requests per minute per source IP. Cloudflare forwarding headers are accepted only when the immediate socket peer matches an explicit `FLOWBOARD_TRUSTED_PROXY_IPS` address/CIDR (for local `cloudflared`, its trusted loopback peer); `cf-ray` and `cf-connecting-ip` alone are never proof. Direct, forged, or unconfigured requests use the transport socket address, so rotating both headers cannot evade the limit. The limit is checked in-app; additional reverse-proxy rate limiting is recommended in production. Rejected requests return HTTP 429 with a `Retry-After` header.
+
+### Privacy-filter for logs (T-441-4)
+All console output (warnings, errors, logs) passes through a sanitization layer that redacts common patterns: Telegram bot tokens, JWT tokens, bearer tokens, and secret/password strings. The repository privacy scan also checks singular and plural `TELEGRAM_BOT_TOKEN(S)` assignments, including comma-separated lists, without echoing captured values. This prevents accidental token leaks from reaching logs or the published source. The filter is identity-preserving (it records that *something* happened) but removes the secret values themselves.

@@ -51,6 +51,8 @@ async function run() {
       HZL_DB_PATH: path.join(tmp, 'fb.db'), NODE_ENV: 'test',
       // Turn AUTH_ENABLED on.
       TELEGRAM_BOT_TOKEN: '123456:dummy', JWT_SECRET: SECRET, ALLOWED_USER_IDS: '42',
+      FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      FLOWBOARD_TRUSTED_PROXY_IPS: '127.0.0.1,::1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

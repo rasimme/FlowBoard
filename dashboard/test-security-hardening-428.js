@@ -84,6 +84,7 @@ async function run() {
       TELEGRAM_BOT_TOKEN: BOT_TOKEN, JWT_SECRET: SECRET, ALLOWED_USER_IDS: '42',
       TELEGRAM_BOT_TOKENS: SECONDARY_BOT_TOKEN,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'primary-agent,secondary-agent',
+      FLOWBOARD_TRUSTED_PROXY_IPS: '127.0.0.1,::1',
       LOCAL_HOSTNAME: 'myhost.local', FLOWBOARD_ALLOW_LAN: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

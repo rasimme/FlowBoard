@@ -48,15 +48,28 @@ function applyDashboardIdentity(authAgentId = null) {
   return identity;
 }
 
-function authenticateDashboard(signal) {
-  if (!tg?.initData) return applyDashboardIdentity();
+function describeAuthError(error) {
+  return {
+    // The API returns stable T-441 codes. Keep a safe fallback for network,
+    // timeout, and malformed-response failures that have no server code.
+    code: error?.code || (error?.kind === 'protocol' ? 'AUTH_RESPONSE_INVALID' : 'AUTH_REQUEST_FAILED'),
+    message: error?.message || 'Authentication failed.',
+  };
+}
 
-  return authenticateTelegram(tg.initData, signal).then((authData) => {
+async function authenticateDashboard(signal) {
+  if (!tg?.initData) {
+    window.appState.authError = null;
     window.appState.bootstrapAuthError = null;
-    window.appState.authUser = authData.user.username || null;
-    applyDashboardIdentity(authData.agentId);
-    return authData;
-  });
+    return applyDashboardIdentity();
+  }
+
+  const authData = await authenticateTelegram(tg.initData, signal);
+  window.appState.bootstrapAuthError = null;
+  window.appState.authError = null;
+  window.appState.authUser = authData.user.username || null;
+  applyDashboardIdentity(authData.agentId);
+  return authData;
 }
 
 // DashboardContext uses the same function for an explicit Retry after an auth
@@ -77,10 +90,14 @@ window.__flowboardAuthenticate = authenticateDashboard;
     if (tg?.initData) await authenticateDashboard();
     else authenticateDashboard();
   } catch (error) {
-    console.warn('Auth failed:', error);
+    const authError = describeAuthError(error);
+    console.warn(`Auth failed (${authError.code}):`, authError.message);
+    window.appState.authError = authError;
     window.appState.bootstrapAuthError = error;
     window.appState.connection = connectionFailure(window.appState.connection, error, 'auth');
-    // Resolve a safe fallback identity without pretending authentication worked.
+    window.appState.authUser = null;
+    // Keep the non-auth fallback identity available for the local-first core
+    // snapshot, but never treat it as proof that the Telegram exchange worked.
     applyDashboardIdentity();
   } finally {
     window.__flowboardBootstrapReady = true;

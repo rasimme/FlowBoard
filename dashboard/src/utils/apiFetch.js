@@ -126,12 +126,13 @@ export function apiFetch(path, opts = {}) {
 }
 
 export class ApiError extends Error {
-  constructor(message, { status = null, kind = 'http', path = null, cause = null } = {}) {
+  constructor(message, { status = null, kind = 'http', path = null, cause = null, code = null } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.kind = kind;
     this.path = path;
+    if (typeof code === 'string' && code) this.code = code;
     if (cause) this.cause = cause;
   }
 }
@@ -285,6 +286,7 @@ export async function apiJson(path, opts = {}) {
         status: res.status,
         kind: 'http',
         path: normalizedPath,
+        code: !parseError && typeof data?.code === 'string' ? data.code : null,
       });
     }
 

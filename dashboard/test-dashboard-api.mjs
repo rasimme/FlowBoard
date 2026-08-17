@@ -180,6 +180,12 @@ globalThis.fetch = async () => jsonResponse({ ok: false, user: {} });
 await expectProtocol(() => authenticateTelegram('signed-init-data'), 'auth requires ok=true');
 globalThis.fetch = async () => jsonResponse({ ok: true, user: {}, agentId: '' });
 await expectProtocol(() => authenticateTelegram('signed-init-data'), 'auth rejects an empty agentId');
+globalThis.fetch = async () => jsonResponse({ error: 'Telegram init data was not signed by a configured bot.', code: 'TELEGRAM_BOT_NOT_SUPPORTED' }, 403);
+await assert.rejects(
+  () => authenticateTelegram('signed-init-data'),
+  (error) => error?.status === 403 && error?.code === 'TELEGRAM_BOT_NOT_SUPPORTED',
+  'auth preserves the server-issued typed failure code',
+);
 
 // Every loader uses apiJson's deadline and forwards a caller abort. A caller
 // cancellation must remain "aborted" even if fetch settles after timeoutMs.

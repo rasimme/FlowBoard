@@ -141,6 +141,7 @@ const CONFIGURABLE_ENV_KEYS = [
   'FLOWBOARD_NOTIFICATION_TARGET', 'FLOWBOARD_NOTIFICATION_TO',
   'FLOWBOARD_NOTIFY_ON_COMPLETE', 'FLOWBOARD_PORT', 'FLOWBOARD_PROJECTS_DIR',
   'FLOWBOARD_REPO', 'FLOWBOARD_RULES_TELEMETRY', 'FLOWBOARD_TELEGRAM_AGENT_IDS',
+  'FLOWBOARD_TRUSTED_PROXY_IPS',
   'FLOWBOARD_WAKE_AGENT', 'GATEWAY_PORT', 'GATEWAY_URL', 'GITHUB_TOKEN',
   'HOOKS_TOKEN', 'HZL_DB_PATH', 'HZL_INTEGRITY_STRICT', 'INTEGRITY_WEBHOOK_TOKEN',
   'INTEGRITY_WEBHOOK_URL', 'JWT_SECRET', 'LOCAL_HOSTNAME', 'LOG_REQUESTS',
@@ -974,6 +975,8 @@ if (remoteGaps === null) {
 } else {
   log(`${c.ok} remote auth configuration has all required variables`);
 }
+log(c.dim('  Telegram Mini App / remote access is optional (loopback needs no auth).'));
+log(c.dim('  To enable it later, add TELEGRAM_BOT_TOKEN / FLOWBOARD_TELEGRAM_AGENT_IDS / ALLOWED_USER_IDS to the service definition — see docs/.'));
 
 // ── 5. Service registration (launchd / systemd --user) ──────────────────────
 step('4. Register the dashboard service');

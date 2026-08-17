@@ -75,6 +75,13 @@ if (process.env.NODE_ENV !== 'test' && process.env.SPECIFY_WORKER_DISABLED !== '
 const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
+const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegram-auth.js');
+const {
+  RateLimiter,
+  getClientIp,
+  parseTrustedProxyConfig,
+} = require('./rate-limiter.js');
+const { installPrivacyFilter } = require('./privacy-filter.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
 const versionCheck = require('./version-check.js');
@@ -99,28 +106,47 @@ if (!HOOKS_TOKEN) {
   console.warn('⚠️  OPENCLAW_HOOKS_TOKEN not set — /api/hooks/task-complete endpoint will reject all calls');
 }
 
-// Auth config (from env vars — never hardcoded)
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
-const TELEGRAM_BOT_TOKENS = [
-  BOT_TOKEN,
-  ...(process.env.TELEGRAM_BOT_TOKENS || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean)
-].filter(Boolean);
-const TELEGRAM_AGENT_IDS = (process.env.FLOWBOARD_TELEGRAM_AGENT_IDS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
+// Auth config (from env vars — never hardcoded). Position 1 is the primary
+// token; additional tokens and agent IDs are positional ordered lists.
 const JWT_SECRET = process.env.JWT_SECRET || '';
 const ALLOWED_USER_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+const TELEGRAM_AUTH_CONFIG = buildTelegramAuthConfig({
+  primaryToken: process.env.TELEGRAM_BOT_TOKEN,
+  additionalTokens: process.env.TELEGRAM_BOT_TOKENS,
+  agentIds: process.env.FLOWBOARD_TELEGRAM_AGENT_IDS,
+  // A lone token in an unfinished local-dev setup keeps auth disabled. Once
+  // the other auth prerequisites are present, missing mappings are fatal.
+  requireAgentMappings: Boolean(JWT_SECRET && ALLOWED_USER_IDS.length),
+  validateAgentId: agentIdentity.validateAgentId,
+});
+if (!TELEGRAM_AUTH_CONFIG.ok) {
+  console.error('FATAL: Invalid Telegram auth configuration.');
+  TELEGRAM_AUTH_CONFIG.errors.forEach(({ code, message }) => {
+    // These diagnostics contain positions and agent IDs, never token values.
+    console.error(`[${code}] ${message}`);
+  });
+  process.exit(1);
+}
+const TELEGRAM_BOT_IDENTITIES = TELEGRAM_AUTH_CONFIG.botIdentities;
 const FLOWBOARD_NOTIFICATION_TARGET = process.env.FLOWBOARD_NOTIFICATION_TARGET
   || process.env.FLOWBOARD_NOTIFICATION_TO
   || (FLOWBOARD_NOTIFICATION_CHANNEL === 'telegram' && ALLOWED_USER_IDS.length === 1
     ? String(ALLOWED_USER_IDS[0])
     : '');
 const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN || '';
+// Cloudflare's forwarding headers are not cryptographic proof: a direct
+// client can send the same names. Only accept cf-connecting-ip for rate-limit
+// identity when the transport peer is an explicitly configured proxy/tunnel.
+// An empty/invalid configuration deliberately falls back to the socket key.
+const TRUSTED_PROXY_CONFIG = parseTrustedProxyConfig(process.env.FLOWBOARD_TRUSTED_PROXY_IPS);
+const TRUSTED_PROXY_IPS = TRUSTED_PROXY_CONFIG.entries;
+if (TRUSTED_PROXY_CONFIG.invalid.length > 0) {
+  console.warn(
+    `[TRUSTED_PROXY_CONFIG] Ignoring invalid proxy peer entries; ` +
+    `Cloudflare forwarding trust remains disabled for those entries.`
+  );
+}
 
 function flowboardNotificationDelivery() {
   return {
@@ -137,7 +163,7 @@ const AUTH_ALWAYS = process.env.AUTH_ALWAYS === 'true';
 // access via FLOWBOARD_ALLOW_LAN=true — so "local-first" stays loopback-only by
 // default and the bypass can never be reached by setting LOCAL_HOSTNAME alone.
 const ALLOW_LAN = process.env.FLOWBOARD_ALLOW_LAN === 'true';
-const AUTH_ENABLED = !!(TELEGRAM_BOT_TOKENS.length && JWT_SECRET && ALLOWED_USER_IDS.length);
+const AUTH_ENABLED = !!(TELEGRAM_BOT_IDENTITIES.length && JWT_SECRET && ALLOWED_USER_IDS.length);
 const TELEGRAM_WEB_ORIGIN = 'https://web.telegram.org';
 const CORS_ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'DELETE'];
 const CORS_ALLOWED_HEADERS = ['Content-Type', 'X-Telegram-Init-Data', 'X-Requested-With'];
@@ -211,84 +237,114 @@ if (!AUTH_ENABLED && isLoopbackHost(HOST)) {
 
 // --- Auth helpers ---
 
-// Telegram WebApp data-check spec constant — NOT a secret. The validation
-// algorithm derives the secret key as HMAC_SHA256(key='WebAppData', data=bot_token);
-// 'WebAppData' is a fixed, public domain-separator mandated by Telegram. The real
-// secret is the bot token (from env). Named so secret-scanners don't misread the
-// literal. See https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-const TELEGRAM_WEBAPP_HMAC_SALT = 'WebAppData';
 function validateTelegramWebApp(initData) {
-  if (!initData || !TELEGRAM_BOT_TOKENS.length) return null;
-  const params = new URLSearchParams(initData);
-  const hash = params.get('hash');
-  if (!hash) return null;
-  const authDate = parseInt(params.get('auth_date'), 10);
-  const now = Math.floor(Date.now() / 1000);
-  if (!authDate || now - authDate > 300 || authDate > now) return null;
-  params.delete('hash');
-  const dataCheckString = [...params.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, v]) => `${k}=${v}`).join('\n');
-
-  // S-01: Timing-safe HMAC comparison to prevent timing side-channel attacks
-  let matchedBotIndex = -1;
-  const isValid = TELEGRAM_BOT_TOKENS.some((token, index) => {
-    const secretKey = crypto.createHmac('sha256', TELEGRAM_WEBAPP_HMAC_SALT).update(token).digest();
-    const checkHash = crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
-    const checkBuf = Buffer.from(checkHash, 'utf8');
-    const hashBuf = Buffer.from(hash, 'utf8');
-    if (checkBuf.length !== hashBuf.length) return false;
-    const valid = crypto.timingSafeEqual(checkBuf, hashBuf);
-    if (valid) matchedBotIndex = index;
-    return valid;
+  return validateTelegramInitData(initData, {
+    botIdentities: TELEGRAM_BOT_IDENTITIES,
+    allowedUserIds: ALLOWED_USER_IDS,
   });
-
-  if (!isValid) return null;
-  let user = null;
-  try { user = JSON.parse(params.get('user') || 'null'); } catch { return null; }
-  if (!user || !ALLOWED_USER_IDS.includes(user.id)) return null;
-  const mappedAgentId = TELEGRAM_AGENT_IDS[matchedBotIndex] || null;
-  if (mappedAgentId) user.agentId = mappedAgentId;
-  return user;
 }
 
 // Session token helpers (T-355): single source for TTL, cookie flags, the
 // pinned HMAC algorithm, and the verify/issue logic that was previously copied
 // inline several times in the auth middleware.
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8h
-const SESSION_COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'none', maxAge: SESSION_TTL_MS };
+const SESSION_COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'none', path: '/', maxAge: SESSION_TTL_MS };
+const SESSION_CLEAR_COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'none', path: '/' };
 // Pin HS256 so a token cannot be presented under a different (or "none") alg.
 function verifySession(token) { return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }); }
 function issueSession(res, user) {
   const sessionToken = jwt.sign(
-    { id: user.id, username: user.username, agentId: user.agentId || null },
+    {
+      id: user.id,
+      username: user.username,
+      agentId: user.agentId || null,
+      botIndex: Number.isInteger(user.botIndex) ? user.botIndex : null,
+    },
     JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' }
   );
   res.cookie('flowboard_session', sessionToken, SESSION_COOKIE_OPTS);
 }
-// Shared challenge: accept a valid session cookie, else validate Telegram
-// init-data and mint a session, else 403. Identical for tunnel and direct paths.
+
+// Auth endpoint rate limiter (T-441-3): 60 requests per minute per IP
+const authRateLimiter = new RateLimiter({
+  windowMs: 60 * 1000,
+  maxRequests: 60,
+  trustedProxyIps: TRUSTED_PROXY_IPS,
+});
+
+function clearSession(res) {
+  res.clearCookie('flowboard_session', SESSION_CLEAR_COOKIE_OPTS);
+  // Older builds issued the same cookie with a /api path. Clear both scopes so
+  // a legacy agentless cookie cannot survive the INVALID_SESSION response.
+  res.clearCookie('flowboard_session', { ...SESSION_CLEAR_COOKIE_OPTS, path: '/api' });
+}
+function sameSessionIdentity(sessionUser, telegramIdentity) {
+  return String(sessionUser?.id) === String(telegramIdentity?.user?.id)
+    && (sessionUser?.agentId || null) === (telegramIdentity?.agentId || null)
+    // Cookies issued before botIndex was added remain bound by their unique
+    // agent mapping. New cookies carry the position as an additional guard.
+    && (sessionUser?.botIndex == null || sessionUser.botIndex === telegramIdentity?.botIndex);
+}
+function rejectTelegramAuth(req, res, failure, { clearExistingSession = false } = {}) {
+  if (clearExistingSession || failure.code === 'INVALID_SESSION') clearSession(res);
+  console.warn(
+    `[auth] ${failure.code} from ${getClientIp(req, TRUSTED_PROXY_IPS)} — ${new Date().toISOString()}`
+  );
+  return res.status(failure.status || 403).json({ error: failure.error, code: failure.code });
+}
+// Shared challenge. Fresh Telegram init-data is authoritative when present:
+// it can mint or rebind a session, while malformed/unsupported fresh data is
+// never hidden by a cookie from another bot. Expired init-data may use an
+// existing cookie only on steady-state API calls; /api/auth is always a strict
+// credential exchange so reopening a Mini App cannot inherit another bot.
 function authenticateOrChallenge(req, res, next) {
   const token = req.cookies?.flowboard_session;
+  let sessionUser = null;
   if (token) {
-    try { req.user = verifySession(token); return next(); } catch { /* expired/invalid → fall through */ }
+    try { sessionUser = verifySession(token); } catch { /* expired/invalid */ }
   }
-  const user = validateTelegramWebApp(req.headers['x-telegram-init-data']);
-  if (!user) {
-    console.warn(`[auth] Failed attempt from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`);
-    return res.status(403).json({ error: 'Unauthorized' });
+
+  const initData = req.headers['x-telegram-init-data'];
+  const hasInitData = typeof initData === 'string' && initData.length > 0;
+  const isAuthExchange = req.method === 'POST' && req.path === '/auth';
+  if (hasInitData) {
+    const telegramResult = validateTelegramWebApp(initData);
+    if (telegramResult.ok) {
+      if (isAuthExchange || !sameSessionIdentity(sessionUser, telegramResult)) {
+        issueSession(res, { ...telegramResult.user, botIndex: telegramResult.botIndex });
+      }
+      req.user = telegramResult.user;
+      req.telegramBotIndex = telegramResult.botIndex;
+      return next();
+    }
+
+    if (
+      !isAuthExchange
+      && telegramResult.code === 'TELEGRAM_INIT_DATA_EXPIRED'
+      && sessionUser
+      && sameSessionIdentity(sessionUser, telegramResult)
+    ) {
+      req.user = sessionUser;
+      return next();
+    }
+
+    return rejectTelegramAuth(req, res, telegramResult, {
+      clearExistingSession: Boolean(token),
+    });
   }
-  issueSession(res, user);
-  req.user = user;
-  return next();
+
+  if (sessionUser) {
+    req.user = sessionUser;
+    return next();
+  }
+
+  return rejectTelegramAuth(req, res, validateTelegramWebApp(null));
 }
 
 function telegramAuthMiddleware(req, res, next) {
-  // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so IP check can't distinguish
-  // local vs external. cf-ray is ONLY set by Cloudflare edge — if present, request is external.
-  // Cloudflare Tunnel bypass: cloudflared connects from 127.0.0.1 so the IP
-  // check can't distinguish local vs external. cf-ray is ONLY set by the
-  // Cloudflare edge — if present, the request is external and must authenticate.
+  // A cf-ray marker raises the auth requirement because cloudflared connects
+  // from loopback. The marker is fail-closed routing only; it is not trusted
+  // as proof of the client IP (the rate limiter verifies the socket peer).
   if (req.headers['cf-ray']) {
     if (!AUTH_ENABLED) {
       // Auth not configured but request is external via tunnel — block it
@@ -327,6 +383,7 @@ function telegramAuthMiddleware(req, res, next) {
 // --- Middleware stack ---
 
 app.use(cookieParser());
+installPrivacyFilter();
 app.use(express.json());
 
 // S-15: Request logger — only in development or when explicitly enabled
@@ -336,6 +393,23 @@ if (process.env.LOG_REQUESTS === 'true' || process.env.DEBUG || process.env.NODE
     next();
   });
 }
+
+// T-441: rate-limit the auth exchange before Telegram/JWT verification so
+// invalid credentials consume the same budget as valid attempts.
+app.use('/api/auth', (req, res, next) => {
+  if (req.method !== 'POST') return next();
+
+  const rateLimitCheck = authRateLimiter.check(req);
+  if (!rateLimitCheck.ok) {
+    res.set('Retry-After', String(rateLimitCheck.resetSeconds));
+    return res.status(rateLimitCheck.status).json({
+      error: rateLimitCheck.message,
+      code: 'RATE_LIMIT_EXCEEDED',
+    });
+  }
+
+  next();
+});
 
 // Global auth on all /api/ routes (except /health, /info and CORS preflight)
 app.use('/api/', (req, res, next) => {
@@ -410,12 +484,12 @@ app.use('/api/', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
-  // Skip ONLY genuinely-local requests. cloudflared connects from 127.0.0.1, so
-  // without excluding the tunnel marker (cf-ray) every external request would be
-  // treated as local and skip the limit entirely (T-355). Tunneled requests are
-  // keyed by their real client IP below.
+  // Skip only requests without a tunnel marker that arrive from loopback.
+  // cloudflared also connects from loopback, so a marker must never skip the
+  // limiter. Its client-IP header is used only when the socket peer matches
+  // TRUSTED_PROXY_IPS; otherwise getClientIp() uses the socket address.
   skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),
-  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip || 'unknown',
+  keyGenerator: (req) => getClientIp(req, TRUSTED_PROXY_IPS),
   message: { error: 'Too many requests, please slow down.' }
 }));
 
@@ -1339,13 +1413,17 @@ app.get('/api/info', (req, res) => {
 
 // Auth-Endpoint (vor dem generellen API-Auth)
 app.post('/api/auth', (req, res) => {
-  // Existing session cookies created before FLOWBOARD_TELEGRAM_AGENT_IDS do not
-  // carry agentId. If fresh Telegram initData is present, re-read the signed
-  // payload so the dashboard can still infer the caller agent immediately.
-  const freshUser = validateTelegramWebApp(req.headers['x-telegram-init-data']);
-  const mergedUser = freshUser || req.user || {};
-  const agentId = freshUser?.agentId || req.user?.agentId || null;
-  const { agentId: _agentId, ...user } = mergedUser;
+  // The global auth middleware has already preferred and verified any fresh
+  // init-data, and reissued the cookie for that bot identity.
+  const agentId = req.user?.agentId || null;
+  if (!agentId) {
+    return rejectTelegramAuth(req, res, {
+      code: 'INVALID_SESSION',
+      error: 'Session missing required agent binding',
+      status: 403,
+    });
+  }
+  const { agentId: _agentId, iat: _iat, exp: _exp, ...user } = req.user || {};
   res.json({ ok: true, user, agentId });
 });
 
