@@ -55,3 +55,13 @@ immediately eligible.
 `checkAgainAt` writes require an ISO-8601 date-time with an explicit timezone.
 Offsets are limited to ±14:00, with minute `00` at the ±14 boundary; invalid
 values return HTTP 400 and never change the task.
+
+The dashboard may use the explicit non-destructive actions returned in
+`stuckIndicator.actions`: `POST
+/api/projects/:name/tasks/:id/stuck-indicator/retry` performs an immediate
+task-scoped re-evaluation, while `POST
+/api/projects/:name/tasks/:id/stuck-indicator/clear` clears only the transient
+indicator and resets its notification/backoff metadata. Neither action changes
+lifecycle, `workState`, or `workStateDetails`, appends a comment, or wakes an
+agent. The descriptors are encoded and bound to the exact project and task;
+clients must not invent a generic PUT fallback.

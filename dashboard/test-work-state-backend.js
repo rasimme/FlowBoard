@@ -329,6 +329,88 @@ async function main() {
     const fresh = hzl.getNotifiableStuckTasks({ staleThreshold: 9999, notificationWindow: 60, consume: false });
     assert.ok(fresh.workState.some(item => item.taskId === freshIncident.id), 'new incident is immediately notifiable');
 
+    // T-443 indicator actions are task-scoped and non-destructive. Retry
+    // reevaluates only the requested task, returns the current indicator, and
+    // leaves lifecycle/work-state/details, comments, and notification
+    // backoff untouched.
+    const actionTask = hzl.createTask('t443', {
+      title: 'task-scoped-indicator-actions',
+      status: 'open',
+      workState: 'waiting',
+      workStateDetails: { reason: 'external dependency', waitingFor: 'supplier' },
+    });
+    const actionBefore = hzl.getTask('t443', actionTask.id);
+    const actionCommentsBefore = hzl.getComments('t443', actionTask.id).length;
+    const actionRetry = hzl.reevaluateStuckIndicator('t443', actionTask.id, {
+      staleThreshold: 9999,
+      now: '2026-08-17T20:00:00.000Z',
+    });
+    assert.equal(actionRetry.task.status, actionBefore.status, 'retry preserves lifecycle status');
+    assert.equal(actionRetry.task.workState, actionBefore.workState, 'retry preserves workState');
+    assert.deepEqual(actionRetry.task.workStateDetails, actionBefore.workStateDetails, 'retry preserves workStateDetails');
+    assert.equal(actionRetry.task.stuckIndicator.active, true, 'retry returns the current indicator');
+    assert.deepEqual(actionRetry.task.stuckIndicator.actions, {
+      retry: {
+        action: 'retry',
+        method: 'POST',
+        path: `/api/projects/t443/tasks/${encodeURIComponent(actionTask.id)}/stuck-indicator/retry`,
+      },
+      clear: {
+        action: 'clear',
+        method: 'POST',
+        path: `/api/projects/t443/tasks/${encodeURIComponent(actionTask.id)}/stuck-indicator/clear`,
+      },
+    }, 'indicator actions are exact project/task-bound POST descriptors');
+    assert.equal(hzl.getComments('t443', actionTask.id).length, actionCommentsBefore, 'retry adds no comment');
+
+    // A notification/backoff already consumed by the scheduler must not be
+    // consumed, extended, or reset by a retry reevaluation.
+    hzl.getNotifiableStuckTasks({ staleThreshold: 9999, notificationWindow: 3, consume: true });
+    const armedActionMeta = rawMetadata(cacheDb, actionTask.id).flowboard.notifications.stuck;
+    assert.ok(armedActionMeta.lastNotifiedAt, 'action task backoff is armed by the scheduler path');
+    const retryWithBackoff = hzl.reevaluateStuckIndicator('t443', actionTask.id, {
+      staleThreshold: 9999,
+      now: '2026-08-17T20:01:00.000Z',
+    });
+    const retriedActionMeta = rawMetadata(cacheDb, actionTask.id).flowboard.notifications.stuck;
+    assert.equal(retriedActionMeta.lastNotifiedAt, armedActionMeta.lastNotifiedAt, 'retry does not consume notification time');
+    assert.equal(retriedActionMeta.nextNotifyAt, armedActionMeta.nextNotifyAt, 'retry does not alter next backoff deadline');
+    assert.equal(retryWithBackoff.task.status, actionBefore.status, 'retry with backoff preserves lifecycle');
+
+    const clearAction = hzl.clearStuckIndicator('t443', actionTask.id);
+    assert.equal(clearAction, true, 'clear removes the transient indicator');
+    const clearedAction = hzl.getTask('t443', actionTask.id);
+    const clearedActionMeta = rawMetadata(cacheDb, actionTask.id).flowboard;
+    assert.equal(clearedAction.stuckIndicator, null, 'clear leaves no stale indicator');
+    assert.equal(clearedAction.status, actionBefore.status, 'clear preserves lifecycle status');
+    assert.equal(clearedAction.workState, actionBefore.workState, 'clear preserves workState');
+    assert.deepEqual(clearedAction.workStateDetails, actionBefore.workStateDetails, 'clear preserves workStateDetails');
+    assert.equal(clearedActionMeta.notifications.stuck.lastNotifiedAt, null, 'clear resets notification timestamp');
+    assert.equal(clearedActionMeta.notifications.stuck.nextNotifyAt, null, 'clear resets next notification deadline');
+    assert.equal(clearedActionMeta.notifications.stuck.backoffMinutes, null, 'clear resets notification backoff');
+    assert.equal(clearedActionMeta.notifications.stuck.notificationCount, 0, 'clear resets notification count');
+    assert.equal(hzl.getComments('t443', actionTask.id).length, actionCommentsBefore, 'clear adds no comment');
+
+    // Descriptor encoding must bind both path segments to the originating
+    // task, even for service-level migration IDs containing path characters.
+    const encodedActionTask = hzl.createTask('t443', {
+      forceId: 'T/action task',
+      title: 'encoded-indicator-action-task',
+      status: 'open',
+      workState: 'blocked',
+    });
+    const encodedRetry = hzl.reevaluateStuckIndicator('t443', encodedActionTask.id, { staleThreshold: 9999 });
+    assert.equal(
+      encodedRetry.indicator.actions.retry.path,
+      `/api/projects/t443/tasks/${encodeURIComponent(encodedActionTask.id)}/stuck-indicator/retry`,
+      'retry descriptor encodes and binds the task id',
+    );
+    assert.equal(
+      encodedRetry.indicator.actions.clear.path,
+      `/api/projects/t443/tasks/${encodeURIComponent(encodedActionTask.id)}/stuck-indicator/clear`,
+      'clear descriptor encodes and binds the task id',
+    );
+
     console.log('✅ T-443 backend work-state/indicator tests');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

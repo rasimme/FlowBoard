@@ -3578,6 +3578,41 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
   }
 });
 
+// T-443: non-destructive transient stuck-indicator actions.  These routes
+// deliberately return the complete canonical task so the dashboard can apply
+// the backend result without inventing local lifecycle/work-state changes.
+function handleStuckIndicatorAction(req, res, action) {
+  const project = req.params.name;
+  const taskId = req.params.id;
+  // Validate the project/task binding before invoking either action.  The
+  // global /api auth middleware authorizes the caller; this lookup prevents a
+  // request for an unknown task from becoming a metadata write.
+  const existing = hzlService.getTask(project, taskId, { includeArchived: true });
+  if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+  try {
+    if (action === 'clear') {
+      hzlService.clearStuckIndicator(project, taskId);
+    } else {
+      hzlService.reevaluateStuckIndicator(project, taskId);
+    }
+    const task = hzlService.getTask(project, taskId, { includeArchived: true });
+    const indicator = task?.stuckIndicator || null;
+    return res.json({ ok: true, task: taskWithSpecStatus(project, task), indicator });
+  } catch (err) {
+    const status = httpStatusForError(err);
+    return res.status(status).json({ error: err.message });
+  }
+}
+
+app.post('/api/projects/:name/tasks/:id/stuck-indicator/retry', (req, res) => {
+  return handleStuckIndicatorAction(req, res, 'retry');
+});
+
+app.post('/api/projects/:name/tasks/:id/stuck-indicator/clear', (req, res) => {
+  return handleStuckIndicatorAction(req, res, 'clear');
+});
+
 // T-186: POST /api/projects/:name/tasks/:id/approve
 // Review/admin action — accept work in review and finalise (review -> done).
 // Unlike /complete this is NOT owner-gated: it represents a human/admin

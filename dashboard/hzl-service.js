@@ -2760,6 +2760,24 @@ function _stuckEntryKey(entry) {
   return `${entry?.project || ''}:${entry?.taskId || entry?.id || ''}`;
 }
 
+function _stuckIndicatorActions(project, taskId) {
+  const encodedProject = encodeURIComponent(String(project));
+  const encodedTaskId = encodeURIComponent(String(taskId));
+  const basePath = `/api/projects/${encodedProject}/tasks/${encodedTaskId}/stuck-indicator`;
+  return {
+    retry: {
+      action: 'retry',
+      method: 'POST',
+      path: `${basePath}/retry`,
+    },
+    clear: {
+      action: 'clear',
+      method: 'POST',
+      path: `${basePath}/clear`,
+    },
+  };
+}
+
 function _indicatorForEntry(task, entry, now = new Date().toISOString(), opts = {}) {
   const previous = _normalizeStuckIndicator(task.stuckIndicator);
   // `entry.agent` is already normalized to an active claim by getStuckTasks;
@@ -2788,6 +2806,7 @@ function _indicatorForEntry(task, entry, now = new Date().toISOString(), opts = 
     delivery: !owner ? 'operator' : owner === wakeAgent ? 'wake' : 'board',
     wakeAgent,
     checkAgainAt: task.workStateDetails?.checkAgainAt || null,
+    actions: _stuckIndicatorActions(task._project, task.id),
   };
 }
 
@@ -2845,7 +2864,7 @@ function clearStuckIndicator(project, flowboardId) {
 
 /**
  * Evaluate and persist the transient indicator in place.  This method is the
- * only monitor write path: it never appends a comment, and it uses the same
+ * monitor write path: it never appends a comment, and it uses the same
  * metadata key for every re-evaluation.
  */
 function evaluateStuckIndicators(opts = {}) {
@@ -2881,6 +2900,62 @@ function evaluateStuckIndicators(opts = {}) {
   }
 
   return { stuck, indicators, cleared };
+}
+
+/**
+ * Re-evaluate one task's transient indicator immediately.
+ *
+ * This is deliberately narrower than evaluateStuckIndicators(): a frontend
+ * retry action must not scan or mutate unrelated tasks, consume notification
+ * backoff, wake an agent, append a comment, or touch lifecycle/work-state
+ * fields.  A task that is no longer stuck follows the same complete clear
+ * path as the regular monitor, including notification/backoff reset.
+ */
+function reevaluateStuckIndicator(project, flowboardId, opts = {}) {
+  const key = `${project}:${flowboardId}`;
+  const ulid = _fbToUlid.get(key);
+  const task = _cache.get(key);
+  if (!ulid || !task) {
+    throw Object.assign(new Error(`Task not found: ${flowboardId}`), { code: 'NOT_FOUND' });
+  }
+
+  const stuck = getStuckTasks(opts);
+  const entry = (stuck.combined || []).find(candidate => _stuckEntryKey(candidate) === key);
+  if (!entry) {
+    const cleared = clearStuckIndicator(project, flowboardId);
+    const refreshed = _cache.get(key) || task;
+    return {
+      stuck,
+      cleared,
+      indicator: null,
+      task: _publicTask(refreshed),
+    };
+  }
+
+  const now = opts.now ? new Date(opts.now).toISOString() : new Date().toISOString();
+  const indicator = _indicatorForEntry(task, entry, now, opts);
+  const current = _normalizeStuckIndicator(task.stuckIndicator);
+  if (JSON.stringify(current) !== JSON.stringify(indicator) || !current?.active) {
+    const hzlTask = _taskService.getTaskById(ulid);
+    if (hzlTask) {
+      // Deliberately preserve every existing metadata namespace and all
+      // lifecycle/work-state fields.  This event only replaces the transient
+      // indicator within the existing FlowBoard metadata object.
+      _updateMetadata(ulid, {
+        flowboard: {
+          ...(hzlTask.metadata?.flowboard || {}),
+          stuckIndicator: indicator,
+        },
+      });
+    }
+  }
+  task.stuckIndicator = indicator;
+  return {
+    stuck,
+    cleared: false,
+    indicator,
+    task: _publicTask(task),
+  };
 }
 
 /**
@@ -4122,6 +4197,7 @@ module.exports = {
   getComments,
   getStuckTasks,
   evaluateStuckIndicators,   // T-443: update-in-place transient monitor state
+  reevaluateStuckIndicator,  // T-443: task-scoped immediate retry action
   clearStuckIndicator,       // T-443: recovery/checkpoint clearing primitive
   getAgentAttention,       // T-434: per-agent stuck claims for /api/status
   getNotifiableStuckTasks, // T-248: notification-aware stuck-task filter

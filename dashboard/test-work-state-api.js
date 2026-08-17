@@ -66,6 +66,73 @@ async function main() {
       }
     }
 
+    // The frontend-facing indicator actions are explicit, task-bound POSTs.
+    // They return the complete canonical task and never become a lifecycle or
+    // work-state PUT fallback.
+    const indicatorCreated = await api('POST', '/projects/work-state-api/tasks', {
+      title: 'indicator action task',
+      status: 'open',
+      workState: 'waiting',
+      workStateDetails: { reason: 'supplier', waitingFor: 'external service' },
+    });
+    if (indicatorCreated.status !== 200) throw new Error('indicator task create failed');
+    const indicatorId = indicatorCreated.body.task.id;
+    const indicatorBefore = indicatorCreated.body.task;
+    const indicatorCommentsBefore = await api('GET', `/projects/work-state-api/tasks/${indicatorId}/comments`);
+    const retry = await api('POST', `/projects/work-state-api/tasks/${indicatorId}/stuck-indicator/retry`, {
+      // Unknown fields are intentionally ignored; the action remains
+      // non-destructive even if a caller attempts to smuggle a PUT payload.
+      status: 'done',
+      workState: 'working',
+    });
+    if (retry.status !== 200 || !retry.body?.task?.stuckIndicator?.active) {
+      throw new Error(`indicator retry failed: ${retry.status}`);
+    }
+    const retriedTask = retry.body.task;
+    if (JSON.stringify(retry.body.indicator) !== JSON.stringify(retriedTask.stuckIndicator)) {
+      throw new Error('retry response indicator is not the current task indicator');
+    }
+    if (retriedTask.status !== indicatorBefore.status
+        || retriedTask.workState !== indicatorBefore.workState
+        || JSON.stringify(retriedTask.workStateDetails) !== JSON.stringify(indicatorBefore.workStateDetails)) {
+      throw new Error('indicator retry changed lifecycle/work-state fields');
+    }
+    const expectedRetryPath = `/api/projects/work-state-api/tasks/${encodeURIComponent(indicatorId)}/stuck-indicator/retry`;
+    const expectedClearPath = `/api/projects/work-state-api/tasks/${encodeURIComponent(indicatorId)}/stuck-indicator/clear`;
+    if (JSON.stringify(retriedTask.stuckIndicator.actions) !== JSON.stringify({
+      retry: { action: 'retry', method: 'POST', path: expectedRetryPath },
+      clear: { action: 'clear', method: 'POST', path: expectedClearPath },
+    })) {
+      throw new Error('indicator action descriptors are not exact project/task-bound POST routes');
+    }
+    const indicatorCommentsAfterRetry = await api('GET', `/projects/work-state-api/tasks/${indicatorId}/comments`);
+    if (indicatorCommentsAfterRetry.status !== 200
+        || indicatorCommentsAfterRetry.body.comments.length !== indicatorCommentsBefore.body.comments.length) {
+      throw new Error('indicator retry appended a comment');
+    }
+
+    const clear = await api('POST', `/projects/work-state-api/tasks/${indicatorId}/stuck-indicator/clear`);
+    if (clear.status !== 200 || clear.body?.task?.stuckIndicator !== null || clear.body?.indicator !== null) {
+      throw new Error(`indicator clear failed: ${clear.status}`);
+    }
+    if (clear.body.task.status !== indicatorBefore.status
+        || clear.body.task.workState !== indicatorBefore.workState
+        || JSON.stringify(clear.body.task.workStateDetails) !== JSON.stringify(indicatorBefore.workStateDetails)) {
+      throw new Error('indicator clear changed lifecycle/work-state fields');
+    }
+
+    // Clear is non-destructive and retry can immediately re-evaluate the same
+    // still-waiting condition without any agent-wake side effect.
+    const retryAfterClear = await api('POST', `/projects/work-state-api/tasks/${indicatorId}/stuck-indicator/retry`);
+    if (retryAfterClear.status !== 200 || !retryAfterClear.body?.task?.stuckIndicator?.active) {
+      throw new Error('retry did not immediately re-evaluate after clear');
+    }
+
+    for (const action of ['retry', 'clear']) {
+      const unknown = await api('POST', `/projects/work-state-api/tasks/T-unknown/stuck-indicator/${action}`);
+      if (unknown.status !== 404) throw new Error(`unknown task ${action} did not return 404`);
+    }
+
     // Seed two valid specs so the rejected PUT can prove that the spec link
     // (and an unrelated title) remains unchanged when work-state validation
     // fails.  This is the adversarial regression for validate-before-mutate.

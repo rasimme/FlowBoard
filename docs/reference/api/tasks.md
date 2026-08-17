@@ -146,6 +146,44 @@ Status-change event stream sourced from the HZL event store. Includes block/unbl
 
 **Response 200:** `{"ok": true, "events": [{<event>}, ...]}`
 
+### `POST /api/projects/:name/tasks/:id/stuck-indicator/retry`
+
+Re-evaluate exactly this task's transient `stuckIndicator` immediately. The
+action is non-destructive: it never changes lifecycle status, `workState`, or
+`workStateDetails`, consumes notification/backoff state, wakes an agent, or
+adds a comment. If the task is still stuck, the current indicator is returned;
+if the condition has cleared, the indicator and its notification/backoff state
+are cleared.
+
+**Response 200:** `{"ok": true, "task": <canonical task>, "indicator": <object|null>}`
+
+### `POST /api/projects/:name/tasks/:id/stuck-indicator/clear`
+
+Clear only this task's transient `stuckIndicator` and reset its persisted
+stuck-notification/backoff metadata. Lifecycle status, canonical work state,
+and work-state details are preserved exactly. The endpoint is idempotent and
+does not add a comment or wake an agent.
+
+**Response 200:** `{"ok": true, "task": <canonical task>, "indicator": null}`
+
+Both actions require the normal authenticated API session and validate the
+project/task binding; an unknown task returns HTTP 404. Indicators expose
+project- and task-bound action descriptors in this exact shape:
+
+```json
+{
+  "retry": {
+    "action": "retry",
+    "method": "POST",
+    "path": "/api/projects/<encoded-project>/tasks/<encoded-task>/stuck-indicator/retry"
+  },
+  "clear": {
+    "action": "clear",
+    "method": "POST",
+    "path": "/api/projects/<encoded-project>/tasks/<encoded-task>/stuck-indicator/clear"
+  }
+}
+
 ## Cross-cutting
 
 ### `GET /api/tasks/stuck`
