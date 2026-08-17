@@ -62,11 +62,17 @@ specifier handling is deliberately fail-safe: only `%%`, `%h`, and `%U` are
 accepted by the normalizer, and literal percent signs in rewritten
 `Environment=` values are emitted as `%%`.
 The reader decodes valid systemd escapes exactly once (`\\xHH`, `\\s`, `\\t`,
-one-to-three-digit octal escapes such as `\\040`, and escaped backslashes or
+exactly-three-digit octal escapes such as `\\040`, and escaped backslashes or
 quotes). Unclosed quotes, trailing backslashes, malformed escapes, and invalid
 octal values abort before dependencies, the build, or service registration are
-touched. Backslashes in Windows-style values therefore need the usual doubled
-unit-file spelling (for example `C:\\\\Users\\\\FlowBoard`).
+touched. UTF-8 BOMs in unit/drop-in files and EnvironmentFile content are also
+rejected instead of being silently stripped. Backslashes in Windows-style
+values therefore need the usual doubled unit-file spelling (for example
+`C:\\\\Users\\\\FlowBoard`). `EnvironmentFile=`
+uses systemd's complete path RHS instead: spaces and backslashes stay path
+characters (only `%` specifiers are expanded), and the path is never parsed as
+an `Environment=` word list. Relative or wildcard paths are retained but cause
+an update to stop safely because setup cannot evaluate their effective values.
 
 On macOS, launchd stdout/stderr goes to
 `~/Library/Logs/FlowBoard/flowboard-dashboard.log`. Setup creates the directory

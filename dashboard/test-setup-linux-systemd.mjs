@@ -48,11 +48,20 @@ function quoteScript(script) {
   return `#!/usr/bin/env node\n${script}\n`;
 }
 
-function makeHarness({ initialUnit = '', dropIns = {}, environmentFiles = {} } = {}) {
+function makeHarness({
+  initialUnit = '',
+  dropIns = {},
+  environmentFiles = {},
+  globalDropIns = {},
+  globalPrefixDropIns = {},
+  globalTypeDropIns = {},
+  globalUnit = '',
+} = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fb-setup-systemd-'));
   const bin = join(dir, 'bin');
   const home = join(dir, 'home');
   const unitDir = join(home, '.config', 'systemd', 'user');
+  const globalConfigRoot = join(home, 'global-config');
   const unitPath = join(unitDir, UNIT_NAME);
   mkdirSync(bin, { recursive: true });
   mkdirSync(home, { recursive: true });
@@ -65,6 +74,23 @@ function makeHarness({ initialUnit = '', dropIns = {}, environmentFiles = {} } =
     const dropInDir = `${unitPath}.d`;
     mkdirSync(dropInDir, { recursive: true });
     for (const [name, content] of Object.entries(dropIns)) {
+      writeFileSync(join(dropInDir, name), content, { mode: 0o600 });
+    }
+  }
+  if (globalUnit) {
+    const globalUnitPath = join(globalConfigRoot, 'systemd', 'user', UNIT_NAME);
+    mkdirSync(dirname(globalUnitPath), { recursive: true });
+    writeFileSync(globalUnitPath, globalUnit, { mode: 0o600 });
+  }
+  for (const [directory, files] of [
+    [`${UNIT_NAME}.d`, globalDropIns],
+    ['flowboard-.service.d', globalPrefixDropIns],
+    ['service.d', globalTypeDropIns],
+  ]) {
+    if (Object.keys(files).length === 0) continue;
+    const dropInDir = join(globalConfigRoot, 'systemd', 'user', directory);
+    mkdirSync(dropInDir, { recursive: true });
+    for (const [name, content] of Object.entries(files)) {
       writeFileSync(join(dropInDir, name), content, { mode: 0o600 });
     }
   }
@@ -125,6 +151,10 @@ process.exit(Number(process.env.FAKE_SYSTEMD_ANALYZE_STATUS || 0));
     env: {
       ...safeEnv,
       HOME: home,
+      ...(Object.keys(globalDropIns).length > 0
+        || Object.keys(globalPrefixDropIns).length > 0
+        || Object.keys(globalTypeDropIns).length > 0
+        || globalUnit ? { XDG_CONFIG_DIRS: globalConfigRoot } : {}),
       NODE_ENV: 'test',
       FLOWBOARD_SETUP_TEST_PLATFORM: 'linux',
       FAKE_COMMAND_LOG: commandLog,
@@ -448,6 +478,121 @@ const preservedUnit = port => existingUnit([
 }
 
 {
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="JWT_SECRET=case-sensitive-secret"',
+      '[service]',
+      'Environment="CUSTOM_IGNORED=must-not-be-rewritten"',
+    ]),
+  });
+  ok(result.code === 1, 'lowercase [service] is not treated as the systemd [Service] section');
+  ok(result.stdout.includes('case-variant [Service] section'), 'ignored case-variant service sections fail closed');
+  ok(result.commands.length === 0, 'case-variant service sections abort before build or service commands');
+  ok(!result.stdout.includes('case-sensitive-secret') && !result.stdout.includes('must-not-be-rewritten'), 'case-variant section failures never print preserved secrets');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="JWT_SECRET=bom-secret"',
+      '\uFEFFEnvironment="CUSTOM_AFTER_BOM=must-be-preserved"',
+    ]),
+  });
+  ok(result.code === 1, 'a BOM on a later systemd unit line fails closed');
+  ok(result.stdout.includes('contains a UTF-8 byte-order mark'), 'BOM diagnostics explain why the unit is unsafe to rewrite');
+  ok(result.commands.length === 0, 'BOM failures abort before build or service commands');
+  ok(!result.stdout.includes('bom-secret') && !result.stdout.includes('must-be-preserved'), 'BOM failures never print service secrets');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      '\uFEFF[Service]',
+      'Environment="JWT_SECRET=first-bom-secret"',
+    ]),
+  });
+  ok(result.code === 1, 'a BOM at the beginning of a systemd unit section fails closed');
+  ok(result.stdout.includes('contains a UTF-8 byte-order mark'), 'leading BOM diagnostics explain why the unit is unsafe to rewrite');
+  ok(result.commands.length === 0, 'leading BOM failures abort before build or service commands');
+  ok(!result.stdout.includes('first-bom-secret'), 'leading BOM failures never print service secrets');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit([
+      'EnvironmentFile=%h/.config/flow board/runtime\\file.env',
+    ]),
+    environmentFiles: {
+      '.config/flow board/runtime\\file.env': port => `FLOWBOARD_PORT=${port}\nJWT_SECRET=full-path-secret\n`,
+    },
+    injectPort: false,
+  });
+  ok(result.code === 0, 'EnvironmentFile parses a complete path with spaces and literal backslashes');
+  ok(result.unit.includes('EnvironmentFile=%h/.config/flow board/runtime\\file.env'), 'complete EnvironmentFile RHS is preserved without Environment-word C-unescaping');
+  ok(result.stdout.includes('JWT_SECRET: existing value preserved in its EnvironmentFile'), 'full-path EnvironmentFile values participate in effective diagnostics');
+  ok(!result.stdout.includes('full-path-secret'), 'full-path EnvironmentFile secrets are never printed');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
+    globalDropIns: {
+      '20-global-auth.conf': '[Service]\nEnvironment="JWT_SECRET=global-dropin-secret"\nEnvironment="TELEGRAM_BOT_TOKEN=global-dropin-token"\nEnvironment="ALLOWED_USER_IDS=700"\nEnvironment="DASHBOARD_ORIGIN=https://global.example.invalid"\nEnvironment="CUSTOM_GLOBAL_CREDENTIAL=global-custom-credential"\n',
+    },
+  });
+  ok(result.code === 0, 'global XDG_CONFIG_DIRS drop-ins participate in effective user-service configuration');
+  ok(result.stdout.includes('remote auth configuration has all required variables'), 'global drop-in auth values drive diagnostics');
+  ok(!result.unit.includes('global-dropin-secret') && !result.unit.includes('global-custom-credential'), 'global drop-in values remain in their owner path');
+  ok(!result.stdout.includes('global-dropin-secret') && !result.stdout.includes('global-dropin-token') && !result.stdout.includes('global-custom-credential'), 'global drop-in credentials are never printed');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
+    globalTypeDropIns: {
+      '10-all-services.conf': '[Service]\nEnvironment="ALLOWED_USER_IDS=701"\nEnvironment="JWT_SECRET=type-secret"\n',
+      '20-overlap.conf': '[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=type-secret"\n',
+    },
+    globalPrefixDropIns: {
+      '15-shared-flowboard.conf': '[Service]\nEnvironment="DASHBOARD_ORIGIN=https://prefix.example.invalid"\nEnvironment="JWT_SECRET=prefix-secret"\n',
+      '20-overlap.conf': '[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=prefix-secret"\n',
+    },
+    globalDropIns: {
+      '20-exact-auth.conf': '[Service]\nEnvironment="TELEGRAM_BOT_TOKEN=exact-token"\n',
+      '20-overlap.conf': '[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=exact-secret"\nEnvironment="JWT_SECRET=exact-secret"\n',
+    },
+  });
+  ok(result.code === 0, 'unit-specific, dash-prefix, and service-wide drop-in paths are merged');
+  ok(result.stdout.includes('remote auth configuration has all required variables'), 'all relevant drop-in search paths contribute to effective diagnostics');
+  ok(!result.stdout.includes('type-secret') && !result.stdout.includes('prefix-secret')
+    && !result.stdout.includes('exact-secret') && !result.stdout.includes('exact-token'), 'all relevant drop-in paths remain secret-redacted');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    globalUnit: existingUnit(['Environment="JWT_SECRET=global-unit-secret"']),
+  });
+  ok(result.code === 1, 'a global main unit that outranks the managed path fails closed');
+  ok(result.stdout.includes('higher-priority or global unit path'), 'global main-unit ambiguity is diagnosed');
+  ok(result.commands.length === 0, 'global main-unit ambiguity aborts before build or service commands');
+  ok(!result.stdout.includes('global-unit-secret'), 'global main-unit ambiguity never prints its secret');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
+  }, {
+    SYSTEMD_UNIT_PATH: '/tmp/flowboard-custom-unit-path',
+  });
+  ok(result.code === 1, 'a custom SYSTEMD_UNIT_PATH that excludes the managed path fails closed');
+  ok(result.stdout.includes('not in SYSTEMD_UNIT_PATH'), 'unloadable custom unit paths are diagnosed explicitly');
+  ok(result.commands.length === 0, 'an unloadable custom unit path aborts before build or service commands');
+}
+
+{
   const result = await runSetup(['--dry-run', '--update'], {
     initialUnit: existingUnit([
       'Environment="FLOWBOARD_PORT=9"',
@@ -619,6 +764,19 @@ for (const [label, assignment] of [
   const result = await runSetup(['--update'], {
     initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
     environmentFiles: {
+      '.config/flowboard/invalid.env': 'FLOWBOARD_PORT=18790\nOPENCLAW_WORKSPACE="unterminated\n',
+    },
+    injectPort: false,
+  });
+  ok(result.code === 1, 'unterminated EnvironmentFile quotes fail closed');
+  ok(result.stdout.includes('unterminated EnvironmentFile quote'), 'unterminated EnvironmentFile quotes are diagnosed explicitly');
+  ok(result.commands.length === 0, 'invalid EnvironmentFile quotes are rejected before build or service commands');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
+    environmentFiles: {
       '.config/flowboard/invalid.env': Buffer.from('FLOWBOARD_PORT=18790\nBAD=\0\n', 'utf8'),
     },
     injectPort: false,
@@ -646,14 +804,20 @@ for (const [label, assignment] of [
       `Environment="FLOWBOARD_PORT=${port}"`,
       'Environment="JWT_SECRET=test-analyzer-secret"',
       'Environment="CUSTOM_SHORT_SECRET=abc"',
+      'Environment="CUSTOM_CREDENTIAL=main-unit-credential"',
     ]),
+    dropIns: {
+      '20-credentials.conf': '[Service]\nEnvironment="CUSTOM_CREDENTIAL=drop-in-credential"\nEnvironment="CUSTOM_OVERRIDDEN=overridden-credential"\n',
+    },
   }, {
-    FAKE_SYSTEMD_ANALYZE_STDERR: 'systemd-analyze: warning: malformed generated unit abc',
+    FAKE_SYSTEMD_ANALYZE_STDOUT: 'Environment="JWT_SECRET=test-analyzer-secret" Environment="CUSTOM_CREDENTIAL=main-unit-credential"',
+    FAKE_SYSTEMD_ANALYZE_STDERR: 'systemd-analyze: warning: malformed generated unit abc CUSTOM_CREDENTIAL=drop-in-credential CUSTOM_OVERRIDDEN=overridden-credential',
   });
   ok(result.code === 1, 'systemd-analyze diagnostics fail setup even with a zero exit status');
   ok(result.stdout.includes('malformed generated unit'), 'systemd-analyze diagnostic is surfaced');
   ok(!result.stdout.includes('test-analyzer-secret'), 'systemd-analyze diagnostics never expose service secrets');
   ok(!result.stdout.includes('abc'), 'short custom service values are also redacted from diagnostics');
+  ok(!result.stdout.includes('main-unit-credential') && !result.stdout.includes('drop-in-credential') && !result.stdout.includes('overridden-credential'), 'systemd-analyze diagnostics redact main, overridden, and custom credential values');
   ok(!result.commands.some(line => line.startsWith('systemctl ')), 'systemd-analyze diagnostics abort before daemon reload or service restart');
 }
 

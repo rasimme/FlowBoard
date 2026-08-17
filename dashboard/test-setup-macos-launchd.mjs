@@ -317,6 +317,25 @@ let generatedLaunchdPlist = '';
 }
 
 {
+  const result = await runSetup(['--dry-run', '--update'], existingPlist, {}, {
+    prepare(harness) {
+      chmodSync(harness.plistPath, 0o644);
+    },
+    capture(harness) {
+      return {
+        plistModeAfterDryRun: statSync(harness.plistPath).mode & 0o777,
+        logDirExistsAfterDryRun: existsSync(harness.logDir),
+        logExistsAfterDryRun: existsSync(harness.logPath),
+      };
+    },
+  });
+  ok(result.code === 0, 'launchd dry-run remains successful with an unsafe-but-readable plist mode');
+  ok(result.plistModeAfterDryRun === 0o644, 'launchd dry-run owner-only inspection does not chmod the existing plist');
+  ok(!result.logDirExistsAfterDryRun && !result.logExistsAfterDryRun, 'launchd dry-run does not create or harden log paths');
+  ok(!result.commands.some(line => line.startsWith('chmod ') || line.startsWith('launchctl ')), 'launchd dry-run performs no hardening or service mutation commands');
+}
+
+{
   const result = await runSetup(['--update'], existingPlist, {}, {
     prepare(harness) {
       mkdirSync(harness.logDir, { recursive: true, mode: 0o777 });

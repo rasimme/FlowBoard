@@ -53,6 +53,7 @@
     "openclaw/**",
     "hooks/**",
     "scripts/setup.mjs",
+    "scripts/systemd-config.mjs",
     "snippets/**",
     "templates/**",
     "docs/**",
