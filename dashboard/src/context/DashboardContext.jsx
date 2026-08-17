@@ -119,7 +119,7 @@ export function DashboardProvider({ children }) {
         try {
           const tasks = await fetchTasksForProject(project, controller.signal, fetchOptions);
           if (controller.signal.aborted || taskRequestRef.current.generation !== generation) return null;
-          return tasks;
+          return { tasks, generation };
         } catch (error) {
           if (active?.superseded || taskRequestRef.current.generation !== generation) return null;
           throw error;
@@ -161,12 +161,19 @@ export function DashboardProvider({ children }) {
       activeProject,
       currentViewedProject: window.appState?.viewedProject || null,
     });
-    const tasks = viewedProject
+    const taskSnapshot = viewedProject
       ? await fetchCoordinatedTasks(viewedProject, 'Dashboard snapshot', { signal })
-      : [];
-    if (tasks === null) throw new DOMException('Superseded dashboard task snapshot', 'AbortError');
+      : { tasks: [], generation: taskRequestRef.current.generation };
+    if (taskSnapshot === null) throw new DOMException('Superseded dashboard task snapshot', 'AbortError');
 
-    return { projects, agents, activeProject, viewedProject, tasks };
+    return {
+      projects,
+      agents,
+      activeProject,
+      viewedProject,
+      tasks: taskSnapshot.tasks,
+      taskGeneration: taskSnapshot.generation,
+    };
   }, [fetchCoordinatedTasks]);
 
   const commitFullSnapshot = useCallback((snapshot, recoveredScope = 'core') => {
@@ -240,7 +247,9 @@ export function DashboardProvider({ children }) {
             retryAuth,
             onAuthRecovered: () => { authRecovered = true; },
           });
-          if (controller.signal.aborted || snapshotRequestRef.current.generation !== generation) return false;
+          if (controller.signal.aborted
+            || snapshotRequestRef.current.generation !== generation
+            || snapshot.taskGeneration !== taskRequestRef.current.generation) return false;
           if (kind === 'poll') commitPollSnapshot(snapshot);
           else commitFullSnapshot(snapshot, retryAuth ? 'auth' : 'core');
           return true;
@@ -312,13 +321,16 @@ export function DashboardProvider({ children }) {
     if (currentProject !== project) return null;
 
     try {
-      const tasks = await fetchCoordinatedTasks(project, 'Board refresh', options);
+      const result = await fetchCoordinatedTasks(project, 'Board refresh', options);
       const latestProject = window.appState?.viewedProject || window.appState?.activeProject;
-      if (tasks === null || latestProject !== project || projectSwitchRef.current) return null;
-      bridge.replaceTasks(tasks);
-      prevTasksRef.current = JSON.stringify(tasks);
+      if (result === null
+        || result.generation !== taskRequestRef.current.generation
+        || latestProject !== project
+        || projectSwitchRef.current) return null;
+      bridge.replaceTasks(result.tasks);
+      prevTasksRef.current = JSON.stringify(result.tasks);
       markConnectionSuccess(window.appState?.projects || [], 'tasks');
-      return tasks;
+      return result.tasks;
     } catch (error) {
       if (error?.kind !== 'aborted' && error?.name !== 'AbortError') {
         markConnectionFailure(error, 'Board refresh error', 'tasks');
@@ -337,12 +349,14 @@ export function DashboardProvider({ children }) {
       if (projectSwitchRef.current !== pending) return null;
 
       try {
-        const tasks = await fetchCoordinatedTasks(name, 'viewProject');
-        if (tasks === null || projectSwitchRef.current !== pending) return null;
-        prevTasksRef.current = JSON.stringify(tasks);
-        dispatch({ viewedProject: name, tasks });
+        const result = await fetchCoordinatedTasks(name, 'viewProject');
+        if (result === null
+          || result.generation !== taskRequestRef.current.generation
+          || projectSwitchRef.current !== pending) return null;
+        prevTasksRef.current = JSON.stringify(result.tasks);
+        dispatch({ viewedProject: name, tasks: result.tasks });
         markConnectionSuccess(window.appState?.projects || [], 'tasks');
-        return tasks;
+        return result.tasks;
       } catch (error) {
         if (projectSwitchRef.current === pending
           && error?.kind !== 'aborted'

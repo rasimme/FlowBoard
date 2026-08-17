@@ -88,6 +88,8 @@ assert.match(dashboardContext.text, /fetchCoordinatedTasks\(viewedProject, 'Dash
   'full snapshots use the central task-request coordinator')
 assert.equal((dashboardContext.text.match(/fetchTasksForProject\(/g) || []).length, 1,
   'DashboardContext has exactly one low-level task-list fetch site')
+assert.match(dashboardContext.text, /snapshot\.taskGeneration !== taskRequestRef\.current\.generation/,
+  'a newer task refresh invalidates a fetched but not-yet-committed full snapshot')
 console.log('✅ runtime guard: migrated shell bridge keeps hidden DOM listeners')
 
 const tasksView = sourceFiles.find(file => file.path === 'src/pages/TasksView.jsx')
