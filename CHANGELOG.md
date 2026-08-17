@@ -25,20 +25,26 @@
 - **Verified EXPIRED fallback (T-441-2).** The `/api/auth` endpoint treats
   init-data expiration strictly: even with a valid session cookie present,
   aged init-data (>5 minutes old) is rejected. Steady-state API calls may use
-  an established valid cookie with aged init-data, preserving the 8-hour
-  session contract; `/api/auth` is a strict credential exchange.
+  an established valid cookie with aged init-data only after HMAC, user, bot,
+  and agent mapping verification confirms the exact same identity. Cross-bot
+  and forged-expired payloads are rejected and both root and legacy `/api`
+  cookie paths are cleared; `/api/auth` is a strict credential exchange.
 
 - **Auth-endpoint rate limiting (T-441-3).** The `/api/auth` POST endpoint
   enforces a sliding-window rate limit: 60 requests per minute per source IP.
-  This defends against brute-force attempts. Rejected requests return HTTP 429
-  with a `Retry-After` header. The check is at the application level;
+  Cloudflare `cf-connecting-ip` is used only when the existing `cf-ray` tunnel
+  marker is present; direct requests use the socket address. This defends
+  against brute-force attempts and header rotation. Rejected requests return
+  HTTP 429 with a `Retry-After` header. The check is at the application level;
   production deployments may add reverse-proxy rate limiting as well.
 
 - **Privacy-filter for logs (T-441-4).** Console warnings, errors, and logs
   are sanitized to prevent accidental token leaks. Telegram bot tokens, JWT
   tokens, bearer tokens, and secret/password strings are redacted from all
-  output while preserving the event identity. This prevents secrets from
-  reaching logs even if an unguarded error path includes them.
+  output while preserving the event identity. The repository privacy scan also
+  detects plural `TELEGRAM_BOT_TOKENS` comma-separated lists and assignments.
+  This prevents secrets from reaching logs or the published source even if an
+  unguarded error path includes them.
 ### v5.0.4 (2026-06-25) — ClawHub Security Hardening
 
 - **Hardened dashboard file and task mutation surfaces.** Project file reads now

@@ -18,6 +18,7 @@ const ROOT = __dirname;
 const PORT = 18855;
 const SECRET = 'test-only-jwt-secret-at-least-thirty-two-characters';
 const BOT_TOKEN = '100001:test-token';
+const SECONDARY_BOT_TOKEN = '100002:test-secondary-token';
 const AGENT_ID = 'test-agent';
 
 let pass = 0;
@@ -92,7 +93,14 @@ async function auth(base, initData, cookie = null, ip = '203.0.113.44') {
   if (cookie) headers.Cookie = cookie;
   const response = await fetch(`${base}/api/auth`, { method: 'POST', headers });
   const body = await response.json().catch(() => ({}));
-  return { response, body, setCookie: response.headers.get('set-cookie') || '' };
+  return {
+    response,
+    body,
+    setCookie: response.headers.get('set-cookie') || '',
+    setCookies: typeof response.headers.getSetCookie === 'function'
+      ? response.headers.getSetCookie()
+      : [],
+  };
 }
 
 async function run() {
@@ -107,7 +115,10 @@ async function run() {
 
   const child = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
-    env: testEnv(tmp),
+    env: testEnv(tmp, {
+      TELEGRAM_BOT_TOKENS: SECONDARY_BOT_TOKEN,
+      FLOWBOARD_TELEGRAM_AGENT_IDS: `${AGENT_ID},test-agent-secondary`,
+    }),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -119,7 +130,7 @@ async function run() {
 
     // Finding 1: Legacy Cookie Migration – only accept valid cookies with proper format
     console.log('\n## Finding 1: Legacy Cookie Migration');
-    
+
     // Create a valid session
     const validResult = await auth(base, buildTelegramInitData(BOT_TOKEN), null, '203.0.113.10');
     ok(validResult.response.status === 200, 'valid fresh init-data creates session');
@@ -144,10 +155,14 @@ async function run() {
     );
     ok(agentlessResult.response.status === 403, 'legacy agentless cookie is rejected');
     ok(agentlessResult.body.code === 'INVALID_SESSION', 'agentless cookie gets a typed error');
-    
+    ok(agentlessResult.setCookies.some(cookie => /Path=\//i.test(cookie)),
+      'agentless cookie is cleared on the root path');
+    ok(agentlessResult.setCookies.some(cookie => /Path=\/api(?:;|$)/i.test(cookie)),
+      'agentless legacy cookie is cleared on the /api path');
+
     // Finding 2: Verified EXPIRED Fallback
     console.log('\n## Finding 2: Verified EXPIRED Fallback');
-    
+
     // Create an aged init-data (beyond 5 minutes)
     const agedInitData = buildTelegramInitData(BOT_TOKEN, { authDateDelta: -301 });
 
@@ -155,7 +170,11 @@ async function run() {
     const staleAuthExchange = await auth(base, agedInitData, validCookie, '203.0.113.12');
     ok(staleAuthExchange.response.status === 403, '/api/auth rejects aged init-data (even with valid cookie)');
     ok(staleAuthExchange.body.code === 'TELEGRAM_INIT_DATA_EXPIRED', 'correct error code for aged init-data');
-    
+    ok(staleAuthExchange.setCookies.some(cookie => /Path=\//i.test(cookie)),
+      '/api/auth clears the root cookie when aged init-data is rejected');
+    ok(staleAuthExchange.setCookies.some(cookie => /Path=\/api(?:;|$)/i.test(cookie)),
+      '/api/auth clears the legacy /api cookie when aged init-data is rejected');
+
     // On steady-state API (non-auth), aged init-data may use existing valid cookie
     const steadyState = await fetch(`${base}/api/projects`, {
       headers: {
@@ -166,10 +185,52 @@ async function run() {
       },
     });
     ok(steadyState.status === 200, 'steady-state API accepts aged init-data with valid cookie');
-    
+
+    const crossBotStaleResponse = await fetch(`${base}/api/projects`, {
+      headers: {
+        'cf-ray': 'steady-cross-bot-stale',
+        'cf-connecting-ip': '203.0.113.46',
+        Cookie: validCookie,
+        'X-Telegram-Init-Data': buildTelegramInitData(SECONDARY_BOT_TOKEN, { authDateDelta: -301 }),
+      },
+    });
+    const crossBotStaleBody = await crossBotStaleResponse.json().catch(() => ({}));
+    ok(crossBotStaleResponse.status === 403,
+      'steady-state API rejects expired init-data from a different bot');
+    ok(crossBotStaleBody.code === 'TELEGRAM_INIT_DATA_EXPIRED',
+      'cross-bot expired init-data remains explicitly typed as EXPIRED after verification');
+    const crossBotStaleCookies = typeof crossBotStaleResponse.headers.getSetCookie === 'function'
+      ? crossBotStaleResponse.headers.getSetCookie()
+      : [];
+    ok(crossBotStaleCookies.some(cookie => /Path=\//i.test(cookie))
+      && crossBotStaleCookies.some(cookie => /Path=\/api(?:;|$)/i.test(cookie)),
+    'cross-bot expired init-data clears both cookie scopes');
+
+    const forgedExpiredInitData = buildTelegramInitData(BOT_TOKEN)
+      .replace(/auth_date=\d+/, `auth_date=${Math.floor(Date.now() / 1000) - 301}`);
+    const forgedExpiredResponse = await fetch(`${base}/api/projects`, {
+      headers: {
+        'cf-ray': 'steady-forged-expired',
+        'cf-connecting-ip': '203.0.113.47',
+        Cookie: validCookie,
+        'X-Telegram-Init-Data': forgedExpiredInitData,
+      },
+    });
+    const forgedExpiredBody = await forgedExpiredResponse.json().catch(() => ({}));
+    ok(forgedExpiredResponse.status === 403,
+      'forged expired init-data is rejected instead of reaching cookie fallback');
+    ok(forgedExpiredBody.code !== 'TELEGRAM_INIT_DATA_EXPIRED',
+      'forged expired init-data is not misclassified as EXPIRED');
+    const forgedExpiredCookies = typeof forgedExpiredResponse.headers.getSetCookie === 'function'
+      ? forgedExpiredResponse.headers.getSetCookie()
+      : [];
+    ok(forgedExpiredCookies.some(cookie => /Path=\//i.test(cookie))
+      && forgedExpiredCookies.some(cookie => /Path=\/api(?:;|$)/i.test(cookie)),
+    'forged expired init-data clears both cookie scopes');
+
     // Finding 3: Upstream Auth Rate Limiting
     console.log('\n## Finding 3: Upstream Auth Rate Limiting');
-    
+
     // Invalid credentials must also consume the auth budget, before Telegram
     // verification can reject them.
     let rateLimitHit = false;
@@ -183,10 +244,30 @@ async function run() {
       }
     }
     ok(rateLimitHit, 'invalid auth attempts trigger rate limiting (429)');
-    
+
+    let rotatedHeaderRateLimitHit = false;
+    for (let i = 0; i < 65; i++) {
+      const response = await fetch(`${base}/api/auth`, {
+        method: 'POST',
+        headers: {
+          // No cf-ray means this is a direct socket request. Rotating this
+          // untrusted header must not rotate the limiter key.
+          'cf-connecting-ip': `198.51.100.${(i % 200) + 1}`,
+          'X-Telegram-Init-Data': 'malformed-init-data',
+        },
+      });
+      if (response.status === 429) {
+        rotatedHeaderRateLimitHit = true;
+        ok(true, `rotating direct cf-connecting-ip headers still hit 429 after ${i + 1} attempts`);
+        break;
+      }
+    }
+    ok(rotatedHeaderRateLimitHit,
+      'untrusted cf-connecting-ip rotation cannot evade the socket-keyed auth limiter');
+
     // Finding 4: Privacy Scan Extension – no token leaks in logs/responses
     console.log('\n## Finding 4: Privacy Scan Extension');
-    
+
     const privacyResult = await auth(base, buildTelegramInitData(BOT_TOKEN), null, '203.0.113.77');
     ok(privacyResult.response.status === 200, 'valid init-data passes authentication');
     ok(!JSON.stringify(privacyResult.body).includes(BOT_TOKEN), 'bot token not leaked in response body');
@@ -196,7 +277,7 @@ async function run() {
     const allLogs = stdoutLog + stderrLog;
     ok(!allLogs.includes(BOT_TOKEN), 'bot token sanitized in logs');
     ok(!allLogs.includes('WebAppData'), 'HMAC salt not in logs');
-    
+
   } finally {
     child.kill('SIGTERM');
     await once(child, 'exit').catch(() => {});

@@ -14,7 +14,7 @@ class RateLimiter {
     this.windowMs = windowMs;
     this.maxRequests = maxRequests;
     this.requests = new Map(); // Map<ip, Array<timestamps>>
-    
+
     // Cleanup old entries every 10 windows. Do not keep short-lived test
     // processes alive solely for maintenance of this in-memory limiter.
     this.cleanupInterval = setInterval(() => this.cleanup(), windowMs * 10);
@@ -22,8 +22,7 @@ class RateLimiter {
   }
 
   getClientIp(req) {
-    // Trust CF-Connecting-IP from reverse proxy if present, otherwise use req.ip
-    return req.headers['cf-connecting-ip'] || req.ip || '127.0.0.1';
+    return getClientIp(req);
   }
 
   check(req) {
@@ -75,4 +74,34 @@ class RateLimiter {
   }
 }
 
-module.exports = { RateLimiter, DEFAULT_WINDOW_MS, DEFAULT_MAX_REQUESTS };
+function isTrustedCloudflareRequest(req) {
+  // cf-ray is the existing FlowBoard tunnel contract: cloudflared forwards it
+  // from the Cloudflare edge, while direct requests have no tunnel marker.
+  return typeof req?.headers?.['cf-ray'] === 'string'
+    && req.headers['cf-ray'].trim().length > 0;
+}
+
+function socketIp(req) {
+  return req?.socket?.remoteAddress
+    || req?.connection?.remoteAddress
+    || req?.ip
+    || 'unknown';
+}
+
+function getClientIp(req) {
+  if (isTrustedCloudflareRequest(req)) {
+    const cloudflareIp = req.headers['cf-connecting-ip'];
+    if (typeof cloudflareIp === 'string' && cloudflareIp.trim()) return cloudflareIp.trim();
+  }
+  // Do not let a client rotate cf-connecting-ip on a direct request to evade
+  // the limiter. The transport-level socket address is the fallback key.
+  return socketIp(req);
+}
+
+module.exports = {
+  RateLimiter,
+  DEFAULT_WINDOW_MS,
+  DEFAULT_MAX_REQUESTS,
+  getClientIp,
+  isTrustedCloudflareRequest,
+};

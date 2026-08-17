@@ -76,7 +76,7 @@ const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
 const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegram-auth.js');
-const { RateLimiter } = require('./rate-limiter.js');
+const { RateLimiter, getClientIp } = require('./rate-limiter.js');
 const { installPrivacyFilter } = require('./privacy-filter.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
@@ -238,7 +238,12 @@ const SESSION_CLEAR_COOKIE_OPTS = { httpOnly: true, secure: true, sameSite: 'non
 function verifySession(token) { return jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }); }
 function issueSession(res, user) {
   const sessionToken = jwt.sign(
-    { id: user.id, username: user.username, agentId: user.agentId || null },
+    {
+      id: user.id,
+      username: user.username,
+      agentId: user.agentId || null,
+      botIndex: Number.isInteger(user.botIndex) ? user.botIndex : null,
+    },
     JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' }
   );
   res.cookie('flowboard_session', sessionToken, SESSION_COOKIE_OPTS);
@@ -252,13 +257,19 @@ const authRateLimiter = new RateLimiter({
 
 function clearSession(res) {
   res.clearCookie('flowboard_session', SESSION_CLEAR_COOKIE_OPTS);
+  // Older builds issued the same cookie with a /api path. Clear both scopes so
+  // a legacy agentless cookie cannot survive the INVALID_SESSION response.
+  res.clearCookie('flowboard_session', { ...SESSION_CLEAR_COOKIE_OPTS, path: '/api' });
 }
-function sameSessionIdentity(sessionUser, telegramUser) {
-  return String(sessionUser?.id) === String(telegramUser?.id)
-    && (sessionUser?.agentId || null) === (telegramUser?.agentId || null);
+function sameSessionIdentity(sessionUser, telegramIdentity) {
+  return String(sessionUser?.id) === String(telegramIdentity?.user?.id)
+    && (sessionUser?.agentId || null) === (telegramIdentity?.agentId || null)
+    // Cookies issued before botIndex was added remain bound by their unique
+    // agent mapping. New cookies carry the position as an additional guard.
+    && (sessionUser?.botIndex == null || sessionUser.botIndex === telegramIdentity?.botIndex);
 }
 function rejectTelegramAuth(req, res, failure, { clearExistingSession = false } = {}) {
-  if (clearExistingSession) clearSession(res);
+  if (clearExistingSession || failure.code === 'INVALID_SESSION') clearSession(res);
   console.warn(
     `[auth] ${failure.code} from ${req.headers['cf-connecting-ip'] || req.ip} — ${new Date().toISOString()}`
   );
@@ -282,15 +293,20 @@ function authenticateOrChallenge(req, res, next) {
   if (hasInitData) {
     const telegramResult = validateTelegramWebApp(initData);
     if (telegramResult.ok) {
-      if (isAuthExchange || !sameSessionIdentity(sessionUser, telegramResult.user)) {
-        issueSession(res, telegramResult.user);
+      if (isAuthExchange || !sameSessionIdentity(sessionUser, telegramResult)) {
+        issueSession(res, { ...telegramResult.user, botIndex: telegramResult.botIndex });
       }
       req.user = telegramResult.user;
       req.telegramBotIndex = telegramResult.botIndex;
       return next();
     }
 
-    if (!isAuthExchange && telegramResult.code === 'TELEGRAM_INIT_DATA_EXPIRED' && sessionUser) {
+    if (
+      !isAuthExchange
+      && telegramResult.code === 'TELEGRAM_INIT_DATA_EXPIRED'
+      && sessionUser
+      && sameSessionIdentity(sessionUser, telegramResult)
+    ) {
       req.user = sessionUser;
       return next();
     }
@@ -456,9 +472,10 @@ app.use('/api/', rateLimit({
   // Skip ONLY genuinely-local requests. cloudflared connects from 127.0.0.1, so
   // without excluding the tunnel marker (cf-ray) every external request would be
   // treated as local and skip the limit entirely (T-355). Tunneled requests are
-  // keyed by their real client IP below.
+  // keyed by their verified Cloudflare client IP below; direct requests use the
+  // transport socket address and cannot rotate cf-connecting-ip to evade it.
   skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),
-  keyGenerator: (req) => req.headers['cf-connecting-ip'] || req.ip || 'unknown',
+  keyGenerator: getClientIp,
   message: { error: 'Too many requests, please slow down.' }
 }));
 

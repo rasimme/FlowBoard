@@ -52,6 +52,15 @@ from steady-state requests after the original WebApp payload naturally ages.
 6. Evaluate the HMAC against every configured token and return typed,
    secret-safe failures. Do not disclose token values or the matching token's
    secret material in responses or logs.
+7. Classify `EXPIRED` only after HMAC verification, allowed-user validation,
+   bot matching, and agent mapping. The verified result carries the bot
+   position so steady-state fallback accepts only the same Telegram user and
+   bot-agent binding; cross-bot or forged-expired payloads reject with 403 and
+   clear the session.
+8. Clear both the current root-path `flowboard_session` cookie and the legacy
+   `/api`-path variant on rejected sessions. Rate-limit keys trust
+   `cf-connecting-ip` only when the existing `cf-ray` Cloudflare Tunnel marker
+   is present; direct requests use the transport socket address.
 
 ## Consequences
 

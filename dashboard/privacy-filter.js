@@ -3,7 +3,7 @@
 /**
  * Privacy filter for logs (T-441-4): prevents sensitive parameters from leaking
  * into logs or error messages.
- * 
+ *
  * This is a defense-in-depth layer that sanitizes common logging patterns
  * before they reach stdout/stderr.
  */
@@ -11,16 +11,16 @@
 const SENSITIVE_PATTERNS = [
   // Telegram bot tokens (format: 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11)
   /\d+:[A-Za-z0-9_-]{34,}/g,
-  
+
   // JWT tokens (format: header.payload.signature)
   /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
-  
+
   // Generic bearer tokens
   /Bearer\s+[A-Za-z0-9_.-]+/gi,
-  
+
   // Common secret patterns
   /["']?(password|secret|token|key|api_?key|auth_?token)["']?\s*[:=]\s*["']?[^\s"']+/gi,
-  
+
   // GitHub tokens
   /ghp_[A-Za-z0-9_]{36,}/g,
   /github_[A-Za-z0-9_]{32,}/g,
@@ -47,7 +47,7 @@ const SENSITIVE_QUERY_PARAMS = new Set([
  */
 function sanitizeString(str) {
   if (typeof str !== 'string') return str;
-  
+
   let result = str;
   SENSITIVE_PATTERNS.forEach(pattern => {
     result = result.replace(pattern, '[REDACTED]');

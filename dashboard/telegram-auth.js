@@ -187,8 +187,6 @@ function validateTelegramInitData(initData, {
   if (!/^\d+$/.test(authDateRaw)) return AUTH_FAILURES.INVALID;
   const authDate = Number(authDateRaw);
   if (!Number.isSafeInteger(authDate)) return AUTH_FAILURES.INVALID;
-  if (authDate > nowSeconds) return AUTH_FAILURES.FUTURE;
-  if (nowSeconds - authDate > TELEGRAM_INIT_DATA_MAX_AGE_SECONDS) return AUTH_FAILURES.EXPIRED;
 
   params.delete('hash');
   const dataCheckString = [...params.entries()]
@@ -230,11 +228,23 @@ function validateTelegramInitData(initData, {
   const matchedIdentity = botIdentities[matchedBotIndex];
   if (!matchedIdentity?.agentId) return AUTH_FAILURES.MAPPING_MISSING;
 
-  return {
-    ok: true,
+  // Time classification deliberately happens only after the complete
+  // cryptographic and identity checks above. An attacker must not be able to
+  // turn an unsigned/foreign payload into an EXPIRED result and thereby reach
+  // the steady-state cookie path.
+  const verifiedIdentity = {
     user: { ...telegramUser, agentId: matchedIdentity.agentId },
     agentId: matchedIdentity.agentId,
     botIndex: matchedBotIndex,
+  };
+  if (authDate > nowSeconds) return { ...AUTH_FAILURES.FUTURE, ...verifiedIdentity };
+  if (nowSeconds - authDate > TELEGRAM_INIT_DATA_MAX_AGE_SECONDS) {
+    return { ...AUTH_FAILURES.EXPIRED, ...verifiedIdentity };
+  }
+
+  return {
+    ok: true,
+    ...verifiedIdentity,
   };
 }
 

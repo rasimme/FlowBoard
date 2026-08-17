@@ -68,6 +68,11 @@ middleware fails closed:
 - **Fresh Telegram credentials outrank cookies.** Valid fresh init-data issues or
   rebinds the JWT to the matched agent; invalid fresh data cannot inherit a
   session from another bot on the same origin.
+- **Expired init-data is verified before it is classified.** HMAC, allowed-user,
+  bot, and agent mapping checks all run before `EXPIRED` is returned. A
+  steady-state cookie fallback requires the same Telegram user and bot-agent
+  binding; cross-bot and forged-expired payloads return `403` and clear both
+  the root and legacy `/api` cookie paths.
 - **CORS:** when auth is off (local-first), CORS is restricted to loopback
   origins — a cross-site web page cannot drive the API from a victim's browser.
   When auth is on, CORS is restricted to the configured/Telegram origins.
@@ -226,8 +231,7 @@ hook + installer separately from the runtime service.
 ## Recent hardening (T-441)
 
 ### Auth-endpoint rate limiting (T-441-3)
-The `/api/auth` endpoint enforces a sliding-window rate limit of 60 requests per minute per source IP. This defends against brute-force attempts to guess or cycle through credentials. The limit is checked in-app; additional reverse-proxy rate limiting is recommended in production. Rejected requests return HTTP 429 with a `Retry-After` header.
+The `/api/auth` endpoint enforces a sliding-window rate limit of 60 requests per minute per source IP. On the Cloudflare Tunnel path (`cf-ray` present), the key is the edge-provided `cf-connecting-ip`; direct requests use the transport socket address and ignore that client-controlled header. This defends against brute-force attempts to guess or cycle through credentials. The limit is checked in-app; additional reverse-proxy rate limiting is recommended in production. Rejected requests return HTTP 429 with a `Retry-After` header.
 
 ### Privacy-filter for logs (T-441-4)
-All console output (warnings, errors, logs) passes through a sanitization layer that redacts common patterns: Telegram bot tokens, JWT tokens, bearer tokens, and secret/password strings. This prevents accidental token leaks from reaching logs. The filter is identity-preserving (it records that *something* happened) but removes the secret values themselves.
-
+All console output (warnings, errors, logs) passes through a sanitization layer that redacts common patterns: Telegram bot tokens, JWT tokens, bearer tokens, and secret/password strings. The repository privacy scan also checks singular and plural `TELEGRAM_BOT_TOKEN(S)` assignments, including comma-separated lists, without echoing captured values. This prevents accidental token leaks from reaching logs or the published source. The filter is identity-preserving (it records that *something* happened) but removes the secret values themselves.
