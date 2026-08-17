@@ -15,6 +15,9 @@ assert.equal(DEFAULT_WORK_STATE, 'working');
 assert.equal(isValidDateString('2026-08-17'), false, 'date-only values are not scheduler datetimes');
 assert.equal(isValidDateString('2026-08-17T17:00:00.000Z'), true);
 assert.equal(isValidDateString('2026-08-17T17:00:00'), false, 'timezone is required');
+assert.equal(isValidDateString('2026-02-29T17:00:00.000Z'), false, 'calendar overflow is rejected');
+assert.equal(isValidDateString('2024-02-29T17:00:00.000Z'), true, 'leap-day is accepted');
+assert.equal(isValidDateString('2026-08-17T17:00:00+24:00'), false, 'timezone overflow is rejected');
 
 assert.deepEqual(normalizeStoredWorkState({ blocked: true }), {
   workState: 'blocked',

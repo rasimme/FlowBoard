@@ -38,12 +38,36 @@ function isPlainObject(value) {
 // ISO-8601 date-time with an explicit timezone so a scheduler never interprets
 // the same `checkAgainAt` differently on two hosts.  Legacy reads are still
 // forgiving (invalid values normalize to null); writes use this strict path.
-const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO_DATETIME_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/;
 
 function isValidDateString(value) {
-  return typeof value === 'string'
-    && value === value.trim()
-    && ISO_DATETIME_RE.test(value)
+  if (typeof value !== 'string' || value !== value.trim()) return false;
+  const match = ISO_DATETIME_RE.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] ? Number(match[8]) : 0;
+  const offsetMinute = match[9] ? Number(match[9]) : 0;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30,
+    31, 31, 30, 31, 30, 31][month - 1];
+
+  // Date.parse normalizes overflow (for example 2026-02-30 → March 2), so
+  // validate the calendar and clock components before relying on it for the
+  // timezone conversion.  Explicit timezone bounds keep scheduler inputs
+  // deterministic and reject values some JS runtimes normalize differently.
+  return month >= 1 && month <= 12
+    && day >= 1 && day <= daysInMonth
+    && hour >= 0 && hour <= 23
+    && minute >= 0 && minute <= 59
+    && second >= 0 && second <= 59
+    && offsetHour >= 0 && offsetHour <= 23
+    && offsetMinute >= 0 && offsetMinute <= 59
     && !Number.isNaN(new Date(value).getTime());
 }
 

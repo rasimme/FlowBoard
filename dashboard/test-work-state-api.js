@@ -97,6 +97,16 @@ async function main() {
       throw new Error('contradictory PUT mutated specFile or another field');
     }
 
+    for (const checkAgainAt of ['2026-08-17T17:00:00', '2026-02-29T17:00:00.000Z']) {
+      const invalidDatetime = await api('PUT', `/projects/work-state-api/tasks/${id}`, {
+        workState: 'waiting',
+        workStateDetails: { checkAgainAt },
+      });
+      if (invalidDatetime.status !== 400 || invalidDatetime.body?.code !== 'WORK_STATE_DETAILS_INVALID') {
+        throw new Error(`invalid checkAgainAt was not rejected: ${checkAgainAt}`);
+      }
+    }
+
     const legacyBlock = await api('PUT', `/projects/work-state-api/tasks/${id}`, { blocked: true });
     if (legacyBlock.status !== 200 || legacyBlock.body.task.workState !== 'blocked' || legacyBlock.body.task.blocked !== true) {
       throw new Error('legacy blocked=true translation failed');
