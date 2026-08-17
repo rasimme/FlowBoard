@@ -201,12 +201,12 @@ const validTask = (overrides = {}) => ({
   globalThis.fetch = async () => ({
     ok: true,
     status: 200,
-    json: async () => ({ ok: true, tasks: { malformed: true } }),
+    json: async () => ({ ok: true, tasks: [validTask({ status: 'ready' })] }),
   })
   await assert.rejects(
     () => bridge.refreshTasks(),
     err => err?.kind === 'protocol',
-    'schema-invalid task 2xx rejects as a protocol error',
+    'schema-invalid full task 2xx rejects as a protocol error',
   )
   assert.deepEqual(win.appState.tasks, [{ id: 'T-KEEP' }], 'T-KEEP survives a malformed 2xx response')
   assert.equal(win._events.length, 0, 'malformed 2xx does not notify a false empty state')

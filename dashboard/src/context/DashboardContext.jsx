@@ -90,6 +90,51 @@ export function DashboardProvider({ children }) {
     connectionRef.current = state?.connection || INITIAL_CONNECTION_STATE;
   }, [state?.connection]);
 
+  // One task-request lane owns every list fetch that can ultimately publish to
+  // appState.tasks: full snapshots, project navigation, mutation refreshes and
+  // compatibility/override callers. Replacements are network-serial and abort
+  // the old body parser before the next request starts.
+  const fetchCoordinatedTasks = useCallback((project, kind, options = {}) => {
+    const running = taskRequestRef.current.active;
+    const generation = taskRequestRef.current.generation + 1;
+    taskRequestRef.current.generation = generation;
+
+    return (async () => {
+      if (running) {
+        running.superseded = true;
+        running.controller.abort(new DOMException(`Superseded ${running.kind} task load`, 'AbortError'));
+        await running.promise.catch(() => null);
+        if (taskRequestRef.current.generation !== generation) return null;
+        if (taskRequestRef.current.active === running) taskRequestRef.current.active = null;
+      }
+
+      const { signal: callerSignal, ...fetchOptions } = options;
+      const controller = new AbortController();
+      const forwardCallerAbort = () => controller.abort(callerSignal.reason);
+      if (callerSignal?.aborted) forwardCallerAbort();
+      else callerSignal?.addEventListener('abort', forwardCallerAbort, { once: true });
+
+      let active;
+      const request = (async () => {
+        try {
+          const tasks = await fetchTasksForProject(project, controller.signal, fetchOptions);
+          if (controller.signal.aborted || taskRequestRef.current.generation !== generation) return null;
+          return tasks;
+        } catch (error) {
+          if (active?.superseded || taskRequestRef.current.generation !== generation) return null;
+          throw error;
+        } finally {
+          callerSignal?.removeEventListener('abort', forwardCallerAbort);
+          if (taskRequestRef.current.active === active) taskRequestRef.current.active = null;
+        }
+      })();
+
+      active = { generation, controller, promise: request, kind, project, superseded: false };
+      taskRequestRef.current.active = active;
+      return request;
+    })();
+  }, []);
+
   const fetchDashboardSnapshot = useCallback(async (signal, {
     retryAuth = false,
     onAuthRecovered = null,
@@ -116,10 +161,13 @@ export function DashboardProvider({ children }) {
       activeProject,
       currentViewedProject: window.appState?.viewedProject || null,
     });
-    const tasks = viewedProject ? await fetchTasksForProject(viewedProject, signal) : [];
+    const tasks = viewedProject
+      ? await fetchCoordinatedTasks(viewedProject, 'Dashboard snapshot', { signal })
+      : [];
+    if (tasks === null) throw new DOMException('Superseded dashboard task snapshot', 'AbortError');
 
     return { projects, agents, activeProject, viewedProject, tasks };
-  }, []);
+  }, [fetchCoordinatedTasks]);
 
   const commitFullSnapshot = useCallback((snapshot, recoveredScope = 'core') => {
     const { projects, agents, activeProject, viewedProject, tasks } = snapshot;
@@ -199,7 +247,8 @@ export function DashboardProvider({ children }) {
         } catch (error) {
           const superseded = controller.signal.aborted
             || snapshotRequestRef.current.generation !== generation
-            || error?.kind === 'aborted';
+            || error?.kind === 'aborted'
+            || error?.name === 'AbortError';
           if (!superseded) {
             const scope = error?.path === '/api/auth' ? 'auth' : 'core';
             if (authRecovered && scope !== 'auth') {
@@ -232,43 +281,6 @@ export function DashboardProvider({ children }) {
     if (snapshotRequestRef.current.active === running) snapshotRequestRef.current.active = null;
   }, []);
 
-  const startTaskRequest = useCallback((project, kind, onSuccess) => {
-    const running = taskRequestRef.current.active;
-    const generation = taskRequestRef.current.generation + 1;
-    taskRequestRef.current.generation = generation;
-
-    return (async () => {
-      if (running) {
-        running.controller.abort(new DOMException(`Superseded ${running.kind} task load`, 'AbortError'));
-        await running.promise.catch(() => null);
-        if (taskRequestRef.current.generation !== generation) return null;
-        if (taskRequestRef.current.active === running) taskRequestRef.current.active = null;
-      }
-
-      const controller = new AbortController();
-      let active;
-      const request = (async () => {
-        try {
-          const tasks = await fetchTasksForProject(project, controller.signal);
-          if (controller.signal.aborted || taskRequestRef.current.generation !== generation) return null;
-          return onSuccess(tasks);
-        } catch (error) {
-          const superseded = controller.signal.aborted
-            || taskRequestRef.current.generation !== generation
-            || error?.kind === 'aborted';
-          if (!superseded) markConnectionFailure(error, `${kind} error`, 'tasks');
-          return null;
-        } finally {
-          if (taskRequestRef.current.active === active) taskRequestRef.current.active = null;
-        }
-      })();
-
-      active = { generation, controller, promise: request, kind, project };
-      taskRequestRef.current.active = active;
-      return request;
-    })();
-  }, [markConnectionFailure]);
-
   const loadDashboardSnapshot = useCallback(() => (
     startSnapshotRequest('initial')
   ), [startSnapshotRequest]);
@@ -281,6 +293,40 @@ export function DashboardProvider({ children }) {
     startSnapshotRequest('retry')
   ), [startSnapshotRequest]);
 
+  const refreshTasks = useCallback(async (projectOverride = null, options = {}) => {
+    const project = projectOverride
+      || window.appState?.viewedProject
+      || window.appState?.activeProject;
+    if (!project) return null;
+
+    // viewProject owns publication while navigation is pending. Same-target
+    // callers reuse it; stale callbacks captured by the former project vanish.
+    const projectSwitch = projectSwitchRef.current;
+    if (projectSwitch) {
+      return projectSwitch.name === project
+        ? (projectSwitch.promise || null)
+        : null;
+    }
+
+    const currentProject = window.appState?.viewedProject || window.appState?.activeProject;
+    if (currentProject !== project) return null;
+
+    try {
+      const tasks = await fetchCoordinatedTasks(project, 'Board refresh', options);
+      const latestProject = window.appState?.viewedProject || window.appState?.activeProject;
+      if (tasks === null || latestProject !== project || projectSwitchRef.current) return null;
+      bridge.replaceTasks(tasks);
+      prevTasksRef.current = JSON.stringify(tasks);
+      markConnectionSuccess(window.appState?.projects || [], 'tasks');
+      return tasks;
+    } catch (error) {
+      if (error?.kind !== 'aborted' && error?.name !== 'AbortError') {
+        markConnectionFailure(error, 'Board refresh error', 'tasks');
+      }
+      return null;
+    }
+  }, [fetchCoordinatedTasks, markConnectionFailure, markConnectionSuccess]);
+
   const viewProject = useCallback((name) => {
     if (!name) return Promise.resolve(null);
 
@@ -290,18 +336,26 @@ export function DashboardProvider({ children }) {
       await invalidateSnapshotRequest(`Project changed to ${name}`);
       if (projectSwitchRef.current !== pending) return null;
 
-      return startTaskRequest(name, 'viewProject', (tasks) => {
-        if (projectSwitchRef.current !== pending) return null;
+      try {
+        const tasks = await fetchCoordinatedTasks(name, 'viewProject');
+        if (tasks === null || projectSwitchRef.current !== pending) return null;
         prevTasksRef.current = JSON.stringify(tasks);
         dispatch({ viewedProject: name, tasks });
         markConnectionSuccess(window.appState?.projects || [], 'tasks');
         return tasks;
-      });
+      } catch (error) {
+        if (projectSwitchRef.current === pending
+          && error?.kind !== 'aborted'
+          && error?.name !== 'AbortError') {
+          markConnectionFailure(error, 'viewProject error', 'tasks');
+        }
+        return null;
+      }
     })().finally(() => {
       if (projectSwitchRef.current === pending) projectSwitchRef.current = null;
     });
     return pending.promise;
-  }, [dispatch, invalidateSnapshotRequest, markConnectionSuccess, startTaskRequest]);
+  }, [dispatch, fetchCoordinatedTasks, invalidateSnapshotRequest, markConnectionFailure, markConnectionSuccess]);
 
   const activateProject = useCallback(async () => {
     const agentId = window.appState?.agentId;
@@ -366,29 +420,14 @@ export function DashboardProvider({ children }) {
     const onBackdropClick = () => toggleSidebar();
     backdrop?.addEventListener('click', onBackdropClick);
 
-    const installed = bridge.installRefreshBridge(async () => {
-      const project = window.appState?.viewedProject || window.appState?.activeProject;
-      if (!project) return null;
-      return startTaskRequest(project, 'Board refresh', (tasks) => {
-        // Project navigation owns the task lane. Never publish a response for a
-        // project that stopped being current while the request was in flight.
-        const currentProject = window.appState?.viewedProject || window.appState?.activeProject;
-        if (currentProject !== project) return null;
-        bridge.replaceTasks(tasks);
-        prevTasksRef.current = JSON.stringify(tasks);
-        markConnectionSuccess(window.appState?.projects || [], 'tasks');
-        return tasks;
-      });
-    });
+    const installed = bridge.installRefreshBridge(refreshTasks);
 
     return () => {
       uninstallToast();
       backdrop?.removeEventListener('click', onBackdropClick);
-      if (window.appState && installed && window.appState._refreshBoard === installed) {
-        delete window.appState._refreshBoard;
-      }
+      bridge.uninstallRefreshBridge(installed);
     };
-  }, [toggleSidebar, markConnectionSuccess, startTaskRequest]);
+  }, [toggleSidebar, refreshTasks]);
 
   // Initial fetch — runs once after window.appState bootstrap is in place.
   useEffect(() => {
@@ -426,12 +465,13 @@ export function DashboardProvider({ children }) {
     switchTab,
     toggleSidebar,
     refreshProjectsOnly,
+    refreshTasks,
     retryConnection,
     openSpec,
     applyTelegramTheme: applyTelegramThemeImpl,
     haptic,
     hapticNotification,
-  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, retryConnection, openSpec]);
+  }), [state, viewProject, activateProject, deactivateProject, switchTab, toggleSidebar, refreshProjectsOnly, refreshTasks, retryConnection, openSpec]);
 
   return (
     <DashboardContext.Provider value={value}>

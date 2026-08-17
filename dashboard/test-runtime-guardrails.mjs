@@ -84,6 +84,10 @@ assert.match(dashboardContext.text, /querySelector\('\.sidebar-backdrop'\)/, 'Da
 assert.match(dashboardContext.text, /addEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is installed')
 assert.match(dashboardContext.text, /removeEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is cleaned up')
 assert.match(dashboardContext.text, /installGlobalToast/, 'DashboardContext installs global toast bridge for migrated React surfaces')
+assert.match(dashboardContext.text, /fetchCoordinatedTasks\(viewedProject, 'Dashboard snapshot'/,
+  'full snapshots use the central task-request coordinator')
+assert.equal((dashboardContext.text.match(/fetchTasksForProject\(/g) || []).length, 1,
+  'DashboardContext has exactly one low-level task-list fetch site')
 console.log('✅ runtime guard: migrated shell bridge keeps hidden DOM listeners')
 
 const tasksView = sourceFiles.find(file => file.path === 'src/pages/TasksView.jsx')

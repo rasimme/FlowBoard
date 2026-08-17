@@ -179,10 +179,18 @@ async function main() {
       'auth state explains Telegram remediation');
     const retryBox = await page.$eval('.connection-screen [data-action="retry-connection"]', (el) => {
       const box = el.getBoundingClientRect();
-      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, height: box.height };
+      return {
+        left: box.left,
+        right: box.right,
+        top: box.top,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      };
     });
-    r.ok(retryBox.left >= 0 && retryBox.right <= 390 && retryBox.top >= 0 && retryBox.bottom <= 780 && retryBox.height >= 44,
-      'retry is at least 44px tall and remains inside the Telegram/mobile viewport');
+    r.ok(retryBox.left >= 0 && retryBox.right <= 390 && retryBox.top >= 0 && retryBox.bottom <= 780
+      && retryBox.width >= 44 && retryBox.height >= 44,
+      'retry is at least 44×44px and remains inside the Telegram/mobile viewport');
     mode = 'pass';
     await page.click('.connection-screen [data-action="retry-connection"]');
     await page.waitForFunction(() => document.querySelector('[data-connection-state]')?.dataset.connectionState === 'empty');
