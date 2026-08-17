@@ -101,6 +101,16 @@ const HZL_TO_FB = {
 
 const VALID_STATUSES = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
 
+// Keep task-scoped manual re-evaluation aligned with the scheduler.  The
+// scheduler historically used `parseInt(...) || 30`; centralizing that
+// contract prevents the retry action from silently falling back to the old
+// service-level default of 10 minutes.
+const DEFAULT_STALE_THRESHOLD_MINUTES = 30;
+
+function getSchedulerStaleThreshold() {
+  return parseInt(process.env.STALE_THRESHOLD_MINUTES, 10) || DEFAULT_STALE_THRESHOLD_MINUTES;
+}
+
 function _cloneJson(value) {
   if (value === undefined || value === null) return value;
   try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
@@ -2919,7 +2929,10 @@ function reevaluateStuckIndicator(project, flowboardId, opts = {}) {
     throw Object.assign(new Error(`Task not found: ${flowboardId}`), { code: 'NOT_FOUND' });
   }
 
-  const stuck = getStuckTasks(opts);
+  const staleThreshold = opts.staleThreshold !== undefined
+    ? opts.staleThreshold
+    : getSchedulerStaleThreshold();
+  const stuck = getStuckTasks({ ...opts, staleThreshold });
   const entry = (stuck.combined || []).find(candidate => _stuckEntryKey(candidate) === key);
   if (!entry) {
     const cleared = clearStuckIndicator(project, flowboardId);
@@ -4196,6 +4209,7 @@ module.exports = {
   addComment,
   getComments,
   getStuckTasks,
+  getSchedulerStaleThreshold,
   evaluateStuckIndicators,   // T-443: update-in-place transient monitor state
   reevaluateStuckIndicator,  // T-443: task-scoped immediate retry action
   clearStuckIndicator,       // T-443: recovery/checkpoint clearing primitive

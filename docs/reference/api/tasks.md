@@ -183,6 +183,12 @@ project- and task-bound action descriptors in this exact shape:
     "path": "/api/projects/<encoded-project>/tasks/<encoded-task>/stuck-indicator/clear"
   }
 }
+```
+
+When no explicit threshold is supplied by an internal caller, manual retry uses
+the scheduler's `STALE_THRESHOLD_MINUTES` value, with the same default of `30`
+minutes. It intentionally does not use the legacy `GET /api/tasks/stuck`
+read-default of `10` minutes.
 
 ## Cross-cutting
 

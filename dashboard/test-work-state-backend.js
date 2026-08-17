@@ -119,6 +119,39 @@ async function main() {
     await hzl.rebuildCache();
     assert.equal(hzl.getTask('t443', legacyMigration.id).blocked, true);
 
+    // Manual retry must use the scheduler's STALE_THRESHOLD_MINUTES contract
+    // (default 30), not getStuckTasks()'s legacy read default of 10.  A task
+    // idle for 15 minutes therefore stays clear at the scheduler default but
+    // becomes stale when the configured threshold is explicitly lowered.
+    const staleThresholdTask = hzl.createTask('t443', {
+      title: 'manual-retry-uses-scheduler-threshold',
+      status: 'open',
+    });
+    hzl.claimTask('t443', staleThresholdTask.id, { agent: 'main', lease: 60 });
+    const staleThresholdMeta = rawMetadata(cacheDb, staleThresholdTask.id);
+    staleThresholdMeta.flowboard.lastCheckpointAt = '2026-08-17T19:00:00.000Z';
+    injectLegacyMetadata(cacheDb, staleThresholdTask.id, staleThresholdMeta);
+    await hzl.rebuildCache();
+    const previousThreshold = process.env.STALE_THRESHOLD_MINUTES;
+    delete process.env.STALE_THRESHOLD_MINUTES;
+    try {
+      assert.equal(hzl.getSchedulerStaleThreshold(), 30, 'scheduler threshold defaults to 30m');
+      const schedulerDefaultRetry = hzl.reevaluateStuckIndicator('t443', staleThresholdTask.id, {
+        now: '2026-08-17T19:15:00.000Z',
+      });
+      assert.equal(schedulerDefaultRetry.indicator, null, 'manual retry uses default scheduler threshold (30m)');
+
+      process.env.STALE_THRESHOLD_MINUTES = '10';
+      assert.equal(hzl.getSchedulerStaleThreshold(), 10, 'scheduler threshold reads STALE_THRESHOLD_MINUTES');
+      const configuredRetry = hzl.reevaluateStuckIndicator('t443', staleThresholdTask.id, {
+        now: '2026-08-17T19:15:00.000Z',
+      });
+      assert.equal(configuredRetry.indicator?.reason, 'stale', 'manual retry uses configured scheduler threshold');
+    } finally {
+      if (previousThreshold === undefined) delete process.env.STALE_THRESHOLD_MINUTES;
+      else process.env.STALE_THRESHOLD_MINUTES = previousThreshold;
+    }
+
     // A due checkAgainAt is a nudge condition only — no lifecycle/work-state
     // mutation is performed by the evaluator.
     const waiting = hzl.updateTask('t443', created.waiting, {

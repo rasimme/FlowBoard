@@ -15,6 +15,17 @@ The dashboard has a meaningful client runtime (React over a legacy bridge), a RE
 - **Drift tests:** see [Docs-drift enforcement](docs-drift-enforcement.md) — mechanical checks that fail the gate when code and its documentation/registry diverge.
 - **The gate:** `cd dashboard && npm test` must be green (suite exit 0) before commit. Browser tests can be timing-flaky; a single failure is re-run in isolation before being treated as real.
 
+### T-443 boundary-to-browser coverage
+
+Canonical work-state changes use a layered contract gate rather than a
+frontend-only mock: pure helpers → HZL persistence/monitoring → Express API →
+real rendered dashboard. The corresponding checks are
+`test-work-state.js`, `test-work-state-backend.js`, `test-work-state-api.js`,
+`test-work-state.mjs`, and `test-work-state-e2e.js`; the integrated `test`
+script runs all five so the backend Retry/Clear routes and frontend controls
+cannot drift apart. The backend manual Retry path is also covered against the
+scheduler's `STALE_THRESHOLD_MINUTES`/default-30 threshold contract.
+
 ## Consequences
 
 - New UI behavior should add or extend a `*-e2e.js` render test rather than rely on a unit test of a helper.

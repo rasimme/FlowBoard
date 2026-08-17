@@ -1161,7 +1161,7 @@ app.get('/api/status', (req, res) => {
   // own stale/expired/never-claimed work here without any session push.
   try {
     const attention = hzlService.getAgentAttention(agentId, {
-      staleThreshold: parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30,
+      staleThreshold: hzlService.getSchedulerStaleThreshold(),
     });
     if (attention.stuckTasks.length > 0) statusBody.attention = attention;
   } catch { /* attention is best-effort; status must stay available */ }
@@ -4320,7 +4320,7 @@ async function startServer() {
     // Uses getNotifiableStuckTasks() to filter out duplicates within notification window (60min default)
     setInterval(() => {
       try {
-        const staleMinutes = parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30;
+        const staleMinutes = hzlService.getSchedulerStaleThreshold();
         const notificationWindowMinutes = parseInt(process.env.NOTIFICATION_WINDOW_MINUTES) || 60;
 
         // T-443: evaluate one update-in-place indicator before consuming the

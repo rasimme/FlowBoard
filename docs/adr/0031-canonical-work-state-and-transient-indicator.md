@@ -62,15 +62,13 @@ to erase newer state.
   backend emits explicit descriptors and full canonical responses, no Retry or
   Clear control is rendered.
 
-## Integration blocker
+## Integration status
 
-The frontend review worktree is intentionally merge-ready without changing the
-backend worktree. At the reviewed backend `HEAD`, the two action routes are not
-yet registered, so a live task response cannot advertise executable Retry or
-Clear controls. Backend integration must add both exact project/task-bound
-`POST` routes and return the complete canonical task; until then, schema
-validation rejects generic or missing descriptors and the UI remains
-fail-closed.
+The backend registers both exact project/task-bound `POST` routes and returns
+the complete canonical task, so integrated responses can advertise executable
+Retry and Clear controls. The frontend still validates descriptors and remains
+fail-closed for missing, generic, or malformed action payloads. The integrated
+contract is covered by the service, API, and browser regression suites.
 
 ## See also
 

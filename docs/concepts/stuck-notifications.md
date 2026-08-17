@@ -65,3 +65,26 @@ indicator and resets its notification/backoff metadata. Neither action changes
 lifecycle, `workState`, or `workStateDetails`, appends a comment, or wakes an
 agent. The descriptors are encoded and bound to the exact project and task;
 clients must not invent a generic PUT fallback.
+
+## Integration and coverage
+
+The work-state contract is tested at each boundary and then through the
+integrated dashboard:
+
+- `dashboard/test-work-state.js` covers pure-state normalization and datetime
+  validation.
+- `dashboard/test-work-state-backend.js` covers persistence, legacy read
+  repair, migration, lifecycle clearing, notification/backoff deduplication,
+  ownership routing, action descriptors, and the scheduler-threshold manual
+  retry rule.
+- `dashboard/test-work-state-api.js` covers canonical task responses, atomic
+  contradiction rejection, project/task-bound Retry and Clear routes, and
+  legacy writes over HTTP.
+- `dashboard/test-work-state.mjs` covers the frontend contract boundary;
+  `dashboard/test-work-state-e2e.js` proves the picker and living indicator in
+  the rendered browser UI without synthesizing a lifecycle update.
+
+The merge gate runs all backend and frontend work-state tests from the single
+`dashboard/package.json` `test` script. The backend scheduler and manual Retry
+share `STALE_THRESHOLD_MINUTES` (default `30`), while the general stuck-list
+read endpoint retains its documented legacy default of `10` for compatibility.
