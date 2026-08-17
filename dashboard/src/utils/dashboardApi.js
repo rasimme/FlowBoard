@@ -57,9 +57,14 @@ function validateWorkStateDetails(details, path, at) {
   require(isRecord(details), path, `${at}.workStateDetails to be an object`);
   for (const field of WORK_STATE_DETAIL_FIELDS) {
     require(
-      !hasOwn(details, field) || details[field] === null || isNonEmptyString(details[field]),
+      hasOwn(details, field),
       path,
-      `${at}.workStateDetails.${field} to be a string or null when present`,
+      `${at}.workStateDetails.${field} to be present in the canonical detail shape`,
+    );
+    require(
+      details[field] === null || isNonEmptyString(details[field]),
+      path,
+      `${at}.workStateDetails.${field} to be a string or null`,
     );
   }
 }

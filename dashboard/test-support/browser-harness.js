@@ -23,13 +23,14 @@
 // missing the run is SKIPPED (exit 0) — same policy as the existing browser
 // tests, so CI without a browser stays green.
 
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
 
 const ROOT = path.resolve(__dirname, '..'); // the dashboard/ dir (server.js, dist/)
 const EDGE = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
+const CLEANUP_TIMEOUT_MS = 2000;
 
 function reporter(title) {
   let pass = 0, fail = 0;
@@ -63,6 +64,112 @@ async function _waitForServer(base, child, timeoutMs = 10000) {
     await new Promise(r => setTimeout(r, 100));
   }
   throw new Error('dashboard server did not become ready');
+}
+
+function isAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function descendantsOf(pid) {
+  if (!pid || process.platform === 'win32') return [];
+  try {
+    const rows = execFileSync('ps', ['-Ao', 'pid=,ppid='], { encoding: 'utf8' });
+    const children = new Map();
+    for (const line of rows.split('\n')) {
+      const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+      if (!match) continue;
+      const childPid = Number(match[1]);
+      const parentPid = Number(match[2]);
+      if (!children.has(parentPid)) children.set(parentPid, []);
+      children.get(parentPid).push(childPid);
+    }
+    const found = [];
+    const pending = [pid];
+    while (pending.length) {
+      const parent = pending.pop();
+      for (const child of children.get(parent) || []) {
+        found.push(child);
+        pending.push(child);
+      }
+    }
+    return found;
+  } catch {
+    return [];
+  }
+}
+
+function signalTree(pid, signal) {
+  if (!pid) return;
+  // Kill descendants first.  Edge's crashpad/helper processes can otherwise
+  // become orphaned when the browser parent is force-killed after a hung CDP
+  // close attempt.
+  for (const child of descendantsOf(pid).reverse()) {
+    try { process.kill(child, signal); } catch {}
+  }
+  try { process.kill(pid, signal); } catch {}
+}
+
+async function waitForExit(pid, timeoutMs = CLEANUP_TIMEOUT_MS) {
+  if (!pid) return;
+  const deadline = Date.now() + timeoutMs;
+  while (isAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+async function stopProcessTree(child, timeoutMs = CLEANUP_TIMEOUT_MS) {
+  if (!child?.pid) return;
+  const pid = child.pid;
+  if (!isAlive(pid)) return;
+  signalTree(pid, 'SIGTERM');
+  await waitForExit(pid, timeoutMs);
+  if (isAlive(pid)) {
+    signalTree(pid, 'SIGKILL');
+    await waitForExit(pid, timeoutMs);
+  }
+}
+
+async function closeBrowser(browser, timeoutMs = CLEANUP_TIMEOUT_MS) {
+  if (!browser) return;
+  const edgeProcess = typeof browser.process === 'function' ? browser.process() : null;
+  const edgePid = edgeProcess?.pid;
+  // Capture helpers before a normal close can orphan them; this list is only
+  // ever used for the Edge process created by this harness.
+  const trackedPids = edgePid ? [edgePid, ...descendantsOf(edgePid)] : [];
+  let closed = false;
+  try {
+    await Promise.race([
+      Promise.resolve().then(() => browser.close()).catch(() => null),
+      new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+    closed = !isAlive(edgePid);
+  } catch {}
+
+  if (!closed && typeof browser.disconnect === 'function') {
+    try { browser.disconnect(); } catch {}
+  }
+  if (!closed && edgePid) {
+    signalTree(edgePid, 'SIGTERM');
+    await waitForExit(edgePid, timeoutMs);
+  }
+  if (!closed && edgePid && isAlive(edgePid)) {
+    signalTree(edgePid, 'SIGKILL');
+    await waitForExit(edgePid, timeoutMs);
+  }
+  // Helpers may have re-parented while the browser was closing.  Reap the
+  // exact PIDs captured above so a successful test cannot leak Edge/crashpad.
+  for (const pid of trackedPids.reverse()) {
+    if (isAlive(pid)) {
+      try { process.kill(pid, 'SIGKILL'); } catch {}
+      await waitForExit(pid, 250);
+    }
+  }
 }
 
 /**
@@ -105,10 +212,18 @@ async function withDashboard(fn, opts = {}) {
     await fn({ api, page, base, ROOT });
     return { skipped: false };
   } finally {
-    if (browser) { try { await browser.close(); } catch {} }
-    child.kill();
+    await closeBrowser(browser);
+    await stopProcessTree(child);
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
   }
 }
 
-module.exports = { withDashboard, reporter, browserAvailable, EDGE, ROOT };
+module.exports = {
+  withDashboard,
+  reporter,
+  browserAvailable,
+  closeBrowser,
+  stopProcessTree,
+  EDGE,
+  ROOT,
+};

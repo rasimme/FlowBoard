@@ -209,6 +209,17 @@ for (const [label, payload] of [
     ok: true,
     tasks: [validTask({ workStateDetails: undefined })],
   }],
+  ['tasks rejects partial canonical workStateDetails', {
+    ok: true,
+    tasks: [validTask({ workStateDetails: {
+      reason: null,
+      waitingFor: null,
+      responsible: null,
+      checkAgainAt: null,
+      // `setAt` is server-owned, but every canonical response must still
+      // expose its normalized key so the frontend can fail closed.
+    } })],
+  }],
   ['tasks rejects indicator arrays', {
     ok: true,
     tasks: [validTask({ stuckIndicator: [{ id: 'phantom' }] })],

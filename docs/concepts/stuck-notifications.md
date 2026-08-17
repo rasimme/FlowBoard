@@ -38,6 +38,10 @@ when `workState === "blocked"`).  Legacy writes of `blocked: true` map to
 Supplying contradictory `blocked` and `workState` fields returns HTTP 400 with
 `code: "WORK_STATE_CONTRADICTION"`.
 
+`setAt` is server-owned. A client-supplied value is ignored on create/update,
+including malformed values, and the server stamps the canonical write time;
+legacy read normalization may preserve an existing stored timestamp.
+
 Stuck monitoring persists one structured `stuckIndicator` in the same task
 metadata.  Re-evaluation updates that key in place and never appends reminder
 comments.  Checkpoints, recovery/work-state edits, release, review, and

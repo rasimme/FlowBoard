@@ -88,6 +88,8 @@ async function main() {
     let lastIndicatorAction = null;
     let commentPosts = 0;
     let raceMode = false;
+    let failNextWorkStatePut = false;
+    let workStatePutCount = 0;
 
     await page.setRequestInterception(true);
     page.on('request', async (request) => {
@@ -103,6 +105,16 @@ async function main() {
       if (url.pathname === `/api/projects/${PROJECT}/tasks/${taskId}` && request.method() === 'PUT') {
         const body = JSON.parse(request.postData() || '{}');
         lastWorkStateUpdate = body;
+        workStatePutCount += 1;
+        if (failNextWorkStatePut) {
+          failNextWorkStatePut = false;
+          await request.respond({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({ error: 'stale revision' }),
+          });
+          return;
+        }
         if (raceMode && body.workState === 'waiting') {
           currentTask = {
             ...currentTask,
@@ -252,6 +264,54 @@ async function main() {
       'failed mutation does not overwrite a newer external work state');
     r.ok(await page.$eval('input[name="workStateReason"]', (el) => el.value) === 'newer external state',
       'newer external details survive the rejected optimistic mutation');
+
+    // A rejected PUT with no external publication must still roll the draft
+    // back explicitly. This covers the referential/content-equal prop case
+    // where the parent effect cannot observe a canonical change, and proves
+    // that the same selection can be saved again immediately afterwards.
+    currentTask = {
+      ...currentTask,
+      workState: 'waiting',
+      blocked: false,
+      workStateDetails: {
+        reason: 'canonical waiting state',
+        waitingFor: 'canonical owner',
+        responsible: 'canonical owner',
+        checkAgainAt: null,
+        setAt: currentTask.workStateDetails.setAt,
+      },
+      stuckIndicator: null,
+    };
+    await page.evaluate((task) => {
+      window.appState.tasks = window.appState.tasks.map((candidate) => candidate.id === task.id ? task : candidate);
+      if (typeof window._notifyReact === 'function') window._notifyReact();
+      else window.dispatchEvent(new CustomEvent('appstate:change'));
+    }, currentTask);
+    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'waiting', { timeout: 3000 });
+    await page.waitForFunction(
+      () => document.querySelector('input[name="workStateReason"]')?.value === 'canonical waiting state',
+      { timeout: 3000 },
+    );
+    const failedPutCount = workStatePutCount;
+    failNextWorkStatePut = true;
+    await page.select('#work-state-select', 'paused');
+    await waitFor(() => workStatePutCount > failedPutCount);
+    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'waiting', { timeout: 3000 });
+    await page.waitForFunction(
+      () => document.querySelector('input[name="workStateReason"]')?.value === 'canonical waiting state',
+      { timeout: 3000 },
+    );
+    r.ok(await page.$eval('#work-state-select', (el) => el.value) === 'waiting',
+      'failed PUT rolls the picker state back to the canonical shared state');
+    r.ok(await page.$eval('input[name="workStateReason"]', (el) => el.value) === 'canonical waiting state',
+      'failed PUT rolls all picker details back to the canonical shared details');
+
+    const retryPutCount = workStatePutCount;
+    await page.select('#work-state-select', 'paused');
+    await waitFor(() => workStatePutCount > retryPutCount && lastWorkStateUpdate?.workState === 'paused');
+    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'paused', { timeout: 3000 });
+    r.ok(lastWorkStateUpdate?.workState === 'paused',
+      'same work-state selection can be saved again after a rejected PUT');
 
     await page.setViewport({ width: 390, height: 844 });
     const mobile = await page.evaluate(() => ({

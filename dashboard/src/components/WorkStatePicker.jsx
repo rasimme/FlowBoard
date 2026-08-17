@@ -32,6 +32,16 @@ function sameDetails(a, b) {
     .every((key) => (a?.[key] || null) === (b?.[key] || null));
 }
 
+function draftFromTask(task) {
+  const normalized = normalizeTaskWorkState(task || {});
+  const details = detailsFor(normalized);
+  return {
+    state: normalized?.workState || 'working',
+    details,
+    checkAgainAtInput: formatDateTimeLocal(details.checkAgainAt),
+  };
+}
+
 /**
  * Canonical task work-state editor. Lifecycle status stays in DetailPanel's
  * existing status picker; this component only owns workState + details.
@@ -55,6 +65,19 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [dateError, setDateError] = useState('');
+
+  // A failed PUT must reset the local draft even when the parent/shared task
+  // keeps the same reference and the same canonical values.  React's effect
+  // below intentionally keys off canonical values, so relying on it alone
+  // leaves a rejected selection stuck in the form and makes the same choice
+  // impossible to submit again.
+  function rollbackDraft(canonicalTask = task) {
+    const draft = draftFromTask(canonicalTask);
+    setDraftState(draft.state);
+    setDraftDetails(draft.details);
+    setDraftCheckAgainAtInput(draft.checkAgainAtInput);
+    setDateError('');
+  }
 
   useEffect(() => {
     setDraftState(canonicalState);
@@ -80,14 +103,14 @@ export default function WorkStatePicker({ task, onChange, disabled = false }) {
     try {
       const result = await onChange?.(nextState, nextDetails);
       if (result === false || result?.ok === false) {
-        throw new Error(result?.error || 'The work state could not be saved.');
+        const failure = new Error(result?.error || 'The work state could not be saved.');
+        if (result?.canonicalTask) failure.canonicalTask = result.canonicalTask;
+        throw failure;
       }
       return result;
     } catch (err) {
+      rollbackDraft(err?.canonicalTask || task);
       setError(err?.message || 'The work state could not be saved.');
-      // Do not restore the render-time snapshot here.  A rejected request may
-      // race with a newer external task update; the parent task prop and its
-      // canonical response/refetch own the eventual draft convergence.
       return false;
     } finally {
       setSaving(false);

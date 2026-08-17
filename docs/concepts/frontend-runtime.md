@@ -141,7 +141,7 @@ The intended module boundary is:
 - `dashboard/src/utils/dashboardApi.js`
   - owns schema-validated projects, agents, status, tasks, and auth loaders
   - applies the shared API deadline and caller abort contract to every loader
-  - rejects task responses missing canonical work-state fields or returning an indicator array before publication
+  - rejects task responses missing canonical work-state fields, any of the five `workStateDetails` keys, or returning an indicator array before publication
 - `dashboard/src/state/taskState.*`
   - pure operations for patch, merge, rollback, snapshots, and parent updates
 - `dashboard/src/state/taskMutations.*`

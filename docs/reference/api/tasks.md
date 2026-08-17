@@ -14,7 +14,7 @@ List tasks for a project.
 
 Create a task.
 
-**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, "blocked"?: boolean, ...}`. `checkAgainAt` and `setAt` use ISO-8601 date-times with an explicit timezone.
+**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, "blocked"?: boolean, ...}`. `checkAgainAt` uses an ISO-8601 date-time with an explicit timezone. `setAt` is server-owned: a client value is ignored and the server stamps the write time; responses always expose the normalized key.
 **Response 201:** `{"ok": true, "task": {<created>}}`
 
 ### `PUT /api/projects/:name/tasks/:id`

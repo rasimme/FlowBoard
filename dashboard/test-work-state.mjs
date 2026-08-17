@@ -338,6 +338,10 @@ assert.equal(parseDateTimeLocal('2026-03-29T01:30'), '2026-03-29T00:30:00.000Z',
   releaseRace();
   const raced = await racedPromise;
   assert.equal(raced.ok, false, 'stale mutation failure is surfaced');
+  assert.equal(raced.canonicalTask.workState, 'waiting',
+    'mutation failure returns the canonical shared task for draft rollback');
+  assert.equal(raced.canonicalTask.workStateDetails.reason, 'newer external state',
+    'mutation failure returns canonical shared details for draft rollback');
   assert.equal(window.appState.tasks[0].workState, 'waiting', 'newer same-value work state survives mutation error');
   assert.equal(window.appState.tasks[0].workStateDetails.reason, 'newer external state',
     'newer external details survive mutation error');

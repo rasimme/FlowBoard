@@ -432,7 +432,11 @@ export default function DetailPanel() {
   }
 
   async function syncActionResult(result, fallbackTask = taskRef.current) {
-    if (!result?.ok) throw new Error(result?.error || 'Unknown error');
+    if (!result?.ok) {
+      const error = new Error(result?.error || 'Unknown error');
+      if (result?.canonicalTask) error.canonicalTask = result.canonicalTask;
+      throw error;
+    }
     if (result.task) {
       const merged = { ...(fallbackTask || {}), ...result.task };
       return syncPanelTask(merged.workState ? normalizeTaskWorkState(merged) : merged);
@@ -530,7 +534,9 @@ export default function DetailPanel() {
       // snapshot; a newer external state may have arrived while the PUT was
       // pending.
       const current = getTasks().find((candidate) => candidate.id === t.id);
+      const canonicalTask = current || err?.canonicalTask;
       if (current) syncPanelTask(current);
+      if (canonicalTask) err.canonicalTask = normalizeTaskWorkState(canonicalTask);
       showToast('Work-state update failed: ' + (err.message || 'Unknown'), 'error');
       throw err;
     }

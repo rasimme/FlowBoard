@@ -31,6 +31,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { closeBrowser, stopProcessTree } = require('./test-support/browser-harness.js');
 
 const ROOT = __dirname;
 const DASHBOARD_PORT = 18818;
@@ -369,9 +370,8 @@ async function run() {
     console.log(`  not ok - ${err.message}`);
     if (logs) console.log(logs.split('\n').slice(-25).join('\n'));
   } finally {
-    if (browser) await browser.close().catch(() => {});
-    child.kill('SIGTERM');
-    await new Promise(r => setTimeout(r, 300));
+    await closeBrowser(browser);
+    await stopProcessTree(child);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 

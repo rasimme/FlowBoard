@@ -29,6 +29,10 @@ The board's state model has four orthogonal axes plus a soft-delete pointer.
 
 **Work state (four values).** `workState` is orthogonal to the lifecycle column: `working`, `waiting`, `blocked`, or `paused`. The detail panel edits it without moving the task between columns. `workStateDetails` carries optional `reason`, `waitingFor`, `responsible`, and `checkAgainAt` context; `setAt` is server-owned. The legacy `blocked` boolean remains a compatibility projection (`true` exactly when `workState === "blocked"`) and is read-only in the canonical UI. Existing card/search surfaces can therefore continue to render the projection while new UI edits the canonical state.
 
+On create/update, any client-supplied `setAt` is ignored (valid or malformed)
+and replaced by the server's write timestamp. Reads always expose all five
+detail keys, with absent values represented as `null`.
+
 A task may also carry one transient structured stuck indicator. It lives in the Activity/Checkpoint area, is updated in place by monitoring, and is not a comment or historical resolution entry. `detectedAt` identifies the start of the current incident and remains stable across re-evaluations. Retry/Clear controls are rendered only when the backend supplies explicit `POST` action descriptors for the exact project/task routes `/api/projects/{project}/tasks/{id}/stuck-indicator/{clear|retry}`; those non-destructive actions return a complete canonical task. The UI never synthesizes a work-state PUT or dismisses the indicator only in local state. During a rolling backend integration, missing or generic descriptors deliberately leave the controls hidden.
 
 **Claim / lease (three fields).** `agent` is the holder; `claimed_at` is when the claim happened; `lease_until` is when the claim expires (default 30 minutes from claim). Once `lease_until` passes, the task is *stale* and can be reclaimed by anyone (the original `agent` field is preserved until a successful re-claim happens). Checkpoints (`POST .../checkpoint`) reset the lease timer.

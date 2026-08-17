@@ -53,12 +53,18 @@ async function main() {
       title: 'waiting task',
       status: 'open',
       workState: 'waiting',
-      workStateDetails: { waitingFor: 'supplier' },
+      workStateDetails: {
+        waitingFor: 'supplier',
+        setAt: '2000-01-01T00:00:00.000Z',
+      },
     });
     if (created.status !== 200) throw new Error(`task create failed: ${created.status}`);
     const id = created.body.task.id;
     if (created.body.task.blocked !== false || created.body.task.workState !== 'waiting') {
       throw new Error('canonical create response is inconsistent');
+    }
+    if (created.body.task.workStateDetails.setAt === '2000-01-01T00:00:00.000Z') {
+      throw new Error('client-provided setAt was persisted instead of replaced by the server');
     }
     for (const field of ['reason', 'waitingFor', 'responsible', 'checkAgainAt', 'setAt']) {
       if (!Object.prototype.hasOwnProperty.call(created.body.task.workStateDetails, field)) {

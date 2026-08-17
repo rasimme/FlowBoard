@@ -65,7 +65,18 @@ async function mutate(project, taskId, optimisticPatch, mutationFn, { requireCan
     const next = state.rollbackOptimisticFields(currentTasks, snap, optimisticPatch)
     bridge.replaceTasks(next)
 
-    return { ok: false, error: err.message }
+    // Return the shared canonical task to the editor as well.  A failed
+    // canonical work-state PUT intentionally has no optimistic patch, so the
+    // normal field-aware rollback is a no-op.  The picker still needs an
+    // explicit draft reset when the shared task keeps the same reference and
+    // values; otherwise a rejected selection remains locally selected and
+    // cannot be submitted again.
+    const canonicalTask = bridge.getTasks().find((task) => task?.id === taskId)
+    return {
+      ok: false,
+      error: err.message,
+      ...(canonicalTask ? { canonicalTask: normalizeTaskWorkState(canonicalTask) } : {}),
+    }
   }
 }
 

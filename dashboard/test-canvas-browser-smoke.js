@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { closeBrowser, stopProcessTree } = require('./test-support/browser-harness.js');
 
 const ROOT = __dirname;
 const DASHBOARD_PORT = 18811;
@@ -237,9 +238,8 @@ async function run() {
     }, 'zoom transform change');
     ok(/scale\(1\.1/.test(after), 'Ctrl+wheel zooms toward the cursor (scale 1.1)');
   } finally {
-    if (browser) await browser.close().catch(() => {});
-    child.kill('SIGTERM');
-    await new Promise(r => setTimeout(r, 300));
+    await closeBrowser(browser);
+    await stopProcessTree(child);
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 

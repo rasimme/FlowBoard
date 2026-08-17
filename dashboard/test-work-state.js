@@ -69,6 +69,23 @@ assert.equal(created.blocked, false);
 assert.equal(created.workStateDetails.waitingFor, 'API');
 assert.equal(created.workStateDetails.setAt, '2026-08-17T17:00:00.000Z');
 
+const clientSetAt = resolveWorkStatePayload({
+  workState: 'waiting',
+  workStateDetails: {
+    reason: 'server owns this timestamp',
+    setAt: '2000-01-01T00:00:00.000Z',
+  },
+}, null, { now: '2026-08-17T18:00:00.000Z' });
+assert.equal(clientSetAt.workStateDetails.setAt, '2026-08-17T18:00:00.000Z',
+  'client setAt is ignored and replaced with the server timestamp');
+
+const malformedClientSetAt = resolveWorkStatePayload({
+  workState: 'waiting',
+  workStateDetails: { setAt: 'not-a-server-timestamp' },
+}, null, { now: '2026-08-17T18:01:00.000Z' });
+assert.equal(malformedClientSetAt.workStateDetails.setAt, '2026-08-17T18:01:00.000Z',
+  'malformed client setAt is ignored rather than persisted');
+
 assert.equal(resolveWorkStatePayload({ blocked: false }, { workState: 'paused' }).workState, 'working');
 assert.equal(resolveWorkStatePayload({ blocked: true }, { workState: 'working' }).workState, 'blocked');
 

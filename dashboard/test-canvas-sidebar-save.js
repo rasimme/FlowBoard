@@ -12,6 +12,7 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { closeBrowser, stopProcessTree } = require('./test-support/browser-harness.js');
 
 const ROOT = __dirname;
 const PORT = 18829;
@@ -127,9 +128,8 @@ async function run() {
     const stillTruncated = await page.$eval('[data-note-body]', el => el.classList.contains('truncated')).catch(() => null);
     ok(stillTruncated === false, 'shortened note is no longer truncated (inline-edit branch again)');
   } finally {
-    if (browser) await browser.close().catch(() => {});
-    child.kill('SIGTERM');
-    await new Promise(r => setTimeout(r, 300));
+    await closeBrowser(browser);
+    await stopProcessTree(child);
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   console.log(`\n# results: ${pass} passed, ${fail} failed`);

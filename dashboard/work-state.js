@@ -89,7 +89,11 @@ function detailError(field, message) {
  * fields are intentionally dropped so metadata written by older or external
  * clients cannot become a second, competing work-state contract.
  */
-function normalizeWorkStateDetails(value, { setAt = null, validate = false } = {}) {
+function normalizeWorkStateDetails(value, {
+  setAt = null,
+  validate = false,
+  ignoreSetAt = false,
+} = {}) {
   if (value !== undefined && value !== null && !isPlainObject(value)) {
     const error = new Error('workStateDetails must be an object or null');
     error.code = 'WORK_STATE_DETAILS_INVALID';
@@ -112,6 +116,10 @@ function normalizeWorkStateDetails(value, { setAt = null, validate = false } = {
   }
 
   for (const field of ['checkAgainAt', 'setAt']) {
+    // `setAt` is server-owned.  On writes, ignore both valid and malformed
+    // client values and stamp the canonical server time below.  Read/migration
+    // normalization keeps the legacy value so old records remain lossless.
+    if (field === 'setAt' && ignoreSetAt) continue;
     const candidate = source[field];
     if (candidate === undefined || candidate === null || candidate === '') {
       out[field] = null;
@@ -213,7 +221,11 @@ function resolveWorkStatePayload(payload = {}, current = null, { now = new Date(
   const changed = workState !== currentNormalized.workState;
   let workStateDetails;
   if (hasDetails) {
-    workStateDetails = normalizeWorkStateDetails(payload.workStateDetails, { setAt: now, validate: true });
+    workStateDetails = normalizeWorkStateDetails(payload.workStateDetails, {
+      setAt: now,
+      validate: true,
+      ignoreSetAt: true,
+    });
   } else if (changed || !current) {
     workStateDetails = normalizeWorkStateDetails(null, { setAt: now, validate: false });
   } else {

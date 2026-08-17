@@ -10,6 +10,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { closeBrowser, stopProcessTree } = require('./test-support/browser-harness.js');
 
 const puppeteer = (() => {
   try { return require('puppeteer-core'); } catch { return null; }
@@ -147,9 +148,9 @@ async function withViteDashboard(run) {
       throw error;
     }
   } finally {
-    if (browser) { try { await browser.close(); } catch {} }
-    vite.kill();
-    dashboard.kill();
+    await closeBrowser(browser);
+    await stopProcessTree(vite);
+    await stopProcessTree(dashboard);
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
   }
 }

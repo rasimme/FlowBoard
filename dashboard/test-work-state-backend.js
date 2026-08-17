@@ -46,6 +46,23 @@ async function main() {
       assert.equal(task.workStateDetails.reason, `reason-${state}`);
     }
 
+    const clientSetAtTask = hzl.updateTask('t443', created.waiting, {
+      workState: 'waiting',
+      workStateDetails: {
+        reason: 'server timestamp wins',
+        setAt: '2000-01-01T00:00:00.000Z',
+      },
+    });
+    assert.notEqual(clientSetAtTask.workStateDetails.setAt, '2000-01-01T00:00:00.000Z',
+      'client setAt is never persisted');
+    assert.ok(clientSetAtTask.workStateDetails.setAt, 'server stamps setAt on canonical writes');
+
+    const malformedClientSetAtTask = hzl.updateTask('t443', created.waiting, {
+      workStateDetails: { setAt: 'not-a-timestamp' },
+    });
+    assert.ok(malformedClientSetAtTask.workStateDetails.setAt,
+      'malformed client setAt is ignored and replaced by the server timestamp');
+
     const blocked = hzl.getTask('t443', created.blocked);
     assert.equal(blocked.blocked, true);
     assert.equal(blocked.workState, 'blocked');
