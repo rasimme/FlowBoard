@@ -17,7 +17,8 @@ Break a task into subtasks (one level deep — a subtask can't have its own subt
 - **Claim** a task to take ownership (this adds a lease and moves it to *in-progress*).
 - Write **checkpoints** as you progress — short notes, optionally with a progress percentage.
 - **Complete** sends the task to **review**. A human (or another reviewer) then **approves** it to *done* or **rejects** it back. Owners don't approve their own work.
-- Toggle the **blocked** flag to mark a task that can't proceed; it stays in its column but is clearly flagged.
+- Set the task's **work state** separately from its lifecycle status in the detail panel: *Working*, *Waiting*, *Blocked*, or *Paused*. Waiting/blocked/paused states can include a reason, who/what is next, a responsible person, and a check-again time. The legacy `blocked` flag shown on cards is a read-only projection of the canonical *Blocked* state.
+- If monitoring needs attention, the detail panel shows one **live stuck indicator** above Activity/Checkpoints. It is updated in place rather than added as a comment. Use its Retry/Clear actions when offered; both go through the task API.
 
 ## Trash, restore, archive
 

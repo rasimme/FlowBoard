@@ -1,4 +1,5 @@
 import { ApiError, apiJson } from './apiFetch.js';
+import { WORK_STATE_OPTIONS, WORK_STATE_DETAIL_FIELDS } from './workState.js';
 
 const PROJECT_STATUSES = new Set(['active', 'closed', 'archived']);
 const TASK_STATUSES = new Set(['backlog', 'open', 'in-progress', 'review', 'done', 'archived']);
@@ -35,6 +36,17 @@ function isPositiveInteger(value) {
 
 function isStringArray(value) {
   return Array.isArray(value) && value.every(isNonEmptyString);
+}
+
+function validateWorkStateDetails(details, path, at) {
+  require(isRecord(details), path, `${at}.workStateDetails to be an object`);
+  for (const field of WORK_STATE_DETAIL_FIELDS) {
+    require(
+      !hasOwn(details, field) || details[field] === null || isNonEmptyString(details[field]),
+      path,
+      `${at}.workStateDetails.${field} to be a string or null when present`,
+    );
+  }
 }
 
 export function invalidApiPayload(path, expectation) {
@@ -101,6 +113,19 @@ function validateTask(task, index, path) {
   require(isNonEmptyString(task.title), path, `${at}.title to be a non-empty string`);
   require(TASK_STATUSES.has(task.status), path, `${at}.status to match the task status enum`);
   require(typeof task.blocked === 'boolean', path, `${at}.blocked to be a boolean`);
+  if (hasOwn(task, 'workState')) {
+    require(WORK_STATE_OPTIONS.includes(task.workState), path,
+      `${at}.workState to match the canonical work-state enum`);
+    require(task.blocked === (task.workState === 'blocked'), path,
+      `${at}.blocked to match the read-only workState projection`);
+  }
+  if (hasOwn(task, 'workStateDetails')) {
+    validateWorkStateDetails(task.workStateDetails, path, at);
+  }
+  if (hasOwn(task, 'stuckIndicator')) {
+    require(task.stuckIndicator === null || isRecord(task.stuckIndicator) || Array.isArray(task.stuckIndicator), path,
+      `${at}.stuckIndicator to be an object, array, or null when present`);
+  }
   require(TASK_PRIORITIES.has(task.priority), path, `${at}.priority to match the priority enum`);
   require(hasOwn(task, 'parentId') && isNullableString(task.parentId), path,
     `${at}.parentId to be a string or null`);

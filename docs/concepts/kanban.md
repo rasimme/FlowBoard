@@ -2,7 +2,7 @@
 
 ## What
 
-The Kanban board is FlowBoard's primary work surface — a five-column view (`Backlog`, `Open`, `In Progress`, `Review`, `Done`) where tasks move through their lifecycle. Each task can have subtasks (one level of nesting), can be claimed by an agent (with a lease), can be marked blocked (orthogonal flag), can carry a priority (`low`/`medium`/`high`), and can be soft-deleted into a trash bin before permanent removal.
+The Kanban board is FlowBoard's primary work surface — a five-column view (`Backlog`, `Open`, `In Progress`, `Review`, `Done`) where tasks move through their lifecycle. Each task can have subtasks (one level of nesting), can be claimed by an agent (with a lease), carries a canonical work state (`working`, `waiting`, `blocked`, or `paused`) in addition to its lifecycle, can carry a priority (`low`/`medium`/`high`), and can be soft-deleted into a trash bin before permanent removal.
 
 The board is the same view for humans (dashboard UI) and agents (REST API). A drag-and-drop in the UI and a `PUT /api/projects/:name/tasks/:id` body call hit the same lifecycle code path.
 
@@ -27,7 +27,9 @@ The board's state model has four orthogonal axes plus a soft-delete pointer.
 
 **Priority (one of 3).** `low`, `medium`, `high`. Internally stored as a 0–2 integer in HZL's `priority` column; mapped to the strings on read. Legacy rows stored as `critical` (3) read as `high` and converge to `high` on the next write; the API normalizes a submitted `critical` to `high` and rejects other unknown values (T-246-8). New top-level tasks default to `medium`. New subtasks **inherit the parent's priority** at creation time and cannot diverge later.
 
-**Blocked (boolean).** `blocked: true` is a flag, **not a status**. It overlays on top of any column — a card in `In Progress` can be `blocked` simultaneously. The UI renders blocked cards with a visual indicator. This is deliberate: blocked is a *reason for not progressing*, not a destination state. Modeling it as a flag keeps the column count small and keeps a blocked task in the column where the work actually lives, so the holder knows where to come back to.
+**Work state (four values).** `workState` is orthogonal to the lifecycle column: `working`, `waiting`, `blocked`, or `paused`. The detail panel edits it without moving the task between columns. `workStateDetails` carries optional `reason`, `waitingFor`, `responsible`, and `checkAgainAt` context; `setAt` is server-owned. The legacy `blocked` boolean remains a compatibility projection (`true` exactly when `workState === "blocked"`) and is read-only in the canonical UI. Existing card/search surfaces can therefore continue to render the projection while new UI edits the canonical state.
+
+A task may also carry one transient structured stuck indicator. It lives in the Activity/Checkpoint area, is updated in place by monitoring, and is not a comment or historical resolution entry. Retry/Clear affordances issue task API updates; the UI never dismisses the indicator only in local state.
 
 **Claim / lease (three fields).** `agent` is the holder; `claimed_at` is when the claim happened; `lease_until` is when the claim expires (default 30 minutes from claim). Once `lease_until` passes, the task is *stale* and can be reclaimed by anyone (the original `agent` field is preserved until a successful re-claim happens). Checkpoints (`POST .../checkpoint`) reset the lease timer.
 
@@ -53,7 +55,7 @@ Subtask IDs follow the parent: `T-128-1`, `T-128-2`, etc. Subtask numbering is p
 
 - `dashboard/hzl-service.js` — task lifecycle: `createTask`, `updateTask`, `claimTask`, `releaseTask`, `completeTask`, `addCheckpoint`, `routeTask`, `archiveTask`, `purgeTrash`. The 6-status enum lives in `VALID_STATUSES`; `FB_TO_HZL` / `HZL_TO_FB` map between FlowBoard's UI vocabulary and HZL's internal status names.
 - `dashboard/src/pages/TasksView.jsx` — the board view. `STATUS_KEYS` defines the column order (`backlog`, `open`, `in-progress`, `review`, `done`); `STATUS_LABELS` is the UI vocabulary.
-- `dashboard/src/components/DetailPanel.jsx` — per-task drawer with status picker, claim/release controls, blocked toggle, comment thread, checkpoint history.
+- `dashboard/src/components/DetailPanel.jsx` — per-task drawer with lifecycle/status and work-state pickers, claim/release controls, comment thread, checkpoints, and the transient stuck indicator.
 - `dashboard/src/components/AgentChip.jsx`, `PriorityPill.jsx` — visual primitives for the per-task metadata.
 - `dashboard/server.js` — endpoints under `/api/projects/:name/tasks/...` and `/api/projects/:name/tasks/:id/...`.
 - HZL backend (external dependency `hzl-core`) — the event store and projection engine. `tasks_current` is its materialized view.

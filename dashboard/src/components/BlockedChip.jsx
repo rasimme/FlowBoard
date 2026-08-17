@@ -10,8 +10,9 @@ import { Lock } from 'lucide-react';
  * Deliberately not using the warn/danger palette — blocked is a persistent
  * context signal, not an acute warning.
  *
- * The `count` prop is reserved for dependency-based blockers (T-154);
- * while only the bool `task.blocked` exists, the chip reads "blocked".
+ * The `count` prop is reserved for dependency-based blockers (T-154). The
+ * chip consumes the read-only `task.blocked` compatibility projection; the
+ * canonical workState is edited in the detail panel.
  */
 export default function BlockedChip({ count, className = '' }) {
   const label = typeof count === 'number' && count > 0 ? `blocked × ${count}` : 'blocked';

@@ -135,6 +135,20 @@ await expectProtocol(() => fetchActiveProjectForAgent('main'), 'status activePro
 // Tasks: all fields consumed by the board are validated before publication.
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask()] });
 assert.deepEqual(await fetchTasksForProject('demo'), [validTask()]);
+const canonicalTask = validTask({
+  workState: 'waiting',
+  workStateDetails: {
+    reason: 'Need approval',
+    waitingFor: 'reviewer',
+    responsible: 'human',
+    checkAgainAt: '2026-08-18T09:00:00.000Z',
+    setAt: '2026-08-17T17:00:00.000Z',
+  },
+  stuckIndicator: { id: 'si-1', message: 'Needs attention', actions: ['retry'] },
+});
+globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [canonicalTask] });
+assert.deepEqual(await fetchTasksForProject('demo'), [canonicalTask],
+  'tasks accept canonical workState, details, and transient indicator');
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [validTask({ staleAfterMinutes: 1 })] });
 assert.deepEqual(
   await fetchTasksForProject('demo'),
@@ -149,6 +163,18 @@ for (const [label, payload] of [
   ['tasks rejects an unknown priority enum', { ok: true, tasks: [validTask({ priority: 'critical' })] }],
   ['tasks validates subtaskIds as strings', { ok: true, tasks: [validTask({ subtaskIds: ['T-001-1', null] })] }],
   ['tasks validates tags as strings', { ok: true, tasks: [validTask({ tags: ['frontend', 42] })] }],
+  ['tasks rejects contradictory blocked projection', {
+    ok: true,
+    tasks: [validTask({ workState: 'waiting', blocked: true })],
+  }],
+  ['tasks rejects unknown canonical workState', {
+    ok: true,
+    tasks: [validTask({ workState: 'stalled' })],
+  }],
+  ['tasks rejects malformed workStateDetails', {
+    ok: true,
+    tasks: [validTask({ workState: 'paused', workStateDetails: { responsible: 42 } })],
+  }],
   ['tasks rejects staleAfterMinutes zero', {
     ok: true,
     tasks: [validTask({ staleAfterMinutes: 0 })],

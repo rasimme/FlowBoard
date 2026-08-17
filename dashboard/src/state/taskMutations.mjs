@@ -5,6 +5,7 @@
 import * as bridge from './appStateBridge.mjs'
 import * as state from './taskState.mjs'
 import { apiJson } from '../utils/apiFetch.js'
+import { buildWorkStateUpdate, normalizeTaskWorkState } from '../utils/workState.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -142,6 +143,46 @@ export async function updateTaskPriority(project, taskId, priority) {
       'PUT',
       { priority }
     )
+  )
+}
+
+/**
+ * Update the canonical work state. The legacy `blocked` field is intentionally
+ * absent from the request body; its local optimistic value is only the
+ * compatibility projection used by existing board surfaces until the server
+ * response arrives.
+ */
+export async function updateTaskWorkState(project, taskId, workState, details) {
+  const current = normalizeTaskWorkState(
+    bridge.getTasks().find((task) => task?.id === taskId),
+  ) || {};
+  const body = buildWorkStateUpdate(workState, details ?? current.workStateDetails);
+  return updateTaskWorkStatePayload(project, taskId, body)
+}
+
+/**
+ * Send a canonical work-state update supplied by a structured server action
+ * (for example a living stuck-indicator retry/clear action). This remains a
+ * task PUT; no client-only indicator state is changed.
+ */
+export async function updateTaskWorkStatePayload(project, taskId, body) {
+  const current = normalizeTaskWorkState(
+    bridge.getTasks().find((task) => task?.id === taskId),
+  ) || {};
+  const details = body?.workStateDetails === undefined
+    ? current.workStateDetails
+    : { ...current.workStateDetails, ...body.workStateDetails };
+  const workState = body?.workState || current.workState || 'working';
+  const canonicalBody = buildWorkStateUpdate(workState, details);
+  return mutate(
+    project,
+    taskId,
+    { ...canonicalBody, blocked: canonicalBody.workState === 'blocked' },
+    () => apiRequest(
+      `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(taskId)}`,
+      'PUT',
+      canonicalBody,
+    ),
   )
 }
 
