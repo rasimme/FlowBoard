@@ -550,6 +550,13 @@
       "doc": "api/tasks.md"
     },
     {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/stuck-indicator/clear",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
       "method": "GET",
       "path": "/api/projects/:name/tasks/:id/events",
       "auth": "user",
@@ -587,6 +594,13 @@
     {
       "method": "POST",
       "path": "/api/projects/:name/tasks/:id/release",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/stuck-indicator/retry",
       "auth": "user",
       "group": "tasks",
       "doc": "api/tasks.md"

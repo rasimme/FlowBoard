@@ -28,6 +28,9 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `depends_on` | string[] | Task dependency edges (HZL-level; not yet settable or enforced through the FlowBoard API — see T-154-4) |
 | `due_at` | ISO timestamp? | Optional deadline |
 | `metadata` | object? | Max 64KB, arbitrary JSON |
+| `workState` | enum | Canonical execution context: `working`, `waiting`, `blocked`, `paused` |
+| `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null`; datetime values must be ISO-8601 date-times with timezone on writes, with offsets no larger than ±14:00 (±14 requires minute `00`) |
+| `stuckIndicator` | object? | One transient update-in-place monitor signal; `null` when clear |
 | `progress` | 0–100? | Set via checkpoints |
 | `lease_until` | ISO timestamp? | Claim expiry |
 | `staleAfterMinutes` | positive int? | Per-task stale threshold for stuck detection; overrides the global `STALE_THRESHOLD_MINUTES` (T-300); `null` clears the override |
@@ -73,6 +76,9 @@ POST /projects/:name/tasks
 | `priority` | string | no | `low`, `medium`, `high`. Default: `medium`. Legacy `critical` is normalized to `high`; other values are rejected. Subtasks inherit parent priority. |
 | `parentId` | string | no | FlowBoard ID of parent task (e.g. `T-042`). Creates a subtask with auto-incremented ID (`T-042-1`). Max 1 nesting level. |
 | `status` | string | no | Initial status: `backlog` (default), `open`, `in-progress`, `review`, `done`, `archived`. |
+| `workState` | string | no | Optional canonical state: `working`, `waiting`, `blocked`, or `paused`. |
+| `workStateDetails` | object | no | Optional contextual details; reads normalize all known keys to present-or-null. |
+| `blocked` | boolean | no | Legacy compatibility write. `true` maps to `workState=blocked`; `false` maps to `workState=working`. |
 | `description` | string | no | Short inline context, max 16KB. See **Description vs spec** below — most tasks should have one. |
 | `tags` | string[] | no | Filterable tags, max 100 |
 | `forceId` | string | no | Migration mode: use exact ID instead of auto-generated. Throws on duplicate. |
@@ -99,10 +105,16 @@ PUT /projects/:name/tasks/:id
 | `completed` | string | ISO date, auto-set on `done` |
 | `specFile` | string | Link a spec file to the task |
 | `description` | string | Short inline context, max 16KB (see **Description vs spec**). |
-| `blocked` | boolean | Set/clear blocked flag |
+| `blocked` | boolean | Compatibility projection/write; reads are exactly `workState === "blocked"` and lifecycle changes do not auto-unblock |
+| `workState` | string | Canonical execution context; lifecycle remains independent |
+| `workStateDetails` | object | Replaces normalized contextual details; `checkAgainAt` schedules reevaluation only and accepts strict ISO-8601 date-times with timezone, bounded to ±14:00 (±14 requires minute `00`) |
 | `tags` | string[] | Replaces the full tag list (max 100). `milestone:<name>` tags feed the overview milestones widget. |
 
 Note: `parentId` cannot be changed via PUT after creation.
+
+The complete PUT payload is validated before any task or spec-link mutation.
+Contradictory `blocked`/`workState` writes return HTTP 400 with
+`code: "WORK_STATE_CONTRADICTION"` and leave every submitted field unchanged.
 
 ### Description vs spec
 
@@ -162,6 +174,13 @@ Rules:
 - Only the claiming agent can checkpoint/complete/release (unless `force: true`)
 - Expired leases allow steal by other agents
 - Completing a subtask triggers parent status recalculation
+
+`blocked` is computed from canonical `workState` on every read. Supplying
+contradictory `blocked` and `workState` values is rejected with HTTP 400 and
+`WORK_STATE_CONTRADICTION`. Stuck monitoring persists one transient indicator
+per task, deduplicates delivery with backoff, and clears it after checkpoints,
+recovery/work-state edits, release, review, or completion; it never changes a
+task's lifecycle or work state automatically.
 
 ## Project & Agent State
 

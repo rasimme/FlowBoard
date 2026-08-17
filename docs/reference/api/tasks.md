@@ -14,15 +14,24 @@ List tasks for a project.
 
 Create a task.
 
-**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "specFile"?, ...}`
+**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, "blocked"?: boolean, ...}`. `checkAgainAt` and `setAt` use ISO-8601 date-times with an explicit timezone.
 **Response 201:** `{"ok": true, "task": {<created>}}`
 
 ### `PUT /api/projects/:name/tasks/:id`
 
 Update a task. Property whitelist enforced server-side.
 
-**Body:** any whitelisted subset (`title`, `priority`, `status`, `blocked`, `parentId`, `routedAgent`, ...).
+**Body:** any whitelisted subset (`title`, `priority`, `status`, `workState`, `workStateDetails`, legacy `blocked`, `routedAgent`, ...).
 **Response 200:** `{"ok": true, "task": {<updated>}}`
+
+`workState` is additional state and does not replace the lifecycle.  Every task
+read returns all five `workStateDetails` keys (missing values are `null`) and
+computes `blocked` as `workState === "blocked"`.  Legacy `blocked: true` maps
+to `workState: "blocked"`; `blocked: false` maps to the compatibility default
+`workState: "working"`.  A contradictory pair returns HTTP 400 with
+`code: "WORK_STATE_CONTRADICTION"`. The full PUT is validated before any task
+or spec-link mutation, so a rejected contradiction is atomic. Lifecycle
+transitions do not auto-unblock or rewrite `workStateDetails`.
 
 **Guarded status transitions (T-186).** Generic PUT does NOT silently perform privileged workflow transitions:
 
@@ -137,6 +146,44 @@ Status-change event stream sourced from the HZL event store. Includes block/unbl
 
 **Response 200:** `{"ok": true, "events": [{<event>}, ...]}`
 
+### `POST /api/projects/:name/tasks/:id/stuck-indicator/retry`
+
+Re-evaluate exactly this task's transient `stuckIndicator` immediately. The
+action is non-destructive: it never changes lifecycle status, `workState`, or
+`workStateDetails`, consumes notification/backoff state, wakes an agent, or
+adds a comment. If the task is still stuck, the current indicator is returned;
+if the condition has cleared, the indicator and its notification/backoff state
+are cleared.
+
+**Response 200:** `{"ok": true, "task": <canonical task>, "indicator": <object|null>}`
+
+### `POST /api/projects/:name/tasks/:id/stuck-indicator/clear`
+
+Clear only this task's transient `stuckIndicator` and reset its persisted
+stuck-notification/backoff metadata. Lifecycle status, canonical work state,
+and work-state details are preserved exactly. The endpoint is idempotent and
+does not add a comment or wake an agent.
+
+**Response 200:** `{"ok": true, "task": <canonical task>, "indicator": null}`
+
+Both actions require the normal authenticated API session and validate the
+project/task binding; an unknown task returns HTTP 404. Indicators expose
+project- and task-bound action descriptors in this exact shape:
+
+```json
+{
+  "retry": {
+    "action": "retry",
+    "method": "POST",
+    "path": "/api/projects/<encoded-project>/tasks/<encoded-task>/stuck-indicator/retry"
+  },
+  "clear": {
+    "action": "clear",
+    "method": "POST",
+    "path": "/api/projects/<encoded-project>/tasks/<encoded-task>/stuck-indicator/clear"
+  }
+}
+
 ## Cross-cutting
 
 ### `GET /api/tasks/stuck`
@@ -144,14 +191,22 @@ Status-change event stream sourced from the HZL event store. Includes block/unbl
 Cross-project list of tasks with stale claims or expired leases.
 
 **Query:** `staleThreshold` — minutes (default `10`).
-**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "combined": [...]}}`
+**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "routedUnclaimed": [...], "workState": [...], "combined": [...]}}`
+
+Each task may additionally expose one transient `stuckIndicator` object.  The
+monitor updates this object in place and clears it on checkpoint, recovery,
+release, review, or completion; clearing also resets notification/backoff state
+so a new incident is immediately eligible. It does not create reminder
+comments. A due `paused.checkAgainAt` only nudges re-evaluation. Notification
+ownership comes from an active claim (`agent` plus `claimedAt`); a historical
+soft-chip after release is unowned and escalates to the operator.
 
 ### `GET /api/tasks/notifiable-stuck`
 
 Cross-project list of stuck tasks that should notify now. Applies the same stale/expired detection as `/api/tasks/stuck`, then suppresses repeat notifications within the configured notification window.
 
 **Query:** `staleThreshold` — minutes (default `30`); `notificationWindow` — minutes between repeat notifications for the same stuck task (default `60`).
-**Response 200:** `{"ok": true, "notifiable": {"stale": [...], "expired": [...], "combined": [...]}, "appliedThresholds": {...}}`
+**Response 200:** `{"ok": true, "notifiable": {"stale": [...], "expired": [...], "routedUnclaimed": [...], "workState": [...], "combined": [...]}, "appliedThresholds": {...}}`
 
 ### `POST /api/workflows/start`
 

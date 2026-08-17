@@ -10,9 +10,9 @@ In a multi-agent board, work can stall silently: an agent claims a task and stop
 
 ## How it works
 
-- **What counts as stuck** (from `getStuckTasks()`): `in-progress` with no checkpoint past a staleness threshold (per-task `staleAfterMinutes` overrides the global default), an **expired lease**, or **routed-but-not-claimed** (a handoff-contract violation — see [agent bridge](../project-mode/agent-bridge.md)).
+- **What counts as stuck** (from `getStuckTasks()`): `in-progress` with no checkpoint past a staleness threshold (per-task `staleAfterMinutes` overrides the global default), an **expired lease**, **routed-but-not-claimed** (a handoff-contract violation — see [agent bridge](../project-mode/agent-bridge.md)), or an actionable `waiting`/`blocked` state. A due `paused.checkAgainAt` is a nudge/re-evaluation signal; it never changes the task state.
 - **Two views, one source:** the API endpoint `GET /api/tasks/stuck` returns *all* currently-stuck tasks (for dashboards). The scheduler calls `getNotifiableStuckTasks()` every ~5 minutes — the same set passed through **notification guards** so a task isn't re-notified every cycle — exposed as `GET /api/tasks/notifiable-stuck`.
-- **Delivery** goes out through the OpenClaw gateway. Notification routing distinguishes **waking the owning agent** (so it can resume its own task) from **notifying a human operator** — the two are deliberately separable, so an agent can be re-prodded even when no operator channel is configured.
+- **Delivery** goes out through the OpenClaw gateway. Notification routing distinguishes **waking the actively-claiming agent** (so it can resume its own task) from **notifying a human operator** — the two are deliberately separable, so an agent can be re-prodded even when no operator channel is configured. The historical `agent` soft chip is never an owner; routing requires `claimedAt`.
 
 ## Consequences
 
@@ -24,3 +24,44 @@ In a multi-agent board, work can stall silently: an agent claims a task and stop
 - `dashboard/hzl-service.js` — `getStuckTasks()` and `getNotifiableStuckTasks()` (guard-filtered).
 - `dashboard/server.js` — `GET /api/tasks/stuck`, `GET /api/tasks/notifiable-stuck`.
 - Tests: `dashboard/test-compliance-detection.js`, `dashboard/test-stuck-notifications.js`.
+
+## Canonical work state and transient indicators (T-443)
+
+The task lifecycle remains `open → in-progress → review → done`.  It is
+augmented by the canonical `workState` value `working`, `waiting`, `blocked`,
+or `paused`, persisted in `metadata.flowboard.workState`.  The companion
+`workStateDetails` object is returned with the stable keys `reason`,
+`waitingFor`, `responsible`, `checkAgainAt`, and `setAt`; absent values are
+`null`.  `blocked` is a computed compatibility projection (`true` exactly
+when `workState === "blocked"`).  Legacy writes of `blocked: true` map to
+`blocked`; `blocked: false` maps to the compatibility default `working`.
+Supplying contradictory `blocked` and `workState` fields returns HTTP 400 with
+`code: "WORK_STATE_CONTRADICTION"`.
+
+Stuck monitoring persists one structured `stuckIndicator` in the same task
+metadata.  Re-evaluation updates that key in place and never appends reminder
+comments.  Checkpoints, recovery/work-state edits, release, review, and
+completion clear the indicator; a future `checkAgainAt` only schedules a
+re-evaluation and cannot change lifecycle, ownership, or work state.
+
+Delivery is deduplicated per task with persisted notification timestamps and a
+capped exponential backoff. Only the configured `FLOWBOARD_WAKE_AGENT` is
+bundled into the safe `/hooks/wake` channel; other OpenClaw or external owners
+receive pull-based board/status attention, and unowned work is bundled into one
+operator escalation on the dedicated non-live session key. Clearing an
+indicator also resets its notification/backoff state, so a new incident is
+immediately eligible.
+
+`checkAgainAt` writes require an ISO-8601 date-time with an explicit timezone.
+Offsets are limited to ±14:00, with minute `00` at the ±14 boundary; invalid
+values return HTTP 400 and never change the task.
+
+The dashboard may use the explicit non-destructive actions returned in
+`stuckIndicator.actions`: `POST
+/api/projects/:name/tasks/:id/stuck-indicator/retry` performs an immediate
+task-scoped re-evaluation, while `POST
+/api/projects/:name/tasks/:id/stuck-indicator/clear` clears only the transient
+indicator and resets its notification/backoff metadata. Neither action changes
+lifecycle, `workState`, or `workStateDetails`, appends a comment, or wakes an
+agent. The descriptors are encoded and bound to the exact project and task;
+clients must not invent a generic PUT fallback.

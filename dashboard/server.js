@@ -92,6 +92,10 @@ const { isEditorVisible } = require('./file-visibility.js');
 const { isLoopbackHost } = require('./host-utils.js');
 const { buildStuckNotifications } = require('./stuck-notify.js');
 const { formatSessionEntry, insertEntry } = require('./session-log.js');
+const {
+  normalizeStoredWorkState,
+  resolveWorkStatePayload,
+} = require('./work-state.js');
 
 // Gateway webhook config (for project-switch wake events).
 // Resolution contract (docs/reference/env-vars.md): OPENCLAW_-prefixed vars
@@ -1442,8 +1446,17 @@ function taskWithSpecStatus(projectName, task) {
   const specFile = task?.specFile;
   const hasSpec = Boolean(specFile);
   const specExists = hasSpec && fs.existsSync(path.join(PROJECTS_DIR, projectName, specFile));
-  // Ensure blocked field is always present in API response
-  return { ...task, specExists, blocked: task?.blocked === true };
+  // Ensure the canonical work-state shape and computed legacy projection are
+  // present on every API response, including old records during migration.
+  const normalized = normalizeStoredWorkState(task || {});
+  return {
+    ...task,
+    specExists,
+    workState: normalized.workState,
+    workStateDetails: normalized.workStateDetails,
+    blocked: normalized.blocked,
+    stuckIndicator: task?.stuckIndicator || null,
+  };
 }
 
 function enrichTasks(projectName, tasks = []) {
@@ -2095,6 +2108,20 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     return res.status(400).json({ error: 'description must be a string of at most 16KB' });
   }
 
+  // T-443: validate canonical work-state and the legacy blocked projection
+  // before creating anything.  This also rejects contradictory dual-writes
+  // with a stable machine-readable error code.
+  try {
+    resolveWorkStatePayload(req.body, null);
+  } catch (err) {
+    return res.status(err.status || 400).json({
+      error: err.message,
+      code: err.code || 'WORK_STATE_INVALID',
+      ...(err.field ? { field: err.field } : {}),
+      ...(err.fields ? { fields: err.fields } : {}),
+    });
+  }
+
   try {
     const task = hzlService.createTask(req.params.name, {
       title: cleanTitle,
@@ -2104,6 +2131,9 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       staleAfterMinutes,
       ...(req.body.tags !== undefined ? { tags: req.body.tags } : {}),
       ...(req.body.description !== undefined ? { description: req.body.description } : {}),
+      ...(Object.prototype.hasOwnProperty.call(req.body, 'blocked') ? { blocked: req.body.blocked } : {}),
+      ...(Object.prototype.hasOwnProperty.call(req.body, 'workState') ? { workState: req.body.workState } : {}),
+      ...(Object.prototype.hasOwnProperty.call(req.body, 'workStateDetails') ? { workStateDetails: req.body.workStateDetails } : {}),
     });
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
     try {
@@ -2145,7 +2175,6 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
         return res.status(400).json({ error: `specFile target not found: ${nextSpec}` });
       }
     }
-    hzlService.setSpecLink(req.params.name, req.params.id, nextSpec);
   }
 
   const prevStatus = task.status;
@@ -2166,7 +2195,25 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     return res.status(400).json({ error: 'description must be a string of at most 16KB' });
   }
 
-  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description'];
+  // T-443: the canonical work-state contract is validated before any
+  // spec-link or task mutation can be persisted.  `blocked` remains accepted
+  // as a compatibility write, but dual writes must agree.
+  if (Object.prototype.hasOwnProperty.call(updates, 'blocked')
+      || Object.prototype.hasOwnProperty.call(updates, 'workState')
+      || Object.prototype.hasOwnProperty.call(updates, 'workStateDetails')) {
+    try {
+      resolveWorkStatePayload(updates, task);
+    } catch (err) {
+      return res.status(err.status || 400).json({
+        error: err.message,
+        code: err.code || 'WORK_STATE_INVALID',
+        ...(err.field ? { field: err.field } : {}),
+        ...(err.fields ? { fields: err.fields } : {}),
+      });
+    }
+  }
+
+  const ALLOWED = ['title', 'status', 'priority', 'completed', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description', 'workState', 'workStateDetails'];
   const hzlUpdates = {};
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(updates, key)) {
@@ -2188,6 +2235,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     return res.status(400).json({ error: 'agent can only be cleared (set to null), not set to a value' });
   }
 
+  let overrideAudit = null;
   if (hzlUpdates.status !== undefined) {
     const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
     if (!VALID.has(hzlUpdates.status)) {
@@ -2240,19 +2288,17 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       }
       const overrideReason = updates.reason && String(updates.reason).trim();
       const actor = updates.actor && String(updates.actor).trim();
-      const auditMsg = `admin-status-override by ${actor || 'unknown'} (${fromStatus} -> ${toStatus})` +
-        (overrideReason ? ` — Reason: ${overrideReason}` : '');
-      try {
-        hzlService.addComment(req.params.name, req.params.id, { message: auditMsg, author: actor || null });
-      } catch (e) {
-        console.warn('[admin-status-override audit]', e);
-      }
+      overrideAudit = {
+        message: `admin-status-override by ${actor || 'unknown'} (${fromStatus} -> ${toStatus})` +
+          (overrideReason ? ` — Reason: ${overrideReason}` : ''),
+        author: actor || null,
+      };
     }
   }
 
   // Pass blocked flag through
   if (Object.prototype.hasOwnProperty.call(updates, 'blocked')) {
-    hzlUpdates.blocked = updates.blocked === true;
+    hzlUpdates.blocked = updates.blocked;
   }
 
   // T-161-4: pass trashedAt through (ISO string to send to Trash, null to restore).
@@ -2269,6 +2315,22 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 
   try {
     const updatedTask = hzlService.updateTask(req.params.name, req.params.id, hzlUpdates);
+
+    // All PUT validation (including canonical work-state contradictions and
+    // task lifecycle/archive guards) has completed before touching the
+    // filesystem-backed spec link.  A rejected request therefore leaves the
+    // spec and every other field unchanged.
+    if (Object.prototype.hasOwnProperty.call(updates, 'specFile')) {
+      hzlService.setSpecLink(req.params.name, req.params.id, updates.specFile);
+      updatedTask.specFile = updates.specFile;
+    }
+    if (overrideAudit) {
+      try {
+        hzlService.addComment(req.params.name, req.params.id, overrideAudit);
+      } catch (e) {
+        console.warn('[admin-status-override audit]', e);
+      }
+    }
 
     if (updates.priority && updatedTask.subtaskIds && updatedTask.subtaskIds.length > 0) {
       for (const subId of updatedTask.subtaskIds) {
@@ -3516,6 +3578,41 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
   }
 });
 
+// T-443: non-destructive transient stuck-indicator actions.  These routes
+// deliberately return the complete canonical task so the dashboard can apply
+// the backend result without inventing local lifecycle/work-state changes.
+function handleStuckIndicatorAction(req, res, action) {
+  const project = req.params.name;
+  const taskId = req.params.id;
+  // Validate the project/task binding before invoking either action.  The
+  // global /api auth middleware authorizes the caller; this lookup prevents a
+  // request for an unknown task from becoming a metadata write.
+  const existing = hzlService.getTask(project, taskId, { includeArchived: true });
+  if (!existing) return res.status(404).json({ error: 'Task not found' });
+
+  try {
+    if (action === 'clear') {
+      hzlService.clearStuckIndicator(project, taskId);
+    } else {
+      hzlService.reevaluateStuckIndicator(project, taskId);
+    }
+    const task = hzlService.getTask(project, taskId, { includeArchived: true });
+    const indicator = task?.stuckIndicator || null;
+    return res.json({ ok: true, task: taskWithSpecStatus(project, task), indicator });
+  } catch (err) {
+    const status = httpStatusForError(err);
+    return res.status(status).json({ error: err.message });
+  }
+}
+
+app.post('/api/projects/:name/tasks/:id/stuck-indicator/retry', (req, res) => {
+  return handleStuckIndicatorAction(req, res, 'retry');
+});
+
+app.post('/api/projects/:name/tasks/:id/stuck-indicator/clear', (req, res) => {
+  return handleStuckIndicatorAction(req, res, 'clear');
+});
+
 // T-186: POST /api/projects/:name/tasks/:id/approve
 // Review/admin action — accept work in review and finalise (review -> done).
 // Unlike /complete this is NOT owner-gated: it represents a human/admin
@@ -4226,6 +4323,13 @@ async function startServer() {
         const staleMinutes = parseInt(process.env.STALE_THRESHOLD_MINUTES) || 30;
         const notificationWindowMinutes = parseInt(process.env.NOTIFICATION_WINDOW_MINUTES) || 60;
 
+        // T-443: evaluate one update-in-place indicator before consuming the
+        // delivery backoff.  This is structured task state, never a comment.
+        hzlService.evaluateStuckIndicators({
+          staleThreshold: staleMinutes,
+          wakeAgent: process.env.FLOWBOARD_WAKE_AGENT || 'main',
+        });
+
         // Get only tasks that should trigger a notification (avoids duplicates).
         // consume: true — the scheduler is the only consumer of the window
         // guard; API reads stay side-effect free (T-304).
@@ -4233,29 +4337,18 @@ async function startServer() {
           staleThreshold: staleMinutes,
           notificationWindow: notificationWindowMinutes,
           consume: true,
+          updateIndicator: false,
         });
 
         const staleList   = (notifiable && Array.isArray(notifiable.stale))   ? notifiable.stale   : [];
         const expiredList = (notifiable && Array.isArray(notifiable.expired)) ? notifiable.expired : [];
         const routedList  = (notifiable && Array.isArray(notifiable.routedUnclaimed)) ? notifiable.routedUnclaimed : [];
+        const workStateList = (notifiable && Array.isArray(notifiable.workState)) ? notifiable.workState : [];
 
-        if (staleList.length > 0 || expiredList.length > 0 || routedList.length > 0) {
-          // T-434: the durable reminder is BOARD STATE — a comment on each
-          // notifiable task (throttled by the same 60-min window). It reaches
-          // every agent type through the activity feed and /api/status
-          // attention, with no session involvement at all.
-          for (const t of [...staleList, ...expiredList, ...routedList]) {
-            const detail = t.reason === 'stale'
-              ? `no checkpoint for ${t.staleSinceMinutes ?? t.staleMinutes}min`
-              : t.reason === 'expired' ? 'lease expired'
-              : `routed to ${t.routedAgent || 'unknown'}, never claimed`;
-            try {
-              hzlService.addComment(t.project, t.id, {
-                message: `⚠️ Stuck reminder: ${detail}. Write a checkpoint, release, or claim the task.`,
-                author: 'flowboard',
-              });
-            } catch (e) { console.warn(`[stale-check] comment failed (${t.project}/${t.id}):`, e.message); }
-          }
+        if (staleList.length > 0 || expiredList.length > 0 || routedList.length > 0 || workStateList.length > 0) {
+          // T-443/T-434: the durable reminder is the one transient indicator
+          // already persisted above.  It reaches all agent types through the
+          // activity/status read model without append-only reminder comments.
 
           // T-434: push is session-safe only — /hooks/wake system event for
           // the gateway default agent, one /hooks/agent triage turn on a
@@ -4264,7 +4357,7 @@ async function startServer() {
           // wipes the conversation (incident 2026-07-06). Other owners get no
           // push — the board state above is their reminder channel.
           const payloads = buildStuckNotifications(
-            { stale: staleList, expired: expiredList, routedUnclaimed: routedList },
+            { stale: staleList, expired: expiredList, routedUnclaimed: routedList, workState: workStateList },
             {
               operatorDelivery: flowboardNotificationDelivery(),
               wakeAgent: process.env.FLOWBOARD_WAKE_AGENT || 'main',

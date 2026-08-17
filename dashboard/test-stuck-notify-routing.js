@@ -8,7 +8,7 @@
 //   - tasks owned by the gateway default agent nudge it via /hooks/wake
 //     (system event — enqueued into the session WITHOUT resetting it)
 //   - tasks owned by any other agent get NO push at all; they are reminded
-//     through board state (task comment + /api/status attention)
+//     through board state (transient indicator + /api/status attention)
 //   - unowned tasks escalate to the operator ONCE via /hooks/agent on a
 //     dedicated throwaway session key
 // Pure function so the 5-min scheduler logic is testable without the gateway.
@@ -35,8 +35,8 @@ function assertSessionSafe(payloads, label) {
 // --- default-agent owner: one bundled /hooks/wake nudge, no session key ---
 {
   const payloads = buildStuckNotifications(
-    { stale: [{ id: 'T-1', project: 'p', title: 'A', staleSinceMinutes: 45, agent: 'main' },
-              { id: 'T-2', project: 'p', title: 'B', staleSinceMinutes: 50, agent: 'main' }],
+    { stale: [{ id: 'T-1', project: 'p', title: 'A', staleSinceMinutes: 45, agent: 'main', claimedAt: '2026-08-17T17:00:00.000Z' },
+              { id: 'T-2', project: 'p', title: 'B', staleSinceMinutes: 50, agent: 'main', claimedAt: '2026-08-17T17:01:00.000Z' }],
       expired: [], routedUnclaimed: [] },
     { operatorDelivery });
 
@@ -52,13 +52,27 @@ function assertSessionSafe(payloads, label) {
 // --- other owners (gateway or external): no push at all ---
 {
   const payloads = buildStuckNotifications(
-    { stale: [{ id: 'T-3', project: 'p', title: 'C', staleSinceMinutes: 45, agent: 'dev-botti' },
-              { id: 'T-4', project: 'q', title: 'D', staleSinceMinutes: 99, agent: 'claude-code' }],
-      expired: [{ id: 'T-5', project: 'p', title: 'E', agent: 'design-botti' }],
+    { stale: [{ id: 'T-3', project: 'p', title: 'C', staleSinceMinutes: 45, agent: 'dev-botti', claimedAt: '2026-08-17T17:00:00.000Z' },
+              { id: 'T-4', project: 'q', title: 'D', staleSinceMinutes: 99, agent: 'claude-code', claimedAt: '2026-08-17T17:01:00.000Z' }],
+      expired: [{ id: 'T-5', project: 'p', title: 'E', agent: 'design-botti', claimedAt: '2026-08-17T17:02:00.000Z' }],
       routedUnclaimed: [{ id: 'T-6', project: 'p', title: 'F', routedAgent: 'dev-botti' }] },
     { operatorDelivery });
 
   ok(payloads.length === 0, 'non-default owners get no push (board state is their reminder channel)');
+}
+
+// --- historical soft-chip is not an owner: released work escalates ---
+{
+  const payloads = buildStuckNotifications(
+    { stale: [], expired: [], routedUnclaimed: [],
+      workState: [{ id: 'T-11', project: 'p', title: 'released waiting task', workState: 'waiting',
+        reason: 'waiting', agent: 'main', claimedAt: null }] },
+    { operatorDelivery });
+
+  ok(payloads.length === 1 && payloads[0].endpoint === 'agent',
+    'released historical owner is escalated as unowned, not woken');
+  ok(/T-11/.test(payloads[0]?.body.message || ''), 'unowned escalation includes the released task');
+  assertSessionSafe(payloads, 'released soft-chip round');
 }
 
 // --- unowned tasks: a single escalation on a dedicated throwaway key ---
@@ -81,8 +95,8 @@ function assertSessionSafe(payloads, label) {
 // --- mixed: default-agent nudged, others silent, orphans escalated ---
 {
   const payloads = buildStuckNotifications(
-    { stale: [{ id: 'T-1', project: 'p', title: 'A', staleSinceMinutes: 45, agent: 'main' },
-              { id: 'T-3', project: 'p', title: 'C', staleSinceMinutes: 50, agent: 'dev-botti' },
+    { stale: [{ id: 'T-1', project: 'p', title: 'A', staleSinceMinutes: 45, agent: 'main', claimedAt: '2026-08-17T17:00:00.000Z' },
+              { id: 'T-3', project: 'p', title: 'C', staleSinceMinutes: 50, agent: 'dev-botti', claimedAt: '2026-08-17T17:01:00.000Z' },
               { id: 'T-9', project: 'p', title: 'orphan', staleSinceMinutes: 90 }],
       expired: [], routedUnclaimed: [] },
     { operatorDelivery });
@@ -96,8 +110,8 @@ function assertSessionSafe(payloads, label) {
 // --- custom default agent via opts.wakeAgent ---
 {
   const payloads = buildStuckNotifications(
-    { stale: [{ id: 'T-1', project: 'p', title: 'A', staleSinceMinutes: 45, agent: 'ops' },
-              { id: 'T-2', project: 'p', title: 'B', staleSinceMinutes: 50, agent: 'main' }],
+    { stale: [{ id: 'T-1', project: 'p', title: 'A', staleSinceMinutes: 45, agent: 'ops', claimedAt: '2026-08-17T17:00:00.000Z' },
+              { id: 'T-2', project: 'p', title: 'B', staleSinceMinutes: 50, agent: 'main', claimedAt: '2026-08-17T17:01:00.000Z' }],
       expired: [], routedUnclaimed: [] },
     { operatorDelivery, wakeAgent: 'ops' });
 

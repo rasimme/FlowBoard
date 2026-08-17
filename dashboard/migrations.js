@@ -356,6 +356,16 @@ const migrations = [
       hzlService.canvasEnsureSchema();
     },
   },
+
+  {
+    id:   'm009-canonical-work-state',
+    name: 'Normalize legacy blocked metadata into canonical task work state (T-443)',
+    run: (_db, { hzlService }) => {
+      if (!hzlService || typeof hzlService.migrateWorkStateMetadata !== 'function') return;
+      const result = hzlService.migrateWorkStateMetadata();
+      if (result?.migrated) console.log(`[m009] normalized ${result.migrated} task work-state record(s)`);
+    },
+  },
 ];
 
 /**
