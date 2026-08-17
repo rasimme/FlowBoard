@@ -14,15 +14,22 @@ List tasks for a project.
 
 Create a task.
 
-**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "specFile"?, ...}`
+**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, "blocked"?: boolean, ...}`
 **Response 201:** `{"ok": true, "task": {<created>}}`
 
 ### `PUT /api/projects/:name/tasks/:id`
 
 Update a task. Property whitelist enforced server-side.
 
-**Body:** any whitelisted subset (`title`, `priority`, `status`, `blocked`, `parentId`, `routedAgent`, ...).
+**Body:** any whitelisted subset (`title`, `priority`, `status`, `workState`, `workStateDetails`, legacy `blocked`, `routedAgent`, ...).
 **Response 200:** `{"ok": true, "task": {<updated>}}`
+
+`workState` is additional state and does not replace the lifecycle.  Every task
+read returns all five `workStateDetails` keys (missing values are `null`) and
+computes `blocked` as `workState === "blocked"`.  Legacy `blocked: true` maps
+to `workState: "blocked"`; `blocked: false` maps to the compatibility default
+`workState: "working"`.  A contradictory pair returns HTTP 400 with
+`code: "WORK_STATE_CONTRADICTION"`.
 
 **Guarded status transitions (T-186).** Generic PUT does NOT silently perform privileged workflow transitions:
 
@@ -144,14 +151,18 @@ Status-change event stream sourced from the HZL event store. Includes block/unbl
 Cross-project list of tasks with stale claims or expired leases.
 
 **Query:** `staleThreshold` — minutes (default `10`).
-**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "combined": [...]}}`
+**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "routedUnclaimed": [...], "workState": [...], "combined": [...]}}`
+
+Each task may additionally expose one transient `stuckIndicator` object.  The
+monitor updates this object in place and clears it on checkpoint, recovery,
+release, review, or completion; it does not create reminder comments.
 
 ### `GET /api/tasks/notifiable-stuck`
 
 Cross-project list of stuck tasks that should notify now. Applies the same stale/expired detection as `/api/tasks/stuck`, then suppresses repeat notifications within the configured notification window.
 
 **Query:** `staleThreshold` — minutes (default `30`); `notificationWindow` — minutes between repeat notifications for the same stuck task (default `60`).
-**Response 200:** `{"ok": true, "notifiable": {"stale": [...], "expired": [...], "combined": [...]}, "appliedThresholds": {...}}`
+**Response 200:** `{"ok": true, "notifiable": {"stale": [...], "expired": [...], "routedUnclaimed": [...], "workState": [...], "combined": [...]}, "appliedThresholds": {...}}`
 
 ### `POST /api/workflows/start`
 

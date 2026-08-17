@@ -24,3 +24,28 @@ In a multi-agent board, work can stall silently: an agent claims a task and stop
 - `dashboard/hzl-service.js` — `getStuckTasks()` and `getNotifiableStuckTasks()` (guard-filtered).
 - `dashboard/server.js` — `GET /api/tasks/stuck`, `GET /api/tasks/notifiable-stuck`.
 - Tests: `dashboard/test-compliance-detection.js`, `dashboard/test-stuck-notifications.js`.
+
+## Canonical work state and transient indicators (T-443)
+
+The task lifecycle remains `open → in-progress → review → done`.  It is
+augmented by the canonical `workState` value `working`, `waiting`, `blocked`,
+or `paused`, persisted in `metadata.flowboard.workState`.  The companion
+`workStateDetails` object is returned with the stable keys `reason`,
+`waitingFor`, `responsible`, `checkAgainAt`, and `setAt`; absent values are
+`null`.  `blocked` is a computed compatibility projection (`true` exactly
+when `workState === "blocked"`).  Legacy writes of `blocked: true` map to
+`blocked`; `blocked: false` maps to the compatibility default `working`.
+Supplying contradictory `blocked` and `workState` fields returns HTTP 400 with
+`code: "WORK_STATE_CONTRADICTION"`.
+
+Stuck monitoring persists one structured `stuckIndicator` in the same task
+metadata.  Re-evaluation updates that key in place and never appends reminder
+comments.  Checkpoints, recovery/work-state edits, release, review, and
+completion clear the indicator; a future `checkAgainAt` only schedules a
+re-evaluation and cannot change lifecycle, ownership, or work state.
+
+Delivery is deduplicated per task with persisted notification timestamps and a
+capped exponential backoff.  Reachable OpenClaw-owned work can be bundled into
+the safe `/hooks/wake` channel, external owners receive pull-based board/status
+attention, and unowned work is bundled into one operator escalation on the
+dedicated non-live session key.
