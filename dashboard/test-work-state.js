@@ -18,6 +18,13 @@ assert.equal(isValidDateString('2026-08-17T17:00:00'), false, 'timezone is requi
 assert.equal(isValidDateString('2026-02-29T17:00:00.000Z'), false, 'calendar overflow is rejected');
 assert.equal(isValidDateString('2024-02-29T17:00:00.000Z'), true, 'leap-day is accepted');
 assert.equal(isValidDateString('2026-08-17T17:00:00+24:00'), false, 'timezone overflow is rejected');
+assert.equal(isValidDateString('2026-08-17T17:00:00+14:00'), true, 'maximum positive timezone offset is accepted');
+assert.equal(isValidDateString('2026-08-17T17:00:00-14:00'), true, 'maximum negative timezone offset is accepted');
+assert.equal(isValidDateString('2026-08-17T17:00:00+14:01'), false, 'offset minutes beyond the ±14:00 boundary are rejected');
+assert.equal(isValidDateString('2026-08-17T17:00:00+15'), false, 'short offset +15 is rejected');
+assert.equal(isValidDateString('2026-08-17T17:00:00+23'), false, 'short offset +23 is rejected');
+assert.equal(isValidDateString('2026-08-17T17:00:00+15:00'), false, 'offset hours beyond ±14 are rejected');
+assert.equal(isValidDateString('2026-08-17T17:00:00+23:00'), false, 'large offset hours are rejected');
 
 assert.deepEqual(normalizeStoredWorkState({ blocked: true }), {
   workState: 'blocked',

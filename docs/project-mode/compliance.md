@@ -119,8 +119,8 @@ Stuck reminders are **session-safe**: the stuck-check pipeline (and the opt-in c
 
 | Audience | Channel | Mechanism |
 |----------|---------|-----------|
-| Every stuck task | Board state | `⚠️ Stuck reminder:` task comment, throttled by the notification window |
-| The owning agent (any type) | Pull | `GET /api/status` returns `attention.stuckTasks` for the requesting agent |
+| Every stuck task | Board state | One transient `stuckIndicator`, updated in place and throttled by the notification window; no reminder comment |
+| The actively claiming agent (any type) | Pull | `GET /api/status` returns `attention.stuckTasks` for the requesting agent |
 | Gateway default agent (`FLOWBOARD_WAKE_AGENT`) | Push, non-destructive | `/hooks/wake` system event — enqueued into the existing session, never resets it |
 | Operator (unowned tasks only) | Isolated triage turn | `/hooks/agent` on the dedicated throwaway key `agent:main:flowboard-stuck-check` |
 

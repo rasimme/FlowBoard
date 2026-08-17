@@ -2734,6 +2734,19 @@ function _stuckOwnerKind(agent) {
   return configured.includes(agent) ? 'openclaw' : 'external';
 }
 
+/**
+ * Return an owner only for a live claim, never for HZL's historical agent
+ * attribution.  HZL intentionally preserves `agent` after release so the UI
+ * can show a soft "last worked by" chip, but that value is not a notification
+ * destination.  `claimedAt` is cleared by release/auto-release and is the
+ * active-claim marker shared by the backend and UI ownership semantics.
+ */
+function _activeClaimOwner(task) {
+  if (!task?.agent || !task.claimedAt) return null;
+  if (task.status === 'done' || task.completedAt) return null;
+  return task.agent;
+}
+
 function _stuckEntryMessage(entry) {
   if (entry.reason === 'stale') return `no checkpoint for ${entry.staleSinceMinutes ?? entry.staleMinutes}min`;
   if (entry.reason === 'expired') return 'lease expired';
@@ -2749,7 +2762,10 @@ function _stuckEntryKey(entry) {
 
 function _indicatorForEntry(task, entry, now = new Date().toISOString(), opts = {}) {
   const previous = _normalizeStuckIndicator(task.stuckIndicator);
-  const owner = entry.reason === 'routed-unclaimed' ? (entry.routedAgent || null) : (task.agent || null);
+  // `entry.agent` is already normalized to an active claim by getStuckTasks;
+  // do not read task.agent here or a released historical soft chip would be
+  // routed as if it still owned the incident.
+  const owner = entry.reason === 'routed-unclaimed' ? (entry.routedAgent || null) : (entry.agent || null);
   const ownerKind = owner ? _stuckOwnerKind(owner) : 'unowned';
   const wakeAgent = opts.wakeAgent || process.env.FLOWBOARD_WAKE_AGENT || 'main';
   const sameIncident = previous && previous.active === true && previous.reason === entry.reason;
@@ -2886,16 +2902,21 @@ function getStuckTasks(opts = {}) {
   for (const [key, task] of _cache) {
     if (task.status === 'archived' || task.trashedAt) continue;
 
+    const activeOwner = _activeClaimOwner(task);
     const entry = {
       project: task._project,
       taskId: task.id,
       id: task.id,
       title: task.title,
-      agent: task.agent || null,
+      // Only an active claim is an owner for routing.  `task.agent` may be a
+      // historical attribution chip left behind by release/complete.
+      agent: activeOwner,
+      claimedAt: task.claimedAt || null,
+      leaseUntil: task.leaseUntil || null,
       status: task.status,
       workState: task.workState || DEFAULT_WORK_STATE,
       workStateDetails: normalizeWorkStateDetails(task.workStateDetails),
-      ownerKind: _stuckOwnerKind(task.agent || task.routedAgent || null),
+      ownerKind: _stuckOwnerKind(activeOwner || task.routedAgent || null),
       stuckIndicator: _normalizeStuckIndicator(task.stuckIndicator),
     };
 

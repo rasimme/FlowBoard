@@ -66,7 +66,11 @@ function isValidDateString(value) {
     && hour >= 0 && hour <= 23
     && minute >= 0 && minute <= 59
     && second >= 0 && second <= 59
-    && offsetHour >= 0 && offsetHour <= 23
+    // ISO-8601 permits offsets only through ±14:00.  The ±14 boundary is
+    // exact; accepting e.g. +14:01 would create a timezone that the standard
+    // does not define and that scheduler implementations may disagree on.
+    && offsetHour >= 0 && offsetHour <= 14
+    && (offsetHour < 14 || offsetMinute === 0)
     && offsetMinute >= 0 && offsetMinute <= 59
     && !Number.isNaN(new Date(value).getTime());
 }

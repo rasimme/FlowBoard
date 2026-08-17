@@ -97,13 +97,31 @@ async function main() {
       throw new Error('contradictory PUT mutated specFile or another field');
     }
 
-    for (const checkAgainAt of ['2026-08-17T17:00:00', '2026-02-29T17:00:00.000Z']) {
+    for (const checkAgainAt of [
+      '2026-08-17T17:00:00',
+      '2026-02-29T17:00:00.000Z',
+      '2026-08-17T17:00:00+14:01',
+      '2026-08-17T17:00:00+15',
+      '2026-08-17T17:00:00+23',
+      '2026-08-17T17:00:00+15:00',
+      '2026-08-17T17:00:00+23:00',
+    ]) {
       const invalidDatetime = await api('PUT', `/projects/work-state-api/tasks/${id}`, {
         workState: 'waiting',
         workStateDetails: { checkAgainAt },
       });
       if (invalidDatetime.status !== 400 || invalidDatetime.body?.code !== 'WORK_STATE_DETAILS_INVALID') {
         throw new Error(`invalid checkAgainAt was not rejected: ${checkAgainAt}`);
+      }
+    }
+
+    for (const checkAgainAt of ['2026-08-17T17:00:00+14:00', '2026-08-17T17:00:00-14:00']) {
+      const boundaryDatetime = await api('PUT', `/projects/work-state-api/tasks/${id}`, {
+        workState: 'waiting',
+        workStateDetails: { checkAgainAt },
+      });
+      if (boundaryDatetime.status !== 200 || boundaryDatetime.body?.task?.workStateDetails?.checkAgainAt !== checkAgainAt) {
+        throw new Error(`maximum valid checkAgainAt offset was rejected: ${checkAgainAt}`);
       }
     }
 

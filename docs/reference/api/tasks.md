@@ -159,7 +159,9 @@ Each task may additionally expose one transient `stuckIndicator` object.  The
 monitor updates this object in place and clears it on checkpoint, recovery,
 release, review, or completion; clearing also resets notification/backoff state
 so a new incident is immediately eligible. It does not create reminder
-comments. A due `paused.checkAgainAt` only nudges re-evaluation.
+comments. A due `paused.checkAgainAt` only nudges re-evaluation. Notification
+ownership comes from an active claim (`agent` plus `claimedAt`); a historical
+soft-chip after release is unowned and escalates to the operator.
 
 ### `GET /api/tasks/notifiable-stuck`
 

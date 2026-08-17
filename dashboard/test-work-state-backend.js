@@ -10,6 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const hzl = require('./hzl-service.js');
 const migrations = require('./migrations.js');
+const { buildStuckNotifications } = require('./stuck-notify.js');
 
 function rawMetadata(cacheDb, taskId) {
   const row = cacheDb.prepare(
@@ -210,6 +211,88 @@ async function main() {
     hzl.evaluateStuckIndicators({ staleThreshold: 0 });
     const attention = hzl.getAgentAttention('dev-botti', { staleThreshold: 0 });
     assert.ok(attention.stuckTasks.some(item => item.taskId === external.id && item.stuckIndicator?.active));
+
+    // Notification ownership is claim-scoped, not based on the historical
+    // `agent` soft chip.  Active OpenClaw and external claims retain their
+    // respective routing semantics for due work-state incidents.
+    const activeMain = hzl.createTask('t443', { title: 'active-main-due', status: 'open' });
+    hzl.claimTask('t443', activeMain.id, { agent: 'main', lease: 60 });
+    hzl.updateTask('t443', activeMain.id, {
+      workState: 'waiting',
+      workStateDetails: { waitingFor: 'operator', checkAgainAt: new Date(Date.now() - 1000).toISOString() },
+    });
+    const activeMainEval = hzl.evaluateStuckIndicators({ staleThreshold: 9999 });
+    const activeMainEntry = hzl.getStuckTasks({ staleThreshold: 9999 }).workState
+      .find(item => item.taskId === activeMain.id);
+    const activeMainIndicator = activeMainEval.indicators.find(item => item.taskId === activeMain.id);
+    assert.equal(activeMainEntry.agent, 'main');
+    assert.ok(activeMainEntry.claimedAt, 'active claim carries claimedAt into routing entries');
+    assert.equal(activeMainEntry.reason, 'check-again');
+    assert.equal(activeMainIndicator.owner, 'main');
+    assert.equal(activeMainIndicator.delivery, 'wake');
+
+    const activeExternal = hzl.createTask('t443', { title: 'active-external-due', status: 'open' });
+    hzl.claimTask('t443', activeExternal.id, { agent: 'dev-botti', lease: 60 });
+    hzl.updateTask('t443', activeExternal.id, {
+      workState: 'blocked',
+      workStateDetails: { reason: 'vendor', checkAgainAt: new Date(Date.now() - 1000).toISOString() },
+    });
+    const activeExternalEval = hzl.evaluateStuckIndicators({ staleThreshold: 9999 });
+    const activeExternalEntry = hzl.getStuckTasks({ staleThreshold: 9999 }).workState
+      .find(item => item.taskId === activeExternal.id);
+    const activeExternalIndicator = activeExternalEval.indicators.find(item => item.taskId === activeExternal.id);
+    assert.equal(activeExternalEntry.agent, 'dev-botti');
+    assert.equal(activeExternalIndicator.owner, 'dev-botti');
+    assert.equal(activeExternalIndicator.ownerKind, 'external');
+    assert.equal(activeExternalIndicator.delivery, 'board');
+
+    // Claim → release → due incident: release deliberately preserves the
+    // historical soft chip, but clears claimedAt.  The incident therefore
+    // belongs to the operator, not to the former OpenClaw owner.
+    const releasedIncident = hzl.createTask('t443', { title: 'released-due-incident', status: 'open' });
+    hzl.claimTask('t443', releasedIncident.id, { agent: 'main', lease: 60 });
+    hzl.releaseTask('t443', releasedIncident.id, { agent: 'main' });
+    const released = hzl.getTask('t443', releasedIncident.id);
+    assert.equal(released.agent, 'main', 'release preserves historical soft-chip attribution');
+    assert.equal(released.claimedAt, null, 'release clears active claim marker');
+    hzl.updateTask('t443', releasedIncident.id, {
+      workState: 'waiting',
+      workStateDetails: { waitingFor: 'operator', checkAgainAt: new Date(Date.now() - 1000).toISOString() },
+    });
+    const releasedEval = hzl.evaluateStuckIndicators({ staleThreshold: 9999 });
+    const releasedEntry = hzl.getStuckTasks({ staleThreshold: 9999 }).workState
+      .find(item => item.taskId === releasedIncident.id);
+    const releasedIndicator = releasedEval.indicators.find(item => item.taskId === releasedIncident.id);
+    assert.equal(releasedEntry.agent, null, 'historical agent is not an incident owner after release');
+    assert.equal(releasedEntry.ownerKind, 'unowned');
+    assert.equal(releasedIndicator.owner, null);
+    assert.equal(releasedIndicator.delivery, 'operator');
+    assert.ok(!hzl.getAgentAttention('main', { staleThreshold: 9999 }).stuckTasks
+      .some(item => item.taskId === releasedIncident.id), 'released incident is not sent to former owner attention');
+    const releasedPayloads = buildStuckNotifications(
+      { stale: [], expired: [], routedUnclaimed: [], workState: [releasedEntry] },
+      { operatorDelivery: { channel: 'telegram', target: 'operator', to: 'operator' } }
+    );
+    assert.equal(releasedPayloads.length, 1);
+    assert.equal(releasedPayloads[0].endpoint, 'agent', 'released incident escalates to operator');
+    assert.match(releasedPayloads[0].body.message, new RegExp(releasedIncident.id));
+
+    for (const workState of ['blocked', 'paused']) {
+      const releasedState = hzl.createTask('t443', { title: `released-${workState}-incident`, status: 'open' });
+      hzl.claimTask('t443', releasedState.id, { agent: 'main', lease: 60 });
+      hzl.releaseTask('t443', releasedState.id, { agent: 'main' });
+      hzl.updateTask('t443', releasedState.id, {
+        workState,
+        workStateDetails: { reason: 'operator', checkAgainAt: new Date(Date.now() - 1000).toISOString() },
+      });
+      const stateEval = hzl.evaluateStuckIndicators({ staleThreshold: 9999 });
+      const stateEntry = hzl.getStuckTasks({ staleThreshold: 9999 }).workState
+        .find(item => item.taskId === releasedState.id);
+      const stateIndicator = stateEval.indicators.find(item => item.taskId === releasedState.id);
+      assert.equal(stateEntry.agent, null, `${workState} after release is unowned`);
+      assert.equal(stateIndicator.owner, null, `${workState} after release has no former owner`);
+      assert.equal(stateIndicator.delivery, 'operator', `${workState} after release escalates to operator`);
+    }
 
     const wakeContract = hzl.createTask('t443', { title: 'wake-contract', status: 'open' });
     hzl.claimTask('t443', wakeContract.id, { agent: 'main', lease: 60 });

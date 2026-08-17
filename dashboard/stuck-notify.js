@@ -11,16 +11,17 @@
  * and injected unrelated project context into it (incident 2026-07-06).
  *
  * Routing (replaces the T-400 owner-wake/agent-turn design):
- *  - Tasks owned by the gateway DEFAULT agent (`opts.wakeAgent`, default
+ *  - Tasks actively claimed by the gateway DEFAULT agent (`opts.wakeAgent`, default
  *    `'main'`) are bundled into one `/hooks/wake` payload — a system event
  *    the gateway enqueues into the existing main session WITHOUT resetting
  *    it; `mode: 'now'` asks for an immediate heartbeat so the reminder is
  *    processed in-context.
- *  - Tasks owned by ANY OTHER agent (other gateway agents, external agents
+ *  - Tasks actively claimed by ANY OTHER agent (other gateway agents, external agents
  *    such as Claude Code) get no push: `/hooks/wake` cannot address them and
  *    `/hooks/agent` must not. Their reminder is board state — the scheduler
- *    posts a task comment and `/api/status` serves `attention.stuckTasks`
- *    (see T-434 spec), which every agent reads on its next FlowBoard touch.
+ *    persists one transient indicator and `/api/status` serves
+ *    `attention.stuckTasks` (see T-434 spec), which every agent reads on its
+ *    next FlowBoard touch.
  *  - Tasks WITHOUT a responsible agent escalate to the operator in ONE
  *    `/hooks/agent` triage turn on a dedicated throwaway session key
  *    (`opts.escalationSessionKey`, default `agent:main:flowboard-stuck-check`)
@@ -67,20 +68,25 @@ function buildStuckNotifications(lists = {}, opts = {}) {
     seen.add(key);
     if (!agent) unowned.push(entry);
     else if (agent === wakeAgent) defaultAgentTasks.push(entry);
-    // other owners: no push — board state (comment + status attention) reminds them
+    // other owners: no push — the transient indicator + status attention
+    // remind them on their next FlowBoard touch.
   };
 
+  // `agent` is a historical soft-chip after release/complete.  Notification
+  // routing must require the active claim marker carried by getStuckTasks.
+  const activeClaimOwner = task => task?.agent && task.claimedAt ? task.agent : null;
+
   for (const t of stale) {
-    route(t.agent, { type: 'stale', id: t.id, project: t.project, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
+    route(activeClaimOwner(t), { type: 'stale', id: t.id, project: t.project, title: t.title, staleSinceMinutes: t.staleSinceMinutes });
   }
   for (const t of expired) {
-    route(t.agent, { type: 'lease_expired', id: t.id, project: t.project, title: t.title });
+    route(activeClaimOwner(t), { type: 'lease_expired', id: t.id, project: t.project, title: t.title });
   }
   for (const t of routedUnclaimed) {
     route(t.routedAgent, { type: 'routed_unclaimed', id: t.id, project: t.project, title: t.title });
   }
   for (const t of workState) {
-    route(t.agent, {
+    route(activeClaimOwner(t), {
       type: t.reason || t.workState || 'work_state',
       id: t.id,
       project: t.project,
