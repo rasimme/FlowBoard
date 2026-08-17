@@ -62,6 +62,16 @@ function makeHarness(initialPlist) {
   writeFileSync(plistPath, initialPlist, { mode: 0o644 });
 
   const commandLog = join(dir, 'commands.log');
+  const plutilBin = join(bin, 'plutil');
+  writeFileSync(plutilBin, `#!/usr/bin/env python3
+import json
+import plistlib
+import sys
+
+with open(sys.argv[-1], 'rb') as handle:
+    value = plistlib.load(handle)
+sys.stdout.write(json.dumps(value))
+`, { mode: 0o755 });
   for (const command of ['npm', 'launchctl']) {
     const body = command === 'npm'
       ? `if (process.argv[2] === '--version') console.log('10.0.0');`
@@ -92,6 +102,7 @@ process.exit(0);
       HOME: home,
       NODE_ENV: 'test',
       FLOWBOARD_SETUP_TEST_PLATFORM: 'darwin',
+      FLOWBOARD_SETUP_TEST_PLUTIL: process.platform === 'darwin' ? '' : plutilBin,
       FLOWBOARD_SETUP_TEST_LEGACY_LOG_PATH: legacyLogPath,
       FAKE_COMMAND_LOG: commandLog,
       PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter),
@@ -104,6 +115,10 @@ process.exit(0);
       const safeStat = path => {
         try { return lstatSync(path); } catch { return null; }
       };
+      const aclInfo = path => {
+        const result = spawnSync('/bin/ls', ['-lde', path], { encoding: 'utf8' });
+        return result.status === 0 ? result.stdout : '';
+      };
       const logStat = safeStat(logPath);
       const legacyStat = safeStat(legacyLogPath);
       const archiveStat = safeStat(legacyArchivePath);
@@ -111,10 +126,15 @@ process.exit(0);
         commands: readLines(commandLog),
         plist: readFileSync(plistPath, 'utf8'),
         mode: statSync(plistPath).mode & 0o777,
+        plistDirMode: statSync(dirname(plistPath)).mode & 0o777,
         logMode: logStat && !logStat.isSymbolicLink() ? logStat.mode & 0o777 : null,
         logIsSymlink: Boolean(logStat?.isSymbolicLink()),
         logIsFifo: Boolean(logStat?.isFIFO?.()),
         logDirMode: existsSync(logDir) ? statSync(logDir).mode & 0o777 : null,
+        plistAcl: aclInfo(plistPath),
+        plistDirAcl: aclInfo(dirname(plistPath)),
+        logDirAcl: aclInfo(logDir),
+        logAcl: aclInfo(logPath),
         legacyExists: Boolean(legacyStat),
         legacyIsSymlink: Boolean(legacyStat?.isSymbolicLink()),
         legacyArchiveMode: archiveStat && !archiveStat.isSymbolicLink() ? archiveStat.mode & 0o777 : null,
@@ -252,7 +272,17 @@ let generatedLaunchdPlist = '';
   ok(!result.plist.includes('/tmp/flowboard-dashboard.log'), 'launchd no longer uses the predictable shared /tmp log');
   ok(result.plist.includes('<key>Umask</key><integer>63</integer>'), 'launchd service enforces owner-only file creation via umask 077');
   ok(result.logDirMode === 0o700, 'launchd log directory is owner-only');
+  ok(result.plistDirMode === 0o700, 'launchd plist directory is owner-only');
   ok(result.logMode === 0o600, 'launchd log file is pre-created owner-only');
+}
+
+{
+  const whitespaceAndEntities = existingPlist
+    .replace('<key>CUSTOM_PROXY_LABEL</key><string>blue &amp; green</string>', '<key>CUSTOM_PROXY_LABEL</key>\n    <string>  blue &amp; &quot;green&quot;  </string>')
+    .replace('<key>FLOWBOARD_PORT</key><string>__FLOWBOARD_PORT__</string>', '<key>FLOWBOARD_PORT</key>\n    <string> __FLOWBOARD_PORT__ </string>');
+  const result = await runSetup(['--update'], whitespaceAndEntities);
+  ok(result.code === 0, 'real plist parsing accepts whitespace and XML entities');
+  ok(result.plist.includes('<key>CUSTOM_PROXY_LABEL</key><string>  blue &amp; &quot;green&quot;  </string>'), 'plist parser preserves decoded value bytes and surrounding whitespace');
 }
 
 {
@@ -299,6 +329,28 @@ let generatedLaunchdPlist = '';
   ok(result.logDirMode === 0o700 && result.logMode === 0o600, 'pre-created log path permissions are tightened to owner-only');
 }
 
+if (process.platform === 'darwin') {
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    prepare(harness) {
+      mkdirSync(harness.logDir, { recursive: true, mode: 0o700 });
+      writeFileSync(harness.logPath, 'acl-protected log\n', { mode: 0o600 });
+      for (const [path, rule] of [
+        [harness.plistPath, 'everyone allow read,write,append,execute,delete'],
+        [harness.logDir, 'everyone allow read,write,append,execute,delete'],
+        [harness.logPath, 'everyone allow read,write,append,execute,delete'],
+      ]) {
+        const acl = spawnSync('/bin/chmod', ['+a', rule, path], { stdio: 'ignore' });
+        if (acl.status !== 0) throw new Error(`ACL setup failed for ${path}`);
+      }
+    },
+  });
+  ok(result.code === 0, 'permissive macOS ACLs are removed before service use');
+  ok(result.mode === 0o600 && result.logDirMode === 0o700 && result.logMode === 0o600, 'ACL cleanup leaves owner-only mode bits');
+  ok(!/[+]\s/.test(result.plistAcl) && !/[+]\s/.test(result.plistDirAcl) && !/[+]\s/.test(result.logDirAcl) && !/[+]\s/.test(result.logAcl), 'plist, plist directory, log directory, and log have no remaining ACL marker');
+} else {
+  console.log('  # macOS ACL mutation unavailable; ACL hardening test skipped');
+}
+
 {
   let victimPath;
   const result = await runSetup(['--update'], existingPlist, {}, {
@@ -320,6 +372,28 @@ let generatedLaunchdPlist = '';
   ok(result.logIsSymlink, 'unsafe secure-log symlink is not replaced or followed');
   ok(result.victimContent === 'must remain untouched\n' && result.victimMode === 0o644, 'secure-log symlink target is not modified');
   ok(!result.commands.some(line => line.startsWith('launchctl ')), 'unsafe log pre-creation aborts before stopping or bootstrapping launchd');
+}
+
+{
+  let victimPath;
+  const result = await runSetup(['--update'], existingPlist, {}, {
+    prepare(harness) {
+      victimPath = join(harness.home, 'plist-victim');
+      writeFileSync(victimPath, existingPlist, { mode: 0o644 });
+      chmodSync(victimPath, 0o644);
+      rmSync(harness.plistPath);
+      symlinkSync(victimPath, harness.plistPath);
+    },
+    capture() {
+      return {
+        victimContent: readFileSync(victimPath, 'utf8'),
+        victimMode: statSync(victimPath).mode & 0o777,
+      };
+    },
+  });
+  ok(result.code === 1, 'pre-created launchd plist symlink fails closed');
+  ok(result.victimContent === existingPlist && result.victimMode === 0o644, `launchd plist symlink target remains untouched (mode ${result.victimMode}, content ${JSON.stringify(result.victimContent.slice(-40))})`);
+  ok(!result.commands.some(line => line.startsWith('launchctl ')), 'plist symlink rejection aborts before stopping or bootstrapping launchd');
 }
 
 {

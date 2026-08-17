@@ -77,6 +77,7 @@ function makeHarness({ initialUnit = '', dropIns = {}, environmentFiles = {} } =
   const commandLog = join(dir, 'commands.log');
   const npmBin = join(bin, 'npm');
   const systemctlBin = join(bin, 'systemctl');
+  const systemdAnalyzeBin = join(bin, 'systemd-analyze');
 
   writeFileSync(npmBin, quoteScript(`
 const { appendFileSync } = require('node:fs');
@@ -99,6 +100,16 @@ if (args.includes('is-enabled') && process.env.FAKE_SYSTEMCTL_IS_ENABLED_STATUS)
   process.exit(Number(process.env.FAKE_SYSTEMCTL_IS_ENABLED_STATUS));
 }
 process.exit(0);
+`), { mode: 0o755 });
+
+  writeFileSync(systemdAnalyzeBin, quoteScript(`
+const { appendFileSync } = require('node:fs');
+if (process.env.FAKE_SYSTEMD_ANALYZE_LOG === '1') {
+  appendFileSync(process.env.FAKE_COMMAND_LOG, 'systemd-analyze ' + process.argv.slice(2).join(' ') + '\\n');
+}
+if (process.env.FAKE_SYSTEMD_ANALYZE_STDOUT) process.stdout.write(process.env.FAKE_SYSTEMD_ANALYZE_STDOUT + '\\n');
+if (process.env.FAKE_SYSTEMD_ANALYZE_STDERR) process.stderr.write(process.env.FAKE_SYSTEMD_ANALYZE_STDERR + '\\n');
+process.exit(Number(process.env.FAKE_SYSTEMD_ANALYZE_STATUS || 0));
 `), { mode: 0o755 });
 
   const safeEnv = {};
@@ -270,6 +281,8 @@ const preservedUnit = port => existingUnit([
   const escapedUnit = port => existingUnit([
     `Environment="FLOWBOARD_PORT=${port}"`,
     'Environment="OPENCLAW_WORKSPACE=/Users/test\\x20workspace"',
+    'Environment="CUSTOM_UTF8_VALUE=\\xC3\\xA9"',
+    'Environment="CUSTOM_EMOJI=🦞"',
     'Environment="FLOWBOARD_RULES_TELEMETRY=left\\sright"',
     'Environment="FLOWBOARD_HOOK_TELEMETRY=tab\\tvalue"',
     'Environment="FLOWBOARD_PROJECTS_DIR=/srv/flowboard\\040projects"',
@@ -279,11 +292,34 @@ const preservedUnit = port => existingUnit([
   const result = await runSetup(['--update'], { initialUnit: escapedUnit });
   ok(result.code === 0, 'systemd Environment escape sequences round-trip without double-unescaping');
   ok(result.unit.includes('Environment="OPENCLAW_WORKSPACE=/Users/test workspace"'), '\\x20 decodes to one space');
+  ok(result.unit.includes('Environment="CUSTOM_UTF8_VALUE=é"'), 'UTF-8 byte escapes decode as one Unicode value');
+  ok(result.unit.includes('Environment="CUSTOM_EMOJI=🦞"'), 'raw astral Unicode values round-trip');
   ok(result.unit.includes('Environment="FLOWBOARD_RULES_TELEMETRY=left right"'), '\\s decodes to one space');
   ok(result.unit.includes('Environment="FLOWBOARD_HOOK_TELEMETRY=tab\tvalue"'), '\\t decodes to one tab');
   ok(result.unit.includes('Environment="FLOWBOARD_PROJECTS_DIR=/srv/flowboard projects"'), 'octal \\040 decodes to one space');
   ok(result.unit.includes('Environment="FLOWBOARD_BASE_URL=C:\\\\Users\\\\FlowBoard\\\\bin"'), 'escaped backslashes preserve a Windows-style path');
   ok(result.unit.includes('Environment="FLOWBOARD_REPO=/srv/flowboard\\\\s-cache"'), 'a literal backslash is not decoded a second time');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment \t = \t"FLOWBOARD_PORT=9"`,
+      'Environment="CUSTOM_CONTINUED=ok" \\',
+      '# comments after a continuation are ignored',
+      ' "CUSTOM_CONTINUED_TWO=ok"',
+      'EnvironmentFile \t = \t%h/.config/flowboard/whitespace.env',
+      'UnsetEnvironment \t = \t"FLOWBOARD_PORT=9"',
+    ]),
+    environmentFiles: {
+      '.config/flowboard/whitespace.env': port => `FLOWBOARD_PORT=${port}\n`,
+    },
+    injectPort: false,
+  });
+  ok(result.code === 0, 'systemd directives accept whitespace around equals');
+  ok(result.unit.includes('EnvironmentFile=%h/.config/flowboard/whitespace.env'), 'whitespace-normalized EnvironmentFile survives');
+  ok(result.unit.includes('UnsetEnvironment="FLOWBOARD_PORT=9"'), 'whitespace-normalized UnsetEnvironment survives');
+  ok(result.unit.includes('Environment="CUSTOM_CONTINUED_TWO=ok"'), 'systemd continuation skips intervening comments');
 }
 
 {
@@ -495,14 +531,18 @@ const preservedUnit = port => existingUnit([
       'EnvironmentFile=%h/.config/flowboard/escaped.env',
     ]),
     environmentFiles: {
-      '.config/flowboard/escaped.env': port => {
-        const octalPort = String(port).split('').map(digit => `\\06${digit}`).join('');
-        return `FLOWBOARD_PORT=${octalPort}\nOPENCLAW_WORKSPACE="/Users/file\\x20workspace"\n`;
-      },
+      '.config/flowboard/escaped.env': port => [
+        `FLOWBOARD_PORT=${port}`,
+        'OPENCLAW_WORKSPACE="/Users/file\\x20workspace"',
+        "FLOWBOARD_BASE_URL='C:\\\\Users\\\\FlowBoard'",
+        'FLOWBOARD_REPO=C:\\\\srv\\\\flowboard\\\\cache',
+        'FLOWBOARD_RULES_TELEMETRY=left\\ right',
+        '',
+      ].join('\n'),
     },
     injectPort: false,
   });
-  ok(result.code === 0, 'EnvironmentFile escape decoding resolves the health-check port before mutation');
+  ok(result.code === 0, 'EnvironmentFile POSIX-style quoting resolves the health-check port before mutation');
   ok(result.unit.includes('EnvironmentFile=%h/.config/flowboard/escaped.env'), 'escaped EnvironmentFile source remains owner-controlled');
 }
 
@@ -546,7 +586,12 @@ for (const [label, assignment] of [
   ['an unclosed quote', 'Environment="OPENCLAW_WORKSPACE=/tmp/unclosed'],
   ['an unknown escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\q"'],
   ['a short hexadecimal escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\x2"'],
+  ['an invalid UTF-8 byte escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\xFF"'],
   ['an invalid octal escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\09"'],
+  ['a space escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\ "'],
+  ['a short octal escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\07"'],
+  ['a Unicode surrogate escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\uD800"'],
+  ['a Unicode noncharacter escape', 'Environment="OPENCLAW_WORKSPACE=/tmp/bad\\U0000FDD0"'],
 ]) {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([
@@ -562,13 +607,54 @@ for (const [label, assignment] of [
   const result = await runSetup(['--update'], {
     initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
     environmentFiles: {
-      '.config/flowboard/invalid.env': 'OPENCLAW_WORKSPACE="/tmp/bad\\q"\n',
+      '.config/flowboard/invalid.env': 'FLOWBOARD_PORT=18790\nOPENCLAW_WORKSPACE="/tmp/literal\\x20value"\n',
     },
     injectPort: false,
   });
-  ok(result.code === 1, 'invalid EnvironmentFile escapes fail closed');
+  ok(result.code === 0, 'EnvironmentFile keeps non-POSIX C escapes literal instead of applying unit decoding');
+  ok(result.commands.length > 0, 'valid EnvironmentFile content proceeds to service registration');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
+    environmentFiles: {
+      '.config/flowboard/invalid.env': Buffer.from('FLOWBOARD_PORT=18790\nBAD=\0\n', 'utf8'),
+    },
+    injectPort: false,
+  });
+  ok(result.code === 1, 'invalid EnvironmentFile Unicode content fails closed');
   ok(result.stdout.includes('could not read EnvironmentFile'), 'invalid EnvironmentFile diagnostics identify the source without its value');
   ok(result.commands.length === 0, 'invalid EnvironmentFile content is rejected before build or service commands');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
+    environmentFiles: {
+      '.config/flowboard/invalid.env': 'FLOWBOARD_PORT=18790\n# interior BOM: \uFEFF\n',
+    },
+    injectPort: false,
+  });
+  ok(result.code === 1, 'EnvironmentFile Unicode BOM content fails closed even outside the byte-order-mark prefix');
+  ok(result.commands.length === 0, 'invalid EnvironmentFile BOM content is rejected before build or service commands');
+}
+
+{
+  const result = await runSetup(['--update'], {
+    initialUnit: port => existingUnit([
+      `Environment="FLOWBOARD_PORT=${port}"`,
+      'Environment="JWT_SECRET=test-analyzer-secret"',
+      'Environment="CUSTOM_SHORT_SECRET=abc"',
+    ]),
+  }, {
+    FAKE_SYSTEMD_ANALYZE_STDERR: 'systemd-analyze: warning: malformed generated unit abc',
+  });
+  ok(result.code === 1, 'systemd-analyze diagnostics fail setup even with a zero exit status');
+  ok(result.stdout.includes('malformed generated unit'), 'systemd-analyze diagnostic is surfaced');
+  ok(!result.stdout.includes('test-analyzer-secret'), 'systemd-analyze diagnostics never expose service secrets');
+  ok(!result.stdout.includes('abc'), 'short custom service values are also redacted from diagnostics');
+  ok(!result.commands.some(line => line.startsWith('systemctl ')), 'systemd-analyze diagnostics abort before daemon reload or service restart');
 }
 
 {

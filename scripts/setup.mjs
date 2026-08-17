@@ -31,6 +31,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -175,19 +176,16 @@ function parseOverrideEnvKeys(argv) {
 
 const OVERRIDE_ENV_KEYS = parseOverrideEnvKeys(process.argv.slice(2));
 
-function decodeXml(value) {
-  return value
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#([0-9]+);/g, (_, number) => String.fromCodePoint(Number.parseInt(number, 10)))
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&amp;/g, '&');
-}
-
 function encodeXml(value) {
-  return String(value)
+  const text = String(value);
+  validateUnicodeScalars(text, 'launchd plist value');
+  for (const character of text) {
+    const codepoint = character.codePointAt(0);
+    if (codepoint < 0x20 && ![0x09, 0x0A, 0x0D].includes(codepoint)) {
+      throw new Error('launchd plist value contains an XML 1.0 control character');
+    }
+  }
+  return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -195,20 +193,62 @@ function encodeXml(value) {
     .replace(/'/g, '&apos;');
 }
 
-function parseLaunchdEnvironment(content) {
-  const block = content.match(/<key>\s*EnvironmentVariables\s*<\/key>\s*<dict>([\s\S]*?)<\/dict>/i);
-  if (!block) return null;
+function parseLaunchdEnvironment(path) {
+  // Node does not ship a plist parser. Prefer a future builtin parser when one
+  // is available, otherwise ask macOS's plutil to produce JSON. Do not parse
+  // XML with regexes: plist whitespace, entities, binary plists and string
+  // boundaries are all valid inputs that a regex cannot represent faithfully.
+  let parsed;
+  const builtin = typeof process.getBuiltinModule === 'function'
+    ? process.getBuiltinModule('node:plist')
+    : null;
+  if (builtin && typeof builtin.parse === 'function') {
+    try {
+      parsed = builtin.parse(readFileSync(path, 'utf8'));
+    } catch {
+      throw new Error(`invalid launchd plist: ${path}`);
+    }
+  } else {
+    // The test harness may provide a standards-compatible converter on
+    // non-macOS CI; production always uses Apple's fixed system tool.
+    const plistTool = process.env.NODE_ENV === 'test' && process.env.FLOWBOARD_SETUP_TEST_PLUTIL
+      ? process.env.FLOWBOARD_SETUP_TEST_PLUTIL
+      : '/usr/bin/plutil';
+    const result = spawnSync(plistTool, ['-convert', 'json', '-o', '-', '--', path], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (result.error?.code === 'ENOENT') {
+      throw new Error(`cannot parse launchd plist safely: /usr/bin/plutil is unavailable (${path})`);
+    }
+    if (result.status !== 0 || typeof result.stdout !== 'string' || !result.stdout.trim()) {
+      throw new Error(`invalid launchd plist: ${path}`);
+    }
+    try {
+      parsed = JSON.parse(result.stdout);
+    } catch {
+      throw new Error(`invalid launchd plist JSON conversion: ${path}`);
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const variables = parsed.EnvironmentVariables;
+  if (!variables || typeof variables !== 'object' || Array.isArray(variables)) return null;
+
   const env = {};
-  const pair = /<key>\s*([\s\S]*?)\s*<\/key>\s*<string>\s*([\s\S]*?)\s*<\/string>/gi;
-  for (const match of block[1].matchAll(pair)) {
-    const key = decodeXml(match[1].trim());
-    if (VALID_ENV_KEY.test(key)) env[key] = decodeXml(match[2]);
+  for (const [key, value] of Object.entries(variables)) {
+    // Silently dropping a value would make an update destructive. Refuse a
+    // malformed dictionary instead; launchd itself expects string values.
+    if (!VALID_ENV_KEY.test(key)) throw new Error(`invalid launchd environment key in ${path}`);
+    if (typeof value !== 'string') throw new Error(`launchd environment value for ${key} is not a string in ${path}`);
+    env[key] = value;
   }
   return env;
 }
 
 function splitSystemdWords(value) {
   const words = [];
+  const isWhitespace = char => char === ' ' || char === '\t' || char === '\r' || char === '\n';
   let word = '';
   let quote = null;
   let escaping = false;
@@ -227,13 +267,20 @@ function splitSystemdWords(value) {
       escaping = true;
       started = true;
     } else if (quote) {
-      if (char === quote) quote = null;
+      if (char === quote) {
+        const next = value[index + 1];
+        if (next !== undefined && !isWhitespace(next)) {
+          throw new Error(`closing systemd ${quote} quote must be followed by whitespace`);
+        }
+        quote = null;
+      }
       else word += char;
       started = true;
     } else if (char === '"' || char === "'") {
+      if (started) throw new Error(`systemd ${char} quote must start a word`);
       quote = char;
       started = true;
-    } else if (/\s/.test(char)) {
+    } else if (isWhitespace(char)) {
       if (started) {
         words.push(word);
         word = '';
@@ -250,31 +297,57 @@ function splitSystemdWords(value) {
   return words;
 }
 
+function isUnicodeNoncharacter(codepoint) {
+  return (codepoint >= 0xFDD0 && codepoint <= 0xFDEF)
+    || (codepoint & 0xFFFF) >= 0xFFFE;
+}
+
+function assertUnicodeScalar(codepoint, context) {
+  if (codepoint === 0 || codepoint > 0x10FFFF
+      || (codepoint >= 0xD800 && codepoint <= 0xDFFF)
+      || codepoint === 0xFEFF
+      || isUnicodeNoncharacter(codepoint)) {
+    throw new Error(`invalid Unicode scalar in ${context}`);
+  }
+}
+
+function validateUnicodeScalars(value, context) {
+  for (let index = 0; index < value.length; index += 1) {
+    const codepoint = value.codePointAt(index);
+    assertUnicodeScalar(codepoint, context);
+    if (codepoint > 0xFFFF) index += 1;
+  }
+}
+
 function unescapeSystemdString(value) {
-  let result = '';
+  const bytes = [];
+  const encoder = new TextEncoder();
+  const appendText = text => {
+    validateUnicodeScalars(text, 'systemd unit escape');
+    bytes.push(...encoder.encode(text));
+  };
   let i = 0;
   while (i < value.length) {
     if (value[i] === '\\' && i + 1 < value.length) {
       const next = value[i + 1];
       switch (next) {
-        case '\\': result += '\\'; i += 2; break;
-        case '"': result += '"'; i += 2; break;
-        case "'": result += "'"; i += 2; break;
-        case ' ': result += ' '; i += 2; break;
-        case 'n': result += '\n'; i += 2; break;
-        case 'r': result += '\r'; i += 2; break;
-        case 't': result += '\t'; i += 2; break;
-        case 's': result += ' '; i += 2; break;
-        case 'a': result += '\x07'; i += 2; break;
-        case 'b': result += '\b'; i += 2; break;
-        case 'f': result += '\f'; i += 2; break;
-        case 'v': result += '\v'; i += 2; break;
+        case '\\': appendText('\\'); i += 2; break;
+        case '"': appendText('"'); i += 2; break;
+        case "'": appendText("'"); i += 2; break;
+        case 'n': appendText('\n'); i += 2; break;
+        case 'r': appendText('\r'); i += 2; break;
+        case 't': appendText('\t'); i += 2; break;
+        case 's': appendText(' '); i += 2; break;
+        case 'a': appendText('\x07'); i += 2; break;
+        case 'b': appendText('\b'); i += 2; break;
+        case 'f': appendText('\f'); i += 2; break;
+        case 'v': appendText('\v'); i += 2; break;
         case 'x': {
           const hex = value.slice(i + 2, i + 4);
           if (hex.length === 2 && /^[0-9a-f]{2}$/i.test(hex)) {
             const byte = Number.parseInt(hex, 16);
             if (byte === 0) throw new Error(`invalid NUL escape at position ${i}`);
-            result += String.fromCharCode(byte);
+            bytes.push(byte);
             i += 4;
             break;
           }
@@ -285,7 +358,8 @@ function unescapeSystemdString(value) {
           if (hex.length === 4 && /^[0-9a-f]{4}$/i.test(hex)) {
             const codepoint = Number.parseInt(hex, 16);
             if (codepoint > 0 && codepoint <= 0x10FFFF) {
-              result += String.fromCodePoint(codepoint);
+              assertUnicodeScalar(codepoint, 'systemd unit escape');
+              appendText(String.fromCodePoint(codepoint));
               i += 6;
               break;
             }
@@ -297,7 +371,8 @@ function unescapeSystemdString(value) {
           if (hex.length === 8 && /^[0-9a-f]{8}$/i.test(hex)) {
             const codepoint = Number.parseInt(hex, 16);
             if (codepoint > 0 && codepoint <= 0x10FFFF) {
-              result += String.fromCodePoint(codepoint);
+              assertUnicodeScalar(codepoint, 'systemd unit escape');
+              appendText(String.fromCodePoint(codepoint));
               i += 10;
               break;
             }
@@ -305,55 +380,62 @@ function unescapeSystemdString(value) {
           throw new Error(`invalid escape sequence \\U at position ${i}; expected \\UHHHHHHHH`);
         }
         default: {
-          // Systemd accepts one-to-three octal digits as a character escape.
+          // Unit-file octal escapes are exactly three digits. In particular,
+          // do not accept `\\ ` (space is represented by `\\s`) or consume a
+          // two-digit prefix such as `\\09`.
           if (/^[0-7]$/.test(next)) {
-            let end = i + 2;
-            while (end < value.length && end < i + 4 && /^[0-7]$/.test(value[end])) end += 1;
-            const code = Number.parseInt(value.slice(i + 1, end), 8);
+            const octal = value.slice(i + 1, i + 4);
+            if (!/^[0-7]{3}$/.test(octal)) {
+              throw new Error(`invalid octal escape at position ${i}; expected exactly three digits`);
+            }
+            const code = Number.parseInt(octal, 8);
             if (code === 0) throw new Error(`invalid NUL escape at position ${i}`);
             if (code > 0xFF) throw new Error(`invalid octal escape at position ${i}; expected a byte`);
-            result += String.fromCharCode(code);
-            i = end;
+            bytes.push(code);
+            i += 4;
             break;
           }
           throw new Error(`unsupported escape sequence \\${next} at position ${i}`);
         }
       }
     } else {
-      result += value[i];
-      i += 1;
+      const codepoint = value.codePointAt(i);
+      const text = String.fromCodePoint(codepoint);
+      appendText(text);
+      i += text.length;
     }
   }
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    throw new Error('invalid UTF-8 byte-order mark in systemd unit escape');
+  }
+  let result;
+  try {
+    result = new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bytes));
+  } catch {
+    throw new Error('invalid UTF-8 byte sequence in systemd unit escape');
+  }
+  validateUnicodeScalars(result, 'systemd unit escape');
   return result;
 }
 
-// EnvironmentFile values use the same quoting/escape grammar, but each
-// assignment is one value rather than a whitespace-separated list of words.
-// Decode quotes here and run the semantic escape decoder exactly once.
-function decodeSystemdValue(value) {
-  let raw = '';
-  let quote = null;
-  let escaping = false;
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index];
-    if (escaping) {
-      raw += char;
-      escaping = false;
-    } else if (char === '\\') {
-      raw += '\\';
-      escaping = true;
-    } else if (quote) {
-      if (char === quote) quote = null;
-      else raw += char;
-    } else if (char === '"' || char === "'") {
-      quote = char;
-    } else {
-      raw += char;
-    }
+function decodeSystemdEnvironmentFile(content, source) {
+  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'utf8');
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    throw new Error('EnvironmentFile contains a UTF-8 byte-order mark');
   }
-  if (escaping) throw new Error(`unterminated systemd escape at position ${value.length - 1}`);
-  if (quote) throw new Error(`unterminated systemd ${quote} quote`);
-  return unescapeSystemdString(raw);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(`EnvironmentFile is not valid UTF-8${source ? ` (${source})` : ''}`);
+  }
+}
+
+function readUtf8File(path, label) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path));
+  } catch {
+    throw new Error(`${label} is not valid UTF-8 (${path})`);
+  }
 }
 
 function expandSupportedSystemdSpecifiers(value) {
@@ -378,14 +460,36 @@ function expandSupportedSystemdSpecifiers(value) {
   return expanded;
 }
 
+function joinSystemdUnitLines(content) {
+  const logicalLines = [];
+  let pending = '';
+  let continued = false;
+  for (const physical of String(content).split(/\r?\n/)) {
+    if (continued && /^[ \t]*[#;]/.test(physical)) continue;
+    let trailingBackslashes = 0;
+    for (let index = physical.length - 1; index >= 0 && physical[index] === '\\'; index -= 1) {
+      trailingBackslashes += 1;
+    }
+    if (trailingBackslashes % 2 === 1) {
+      pending += `${physical.slice(0, -1)} `;
+      continued = true;
+      continue;
+    }
+    logicalLines.push(pending + physical);
+    pending = '';
+    continued = false;
+  }
+  if (pending) throw new Error('unterminated systemd line continuation');
+  return logicalLines;
+}
+
 function parseSystemdEnvironment(content) {
   const env = {};
   const environmentFiles = [];
   const events = [];
-  const logicalLines = content.replace(/\\\r?\n/g, ' ').split(/\r?\n/);
   let section = null;
-  for (const rawLine of logicalLines) {
-    const line = rawLine.trim();
+  for (const rawLine of joinSystemdUnitLines(content)) {
+    const line = rawLine.replace(/^[ \t\r]+|[ \t\r]+$/g, '');
     if (!line || line.startsWith('#') || line.startsWith(';')) continue;
     const sectionMatch = line.match(/^\[([^\]]+)\]$/);
     if (sectionMatch) {
@@ -393,8 +497,11 @@ function parseSystemdEnvironment(content) {
       continue;
     }
     if (section !== 'service') continue;
-    if (line.startsWith('EnvironmentFile=')) {
-      const value = line.slice('EnvironmentFile='.length).trim();
+    const assignment = line.match(/^([A-Za-z][A-Za-z0-9]*)[ \t\r]*=[ \t\r]*(.*)$/);
+    if (!assignment) continue;
+    const directive = assignment[1];
+    const value = assignment[2].trim();
+    if (directive === 'EnvironmentFile') {
       if (!value) {
         environmentFiles.length = 0;
         events.push({ type: 'environment-file-reset' });
@@ -409,8 +516,7 @@ function parseSystemdEnvironment(content) {
       }
       continue;
     }
-    if (line.startsWith('UnsetEnvironment=')) {
-      const value = line.slice('UnsetEnvironment='.length).trim();
+    if (directive === 'UnsetEnvironment') {
       if (!value) {
         events.push({ type: 'unset-environment-reset' });
         continue;
@@ -427,8 +533,7 @@ function parseSystemdEnvironment(content) {
       events.push({ type: 'unset-environment', entries });
       continue;
     }
-    if (!line.startsWith('Environment=')) continue;
-    const value = line.slice('Environment='.length).trim();
+    if (directive !== 'Environment') continue;
     if (!value) {
       for (const key of Object.keys(env)) delete env[key];
       events.push({ type: 'environment-reset' });
@@ -439,7 +544,7 @@ function parseSystemdEnvironment(content) {
       const unescapedAssignment = unescapeSystemdString(assignment);
       const expandedAssignment = expandSupportedSystemdSpecifiers(unescapedAssignment);
       const separator = expandedAssignment.indexOf('=');
-      if (separator <= 0) continue;
+      if (separator <= 0) throw new Error('invalid systemd Environment assignment');
       const key = expandedAssignment.slice(0, separator);
       if (!VALID_ENV_KEY.test(key)) throw new Error(`invalid systemd Environment key ${JSON.stringify(key)}`);
       const entry = { key, value: expandedAssignment.slice(separator + 1) };
@@ -484,20 +589,145 @@ function applySystemdUnsetEnvironment(environment, entries) {
 }
 
 function parseSystemdEnvironmentFile(content) {
+  validateUnicodeScalars(content, 'EnvironmentFile');
   const env = {};
-  const logicalLines = content.replace(/\\\r?\n/g, '').split(/\r?\n/);
-  for (const rawLine of logicalLines) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#') || line.startsWith(';')) continue;
-    const separator = line.indexOf('=');
-    if (separator <= 0) continue;
-    const key = line.slice(0, separator).trim();
-    if (!VALID_ENV_KEY.test(key)) continue;
-    // EnvironmentFile is not a shell file: quotes/backslashes group and
-    // escape characters, but variable expansion is intentionally not
-    // performed. Keep all value whitespace and decode escapes exactly once.
-    env[key] = decodeSystemdValue(line.slice(separator + 1).trim());
+  let key = '';
+  let value = '';
+  let keyTrailingWhitespace = -1;
+  let valueTrailingWhitespace = -1;
+  let state = 'pre-key';
+  let hasAssignment = false;
+  let line = 1;
+
+  const reset = () => {
+    key = '';
+    value = '';
+    keyTrailingWhitespace = -1;
+    valueTrailingWhitespace = -1;
+    hasAssignment = false;
+  };
+  const finish = (final = false) => {
+    if (!hasAssignment) {
+      reset();
+      state = 'pre-key';
+      return;
+    }
+    const finalKey = keyTrailingWhitespace >= 0 ? key.slice(0, keyTrailingWhitespace) : key;
+    const finalValue = state === 'value' && valueTrailingWhitespace >= 0
+      ? value.slice(0, valueTrailingWhitespace)
+      : value;
+    if (!VALID_ENV_KEY.test(finalKey)) throw new Error(`invalid EnvironmentFile key on line ${line}`);
+    validateUnicodeScalars(finalKey, 'EnvironmentFile key');
+    validateUnicodeScalars(finalValue, 'EnvironmentFile value');
+    env[finalKey] = finalValue;
+    reset();
+    state = 'pre-key';
+    if (!final) line += 1;
+  };
+  const isWhitespace = char => char === ' ' || char === '\t' || char === '\r';
+  const isNewline = char => char === '\n';
+  const doubleQuoteEscapes = new Set(['"', '\\', '$', '`']);
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    switch (state) {
+      case 'pre-key':
+        if (isNewline(char)) line += 1;
+        else if (isWhitespace(char)) {
+          // Leading whitespace is ignored.
+        } else if (char === '#' || char === ';') state = 'comment';
+        else {
+          state = 'key';
+          key += char;
+        }
+        break;
+      case 'key':
+        if (isNewline(char)) {
+          reset();
+          state = 'pre-key';
+          line += 1;
+        } else if (char === '=') {
+          hasAssignment = true;
+          state = 'pre-value';
+        } else {
+          key += char;
+          if (isWhitespace(char)) {
+            if (keyTrailingWhitespace < 0) keyTrailingWhitespace = key.length - 1;
+          } else keyTrailingWhitespace = -1;
+        }
+        break;
+      case 'pre-value':
+        if (isNewline(char)) finish();
+        else if (char === "'") state = 'single-quote';
+        else if (char === '"') state = 'double-quote';
+        else if (char === '\\') state = 'value-escape';
+        else if (!isWhitespace(char)) {
+          value += char;
+          state = 'value';
+        }
+        break;
+      case 'value':
+        if (isNewline(char)) finish();
+        else if (char === '\\') {
+          valueTrailingWhitespace = -1;
+          state = 'value-escape';
+        } else {
+          value += char;
+          if (isWhitespace(char)) {
+            if (valueTrailingWhitespace < 0) valueTrailingWhitespace = value.length - 1;
+          } else valueTrailingWhitespace = -1;
+        }
+        break;
+      case 'value-escape':
+        if (isNewline(char)) {
+          state = 'value';
+          line += 1;
+        } else {
+          value += char;
+          valueTrailingWhitespace = -1;
+          state = 'value';
+        }
+        break;
+      case 'single-quote':
+        if (char === "'") state = 'pre-value';
+        else value += char;
+        break;
+      case 'double-quote':
+        if (char === '"') state = 'pre-value';
+        else if (char === '\\') state = 'double-quote-escape';
+        else value += char;
+        break;
+      case 'double-quote-escape':
+        if (isNewline(char)) {
+          state = 'double-quote';
+          line += 1;
+        } else if (doubleQuoteEscapes.has(char)) {
+          value += char;
+          state = 'double-quote';
+        } else {
+          value += `\\${char}`;
+          state = 'double-quote';
+        }
+        break;
+      case 'comment':
+        if (char === '\\') state = 'comment-escape';
+        else if (isNewline(char)) {
+          state = 'pre-key';
+          line += 1;
+        }
+        break;
+      case 'comment-escape':
+        if (isNewline(char)) {
+          state = 'pre-key';
+          line += 1;
+        } else state = 'comment';
+        break;
+      default:
+        throw new Error(`invalid EnvironmentFile parser state on line ${line}`);
+    }
   }
+
+  if (state !== 'pre-key' && state !== 'key' && state !== 'comment' && state !== 'comment-escape') finish(true);
   return env;
 }
 
@@ -527,8 +757,10 @@ function readSystemdEnvironmentFiles(entries) {
       }
       let fileEnv;
       try {
-        fileEnv = parseSystemdEnvironmentFile(readFileSync(resolvedPath, 'utf8'));
+        const fileContent = decodeSystemdEnvironmentFile(readFileSync(resolvedPath), configuredPath);
+        fileEnv = parseSystemdEnvironmentFile(fileContent);
       } catch (error) {
+        if (optional) continue;
         throw new Error(`could not read EnvironmentFile ${configuredPath}: ${error.message}`);
       }
       for (const [key, value] of Object.entries(fileEnv)) {
@@ -559,7 +791,12 @@ function readExistingServiceConfig() {
         externalSources: [],
       };
     }
-    const env = parseLaunchdEnvironment(readFileSync(launchdPlistPath, 'utf8'));
+    try {
+      ensureOwnerOnlyRegularFile(launchdPlistPath);
+    } catch (error) {
+      throw new Error(`existing launchd plist is not safe to read: ${error.message}`);
+    }
+    const env = parseLaunchdEnvironment(launchdPlistPath);
     if (!env) throw new Error(`existing launchd plist has no readable EnvironmentVariables dictionary: ${launchdPlistPath}`);
     return {
       found: true,
@@ -587,7 +824,7 @@ function readExistingServiceConfig() {
     const externalSources = [];
     const found = existsSync(systemdUnitPath);
     if (existsSync(systemdUnitPath)) {
-      const parsed = parseSystemdEnvironment(readFileSync(systemdUnitPath, 'utf8'));
+      const parsed = parseSystemdEnvironment(readUtf8File(systemdUnitPath, 'systemd unit'));
       mergedState = applySystemdEvents({}, [], parsed.events);
       baseEnv = mergedState.env;
       environmentFiles = mergedState.environmentFiles;
@@ -597,7 +834,7 @@ function readExistingServiceConfig() {
     if (existsSync(dropInDir)) {
       const files = readdirSync(dropInDir).filter(name => name.endsWith('.conf')).sort();
       for (const file of files) {
-        const parsed = parseSystemdEnvironment(readFileSync(join(dropInDir, file), 'utf8'));
+        const parsed = parseSystemdEnvironment(readUtf8File(join(dropInDir, file), 'systemd drop-in'));
         externalSources.push(`drop-in ${file}`);
         for (const event of parsed.events) {
           dropInEvents.push(event);
@@ -676,7 +913,7 @@ function quoteSystemdEnvironment(key, value) {
 
 function quoteSystemdUnsetEnvironmentEntry(entry) {
   const escaped = escapeSystemdUnitString(entry);
-  return entry.includes('=') || /\s/.test(entry) ? `"${escaped}"` : escaped;
+  return entry.includes('=') || /[ \t\r\n]/.test(entry) ? `"${escaped}"` : escaped;
 }
 
 function formatSystemdUnsetEnvironment(entries) {
@@ -686,11 +923,24 @@ function formatSystemdUnsetEnvironment(entries) {
 }
 
 function writeOwnerOnly(path, content) {
-  const tempPath = `${path}.tmp-${process.pid}`;
-  writeFileSync(tempPath, content, { mode: 0o600 });
-  chmodSync(tempPath, 0o600);
-  renameSync(tempPath, path);
-  chmodSync(path, 0o600);
+  const tempPath = `${path}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`;
+  let fd;
+  try {
+    fd = openSync(
+      tempPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollowFlag(),
+      0o600,
+    );
+    writeFileSync(fd, content, 'utf8');
+    fchmodSync(fd, 0o600);
+    closeSync(fd);
+    fd = undefined;
+    renameSync(tempPath, path);
+    chmodSync(path, 0o600);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    rmSync(tempPath, { force: true });
+  }
 }
 
 function currentUid() {
@@ -698,11 +948,30 @@ function currentUid() {
   return process.getuid();
 }
 
+function clearMacAcl(path) {
+  // PLATFORM is overridden by the regression harness, but ACL syntax is
+  // native-macOS-only. Do not invoke chmod -N when a Linux CI job emulates
+  // the launchd path.
+  if (PLATFORM !== 'darwin' || process.platform !== 'darwin') return;
+  // macOS has no Node fs API for ACLs. `chmod -N` removes the ACL from the
+  // already-validated owner path; mode bits alone do not prove owner-only
+  // access. The executable path is fixed so PATH cannot redirect this check.
+  const result = spawnSync('/bin/chmod', ['-N', path], { stdio: 'ignore' });
+  if (result.error || result.status !== 0) {
+    throw new Error(`could not remove macOS ACL safely from ${path}`);
+  }
+}
+
 function ensureOwnerOnlyDirectory(path) {
   mkdirSync(path, { recursive: true, mode: 0o700 });
-  const stats = lstatSync(path);
+  let stats = lstatSync(path);
   if (stats.isSymbolicLink() || !stats.isDirectory()) throw new Error(`${path} must be a real directory, not a symlink or special file`);
   if (stats.uid !== currentUid()) throw new Error(`${path} is not owned by the current user`);
+  clearMacAcl(path);
+  stats = lstatSync(path);
+  if (stats.isSymbolicLink() || !stats.isDirectory() || stats.uid !== currentUid()) {
+    throw new Error(`${path} changed while ACLs were being secured`);
+  }
   chmodSync(path, 0o700);
 }
 
@@ -746,7 +1015,12 @@ function ensureOwnerOnlyRegularFile(path) {
     if (initialStats && (stats.dev !== initialStats.dev || stats.ino !== initialStats.ino)) {
       throw new Error(`${path} changed during inspection`);
     }
+    clearMacAcl(path);
     fchmodSync(fd, 0o600);
+    const securedStats = fstatSync(fd);
+    if (!securedStats.isFile() || securedStats.uid !== currentUid() || securedStats.nlink !== 1) {
+      throw new Error(`${path} changed while ACLs were being secured`);
+    }
   } catch (error) {
     throw new Error(`refusing unsafe launchd log path ${path}: ${error.message}`);
   } finally {
@@ -789,6 +1063,7 @@ function migrateLegacyLaunchdLog() {
     if (!openedStats.isFile() || openedStats.uid !== currentUid() || openedStats.nlink !== 1) {
       throw new Error('ownership, file type, or link count changed during inspection');
     }
+    clearMacAcl(launchdLegacyLogPath);
     fchmodSync(fd, 0o600);
 
     if (pathEntryExistsNoFollow(launchdLegacyArchivePath)) {
@@ -957,6 +1232,41 @@ function healthy() {
   });
 }
 
+function redactSystemdDiagnostics(text, environment) {
+  let redacted = String(text);
+  for (const value of Object.values(environment || {})) {
+    if (typeof value === 'string' && value.length > 0) redacted = redacted.split(value).join('<redacted>');
+  }
+  redacted = redacted.replace(/\b(JWT_SECRET|TELEGRAM_BOT_TOKEN|TELEGRAM_BOT_TOKENS|HOOKS_TOKEN|OPENCLAW_HOOKS_TOKEN)=([^\s"']+)/g, '$1=<redacted>');
+  return redacted.trim().slice(0, 2400);
+}
+
+function verifySystemdUnit(unit) {
+  if (DRY || PLATFORM !== 'linux') return;
+  const verifyPath = `${systemdUnitPath}.verify-${process.pid}.service`;
+  writeOwnerOnly(verifyPath, unit);
+  let failure = null;
+  try {
+    const result = spawnSync('systemd-analyze', ['--user', 'verify', verifyPath], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    if (result.error?.code === 'ENOENT') return;
+    const diagnostics = [result.stdout, result.stderr]
+      .filter(value => typeof value === 'string' && value.trim())
+      .join('\n');
+    // A zero exit code is not sufficient: systemd-analyze can report a unit
+    // diagnostic on stdout/stderr while still accepting the process exit.
+    if (result.error || result.status !== 0 || diagnostics.trim()) {
+      const detail = redactSystemdDiagnostics(diagnostics || result.error?.message || 'unknown diagnostic', effectiveServiceEnv);
+      failure = new Error(`systemd-analyze rejected the generated unit${detail ? `: ${detail}` : ''}`);
+    }
+  } finally {
+    rmSync(verifyPath, { force: true });
+  }
+  if (failure) die(failure.message);
+}
+
 log('\x1b[1mFlowBoard setup\x1b[0m' + (DRY ? c.dim(' (dry-run — nothing will change)') : ''));
 
 // ── 1. Prerequisites ────────────────────────────────────────────────────────
@@ -1047,7 +1357,11 @@ ${envXml}
     log(c.dim(`  would: launchctl bootstrap gui/${uid} ${launchdPlistPath}`));
     log(c.dim(`  would: launchctl print gui/${uid}/${SERVICE_LABEL}`));
   } else {
-    mkdirSync(launchdPlistDir, { recursive: true });
+    try {
+      ensureOwnerOnlyDirectory(launchdPlistDir);
+    } catch (error) {
+      die(`could not secure owner-only launchd plist directory: ${error.message}`);
+    }
     // Validate and secure the destination before stopping a healthy existing
     // job. Renaming an open legacy log is safe on POSIX; launchd keeps its file
     // descriptor until the immediately following bootout.
@@ -1058,6 +1372,11 @@ ${envXml}
     }
     spawnSync('launchctl', ['bootout', `gui/${uid}/${SERVICE_LABEL}`], { stdio: 'ignore' }); // ignore if not loaded
     writeOwnerOnly(launchdPlistPath, plist);
+    try {
+      ensureOwnerOnlyRegularFile(launchdPlistPath);
+    } catch (error) {
+      die(`could not secure generated launchd plist safely: ${error.message}`);
+    }
     run('launchctl', ['bootstrap', `gui/${uid}`, launchdPlistPath]);
     runQuiet('launchctl', ['print', `gui/${uid}/${SERVICE_LABEL}`]);
   }
@@ -1096,6 +1415,7 @@ WantedBy=default.target
     log(c.dim('  would: systemctl --user is-enabled --quiet flowboard-dashboard'));
   } else {
     mkdirSync(systemdUnitDir, { recursive: true });
+    verifySystemdUnit(unit);
     writeOwnerOnly(systemdUnitPath, unit);
     run('systemctl', ['--user', 'daemon-reload']);
     if (existingConfig.found && FORCE) {
