@@ -9,6 +9,20 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const hzl = require('./hzl-service.js');
+const migrations = require('./migrations.js');
+
+function rawMetadata(cacheDb, taskId) {
+  const row = cacheDb.prepare(
+    "SELECT metadata FROM tasks_current WHERE json_extract(metadata, '$.flowboard.id') = ?"
+  ).get(taskId);
+  return row ? JSON.parse(row.metadata) : null;
+}
+
+function injectLegacyMetadata(cacheDb, taskId, metadata) {
+  cacheDb.prepare(
+    "UPDATE tasks_current SET metadata = ? WHERE json_extract(metadata, '$.flowboard.id') = ?"
+  ).run(JSON.stringify(metadata), taskId);
+}
 
 async function main() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-t443-backend-'));
@@ -43,12 +57,66 @@ async function main() {
       () => hzl.updateTask('t443', created.blocked, { blocked: true, workState: 'waiting' }),
       error => error.code === 'WORK_STATE_CONTRADICTION' && error.status === 400
     );
+    assert.equal(hzl.getTask('t443', created.blocked).workState, 'blocked', 'contradiction leaves canonical state unchanged');
+
+    // A contradictory update is atomic even when it carries an unrelated
+    // scalar field: service-level callers must not get a partial title write.
+    const atomic = hzl.createTask('t443', { title: 'atomic-before', status: 'open', workState: 'working' });
+    assert.throws(
+      () => hzl.updateTask('t443', atomic.id, { title: 'atomic-after', blocked: true, workState: 'waiting' }),
+      error => error.code === 'WORK_STATE_CONTRADICTION' && error.status === 400
+    );
+    assert.equal(hzl.getTask('t443', atomic.id).title, 'atomic-before');
+    assert.equal(hzl.getTask('t443', atomic.id).workState, 'working');
 
     // Canonical metadata survives a full cache rebuild.
     await hzl.rebuildCache();
     const rebuilt = hzl.getTask('t443', created.blocked);
     assert.equal(rebuilt.workState, 'blocked');
     assert.deepEqual(Object.keys(rebuilt.workStateDetails).sort(), ['checkAgainAt', 'reason', 'responsible', 'setAt', 'waitingFor']);
+
+    // Legacy read-repair must preserve every top-level namespace and nested
+    // flowboard field.  The raw cache mutation simulates a pre-T-443 row; the
+    // subsequent rebuild exercises the actual repair/event/projection path.
+    const legacyReadRepair = hzl.createTask('t443', { title: 'legacy-read-repair', status: 'open' });
+    const cacheDb = hzl.getCacheDb();
+    const legacyReadMeta = rawMetadata(cacheDb, legacyReadRepair.id);
+    const { workState: _legacyReadState, workStateDetails: _legacyReadDetails, ...legacyReadFlowboard } = legacyReadMeta.flowboard;
+    injectLegacyMetadata(cacheDb, legacyReadRepair.id, {
+      integrations: { provider: 'keep-me', nested: { tokenRef: 'opaque-ref' } },
+      audit: { importedBy: 'legacy-fixture' },
+      flowboard: {
+        ...legacyReadFlowboard,
+        blocked: true,
+        legacyNested: { untouched: true },
+      },
+    });
+    await hzl.rebuildCache();
+    const repairedMeta = rawMetadata(cacheDb, legacyReadRepair.id);
+    assert.equal(hzl.getTask('t443', legacyReadRepair.id).workState, 'blocked');
+    assert.deepEqual(repairedMeta.integrations, { provider: 'keep-me', nested: { tokenRef: 'opaque-ref' } });
+    assert.deepEqual(repairedMeta.audit, { importedBy: 'legacy-fixture' });
+    assert.deepEqual(repairedMeta.flowboard.legacyNested, { untouched: true });
+
+    // Run the real m009 hook against another legacy row, then rebuild the
+    // read model.  This catches migrations that accidentally replace metadata
+    // instead of preserving it through the event-sourced projection.
+    const legacyMigration = hzl.createTask('t443', { title: 'legacy-m009', status: 'open' });
+    const legacyMigrationMeta = rawMetadata(cacheDb, legacyMigration.id);
+    const { workState: _legacyMigrationState, workStateDetails: _legacyMigrationDetails, ...legacyMigrationFlowboard } = legacyMigrationMeta.flowboard;
+    injectLegacyMetadata(cacheDb, legacyMigration.id, {
+      runtime: { source: 'old-client', flags: { keep: true } },
+      flowboard: { ...legacyMigrationFlowboard, blocked: true, imported: { version: 8 } },
+    });
+    const m009 = migrations.migrations.find(migration => migration.id === 'm009-canonical-work-state');
+    assert.ok(m009, 'm009 migration is registered');
+    m009.run(cacheDb, { hzlService: hzl });
+    const migratedMeta = rawMetadata(cacheDb, legacyMigration.id);
+    assert.equal(migratedMeta.flowboard.workState, 'blocked');
+    assert.deepEqual(migratedMeta.runtime, { source: 'old-client', flags: { keep: true } });
+    assert.deepEqual(migratedMeta.flowboard.imported, { version: 8 });
+    await hzl.rebuildCache();
+    assert.equal(hzl.getTask('t443', legacyMigration.id).blocked, true);
 
     // A due checkAgainAt is a nudge condition only — no lifecycle/work-state
     // mutation is performed by the evaluator.
@@ -66,11 +134,48 @@ async function main() {
       'checkAgainAt does not auto-transition task state'
     );
 
+    // Paused tasks stay paused, but a due checkAgainAt is a re-evaluation
+    // signal and produces the same transient indicator/nudge path.
+    const paused = hzl.createTask('t443', {
+      title: 'paused-due-check',
+      status: 'in-progress',
+      workState: 'paused',
+      workStateDetails: {
+        reason: 'operator pause',
+        checkAgainAt: new Date(Date.now() - 1000).toISOString(),
+      },
+    });
+    const pausedBefore = hzl.getTask('t443', paused.id);
+    const pausedEval = hzl.evaluateStuckIndicators({ staleThreshold: 9999, now: new Date().toISOString() });
+    assert.equal(pausedEval.indicators.find(item => item.taskId === paused.id)?.reason, 'check-again');
+    const pausedAfter = hzl.getTask('t443', paused.id);
+    assert.equal(pausedAfter.status, pausedBefore.status);
+    assert.equal(pausedAfter.workState, 'paused');
+    assert.equal(pausedAfter.workStateDetails.reason, 'operator pause');
+
     const commentsBefore = hzl.getComments('t443', created.waiting).length;
     const eval2 = hzl.evaluateStuckIndicators({ staleThreshold: 9999, now: new Date().toISOString() });
     assert.equal(eval2.indicators.filter(item => item.taskId === created.waiting).length, 1);
     assert.equal(hzl.getComments('t443', created.waiting).length, commentsBefore, 'reevaluation creates no reminder comments');
     assert.equal(hzl.getTask('t443', created.waiting).stuckIndicator.active, true);
+
+    // Lifecycle changes clear attention state only; they do not auto-unblock
+    // or rewrite work-state details.
+    const lifecycle = hzl.createTask('t443', {
+      title: 'lifecycle-preserves-work-state',
+      status: 'open',
+      workState: 'blocked',
+      workStateDetails: { reason: 'human dependency', waitingFor: 'operator' },
+    });
+    const lifecycleDetails = hzl.getTask('t443', lifecycle.id).workStateDetails;
+    hzl.updateTask('t443', lifecycle.id, { status: 'review' });
+    assert.equal(hzl.getTask('t443', lifecycle.id).workState, 'blocked');
+    assert.equal(hzl.getTask('t443', lifecycle.id).blocked, true);
+    assert.deepEqual(hzl.getTask('t443', lifecycle.id).workStateDetails, lifecycleDetails);
+    hzl.updateTask('t443', lifecycle.id, { status: 'backlog' });
+    assert.equal(hzl.getTask('t443', lifecycle.id).workState, 'blocked');
+    assert.equal(hzl.getTask('t443', lifecycle.id).blocked, true);
+    assert.deepEqual(hzl.getTask('t443', lifecycle.id).workStateDetails, lifecycleDetails);
 
     // Checkpoint, release and completion are all clear boundaries.
     const claimed = hzl.createTask('t443', { title: 'clear-on-checkpoint', status: 'open' });
@@ -105,6 +210,41 @@ async function main() {
     hzl.evaluateStuckIndicators({ staleThreshold: 0 });
     const attention = hzl.getAgentAttention('dev-botti', { staleThreshold: 0 });
     assert.ok(attention.stuckTasks.some(item => item.taskId === external.id && item.stuckIndicator?.active));
+
+    const wakeContract = hzl.createTask('t443', { title: 'wake-contract', status: 'open' });
+    hzl.claimTask('t443', wakeContract.id, { agent: 'main', lease: 60 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const wakeEval = hzl.evaluateStuckIndicators({ staleThreshold: 0, wakeAgent: 'ops' });
+    const wakeIndicator = wakeEval.indicators.find(item => item.taskId === wakeContract.id);
+    assert.equal(wakeIndicator.delivery, 'board', 'non-wake OpenClaw owners use the board contract');
+    assert.equal(wakeIndicator.wakeAgent, 'ops');
+
+    // Clearing an indicator also clears notification/backoff state, so a
+    // fresh incident is immediately eligible rather than inheriting silence.
+    const freshIncident = hzl.createTask('t443', {
+      title: 'fresh-incident-after-recovery',
+      status: 'open',
+      workState: 'waiting',
+      workStateDetails: { reason: 'dependency', checkAgainAt: new Date(Date.now() - 1000).toISOString() },
+    });
+    hzl.evaluateStuckIndicators({ staleThreshold: 9999 });
+    const consumed = hzl.getNotifiableStuckTasks({ staleThreshold: 9999, notificationWindow: 60, consume: true });
+    assert.ok(consumed.workState.some(item => item.taskId === freshIncident.id));
+    const armedMeta = rawMetadata(cacheDb, freshIncident.id);
+    assert.ok(armedMeta.flowboard.notifications.stuck.lastNotifiedAt);
+    hzl.updateTask('t443', freshIncident.id, { workState: 'working' });
+    const clearedMeta = rawMetadata(cacheDb, freshIncident.id);
+    assert.equal(clearedMeta.flowboard.stuckIndicator, null);
+    assert.equal(clearedMeta.flowboard.notifications.stuck.lastNotifiedAt, null);
+    assert.equal(clearedMeta.flowboard.notifications.stuck.nextNotifyAt, null);
+    assert.equal(clearedMeta.flowboard.notifications.stuck.backoffMinutes, null);
+    assert.equal(clearedMeta.flowboard.notifications.stuck.notificationCount, 0);
+    hzl.updateTask('t443', freshIncident.id, {
+      workState: 'waiting',
+      workStateDetails: { reason: 'new dependency', checkAgainAt: new Date(Date.now() - 1000).toISOString() },
+    });
+    const fresh = hzl.getNotifiableStuckTasks({ staleThreshold: 9999, notificationWindow: 60, consume: false });
+    assert.ok(fresh.workState.some(item => item.taskId === freshIncident.id), 'new incident is immediately notifiable');
 
     console.log('✅ T-443 backend work-state/indicator tests');
   } finally {

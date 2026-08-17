@@ -10,7 +10,7 @@ In a multi-agent board, work can stall silently: an agent claims a task and stop
 
 ## How it works
 
-- **What counts as stuck** (from `getStuckTasks()`): `in-progress` with no checkpoint past a staleness threshold (per-task `staleAfterMinutes` overrides the global default), an **expired lease**, or **routed-but-not-claimed** (a handoff-contract violation — see [agent bridge](../project-mode/agent-bridge.md)).
+- **What counts as stuck** (from `getStuckTasks()`): `in-progress` with no checkpoint past a staleness threshold (per-task `staleAfterMinutes` overrides the global default), an **expired lease**, **routed-but-not-claimed** (a handoff-contract violation — see [agent bridge](../project-mode/agent-bridge.md)), or an actionable `waiting`/`blocked` state. A due `paused.checkAgainAt` is a nudge/re-evaluation signal; it never changes the task state.
 - **Two views, one source:** the API endpoint `GET /api/tasks/stuck` returns *all* currently-stuck tasks (for dashboards). The scheduler calls `getNotifiableStuckTasks()` every ~5 minutes — the same set passed through **notification guards** so a task isn't re-notified every cycle — exposed as `GET /api/tasks/notifiable-stuck`.
 - **Delivery** goes out through the OpenClaw gateway. Notification routing distinguishes **waking the owning agent** (so it can resume its own task) from **notifying a human operator** — the two are deliberately separable, so an agent can be re-prodded even when no operator channel is configured.
 
@@ -45,7 +45,9 @@ completion clear the indicator; a future `checkAgainAt` only schedules a
 re-evaluation and cannot change lifecycle, ownership, or work state.
 
 Delivery is deduplicated per task with persisted notification timestamps and a
-capped exponential backoff.  Reachable OpenClaw-owned work can be bundled into
-the safe `/hooks/wake` channel, external owners receive pull-based board/status
-attention, and unowned work is bundled into one operator escalation on the
-dedicated non-live session key.
+capped exponential backoff. Only the configured `FLOWBOARD_WAKE_AGENT` is
+bundled into the safe `/hooks/wake` channel; other OpenClaw or external owners
+receive pull-based board/status attention, and unowned work is bundled into one
+operator escalation on the dedicated non-live session key. Clearing an
+indicator also resets its notification/backoff state, so a new incident is
+immediately eligible.

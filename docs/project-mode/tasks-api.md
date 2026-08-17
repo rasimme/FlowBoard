@@ -29,7 +29,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `due_at` | ISO timestamp? | Optional deadline |
 | `metadata` | object? | Max 64KB, arbitrary JSON |
 | `workState` | enum | Canonical execution context: `working`, `waiting`, `blocked`, `paused` |
-| `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null` |
+| `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null`; datetime values must be ISO-8601 date-times with timezone on writes |
 | `stuckIndicator` | object? | One transient update-in-place monitor signal; `null` when clear |
 | `progress` | 0–100? | Set via checkpoints |
 | `lease_until` | ISO timestamp? | Claim expiry |
@@ -105,12 +105,16 @@ PUT /projects/:name/tasks/:id
 | `completed` | string | ISO date, auto-set on `done` |
 | `specFile` | string | Link a spec file to the task |
 | `description` | string | Short inline context, max 16KB (see **Description vs spec**). |
-| `blocked` | boolean | Set/clear blocked flag |
+| `blocked` | boolean | Compatibility projection/write; reads are exactly `workState === "blocked"` and lifecycle changes do not auto-unblock |
 | `workState` | string | Canonical execution context; lifecycle remains independent |
-| `workStateDetails` | object | Replaces normalized contextual details; `checkAgainAt` schedules reevaluation only |
+| `workStateDetails` | object | Replaces normalized contextual details; `checkAgainAt` schedules reevaluation only and accepts strict ISO-8601 date-times with timezone |
 | `tags` | string[] | Replaces the full tag list (max 100). `milestone:<name>` tags feed the overview milestones widget. |
 
 Note: `parentId` cannot be changed via PUT after creation.
+
+The complete PUT payload is validated before any task or spec-link mutation.
+Contradictory `blocked`/`workState` writes return HTTP 400 with
+`code: "WORK_STATE_CONTRADICTION"` and leave every submitted field unchanged.
 
 ### Description vs spec
 

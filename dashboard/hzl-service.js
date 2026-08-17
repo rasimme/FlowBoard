@@ -106,6 +106,27 @@ function _cloneJson(value) {
   try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
 }
 
+function _isJsonObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Merge metadata patches without dropping namespaces or nested state.
+ * TaskUpdated's metadata projection replaces the complete JSON value, so a
+ * partial `{ flowboard: ... }` event would otherwise erase unrelated
+ * namespaces (and any flowboard fields not present in the patch).
+ */
+function _deepMergeJson(base, patch) {
+  if (!_isJsonObject(base) || !_isJsonObject(patch)) return _cloneJson(patch);
+  const out = _cloneJson(base) || {};
+  for (const [key, value] of Object.entries(patch)) {
+    out[key] = _isJsonObject(out[key]) && _isJsonObject(value)
+      ? _deepMergeJson(out[key], value)
+      : _cloneJson(value);
+  }
+  return out;
+}
+
 function _normalizeStuckIndicator(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   // Keep the indicator structured but discard accidental/legacy non-object
@@ -358,7 +379,8 @@ function _archiveChild(project, cached) {
   const ulid = _fbToUlid.get(`${project}:${cached.id}`);
   if (!ulid) return;
   _taskService.archiveTask(ulid);
-  const meta = { flowboard: { ...(_taskService.getTaskById(ulid)?.metadata?.flowboard || {}), status: 'archived' } };
+  const childFb = _taskService.getTaskById(ulid)?.metadata?.flowboard || {};
+  const meta = { flowboard: { ..._clearStuckStateMetadata(childFb), status: 'archived' } };
   _updateMetadata(ulid, meta);
   cached.status = 'archived';
 }
@@ -369,7 +391,8 @@ function _restoreChild(project, cached) {
   // Direct event emission — hzl-core rejects setStatus from archived
   const event = _eventStore.append({ task_id: ulid, type: 'status_changed', data: { from: 'archived', to: 'done' } });
   _projectionEngine.applyEvent(event);
-  const meta = { flowboard: { ...(_taskService.getTaskById(ulid)?.metadata?.flowboard || {}), status: 'done' } };
+  const childFb = _taskService.getTaskById(ulid)?.metadata?.flowboard || {};
+  const meta = { flowboard: { ..._clearStuckStateMetadata(childFb), status: 'done' } };
   _updateMetadata(ulid, meta);
   cached.status = 'done';
 }
@@ -380,20 +403,25 @@ function _updateMetadata(ulid, newMetadata) {
   }
   const current = _taskService.getTaskById(ulid);
   if (!current) throw new Error(`[hzl-service] Task not found: ${ulid}`);
-  const oldMeta = current.metadata || {};
+  const oldMeta = _cloneJson(current.metadata || {}) || {};
+  // Metadata events replace the JSON column.  Always materialize a complete,
+  // deeply merged value before appending so read-repair, m009, and ordinary
+  // recovery writes can never erase another namespace or nested flowboard
+  // metadata supplied by an older integration.
+  const mergedMetadata = _deepMergeJson(oldMeta, newMetadata || {});
   // T-379: central status-transition stamp. Every status change routes its
   // metadata write through here (updateTask, completeTask, claimTask, release,
   // restore, archive…), so stamping enteredStatusAt when the flowboard status
   // actually changes covers all paths in one place. Non-status updates keep the
   // existing value (carried in via the caller's `...prev` spread).
-  if (newMetadata?.flowboard && typeof newMetadata.flowboard.status === 'string'
-      && newMetadata.flowboard.status !== oldMeta?.flowboard?.status) {
-    newMetadata.flowboard.enteredStatusAt = new Date().toISOString();
+  if (mergedMetadata?.flowboard && typeof mergedMetadata.flowboard.status === 'string'
+      && mergedMetadata.flowboard.status !== oldMeta?.flowboard?.status) {
+    mergedMetadata.flowboard.enteredStatusAt = new Date().toISOString();
   }
   const event = _eventStore.append({
     task_id: ulid,
     type: _EventType.TaskUpdated,
-    data: { field: 'metadata', old_value: oldMeta, new_value: newMetadata },
+    data: { field: 'metadata', old_value: oldMeta, new_value: mergedMetadata },
   });
   _projectionEngine.applyEvent(event);
 }
@@ -417,7 +445,7 @@ function _ensureCanonicalWorkStateMetadata(hzlTask) {
   if (alreadyCanonical) return hzlTask;
 
   try {
-    _updateMetadata(hzlTask.task_id, workStateMetadata(flowboard, normalized));
+    _updateMetadata(hzlTask.task_id, { flowboard: workStateMetadata(flowboard, normalized) });
     return _taskService.getTaskById(hzlTask.task_id) || hzlTask;
   } catch (error) {
     // A read must remain available even if a legacy record cannot be repaired
@@ -649,7 +677,7 @@ function migrateWorkStateMetadata() {
     const normalized = _normalizeTaskWorkState(before, before.created || null);
     const detailsEqual = JSON.stringify(before.workStateDetails || null) === JSON.stringify(normalized.workStateDetails);
     if (before.workState === normalized.workState && before.blocked === normalized.blocked && detailsEqual) continue;
-    _updateMetadata(ulid, workStateMetadata(before, normalized));
+    _updateMetadata(ulid, { flowboard: workStateMetadata(before, normalized) });
     _resyncCachedTask(ulid);
     migrated++;
   }
@@ -994,6 +1022,34 @@ function updateTask(project, flowboardId, updates) {
 
   const hzlUpdates = {};
   const metaUpdates = { flowboard: { ...(_taskService.getTaskById(ulid)?.metadata?.flowboard || {}) } };
+  let effectiveCompleted;
+
+  // Resolve the complete work-state payload before any status, child, scalar,
+  // or metadata mutation.  In particular, a contradictory dual-write must be
+  // a strict no-op even when the same PUT also contains other fields.
+  const hasWorkStatePayload = Object.prototype.hasOwnProperty.call(updates, 'blocked')
+    || Object.prototype.hasOwnProperty.call(updates, 'workState')
+    || Object.prototype.hasOwnProperty.call(updates, 'workStateDetails');
+  let workStateResolved = null;
+  if (hasWorkStatePayload) {
+    workStateResolved = resolveWorkStatePayload(updates, cached);
+  }
+
+  // Validate every metadata-only scalar before the status branch can archive
+  // or restore children.  Direct service callers must get the same atomic
+  // no-op guarantee as the HTTP PUT path.
+  if (Object.prototype.hasOwnProperty.call(updates, 'staleAfterMinutes')) {
+    const v = updates.staleAfterMinutes;
+    if (v !== null && (!Number.isInteger(v) || v <= 0)) {
+      throw new Error('staleAfterMinutes must be a positive integer or null');
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'order')) {
+    const v = updates.order;
+    if (v !== null && !Number.isFinite(v)) {
+      throw new Error('order must be a finite number or null');
+    }
+  }
 
   if (updates.title !== undefined) hzlUpdates.title = updates.title;
   if (updates.priority !== undefined) hzlUpdates.priority = _priorityToInt(updates.priority);
@@ -1048,38 +1104,26 @@ function updateTask(project, flowboardId, updates) {
     if (updates.status === 'done') {
       const completedDate = updates.completed || new Date().toISOString().slice(0, 10);
       metaUpdates.flowboard.completed = completedDate;
-      updates.completed = completedDate; // ensure cache gets updated below
+      effectiveCompleted = completedDate;
     } else if (updates.status !== 'done' && cached.status === 'done') {
       metaUpdates.flowboard.completed = null;
-      updates.completed = null; // ensure cache gets updated below
+      effectiveCompleted = null;
     }
-    // Clear blocked flag when moving to done or backlog (AD-5)
-    if (updates.status === 'done' || updates.status === 'backlog') {
-      metaUpdates.flowboard.blocked = false;
-      updates.blocked = false;
-    }
-
     // T-443: lifecycle completion/review clears the transient indicator, but
-    // does not replace the independent canonical work-state model.
+    // does not replace the independent canonical work-state model or details.
     if (updates.status === 'review' || updates.status === 'done' || updates.status === 'archived') {
-      metaUpdates.flowboard.stuckIndicator = null;
+      metaUpdates.flowboard = _clearStuckStateMetadata(metaUpdates.flowboard);
     }
   }
 
-  // T-443: canonical work-state update plus legacy blocked translation.  A
-  // caller that supplies both fields must describe the same state; otherwise
-  // fail before any HZL event is emitted.
-  const hasWorkStatePayload = Object.prototype.hasOwnProperty.call(updates, 'blocked')
-    || Object.prototype.hasOwnProperty.call(updates, 'workState')
-    || Object.prototype.hasOwnProperty.call(updates, 'workStateDetails');
-  let workStateResolved = null;
+  // T-443: canonical work-state update plus legacy blocked translation.  The
+  // payload was validated above; now prepare one atomic metadata patch.
   if (hasWorkStatePayload) {
-    workStateResolved = resolveWorkStatePayload(updates, cached);
     metaUpdates.flowboard = workStateMetadata(metaUpdates.flowboard, workStateResolved);
     // A deliberate state edit is a recovery/acknowledgement boundary.  The
     // monitor may recreate a fresh indicator on its next evaluation if the
     // condition still exists, but it never appends a historical comment.
-    metaUpdates.flowboard.stuckIndicator = null;
+    metaUpdates.flowboard = _clearStuckStateMetadata(metaUpdates.flowboard);
   }
 
   if (Object.prototype.hasOwnProperty.call(updates, 'completed')) {
@@ -1097,18 +1141,12 @@ function updateTask(project, flowboardId, updates) {
   // T-300: per-task stale threshold override (minutes); null clears it
   if (Object.prototype.hasOwnProperty.call(updates, 'staleAfterMinutes')) {
     const v = updates.staleAfterMinutes;
-    if (v !== null && (!Number.isInteger(v) || v <= 0)) {
-      throw new Error('staleAfterMinutes must be a positive integer or null');
-    }
     metaUpdates.flowboard.staleAfterMinutes = v;
   }
 
   // T-130: manual per-column ordering rank (number, or null to clear).
   if (Object.prototype.hasOwnProperty.call(updates, 'order')) {
     const v = updates.order;
-    if (v !== null && !Number.isFinite(v)) {
-      throw new Error('order must be a finite number or null');
-    }
     metaUpdates.flowboard.order = v;
   }
 
@@ -1168,16 +1206,23 @@ function updateTask(project, flowboardId, updates) {
   // in `updates`). After this loop, `cached` holds the dashboard's view of
   // truth — including any null-clears applied by the auto-release block
   // above (when transitioning to review/done).
+  const cacheUpdates = { ...updates };
+  if (updates.status === 'done' && !Object.prototype.hasOwnProperty.call(cacheUpdates, 'completed')) {
+    cacheUpdates.completed = effectiveCompleted ?? metaUpdates.flowboard.completed;
+  } else if (updates.status !== undefined && updates.status !== 'done'
+      && cached.status === 'done' && !Object.prototype.hasOwnProperty.call(cacheUpdates, 'completed')) {
+    cacheUpdates.completed = effectiveCompleted;
+  }
   const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'workState', 'workStateDetails', 'stuckIndicator', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description'];
   for (const key of ALLOWED) {
-    if (Object.prototype.hasOwnProperty.call(updates, key)) {
-      if (key === 'blocked') cached[key] = workStateResolved ? workStateResolved.blocked : updates[key] === true;
+    if (Object.prototype.hasOwnProperty.call(cacheUpdates, key)) {
+      if (key === 'blocked') cached[key] = workStateResolved ? workStateResolved.blocked : cacheUpdates[key] === true;
       else if (key === 'workState' && workStateResolved) cached[key] = workStateResolved.workState;
       else if (key === 'workStateDetails' && workStateResolved) cached[key] = workStateResolved.workStateDetails;
-      else if (key === 'stuckIndicator') cached[key] = _normalizeStuckIndicator(updates[key]);
-      else if (key === 'tags') cached[key] = _cleanTags(updates[key]);
-      else if (key === 'trashedAt') cached[key] = updates[key] || null;
-      else cached[key] = updates[key];
+      else if (key === 'stuckIndicator') cached[key] = _normalizeStuckIndicator(cacheUpdates[key]);
+      else if (key === 'tags') cached[key] = _cleanTags(cacheUpdates[key]);
+      else if (key === 'trashedAt') cached[key] = cacheUpdates[key] || null;
+      else cached[key] = cacheUpdates[key];
     }
   }
 
@@ -1305,7 +1350,7 @@ function deleteTask(project, flowboardId, mode) {
           // Update metadata before archiving so status persists across restarts
           try {
             const subFull = _taskService.getTaskById(subUlid);
-            const subMeta = { ...(subFull?.metadata || {}), flowboard: { ...(subFull?.metadata?.flowboard || {}), status: 'archived', stuckIndicator: null } };
+            const subMeta = { ...(subFull?.metadata || {}), flowboard: { ..._clearStuckStateMetadata(subFull?.metadata?.flowboard || {}), status: 'archived' } };
             _updateMetadata(subUlid, subMeta);
             _taskService.archiveTask(subUlid);
           } catch (e) { console.warn(e); }
@@ -1345,7 +1390,7 @@ function deleteTask(project, flowboardId, mode) {
   // Update metadata before archiving so status persists across restarts
   try {
     const currentFull = _taskService.getTaskById(ulid);
-    const archiveMeta = { ...(currentFull?.metadata || {}), flowboard: { ...(currentFull?.metadata?.flowboard || {}), status: 'archived', stuckIndicator: null } };
+    const archiveMeta = { ...(currentFull?.metadata || {}), flowboard: { ..._clearStuckStateMetadata(currentFull?.metadata?.flowboard || {}), status: 'archived' } };
     _updateMetadata(ulid, archiveMeta);
   } catch (e) { console.warn('[hzl-service] metadata update before archive:', e.message); }
   // If archiveTask throws, do NOT touch cache/maps — task is still in DB
@@ -1918,13 +1963,13 @@ function claimTask(project, flowboardId, opts) {
   });
 
   // Update FlowBoard metadata
+  const claimedFlowboard = _clearStuckStateMetadata(result.metadata?.flowboard || hzlTask?.metadata?.flowboard || {});
   const meta = {
     flowboard: {
-      ...(result.metadata?.flowboard || {}),
+      ...claimedFlowboard,
       status: 'in-progress',
       previousStatus: cached.status, // remember for release rollback
       lastCheckpointAt: new Date().toISOString(), // claim starts the stale timer
-      stuckIndicator: null,
     }
   };
   _updateMetadata(ulid, meta);
@@ -1972,7 +2017,7 @@ function releaseTask(project, flowboardId, opts = {}) {
     const hzlTask = _taskService.getTaskById(ulid);
     if (hzlTask) {
       const fb = hzlTask.metadata?.flowboard || {};
-      _updateMetadata(ulid, { flowboard: { ...fb, status: 'open', stuckIndicator: null } });
+      _updateMetadata(ulid, { flowboard: { ..._clearStuckStateMetadata(fb), status: 'open' } });
     }
     return { ok: true };
   }
@@ -1986,10 +2031,9 @@ function releaseTask(project, flowboardId, opts = {}) {
   const restoreStatus = fb.previousStatus || 'open';
   const meta = {
     flowboard: {
-      ...fb,
+      ..._clearStuckStateMetadata(fb),
       status: restoreStatus,
       previousStatus: null, // clear
-      stuckIndicator: null,
     }
   };
   _updateMetadata(ulid, meta);
@@ -2036,10 +2080,9 @@ function completeTask(project, flowboardId, opts = {}) {
   const hzlTask = _taskService.getTaskById(ulid);
   const meta = {
     flowboard: {
-      ...(hzlTask?.metadata?.flowboard || {}),
+      ..._clearStuckStateMetadata(hzlTask?.metadata?.flowboard || {}),
       status: 'review',
       completed: completedDate,
-      stuckIndicator: null,
     }
   };
   _updateMetadata(ulid, meta);
@@ -2190,10 +2233,9 @@ function addCheckpoint(project, flowboardId, opts) {
 
   const meta = {
     flowboard: {
-      ...fb,
+      ..._clearStuckStateMetadata(fb),
       lastCheckpointAt: now,
       checkpointCount: (fb.checkpointCount || 0) + 1,
-      stuckIndicator: null,
     }
   };
   _updateMetadata(ulid, meta);
@@ -2614,17 +2656,18 @@ function _initStuckNotificationMeta(flowboardMeta = {}) {
   return flowboardMeta.notifications.stuck;
 }
 
-function _shouldNotifyStuckTask(task, stuckReason, notificationWindow = 60) {
+function _shouldNotifyStuckTask(task, stuckReason, notificationWindow = 60, nowValue = Date.now()) {
   if (!task || !task._ulid) return false;
   if (!stuckReason) return false; // Not actually stuck
 
   const hzlTask = _taskService.getTaskById(task._ulid);
   if (!hzlTask) return false;
 
-  const fb = hzlTask.metadata?.flowboard || {};
+  const fb = _cloneJson(hzlTask.metadata?.flowboard || {}) || {};
   const notifMeta = _initStuckNotificationMeta(fb);
 
-  const now = Date.now();
+  const parsedNow = typeof nowValue === 'number' ? nowValue : new Date(nowValue).getTime();
+  const now = Number.isFinite(parsedNow) ? parsedNow : Date.now();
   const lastNotified = notifMeta.lastNotifiedAt ? new Date(notifMeta.lastNotifiedAt).getTime() : null;
 
   // First notification: lastNotifiedAt is null
@@ -2640,17 +2683,19 @@ function _shouldNotifyStuckTask(task, stuckReason, notificationWindow = 60) {
   return true; // Window expired, re-notify
 }
 
-function _recordStuckNotification(task, stuckReason, notificationWindow = 60) {
+function _recordStuckNotification(task, stuckReason, notificationWindow = 60, nowValue = Date.now()) {
   if (!task || !task._ulid) return;
 
   const ulid = task._ulid;
   const hzlTask = _taskService.getTaskById(ulid);
   if (!hzlTask) return;
 
-  const fb = hzlTask.metadata?.flowboard || {};
+  const fb = _cloneJson(hzlTask.metadata?.flowboard || {}) || {};
   const notifMeta = _initStuckNotificationMeta(fb);
 
-  const now = new Date().toISOString();
+  const parsedNow = typeof nowValue === 'number' ? nowValue : new Date(nowValue).getTime();
+  const nowMs = Number.isFinite(parsedNow) ? parsedNow : Date.now();
+  const now = new Date(nowMs).toISOString();
   notifMeta.lastNotifiedAt = now;
   notifMeta.lastNotificationReason = stuckReason;
   notifMeta.notificationCount = (notifMeta.notificationCount || 0) + 1;
@@ -2663,7 +2708,7 @@ function _recordStuckNotification(task, stuckReason, notificationWindow = 60) {
     ? Math.min(previousBackoff * 2, 24 * 60)
     : baseWindow;
   notifMeta.backoffMinutes = backoffMinutes;
-  notifMeta.nextNotifyAt = new Date(Date.now() + backoffMinutes * 60 * 1000).toISOString();
+  notifMeta.nextNotifyAt = new Date(nowMs + backoffMinutes * 60 * 1000).toISOString();
 
   const meta = {
     flowboard: {
@@ -2702,10 +2747,11 @@ function _stuckEntryKey(entry) {
   return `${entry?.project || ''}:${entry?.taskId || entry?.id || ''}`;
 }
 
-function _indicatorForEntry(task, entry, now = new Date().toISOString()) {
+function _indicatorForEntry(task, entry, now = new Date().toISOString(), opts = {}) {
   const previous = _normalizeStuckIndicator(task.stuckIndicator);
   const owner = entry.reason === 'routed-unclaimed' ? (entry.routedAgent || null) : (task.agent || null);
   const ownerKind = owner ? _stuckOwnerKind(owner) : 'unowned';
+  const wakeAgent = opts.wakeAgent || process.env.FLOWBOARD_WAKE_AGENT || 'main';
   const sameIncident = previous && previous.active === true && previous.reason === entry.reason;
   return {
     active: true,
@@ -2720,7 +2766,11 @@ function _indicatorForEntry(task, entry, now = new Date().toISOString()) {
     workStateDetails: normalizeWorkStateDetails(task.workStateDetails),
     owner: owner,
     ownerKind,
-    delivery: ownerKind === 'openclaw' ? 'wake' : ownerKind === 'external' ? 'board' : 'operator',
+    // Only the configured gateway wake agent is reachable through
+    // /hooks/wake. Other OpenClaw/external owners use the pull-based board
+    // contract; keep this metadata aligned with buildStuckNotifications().
+    delivery: !owner ? 'operator' : owner === wakeAgent ? 'wake' : 'board',
+    wakeAgent,
     checkAgainAt: task.workStateDetails?.checkAgainAt || null,
   };
 }
@@ -2737,9 +2787,20 @@ function _clearStuckNotificationBackoff(flowboard = {}) {
         lastNotificationReason: null,
         nextNotifyAt: null,
         backoffMinutes: null,
+        notificationCount: 0,
       },
     },
   };
+}
+
+/**
+ * Clear the complete transient attention state in one metadata patch.
+ * Clearing only the indicator used to leave the persisted notification
+ * backoff armed, so a genuinely new incident could not notify immediately.
+ */
+function _clearStuckStateMetadata(flowboard = {}) {
+  const reset = _clearStuckNotificationBackoff(_cloneJson(flowboard) || {});
+  return { ...reset, stuckIndicator: null };
 }
 
 /** Clear the one transient indicator without creating a historical comment. */
@@ -2747,10 +2808,20 @@ function clearStuckIndicator(project, flowboardId) {
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   const cached = _cache.get(`${project}:${flowboardId}`);
   if (!ulid || !cached) return false;
-  if (!cached.stuckIndicator && !cached._stuckIndicator) return false;
   const current = _taskService.getTaskById(ulid);
-  const fb = _clearStuckNotificationBackoff(current?.metadata?.flowboard || {});
-  _updateMetadata(ulid, { flowboard: { ...fb, stuckIndicator: null } });
+  const currentFb = current?.metadata?.flowboard || {};
+  const hadIndicator = !!(cached.stuckIndicator || cached._stuckIndicator || currentFb.stuckIndicator);
+  const hadNotificationState = !!currentFb.notifications?.stuck && (
+    currentFb.notifications.stuck.lastNotifiedAt
+    || currentFb.notifications.stuck.lastNotificationReason
+    || currentFb.notifications.stuck.nextNotifyAt
+    || currentFb.notifications.stuck.backoffMinutes
+    || currentFb.notifications.stuck.notificationCount
+  );
+  if (!hadIndicator && !hadNotificationState) return false;
+  // One metadata event clears both pieces atomically from the task's
+  // perspective; _updateMetadata deep-preserves every unrelated namespace.
+  _updateMetadata(ulid, { flowboard: _clearStuckStateMetadata(currentFb) });
   cached.stuckIndicator = null;
   delete cached._stuckIndicator;
   return true;
@@ -2779,7 +2850,7 @@ function evaluateStuckIndicators(opts = {}) {
       continue;
     }
 
-    const indicator = _indicatorForEntry(task, entry, now);
+    const indicator = _indicatorForEntry(task, entry, now, opts);
     const current = _normalizeStuckIndicator(task.stuckIndicator);
     const material = JSON.stringify(current) !== JSON.stringify(indicator);
     if (material || !current?.active) {
@@ -2804,7 +2875,8 @@ function evaluateStuckIndicators(opts = {}) {
  */
 function getStuckTasks(opts = {}) {
   const staleThreshold = opts.staleThreshold !== undefined ? opts.staleThreshold : 10; // minutes
-  const now = Date.now();
+  const parsedNow = opts.now ? new Date(opts.now).getTime() : Date.now();
+  const now = Number.isFinite(parsedNow) ? parsedNow : Date.now();
   const stale = [];
   const expired = [];
   const routedUnclaimed = [];
@@ -2869,6 +2941,23 @@ function getStuckTasks(opts = {}) {
       combined.push(stateEntry);
       // In-progress blocked/waiting tasks are represented by the explicit
       // work-state condition rather than duplicated as stale/expired.
+      continue;
+    }
+
+    // Paused work is intentionally excluded from stale/lease detection.  A
+    // due checkAgainAt is only a re-evaluation/nudge signal; it never changes
+    // the paused state or lifecycle.
+    if (task.workState === 'paused') {
+      if (checkAgainAt && checkAgainDue) {
+        const stateEntry = {
+          ...entry,
+          reason: 'check-again',
+          checkAgainAt,
+          checkAgainDue: true,
+        };
+        workState.push(stateEntry);
+        combined.push(stateEntry);
+      }
       continue;
     }
 
@@ -2958,7 +3047,7 @@ function getNotifiableStuckTasks(opts = {}) {
   // like the other classes so it doesn't re-fire every scheduler tick.
   for (const routedTask of (allStuck.routedUnclaimed || [])) {
     const task = _cache.get(`${routedTask.project}:${routedTask.taskId}`);
-    if (task && _shouldNotifyStuckTask(task, 'routed-unclaimed', notificationWindow)) {
+    if (task && _shouldNotifyStuckTask(task, 'routed-unclaimed', notificationWindow, opts.now)) {
       notifiableRoutedUnclaimed.push(routedTask);
     }
   }
@@ -2966,7 +3055,7 @@ function getNotifiableStuckTasks(opts = {}) {
   // Check stale tasks
   for (const staleTask of (allStuck.stale || [])) {
     const task = _cache.get(`${staleTask.project}:${staleTask.taskId}`);
-    if (task && _shouldNotifyStuckTask(task, 'stale', notificationWindow)) {
+    if (task && _shouldNotifyStuckTask(task, 'stale', notificationWindow, opts.now)) {
       notifiableStale.push(staleTask);
     }
   }
@@ -2974,7 +3063,7 @@ function getNotifiableStuckTasks(opts = {}) {
   // Check expired tasks
   for (const expiredTask of (allStuck.expired || [])) {
     const task = _cache.get(`${expiredTask.project}:${expiredTask.taskId}`);
-    if (task && _shouldNotifyStuckTask(task, 'expired', notificationWindow)) {
+    if (task && _shouldNotifyStuckTask(task, 'expired', notificationWindow, opts.now)) {
       notifiableExpired.push(expiredTask);
     }
   }
@@ -2985,7 +3074,7 @@ function getNotifiableStuckTasks(opts = {}) {
     // delivery opportunity.  Once due, the reason becomes check-again and the
     // normal persisted backoff applies.
     if (stateTask.checkAgainAt && !stateTask.checkAgainDue) continue;
-    if (task && _shouldNotifyStuckTask(task, stateTask.reason, notificationWindow)) {
+    if (task && _shouldNotifyStuckTask(task, stateTask.reason, notificationWindow, opts.now)) {
       notifiableWorkState.push(stateTask);
     }
   }
@@ -3002,19 +3091,19 @@ function getNotifiableStuckTasks(opts = {}) {
   }
   for (const t of notifiableRoutedUnclaimed) {
     const task = _cache.get(`${t.project}:${t.taskId}`);
-    if (task) _recordStuckNotification(task, 'routed-unclaimed', notificationWindow);
+    if (task) _recordStuckNotification(task, 'routed-unclaimed', notificationWindow, opts.now);
   }
   for (const t of notifiableStale) {
     const task = _cache.get(`${t.project}:${t.taskId}`);
-    if (task) _recordStuckNotification(task, 'stale', notificationWindow);
+    if (task) _recordStuckNotification(task, 'stale', notificationWindow, opts.now);
   }
   for (const t of notifiableExpired) {
     const task = _cache.get(`${t.project}:${t.taskId}`);
-    if (task) _recordStuckNotification(task, 'expired', notificationWindow);
+    if (task) _recordStuckNotification(task, 'expired', notificationWindow, opts.now);
   }
   for (const t of notifiableWorkState) {
     const task = _cache.get(`${t.project}:${t.taskId}`);
-    if (task) _recordStuckNotification(task, t.reason, notificationWindow);
+    if (task) _recordStuckNotification(task, t.reason, notificationWindow, opts.now);
   }
 
   return {
@@ -3563,8 +3652,7 @@ function routeTask(project, flowboardId, agent) {
   // Routing changes acknowledge the previous delivery target.  Clear the
   // transient indicator/backoff so the new owner receives at most one fresh
   // signal if the condition remains after the next evaluation.
-  if (!agent) flowboard = _clearStuckNotificationBackoff({ ...flowboard, stuckIndicator: null });
-  else flowboard.stuckIndicator = null;
+  flowboard = _clearStuckStateMetadata(flowboard);
   const meta = { flowboard };
   _updateMetadata(ulid, meta);
 

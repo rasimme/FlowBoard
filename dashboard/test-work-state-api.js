@@ -66,12 +66,35 @@ async function main() {
       }
     }
 
+    // Seed two valid specs so the rejected PUT can prove that the spec link
+    // (and an unrelated title) remains unchanged when work-state validation
+    // fails.  This is the adversarial regression for validate-before-mutate.
+    const specsDir = path.join(tmp, 'projects', 'work-state-api', 'specs');
+    fs.mkdirSync(specsDir, { recursive: true });
+    fs.writeFileSync(path.join(specsDir, 'before.md'), '# before\n');
+    fs.writeFileSync(path.join(specsDir, 'after.md'), '# after\n');
+    const linked = await api('PUT', `/projects/work-state-api/tasks/${id}`, { specFile: 'specs/before.md' });
+    if (linked.status !== 200 || linked.body.task.specFile !== 'specs/before.md') {
+      throw new Error('valid spec link setup failed');
+    }
+    const beforeContradiction = await api('GET', '/projects/work-state-api/tasks');
+    const beforeTask = beforeContradiction.body.tasks.find(task => task.id === id);
+
     const contradiction = await api('PUT', `/projects/work-state-api/tasks/${id}`, {
+      title: 'must-not-partially-update',
+      specFile: 'specs/after.md',
       blocked: true,
       workState: 'waiting',
     });
     if (contradiction.status !== 400 || contradiction.body?.code !== 'WORK_STATE_CONTRADICTION') {
       throw new Error('contradictory dual-write was not rejected with machine-readable 400');
+    }
+    const afterContradiction = await api('GET', '/projects/work-state-api/tasks');
+    const afterTask = afterContradiction.body.tasks.find(task => task.id === id);
+    if (afterContradiction.status !== 200 || !beforeTask || !afterTask
+        || afterTask.title !== beforeTask.title
+        || afterTask.specFile !== 'specs/before.md') {
+      throw new Error('contradictory PUT mutated specFile or another field');
     }
 
     const legacyBlock = await api('PUT', `/projects/work-state-api/tasks/${id}`, { blocked: true });

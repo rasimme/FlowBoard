@@ -2175,7 +2175,6 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
         return res.status(400).json({ error: `specFile target not found: ${nextSpec}` });
       }
     }
-    hzlService.setSpecLink(req.params.name, req.params.id, nextSpec);
   }
 
   const prevStatus = task.status;
@@ -2236,6 +2235,7 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     return res.status(400).json({ error: 'agent can only be cleared (set to null), not set to a value' });
   }
 
+  let overrideAudit = null;
   if (hzlUpdates.status !== undefined) {
     const VALID = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
     if (!VALID.has(hzlUpdates.status)) {
@@ -2288,13 +2288,11 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       }
       const overrideReason = updates.reason && String(updates.reason).trim();
       const actor = updates.actor && String(updates.actor).trim();
-      const auditMsg = `admin-status-override by ${actor || 'unknown'} (${fromStatus} -> ${toStatus})` +
-        (overrideReason ? ` — Reason: ${overrideReason}` : '');
-      try {
-        hzlService.addComment(req.params.name, req.params.id, { message: auditMsg, author: actor || null });
-      } catch (e) {
-        console.warn('[admin-status-override audit]', e);
-      }
+      overrideAudit = {
+        message: `admin-status-override by ${actor || 'unknown'} (${fromStatus} -> ${toStatus})` +
+          (overrideReason ? ` — Reason: ${overrideReason}` : ''),
+        author: actor || null,
+      };
     }
   }
 
@@ -2317,6 +2315,22 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
 
   try {
     const updatedTask = hzlService.updateTask(req.params.name, req.params.id, hzlUpdates);
+
+    // All PUT validation (including canonical work-state contradictions and
+    // task lifecycle/archive guards) has completed before touching the
+    // filesystem-backed spec link.  A rejected request therefore leaves the
+    // spec and every other field unchanged.
+    if (Object.prototype.hasOwnProperty.call(updates, 'specFile')) {
+      hzlService.setSpecLink(req.params.name, req.params.id, updates.specFile);
+      updatedTask.specFile = updates.specFile;
+    }
+    if (overrideAudit) {
+      try {
+        hzlService.addComment(req.params.name, req.params.id, overrideAudit);
+      } catch (e) {
+        console.warn('[admin-status-override audit]', e);
+      }
+    }
 
     if (updates.priority && updatedTask.subtaskIds && updatedTask.subtaskIds.length > 0) {
       for (const subId of updatedTask.subtaskIds) {
@@ -4276,7 +4290,10 @@ async function startServer() {
 
         // T-443: evaluate one update-in-place indicator before consuming the
         // delivery backoff.  This is structured task state, never a comment.
-        hzlService.evaluateStuckIndicators({ staleThreshold: staleMinutes });
+        hzlService.evaluateStuckIndicators({
+          staleThreshold: staleMinutes,
+          wakeAgent: process.env.FLOWBOARD_WAKE_AGENT || 'main',
+        });
 
         // Get only tasks that should trigger a notification (avoids duplicates).
         // consume: true — the scheduler is the only consumer of the window

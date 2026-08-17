@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   WORK_STATES,
   DEFAULT_WORK_STATE,
+  isValidDateString,
   normalizeStoredWorkState,
   normalizeWorkStateDetails,
   resolveWorkStatePayload,
@@ -11,6 +12,9 @@ const {
 
 assert.deepEqual(WORK_STATES, ['working', 'waiting', 'blocked', 'paused']);
 assert.equal(DEFAULT_WORK_STATE, 'working');
+assert.equal(isValidDateString('2026-08-17'), false, 'date-only values are not scheduler datetimes');
+assert.equal(isValidDateString('2026-08-17T17:00:00.000Z'), true);
+assert.equal(isValidDateString('2026-08-17T17:00:00'), false, 'timezone is required');
 
 assert.deepEqual(normalizeStoredWorkState({ blocked: true }), {
   workState: 'blocked',
@@ -68,6 +72,10 @@ assert.throws(
 );
 assert.throws(
   () => resolveWorkStatePayload({ workStateDetails: { checkAgainAt: 'not-a-date' } }),
+  error => error.code === 'WORK_STATE_DETAILS_INVALID' && error.status === 400
+);
+assert.throws(
+  () => resolveWorkStatePayload({ workStateDetails: { checkAgainAt: '2026-08-17' } }),
   error => error.code === 'WORK_STATE_DETAILS_INVALID' && error.status === 400
 );
 

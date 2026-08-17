@@ -34,8 +34,17 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// Datetime fields are an API contract, not free-form date labels.  Require an
+// ISO-8601 date-time with an explicit timezone so a scheduler never interprets
+// the same `checkAgainAt` differently on two hosts.  Legacy reads are still
+// forgiving (invalid values normalize to null); writes use this strict path.
+const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+
 function isValidDateString(value) {
-  return typeof value === 'string' && value.trim() !== '' && !Number.isNaN(new Date(value).getTime());
+  return typeof value === 'string'
+    && value === value.trim()
+    && ISO_DATETIME_RE.test(value)
+    && !Number.isNaN(new Date(value).getTime());
 }
 
 function detailError(field, message) {
@@ -88,7 +97,7 @@ function normalizeWorkStateDetails(value, { setAt = null, validate = false } = {
     }
   }
 
-  if (!out.setAt && setAt) out.setAt = setAt;
+  if (!out.setAt && setAt && isValidDateString(setAt)) out.setAt = setAt;
   return out;
 }
 
