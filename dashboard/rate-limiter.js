@@ -15,8 +15,10 @@ class RateLimiter {
     this.maxRequests = maxRequests;
     this.requests = new Map(); // Map<ip, Array<timestamps>>
     
-    // Cleanup old entries every 10 windows
-    setInterval(() => this.cleanup(), windowMs * 10);
+    // Cleanup old entries every 10 windows. Do not keep short-lived test
+    // processes alive solely for maintenance of this in-memory limiter.
+    this.cleanupInterval = setInterval(() => this.cleanup(), windowMs * 10);
+    if (this.cleanupInterval.unref) this.cleanupInterval.unref();
   }
 
   getClientIp(req) {
@@ -62,6 +64,13 @@ class RateLimiter {
       } else {
         this.requests.set(ip, valid);
       }
+    }
+  }
+
+  close() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
   }
 }

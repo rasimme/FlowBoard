@@ -363,6 +363,23 @@ if (process.env.LOG_REQUESTS === 'true' || process.env.DEBUG || process.env.NODE
   });
 }
 
+// T-441: rate-limit the auth exchange before Telegram/JWT verification so
+// invalid credentials consume the same budget as valid attempts.
+app.use('/api/auth', (req, res, next) => {
+  if (req.method !== 'POST') return next();
+
+  const rateLimitCheck = authRateLimiter.check(req);
+  if (!rateLimitCheck.ok) {
+    res.set('Retry-After', String(rateLimitCheck.resetSeconds));
+    return res.status(rateLimitCheck.status).json({
+      error: rateLimitCheck.message,
+      code: 'RATE_LIMIT_EXCEEDED',
+    });
+  }
+
+  next();
+});
+
 // Global auth on all /api/ routes (except /health, /info and CORS preflight)
 app.use('/api/', (req, res, next) => {
   if (req.path === '/health') return next();
@@ -1365,21 +1382,15 @@ app.get('/api/info', (req, res) => {
 
 // Auth-Endpoint (vor dem generellen API-Auth)
 app.post('/api/auth', (req, res) => {
-  // Rate limit check (T-441-3): guard against brute-force credential attempts
-  const rateLimitCheck = authRateLimiter.check(req);
-  if (!rateLimitCheck.ok) {
-    res.set('Retry-After', String(rateLimitCheck.resetSeconds));
-    return res.status(rateLimitCheck.status).json({ 
-      error: rateLimitCheck.message, 
-      code: 'RATE_LIMIT_EXCEEDED' 
-    });
-  }
-
   // The global auth middleware has already preferred and verified any fresh
   // init-data, and reissued the cookie for that bot identity.
   const agentId = req.user?.agentId || null;
   if (!agentId) {
-    return rejectTelegramAuth(req, res, 'AGENTLESS_SESSION', {});
+    return rejectTelegramAuth(req, res, {
+      code: 'INVALID_SESSION',
+      error: 'Session missing required agent binding',
+      status: 403,
+    });
   }
   const { agentId: _agentId, iat: _iat, exp: _exp, ...user } = req.user || {};
   res.json({ ok: true, user, agentId });

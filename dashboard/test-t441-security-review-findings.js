@@ -83,12 +83,12 @@ function sessionCookie(setCookie) {
   return setCookie.split(';', 1)[0];
 }
 
-async function auth(base, initData, cookie = null) {
+async function auth(base, initData, cookie = null, ip = '203.0.113.44') {
   const headers = {
     'cf-ray': crypto.randomBytes(8).toString('hex'),
-    'cf-connecting-ip': '203.0.113.44',
-    'X-Telegram-Init-Data': initData,
+    'cf-connecting-ip': ip,
   };
+  if (initData !== null && initData !== undefined) headers['X-Telegram-Init-Data'] = initData;
   if (cookie) headers.Cookie = cookie;
   const response = await fetch(`${base}/api/auth`, { method: 'POST', headers });
   const body = await response.json().catch(() => ({}));
@@ -101,12 +101,18 @@ async function run() {
   fs.mkdirSync(path.join(tmp, 'workspace', 'projects'), { recursive: true });
   fs.mkdirSync(path.join(tmp, 'projects'), { recursive: true });
   const base = `http://127.0.0.1:${PORT}`;
-  
+
+  let stdoutLog = '';
+  let stderrLog = '';
+
   const child = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: testEnv(tmp),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+
+  child.stdout.on('data', data => { stdoutLog += data.toString(); });
+  child.stderr.on('data', data => { stderrLog += data.toString(); });
 
   try {
     await waitForServer(base, child);
@@ -115,24 +121,38 @@ async function run() {
     console.log('\n## Finding 1: Legacy Cookie Migration');
     
     // Create a valid session
-    const validResult = await auth(base, buildTelegramInitData(BOT_TOKEN));
+    const validResult = await auth(base, buildTelegramInitData(BOT_TOKEN), null, '203.0.113.10');
     ok(validResult.response.status === 200, 'valid fresh init-data creates session');
-    
+
     const validCookie = sessionCookie(validResult.setCookie);
-    
+
     // Test that legacy/malformed cookies are rejected
     const legacyCookie = 'flowboard_session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature';
-    const legacyResult = await auth(base, null, legacyCookie);
+    const legacyResult = await auth(base, null, legacyCookie, '203.0.113.11');
     ok(legacyResult.response.status === 403, 'legacy malformed cookie is rejected');
+
+    const agentlessToken = jwt.sign(
+      { id: 42, username: 'test_user', agentId: null },
+      SECRET,
+      { expiresIn: '8h', algorithm: 'HS256' },
+    );
+    const agentlessResult = await auth(
+      base,
+      null,
+      `flowboard_session=${agentlessToken}`,
+      '203.0.113.13',
+    );
+    ok(agentlessResult.response.status === 403, 'legacy agentless cookie is rejected');
+    ok(agentlessResult.body.code === 'INVALID_SESSION', 'agentless cookie gets a typed error');
     
     // Finding 2: Verified EXPIRED Fallback
     console.log('\n## Finding 2: Verified EXPIRED Fallback');
     
     // Create an aged init-data (beyond 5 minutes)
     const agedInitData = buildTelegramInitData(BOT_TOKEN, { authDateDelta: -301 });
-    
+
     // On /api/auth (strict exchange), aged init-data must be rejected even with valid cookie
-    const staleAuthExchange = await auth(base, agedInitData, validCookie);
+    const staleAuthExchange = await auth(base, agedInitData, validCookie, '203.0.113.12');
     ok(staleAuthExchange.response.status === 403, '/api/auth rejects aged init-data (even with valid cookie)');
     ok(staleAuthExchange.body.code === 'TELEGRAM_INIT_DATA_EXPIRED', 'correct error code for aged init-data');
     
@@ -150,33 +170,32 @@ async function run() {
     // Finding 3: Upstream Auth Rate Limiting
     console.log('\n## Finding 3: Upstream Auth Rate Limiting');
     
-    // Simulate rapid auth attempts from same IP
+    // Invalid credentials must also consume the auth budget, before Telegram
+    // verification can reject them.
     let rateLimitHit = false;
+    const rateLimitTestIp = '203.0.113.88';
     for (let i = 0; i < 65; i++) {
-      const result = await auth(base, buildTelegramInitData(BOT_TOKEN), null);
-      if (result.response.status === 429 || result.response.status >= 500) {
+      const result = await auth(base, 'malformed-init-data', null, rateLimitTestIp);
+      if (result.response.status === 429) {
         rateLimitHit = true;
+        ok(true, `rate limit (429) hit after ${i + 1} attempts`);
         break;
       }
     }
-    // Note: rate limiting may be implemented at reverse-proxy level
-    // This test verifies the behavior exists or is documented
-    if (!rateLimitHit) {
-      console.log(`  ⚠️  rate limiting not detected at app level (may be at reverse proxy)`);
-    }
+    ok(rateLimitHit, 'invalid auth attempts trigger rate limiting (429)');
     
     // Finding 4: Privacy Scan Extension – no token leaks in logs/responses
     console.log('\n## Finding 4: Privacy Scan Extension');
     
-    // Capture stderr to check for token leaks
-    let logOutput = '';
-    const logCapture = () => { /* logs would be checked here */ };
-    
-    const badInitData = buildTelegramInitData('fake-token-for-privacy-test');
-    const privacyResult = await auth(base, badInitData, null);
-    ok(privacyResult.response.status === 403, 'bad token init-data is rejected');
-    ok(!JSON.stringify(privacyResult.body).includes('fake-token'), 'token not leaked in response body');
+    const privacyResult = await auth(base, buildTelegramInitData(BOT_TOKEN), null, '203.0.113.77');
+    ok(privacyResult.response.status === 200, 'valid init-data passes authentication');
+    ok(!JSON.stringify(privacyResult.body).includes(BOT_TOKEN), 'bot token not leaked in response body');
     ok(!JSON.stringify(privacyResult.body).includes('WebAppData'), 'HMAC salt not in response');
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const allLogs = stdoutLog + stderrLog;
+    ok(!allLogs.includes(BOT_TOKEN), 'bot token sanitized in logs');
+    ok(!allLogs.includes('WebAppData'), 'HMAC salt not in logs');
     
   } finally {
     child.kill('SIGTERM');
@@ -196,30 +215,3 @@ run().catch(error => {
   console.error('# fatal:', error.stack || error.message);
   process.exitCode = 1;
 });
-
-// Separate test for rate limiter functionality
-if (require.main === module) {
-  const { RateLimiter } = require('./rate-limiter.js');
-  
-  console.log('\n## Test Rate Limiter Direct');
-  const limiter = new RateLimiter({ windowMs: 1000, maxRequests: 5 });
-  
-  const mockReq = { 
-    headers: { 'cf-connecting-ip': '203.0.113.50' },
-    ip: '127.0.0.1'
-  };
-  
-  let hitLimit = false;
-  for (let i = 0; i < 10; i++) {
-    const result = limiter.check(mockReq);
-    if (!result.ok) {
-      hitLimit = true;
-      console.log(`  ok - rate limit hit after ${i} requests`);
-      break;
-    }
-  }
-  
-  if (!hitLimit) {
-    console.log('  not ok - rate limit not hit within 10 requests');
-  }
-}
