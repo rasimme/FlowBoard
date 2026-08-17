@@ -8,7 +8,7 @@ It sits between React views, the legacy `window.appState` shell bridge, and the 
 
 The ownership boundary is explicit. `dashboard/src/bootstrap.js` is bootstrap-only: it creates the initial `window.appState` shape and resolves Telegram auth/agent identity. React's `DashboardContext` owns shell refresh, project actions, tab switching, and the remaining compatibility bridge. Task-list reads and writes go through `appStateBridge`, and mutation wrappers live under `src/state/`.
 
-`appStore` also carries one connection state for the shell: `loading`, `ready`, `empty`, `auth-error`, `offline`, or `server-error`. `empty` is produced only by a successful projects response. Initial failures block the shell with remediation; failures after a valid snapshot leave that snapshot intact and surface a persistent retry banner.
+`appStore` also carries one connection state for the shell: `loading`, `ready`, `empty`, `auth-error`, `offline`, `timeout`, or `server-error`. `empty` is produced only by a successful, schema-valid projects response. Initial failures block the shell with remediation; failures after a valid snapshot leave that snapshot intact and surface a persistent retry banner.
 
 ## Why
 
@@ -93,10 +93,13 @@ Every task mutation should follow the same sequence:
 Polling is reconciliation. It is not the primary state propagation mechanism for a local action.
 
 Polling is also transactional at the shell-snapshot boundary: projects, agents,
-active project, and tasks are fetched before updates are committed. Any failed
-request changes only the connection state; it cannot turn the last successful
-project/task snapshot into an empty array. A later successful poll or manual
-retry clears the degraded state.
+active project, and tasks are fetched before updates are committed. Polls and
+manual retries share one generation/abort coordinator, so an older response
+cannot overwrite a newer retry. Any failed request changes only the connection
+state; it cannot turn the last successful project/task snapshot into an empty
+array. Core failures are cleared only by a complete successful core snapshot —
+a task-only refresh cannot hide them. A later successful poll or manual retry
+clears the degraded state.
 
 ## File Runtime
 
@@ -120,7 +123,7 @@ The intended module boundary is:
   - emits the React notification event
   - owns refresh bridge functions
 - `dashboard/src/state/connectionState.mjs`
-  - classifies auth, network, and server failures
+  - classifies auth, network, timeout, protocol, and server failures
   - derives loading/ready/empty/degraded shell states without mutating data
 - `dashboard/src/state/taskState.*`
   - pure operations for patch, merge, rollback, snapshots, and parent updates

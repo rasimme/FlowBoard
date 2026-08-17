@@ -16,6 +16,12 @@ const COPY = {
     fatal: 'The dashboard service could not be reached. Check your connection and confirm that FlowBoard is running, then retry.',
     degraded: 'The dashboard service cannot be reached. Your last loaded board is still visible.',
   },
+  timeout: {
+    Icon: WifiOff,
+    title: 'FlowBoard took too long to respond',
+    fatal: 'The dashboard request reached its deadline. Retry now; if it keeps timing out, check the connection and dashboard service.',
+    degraded: 'A refresh timed out. Your last loaded board is still visible and you can retry safely.',
+  },
   'server-error': {
     Icon: ServerCrash,
     title: 'Dashboard service error',
@@ -68,7 +74,9 @@ export default function DashboardConnectionState() {
             {failure?.fatal || 'Connecting to the dashboard service and loading your projects…'}
           </p>
           {connection?.httpStatus && <code className="connection-code">HTTP {connection.httpStatus}</code>}
-          {failure && <RetryButton retrying={connection.retrying} onRetry={retryConnection} />}
+          {(failure || status === 'loading') && (
+            <RetryButton retrying={connection.retrying} onRetry={retryConnection} />
+          )}
         </section>
       </div>
     );

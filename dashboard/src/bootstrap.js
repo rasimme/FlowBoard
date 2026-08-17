@@ -8,6 +8,7 @@
 
 import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
 import { installAppStateProxy } from './state/appStore.mjs';
+import { apiFetch, DEFAULT_API_TIMEOUT_MS } from './utils/apiFetch.js';
 
 // window.appState is now a Proxy over the React-owned store (appStore.mjs). The
 // auth/agentId writes below go through it and notify React automatically.
@@ -36,10 +37,11 @@ document.addEventListener('click', (e) => {
       tg.expand();
       tg.disableVerticalSwipes?.();
       try {
-        const authRes = await fetch('/api/auth', {
+        const authRes = await apiFetch('/api/auth', {
           method: 'POST',
           headers: { 'X-Telegram-Init-Data': tg.initData },
           credentials: 'include',
+          timeoutMs: DEFAULT_API_TIMEOUT_MS,
         });
         const authData = await authRes.json().catch(() => null);
         if (authData?.user?.username) window.appState.authUser = authData.user.username;

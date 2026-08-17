@@ -4,6 +4,7 @@ export const CONNECTION_STATUSES = Object.freeze([
   'empty',
   'auth-error',
   'offline',
+  'timeout',
   'server-error',
 ]);
 
@@ -13,6 +14,7 @@ export const INITIAL_CONNECTION_STATE = Object.freeze({
   retrying: false,
   error: null,
   httpStatus: null,
+  errorScope: null,
 });
 
 export function classifyConnectionError(error) {
@@ -20,6 +22,7 @@ export function classifyConnectionError(error) {
   let status = 'server-error';
   if (httpStatus === 401 || httpStatus === 403) status = 'auth-error';
   else if (error?.kind === 'network') status = 'offline';
+  else if (error?.kind === 'timeout') status = 'timeout';
 
   return {
     status,
@@ -35,10 +38,12 @@ export function connectionSuccess(projects) {
     retrying: false,
     error: null,
     httpStatus: null,
+    errorScope: null,
   };
 }
 
-export function connectionFailure(previous, error) {
+export function connectionFailure(previous, error, errorScope = 'core') {
+  if (errorScope !== 'core' && previous?.errorScope === 'core') return previous;
   const failure = typeof error?.status === 'string' ? error : classifyConnectionError(error);
   return {
     status: failure.status,
@@ -46,7 +51,13 @@ export function connectionFailure(previous, error) {
     retrying: false,
     error: failure.error || 'The dashboard request failed.',
     httpStatus: Number.isInteger(failure.httpStatus) ? failure.httpStatus : null,
+    errorScope,
   };
+}
+
+export function connectionRecovery(previous, projects, recoveredScope = 'core') {
+  if (recoveredScope !== 'core' && previous?.errorScope === 'core') return previous;
+  return connectionSuccess(projects);
 }
 
 export function connectionLoading(previous = INITIAL_CONNECTION_STATE) {

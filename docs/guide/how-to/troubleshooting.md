@@ -29,9 +29,11 @@ The dashboard now distinguishes this from an empty installation: HTTP 401/403 sh
 
 ## The dashboard is offline or reports a server error
 
-An unreachable service shows **FlowBoard is offline**; an HTTP 5xx response shows **Dashboard service error**. Use **Retry** after restoring the connection or service. If the dashboard had already loaded, FlowBoard keeps the last valid board visible and shows a persistent error banner — a failed poll never replaces projects or tasks with an empty list.
+An unreachable service shows **FlowBoard is offline**; an HTTP 5xx or invalid API response shows **Dashboard service error**. A request that does not finish within 10 seconds is aborted and shows **FlowBoard took too long to respond**. Use **Retry** after restoring the connection or service; Retry is also available during the initial loading screen.
 
-`No projects` means something different: `/api/projects` completed successfully with HTTP 2xx and returned an empty project list.
+If the dashboard had already loaded, FlowBoard keeps the last valid board visible and shows a persistent error banner — a failed poll never replaces projects or tasks with an empty list. Task-only refreshes cannot hide a global projects/agents/status failure.
+
+`No projects` means something different: `/api/projects` completed successfully with HTTP 2xx and returned a schema-valid empty project list.
 
 ## See also
 

@@ -1,8 +1,9 @@
 'use strict';
 
-// T-440 — real-browser coverage for fatal bootstrap/API states and degraded
-// polling. Request interception controls only GET /api/projects; the rest of
-// the shell talks to the throwaway real dashboard from browser-harness.
+// T-440 — real-browser coverage for fatal bootstrap/API states, bounded
+// timeouts, partial refresh priority, and poll/retry serialization. Request
+// interception controls only GET /api/projects; the rest of the shell talks to
+// the throwaway real dashboard from browser-harness.
 
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
 
@@ -13,39 +14,62 @@ async function main() {
     let mode = 'pass';
     let releaseDelayedProjects;
     let delayedProjects = Promise.resolve();
+    let releaseStaleRace;
+    let staleRaceResponse = Promise.resolve();
+    let notifyRacePollStarted;
+    let racePollStarted = Promise.resolve();
+    let raceRequestCount = 0;
+
+    const respond = (request, status, body, contentType = 'application/json') => request.respond({
+      status,
+      contentType,
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    });
 
     await page.setRequestInterception(true);
-    page.on('request', async (request) => {
-      const url = new URL(request.url());
-      if (request.method() !== 'GET' || url.pathname !== '/api/projects') {
-        await request.continue();
-        return;
-      }
+    page.on('request', (request) => {
+      void (async () => {
+        const url = new URL(request.url());
+        if (request.method() !== 'GET' || url.pathname !== '/api/projects') {
+          await request.continue();
+          return;
+        }
 
-      if (mode === 'delay-empty') {
-        await delayedProjects;
-        await request.respond({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ projects: [] }),
-        });
-      } else if (mode === 'auth') {
-        await request.respond({
-          status: 403,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'Tunnel authentication required' }),
-        });
-      } else if (mode === 'server') {
-        await request.respond({
-          status: 500,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'Synthetic server failure' }),
-        });
-      } else if (mode === 'offline') {
-        await request.abort('failed');
-      } else {
-        await request.continue();
-      }
+        if (mode === 'delay-empty') {
+          await delayedProjects;
+          await respond(request, 200, { projects: [] });
+        } else if (mode === 'malformed') {
+          await respond(request, 200, '<html>not JSON</html>', 'text/html');
+        } else if (mode === 'invalid-schema') {
+          await respond(request, 200, { projects: { unexpected: true } });
+        } else if (mode === 'auth') {
+          await respond(request, 403, { error: 'Tunnel authentication required' });
+        } else if (mode === 'server') {
+          await respond(request, 500, { error: 'Synthetic server failure' });
+        } else if (mode === 'offline') {
+          await request.abort('failed');
+        } else if (mode === 'timeout') {
+          // Intentionally leave the real browser request unresolved. apiFetch's
+          // deadline must abort it and surface a retryable timeout state.
+        } else if (mode === 'race') {
+          raceRequestCount += 1;
+          if (raceRequestCount === 1) {
+            notifyRacePollStarted();
+            await staleRaceResponse;
+            await respond(request, 200, { projects: [] });
+          } else {
+            await request.continue();
+          }
+        } else {
+          await request.continue();
+        }
+      })().catch((error) => {
+        // A retry deliberately aborts the intercepted stale poll. Puppeteer can
+        // then reject the late respond() because the request no longer exists.
+        if (!/intercept|Invalid Interception|already handled|Target closed/i.test(error.message)) {
+          console.error('request interception failed:', error);
+        }
+      });
     });
 
     const goto = async (caseName) => {
@@ -56,16 +80,43 @@ async function main() {
       (els) => els.some((el) => el.textContent.trim() === 'No projects'));
 
     // Explicit Loading → Empty: "No projects" is allowed only after the
-    // successful delayed 200 response resolves.
+    // successful delayed 200 response resolves. Loading itself has a manual
+    // retry path instead of becoming an uninterruptible spinner.
     mode = 'delay-empty';
     delayedProjects = new Promise((resolve) => { releaseDelayedProjects = resolve; });
     const loadingNavigation = goto('loading-empty');
     await page.waitForSelector('.connection-screen[data-connection-state="loading"]', { timeout: 8000 });
+    r.ok(!!(await page.$('.connection-screen [data-action="retry-connection"]')),
+      'initial loading exposes a manual retry/abort action');
     r.ok(!(await sidebarSaysNoProjects()), 'loading does not masquerade as an empty board');
     releaseDelayedProjects();
     await loadingNavigation;
     await page.waitForFunction(() => document.querySelector('[data-connection-state]')?.dataset.connectionState === 'empty');
     r.ok(await sidebarSaysNoProjects(), 'successful 200 + [] renders the real No projects state');
+
+    // Both syntactically malformed JSON and a schema-invalid JSON envelope are
+    // protocol/server errors, never successful empty data.
+    mode = 'malformed';
+    await goto('malformed-2xx');
+    await page.waitForSelector('.connection-screen[data-connection-state="server-error"]', { timeout: 8000 });
+    r.ok(!(await sidebarSaysNoProjects()), 'non-JSON 2xx is a server error, not No projects');
+
+    mode = 'invalid-schema';
+    await goto('invalid-schema-2xx');
+    await page.waitForSelector('.connection-screen[data-connection-state="server-error"]', { timeout: 8000 });
+    r.ok(!(await sidebarSaysNoProjects()), 'schema-invalid 2xx is a server error, not No projects');
+
+    // This is a real unresolved fetch, not a synthetic 504 response. The
+    // 10-second apiJson deadline aborts it and renders a retryable timeout.
+    mode = 'timeout';
+    await goto('timeout');
+    await page.waitForSelector('.connection-screen[data-connection-state="timeout"]', { timeout: 13000 });
+    r.ok(await state() === 'timeout', 'an actual fetch deadline renders the timeout state');
+    r.ok(!!(await page.$('.connection-screen [data-action="retry-connection"]')),
+      'timeout state offers Retry');
+    mode = 'pass';
+    await page.click('.connection-screen [data-action="retry-connection"]');
+    await page.waitForFunction(() => document.querySelector('[data-connection-state]')?.dataset.connectionState === 'empty');
 
     // 403 is a blocking auth state with Telegram-specific remediation. The
     // retry remains inside a phone viewport and recovers to the valid empty UI.
@@ -111,10 +162,30 @@ async function main() {
     await page.waitForSelector('.connection-banner[data-connection-state="server-error"]', { timeout: 8000 });
     r.ok(!!(await page.$('[data-project="preserved-board"]')), 'poll failure preserves the last valid project data');
     r.ok(!(await sidebarSaysNoProjects()), 'poll failure does not replace data with an empty board');
+
+    // A successful task-only refresh is a partial recovery. It must not erase
+    // the still-unrecovered global /projects failure.
     mode = 'pass';
+    await page.evaluate(() => window.appState._refreshBoard());
+    r.ok(!!(await page.$('.connection-banner[data-connection-state="server-error"]')),
+      'task-only recovery cannot clear a global core API failure');
+
+    // Coordinate the next poll so it remains in flight, then click the still
+    // visible Retry button. Retry must abort/supersede that poll; releasing its
+    // stale empty response later must not overwrite the retry result.
+    mode = 'race';
+    raceRequestCount = 0;
+    racePollStarted = new Promise((resolve) => { notifyRacePollStarted = resolve; });
+    staleRaceResponse = new Promise((resolve) => { releaseStaleRace = resolve; });
+    await racePollStarted;
     await page.click('.connection-banner [data-action="retry-connection"]');
     await page.waitForFunction(() => document.querySelector('[data-connection-state]')?.dataset.connectionState === 'ready');
-    r.ok(!(await page.$('.connection-banner')), 'banner retry returns the shell to ready');
+    releaseStaleRace();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    r.ok(await state() === 'ready', 'a stale poll cannot replace the newer retry connection state');
+    r.ok(!!(await page.$('[data-project="preserved-board"]')),
+      'a stale poll cannot overwrite the project snapshot recovered by Retry');
+    r.ok(!(await page.$('.connection-banner')), 'serialized retry returns the shell to ready');
   }, { port: 18869, viewport: { width: 1400, height: 900 } });
 
   if (res?.skipped) r.skip(res.reason);

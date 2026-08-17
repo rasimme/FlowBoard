@@ -5,12 +5,15 @@
  * - Telegram WebApp authentication (sends initData header if available)
  * - Cookie credentials (for session-based auth via Cloudflare tunnel)
  * - JSON Content-Type for POST/PUT/PATCH
- * - Error extraction from response body
+ * - Optional request deadlines with caller abort propagation
+ * - Error extraction from response body through apiJson
  *
  * @param {string} path - API path (e.g., '/api/projects/myproject/tasks')
- * @param {object} [opts] - Fetch options (method, body, signal, etc.)
+ * @param {object} [opts] - Fetch options plus optional timeoutMs
  * @returns {Promise<Response>} - The fetch Response object
  */
+export const DEFAULT_API_TIMEOUT_MS = 10000;
+
 export function apiFetch(path, opts = {}) {
   const headers = { ...opts.headers };
 
@@ -62,11 +65,56 @@ export function apiFetch(path, opts = {}) {
   }
   if (isJsonObject) body = JSON.stringify(body);
 
-  return fetch(path, {
-    ...opts,
-    headers,
-    credentials,
-    body,
+  const { timeoutMs = null, signal: callerSignal, ...fetchOptions } = opts;
+  const hasDeadline = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  const controller = hasDeadline ? new AbortController() : null;
+  let timedOut = false;
+  let timeoutId = null;
+  let removeAbortForwarder = null;
+
+  if (controller && callerSignal) {
+    const forwardAbort = () => controller.abort(callerSignal.reason);
+    if (callerSignal.aborted) forwardAbort();
+    else {
+      callerSignal.addEventListener('abort', forwardAbort, { once: true });
+      removeAbortForwarder = () => callerSignal.removeEventListener('abort', forwardAbort);
+    }
+  }
+
+  if (controller) {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new DOMException('FlowBoard API request timed out', 'TimeoutError'));
+    }, timeoutMs);
+  }
+
+  let request;
+  try {
+    request = fetch(path, {
+      ...fetchOptions,
+      headers,
+      credentials,
+      body,
+      signal: controller?.signal || callerSignal,
+    });
+  } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+    removeAbortForwarder?.();
+    throw error;
+  }
+
+  return request.catch((error) => {
+    if (timedOut) {
+      throw new ApiError(`FlowBoard did not respond within ${timeoutMs} ms.`, {
+        kind: 'timeout',
+        path,
+        cause: error,
+      });
+    }
+    throw error;
+  }).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+    removeAbortForwarder?.();
   });
 }
 
@@ -85,22 +133,49 @@ export async function apiJson(path, opts = {}) {
   const normalizedPath = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
   let res;
   try {
-    res = await apiFetch(normalizedPath, opts);
+    res = await apiFetch(normalizedPath, {
+      ...opts,
+      timeoutMs: opts.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
+    });
   } catch (error) {
     if (error instanceof ApiError) throw error;
+    if (error?.name === 'AbortError') {
+      throw new ApiError('FlowBoard request was cancelled.', {
+        kind: 'aborted',
+        path: normalizedPath,
+        cause: error,
+      });
+    }
     throw new ApiError('Unable to reach the FlowBoard service.', {
       kind: 'network',
       path: normalizedPath,
       cause: error,
     });
   }
-  const data = await res.json().catch(() => ({}));
+
+  let data;
+  let parseError = null;
+  try {
+    data = await res.json();
+  } catch (error) {
+    parseError = error;
+  }
+
   if (!res.ok) {
-    throw new ApiError(data?.error || `HTTP ${res.status}`, {
+    throw new ApiError((!parseError && data?.error) || `HTTP ${res.status}`, {
       status: res.status,
       kind: 'http',
       path: normalizedPath,
     });
   }
+
+  if (parseError) {
+    throw new ApiError('FlowBoard returned an invalid JSON response.', {
+      kind: 'protocol',
+      path: normalizedPath,
+      cause: parseError,
+    });
+  }
+
   return data;
 }
