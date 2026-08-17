@@ -1,16 +1,25 @@
 #!/usr/bin/env node
-// Regression coverage for scripts/setup.mjs Linux systemd service commands.
+// Regression coverage for scripts/setup.mjs Linux service configuration.
 
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DASH = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(DASH);
+const UNIT_NAME = 'flowboard-dashboard.service';
 
 let pass = 0;
 let fail = 0;
@@ -39,12 +48,26 @@ function quoteScript(script) {
   return `#!/usr/bin/env node\n${script}\n`;
 }
 
-function makeHarness() {
+function makeHarness({ initialUnit = '', dropIns = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fb-setup-systemd-'));
   const bin = join(dir, 'bin');
   const home = join(dir, 'home');
+  const unitDir = join(home, '.config', 'systemd', 'user');
+  const unitPath = join(unitDir, UNIT_NAME);
   mkdirSync(bin, { recursive: true });
   mkdirSync(home, { recursive: true });
+
+  if (initialUnit) {
+    mkdirSync(unitDir, { recursive: true });
+    writeFileSync(unitPath, initialUnit, { mode: 0o600 });
+  }
+  if (Object.keys(dropIns).length > 0) {
+    const dropInDir = `${unitPath}.d`;
+    mkdirSync(dropInDir, { recursive: true });
+    for (const [name, content] of Object.entries(dropIns)) {
+      writeFileSync(join(dropInDir, name), content, { mode: 0o600 });
+    }
+  }
 
   const commandLog = join(dir, 'commands.log');
   const npmBin = join(bin, 'npm');
@@ -67,20 +90,35 @@ if (args.includes('restart') && process.env.FAKE_SYSTEMCTL_RESTART_STATUS) {
 if (args.includes('is-active') && process.env.FAKE_SYSTEMCTL_IS_ACTIVE_STATUS) {
   process.exit(Number(process.env.FAKE_SYSTEMCTL_IS_ACTIVE_STATUS));
 }
+if (args.includes('is-enabled') && process.env.FAKE_SYSTEMCTL_IS_ENABLED_STATUS) {
+  process.exit(Number(process.env.FAKE_SYSTEMCTL_IS_ENABLED_STATUS));
+}
 process.exit(0);
 `), { mode: 0o755 });
+
+  const safeEnv = {};
+  for (const key of ['LANG', 'LC_ALL', 'TMPDIR']) {
+    if (process.env[key]) safeEnv[key] = process.env[key];
+  }
 
   return {
     dir,
     home,
+    unitPath,
     commandLog,
     env: {
-      ...process.env,
+      ...safeEnv,
       HOME: home,
       NODE_ENV: 'test',
       FLOWBOARD_SETUP_TEST_PLATFORM: 'linux',
       FAKE_COMMAND_LOG: commandLog,
       PATH: [bin, process.env.PATH].filter(Boolean).join(delimiter),
+    },
+    artifact() {
+      return {
+        unit: existsSync(unitPath) ? readFileSync(unitPath, 'utf8') : '',
+        mode: existsSync(unitPath) ? statSync(unitPath).mode & 0o777 : null,
+      };
     },
     cleanup() {
       rmSync(dir, { recursive: true, force: true });
@@ -108,9 +146,9 @@ async function withHealthServer(fn) {
   }
 }
 
-async function runSetup(args, extraEnv = {}) {
-  return await withHealthServer(port => new Promise((resolve, reject) => {
-    const harness = makeHarness();
+async function spawnSetup(harness, port, args, extraEnv = {}) {
+  const before = readLines(harness.commandLog).length;
+  return await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [join(ROOT, 'scripts', 'setup.mjs'), ...args], {
       cwd: ROOT,
       env: {
@@ -125,23 +163,34 @@ async function runSetup(args, extraEnv = {}) {
     let stderr = '';
     child.stdout.on('data', data => { stdout += data; });
     child.stderr.on('data', data => { stderr += data; });
-    child.on('error', err => {
-      harness.cleanup();
-      reject(err);
-    });
+    child.on('error', reject);
     child.on('close', code => {
-      const commands = readLines(harness.commandLog);
-      harness.cleanup();
-      resolve({ code, stdout, stderr, commands });
+      const commands = readLines(harness.commandLog).slice(before);
+      resolve({ code, stdout, stderr, commands, ...harness.artifact() });
     });
-  }));
+  });
 }
 
-console.log('# setup.mjs Linux systemd commands');
+async function runSetup(args, options = {}, extraEnv = {}) {
+  return await withHealthServer(async port => {
+    const harness = makeHarness(options);
+    try {
+      return await spawnSetup(harness, port, args, extraEnv);
+    } finally {
+      harness.cleanup();
+    }
+  });
+}
+
+function existingUnit(lines = []) {
+  return `[Unit]\nDescription=Existing FlowBoard\n\n[Service]\n${lines.join('\n')}\n\n[Install]\nWantedBy=default.target\n`;
+}
+
+console.log('# setup.mjs Linux systemd configuration');
 
 {
   const result = await runSetup(['--force']);
-  ok(result.code === 0, 'non-update setup exits successfully with fake systemctl');
+  ok(result.code === 0, 'first install exits successfully with fake systemctl');
   assert.deepEqual(result.commands, [
     'npm --version',
     'npm --version',
@@ -149,51 +198,153 @@ console.log('# setup.mjs Linux systemd commands');
     'npm run build',
     'systemctl --user daemon-reload',
     'systemctl --user enable --now flowboard-dashboard',
+    'systemctl --user is-enabled --quiet flowboard-dashboard',
   ]);
-  ok(true, 'non-update executes daemon-reload then enable --now');
+  ok(result.unit.includes('Environment="JWT_SECRET='), 'first install generates a JWT secret in the service');
+  ok(result.unit.includes('Restart=on-failure'), 'first install keeps the service restartable');
+  ok(result.mode === 0o600, 'generated service unit is owner-only');
+  ok(!/[a-f0-9]{64}/i.test(result.stdout), 'generated secret is not printed');
+}
+
+const preservedUnit = existingUnit([
+  'Environment="JWT_SECRET=test-secret-v1"',
+  'Environment="TELEGRAM_BOT_TOKENS=test-bot-a,test-bot-b"',
+  'Environment="ALLOWED_USER_IDS=100,200"',
+  'Environment="DASHBOARD_ORIGIN=https://flowboard.example.invalid"',
+  'Environment="FLOWBOARD_ENABLE_SELF_UPDATE=true"',
+  'Environment="CUSTOM_TUNNEL_MODE=enabled"',
+  'EnvironmentFile=-%h/.config/flowboard/optional.env',
+]);
+
+{
+  const result = await runSetup(['--update'], { initialUnit: preservedUnit });
+  ok(result.code === 0, 'update exits successfully with an existing standard service');
+  assert.deepEqual(result.commands, [
+    'npm --version',
+    'npm --version',
+    'npm install --no-audit --no-fund',
+    'npm run build',
+    'systemctl --user daemon-reload',
+    'systemctl --user enable flowboard-dashboard',
+    'systemctl --user restart flowboard-dashboard',
+    'systemctl --user is-enabled --quiet flowboard-dashboard',
+  ]);
+  for (const expected of [
+    'JWT_SECRET=test-secret-v1',
+    'TELEGRAM_BOT_TOKENS=test-bot-a,test-bot-b',
+    'ALLOWED_USER_IDS=100,200',
+    'DASHBOARD_ORIGIN=https://flowboard.example.invalid',
+    'FLOWBOARD_ENABLE_SELF_UPDATE=true',
+    'CUSTOM_TUNNEL_MODE=enabled',
+    'EnvironmentFile=-%h/.config/flowboard/optional.env',
+  ]) {
+    ok(result.unit.includes(expected), `update preserves ${expected.split('=')[0]}`);
+  }
+  ok(!result.stdout.includes('test-secret-v1'), 'preserved JWT secret is not printed');
+  ok(!result.stdout.includes('test-bot-a'), 'preserved bot tokens are not printed');
+  ok(result.stdout.includes('remote auth configuration has all required variables'), 'complete remote auth configuration is diagnosed');
+}
+
+{
+  const result = await runSetup(['--force'], { initialUnit: preservedUnit });
+  ok(result.code === 0, 'forced re-registration succeeds with an existing service');
+  ok(result.unit.includes('JWT_SECRET=test-secret-v1'), 'forced re-registration preserves the existing JWT secret');
+  ok(result.unit.includes('CUSTOM_TUNNEL_MODE=enabled'), 'forced re-registration preserves custom variables');
+  ok(result.commands.includes('systemctl --user enable --now flowboard-dashboard'), 'forced re-registration keeps systemd autostart enabled');
+}
+
+{
+  const result = await withHealthServer(async port => {
+    const harness = makeHarness({ initialUnit: preservedUnit });
+    try {
+      const first = await spawnSetup(harness, port, ['--update']);
+      const second = await spawnSetup(harness, port, ['--update']);
+      return { first, second };
+    } finally {
+      harness.cleanup();
+    }
+  });
+  ok(result.first.code === 0 && result.second.code === 0, 'two consecutive updates both succeed');
+  ok(result.second.unit.includes('JWT_SECRET=test-secret-v1'), 'second update preserves the original JWT secret');
+  ok(result.second.unit.includes('CUSTOM_TUNNEL_MODE=enabled'), 'second update preserves custom service variables');
+}
+
+{
+  const rotationUnit = existingUnit([
+    'Environment="JWT_SECRET=test-secret-v1"',
+    'Environment="CUSTOM_TUNNEL_MODE=enabled"',
+  ]);
+  const result = await runSetup(['--update', '--rotate-secret'], { initialUnit: rotationUnit });
+  ok(result.code === 0, 'explicit secret rotation succeeds');
+  ok(!result.unit.includes('JWT_SECRET=test-secret-v1'), '--rotate-secret replaces the prior JWT secret');
+  ok(/Environment="JWT_SECRET=[a-f0-9]{64}"/i.test(result.unit), 'rotation writes a new generated JWT secret');
+  ok(!/[a-f0-9]{64}/i.test(result.stdout), 'rotated secret is not printed');
+}
+
+{
+  const result = await runSetup(['--update', '--rotate-secret'], { initialUnit: preservedUnit });
+  ok(result.code === 1, 'rotation refuses to override an external EnvironmentFile source');
+  ok(result.stdout.includes('Rotate it in that owner-only source'), 'rotation error points to the owning secret source');
+  ok(result.commands.length === 0, 'unsafe external-source rotation fails before build/service commands');
+  ok(!result.stdout.includes('test-secret-v1'), 'rotation refusal does not print the existing secret');
+}
+
+{
+  const dropIn = `[Service]\nEnvironment="JWT_SECRET=test-dropin-secret"\nEnvironment="TELEGRAM_BOT_TOKEN=test-dropin-bot"\nEnvironment="ALLOWED_USER_IDS=300"\nEnvironment="DASHBOARD_ORIGIN=https://dropin.example.invalid"\nEnvironment="CUSTOM_DROPIN_MODE=enabled"\n`;
+  const result = await runSetup(['--update'], {
+    initialUnit: existingUnit([]),
+    dropIns: { 'auth.conf': dropIn },
+  });
+  ok(result.code === 0, 'update preserves systemd drop-in configuration');
+  ok(!result.unit.includes('test-dropin-secret'), 'drop-in JWT stays in its source instead of becoming sticky in the main unit');
+  ok(!result.unit.includes('test-dropin-bot'), 'drop-in bot token is not copied into the main unit');
+  ok(!result.unit.includes('CUSTOM_DROPIN_MODE'), 'custom drop-in variables are not copied into the main unit');
+  ok(result.stdout.includes('remote auth configuration has all required variables'), 'drop-in variables participate in safe remote diagnostics');
+  ok(!result.stdout.includes('test-dropin-secret') && !result.stdout.includes('test-dropin-bot'), 'drop-in secret values are not printed');
 }
 
 {
   const result = await runSetup(['--update']);
-  ok(result.code === 0, 'update setup exits successfully with fake systemctl');
-  assert.deepEqual(result.commands, [
-    'npm --version',
-    'npm --version',
-    'npm install --no-audit --no-fund',
-    'npm run build',
-    'systemctl --user daemon-reload',
-    'systemctl --user enable flowboard-dashboard',
-    'systemctl --user restart flowboard-dashboard',
-  ]);
-  ok(true, 'update executes daemon-reload, enable without --now, then restart');
+  ok(result.code === 1, '--update refuses to act when the standard service does not exist');
+  ok(result.stdout.includes('--update requires an existing standard systemd service'), 'missing-service error explains first install versus update');
+  ok(result.commands.length === 0, 'missing-service update fails before build or service commands');
 }
 
 {
-  const result = await runSetup(['--update'], {
+  const partialUnit = existingUnit([
+    'Environment="JWT_SECRET=test-secret-v1"',
+    'Environment="TELEGRAM_BOT_TOKEN=test-bot-only"',
+  ]);
+  const result = await runSetup(['--update'], { initialUnit: partialUnit });
+  ok(result.code === 0, 'update with partial remote configuration still completes');
+  ok(result.stdout.includes('remote access configuration is incomplete'), 'partial remote configuration emits a clear warning');
+  ok(result.stdout.includes('ALLOWED_USER_IDS') && result.stdout.includes('DASHBOARD_ORIGIN'), 'warning names missing remote settings without values');
+  ok(!result.stdout.includes('test-bot-only'), 'partial bot token is not printed');
+}
+
+{
+  const result = await runSetup(['--update'], { initialUnit: preservedUnit }, {
     FAKE_SYSTEMCTL_RESTART_STATUS: '1',
     FAKE_SYSTEMCTL_IS_ACTIVE_STATUS: '3',
   });
   ok(result.code === 0, 'update falls back to start when restart fails and unit is inactive');
-  assert.deepEqual(result.commands, [
-    'npm --version',
-    'npm --version',
-    'npm install --no-audit --no-fund',
-    'npm run build',
-    'systemctl --user daemon-reload',
+  assert.deepEqual(result.commands.slice(-5), [
     'systemctl --user enable flowboard-dashboard',
     'systemctl --user restart flowboard-dashboard',
     'systemctl --user is-active --quiet flowboard-dashboard',
     'systemctl --user start flowboard-dashboard',
+    'systemctl --user is-enabled --quiet flowboard-dashboard',
   ]);
   ok(result.stdout.includes('restart failed; unit is inactive'), 'fallback emits a warning');
 }
 
 {
-  const result = await runSetup(['--dry-run', '--update']);
+  const result = await runSetup(['--dry-run', '--update'], { initialUnit: preservedUnit });
   ok(result.code === 0, 'dry-run update exits successfully');
   ok(!result.commands.some(line => line.startsWith('systemctl ')), 'dry-run does not execute systemctl');
   ok(result.stdout.includes('systemctl --user enable flowboard-dashboard'), 'dry-run prints enable without --now');
   ok(result.stdout.includes('systemctl --user restart flowboard-dashboard'), 'dry-run prints restart');
+  ok(result.stdout.includes('systemctl --user is-enabled --quiet flowboard-dashboard'), 'dry-run prints autostart verification');
 }
 
 console.log(`\n# results: ${pass} passed, ${fail} failed`);

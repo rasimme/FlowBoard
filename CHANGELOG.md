@@ -2,6 +2,13 @@
 
 ### Unreleased
 
+- **Preserved service configuration across setup updates (T-439).** The standard
+  launchd/systemd installer now securely merges existing auth, tunnel, custom,
+  and operational environment values instead of regenerating `JWT_SECRET` on
+  every update. First install and update are distinct, secret rotation is
+  explicit, generated service files are owner-only, and setup verifies
+  autostart plus local health while diagnosing incomplete remote auth safely.
+
 - **Made stuck-task notifications session-safe (T-434).** The stuck-check
   scheduler no longer runs `/hooks/agent` turns against live
   `agent:<x>:main` session keys — the gateway force-rolls the targeted key,

@@ -1,6 +1,8 @@
 # Systemd drop-in for FlowBoard dashboard auth
-# Copy to ~/.config/systemd/user/dashboard.service.d/auth.conf
-# Then: systemctl --user daemon-reload && systemctl --user restart dashboard
+# Copy to ~/.config/systemd/user/flowboard-dashboard.service.d/auth.conf
+# Then: chmod 600 auth.conf
+# Then: systemctl --user daemon-reload && systemctl --user restart flowboard-dashboard
+# setup.mjs --update preserves this drop-in and its values without logging them.
 #
 # Required for Telegram Mini App auth:
 #   TELEGRAM_BOT_TOKEN  — from @BotFather
