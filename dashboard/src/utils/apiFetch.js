@@ -215,7 +215,18 @@ export async function abortableAll(requestFactories, { signal: parentSignal } = 
   if (parentSignal?.aborted) forwardParentAbort();
   else parentSignal?.addEventListener('abort', forwardParentAbort, { once: true });
 
-  const requests = requestFactories.map((request) => Promise.resolve().then(() => request(controller.signal)));
+  // Start every sibling in this turn. Deferring factories to a microtask lets
+  // React StrictMode's mount rehearsal abort the whole initial group before a
+  // single fetch is even issued, making the real mount depend on a poll tick.
+  // Promise.resolve still normalizes synchronous returns, while the try/catch
+  // preserves rejection semantics for a synchronously throwing factory.
+  const requests = requestFactories.map((request) => {
+    try {
+      return Promise.resolve(request(controller.signal));
+    } catch (error) {
+      return Promise.reject(error);
+    }
+  });
   try {
     return await Promise.all(requests);
   } catch (error) {

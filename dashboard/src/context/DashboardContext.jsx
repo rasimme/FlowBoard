@@ -143,7 +143,9 @@ export function DashboardProvider({ children }) {
     // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
     // very first core calls see a populated agentId. An explicit auth Retry uses
     // bootstrap's one auth owner again before loading the core snapshot.
-    if (window.__flowboardBootstrap) await window.__flowboardBootstrap;
+    if (window.__flowboardBootstrap && !window.__flowboardBootstrapReady) {
+      await window.__flowboardBootstrap;
+    }
     connectionRef.current = window.appState?.connection || connectionRef.current;
     if (retryAuth && typeof window.__flowboardAuthenticate === 'function') {
       await window.__flowboardAuthenticate(signal);

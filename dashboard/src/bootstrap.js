@@ -17,6 +17,7 @@ installAppStateProxy();
 
 let resolveBootstrap;
 window.__flowboardBootstrap = new Promise((r) => { resolveBootstrap = r; });
+window.__flowboardBootstrapReady = false;
 
 const tg = window.Telegram?.WebApp;
 
@@ -47,14 +48,15 @@ function applyDashboardIdentity(authAgentId = null) {
   return identity;
 }
 
-async function authenticateDashboard(signal) {
+function authenticateDashboard(signal) {
   if (!tg?.initData) return applyDashboardIdentity();
 
-  const authData = await authenticateTelegram(tg.initData, signal);
-  window.appState.bootstrapAuthError = null;
-  window.appState.authUser = authData.user.username || null;
-  applyDashboardIdentity(authData.agentId);
-  return authData;
+  return authenticateTelegram(tg.initData, signal).then((authData) => {
+    window.appState.bootstrapAuthError = null;
+    window.appState.authUser = authData.user.username || null;
+    applyDashboardIdentity(authData.agentId);
+    return authData;
+  });
 }
 
 // DashboardContext uses the same function for an explicit Retry after an auth
@@ -68,7 +70,12 @@ window.__flowboardAuthenticate = authenticateDashboard;
       tg.expand();
       tg.disableVerticalSwipes?.();
     }
-    await authenticateDashboard();
+    // The no-auth dashboard path only resolves URL/local identity and is
+    // synchronous in practice. Keep that path visible to the first React
+    // effect so React StrictMode can rehearse and restart its initial network
+    // request instead of postponing the rehearsal until after cleanup.
+    if (tg?.initData) await authenticateDashboard();
+    else authenticateDashboard();
   } catch (error) {
     console.warn('Auth failed:', error);
     window.appState.bootstrapAuthError = error;
@@ -76,6 +83,7 @@ window.__flowboardAuthenticate = authenticateDashboard;
     // Resolve a safe fallback identity without pretending authentication worked.
     applyDashboardIdentity();
   } finally {
+    window.__flowboardBootstrapReady = true;
     // Notify React explicitly so authUser/agentId/connection propagate without
     // relying on a polling watchdog (T-356).
     try { window.dispatchEvent(new CustomEvent('appstate:change')); } catch { /* non-DOM env */ }
