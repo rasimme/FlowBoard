@@ -70,7 +70,7 @@ assert.equal(canonical.workStateDetails.setAt, '2026-08-17T17:00:00.000Z');
 
 assert.deepEqual(buildWorkStateUpdate('waiting', {
   reason: 'Need approval',
-  waitingFor: 'Simeon',
+  waitingFor: 'project owner',
   responsible: 'human',
   checkAgainAt: '2026-08-18T09:00:00.000Z',
   setAt: 'client must not write this',
@@ -78,7 +78,7 @@ assert.deepEqual(buildWorkStateUpdate('waiting', {
   workState: 'waiting',
   workStateDetails: {
     reason: 'Need approval',
-    waitingFor: 'Simeon',
+    waitingFor: 'project owner',
     responsible: 'human',
     checkAgainAt: '2026-08-18T09:00:00.000Z',
   },
