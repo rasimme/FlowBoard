@@ -106,3 +106,18 @@ Specs are created via `POST /api/projects/:name/specs/:taskId` (canonical name `
 ## Integration with Tasks API
 
 Specify creates tasks via the standard `POST /api/projects/:name/tasks` endpoint. The created tasks reference their spec via `links` or `metadata`. This is not a separate task creation path — Specify is a workflow that uses the Tasks API.
+
+## Governance rollout and recovery
+
+The normal Specify path is allowed in both `compat` and `enforce` mode because
+it carries the server-bound verified-human confirmation. A direct agent task
+request that evaluates to `would_block` behaves as follows:
+
+- `compat`: the task is created and the policy ledger records the observation;
+- `enforce`: no task is written and the API returns `409 SPECIFY_REQUIRED` with
+  a reusable `specifyRequest`.
+
+Pass that object unchanged to `POST /api/specify/sessions`, preserve its
+`structuredDecisions`, and complete the normal proposal plus Dashboard-human
+confirmation flow. A verified human controls rollout and rollback through
+`/api/projects/:name/governance/mode`; agents may only read the mode.

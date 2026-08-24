@@ -15,6 +15,20 @@ const crypto = require('crypto');
 const GOVERNANCE_MODES = ['compat', 'enforce'];
 const DEFAULT_GOVERNANCE_MODE = 'compat';
 const SETTING_KEY_MODE = 'governance_mode';
+const SETTING_KEY_MODE_AUDIT = `${SETTING_KEY_MODE}__last_change`;
+
+function projectSettingKey(project, suffix = '') {
+  if (project === undefined || project === null || project === '') {
+    return `${SETTING_KEY_MODE}${suffix}`;
+  }
+  const name = String(project).trim();
+  if (!name) return `${SETTING_KEY_MODE}${suffix}`;
+  // Project names are validated at the HTTP boundary. Keep the key format
+  // explicit here so settings written by older builds remain readable and a
+  // project-scoped setting can never collide with the global compatibility
+  // setting during the migration window.
+  return `${SETTING_KEY_MODE}:${name}${suffix}`;
+}
 const CONFIRMATION_MAX_AGE_MS =
   (parseInt(process.env.FLOWBOARD_CONFIRM_MAX_AGE_MIN, 10) || 30) * 60 * 1000;
 
@@ -147,21 +161,31 @@ function verifyHumanConfirmation({ principal, session, expectedSessionId, now = 
   };
 }
 
-function getGovernanceMode(store) {
+function getGovernanceMode(store, project = null) {
   try {
-    const value = store?.getSetting?.(SETTING_KEY_MODE);
-    return GOVERNANCE_MODES.includes(value) ? value : DEFAULT_GOVERNANCE_MODE;
+    const scoped = store?.getSetting?.(projectSettingKey(project));
+    if (GOVERNANCE_MODES.includes(scoped)) return scoped;
+    // T-447-1 stored one instance-wide setting. Preserve that value as the
+    // read fallback until a project is explicitly switched, so upgrading an
+    // existing install cannot silently change an active enforce rollout.
+    const legacy = store?.getSetting?.(SETTING_KEY_MODE);
+    return GOVERNANCE_MODES.includes(legacy) ? legacy : DEFAULT_GOVERNANCE_MODE;
   } catch { return DEFAULT_GOVERNANCE_MODE; }
 }
 
-function getGovernanceModeAudit(store) {
+function getGovernanceModeAudit(store, project = null) {
   try {
-    const value = store?.getSetting?.(`${SETTING_KEY_MODE}__last_change`);
-    return value ? JSON.parse(value) : null;
+    const scoped = store?.getSetting?.(projectSettingKey(project, '__last_change'));
+    const legacy = store?.getSetting?.(SETTING_KEY_MODE_AUDIT);
+    const value = scoped || legacy;
+    if (!value) return null;
+    const audit = JSON.parse(value);
+    if (!audit || typeof audit !== 'object' || Array.isArray(audit)) return null;
+    return audit;
   } catch { return null; }
 }
 
-function setGovernanceMode({ store, principal, nextMode, now = Date.now() }) {
+function setGovernanceMode({ store, project = null, principal, nextMode, now = Date.now() }) {
   if (!GOVERNANCE_MODES.includes(nextMode)) {
     return { ok: false, code: 'invalid_governance_mode',
       reason: `mode must be one of ${GOVERNANCE_MODES.join('|')}` };
@@ -172,13 +196,13 @@ function setGovernanceMode({ store, principal, nextMode, now = Date.now() }) {
   }
   const record = { actor: principal.actor, humanId: principal.humanId,
     changedAt: new Date(now).toISOString(), mode: nextMode };
-  store.setSetting(SETTING_KEY_MODE, nextMode);
-  store.setSetting(`${SETTING_KEY_MODE}__last_change`, JSON.stringify(record));
+  store.setSetting(projectSettingKey(project), nextMode);
+  store.setSetting(projectSettingKey(project, '__last_change'), JSON.stringify(record));
   return { ok: true, mode: nextMode, record };
 }
 
 module.exports = {
   CONFIRMATION_MAX_AGE_MS, GOVERNANCE_MODES, DEFAULT_GOVERNANCE_MODE, CONFIRM_REJECT,
   resolvePrincipal, isVerifiedHuman, proposalIdentityOf, verifyHumanConfirmation,
-  getGovernanceMode, getGovernanceModeAudit, setGovernanceMode,
+  getGovernanceMode, getGovernanceModeAudit, setGovernanceMode, projectSettingKey,
 };

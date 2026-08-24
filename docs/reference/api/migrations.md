@@ -73,6 +73,26 @@ node dashboard/scripts/migrate-canvas-to-db.mjs --run --project foo --project ba
 
 Talks to a running server (`--base` / `FLOWBOARD_BASE_URL` / `FLOWBOARD_PORT`, default `http://127.0.0.1:18790`). Exit codes: `0` ok, `1` at least one project failed, `2` usage or connection error.
 
+## Task-creation governance rollout
+
+Governance mode is independent from canvas/task file migration, but upgrades
+should treat it as a compatibility checkpoint:
+
+1. Read `GET /api/projects/:name/governance/mode` for every imported project.
+2. Keep the default `compat` mode while importing legacy tasks. Import-created
+   tasks use the explicit `migration` origin and remain allowed.
+3. Review the append-only policy ledger for `would_block` records and group
+   them by its `governanceMode` field. Older records without that field are
+   historical compatibility observations.
+4. Switch a project to `enforce` manually through the governance endpoint only
+   after the human has reviewed the observed recovery volume.
+5. If a regression appears, the verified human can immediately `PUT` the same
+   endpoint with `{ "mode": "compat" }`; this is the supported rollback.
+
+Do not copy `governance_mode` settings or `policy-ledger.jsonl` between
+projects. T-447-5 stores new mode and audit records under project-scoped keys;
+the legacy instance-wide key is read only as an upgrade fallback.
+
 ## See also
 
 - [ADR-0025](../../adr/0025-canvas-state-in-db.md) — canvas state in relational DB tables; migration and conflict rationale

@@ -63,6 +63,10 @@ function appendPolicyRecord(project, record = {}, options = {}) {
     code: record.code || null,
     principal: record.principal ? clone(record.principal) : null,
     evidence: record.evidence ? clone(record.evidence) : null,
+    // Observation telemetry for the rollout: every decision can be grouped
+    // by the persisted mode that evaluated it. Older records may omit this
+    // field; new records always carry the normalized compatibility value.
+    governanceMode: record.governanceMode === 'enforce' ? 'enforce' : 'compat',
   };
 
   const file = ledgerPath(options);

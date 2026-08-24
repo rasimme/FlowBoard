@@ -91,6 +91,17 @@ POST /projects/:name/tasks
 - Max 1 nesting level: a subtask cannot have its own subtasks.
 - Completing a subtask triggers parent status recalculation.
 
+### Governance rollout
+
+The project governance mode is read from
+`GET /api/projects/:name/governance/mode`. Agents may read it and should treat
+`canChange: false` as non-authoritative UI information: only a verified human
+may change it. In `compat`, `would_block` requests are intentionally allowed
+and recorded in the policy ledger for rollout observation. In `enforce`, they
+are recorded and rejected before task creation. Agents must not edit the
+settings table or ledger file; for a recovery, pass the returned
+`specifyRequest` to Specify.
+
 ### Update Task — Full Body Reference
 
 ```

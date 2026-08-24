@@ -11,6 +11,26 @@
 }
 .ov-toolbar-note { margin-right: auto; font-size: 11.5px; color: var(--muted); }
 
+/* T-447-5 — the mode is readable in every Dashboard session, but the
+   mutation affordance is rendered only when the API confirms a verified human. */
+.governance-mode-control {
+  display: inline-flex; align-items: center; gap: 5px;
+  min-height: 26px; padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  color: var(--muted); font-size: 10.5px; white-space: nowrap;
+}
+.governance-mode-control.is-enforce {
+  color: var(--warn); border-color: rgba(245,158,11,.4); background: var(--warn-subtle);
+}
+.governance-mode-control.is-compat { color: var(--muted); }
+.governance-mode-value {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+}
+.governance-mode-hint { font-size: 9.5px; opacity: .8; }
+.governance-mode-action { min-height: 21px; padding: 2px 7px; font-size: 10px; }
+.governance-mode-error { color: var(--danger); }
+
 /* ---------- 12-col widget grid ---------- */
 .ov-grid {
   position: relative;

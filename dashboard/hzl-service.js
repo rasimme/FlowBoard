@@ -875,7 +875,7 @@ function workflowStart(project, opts = {}) {
 }
 
 function workflowHandoff(project, opts = {}) {
-  const { fromTaskId, title, agent = null, carryCheckpoints = 3, carryMaxChars = 4000, opId = null } = opts;
+  const { fromTaskId, title, agent = null, carryCheckpoints = 3, carryMaxChars = 4000, opId = null, governanceMode = null } = opts;
   if (!fromTaskId) throw new Error('fromTaskId is required');
   if (!title) throw new Error('title is required');
   const opKey = _workflowOpKey(project, 'handoff', opId);
@@ -894,6 +894,7 @@ function workflowHandoff(project, opts = {}) {
     sourceTaskId: fromTaskId,
     fromTaskId,
     exception: 'handoff',
+    governanceMode,
   });
   if (agent) routeTask(project, followOn.id, agent);
 
@@ -1035,7 +1036,11 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     getTask,
   });
 
-  const enforce = context.governanceMode === 'enforce'
+  const governanceMode = context.governanceMode === 'enforce'
+    || context.mode === 'enforce'
+    || context.enforce === true
+    ? 'enforce' : 'compat';
+  const enforce = governanceMode === 'enforce'
     || context.mode === 'enforce'
     || context.enforce === true;
   const specifyRequest = policy.decision === 'would_block'
@@ -1052,6 +1057,7 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     code: policy.code,
     principal: policy.principal,
     evidence: policy.evidence,
+    governanceMode,
   }, context.policyLedgerOptions || {});
 
   if (policy.decision === 'blocked') {
@@ -1111,11 +1117,11 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     if (context.specifyConfirmation) {
       setSpecifyConfirmation(project, task.id, context.specifyConfirmation);
     }
-    // Compatibility mode is the only mode owned by this task: a would-block
-    // creation is allowed but remains explicitly visible in the ledger. The
-    // later rollout task owns the switch that turns it into a 409. Append only
-    // after the task id is known, and purge the task if this durable write
-    // fails; otherwise an allowed/would_block task could escape without audit.
+    // In compatibility mode a would-block creation is allowed but remains
+    // explicitly visible in the ledger; enforce mode returned before this
+    // branch. Append only after the task id is known, and purge the task if
+    // this durable write fails; otherwise an allowed/would_block task could
+    // escape without audit.
     appendDecision(task.id);
     return getTask(project, task.id) || task;
   } catch (error) {

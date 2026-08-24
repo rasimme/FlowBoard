@@ -758,6 +758,7 @@ function persistSpecifyProposal(session, opts = {}) {
         // this is descriptive audit data, never an authorization claim.
         specifyRequest: session.specifyRequest || null,
         structuredDecisions: session.structuredDecisions || session.specifyRequest?.structuredDecisions || {},
+        governanceMode: governance.getGovernanceMode(fbMeta, session.project),
       });
       createdTaskIds.push(task.id);
       if (role === 'parent') currentParentId = task.id;
@@ -2289,7 +2290,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       // are never used to authorize or label this creation path.
       origin: 'tasks-api',
       principal,
-      governanceMode: governance.getGovernanceMode(fbMeta),
+      governanceMode: governance.getGovernanceMode(fbMeta, req.params.name),
       sourceContext: req.body.sourceContext,
       structuredDecisions: req.body.structuredDecisions,
     });
@@ -3754,12 +3755,21 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
 // principal resolver. These small surfaces establish the trust contract used
 // by later policy enforcement work.
 app.get('/api/projects/:name/governance/mode', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   try {
+    const principal = governance.resolvePrincipal(req);
     res.json({
-      mode: governance.getGovernanceMode(fbMeta),
+      ok: true,
+      project: req.params.name,
+      mode: governance.getGovernanceMode(fbMeta, req.params.name),
       default: governance.DEFAULT_GOVERNANCE_MODE,
       modes: governance.GOVERNANCE_MODES,
-      lastChange: governance.getGovernanceModeAudit(fbMeta),
+      lastChange: governance.getGovernanceModeAudit(fbMeta, req.params.name),
+      // Reads stay available to agents and anonymous local callers, while the
+      // Dashboard can disable its mutation control before making a request
+      // that the server would reject. This is a capability hint, never the
+      // authorization decision.
+      canChange: governance.isVerifiedHuman(principal),
     });
   } catch (err) {
     console.error('[api]', err);
@@ -3768,9 +3778,11 @@ app.get('/api/projects/:name/governance/mode', (req, res) => {
 });
 
 app.put('/api/projects/:name/governance/mode', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   try {
     const result = governance.setGovernanceMode({
       store: fbMeta,
+      project: req.params.name,
       principal: governance.resolvePrincipal(req),
       nextMode: req.body?.mode,
     });
@@ -3778,7 +3790,7 @@ app.put('/api/projects/:name/governance/mode', (req, res) => {
       return res.status(result.code === 'invalid_governance_mode' ? 400 : 403)
         .json({ error: result.reason, code: result.code });
     }
-    return res.json({ ok: true, mode: result.mode, lastChange: result.record });
+    return res.json({ ok: true, project: req.params.name, mode: result.mode, lastChange: result.record });
   } catch (err) {
     console.error('[api]', err);
     return res.status(500).json({ error: 'Internal server error' });
@@ -4369,6 +4381,7 @@ app.post('/api/workflows/handoff', (req, res) => {
       carryCheckpoints,
       carryMaxChars,
       opId,
+      governanceMode: governance.getGovernanceMode(fbMeta, project),
     });
     res.json({ ok: true, ...result });
   } catch (err) {
@@ -4396,7 +4409,7 @@ app.post('/api/workflows/delegate', (req, res) => {
       pauseParent: pauseParent === true,
       checkpoint,
       opId,
-      governanceMode: governance.getGovernanceMode(fbMeta),
+      governanceMode: governance.getGovernanceMode(fbMeta, project),
     });
     res.json({ ok: true, ...result });
   } catch (err) {

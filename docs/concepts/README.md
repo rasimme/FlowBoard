@@ -68,7 +68,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Stuck Detection & Notifications | Stale/expired/routed-unclaimed; one transient indicator; notification guards | ✅ [stuck-notifications.md](stuck-notifications.md) | ✅ ADR-0031 | T-443 |
 | Testing Strategy | Browser E2E harness; runtime guardrails; the `npm test` gate | ✅ [testing-strategy.md](testing-strategy.md) | ✅ ADR-0026 (frontend invariants) | — |
 | Docs-Drift Enforcement | Drift-test family ties docs to code | ✅ [docs-drift-enforcement.md](docs-drift-enforcement.md) | ⬜ none yet | — |
-| Governance Trust Contract | Server-authoritative principal (human vs agent); authenticated Specify confirmation; governance-mode switch | ✅ [governance-trust-contract.md](governance-trust-contract.md) | ✅ ADR-0033 (builds on ADR-0028, ADR-0029, ADR-0003) | T-447 (T-447-1 done; T-447-2..5 planned) |
+| Governance Trust Contract | Server-authoritative principal (human vs agent); authenticated Specify confirmation; project-scoped compat/enforce rollout and manual rollback | ✅ [governance-trust-contract.md](governance-trust-contract.md) | ✅ ADR-0033, ADR-0034 (builds on ADR-0028, ADR-0029, ADR-0003) | T-447 (governance rollout) |
 
 **Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
 

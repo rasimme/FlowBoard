@@ -86,14 +86,20 @@ Rejections (HTTP 403 with a stable `code`):
 | `session_binding_mismatch` | route `:id` ≠ the bound session, or no session |
 | `confirmation_binding_stale` | proposal older than `FLOWBOARD_CONFIRM_MAX_AGE_MIN` (default 30 min) |
 
-## 5. Governance mode
+## 5. Governance mode and rollout
 
 - **Governance mode** (`compat` \| `enforce`, default `compat`) persists in
-  `flowboard_settings` via `fbMeta.getSetting/setSetting`. `GET/PUT
-  /api/projects/:name/governance/mode`. The `PUT` requires a verified human and
-  writes an audit record (`{ actor, humanId, changedAt, mode }`). `compat` and
-  `enforce` semantics for the creation wrapper arrive in later subtasks; T-447-1
-  only owns the persisted, human-gated switch + rollback.
+  project-scoped `flowboard_settings` keys via `fbMeta.getSetting/setSetting`.
+  `GET/PUT /api/projects/:name/governance/mode` is the supported surface. A
+  legacy instance-wide setting is read only as an upgrade fallback.
+- `GET` is readable by normal callers and exposes `canChange` as a UI hint.
+  `PUT` requires a server-verified Telegram/JWT human and writes
+  `{ actor, humanId, changedAt, mode }`; body identity claims never authorize.
+  The same endpoint with `{ "mode": "compat" }` is the manual rollback.
+- In `compat`, a `would_block` decision is allowed and written to the
+  append-only policy ledger. In `enforce`, it is written to the ledger and
+  rejected before task creation with `409 SPECIFY_REQUIRED` and a reusable
+  Specify request. Ledger records include `governanceMode` for observation.
 
 In `enforce`, a non-exempt direct agent task request returns HTTP 409 with
 `code: SPECIFY_REQUIRED` and a reusable `specifyRequest`; no Specify session
@@ -105,7 +111,15 @@ again. Exception-created tasks are visible through the exception inbox/filter;
 only the authenticated human principal can perform its immutable
 `pending → reviewed` action.
 
-## 6. Scope boundary (what T-447-1 does NOT do)
+## 6. Migration guidance
+
+Legacy task imports use the explicit `migration` origin and are not blocked.
+Keep imported projects in `compat`, review the ledger, then switch to
+`enforce` manually. Never copy settings or ledger files between projects and
+never edit either file/table by hand; rollback is the verified-human `PUT`
+with `mode: compat`.
+
+## 7. Scope boundary (what T-447-1 does NOT do)
 
 The task-creation policy remains deliberately narrow: it is not a generic
 roles matrix, allowlist, or persistent per-project configuration surface.
@@ -116,6 +130,12 @@ roles matrix, allowlist, or persistent per-project configuration surface.
 - `dashboard/server.js` — `/specify/.../confirm` and `/governance/mode`.
 - `dashboard/hzl-service.js` — durable `specifyConfirmation` task metadata.
 - `dashboard/flowboard-metadata.js` — `getSetting`/`setSetting` for mode.
-- Tests: `dashboard/test-t447-1-governance.js` (unit),
-  `dashboard/test-t447-1-governance-endpoints.js` (integration),
-  updated `dashboard/test-specify-api-confirm.js` and the Specify E2E suite.
+- `dashboard/policy-ledger.js` — append-only decision telemetry, including
+  the evaluated rollout mode.
+- `dashboard/src/components/GovernanceModeControl.jsx` — Overview read/control
+  surface; the server remains the authorization boundary.
+- Tests: `dashboard/test-t447-1-governance.js` and
+  `dashboard/test-t447-1-governance-endpoints.js` (trust contract),
+  `dashboard/test-t447-5-governance-rollout.js` (unit),
+  `dashboard/test-t447-5-governance-api.js` (API), and
+  `dashboard/test-t447-5-governance-e2e.js` (browser).
