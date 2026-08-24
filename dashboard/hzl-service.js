@@ -990,8 +990,8 @@ function buildCreationAudit(origin, context) {
  *
  * Normal runtime paths must use createTaskWithPolicy(). The explicit
  * createTaskForMigration() alias is the supported import/migration escape
- * hatch. createTask() remains as a compatibility alias for existing internal
- * callers and tests while the migration is rolled out.
+ * hatch. This primitive is intentionally kept private so exported creation
+ * cannot bypass the policy boundary.
  */
 function createTaskRaw(project, opts) {
   const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null, staleAfterMinutes = null } = opts;
@@ -1117,10 +1117,12 @@ function createTaskForMigration(project, opts) {
   return createTaskRaw(project, opts);
 }
 
-// Compatibility alias for pre-T-447 callers. New production paths must not
-// call this primitive directly; use createTaskWithPolicy instead.
-function createTask(project, opts) {
-  return createTaskRaw(project, opts);
+// Ordinary exported creation remains compatible with pre-T-447 callers while
+// ensuring they all pass through the policy-aware boundary. The route-level
+// API supplies its own server-owned context directly; this default is for
+// service callers and tests that use the historical two-argument API.
+function createTask(project, opts = {}) {
+  return createTaskWithPolicy(project, opts, { origin: 'tasks-api' });
 }
 
 /**

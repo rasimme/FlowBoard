@@ -25,13 +25,13 @@ async function main() {
   cleanDb();
   await hzl.init(DB_PATH);
 
-  const publicTask = hzl.createTaskWithPolicy(PROJECT, {
+  const publicTask = hzl.createTask(PROJECT, {
     title: 'Public API boundary',
-  }, {
-    origin: 'tasks-api',
-    principal: { kind: 'agent', verified: false, actor: 'agent:unverified' },
   });
-  assert.equal(publicTask.creationAudit.origin, 'tasks-api');
+  assert.equal(publicTask.creationAudit.origin, 'tasks-api',
+    'ordinary exported creation uses the policy-aware boundary');
+  assert.equal(hzl.createTaskRaw, undefined,
+    'raw creation primitive is not exported as an ordinary creation path');
 
   const confirmation = {
     actor: 'telegram:42',
