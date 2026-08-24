@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import OptionList from './OptionList.jsx';
 import { ChevronRight, ChevronDown, AlertCircle, RotateCcw, FastForward, CheckCircle2 } from 'lucide-react';
 import { Modal, Button, Textarea, Spinner, Checkbox } from './index.js';
@@ -6,6 +6,7 @@ import MarkdownPreview from './MarkdownPreview.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import { apiFetch } from '../utils/apiFetch.js';
+import { isAuthHalted, subscribeAuthState } from '../state/authState.mjs';
 
 // Mirrors MAX_CLARIFICATIONS in specify-policy.js (server-enforced cap).
 const MAX_QUESTIONS = 4;
@@ -29,6 +30,7 @@ function BusyState({ label, hint }) {
 export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
   const { switchTab } = useDashboard();
   const { goToTask } = useNavigation();
+  const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,16 +47,20 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
   const lastQuestionId = useRef(null);
 
   useEffect(() => {
+    if (authHalted) return undefined;
     fetchSession();
     const interval = setInterval(fetchSession, 2000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [authHalted, sessionId]);
 
   async function fetchSession() {
+    if (isAuthHalted()) return;
     try {
       const res = await apiFetch(`/api/specify/sessions/${sessionId}`);
       if (!res.ok) throw new Error('Failed to load session');
+      if (isAuthHalted()) return;
       const data = await res.json();
+      if (isAuthHalted()) return;
       applySession(data);
       if (data.status === 'created' && !requestedNext.current.has(data.id)) {
         requestedNext.current.add(data.id);

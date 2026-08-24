@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Send, MessageSquare, CheckCircle2, ArrowRight, Inbox, ChevronDown, FileText, FilePlus, Archive as ArchiveIcon, Trash2, UserPlus, RotateCcw, FolderInput } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
@@ -22,6 +22,7 @@ import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 import { apiJson as apiFetch } from '../utils/apiFetch.js';
 import { fetchTasksForProject } from '../utils/dashboardApi.js';
+import { isAuthHalted, subscribeAuthState } from '../state/authState.mjs';
 import {
   buildStuckIndicatorActionRequest,
   normalizeTaskWorkState,
@@ -217,6 +218,7 @@ export default function DetailPanel() {
 
   const project = state?.viewedProject;
   const isOpen = taskId !== null;
+  const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
 
   // Keep taskRef in sync
   taskRef.current = task;
@@ -306,7 +308,7 @@ export default function DetailPanel() {
 
   // --- Load activity feed ---
   const loadActivity = useCallback(async () => {
-    if (!taskId || !project) return;
+    if (isAuthHalted() || !taskId || !project) return;
     try {
       // T-161-4: three parallel sources — comments (human utterances),
       // checkpoints (agent progress), and status events (claims / routes
@@ -317,6 +319,7 @@ export default function DetailPanel() {
         apiFetch(`/projects/${project}/tasks/${taskId}/checkpoints`),
         apiFetch(`/projects/${project}/tasks/${taskId}/events`),
       ]);
+      if (isAuthHalted()) return;
 
       if (
         commentsResult.status === 'rejected' ||
@@ -352,15 +355,19 @@ export default function DetailPanel() {
     } catch {
       // silently ignore poll errors
     }
-  }, [taskId, project]);
+  }, [authHalted, taskId, project]);
 
   // Load activity once task is loaded, then poll every 12s
   useEffect(() => {
-    if (!task) return;
+    if (!task || authHalted) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+      return undefined;
+    }
     loadActivity();
     pollRef.current = setInterval(loadActivity, 12000);
     return () => { clearInterval(pollRef.current); };
-  }, [task, loadActivity]);
+  }, [authHalted, task, loadActivity]);
 
   // Scroll feed to bottom when new items arrive, but only if the user
   // was already near the bottom. Prevents the poll from hijacking a

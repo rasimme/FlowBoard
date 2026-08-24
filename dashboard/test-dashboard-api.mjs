@@ -5,6 +5,7 @@ import {
   authenticateTelegram,
   fetchActiveProjectForAgent,
   fetchAgentsList,
+  fetchDashboardSnapshot,
   fetchProjectsList,
   fetchTasksForProject,
 } from './src/utils/dashboardApi.js';
@@ -297,6 +298,69 @@ await assert.rejects(
   (error) => error?.status === 403 && error?.code === 'TELEGRAM_BOT_NOT_SUPPORTED',
   'auth preserves the server-issued typed failure code',
 );
+
+// The manual snapshot rollback must forward its caller signal through the
+// abortable sibling group. This is also the StrictMode supersession shape:
+// React aborts the rehearsal request before launching the real request.
+const legacyProject = validProject({ name: 'demo' });
+const legacyAgent = validAgent({ agent_id: 'main' });
+const legacyBodies = (path) => path === '/api/projects'
+  ? { ok: true, projects: [legacyProject] }
+  : path === '/api/agents'
+    ? { ok: true, agents: [legacyAgent] }
+    : path === '/api/status'
+      ? { agentId: 'main', activeProject: null }
+      : { ok: true, tasks: [] };
+const legacyResponse = (path) => jsonResponse(legacyBodies(path));
+globalThis.window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = false;
+let legacyStartedResolve;
+const legacyStarted = new Promise((resolve) => { legacyStartedResolve = resolve; });
+globalThis.fetch = async (url, { signal }) => {
+  const path = new URL(url, globalThis.window.location.origin).pathname;
+  if (path === '/api/projects') {
+    legacyStartedResolve();
+    return new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+      else signal.addEventListener('abort', () => reject(signal.reason || new DOMException('Aborted', 'AbortError')), { once: true });
+    });
+  }
+  return legacyResponse(path);
+};
+const legacyAbortController = new AbortController();
+const cancelledLegacy = fetchDashboardSnapshot('demo', 'main', legacyAbortController.signal);
+await legacyStarted;
+legacyAbortController.abort(new DOMException('StrictMode rehearsal superseded', 'AbortError'));
+await assert.rejects(
+  cancelledLegacy,
+  (error) => error?.kind === 'aborted',
+  'legacy rollback propagates caller cancellation through all sibling requests',
+);
+
+let firstLegacyRequest = true;
+let firstLegacyStartedResolve;
+const firstLegacyStarted = new Promise((resolve) => { firstLegacyStartedResolve = resolve; });
+globalThis.fetch = async (url, { signal }) => {
+  const path = new URL(url, globalThis.window.location.origin).pathname;
+  if (path === '/api/projects' && firstLegacyRequest) {
+    firstLegacyRequest = false;
+    firstLegacyStartedResolve();
+    return new Promise((_resolve, reject) => {
+      if (signal.aborted) reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+      else signal.addEventListener('abort', () => reject(signal.reason || new DOMException('Aborted', 'AbortError')), { once: true });
+    });
+  }
+  return legacyResponse(path);
+};
+const rehearsalController = new AbortController();
+const rehearsal = fetchDashboardSnapshot({ project: 'demo', agentId: 'main' }, rehearsalController.signal);
+await firstLegacyStarted;
+rehearsalController.abort(new DOMException('StrictMode superseded', 'AbortError'));
+const realLoad = fetchDashboardSnapshot({ project: 'demo', agentId: 'main' }, new AbortController().signal);
+await assert.rejects(rehearsal, (error) => error?.kind === 'aborted',
+  'superseded legacy rehearsal rejects as an abort');
+const recoveredLegacy = await realLoad;
+assert.equal(recoveredLegacy.viewedProject, 'demo', 'replacement legacy load completes after rehearsal cancellation');
+globalThis.window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = true;
 
 // Every loader uses apiJson's deadline and forwards a caller abort. A caller
 // cancellation must remain "aborted" even if fetch settles after timeoutMs.

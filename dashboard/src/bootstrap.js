@@ -10,7 +10,7 @@ import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
 import { installAppStateProxy } from './state/appStore.mjs';
 import { connectionFailure } from './state/connectionState.mjs';
 import { authenticateTelegram } from './utils/dashboardApi.js';
-import { markAuthHalted } from './state/authState.mjs';
+import { markAuthHalted, markAuthSucceeded } from './state/authState.mjs';
 
 // window.appState is now a Proxy over the React-owned store (appStore.mjs). The
 // auth/agentId writes below go through it and notify React automatically.
@@ -58,10 +58,11 @@ function describeAuthError(error) {
   };
 }
 
-async function authenticateDashboard(signal) {
+async function authenticateDashboard(signal, { explicitRecovery = false } = {}) {
   if (!tg?.initData) {
     window.appState.authError = null;
     window.appState.bootstrapAuthError = null;
+    if (explicitRecovery) markAuthSucceeded();
     return applyDashboardIdentity();
   }
 
@@ -75,7 +76,7 @@ async function authenticateDashboard(signal) {
 
 // DashboardContext uses the same function for an explicit Retry after an auth
 // failure. This keeps /api/auth validation and identity writes in one owner.
-window.__flowboardAuthenticate = authenticateDashboard;
+window.__flowboardAuthenticate = (signal) => authenticateDashboard(signal, { explicitRecovery: true });
 
 (async () => {
   try {

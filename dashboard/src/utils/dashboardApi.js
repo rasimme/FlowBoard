@@ -280,7 +280,7 @@ async function fetchLegacyDashboardSnapshot(project, agentId, signal, options = 
     (groupSignal) => fetchProjectsList(groupSignal, options),
     (groupSignal) => fetchAgentsList(groupSignal, options),
     (groupSignal) => fetchActiveProjectForAgent(agentId, groupSignal, options),
-  ], { parentSignal: signal });
+  ], { signal });
   const viewedProject = selectViewedProject({
     projects,
     agents,

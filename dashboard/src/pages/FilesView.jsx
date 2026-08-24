@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense, useSyncExternalStore } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, lazy, Suspense, useSyncExternalStore } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
@@ -14,6 +14,7 @@ import {
   getFileReconciliationAction,
   getFileVersion,
 } from '../utils/fileRuntime.mjs';
+import { createFileTargetRuntime } from '../utils/fileTargetRuntime.mjs';
 
 const MarkdownEditor = lazy(() => import('../components/MarkdownEditor.jsx'));
 const MarkdownPreview = lazy(() => import('../components/MarkdownPreview.jsx'));
@@ -150,6 +151,9 @@ function FilePreview({
   projectName,
   onDeleted,
   onSaved,
+  onSaveFile,
+  onDeleteFile,
+  isCurrentFileTarget,
   previewScrollRef,
   fromTaskId,
   fromBackTab,
@@ -173,6 +177,13 @@ function FilePreview({
     setEditing(false);
     setEditContent('');
   }, [filePath]);
+
+  // A project/visibility switch invalidates an in-flight save. Clear the
+  // child-local busy flag for the new target without allowing the old
+  // continuation to mutate the new preview.
+  useEffect(() => {
+    setSaving(false);
+  }, [isCurrentFileTarget]);
 
   useEffect(() => {
     if (editing && !conflict && !dirtyStateRef.current) setEditContent(fileData?.content || '');
@@ -221,14 +232,12 @@ function FilePreview({
 
   const handleSave = async () => {
     if (saving) return;
+    const operationTarget = { project: projectName, path: filePath };
+    if (isCurrentFileTarget && !isCurrentFileTarget(operationTarget)) return;
     setSaving(true);
     try {
-      const res = await apiFetch(`/api/projects/${projectName}/files/${filePath}`, {
-        method: 'PUT',
-        body: JSON.stringify({ content: editContent }),
-      });
-      if (!res.ok) throw new Error('Save failed');
-      const saved = await res.json();
+      const saved = await onSaveFile?.(operationTarget, editContent);
+      if (!saved || (isCurrentFileTarget && !isCurrentFileTarget(operationTarget))) return;
       haptic.medium();
       if (window.showToast) window.showToast('File saved', 'success');
       onSaved?.({
@@ -240,23 +249,27 @@ function FilePreview({
       setEditContent('');
       setEditing(false);
     } catch (err) {
+      if (isCurrentFileTarget && !isCurrentFileTarget(operationTarget)) return;
       console.warn('[file-save]', err);
       haptic.error();
       if (window.showToast) window.showToast('Save failed', 'error');
     } finally {
-      setSaving(false);
+      if (!isCurrentFileTarget || isCurrentFileTarget(operationTarget)) setSaving(false);
     }
   };
 
   const handleDelete = async () => {
+    const operationTarget = { project: projectName, path: filePath };
+    if (isCurrentFileTarget && !isCurrentFileTarget(operationTarget)) return;
     try {
-      const res = await apiFetch(`/api/projects/${projectName}/files/${filePath}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
+      const deleted = await onDeleteFile?.(operationTarget);
+      if (!deleted || (isCurrentFileTarget && !isCurrentFileTarget(operationTarget))) return;
       haptic.medium();
       if (window.showToast) window.showToast('File deleted', 'success');
       setShowDeleteModal(false);
       onDeleted?.();
     } catch (err) {
+      if (isCurrentFileTarget && !isCurrentFileTarget(operationTarget)) return;
       console.warn('[file-delete]', err);
       haptic.error();
       if (window.showToast) window.showToast('Delete failed', 'error');
@@ -499,6 +512,9 @@ export default function FilesView() {
   const treeRequestRef = useRef(null);
   const treeCooldownsRef = useRef(new Map());
   const treeTargetRef = useRef({ key: null, generation: 0 });
+  const fileTargetRuntimeRef = useRef(null);
+  if (!fileTargetRuntimeRef.current) fileTargetRuntimeRef.current = createFileTargetRuntime();
+  const fileTargetRuntime = fileTargetRuntimeRef.current;
   const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
 
   const treeScrollRef = useCustomScroll();
@@ -506,7 +522,49 @@ export default function FilesView() {
 
   useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
   useEffect(() => { fileDataRef.current = fileData; }, [fileData]);
-  useEffect(() => { fileTreeRef.current = fileTree; }, [fileTree]);
+
+  const targetKey = viewedProject ? fileTreeTargetKey(viewedProject, showHidden) : null;
+
+  // Invalidate before normal effects run when either the project or visibility
+  // target changes. This aborts old tree/read/write operations during the
+  // commit, so a late response cannot publish in the small window before the
+  // target's fetch effect runs.
+  useLayoutEffect(() => {
+    const previousTarget = fileTargetRuntime.getTarget();
+    const changed = previousTarget.key !== targetKey;
+    const target = fileTargetRuntime.setTarget(targetKey);
+    treeTargetRef.current = target;
+    const staleTree = treeRequestRef.current;
+    if (staleTree && !fileTargetRuntime.isCurrent(staleTree)) {
+      treeRequestRef.current = null;
+    }
+    const cached = targetKey ? fileTreeCacheRef.current.get(targetKey) || null : null;
+    fileTreeRef.current = cached;
+    setFileTree(cached);
+    if (changed) {
+      if (abortRef.current?.signal.aborted) abortRef.current = null;
+      setLoading(false);
+      setUploading(false);
+      setCreatingFile(false);
+    }
+  }, [fileTargetRuntime, targetKey]);
+
+  const captureTarget = useCallback((requestedKey) => {
+    const current = fileTargetRuntime.getTarget();
+    // A callback retained by an older render must never move the runtime back
+    // to its former project/visibility target.
+    if (current.key !== null && current.key !== requestedKey) return null;
+    const target = current.key === requestedKey ? current : fileTargetRuntime.setTarget(requestedKey);
+    treeTargetRef.current = target;
+    return target;
+  }, [fileTargetRuntime]);
+
+  const isCurrentFileTarget = useCallback((operationTarget) => {
+    const current = fileTargetRuntime.getTarget();
+    return current.key === fileTreeTargetKey(operationTarget?.project, showHidden)
+      && current.key === targetKey
+      && selectedFileRef.current === operationTarget?.path;
+  }, [fileTargetRuntime, showHidden, targetKey]);
 
   const setLastOpenedFile = useCallback((filePath) => {
     if (!viewedProject) return;
@@ -532,21 +590,13 @@ export default function FilesView() {
   const fetchTree = useCallback(async (opts = {}) => {
     if (!viewedProject) return null;
     const targetKey = fileTreeTargetKey(viewedProject, showHidden);
-    let target = treeTargetRef.current;
-    if (target.key !== targetKey) {
-      target = { key: targetKey, generation: target.generation + 1 };
-      treeTargetRef.current = target;
-      const stale = treeRequestRef.current;
-      if (stale && stale.key !== targetKey) {
-        stale.stale = true;
-        stale.controller.abort(new DOMException('Files target changed', 'AbortError'));
-        treeRequestRef.current = null;
-      }
-      fileTreeRef.current = fileTreeCacheRef.current.get(targetKey) || null;
-      setFileTree(fileTreeRef.current);
-    }
+    const target = captureTarget(targetKey);
+    if (!target) return null;
     const generation = target.generation;
-    const isCurrent = (request = null) => treeTargetRef.current.key === targetKey
+    const isCurrent = (request = null) => (!request || fileTargetRuntime.isCurrent(request))
+      && fileTargetRuntime.getTarget().key === targetKey
+      && fileTargetRuntime.getTarget().generation === generation
+      && treeTargetRef.current.key === targetKey
       && treeTargetRef.current.generation === generation
       && (!request || treeRequestRef.current === request);
     if (authHalted) return isCurrent() ? fileTreeRef.current : null;
@@ -554,18 +604,12 @@ export default function FilesView() {
     if (cooldownUntil > Date.now()) return isCurrent() ? fileTreeRef.current : null;
     const running = treeRequestRef.current;
     if (running?.key === targetKey && running.generation === generation
-      && !running.controller.signal.aborted) return running.promise;
+      && fileTargetRuntime.isCurrent(running)) return running.promise;
     if (running?.controller.signal.aborted && treeRequestRef.current === running) {
       treeRequestRef.current = null;
     }
     if (!opts.background) setTreeLoading(true);
-    const active = {
-      key: targetKey,
-      generation,
-      controller: new AbortController(),
-      stale: false,
-      promise: null,
-    };
+    const active = fileTargetRuntime.begin(targetKey);
     const request = (async () => {
       try {
         const qs = showHidden ? '?includeHidden=true' : '';
@@ -600,13 +644,14 @@ export default function FilesView() {
       } finally {
         if (!opts.background && isCurrent(active)) setTreeLoading(false);
       }
-    });
+    })();
     active.promise = request.finally(() => {
       if (treeRequestRef.current === active) treeRequestRef.current = null;
+      fileTargetRuntime.finish(active);
     });
     treeRequestRef.current = active;
     return active.promise;
-  }, [authHalted, showHidden, viewedProject]);
+  }, [authHalted, captureTarget, fileTargetRuntime, showHidden, viewedProject]);
 
   useEffect(() => {
     if (!viewedProject) {
@@ -618,7 +663,7 @@ export default function FilesView() {
       setFileTree(null);
       fileTreeRef.current = null;
       setTreeError(null);
-      treeTargetRef.current = { key: null, generation: treeTargetRef.current.generation + 1 };
+      treeTargetRef.current = fileTargetRuntime.getTarget();
       treeCooldownsRef.current.clear();
       setSelectedFile(null);
       setFileData(null);
@@ -673,10 +718,17 @@ export default function FilesView() {
   // T-222: handle file upload to context/
   const loadFile = useCallback(async (filePath, opts = {}) => {
     if (!viewedProject || !filePath) return null;
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
     const targetKey = fileTreeTargetKey(viewedProject, showHidden);
+    const target = captureTarget(targetKey);
+    if (!target) return null;
+    if (abortRef.current) abortRef.current.abort();
+    const active = fileTargetRuntime.begin(targetKey);
+    const controller = active.controller;
+    abortRef.current = controller;
+    const isCurrentRead = () => fileTargetRuntime.isCurrent(active)
+      && abortRef.current === controller
+      && treeTargetRef.current.key === targetKey
+      && treeTargetRef.current.generation === target.generation;
 
     setSelectedFile(filePath);
     if (!opts.background) setLoading(true);
@@ -692,7 +744,7 @@ export default function FilesView() {
       // tree's showHidden toggle here or opening a hidden file would 403.
       const readQs = showHidden ? '?includeHidden=true' : '';
       const res = await apiFetch(`/api/projects/${viewedProject}/files/${filePath}${readQs}`, { signal: controller.signal });
-      if (abortRef.current !== controller || treeTargetRef.current.key !== targetKey) return null;
+      if (!isCurrentRead()) return null;
       if (res.status === 404) {
         clearLastOpenedFile(filePath);
         setSelectedFile(null);
@@ -702,6 +754,7 @@ export default function FilesView() {
       }
       if (!res.ok) throw new Error('File load failed');
       const data = await res.json();
+      if (!isCurrentRead()) return null;
       if (data?.error) {
         console.warn('[file-load]', data.error);
         setFileData(null);
@@ -717,9 +770,48 @@ export default function FilesView() {
       }
       return null;
     } finally {
-      if (!opts.background && abortRef.current === controller) setLoading(false);
+      if (!opts.background && isCurrentRead()) setLoading(false);
+      if (abortRef.current === controller) abortRef.current = null;
+      fileTargetRuntime.finish(active);
     }
-  }, [clearLastOpenedFile, setLastOpenedFile, viewedProject, showHidden]);
+  }, [captureTarget, clearLastOpenedFile, fileTargetRuntime, setLastOpenedFile, viewedProject, showHidden]);
+
+  const runFileMutation = useCallback(async ({ operationTarget, method, content, parseJson = false }) => {
+    if (!operationTarget?.project || !operationTarget.path
+      || operationTarget.project !== viewedProject
+      || selectedFileRef.current !== operationTarget.path) return null;
+    const targetKey = fileTreeTargetKey(operationTarget.project, showHidden);
+    const target = captureTarget(targetKey);
+    if (!target) return null;
+    const active = fileTargetRuntime.begin(targetKey);
+    const isCurrentMutation = () => fileTargetRuntime.isCurrent(active)
+      && treeTargetRef.current.key === targetKey
+      && treeTargetRef.current.generation === target.generation
+      && selectedFileRef.current === operationTarget.path;
+    try {
+      const res = await apiFetch(`/api/projects/${operationTarget.project}/files/${operationTarget.path}`, {
+        method,
+        headers: content === undefined ? undefined : { 'Content-Type': 'application/json' },
+        body: content === undefined ? undefined : JSON.stringify({ content }),
+        signal: active.controller.signal,
+      });
+      if (!isCurrentMutation()) return null;
+      if (!res.ok) throw new Error(method === 'PUT' ? 'Save failed' : 'Delete failed');
+      if (!parseJson) return true;
+      const data = await res.json();
+      return isCurrentMutation() ? data : null;
+    } finally {
+      fileTargetRuntime.finish(active);
+    }
+  }, [captureTarget, fileTargetRuntime, showHidden, viewedProject]);
+
+  const saveFile = useCallback((operationTarget, content) => (
+    runFileMutation({ operationTarget, method: 'PUT', content, parseJson: true })
+  ), [runFileMutation]);
+
+  const deleteFile = useCallback((operationTarget) => (
+    runFileMutation({ operationTarget, method: 'DELETE' })
+  ), [runFileMutation]);
 
   const handleUpload = useCallback(async (file) => {
     if (!viewedProject) return;
@@ -727,30 +819,44 @@ export default function FilesView() {
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Only .md files are allowed', type: 'warn' } }));
       return;
     }
+    const targetKey = fileTreeTargetKey(viewedProject, showHidden);
+    const target = captureTarget(targetKey);
+    if (!target) return;
+    const active = fileTargetRuntime.begin(targetKey);
+    const isCurrentUpload = () => fileTargetRuntime.isCurrent(active)
+      && treeTargetRef.current.key === targetKey
+      && treeTargetRef.current.generation === target.generation;
     setUploading(true);
     try {
       const content = await file.text();
+      if (!isCurrentUpload()) return;
       const res = await apiFetch(`/api/projects/${viewedProject}/files/context`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename: file.name, content }),
+        signal: active.controller.signal,
       });
+      if (!isCurrentUpload()) return;
       if (!res.ok) {
         const err = await res.text();
         throw new Error(err);
       }
       const uploaded = await res.json();
+      if (!isCurrentUpload()) return;
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${file.name} uploaded`, type: 'success' } }));
-      await fetchTree({ background: true });
+      const nextTree = await fetchTree({ background: true });
+      if (!isCurrentUpload() || !nextTree) return;
       setExpandedDirs(prev => new Set(prev).add('context'));
       if (uploaded?.path) loadFile(uploaded.path, { keepFromTaskId: true });
     } catch (err) {
+      if (!isCurrentUpload()) return;
       console.warn('[upload]', err);
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'Upload failed', type: 'error' } }));
     } finally {
-      setUploading(false);
+      if (isCurrentUpload()) setUploading(false);
+      fileTargetRuntime.finish(active);
     }
-  }, [viewedProject, fetchTree, loadFile]);
+  }, [captureTarget, fetchTree, fileTargetRuntime, loadFile, showHidden, viewedProject]);
 
   const handleUploadClick = useCallback(() => {
     uploadInputRef.current?.click();
@@ -772,6 +878,13 @@ export default function FilesView() {
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} already exists`, type: 'warn' } }));
       return;
     }
+    const targetKey = fileTreeTargetKey(viewedProject, showHidden);
+    const target = captureTarget(targetKey);
+    if (!target) return;
+    const active = fileTargetRuntime.begin(targetKey);
+    const isCurrentCreate = () => fileTargetRuntime.isCurrent(active)
+      && treeTargetRef.current.key === targetKey
+      && treeTargetRef.current.generation === target.generation;
     setCreatingFile(true);
     try {
       const content = title ? `# ${title}\n\n` : '';
@@ -779,25 +892,31 @@ export default function FilesView() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, content }),
+        signal: active.controller.signal,
       });
+      if (!isCurrentCreate()) return;
       if (!res.ok) {
         const err = await res.text();
         throw new Error(err);
       }
       const created = await res.json();
+      if (!isCurrentCreate()) return;
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: `${filename} created`, type: 'success' } }));
       setCreateOpen(false);
       setNewFileTitle('');
-      await fetchTree({ background: true });
+      const nextTree = await fetchTree({ background: true });
+      if (!isCurrentCreate() || !nextTree) return;
       setExpandedDirs(prev => new Set(prev).add('context'));
       if (created?.path) loadFile(created.path, { keepFromTaskId: true });
     } catch (err) {
+      if (!isCurrentCreate()) return;
       console.warn('[create-file]', err);
       window.dispatchEvent(new CustomEvent('toast', { detail: { text: 'File could not be created', type: 'error' } }));
     } finally {
-      setCreatingFile(false);
+      if (isCurrentCreate()) setCreatingFile(false);
+      fileTargetRuntime.finish(active);
     }
-  }, [creatingFile, fetchTree, fileTree?.tree, loadFile, newFileTitle, viewedProject]);
+  }, [captureTarget, creatingFile, fetchTree, fileTargetRuntime, fileTree?.tree, loadFile, newFileTitle, showHidden, viewedProject]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();
@@ -821,12 +940,13 @@ export default function FilesView() {
 
   const handleFileDeleted = useCallback(() => {
     const deletedPath = selectedFileRef.current;
+    if (!isCurrentFileTarget({ project: viewedProject, path: deletedPath })) return;
     setSelectedFile(null);
     setFileData(null);
     setFileConflict(null);
     clearLastOpenedFile(deletedPath);
     fetchTree();
-  }, [clearLastOpenedFile, fetchTree]);
+  }, [clearLastOpenedFile, fetchTree, isCurrentFileTarget, viewedProject]);
 
   const toggleDir = useCallback((dirPath) => {
     setExpandedDirs(prev => {
@@ -853,11 +973,14 @@ export default function FilesView() {
   }, [loadFile]);
 
   const handleSaved = useCallback(async (nextFileData) => {
+    const operationTarget = { project: viewedProject, path: nextFileData?.path };
+    if (!isCurrentFileTarget(operationTarget)) return null;
     setFileData(nextFileData);
     setFileConflict(null);
     ignoredConflictRef.current = null;
-    await fetchTree({ background: true });
-  }, [fetchTree]);
+    const nextTree = await fetchTree({ background: true });
+    return isCurrentFileTarget(operationTarget) ? nextTree : null;
+  }, [fetchTree, isCurrentFileTarget, viewedProject]);
 
   const handleDirtyChange = useCallback((dirty) => {
     dirtyRef.current = dirty;
@@ -1058,6 +1181,9 @@ export default function FilesView() {
             projectName={viewedProject}
             onDeleted={handleFileDeleted}
             onSaved={handleSaved}
+            onSaveFile={saveFile}
+            onDeleteFile={deleteFile}
+            isCurrentFileTarget={isCurrentFileTarget}
             previewScrollRef={previewScrollRef}
             fromTaskId={fromTaskId}
             fromBackTab={fromBackTab}

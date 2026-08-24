@@ -1,9 +1,10 @@
 // Shared browser auth circuit breaker (T-445).
 //
 // Any API 401/403 opens the breaker, including bootstrap/auth failures and
-// requests made by views outside DashboardContext. Only a proven successful
-// Telegram auth exchange closes it; an arbitrary 2xx response must never make
-// background polling resume after credentials have failed.
+// requests made by views outside DashboardContext. A validated Telegram auth
+// exchange or an explicit successful no-auth retry closes it; an arbitrary 2xx
+// response must never make background polling resume after credentials have
+// failed.
 
 let halted = false;
 let lastError = null;

@@ -77,11 +77,24 @@ assert.doesNotMatch(getRateLimitKey(request), /token|cookie/i);
 
 const source = fs.readFileSync(new URL('./src/context/AppStateContext.jsx', import.meta.url), 'utf8');
 const filesSource = fs.readFileSync(new URL('./src/pages/FilesView.jsx', import.meta.url), 'utf8');
+const detailSource = fs.readFileSync(new URL('./src/components/DetailPanel.jsx', import.meta.url), 'utf8');
+const specifySource = fs.readFileSync(new URL('./src/components/SpecifyStepper.jsx', import.meta.url), 'utf8');
+const bootstrapSource = fs.readFileSync(new URL('./src/bootstrap.js', import.meta.url), 'utf8');
+const dashboardApiSource = fs.readFileSync(new URL('./src/utils/dashboardApi.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /fetchAgentsList|app-state-initial-agents/, 'AppStateProvider does not duplicate agent reads');
 assert.match(filesSource, /const FILE_POLL_INTERVAL_MS = 15000;/, 'Files lane is visible-only at 15 seconds');
 assert.match(filesSource, /fileTreeTargetKey/, 'Files tree target includes project and includeHidden');
 assert.match(filesSource, /treeTargetRef/, 'Files tree uses generation invalidation for target switches');
 assert.match(filesSource, /isAuthHalted|authHalted/, 'Files polling honors the shared auth halt');
+assert.match(filesSource, /createFileTargetRuntime/, 'Files operations share a target generation runtime');
+assert.match(filesSource, /await res\.json\(\);[\s\S]{0,240}isCurrentRead/, 'file reads recheck the target after parsing the body');
+assert.match(detailSource, /useSyncExternalStore/, 'DetailPanel subscribes to the shared auth state');
+assert.match(detailSource, /if \(isAuthHalted\(\)\) return/, 'DetailPanel drops halted activity poll continuations');
+assert.match(specifySource, /useSyncExternalStore/, 'SpecifyStepper subscribes to the shared auth state');
+assert.match(specifySource, /if \(isAuthHalted\(\)\) return/, 'SpecifyStepper stops halted session polling');
+assert.match(bootstrapSource, /explicitRecovery/, 'no-initData recovery is explicit');
+assert.match(bootstrapSource, /if \(explicitRecovery\) markAuthSucceeded\(\)/, 'successful no-initData recovery clears the breaker');
+assert.match(dashboardApiSource, /abortableAll\(\[[\s\S]*?\], \{ signal \}\)/, 'legacy rollback forwards the caller signal to abortableAll');
 
 global.window = { location: { origin: 'http://127.0.0.1:18790' }, Telegram: {} };
 global.fetch = async () => new Response(JSON.stringify({
@@ -111,6 +124,13 @@ global.fetch = async () => new Response(JSON.stringify({ error: 'Forbidden' }), 
 });
 await apiFetch('/api/projects/demo/files');
 assert.equal(isAuthHalted(), true, 'any API 403 opens the shared auth halt');
+
+global.fetch = async () => new Response(JSON.stringify({ ok: true }), {
+  status: 200,
+  headers: { 'Content-Type': 'application/json' },
+});
+await apiFetch('/api/projects/demo/files');
+assert.equal(isAuthHalted(), true, 'an arbitrary API 2xx cannot clear the shared auth halt');
 
 global.fetch = async () => new Response(JSON.stringify({
   ok: true,

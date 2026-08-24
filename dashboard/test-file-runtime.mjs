@@ -6,6 +6,7 @@ import {
   getFileReconciliationAction,
   pickDefaultFile,
 } from './src/utils/fileRuntime.mjs';
+import { createFileTargetRuntime } from './src/utils/fileTargetRuntime.mjs';
 
 const tree = [
   { type: 'file', name: 'PROJECT.md', path: 'PROJECT.md', version: '1:10', size: 10 },
@@ -135,5 +136,31 @@ assert.deepEqual(
   { type: 'none' },
   'pending spec open blocks automatic fallback selection'
 );
+
+// T-445: a late read/write continuation from the former project or visibility
+// target must be aborted and fail its generation check before it can publish.
+const targetRuntime = createFileTargetRuntime();
+targetRuntime.setTarget('old-project\u0000visible');
+const staleRead = targetRuntime.begin('old-project\u0000visible');
+let stalePublished = false;
+const lateRead = new Promise((resolve) => setTimeout(() => {
+  if (targetRuntime.isCurrent(staleRead)) stalePublished = true;
+  resolve();
+}, 0));
+targetRuntime.setTarget('new-project\u0000hidden');
+await lateRead;
+assert.equal(staleRead.controller.signal.aborted, true, 'target switch aborts the stale Files read');
+assert.equal(stalePublished, false, 'late Files read cannot publish after project/includeHidden switch');
+
+const currentWrite = targetRuntime.begin('new-project\u0000hidden');
+let writePublished = false;
+const lateWrite = new Promise((resolve) => setTimeout(() => {
+  if (targetRuntime.isCurrent(currentWrite)) writePublished = true;
+  resolve();
+}, 0));
+targetRuntime.setTarget('new-project\u0000visible');
+await lateWrite;
+assert.equal(currentWrite.controller.signal.aborted, true, 'visibility switch aborts the stale Files write');
+assert.equal(writePublished, false, 'late Files write cannot publish after includeHidden switch');
 
 console.log('✅ file runtime tests passed');
