@@ -90,8 +90,10 @@ Rejections (HTTP 403 with a stable `code`):
 
 - **Governance mode** (`compat` \| `enforce`, default `compat`) persists in
   project-scoped `flowboard_settings` keys via `fbMeta.getSetting/setSetting`.
-  `GET/PUT /api/projects/:name/governance/mode` is the supported surface. A
-  legacy instance-wide setting is read only as an upgrade fallback.
+  `GET/PUT /api/projects/:name/governance/mode` is the supported surface. The
+  former instance-wide setting is not an automatic fallback; migration is an
+  explicit, verified-human switch for each project. Unscoped reads remain
+  `compat` and have no audit record.
 - `GET` is readable by normal callers and exposes `canChange` as a UI hint.
   `PUT` requires a server-verified Telegram/JWT human and writes
   `{ actor, humanId, changedAt, mode }`; body identity claims never authorize.

@@ -24,9 +24,11 @@ the policy.
 
 - Persist `compat` and `enforce` per project in `flowboard_settings`; a missing
   project setting reads as `compat`.
-- Read the former instance-wide key only as a migration fallback. A manual
-  project switch writes the scoped key and an audit record containing the
-  server-derived actor, human id, timestamp, and resulting mode.
+- Do not read the former instance-wide mode or audit keys as automatic
+  fallbacks. A legacy `enforce` value must not leak into new or unscoped
+  projects. Migration is explicit: a verified human selects the desired mode
+  for each project, which writes the scoped key and an audit record containing
+  the server-derived actor, human id, timestamp, and resulting mode.
 - Expose read and write through `/api/projects/:name/governance/mode`. Reads
   remain available to normal callers; writes require `req.user` resolved by
   the authenticated Telegram/JWT middleware. `{human, agent, agentId,
@@ -40,7 +42,8 @@ the policy.
 
 ## Consequences
 
-Existing projects are not silently relaxed during upgrade, agents can inspect
-the rollout state, and operators can stage enforcement project by project.
-The legacy setting remains until no longer needed for migration compatibility;
-new writes are scoped and ledger files remain append-only audit evidence.
+Operators can stage enforcement project by project without allowing a legacy
+global value to affect unrelated projects, and agents can inspect the rollout
+state. The legacy keys may remain in storage for forensic/migration purposes,
+but are inert; new writes are scoped and ledger files remain append-only audit
+evidence.

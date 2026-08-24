@@ -1,6 +1,6 @@
 'use strict';
 
-// T-447-5 unit coverage: project-scoped persistence, legacy compatibility,
+// T-447-5 unit coverage: project-scoped persistence, safe legacy migration,
 // verified-human mutation, and append-only rollout telemetry.
 const assert = require('assert');
 const fs = require('fs');
@@ -17,8 +17,23 @@ const store = {
 const human = { kind: 'human', verified: true, actor: 'telegram:42', humanId: '42' };
 const agent = { kind: 'agent', verified: false, actor: 'agent:codex' };
 
+// A pre-T-447-5 install may still have a global enforce value and audit row.
+// Those legacy values are inert until a verified human explicitly selects a
+// project through the scoped API; they must not affect either project or an
+// unscoped read.
+values.set('governance_mode', 'enforce');
+values.set('governance_mode__last_change', JSON.stringify({
+  actor: 'telegram:legacy', humanId: 'legacy',
+  changedAt: '2026-08-24T19:00:00.000Z', mode: 'enforce',
+}));
 assert.equal(governance.getGovernanceMode(store, 'alpha'), 'compat', 'missing project defaults to compat');
 assert.equal(governance.getGovernanceMode(store, 'beta'), 'compat', 'projects start independently in compat');
+assert.equal(governance.getGovernanceMode(store), 'compat', 'unscoped reads default to compat');
+assert.equal(governance.getGovernanceModeAudit(store, 'alpha'), null, 'legacy audit cannot leak into alpha');
+assert.equal(governance.getGovernanceModeAudit(store, 'beta'), null, 'legacy audit cannot leak into beta');
+assert.equal(governance.getGovernanceModeAudit(store), null, 'legacy audit cannot leak into unscoped state');
+assert.equal(governance.projectSettingKey('legacy-project'), 'governance_mode:legacy-project');
+assert.equal(governance.scopedProjectSettingKey(), null, 'unscoped state has no project setting key');
 
 let result = governance.setGovernanceMode({
   store, project: 'alpha', principal: agent, nextMode: 'enforce', now: Date.parse('2026-08-24T20:00:00.000Z'),
@@ -42,11 +57,15 @@ assert.equal(result.ok, true, 'verified human can manually roll back');
 assert.equal(governance.getGovernanceMode(store, 'alpha'), 'compat');
 assert.equal(governance.getGovernanceModeAudit(store, 'alpha').mode, 'compat');
 
-// Existing T-447-1 installations used an instance-wide key. Reads preserve
-// that value until the project receives its first explicit setting.
-values.set('governance_mode', 'enforce');
-assert.equal(governance.getGovernanceMode(store, 'legacy-project'), 'enforce');
-assert.equal(governance.projectSettingKey('legacy-project'), 'governance_mode:legacy-project');
+assert.equal(governance.getGovernanceMode(store, 'beta'), 'compat', 'alpha cannot change beta');
+assert.equal(governance.getGovernanceMode(store), 'compat', 'project changes cannot affect unscoped state');
+assert.equal(governance.getGovernanceModeAudit(store, 'beta'), null, 'alpha audit cannot leak into beta');
+assert.equal(governance.getGovernanceModeAudit(store), null, 'project audit cannot leak into unscoped state');
+
+result = governance.setGovernanceMode({ store, principal: human, nextMode: 'enforce' });
+assert.equal(result.ok, false);
+assert.equal(result.code, 'project_required_for_governance_mode', 'unscoped mode changes are rejected');
+assert.equal(governance.getGovernanceMode(store), 'compat');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-governance-ledger-'));
 try {

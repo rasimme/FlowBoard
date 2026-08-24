@@ -91,7 +91,10 @@ should treat it as a compatibility checkpoint:
 
 Do not copy `governance_mode` settings or `policy-ledger.jsonl` between
 projects. T-447-5 stores new mode and audit records under project-scoped keys;
-the legacy instance-wide key is read only as an upgrade fallback.
+the legacy instance-wide mode and audit keys are inert and are not read as
+fallbacks. If an old install needs to retain `enforce`, a verified human must
+set it explicitly through the governance endpoint for each intended project;
+new and unscoped reads remain `compat`.
 
 ## See also
 

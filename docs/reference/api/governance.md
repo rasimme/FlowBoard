@@ -2,9 +2,11 @@
 
 Task creation governance is stored per project in the FlowBoard settings
 table. New projects and projects without an explicit setting start in
-`compat`. The legacy instance-wide setting is read as a migration fallback so
-an upgrade cannot silently relax an existing `enforce` rollout; the next
-manual switch writes the project-scoped setting.
+`compat`. The former instance-wide `governance_mode` and audit keys are not
+read as fallbacks: a legacy `enforce` value must not leak into a new or
+unscoped project, and its actor/timestamp must not appear as that project's
+audit. Migration is explicit and project-scoped: a verified human must select
+the desired mode through the endpoint for each project.
 
 ## `GET /api/projects/:name/governance/mode`
 
@@ -75,6 +77,8 @@ verification; records from older versions may omit it.
 Task imports and explicit migration paths use the `migration` origin and are
 not blocked by this policy. Imports should preserve their source metadata and
 be followed by a read of this endpoint plus a ledger review. Do not edit the
-settings table or ledger file by hand. See
+settings table or ledger file by hand. If an older install contains a global
+`governance_mode` value, do not rely on it as policy state; explicitly set the
+mode for each project with the verified-human `PUT` endpoint. See
 [Migrations](migrations.md#task-creation-governance-rollout) for the staged
 rollout checklist.
