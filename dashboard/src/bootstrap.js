@@ -10,7 +10,11 @@ import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
 import { installAppStateProxy } from './state/appStore.mjs';
 import { connectionFailure } from './state/connectionState.mjs';
 import { authenticateTelegram } from './utils/dashboardApi.js';
-import { markAuthHalted, markAuthSucceeded } from './state/authState.mjs';
+import {
+  isAuthenticationFailure,
+  markAuthHalted,
+  markAuthSucceeded,
+} from './state/authState.mjs';
 
 // window.appState is now a Proxy over the React-owned store (appStore.mjs). The
 // auth/agentId writes below go through it and notify React automatically.
@@ -96,7 +100,7 @@ window.__flowboardAuthenticate = (signal) => authenticateDashboard(signal, { exp
     console.warn(`Auth failed (${authError.code}):`, authError.message);
     window.appState.authError = authError;
     window.appState.bootstrapAuthError = error;
-    if (error?.status === 401 || error?.status === 403) markAuthHalted(error);
+    if (isAuthenticationFailure(error)) markAuthHalted(error);
     window.appState.connection = connectionFailure(window.appState.connection, error, 'auth');
     window.appState.authUser = null;
     // Keep the non-auth fallback identity available for the local-first core

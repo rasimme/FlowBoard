@@ -15,6 +15,7 @@ import {
   connectionScopeRecovery,
 } from '../state/connectionState.mjs';
 import {
+  isAuthenticationFailure,
   isAuthHalted,
   getAuthHaltError,
   markAuthHalted,
@@ -88,7 +89,7 @@ export function DashboardProvider({ children }) {
 
   const markConnectionFailure = useCallback((error, label, scope = 'core') => {
     console.error(`${label}:`, error);
-    if (error?.status === 401 || error?.status === 403) {
+    if (isAuthenticationFailure(error)) {
       // apiFetch normally opens the breaker before apiJson rejects. Keep this
       // safeguard for bootstrap/custom fetch implementations as well.
       markAuthHalted(error);
@@ -118,9 +119,9 @@ export function DashboardProvider({ children }) {
     connectionRef.current = state?.connection || INITIAL_CONNECTION_STATE;
   }, [state?.connection]);
 
-  // A 401/403 from Files or another view must put the shell in the same auth
-  // state as a failed snapshot. This also gives the explicit Retry button an
-  // auth-scoped request that can rerun /api/auth.
+  // A typed auth failure from Files or another view must put the shell in the
+  // same auth state as a failed snapshot. This also gives the explicit Retry
+  // button an auth-scoped request that can rerun /api/auth.
   useEffect(() => {
     if (!authHalted || connectionRef.current.errorScope === 'auth') return;
     const halted = getAuthHaltError();
@@ -297,7 +298,7 @@ export function DashboardProvider({ children }) {
             || error?.name === 'AbortError';
           if (!superseded) {
             const scope = error?.path === '/api/auth' ? 'auth' : 'core';
-            if (error?.status === 401 || error?.status === 403) {
+            if (isAuthenticationFailure(error)) {
               // apiFetch opens the shared breaker; retain this explicit call
               // for protocol/auth errors raised by a custom fetcher.
               markAuthHalted(error);

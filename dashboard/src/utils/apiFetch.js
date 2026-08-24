@@ -1,4 +1,4 @@
-import { markAuthHalted } from '../state/authState.mjs';
+import { isAuthenticationFailure, markAuthHalted } from '../state/authState.mjs';
 
 /**
  * apiFetch — Centralized fetch wrapper for FlowBoard API calls.
@@ -15,6 +15,24 @@ import { markAuthHalted } from '../state/authState.mjs';
  * @returns {Promise<Response>} - The fetch Response object
  */
 export const DEFAULT_API_TIMEOUT_MS = 10000;
+
+async function authenticationFailureForResponse(response, path) {
+  if (response.status === 401) return { status: response.status, path };
+  if (response.status !== 403 || typeof response.clone !== 'function') return null;
+
+  // Keep the original response for the caller. The clone lets apiFetch
+  // classify a typed auth denial even when a view uses apiFetch directly and
+  // parses the original response itself instead of going through apiJson.
+  try {
+    const data = await response.clone().json();
+    const failure = { status: response.status, path, code: data?.code };
+    return isAuthenticationFailure(failure) ? failure : null;
+  } catch {
+    // A malformed/untyped 403 is a domain or protocol failure, not proof that
+    // the dashboard credentials are stale.
+    return null;
+  }
+}
 
 export function apiFetch(path, opts = {}) {
   const headers = { ...opts.headers };
@@ -112,13 +130,13 @@ export function apiFetch(path, opts = {}) {
     throw error;
   }
 
-  return request.then((response) => {
-    // This is deliberately below authentication middleware and therefore sees
-    // every API 401/403, including bootstrap and Files requests. The auth
-    // exchange explicitly clears the breaker after validating its payload.
-    if (response.status === 401 || response.status === 403) {
-      markAuthHalted({ status: response.status, path });
-    }
+  return request.then(async (response) => {
+    // 401 is unambiguously an authentication failure. A 403 must carry one of
+    // the server's stable auth codes; authorization conflicts such as
+    // NOT_OWNER, AGENT_REQUIRED, and ROUTING_MISMATCH must remain local to the
+    // failed action and cannot halt global polling.
+    const authFailure = await authenticationFailureForResponse(response, path);
+    if (authFailure) markAuthHalted(authFailure);
     return response;
   }).catch((error) => {
     if (timedOut) {

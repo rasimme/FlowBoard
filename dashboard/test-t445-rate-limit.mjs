@@ -118,12 +118,36 @@ const loaded = await fetchDashboardSnapshot(null, 'codex');
 assert.equal(loaded.version, 1);
 assert.equal(Object.hasOwn(loaded, 'snapshot'), false);
 
-global.fetch = async () => new Response(JSON.stringify({ error: 'Forbidden' }), {
+for (const code of ['NOT_OWNER', 'AGENT_REQUIRED', 'ROUTING_MISMATCH']) {
+  global.fetch = async () => new Response(JSON.stringify({
+    error: `Domain authorization conflict: ${code}`,
+    code,
+  }), {
+    status: 403,
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const response = await apiFetch('/api/projects/demo/tasks/T-445', { method: 'PUT' });
+  assert.equal(response.status, 403);
+  assert.equal(isAuthHalted(), false, `${code} does not halt global polling`);
+}
+
+global.fetch = async () => new Response(JSON.stringify({
+  error: 'Telegram init data has expired.',
+  code: 'TELEGRAM_INIT_DATA_EXPIRED',
+}), {
   status: 403,
   headers: { 'Content-Type': 'application/json' },
 });
 await apiFetch('/api/projects/demo/files');
-assert.equal(isAuthHalted(), true, 'any API 403 opens the shared auth halt');
+assert.equal(isAuthHalted(), true, 'typed expired auth failure halts global polling');
+
+markAuthSucceeded();
+global.fetch = async () => new Response(JSON.stringify({ error: 'Unauthorized' }), {
+  status: 401,
+  headers: { 'Content-Type': 'application/json' },
+});
+await apiFetch('/api/projects/demo/files');
+assert.equal(isAuthHalted(), true, 'an actual 401 still halts global polling');
 
 global.fetch = async () => new Response(JSON.stringify({ ok: true }), {
   status: 200,
