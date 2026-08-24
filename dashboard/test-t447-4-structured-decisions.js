@@ -34,13 +34,23 @@ async function main() {
 
   const partial = specifySession.createSession({
     project: 'structured-decisions', agentId: 't447-4-partial',
-    structuredDecisions: { scope: 'one task' },
+    structuredDecisions: { scope: 'one task', resolved: true },
   });
   worker.setResponses(partial.id, [
     { action: 'question', workerRequest: { question: 'What behavior?', affectedFields: ['behavior'] } },
   ]);
   const partialResult = await bridge.requestNext(partial.id);
-  assert.equal(partialResult.action, 'question', 'uncovered worker fields remain eligible for clarification');
+  assert.equal(partialResult.action, 'question', 'resolved:true does not blanket-suppress an uncovered field');
+
+  const nested = specifySession.createSession({
+    project: 'structured-decisions', agentId: 't447-4-nested',
+    structuredDecisions: { resolved: true, resolvedFields: ['scope'] },
+  });
+  worker.setResponses(nested.id, [
+    { action: 'question', workerRequest: { question: 'What behavior?', affectedFields: ['behavior'] } },
+  ]);
+  const nestedResult = await bridge.requestNext(nested.id);
+  assert.equal(nestedResult.action, 'question', 'only explicitly named resolved fields are covered');
 
   console.log('T-447-4 structured decision tests: all passed');
 }

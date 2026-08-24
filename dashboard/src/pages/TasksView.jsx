@@ -17,6 +17,7 @@ import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUp
 import { apiFetch } from '../utils/apiFetch.js';
 import { getTasks, replaceTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
+import { tasksForExceptionReview, boardTopLevelTasks } from '../utils/exceptionReview.mjs';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
 // animates between the soft ring token and the full ring token. Returning null
@@ -1639,10 +1640,8 @@ export default function TasksView() {
   }, [handleDrop]);
 
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
-    const sourceTasks = showPendingExceptions
-      ? allTasks.filter(t => t.exceptionReview?.status === 'pending')
-      : allTasks;
-    const topLevel = sourceTasks.filter(t => !t.parentId);
+    const sourceTasks = tasksForExceptionReview(allTasks, showPendingExceptions);
+    const topLevel = boardTopLevelTasks(sourceTasks, showPendingExceptions);
     const groups = {};
     STATUS_KEYS.forEach(s => { groups[s] = []; });
     const archived = [];

@@ -149,19 +149,60 @@ function normalizedField(value) {
 function decisionFields(decisions) {
   const fields = new Set();
   if (!decisions || typeof decisions !== 'object') return fields;
-  for (const [key, value] of Object.entries(decisions)) {
-    if (['resolved', 'complete', 'fullyresolved', 'version', 'decisions'].includes(normalizedField(key))) continue;
-    if (value !== undefined && value !== null && value !== '') fields.add(normalizedField(key));
+
+  const metadataKeys = new Set([
+    'resolved', 'complete', 'fullyresolved', 'version',
+  ]);
+  const namedFieldKeys = new Set([
+    'field', 'affectedfield', 'affectedfields', 'key', 'name', 'id',
+  ]);
+  const decisionContainerKeys = new Set([
+    'decisions', 'resolvedfields', 'fields', 'values',
+  ]);
+
+  const addField = (value) => {
+    if (typeof value !== 'string' && typeof value !== 'number') return;
+    const field = normalizedField(value);
+    if (field) fields.add(field);
+  };
+
+  const addNamedFields = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(item => {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          for (const [key, nested] of Object.entries(item)) {
+            if (namedFieldKeys.has(normalizedField(key))) {
+              if (Array.isArray(nested)) nested.forEach(addField);
+              else addField(nested);
+            }
+          }
+        } else {
+          addField(item);
+        }
+      });
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    // A map such as { scope: "one task" } names its resolved fields by key.
+    for (const [key, nested] of Object.entries(value)) {
+      if (metadataKeys.has(normalizedField(key))) continue;
+      if (nested !== undefined && nested !== null && nested !== '') addField(key);
+    }
+  };
+
+  if (Array.isArray(decisions)) {
+    addNamedFields(decisions);
+    return fields;
   }
-  const items = Array.isArray(decisions)
-    ? decisions
-    : (Array.isArray(decisions.decisions) ? decisions.decisions : []);
-  for (const item of items) {
-    if (!item || typeof item !== 'object') continue;
-    for (const key of ['field', 'affectedField', 'affectedFields', 'key', 'name', 'id']) {
-      const value = item[key];
-      if (Array.isArray(value)) value.forEach(v => fields.add(normalizedField(v)));
-      else if (value !== undefined && value !== null && value !== '') fields.add(normalizedField(value));
+
+  for (const [key, value] of Object.entries(decisions)) {
+    const normalizedKey = normalizedField(key);
+    if (metadataKeys.has(normalizedKey)) continue;
+    if (decisionContainerKeys.has(normalizedKey)) {
+      addNamedFields(value);
+    } else if (value !== undefined && value !== null && value !== '') {
+      // A direct key/value decision explicitly names one resolved field.
+      addField(key);
     }
   }
   return fields;
@@ -176,9 +217,8 @@ function decisionsAreFullyResolved(decisions) {
 /** Return true when all fields a worker question changes are pre-resolved. */
 function questionCoveredByStructuredDecisions(session, question) {
   const decisions = structuredDecisionsOf(session);
-  if (decisionsAreFullyResolved(decisions)) return true;
   const affected = Array.isArray(question?.affectedFields)
-    ? question.affectedFields.filter(Boolean).map(normalizedField)
+    ? question.affectedFields.filter(Boolean).map(normalizedField).filter(Boolean)
     : [];
   if (affected.length === 0) return false;
   const fields = decisionFields(decisions);

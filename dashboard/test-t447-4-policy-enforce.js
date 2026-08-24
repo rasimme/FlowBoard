@@ -144,6 +144,29 @@ async function main() {
     const exceptionTaskId = delegated.body.delegatedTask.id;
     const inbox = await request('GET', `/api/projects/${project}/exceptions?status=pending`);
     assert.ok(inbox.body.tasks.some(task => task.id === exceptionTaskId));
+    assert.equal(inbox.body.tasks.find(task => task.id === exceptionTaskId).parentId, source.body.task.id,
+      'exception inbox retains delegated subtasks with parentId');
+
+    const beforeNoDepends = await request('GET', `/api/projects/${project}/tasks`);
+    const noDepends = await request('POST', '/api/workflows/delegate', {
+      project, fromTaskId: source.body.task.id, title: 'No-dependency recovery',
+      agent: 'worker-three', noDepends: true,
+    });
+    assert.equal(noDepends.status, 409);
+    assert.equal(noDepends.body.code, 'SPECIFY_REQUIRED');
+    assert.ok(noDepends.body.specifyRequest, 'noDepends rejection includes a reusable Specify request');
+    assert.equal(noDepends.body.specifyRequest.title, 'No-dependency recovery');
+    const afterNoDepends = await request('GET', `/api/projects/${project}/tasks`);
+    assert.equal(afterNoDepends.body.tasks.length, beforeNoDepends.body.tasks.length,
+      'enforced noDepends rejection persists zero tasks');
+
+    const recoverySession = await request('POST', '/api/specify/sessions', {
+      project, agentId: 'no-dep-recovery', origin: 'delegate',
+      specifyRequest: noDepends.body.specifyRequest,
+    });
+    assert.equal(recoverySession.status, 201, 'reusable noDepends payload is accepted by Specify');
+    await request('POST', `/api/specify/sessions/${recoverySession.body.session.id}/abort`);
+
     const forgedReview = await request('POST', `/api/projects/${project}/tasks/${exceptionTaskId}/exception-review`);
     assert.equal(forgedReview.status, 403);
     const humanReview = await request('POST', `/api/projects/${project}/tasks/${exceptionTaskId}/exception-review`, { reviewer: 'forged', reviewedAt: '2000-01-01T00:00:00.000Z' }, humanCookie);

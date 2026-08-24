@@ -1639,6 +1639,7 @@ const ERROR_CODE_STATUS = {
   EXCEPTION_REVIEW_REQUIRES_VERIFIED_HUMAN: 403,
   EXCEPTION_REVIEW_IMMUTABLE: 409,
   EXCEPTION_REVIEW_NOT_REQUIRED: 400,
+  SPECIFY_REQUIRED: 409,
   REASON_REQUIRED: 400,
   IS_SUBTASK: 400,
   HAS_SUBTASKS: 409,
@@ -4400,7 +4401,12 @@ app.post('/api/workflows/delegate', (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     const status = httpStatusForError(err);
-    res.status(status).json({ error: err.message });
+    res.status(status).json({
+      error: err.message,
+      ...(err.code ? { code: err.code } : {}),
+      ...(err.code === 'SPECIFY_REQUIRED' && err.specifyRequest
+        ? { specifyRequest: err.specifyRequest } : {}),
+    });
   }
 });
 
