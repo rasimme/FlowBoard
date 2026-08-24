@@ -158,7 +158,25 @@ function _normalizeExceptionReview(value) {
   const reviewedAt = typeof value.reviewedAt === 'string' && value.reviewedAt.trim()
     ? value.reviewedAt : null;
   // A reviewed marker without both immutable human evidence fields is not a
-  // reviewed task. The future review endpoint must provide both together.
+  // reviewed task. The review primitive below adds the server-managed
+  // authority marker; metadata supplied by a task creator cannot self-review.
+  if (!reviewer || !reviewedAt || Number.isNaN(Date.parse(reviewedAt))
+      || value.verifiedHuman !== true || typeof value.reviewerHumanId !== 'string'
+      || !value.reviewerHumanId.trim()) return null;
+  return { status: 'reviewed', reviewer, reviewedAt };
+}
+
+// `_toFbTask()` has already verified the server-managed marker before a task
+// enters the cache. `_publicTask()` may receive that projected (marker-free)
+// shape again, so project it without reinterpreting arbitrary metadata.
+function _projectExceptionReview(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (value.status === 'pending') return { status: 'pending', reviewer: null, reviewedAt: null };
+  if (value.status !== 'reviewed') return null;
+  const reviewer = typeof value.reviewer === 'string' && value.reviewer.trim()
+    ? value.reviewer.trim() : null;
+  const reviewedAt = typeof value.reviewedAt === 'string' && value.reviewedAt.trim()
+    ? value.reviewedAt : null;
   if (!reviewer || !reviewedAt || Number.isNaN(Date.parse(reviewedAt))) return null;
   return { status: 'reviewed', reviewer, reviewedAt };
 }
@@ -213,7 +231,7 @@ function _toFbTask(hzlTask, project) {
     order: typeof fb.order === 'number' ? fb.order : null,
     // Filterable tags (HZL native column) — milestone:<name> drives the
     // overview milestones widget
-    tags: hzlTask.tags || [],
+    tags: _cloneJson(hzlTask.tags || []),
     // T-396: short inline context (HZL native column). Returned so the detail
     // panel can show/edit it and search can match it.
     description: hzlTask.description ?? '',
@@ -222,14 +240,14 @@ function _toFbTask(hzlTask, project) {
     // T-161-4: soft-delete pointer into Trash. Null = live task; ISO string =
     // task is in Trash and eligible for Empty-Trash bulk hard-delete.
     trashedAt: fb.trashedAt || null,
-    specifyConfirmation: fb.specifyConfirmation || null,
+    specifyConfirmation: _cloneJson(fb.specifyConfirmation || null),
     // T-447-2: durable provenance for the policy-aware creation boundary.
     // This is deliberately task-local metadata, not the append-only policy
     // ledger. The ledger is written by createTaskWithPolicy().
-    creationAudit: fb.creationAudit || null,
+    creationAudit: _cloneJson(fb.creationAudit || null),
     // T-447-3: exception-created work starts pending and is reviewed by a
     // later verified-human review action. Keep the shape stable for API/UI
-    // consumers without adding the review surface in this task.
+    // consumers without adding a dashboard surface in this task.
     exceptionReview: _normalizeExceptionReview(fb.exceptionReview),
     _ulid: hzlTask.task_id,
     _project: project,
@@ -777,16 +795,25 @@ function _rememberWorkflowOp(key, result) {
 function _publicTask(t) {
   // Return a copy without internal fields; expose canonical work state and
   // derive blocked on every read for legacy consumers.
-  const { _ulid, _project, ...pub } = t;
+  // Metadata projections contain nested principal/evidence/review objects.
+  // A shallow spread would let an API caller mutate the RAM cache (and in
+  // turn influence later responses), so clone the complete JSON-shaped task
+  // before removing internal fields.
+  const cloned = _cloneJson(t) || {};
+  const { _ulid, _project, ...pub } = cloned;
   const normalized = _normalizeTaskWorkState({
     workState: pub.workState,
     workStateDetails: pub.workStateDetails,
     blocked: pub.blocked,
   }, pub.created || null);
   pub.workState = normalized.workState;
-  pub.workStateDetails = normalized.workStateDetails;
+  pub.workStateDetails = _cloneJson(normalized.workStateDetails);
   pub.blocked = normalized.blocked;
   pub.stuckIndicator = _normalizeStuckIndicator(pub.stuckIndicator);
+  pub.tags = _cloneJson(pub.tags || []);
+  pub.specifyConfirmation = _cloneJson(pub.specifyConfirmation || null);
+  pub.creationAudit = _cloneJson(pub.creationAudit || null);
+  pub.exceptionReview = _projectExceptionReview(pub.exceptionReview);
   // Ensure claim/checkpoint fields are always present
   pub.agent = pub.agent || null;
   pub.claimedAt = pub.claimedAt || null;
@@ -939,6 +966,54 @@ function workflowDelegate(project, opts = {}) {
 }
 
 /**
+ * Remove a just-created task when the companion policy-ledger append fails.
+ *
+ * A policy decision is only useful when the task and its decision are both
+ * durable.  HZL's normal archive/delete API intentionally preserves history,
+ * which is the wrong rollback primitive here: a failed creation must leave no
+ * task projection or event behind.  Use the same low-level event/projection
+ * deletion primitives as emptyTrash, then clear only the in-memory entries
+ * created by createTaskRaw().
+ */
+function _purgeTaskForCreationRollback(project, task) {
+  const flowboardId = task?.id;
+  const ulid = task?._ulid || (flowboardId && _fbToUlid.get(`${project}:${flowboardId}`));
+  if (!ulid) return;
+
+  const cacheDb = _taskService?.db;
+  const eventsDb = _taskService?.eventsDb;
+  if (!cacheDb || !eventsDb) throw new Error('Task rollback storage is unavailable');
+
+  if (eventsDb === cacheDb) {
+    cacheDb.transaction(() => {
+      _taskService.deleteTasksFromEvents(cacheDb, [ulid], 'main');
+      _taskService.deleteTasksFromProjections(cacheDb, [ulid]);
+    }).immediate();
+  } else {
+    // The event store is canonical. Remove it first, then its cache
+    // projection. A subsequent cache rebuild therefore cannot resurrect the
+    // failed task even if the second transaction is interrupted.
+    eventsDb.transaction(() => {
+      _taskService.deleteTasksFromEvents(eventsDb, [ulid], 'main');
+    }).immediate();
+    cacheDb.transaction(() => {
+      _taskService.deleteTasksFromProjections(cacheDb, [ulid]);
+    }).immediate();
+  }
+
+  const parentId = task.parentId || null;
+  const parent = parentId ? _cache.get(`${project}:${parentId}`) : null;
+  if (parent?.subtaskIds) {
+    parent.subtaskIds = parent.subtaskIds.filter(id => id !== flowboardId);
+  }
+  _cache.delete(`${project}:${flowboardId}`);
+  _ulidToFb.delete(ulid);
+  // Unlike a user-requested hard delete, this ID was never a durable task and
+  // must not be retained as an anti-reuse tombstone.
+  _fbToUlid.delete(`${project}:${flowboardId}`);
+}
+
+/**
  * Create a task through the one policy-aware creation boundary.
  *
  * The boundary owns creation provenance and is the only normal runtime entry
@@ -995,23 +1070,42 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
   const exceptionReview = policy.exception
     ? { status: 'pending', reviewer: null, reviewedAt: null }
     : null;
-  const task = createTaskRaw(project, {
-    ...opts,
-    creationAudit: audit,
-    exceptionReview,
-  });
+  let task = null;
+  try {
+    // exceptionReview is server-managed state. Never carry a nested review
+    // object from a caller's creation options, including the explicit
+    // migration/import escape hatch; only the policy decision below may seed
+    // the pending marker.
+    const { exceptionReview: _callerReview, ...safeCreationOpts } = opts || {};
+    task = createTaskRaw(project, {
+      ...safeCreationOpts,
+      creationAudit: audit,
+      exceptionReview,
+    });
 
-  // Specify confirmation is already verified by governance.js before this
-  // boundary is entered. Keep it on the durable task record so a confirmed
-  // task remains answerable after the in-memory Specify session is gone.
-  if (context.specifyConfirmation) {
-    setSpecifyConfirmation(project, task.id, context.specifyConfirmation);
+    // Specify confirmation is already verified by governance.js before this
+    // boundary is entered. Keep it on the durable task record so a confirmed
+    // task remains answerable after the in-memory Specify session is gone.
+    if (context.specifyConfirmation) {
+      setSpecifyConfirmation(project, task.id, context.specifyConfirmation);
+    }
+    // Compatibility mode is the only mode owned by this task: a would-block
+    // creation is allowed but remains explicitly visible in the ledger. The
+    // later rollout task owns the switch that turns it into a 409. Append only
+    // after the task id is known, and purge the task if this durable write
+    // fails; otherwise an allowed/would_block task could escape without audit.
+    appendDecision(task.id);
+    return getTask(project, task.id) || task;
+  } catch (error) {
+    if (task) {
+      try {
+        _purgeTaskForCreationRollback(project, task);
+      } catch (rollbackError) {
+        error.rollbackError = rollbackError.message;
+      }
+    }
+    throw error;
   }
-  // Compatibility mode is the only mode owned by this task: a would-block
-  // creation is allowed but remains explicitly visible in the ledger. The
-  // later rollout task owns the switch that turns it into a 409.
-  appendDecision(task.id);
-  return getTask(project, task.id) || task;
 }
 
 const CREATION_ORIGINS = new Set(['tasks-api', 'specify', 'handoff', 'delegate', 'delegate_subtask', 'incident', 'human_requested_trivial', 'migration']);
@@ -1191,7 +1285,8 @@ function createTaskRaw(project, opts) {
 }
 
 function createTaskForMigration(project, opts) {
-  return createTaskRaw(project, opts);
+  const { exceptionReview: _callerReview, ...safeOpts } = opts || {};
+  return createTaskRaw(project, safeOpts);
 }
 
 function getPolicyLedger(options = {}) {
@@ -3999,6 +4094,65 @@ function setSpecifyConfirmation(project, flowboardIds, record) {
   return ids.map(id => _publicTask(_cache.get(`${project}:${id}`)));
 }
 
+/**
+ * Record the one-way review of an exception-created task.
+ *
+ * The caller must pass the principal resolved by the authenticated server
+ * request. Reviewer identity comes from that principal and review time comes
+ * from this service; caller-supplied reviewer/time fields are intentionally
+ * ignored. A second review is rejected so neither piece of evidence can be
+ * rewritten after it becomes durable.
+ */
+function reviewException(project, flowboardId, opts = {}) {
+  const principal = opts?.principal;
+  if (principal?.kind !== 'human' || principal.verified !== true
+      || typeof principal.actor !== 'string' || !principal.actor.trim()
+      || typeof principal.humanId !== 'string' || !principal.humanId.trim()) {
+    throw Object.assign(new Error('Exception review requires a verified human principal'), {
+      status: 403,
+      code: 'EXCEPTION_REVIEW_REQUIRES_VERIFIED_HUMAN',
+    });
+  }
+
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+  const currentReview = cached.exceptionReview;
+  if (!currentReview) {
+    throw Object.assign(new Error(`Task ${flowboardId} has no exception review`), {
+      status: 400,
+      code: 'EXCEPTION_REVIEW_NOT_REQUIRED',
+    });
+  }
+  if (currentReview.status !== 'pending') {
+    throw Object.assign(new Error(`Task ${flowboardId} exception review is immutable`), {
+      status: 409,
+      code: 'EXCEPTION_REVIEW_IMMUTABLE',
+    });
+  }
+
+  const current = _taskService.getTaskById(ulid);
+  if (!current) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+  const review = {
+    status: 'reviewed',
+    reviewer: principal.actor.trim(),
+    reviewedAt: new Date().toISOString(),
+    // These fields are server-managed evidence. They are projected out of the
+    // public task shape by _normalizeExceptionReview().
+    verifiedHuman: true,
+    reviewerHumanId: principal.humanId.trim(),
+  };
+  _updateMetadata(ulid, {
+    flowboard: {
+      ...(current.metadata?.flowboard || {}),
+      exceptionReview: review,
+    },
+  });
+  const refreshed = _resyncCachedTask(ulid);
+  return _publicTask(refreshed || cached);
+}
+
 /** Set the completion notification callback */
 function setOnComplete(fn) { _onCompleteCallback = fn; }
 
@@ -4416,6 +4570,7 @@ module.exports = {
   getPolicyLedger,
   updateTask,
   setSpecifyConfirmation,
+  reviewException,
   emptyTrash,
   deleteTask,
   getTaskSummary,

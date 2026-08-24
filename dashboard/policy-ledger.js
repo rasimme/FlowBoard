@@ -68,9 +68,22 @@ function appendPolicyRecord(project, record = {}, options = {}) {
   const file = ledgerPath(options);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const fd = fs.openSync(file, fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY, 0o600);
+  const previousSize = fs.fstatSync(fd).size;
   try {
     fs.writeSync(fd, `${JSON.stringify(entry)}\n`, null, 'utf8');
     fs.fsyncSync(fd);
+  } catch (error) {
+    // A write can fail after appending bytes (notably a deterministic fsync
+    // failure in tests or a full filesystem). Restore the exact pre-append
+    // length before surfacing the error so a partial policy record can never
+    // be mistaken for durable audit evidence.
+    try {
+      fs.ftruncateSync(fd, previousSize);
+      fs.fsyncSync(fd);
+    } catch (rollbackError) {
+      error.ledgerRollbackError = rollbackError.message;
+    }
+    throw error;
   } finally {
     fs.closeSync(fd);
   }

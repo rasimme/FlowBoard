@@ -30,6 +30,11 @@ function sourceIdOf(context) {
   return context.sourceTaskId || context.fromTaskId || null;
 }
 
+function sourceIdsConflict(context) {
+  if (context.sourceTaskId == null || context.fromTaskId == null) return false;
+  return String(context.sourceTaskId) !== String(context.fromTaskId);
+}
+
 function evidenceOf(context) {
   return context.humanEvidence || context.humanRequestEvidence || null;
 }
@@ -142,6 +147,15 @@ function evaluateCreationPolicy({ project, opts = {}, context = {}, getTask }) {
     return result('blocked', 'EXCEPTION_INVALID', `Invalid creation exception: "${exception}"`, context);
   }
 
+  // `delegate` is an internal workflow origin.  If it is used for a child
+  // operation, both source fields must describe the same live source before
+  // any exception predicate is evaluated.  This also prevents an explicit
+  // null exception from turning a malformed delegation into an ordinary
+  // compatibility-mode creation.
+  if (origin === 'delegate' && context.noDepends !== true && sourceIdsConflict(context)) {
+    return result('blocked', 'DELEGATE_SOURCE_CONFLICT', 'Delegation sourceTaskId and fromTaskId must identify the same task', context, exception);
+  }
+
   if (origin === 'specify') {
     if (!specifyConfirmationIsValid(context.specifyConfirmation)) {
       return result('blocked', 'SPECIFY_CONFIRMATION_REQUIRED', 'Specify creation requires a verified human confirmation', context);
@@ -153,6 +167,12 @@ function evaluateCreationPolicy({ project, opts = {}, context = {}, getTask }) {
   // compatibility rollout it is recorded as would_block; T-447-5 owns the
   // mode that turns this decision into an HTTP rejection.
   if (origin === 'delegate' && context.noDepends === true) {
+    if (sourceIdsConflict(context)) {
+      return result('blocked', 'DELEGATE_SOURCE_CONFLICT', 'Delegation sourceTaskId and fromTaskId must identify the same task', context);
+    }
+    if (opts.parentId !== undefined && opts.parentId !== null) {
+      return result('blocked', 'NO_DEPENDS_PARENT_CONFLICT', 'noDepends delegation must be top-level with parentId null', context);
+    }
     if (context.exception !== undefined && context.exception !== null) {
       return result('blocked', 'NO_DEPENDS_NOT_EXCEPTION', 'Top-level noDepends delegation is not a delegate_subtask exception', context, context.exception);
     }
@@ -167,6 +187,9 @@ function evaluateCreationPolicy({ project, opts = {}, context = {}, getTask }) {
   }
 
   const sourceTaskId = sourceIdOf(context);
+  if (exception === 'delegate_subtask' && sourceIdsConflict(context)) {
+    return result('blocked', 'DELEGATE_SOURCE_CONFLICT', 'Delegation sourceTaskId and fromTaskId must identify the same task', context, exception);
+  }
   const getLiveTask = typeof getTask === 'function' && sourceTaskId
     ? getTask(project, sourceTaskId)
     : null;
@@ -181,6 +204,9 @@ function evaluateCreationPolicy({ project, opts = {}, context = {}, getTask }) {
 
   if (exception === 'delegate_subtask') {
     if (context.noDepends === true) {
+      if (opts.parentId !== undefined && opts.parentId !== null) {
+        return result('blocked', 'NO_DEPENDS_PARENT_CONFLICT', 'noDepends delegation must be top-level with parentId null', context, exception);
+      }
       return result('blocked', 'NO_DEPENDS_NOT_EXCEPTION', 'Top-level noDepends delegation is not a delegate_subtask exception', context, exception);
     }
     if (!getLiveTask) return result('blocked', 'DELEGATE_SOURCE_NOT_FOUND', 'Delegation source task does not exist', context, exception);
