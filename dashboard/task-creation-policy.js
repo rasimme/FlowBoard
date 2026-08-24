@@ -91,6 +91,45 @@ function specifyConfirmationIsValid(record) {
     && nonEmpty(record.proposalIdentity?.digest);
 }
 
+function clone(value) {
+  if (value === undefined || value === null) return value;
+  try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+}
+
+/**
+ * Build the recovery payload for a would-block decision.  The payload is
+ * server-owned at the policy boundary: request-body identity/origin claims
+ * are never used to decide whether a task may be created.  It is intentionally
+ * a plain JSON object so callers can hand it to POST /api/specify/sessions
+ * without adapting or re-serializing individual fields.
+ */
+function buildSpecifyRequest({ project, opts = {}, context = {} }) {
+  if (context.specifyRequest && typeof context.specifyRequest === 'object'
+      && !Array.isArray(context.specifyRequest)) {
+    return clone(context.specifyRequest);
+  }
+
+  const principal = context.principal && typeof context.principal === 'object'
+    ? clone(context.principal) : null;
+  const sourceContext = context.sourceContext && typeof context.sourceContext === 'object'
+    && !Array.isArray(context.sourceContext)
+    ? clone(context.sourceContext)
+    : {
+      project: project || null,
+      origin: context.origin || null,
+      parentId: opts.parentId ?? null,
+    };
+  return {
+    project: project || null,
+    title: typeof opts.title === 'string' ? opts.title : '',
+    description: typeof opts.description === 'string' ? opts.description : '',
+    priority: opts.priority || 'medium',
+    creatorIdentity: principal,
+    sourceContext,
+    structuredDecisions: clone(context.structuredDecisions || {}),
+  };
+}
+
 function inferException(context = {}) {
   if (Object.prototype.hasOwnProperty.call(context, 'exception')) {
     return context.exception;
@@ -244,4 +283,5 @@ module.exports = {
   hasOneTopLevelAction,
   humanEvidenceIsValid,
   specifyConfirmationIsValid,
+  buildSpecifyRequest,
 };

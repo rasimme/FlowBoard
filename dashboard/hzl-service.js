@@ -926,7 +926,7 @@ function workflowHandoff(project, opts = {}) {
 }
 
 function workflowDelegate(project, opts = {}) {
-  const { fromTaskId, title, agent = null, noDepends = false, pauseParent = false, checkpoint = null, opId = null } = opts;
+  const { fromTaskId, title, agent = null, noDepends = false, pauseParent = false, checkpoint = null, opId = null, governanceMode = null } = opts;
   if (!fromTaskId) throw new Error('fromTaskId is required');
   if (!title) throw new Error('title is required');
   const opKey = _workflowOpKey(project, 'delegate', opId);
@@ -946,6 +946,7 @@ function workflowDelegate(project, opts = {}) {
     sourceTaskId: fromTaskId,
     fromTaskId,
     noDepends,
+    governanceMode,
     // A child with an exact parent relation is the only delegate exception.
     // The policy evaluator intentionally receives no exception for noDepends.
     ...(noDepends ? {} : { exception: 'delegate_subtask' }),
@@ -1034,6 +1035,13 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     getTask,
   });
 
+  const enforce = context.governanceMode === 'enforce'
+    || context.mode === 'enforce'
+    || context.enforce === true;
+  const specifyRequest = policy.decision === 'would_block'
+    ? taskCreationPolicy.buildSpecifyRequest({ project, opts, context })
+    : null;
+
   const appendDecision = (taskId = null) => policyLedger.appendPolicyRecord(project, {
     decision: policy.decision,
     origin: policy.origin,
@@ -1055,6 +1063,20 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
       code: policy.code,
       policyDecision: policy.decision,
       exception: policy.exception,
+    });
+  }
+
+  if (policy.decision === 'would_block' && enforce) {
+    // Enforcement is deliberately a pre-creation branch. The policy ledger
+    // records the rejection, but no HZL event, projection or review marker is
+    // written. The request is reusable by the Specify session API as-is.
+    appendDecision();
+    throw Object.assign(new Error(policy.reason), {
+      status: 409,
+      code: 'SPECIFY_REQUIRED',
+      policyDecision: policy.decision,
+      exception: policy.exception,
+      specifyRequest,
     });
   }
 
@@ -1150,6 +1172,12 @@ function buildCreationAudit(origin, context) {
   if (context.specifyConfirmation) {
     audit.specifySessionId = context.specifyConfirmation.specifySessionId || null;
     audit.proposalDigest = context.specifyConfirmation.proposalIdentity?.digest || null;
+  }
+  if (context.specifyRequest && typeof context.specifyRequest === 'object') {
+    audit.specifyRequest = _cloneJson(context.specifyRequest);
+  }
+  if (context.structuredDecisions && typeof context.structuredDecisions === 'object') {
+    audit.structuredDecisions = _cloneJson(context.structuredDecisions);
   }
   return audit;
 }

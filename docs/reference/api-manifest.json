@@ -487,6 +487,14 @@
       "doc": "api/tasks.md"
     },
     {
+      "method": "GET",
+      "path": "/api/projects/:name/exceptions",
+      "auth": "user",
+      "group": "tasks",
+      "description": "List exception-created tasks filtered by pending or reviewed human review status.",
+      "doc": "api/tasks.md"
+    },
+    {
       "method": "POST",
       "path": "/api/projects/:name/tasks",
       "auth": "user",
@@ -512,6 +520,14 @@
       "path": "/api/projects/:name/tasks/:id/approve",
       "auth": "user",
       "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/exception-review",
+      "auth": "user",
+      "group": "tasks",
+      "description": "Mark a pending exception-created task reviewed; requires a server-verified human principal.",
       "doc": "api/tasks.md"
     },
     {

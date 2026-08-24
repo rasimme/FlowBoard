@@ -2,6 +2,7 @@ import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect, mem
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
+import { useSpecify } from '../context/SpecifyContext.jsx';
 import { sortTasks } from './taskSort.js';
 import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../components/index.js';
 import AgentChip, { agentColor } from '../components/AgentChip.jsx';
@@ -44,6 +45,19 @@ const STATUS_LABELS = {
   review: 'Review',
   done: 'Done',
 };
+
+function ExceptionReviewBadge({ task }) {
+  if (task?.exceptionReview?.status !== 'pending') return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full bg-warn-subtle text-warn px-1.5 py-0.5 text-[10px] font-semibold"
+      title={`Exception review pending: ${task.creationAudit?.exception || 'validated exception'}`}
+      data-exception-review="pending"
+    >
+      Exception review
+    </span>
+  );
+}
 
 // T-130: sort modes. 'custom' = manual drag order (the default now that columns
 // are user-orderable); 'newest'/'oldest' sort purely by task number and ignore
@@ -446,8 +460,9 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   <GripVertical size={14} />
                 </button>
               )}
-              <span className="task-id mono">
+              <span className="task-id mono flex items-center gap-1.5">
                 {task.id}
+                <ExceptionReviewBadge task={task} />
               </span>
             </span>
             {/* Right cluster — hover-revealed admin icons sit directly to
@@ -831,6 +846,7 @@ function DeleteTaskModal({ task, project, onConfirm, onCancel }) {
 // --- Inline Add-Task form (Backlog only) ---
 function AddTaskForm({ project, onCreated }) {
   const { intent: navIntent, clearPendingNewTask } = useNavigation();
+  const specify = useSpecify();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -869,7 +885,34 @@ function AddTaskForm({ project, onCreated }) {
         body: JSON.stringify({ title: trimmed, priority, status: 'backlog' }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create task');
+      if (!res.ok) {
+        // Enforce-mode direct creation returns a reusable request. Starting
+        // Specify here is the explicit Dashboard recovery action; the API
+        // rejection itself never creates a session or task.
+        if (res.status === 409 && data.code === 'SPECIFY_REQUIRED' && data.specifyRequest) {
+          const sessionRes = await apiFetch('/api/specify/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              project,
+              origin: 'tasks-api',
+              agentId: 'human',
+              transport: 'dashboard',
+              specifyRequest: data.specifyRequest,
+            }),
+          });
+          const sessionData = await sessionRes.json().catch(() => ({}));
+          if (!sessionRes.ok || !sessionData.session?.id) {
+            throw new Error(sessionData.error || 'Failed to start Specify recovery');
+          }
+          specify.show(sessionData.session.id);
+          setOpen(false);
+          if (window.showToast) window.showToast('Specify is required before creating this task', 'info');
+          setSubmitting(false);
+          return;
+        }
+        throw new Error(data.error || 'Failed to create task');
+      }
       haptic.medium();
       if (data.task) {
         replaceTasks(applyTaskResponse(getTasks(), data));
@@ -1058,6 +1101,7 @@ export default function TasksView() {
   const [sortMode, setSortMode] = useState(getInitialSortMode);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(getInitialArchived);
+  const [showPendingExceptions, setShowPendingExceptions] = useState(false);
   const [expandedParents, setExpandedParents] = useState(() => new Set(loadKanbanView(viewedProject)?.expanded || []));
   const [lastCreatedId, setLastCreatedId] = useState(null);
   const [addingSubtaskParentId, setAddingSubtaskParentId] = useState(null);
@@ -1595,7 +1639,10 @@ export default function TasksView() {
   }, [handleDrop]);
 
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
-    const topLevel = allTasks.filter(t => !t.parentId);
+    const sourceTasks = showPendingExceptions
+      ? allTasks.filter(t => t.exceptionReview?.status === 'pending')
+      : allTasks;
+    const topLevel = sourceTasks.filter(t => !t.parentId);
     const groups = {};
     STATUS_KEYS.forEach(s => { groups[s] = []; });
     const archived = [];
@@ -1622,7 +1669,7 @@ export default function TasksView() {
     // Sort trashed newest-first by trashedAt so recently deleted items surface first
     trashed.sort((a, b) => new Date(b.trashedAt).getTime() - new Date(a.trashedAt).getTime());
     return { grouped: groups, archivedTopLevel: archived, trashedTopLevel: trashed };
-  }, [allTasks, sortMode]);
+  }, [allTasks, sortMode, showPendingExceptions]);
 
   if (!viewedProject) {
     return (
@@ -1644,6 +1691,18 @@ export default function TasksView() {
       <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
       <ActiveAgentsBar />
       <div className="flex items-center justify-end pb-2 gap-2 shrink-0">
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm${showPendingExceptions ? ' active' : ''}`}
+          style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+          onClick={() => setShowPendingExceptions(value => !value)}
+          aria-pressed={showPendingExceptions}
+          title="Show tasks awaiting verified human exception review"
+        >
+          <span aria-hidden="true">⚠</span>
+          <span>Exception review</span>
+          <span>{allTasks.filter(task => task.exceptionReview?.status === 'pending').length}</span>
+        </button>
         <div className="sort-mode" style={{ position: 'relative' }}>
           <button
             type="button"

@@ -132,6 +132,59 @@ function _validateProposal(proposal, errors) {
   }
 }
 
+function structuredDecisionsOf(session) {
+  if (!session || typeof session !== 'object') return {};
+  if (session.structuredDecisions && typeof session.structuredDecisions === 'object') {
+    return session.structuredDecisions;
+  }
+  return session.specifyRequest?.structuredDecisions
+    && typeof session.specifyRequest.structuredDecisions === 'object'
+    ? session.specifyRequest.structuredDecisions : {};
+}
+
+function normalizedField(value) {
+  return String(value || '').trim().toLowerCase().replace(/[ _-]+/g, '');
+}
+
+function decisionFields(decisions) {
+  const fields = new Set();
+  if (!decisions || typeof decisions !== 'object') return fields;
+  for (const [key, value] of Object.entries(decisions)) {
+    if (['resolved', 'complete', 'fullyresolved', 'version', 'decisions'].includes(normalizedField(key))) continue;
+    if (value !== undefined && value !== null && value !== '') fields.add(normalizedField(key));
+  }
+  const items = Array.isArray(decisions)
+    ? decisions
+    : (Array.isArray(decisions.decisions) ? decisions.decisions : []);
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    for (const key of ['field', 'affectedField', 'affectedFields', 'key', 'name', 'id']) {
+      const value = item[key];
+      if (Array.isArray(value)) value.forEach(v => fields.add(normalizedField(v)));
+      else if (value !== undefined && value !== null && value !== '') fields.add(normalizedField(value));
+    }
+  }
+  return fields;
+}
+
+function decisionsAreFullyResolved(decisions) {
+  return !!decisions && typeof decisions === 'object' && (
+    decisions.resolved === true || decisions.complete === true || decisions.fullyResolved === true
+  );
+}
+
+/** Return true when all fields a worker question changes are pre-resolved. */
+function questionCoveredByStructuredDecisions(session, question) {
+  const decisions = structuredDecisionsOf(session);
+  if (decisionsAreFullyResolved(decisions)) return true;
+  const affected = Array.isArray(question?.affectedFields)
+    ? question.affectedFields.filter(Boolean).map(normalizedField)
+    : [];
+  if (affected.length === 0) return false;
+  const fields = decisionFields(decisions);
+  return affected.every(field => fields.has(field));
+}
+
 /**
  * Validate a worker response against the Specify contract.
  * Returns { ok: boolean, errors: string[] }.
@@ -181,6 +234,9 @@ module.exports = {
   MAX_OPTIONS,
   VALID_ACTIONS,
   DIRECTIVES,
+  decisionsAreFullyResolved,
+  questionCoveredByStructuredDecisions,
+  structuredDecisionsOf,
   validateWorkerResponse,
   canAskQuestion,
   needsSingleNoteGuard,

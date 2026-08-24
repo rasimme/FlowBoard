@@ -94,15 +94,21 @@ Rejections (HTTP 403 with a stable `code`):
   writes an audit record (`{ actor, humanId, changedAt, mode }`). `compat` and
   `enforce` semantics for the creation wrapper arrive in later subtasks; T-447-1
   only owns the persisted, human-gated switch + rollback.
-Exception-review UI/API is intentionally deferred to T-447-3/T-447-4; this
-task does not expose or persist that behavior.
+
+In `enforce`, a non-exempt direct agent task request returns HTTP 409 with
+`code: SPECIFY_REQUIRED` and a reusable `specifyRequest`; no Specify session
+is created implicitly and no task is written. A Dashboard or chat caller can
+POST that request unchanged to `/api/specify/sessions`, let the worker use its
+`structuredDecisions`, and complete the normal proposal → verified-human
+confirmation flow. Fields already covered by those decisions are not asked
+again. Exception-created tasks are visible through the exception inbox/filter;
+only the authenticated human principal can perform its immutable
+`pending → reviewed` action.
 
 ## 6. Scope boundary (what T-447-1 does NOT do)
 
-The `createTaskWithPolicy()` boundary, the four server-validated operational
-exceptions and their predicates, the append-only policy ledger, and the
-`SPECIFY_REQUIRED` 409 recovery flow are **later** subtasks (T-447-2..5). This
-concept is only the trust primitives those tasks consume.
+The task-creation policy remains deliberately narrow: it is not a generic
+roles matrix, allowlist, or persistent per-project configuration surface.
 
 ## Where the code lives
 

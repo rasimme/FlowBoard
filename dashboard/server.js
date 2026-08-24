@@ -754,6 +754,10 @@ function persistSpecifyProposal(session, opts = {}) {
           authSessionId: opts.confirmation.authSessionId,
         } : null,
         specifyConfirmation: opts.confirmation || null,
+        // Preserve the original enforce recovery context in task provenance;
+        // this is descriptive audit data, never an authorization claim.
+        specifyRequest: session.specifyRequest || null,
+        structuredDecisions: session.structuredDecisions || session.specifyRequest?.structuredDecisions || {},
       });
       createdTaskIds.push(task.id);
       if (role === 'parent') currentParentId = task.id;
@@ -1632,6 +1636,9 @@ const ERROR_CODE_STATUS = {
   NOT_IN_REVIEW: 409,
   PARENT_NOT_CLAIMABLE: 409,
   ALREADY_CLAIMED: 409,
+  EXCEPTION_REVIEW_REQUIRES_VERIFIED_HUMAN: 403,
+  EXCEPTION_REVIEW_IMMUTABLE: 409,
+  EXCEPTION_REVIEW_NOT_REQUIRED: 400,
   REASON_REQUIRED: 400,
   IS_SUBTASK: 400,
   HAS_SUBTASKS: 409,
@@ -2151,7 +2158,12 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   }
   const includeArchived = req.query.includeArchived === 'true';
   const tasks = hzlService.listTasks(req.params.name, { includeArchived });
-  const result = enrichTasks(req.params.name, tasks);
+  const requestedExceptionReview = req.query.exceptionReview || req.query.exceptionStatus || null;
+  if (requestedExceptionReview && !['pending', 'reviewed'].includes(requestedExceptionReview)) {
+    return res.status(400).json({ error: 'exceptionReview must be pending or reviewed' });
+  }
+  const result = enrichTasks(req.params.name, tasks)
+    .filter(task => !requestedExceptionReview || task.exceptionReview?.status === requestedExceptionReview);
   const response = { ok: true, tasks: result };
 
   // Task status nudge
@@ -2174,6 +2186,20 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   } catch (e) { console.warn('[taskContext]', e); }
 
   res.json(response);
+});
+
+// GET /api/projects/:name/exceptions — minimal exception-review inbox. This
+// is intentionally a read/filter surface over the canonical task projection;
+// the append-only policy ledger remains the audit source of truth.
+app.get('/api/projects/:name/exceptions', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  const status = req.query.status || 'pending';
+  if (!['pending', 'reviewed'].includes(status)) {
+    return res.status(400).json({ error: 'status must be pending or reviewed' });
+  }
+  const tasks = enrichTasks(req.params.name, hzlService.listTasks(req.params.name, { includeArchived: true }))
+    .filter(task => task.exceptionReview?.status === status);
+  res.json({ ok: true, status, count: tasks.length, tasks });
 });
 
 // FlowBoard uses exactly three priorities (T-246-8). "critical" is accepted
@@ -2244,6 +2270,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     });
   }
 
+  const principal = governance.resolvePrincipal(req);
   try {
     const task = hzlService.createTaskWithPolicy(req.params.name, {
       title: cleanTitle,
@@ -2260,7 +2287,10 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       // The route chooses the origin. Client-supplied origin/identity claims
       // are never used to authorize or label this creation path.
       origin: 'tasks-api',
-      principal: governance.resolvePrincipal(req),
+      principal,
+      governanceMode: governance.getGovernanceMode(fbMeta),
+      sourceContext: req.body.sourceContext,
+      structuredDecisions: req.body.structuredDecisions,
     });
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
     try {
@@ -2269,6 +2299,14 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     } catch (e) { console.warn('[reminder]', e); }
     return res.json(response);
   } catch (err) {
+    if (err?.code === 'SPECIFY_REQUIRED' && err?.status === 409) {
+      return res.status(409).json({
+        error: err.message,
+        code: 'SPECIFY_REQUIRED',
+        specifyRequest: err.specifyRequest,
+      });
+    }
+    if (err?.status) return res.status(err.status).json({ error: err.message, code: err.code });
     console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -3292,7 +3330,22 @@ app.get('/api/specify/sessions', (req, res) => {
 // POST /api/specify/sessions — create a new session
 app.post('/api/specify/sessions', (req, res) => {
   try {
-    const { project, origin, agentId, sourceNoteIds = [], sourceDescription = '', transport = 'api' } = req.body;
+    const incomingRequest = req.body?.specifyRequest;
+    if (incomingRequest !== undefined &&
+        (!incomingRequest || typeof incomingRequest !== 'object' || Array.isArray(incomingRequest))) {
+      return res.status(400).json({ error: 'specifyRequest must be an object' });
+    }
+    const project = req.body?.project || incomingRequest?.project;
+    const { origin, agentId, transport = 'api' } = req.body;
+    const sourceNoteIds = req.body?.sourceNoteIds
+      ?? (Array.isArray(incomingRequest?.sourceContext?.sourceNoteIds)
+        ? incomingRequest.sourceContext.sourceNoteIds : []);
+    const sourceDescription = req.body?.sourceDescription
+      ?? incomingRequest?.description
+      ?? '';
+    const structuredDecisions = req.body?.structuredDecisions
+      ?? incomingRequest?.structuredDecisions
+      ?? {};
     if (!project) return res.status(400).json({ error: 'project is required' });
     if (!agentId) return res.status(400).json({ error: 'agentId is required' });
     // Path-traversal guard + existence check (review finding): the project
@@ -3318,6 +3371,8 @@ app.post('/api/specify/sessions', (req, res) => {
       sourceNoteIds,
       sourceDescription,
       transport: verifiedDashboardHuman ? 'dashboard' : (transport === 'dashboard' ? 'api' : transport),
+      specifyRequest: incomingRequest || null,
+      structuredDecisions,
       principalBinding: verifiedDashboardHuman
         ? { kind: 'human', actor: principal.actor, humanId: principal.humanId,
           authSessionId: principal.authSessionId }
@@ -3495,6 +3550,14 @@ app.post('/api/specify/sessions/:id/answer', async (req, res) => {
     if (action === 'question') {
       if (!req.body.question || !answer) {
         return res.status(400).json({ error: 'question and answer are required' });
+      }
+      if (specifyPolicy.questionCoveredByStructuredDecisions(session, {
+        affectedFields: req.body.affectedFields,
+      })) {
+        return res.status(409).json({
+          error: 'Question is already resolved by structuredDecisions',
+          code: 'STRUCTURED_DECISION_ALREADY_RESOLVED',
+        });
       }
       const qId = `q-${session.clarifications.length + 1}`;
       const updated = session.clarifications.concat([{
@@ -3833,6 +3896,22 @@ app.post('/api/projects/:name/tasks/:id/approve', (req, res) => {
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/exception-review
+// One-way pending -> reviewed action. Reviewer and timestamp are always
+// derived from the authenticated server principal; request-body identity
+// fields are descriptive and cannot forge the review evidence.
+app.post('/api/projects/:name/tasks/:id/exception-review', (req, res) => {
+  try {
+    const task = hzlService.reviewException(req.params.name, req.params.id, {
+      principal: governance.resolvePrincipal(req),
+    });
+    res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
+  } catch (err) {
+    const status = httpStatusForError(err);
+    res.status(status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });
 
@@ -4316,6 +4395,7 @@ app.post('/api/workflows/delegate', (req, res) => {
       pauseParent: pauseParent === true,
       checkpoint,
       opId,
+      governanceMode: governance.getGovernanceMode(fbMeta),
     });
     res.json({ ok: true, ...result });
   } catch (err) {

@@ -8,9 +8,18 @@ actions. HZL is always enabled in current FlowBoard releases.
 
 ### `GET /api/projects/:name/tasks`
 
-List tasks for a project.
+List tasks for a project. Add `?exceptionReview=pending` (or `reviewed`) to
+show only exception-created tasks in that review state.
 
 **Response 200:** `{"ok": true, "tasks": [{"id": "T-197-7", "title": "...", "status": "review", "agent": "claude-code", "claimedAt": "...", "leaseUntil": "...", "lastCheckpointAt": "...", ...}, ...]}`
+
+### `GET /api/projects/:name/exceptions`
+
+Minimal exception-review inbox. `status` defaults to `pending` and accepts
+`pending` or `reviewed`. Each returned task includes `creationAudit` (origin,
+exception and policy reason) and `exceptionReview`.
+
+**Response 200:** `{"ok": true, "status": "pending", "count": 1, "tasks": [...]}`
 
 ### `POST /api/projects/:name/tasks`
 
@@ -18,6 +27,13 @@ Create a task.
 
 **Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, "blocked"?: boolean, ...}`. `checkAgainAt` uses an ISO-8601 date-time with an explicit timezone. `setAt` is server-owned: a client value is ignored and the server stamps the write time; responses always expose the normalized key.
 **Response 201:** `{"ok": true, "task": {<created>}}`
+
+When governance mode is `enforce`, a non-exempt direct agent creation returns
+HTTP 409 with `{"code":"SPECIFY_REQUIRED", "specifyRequest": {...}}` and
+creates no task. The `specifyRequest` can be passed unchanged as
+`specifyRequest` to `POST /api/specify/sessions`; it carries the title,
+description, priority, server-resolved creator identity, source context and
+`structuredDecisions`. Rejection does not create a Specify session.
 
 ### `PUT /api/projects/:name/tasks/:id`
 
@@ -99,6 +115,16 @@ Review/admin action — accept a task that is in `review` and finalise it as `do
 **404** task not found.
 
 The approval is recorded as a comment on the task (`Approved by <actor> (review -> done)`), surfaced via `GET .../comments` and in the activity feed.
+
+### `POST /api/projects/:name/tasks/:id/exception-review`
+
+One-way review action for exception-created tasks. The server resolves the
+reviewer and timestamp from the authenticated principal; body-supplied
+reviewer or timestamp fields are ignored.
+
+**Response 200:** `{"ok": true, "task": {"exceptionReview": {"status": "reviewed", "reviewer": "telegram:42", "reviewedAt": "..."}}}`
+**403** `EXCEPTION_REVIEW_REQUIRES_VERIFIED_HUMAN` for an agent or anonymous
+caller. **409** `EXCEPTION_REVIEW_IMMUTABLE` after the first review.
 
 ### `POST /api/projects/:name/tasks/:id/reject`
 

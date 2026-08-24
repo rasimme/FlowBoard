@@ -199,6 +199,7 @@ export default function DetailPanel() {
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [busyStuckAction, setBusyStuckAction] = useState(null);
+  const [reviewingException, setReviewingException] = useState(false);
   // T-161-4 Zone 3: description inline-edit
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescription, setEditDescription] = useState('');
@@ -235,6 +236,7 @@ export default function DetailPanel() {
     setEditTitle('');
     setEditDescription('');
     setBusyStuckAction(null);
+    setReviewingException(false);
     stickToBottomRef.current = true;
   }, []);
 
@@ -607,6 +609,25 @@ export default function DetailPanel() {
     } catch (err) {
       syncPanelTask({ ...t, routedAgent: oldRouted });
       showToast('Route failed: ' + (err.message || 'Unknown'), 'error');
+    }
+  }
+
+  async function handleReviewException() {
+    const t = taskRef.current;
+    if (!t || t.exceptionReview?.status !== 'pending' || reviewingException) return;
+    setReviewingException(true);
+    try {
+      const result = await apiFetch(`/projects/${project}/tasks/${t.id}/exception-review`, {
+        method: 'POST',
+      });
+      if (result?.error) throw new Error(result.error);
+      if (!result?.task) throw new Error('Review response did not include a task');
+      syncPanelTask(result.task);
+      showToast(`Exception review recorded for ${t.id}`, 'success');
+    } catch (err) {
+      showToast('Exception review failed: ' + (err.message || 'Unknown'), 'error');
+    } finally {
+      setReviewingException(false);
     }
   }
 
@@ -1000,6 +1021,21 @@ export default function DetailPanel() {
               </div>
               <div className="h-1.5 rounded-full bg-bg-hover overflow-hidden">
                 <div className="h-full bg-danger" style={{ width: `${taskProgress}%` }} />
+              </div>
+            </div>
+          )}
+          {task?.exceptionReview?.status === 'pending' && (
+            <div className="mt-3 rounded-md border border-warn bg-warn-subtle px-3 py-2" data-exception-review="pending">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-warn font-semibold">Exception review pending</div>
+                  <div className="text-xs text-muted mt-1">
+                    {task.creationAudit?.exception || 'Validated exception'} · {task.creationAudit?.origin || 'server policy'}
+                  </div>
+                </div>
+                <Button size="xs" variant="accent" onClick={handleReviewException} disabled={reviewingException}>
+                  {reviewingException ? 'Reviewing…' : 'Mark reviewed'}
+                </Button>
               </div>
             </div>
           )}

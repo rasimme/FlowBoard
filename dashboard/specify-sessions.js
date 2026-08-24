@@ -44,7 +44,7 @@ const TRANSITIONS = {
  *   - another active session has overlapping sourceNoteIds for same project
  *   - the agent already has an active session
  */
-function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDescription = '', transport = 'api', principalBinding = null }) {
+function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDescription = '', transport = 'api', principalBinding = null, specifyRequest = null, structuredDecisions = null }) {
   if (!project) throw new Error('project is required');
   if (!agentId) throw new Error('agentId is required');
 
@@ -92,6 +92,15 @@ function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDes
     transport: transport || 'api',
     sourceNoteIds: [...sourceNoteIds],
     sourceDescription: sourceDescription || '',
+    // T-447-4: a server-produced enforce rejection can be handed to this
+    // endpoint unchanged. Keep the raw request and its structured decisions
+    // on the session so the worker receives the same resolved context later.
+    specifyRequest: specifyRequest && typeof specifyRequest === 'object'
+      ? JSON.parse(JSON.stringify(specifyRequest)) : null,
+    structuredDecisions: structuredDecisions && typeof structuredDecisions === 'object'
+      ? JSON.parse(JSON.stringify(structuredDecisions))
+      : (specifyRequest?.structuredDecisions && typeof specifyRequest.structuredDecisions === 'object'
+        ? JSON.parse(JSON.stringify(specifyRequest.structuredDecisions)) : {}),
     agentId,
     principalBinding: binding,
     status: 'created',

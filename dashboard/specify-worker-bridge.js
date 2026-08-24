@@ -82,6 +82,11 @@ function _buildWorkerRequest(session, directive) {
     input: {
       sourceNoteIds: session.sourceNoteIds,
       sourceDescription: session.sourceDescription || '',
+      // T-447-4: preserve the reusable recovery request and pre-resolved
+      // decisions in every stateless worker call. The worker must not ask the
+      // user to repeat a field already covered here.
+      specifyRequest: session.specifyRequest || null,
+      structuredDecisions: session.structuredDecisions || session.specifyRequest?.structuredDecisions || {},
       previousClarifications: session.clarifications,
       revisionNotes: session.revisionNotes || [],
       proposalDraft: session.draftProposal,
@@ -213,6 +218,13 @@ async function _step(sessionId, directive, attempt = 0) {
   const result = _normalizeResponse(raw, _workerAdapter.kind !== 'openclaw-cli');
 
   if (result.action === 'question') {
+    if (policy.questionCoveredByStructuredDecisions(session, result.workerRequest)) {
+      // A worker may still emit a broad ambiguity question after receiving a
+      // resolved field set. Re-request a proposal so server-side session state
+      // cannot regress into a repeat question; uncovered fields remain eligible
+      // for ordinary clarification questions on the next worker call.
+      return _step(sessionId, policy.DIRECTIVES.FORCE_PROPOSAL, attempt + 1);
+    }
     const proposalDirective = directive === policy.DIRECTIVES.SKIP_REMAINING ||
       directive === policy.DIRECTIVES.FORCE_PROPOSAL ||
       directive === policy.DIRECTIVES.REVISE;
