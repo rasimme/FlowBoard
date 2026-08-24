@@ -3,7 +3,7 @@
  *
  * Renders nothing when the task is healthy or not actively claimed.
  * Shows a small warning/critical dot next to the ownership AgentChip when:
- *   - stale:   claimed but no checkpoint in 15 min  (amber dot)
+ *   - stale:   claimed but no checkpoint past the shared threshold (amber dot)
  *   - expired: leaseUntil is in the past            (red pulse dot)
  *
  * Health applies only to *active* claims. HZL-core preserves task.agent
@@ -15,31 +15,12 @@
  */
 
 import { isActivelyClaimed } from '../utils/formatting.js';
+import { getLeaseHealth, LEASE_HEALTH } from '../utils/leaseHealth.js';
 
-const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
-
-function computeHealth(task) {
+function computeHealth(task, now = Date.now()) {
   if (!isActivelyClaimed(task)) return null; // not actively claimed — no health to report
-
-  const now = Date.now();
-
-  // Lease expired is the stronger signal — check first
-  if (task.leaseUntil) {
-    const lease = new Date(task.leaseUntil).getTime();
-    if (lease <= now) return 'expired';
-  }
-
-  // Stale: claimed but no recent checkpoint
-  if (task.lastCheckpointAt) {
-    const last = new Date(task.lastCheckpointAt).getTime();
-    if (now - last > STALE_THRESHOLD_MS) return 'stale';
-  } else if (task.claimedAt) {
-    // No checkpoint at all — fall back to claimedAt
-    const claimed = new Date(task.claimedAt).getTime();
-    if (now - claimed > STALE_THRESHOLD_MS) return 'stale';
-  }
-
-  return null; // healthy
+  const health = getLeaseHealth(task, now);
+  return health === LEASE_HEALTH.CURRENT ? null : health;
 }
 
 const STYLES = {

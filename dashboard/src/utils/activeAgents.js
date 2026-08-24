@@ -1,24 +1,23 @@
 import { isActivelyClaimed } from './formatting.js';
+import {
+  aggregateLeaseHealth,
+  getLeaseHealth,
+  LEASE_HEALTH,
+} from './leaseHealth.js';
 
 /**
  * Return whether a task represents a claim that can be shown in the
  * project-local Active Agents bar.
  *
  * `agent` is intentionally not enough here: HZL keeps it as historical
- * attribution after a release or completion. A missing lease is accepted for
- * compatibility with older task payloads, while a supplied malformed or
- * expired lease is never treated as live.
+ * attribution after a release or completion. Lease validity is deliberately
+ * not part of this display predicate: expired and malformed leases remain
+ * visible so the bar can surface their health and help an operator recover.
  */
-export function isValidActiveClaim(task, now = Date.now()) {
+export function isValidActiveClaim(task) {
   if (!isActivelyClaimed(task)) return false;
   if (task.status === 'archived' || task.archived || task.trashedAt) return false;
-
-  const leaseUntil = task.leaseUntil ?? task.lease_until;
-  if (leaseUntil == null) return true;
-  if (typeof leaseUntil !== 'string' || leaseUntil.trim() === '') return false;
-
-  const leaseMs = Date.parse(leaseUntil);
-  return Number.isFinite(leaseMs) && leaseMs > now;
+  return true;
 }
 
 export function taskId(task) {
@@ -26,9 +25,10 @@ export function taskId(task) {
   return id == null ? '' : String(id);
 }
 
-function agentSlug(agent) {
+export function canonicalAgentSlug(agent) {
+  if (typeof agent === 'string' || typeof agent === 'number') return String(agent).trim();
   const id = agent?.agent_id ?? agent?.agentId ?? agent?.id ?? agent?.slug;
-  return id == null ? '' : String(id);
+  return id == null ? '' : String(id).trim();
 }
 
 function activeProject(agent) {
@@ -36,22 +36,24 @@ function activeProject(agent) {
 }
 
 /**
- * Group valid claims by the owner slug without losing a second claim for the
- * same owner. The first occurrence of a task id wins: this mirrors the loaded
- * project payload and makes duplicate API rows harmless and deterministic.
+ * Group displayable claims by the canonical owner slug without losing a
+ * second claim for the same owner. The first occurrence of a task id wins:
+ * this mirrors the loaded project payload and makes duplicate API rows
+ * harmless and deterministic.
  */
-export function groupActiveClaims(tasks = [], now = Date.now()) {
+export function groupActiveClaims(tasks = []) {
   const grouped = new Map();
   const seenTaskIds = new Set();
 
   for (const task of Array.isArray(tasks) ? tasks : []) {
-    if (!isValidActiveClaim(task, now)) continue;
+    if (!isValidActiveClaim(task)) continue;
     const id = taskId(task);
     const dedupeKey = id ? `id:${id}` : task;
     if (seenTaskIds.has(dedupeKey)) continue;
     seenTaskIds.add(dedupeKey);
 
-    const owner = String(task.agent);
+    const owner = canonicalAgentSlug(task.agent);
+    if (!owner) continue;
     if (!grouped.has(owner)) grouped.set(owner, []);
     grouped.get(owner).push(task);
   }
@@ -62,7 +64,7 @@ export function groupActiveClaims(tasks = [], now = Date.now()) {
 /**
  * Build the render model for ActiveAgentsBar.
  *
- * `/api/agents` is authoritative for known-agent order. Valid claim owners
+ * `/api/agents` is authoritative for known-agent order. Displayable claim owners
  * are appended even when their agent row is absent or points at another
  * project: a task claim is the stronger signal that work is active here, and
  * the owner slug is a safe display fallback in that partial-data case.
@@ -76,12 +78,17 @@ export function buildActiveAgentRows({ agents = [], tasks = [], viewedProject, n
   const knownAgents = Array.isArray(agents) ? agents : [];
 
   for (const agent of knownAgents) {
-    const slug = agentSlug(agent);
+    const slug = canonicalAgentSlug(agent);
     if (!slug || seenAgents.has(slug)) continue;
     const claims = claimsByAgent.get(slug) || [];
     if (activeProject(agent) !== viewedProject && claims.length === 0) continue;
     seenAgents.add(slug);
-    rows.push({ agentId: slug, claims, agent });
+    rows.push({
+      agentId: slug,
+      claims,
+      agent,
+      leaseHealth: claims.length ? aggregateLeaseHealth(claims, now) : null,
+    });
   }
 
   // Unknown owners have no /api/agents position. Sort this fallback set by
@@ -91,11 +98,23 @@ export function buildActiveAgentRows({ agents = [], tasks = [], viewedProject, n
     .sort((a, b) => a.localeCompare(b));
   for (const slug of unknown) {
     seenAgents.add(slug);
-    rows.push({ agentId: slug, claims: claimsByAgent.get(slug) || [], agent: null });
+    const claims = claimsByAgent.get(slug) || [];
+    rows.push({
+      agentId: slug,
+      claims,
+      agent: null,
+      leaseHealth: claims.length ? aggregateLeaseHealth(claims, now) : null,
+    });
   }
 
   return rows;
 }
+
+export {
+  aggregateLeaseHealth,
+  getLeaseHealth,
+  LEASE_HEALTH,
+};
 
 export const ACTIVE_AGENT_STATUS_LABELS = {
   backlog: 'Backlog',
