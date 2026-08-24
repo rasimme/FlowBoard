@@ -219,6 +219,14 @@ async function _step(sessionId, directive, attempt = 0) {
 
   if (result.action === 'question') {
     if (policy.questionCoveredByStructuredDecisions(session, result.workerRequest)) {
+      if (directive === policy.DIRECTIVES.FORCE_PROPOSAL) {
+        return {
+          action: 'error',
+          workerRequest: null,
+          message: 'Specify worker repeated a question already resolved by structuredDecisions after force-proposal',
+          ambiguityScan: result.ambiguityScan,
+        };
+      }
       // A worker may still emit a broad ambiguity question after receiving a
       // resolved field set. Re-request a proposal so server-side session state
       // cannot regress into a repeat question; uncovered fields remain eligible

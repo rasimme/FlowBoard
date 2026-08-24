@@ -52,6 +52,23 @@ async function main() {
   const nestedResult = await bridge.requestNext(nested.id);
   assert.equal(nestedResult.action, 'question', 'only explicitly named resolved fields are covered');
 
+  const stubborn = specifySession.createSession({
+    project: 'structured-decisions', agentId: 't447-4-stubborn',
+    structuredDecisions: { scope: 'one task', resolved: true },
+  });
+  const repeatedCoveredQuestion = {
+    action: 'question',
+    workerRequest: { question: 'Repeat scope?', affectedFields: ['scope'] },
+  };
+  worker.setResponses(stubborn.id, [repeatedCoveredQuestion, repeatedCoveredQuestion]);
+  const stubbornResult = await bridge.requestNext(stubborn.id);
+  assert.equal(stubbornResult.action, 'error',
+    'a covered question repeated after force-proposal becomes a bounded policy error');
+  assert.match(stubbornResult.message, /repeated a question already resolved/,
+    'bounded covered-question error explains the recovery path');
+  assert.equal(worker.getRequests(stubborn.id).length, 2,
+    'a repeated covered question performs only the initial request and one force-proposal retry');
+
   console.log('T-447-4 structured decision tests: all passed');
 }
 

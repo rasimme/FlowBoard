@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { apiJson } from './src/utils/apiFetch.js';
 import { boardTopLevelTasks, tasksForExceptionReview } from './src/utils/exceptionReview.mjs';
 
 const parent = { id: 'T-447-4-1', parentId: null, exceptionReview: null };
@@ -24,10 +25,28 @@ assert.deepEqual(boardTopLevelTasks([parent, delegated], false), [parent],
 
 const detailPanel = fs.readFileSync(new URL('./src/components/DetailPanel.jsx', import.meta.url), 'utf8');
 assert.match(detailPanel,
-  /apiFetch\(`\/api\/projects\/\$\{project\}\/tasks\/\$\{t\.id\}\/exception-review`/,
-  'DetailPanel uses the canonical API path for exception review');
+  /import \{ apiJson as apiFetch \} from '\.\.\/utils\/apiFetch\.js'/,
+  'DetailPanel keeps the parsed JSON API wrapper for all CRUD calls');
 assert.match(detailPanel,
-  /const result = await response\.json\(\)/,
-  'DetailPanel awaits and parses the review response JSON');
+  /apiFetch\(`\/projects\/\$\{project\}\/tasks\/\$\{t\.id\}\/exception-review`/,
+  'DetailPanel uses the legacy path that apiJson normalizes for exception review');
+assert.match(detailPanel,
+  /const result = await apiFetch\(`\/projects\/\$\{project\}\/tasks\/\$\{t\.id\}\/exception-review`[\s\S]*?\n\s*\}\);[\s\S]*?if \(result\?\.error\)/,
+  'DetailPanel consumes the parsed review response from apiJson');
+
+global.window = { location: { origin: 'http://127.0.0.1:18790' }, Telegram: {} };
+let requestPath = null;
+global.fetch = async (path) => {
+  requestPath = path;
+  return new Response(JSON.stringify({ ok: true, task: { id: 'T-447-4-review' } }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+const reviewResult = await apiJson('/projects/demo/tasks/T-447-4-review/exception-review', { method: 'POST' });
+assert.equal(requestPath, '/api/projects/demo/tasks/T-447-4-review/exception-review',
+  'apiJson normalizes the old /projects path before fetch');
+assert.deepEqual(reviewResult.task, { id: 'T-447-4-review' },
+  'apiJson returns parsed JSON for the review action');
 
 console.log('T-447-4 clash blocker regressions: all passed');

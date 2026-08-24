@@ -20,7 +20,7 @@ import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
-import { apiFetch } from '../utils/apiFetch.js';
+import { apiJson as apiFetch } from '../utils/apiFetch.js';
 import { fetchTasksForProject } from '../utils/dashboardApi.js';
 import { isAuthHalted, subscribeAuthState } from '../state/authState.mjs';
 import {
@@ -617,11 +617,10 @@ export default function DetailPanel() {
     if (!t || t.exceptionReview?.status !== 'pending' || reviewingException) return;
     setReviewingException(true);
     try {
-      const response = await apiFetch(`/api/projects/${project}/tasks/${t.id}/exception-review`, {
+      const result = await apiFetch(`/projects/${project}/tasks/${t.id}/exception-review`, {
         method: 'POST',
       });
-      const result = await response.json();
-      if (!response.ok || result?.error) throw new Error(result?.error || 'Exception review request failed');
+      if (result?.error) throw new Error(result.error);
       if (!result?.task) throw new Error('Review response did not include a task');
       syncPanelTask(result.task);
       showToast(`Exception review recorded for ${t.id}`, 'success');
