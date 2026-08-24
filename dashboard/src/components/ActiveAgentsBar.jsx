@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
 import AgentChip from './AgentChip.jsx';
 import {
@@ -33,14 +34,6 @@ function taskTitle(task) {
   return String(task?.title || 'Untitled task');
 }
 
-function taskProgress(task) {
-  const value = task?.progress ?? task?.progressPercent;
-  if (value === '' || value == null) return null;
-  const number = Number(value);
-  if (!Number.isFinite(number)) return null;
-  return Math.max(0, Math.min(100, number));
-}
-
 function checkpointTimestamp(task) {
   return task?.lastCheckpointAt || task?.lastCheckpoint || task?.checkpointAt || null;
 }
@@ -65,26 +58,6 @@ function StatusDot({ status, label = false }) {
   );
 }
 
-function TaskProgress({ task }) {
-  const progress = taskProgress(task);
-  if (progress == null) return null;
-  return (
-    <span className="active-agents-task-progress" title={`${progress}% complete`}>
-      <span
-        className="active-agents-task-progress__track"
-        role="progressbar"
-        aria-label={`${progress}% complete`}
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow={progress}
-      >
-        <span className="active-agents-task-progress__fill" style={{ width: `${progress}%` }} />
-      </span>
-      <span className="active-agents-task-progress__value">{progress}%</span>
-    </span>
-  );
-}
-
 function ActiveTaskRow({ task, onOpen }) {
   const id = taskId(task);
   const title = taskTitle(task);
@@ -92,7 +65,6 @@ function ActiveTaskRow({ task, onOpen }) {
   const checkpoint = checkpointTimestamp(task);
   const checkpointText = formatCheckpoint(checkpoint);
   const aria = `${id || 'Task'}: ${title}. Status: ${status}`
-    + (taskProgress(task) == null ? '' : `. Progress: ${taskProgress(task)}%`)
     + (checkpointText ? `. Last checkpoint: ${checkpointText}` : '');
 
   return (
@@ -110,7 +82,6 @@ function ActiveTaskRow({ task, onOpen }) {
       </span>
       <span className="active-agents-task-row__meta">
         <StatusDot status={task?.status} label />
-        <TaskProgress task={task} />
         {checkpointText && (
           <time
             className="active-agents-task-row__checkpoint"
@@ -142,6 +113,7 @@ function ActiveAgentPill({
   onOpenTask,
   triggerRef,
   popoverRef,
+  popoverPosition,
 }) {
   const handle = formatHandle(agentId);
   const multi = claims.length > 1;
@@ -209,13 +181,17 @@ function ActiveAgentPill({
         )}
       </button>
 
-      {multi && open && (
+      {multi && open && typeof document !== 'undefined' && createPortal(
         <div
           ref={popoverRef}
           id={id}
           className="active-agents-popover"
           role="dialog"
           aria-labelledby={`${id}-title`}
+          style={{
+            ...(popoverPosition || {}),
+            visibility: popoverPosition ? 'visible' : 'hidden',
+          }}
         >
           <div className="active-agents-popover__header">
             <span id={`${id}-title`}>Active tasks · {claims.length}</span>
@@ -225,7 +201,8 @@ function ActiveAgentPill({
               <ActiveTaskRow key={taskId(claim) || `${agentId}-${claims.indexOf(claim)}`} task={claim} onOpen={onOpenTask} />
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -245,9 +222,12 @@ export default function ActiveAgentsBar() {
   const tasks = state?.tasks || [];
   const [now, setNow] = useState(() => Date.now());
   const [openAgentId, setOpenAgentId] = useState(null);
+  const [popoverPosition, setPopoverPosition] = useState(null);
   const triggerRefs = useRef(new Map());
-  const firstTaskRefs = useRef(new Map());
+  const popoverRefs = useRef(new Map());
   const focusFirstRef = useRef(null);
+  const pendingFocusRef = useRef(null);
+  const barRef = useRef(null);
 
   // A lease can expire between dashboard snapshots. Re-evaluate cheaply so an
   // expired claim cannot stay visible until an unrelated state change.
@@ -259,15 +239,43 @@ export default function ActiveAgentsBar() {
   const rows = useMemo(() => buildActiveAgentRows({ agents, tasks, viewedProject, now }), [agents, tasks, viewedProject, now]);
   const openRow = rows.find((row) => row.agentId === openAgentId);
 
-  const restoreTriggerFocus = useCallback((agentId) => {
-    triggerRefs.current.get(agentId)?.focus?.();
-  }, []);
+  const focusSurvivingControl = useCallback((closingAgentId) => {
+    const trigger = triggerRefs.current.get(closingAgentId);
+    if (trigger?.isConnected) {
+      trigger.focus();
+      return;
+    }
+
+    const survivingRow = rows.find(({ agentId, claims }) => (
+      agentId !== closingAgentId && claims.length > 0
+    ));
+    const survivingTrigger = survivingRow && triggerRefs.current.get(survivingRow.agentId);
+    if (survivingTrigger?.isConnected) {
+      survivingTrigger.focus();
+      return;
+    }
+
+    if (barRef.current?.isConnected) {
+      barRef.current.focus();
+      return;
+    }
+
+    // The bar itself can disappear when the last claim expires. Keep focus in
+    // the task surface instead of falling back to body/document.
+    const nearbyTaskControl = document.querySelector(
+      '.content [data-react-tasks][tabindex]:not([tabindex="-1"]), '
+      + '.content [data-task-id][tabindex]:not([tabindex="-1"]), '
+      + '#tabBar .tab[data-tab="tasks"]',
+    );
+    nearbyTaskControl?.focus?.();
+  }, [rows]);
 
   const closePopover = useCallback((restoreFocus = true) => {
     const closing = openAgentId;
     setOpenAgentId(null);
-    if (restoreFocus && closing) restoreTriggerFocus(closing);
-  }, [openAgentId, restoreTriggerFocus]);
+    setPopoverPosition(null);
+    if (restoreFocus && closing) pendingFocusRef.current = closing;
+  }, [openAgentId]);
 
   const togglePopover = useCallback((agentId, focusFirst = false) => {
     if (openAgentId === agentId) {
@@ -275,6 +283,7 @@ export default function ActiveAgentsBar() {
       return;
     }
     focusFirstRef.current = focusFirst ? agentId : null;
+    setPopoverPosition(null);
     setOpenAgentId(agentId);
   }, [closePopover, openAgentId]);
 
@@ -284,16 +293,86 @@ export default function ActiveAgentsBar() {
     if (id && window.openTaskDetail) window.openTaskDetail(id);
   }, [closePopover]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const focusAgent = focusFirstRef.current;
     if (!focusAgent || focusAgent !== openAgentId) return;
     focusFirstRef.current = null;
-    firstTaskRefs.current.get(focusAgent)?.querySelector('button')?.focus?.();
+    const frame = window.requestAnimationFrame(() => {
+      popoverRefs.current.get(focusAgent)?.querySelector('button')?.focus?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [openAgentId, rows]);
+
+  // The trigger may be gone by the time a lease/reassignment update closes
+  // the popover. Wait for the closing render so the fallback cannot target a
+  // detached element and leave focus on body.
+  useLayoutEffect(() => {
+    const closingAgentId = pendingFocusRef.current;
+    if (!closingAgentId || openAgentId) return;
+    pendingFocusRef.current = null;
+    focusSurvivingControl(closingAgentId);
+  }, [focusSurvivingControl, openAgentId, rows]);
+
+  const updatePopoverPosition = useCallback(() => {
+    if (!openAgentId) return;
+    const trigger = triggerRefs.current.get(openAgentId);
+    const popover = popoverRefs.current.get(openAgentId);
+    if (!trigger || !popover) return;
+
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const gap = 12;
+    const offset = 8;
+    const triggerRect = trigger.getBoundingClientRect();
+    const measured = popover.getBoundingClientRect();
+    const width = Math.min(measured.width || 360, Math.max(0, viewportWidth - (gap * 2)));
+    const height = Math.min(measured.height || 0, Math.max(0, viewportHeight - (gap * 2)));
+    const belowSpace = viewportHeight - triggerRect.bottom - offset - gap;
+    const aboveSpace = triggerRect.top - offset - gap;
+    const placeAbove = measured.height > belowSpace && aboveSpace > belowSpace;
+    const requestedTop = placeAbove
+      ? triggerRect.top - offset - height
+      : triggerRect.bottom + offset;
+    const maxTop = Math.max(gap, viewportHeight - height - gap);
+    const left = Math.min(
+      Math.max(gap, triggerRect.left),
+      Math.max(gap, viewportWidth - width - gap),
+    );
+    const top = Math.min(Math.max(gap, requestedTop), maxTop);
+    const next = {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
+      maxHeight: `${Math.max(0, viewportHeight - (gap * 2))}px`,
+    };
+    setPopoverPosition((previous) => (
+      previous && Object.keys(next).every((key) => previous[key] === next[key])
+        ? previous
+        : next
+    ));
+  }, [openAgentId]);
+
+  useLayoutEffect(() => {
+    if (!openAgentId) return undefined;
+    updatePopoverPosition();
+    let frame = window.requestAnimationFrame(updatePopoverPosition);
+    const onViewportChange = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(updatePopoverPosition);
+    };
+    window.addEventListener('resize', onViewportChange);
+    document.addEventListener('scroll', onViewportChange, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', onViewportChange);
+      document.removeEventListener('scroll', onViewportChange, true);
+    };
+  }, [openAgentId, rows, updatePopoverPosition]);
 
   // If a lease disappears while its list is open, close cleanly and restore
   // focus when the trigger still exists (it may have become a single-claim
-  // button). If the owner vanished entirely, there is no unsafe focus target.
+  // button). If the owner vanished entirely, focusSurvivingControl chooses a
+  // sibling pill, the bar, or a nearby task control.
   useEffect(() => {
     if (!openAgentId) return;
     if (openRow && openRow.claims.length > 1) return;
@@ -310,7 +389,7 @@ export default function ActiveAgentsBar() {
     const onPointerDown = (event) => {
       const target = event.target;
       const trigger = triggerRefs.current.get(openAgentId);
-      const popover = firstTaskRefs.current.get(openAgentId);
+      const popover = popoverRefs.current.get(openAgentId);
       if (!trigger?.contains(target) && !popover?.contains(target)) closePopover(false);
     };
     document.addEventListener('keydown', onEscape);
@@ -324,7 +403,13 @@ export default function ActiveAgentsBar() {
   if (!viewedProject || rows.length === 0) return null;
 
   return (
-    <div className="active-agents-bar" role="region" aria-label="Agents active on this project">
+    <div
+      ref={barRef}
+      className="active-agents-bar"
+      role="region"
+      aria-label="Agents active on this project"
+      tabIndex={-1}
+    >
       <div className="active-agents-bar__label">Active on this project</div>
       <div className="active-agents-bar__list">
         {rows.map(({ agentId, claims }) => (
@@ -335,13 +420,14 @@ export default function ActiveAgentsBar() {
             open={openAgentId === agentId}
             onToggle={togglePopover}
             onOpenTask={openTask}
+            popoverPosition={openAgentId === agentId ? popoverPosition : null}
             triggerRef={(element) => {
               if (element) triggerRefs.current.set(agentId, element);
               else triggerRefs.current.delete(agentId);
             }}
             popoverRef={(element) => {
-              if (element) firstTaskRefs.current.set(agentId, element);
-              else firstTaskRefs.current.delete(agentId);
+              if (element) popoverRefs.current.set(agentId, element);
+              else popoverRefs.current.delete(agentId);
             }}
           />
         ))}
