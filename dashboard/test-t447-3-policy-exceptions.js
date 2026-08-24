@@ -147,6 +147,39 @@ function expectBlocked(fn, code) {
   assert.deepEqual(ledger.readPolicyLedger({ dir: failureLedgerDir }), [],
     'ledger failure leaves no policy record');
 
+  // A deterministic partial fs.writeSync must be rejected and rolled back,
+  // leaving the task store unchanged and the existing JSONL parseable.
+  const shortWriteLedgerDir = path.join(root, 'short-write-audit');
+  const shortWriteLedgerOptions = { dir: shortWriteLedgerDir };
+  hzl.createTaskWithPolicy(PROJECT, { title: 'Short-write ledger baseline' }, {
+    origin: 'tasks-api', policyLedgerOptions: shortWriteLedgerOptions,
+  });
+  const ledgerBeforeShortWrite = ledger.readPolicyLedger(shortWriteLedgerOptions);
+  const originalWriteSync = fs.writeSync;
+  fs.writeSync = function deterministicShortWrite(fd, data, position, encoding) {
+    if (typeof data === 'string') {
+      const encoded = Buffer.from(data, encoding || 'utf8');
+      const partial = encoded.subarray(0, Math.max(0, encoded.length - 1));
+      originalWriteSync(fd, partial, 0, partial.length, position);
+      return partial.length;
+    }
+    return originalWriteSync.apply(this, arguments);
+  };
+  try {
+    expectBlocked(() => hzl.createTaskWithPolicy(PROJECT, { title: 'Must roll back on short ledger write' }, {
+      origin: 'tasks-api', policyLedgerOptions: shortWriteLedgerOptions,
+    }), 'POLICY_LEDGER_SHORT_WRITE');
+  } finally {
+    fs.writeSync = originalWriteSync;
+  }
+  assert.ok(!hzl.listTasks(PROJECT).some(t => t.title === 'Must roll back on short ledger write'),
+    'short ledger write leaves no task projection');
+  assert.deepEqual(ledger.readPolicyLedger(shortWriteLedgerOptions), ledgerBeforeShortWrite,
+    'short ledger write leaves the prior JSONL records intact and parseable');
+  await hzl.init(dbPath);
+  assert.ok(!hzl.listTasks(PROJECT).some(t => t.title === 'Must roll back on short ledger write'),
+    'short ledger write leaves no persisted task after event-store replay');
+
   // Exception review is one-way and server-authoritative. The public task is
   // also a deep projection: mutating nested audit/review objects cannot alter
   // the cached or durable evidence.

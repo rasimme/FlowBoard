@@ -70,7 +70,18 @@ function appendPolicyRecord(project, record = {}, options = {}) {
   const fd = fs.openSync(file, fs.constants.O_APPEND | fs.constants.O_CREAT | fs.constants.O_WRONLY, 0o600);
   const previousSize = fs.fstatSync(fd).size;
   try {
-    fs.writeSync(fd, `${JSON.stringify(entry)}\n`, null, 'utf8');
+    const encodedRecord = `${JSON.stringify(entry)}\n`;
+    const expectedBytes = Buffer.byteLength(encodedRecord, 'utf8');
+    const writtenBytes = fs.writeSync(fd, encodedRecord, null, 'utf8');
+    if (writtenBytes !== expectedBytes) {
+      throw Object.assign(new Error(
+        `Policy ledger short write: expected ${expectedBytes} bytes, wrote ${writtenBytes}`
+      ), {
+        code: 'POLICY_LEDGER_SHORT_WRITE',
+        expectedBytes,
+        writtenBytes,
+      });
+    }
     fs.fsyncSync(fd);
   } catch (error) {
     // A write can fail after appending bytes (notably a deterministic fsync
