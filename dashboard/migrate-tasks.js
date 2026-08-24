@@ -205,7 +205,7 @@ async function migrateProject(hzl, projectName) {
 
       // hzl-core has a 128-char title limit; truncate with ellipsis
       const title = task.title.length > 128 ? task.title.slice(0, 125) + '...' : task.title;
-      const created = hzl.createTask(projectName, {
+      const created = hzl.createTaskForMigration(projectName, {
         title,
         priority,
         parentId,

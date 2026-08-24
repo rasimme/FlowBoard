@@ -734,7 +734,7 @@ function persistSpecifyProposal(session, opts = {}) {
         : (legacyParentMode ? (idx === 0 ? 'parent' : 'subtask') : 'standalone');
       const parentId = role === 'subtask' ? currentParentId : null;
 
-      const task = hzlService.createTask(session.project, {
+      const task = hzlService.createTaskWithPolicy(session.project, {
         title: taskDef.title,
         description: taskDef.description,
         priority: taskDef.priority,
@@ -742,6 +742,18 @@ function persistSpecifyProposal(session, opts = {}) {
         // New Specify tasks land in Backlog (Kanban semantics) — picking
         // them up into Open is a deliberate user/agent decision.
         status: 'backlog',
+      }, {
+        origin: 'specify',
+        // This record was produced by the server-authoritative confirmation
+        // gate in /confirm; it is internal context, never proposal input.
+        principal: opts.confirmation ? {
+          kind: 'human',
+          verified: true,
+          actor: opts.confirmation.actor,
+          humanId: opts.confirmation.humanId,
+          authSessionId: opts.confirmation.authSessionId,
+        } : null,
+        specifyConfirmation: opts.confirmation || null,
       });
       createdTaskIds.push(task.id);
       if (role === 'parent') currentParentId = task.id;
@@ -762,14 +774,6 @@ function persistSpecifyProposal(session, opts = {}) {
     if (!sessionSpecPlaced && specContent && createdTaskIds.length > 0) {
       const firstTask = hzlService.getTask(session.project, createdTaskIds[0]);
       if (firstTask) specFiles.push(writeSpecFileForTask(session.project, firstTask, specContent));
-    }
-
-    // Confirmation is an authorization audit record, not session state. Put
-    // it on every task created by this proposal before the optional canvas
-    // cleanup so it survives a process restart and remains attached to the
-    // durable work it authorized.
-    if (opts.confirmation && createdTaskIds.length > 0) {
-      hzlService.setSpecifyConfirmation(session.project, createdTaskIds, opts.confirmation);
     }
 
     if (cleanupNotes && session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
@@ -2241,7 +2245,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   }
 
   try {
-    const task = hzlService.createTask(req.params.name, {
+    const task = hzlService.createTaskWithPolicy(req.params.name, {
       title: cleanTitle,
       priority: effectivePriority,
       parentId: parentId || null,
@@ -2252,6 +2256,11 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       ...(Object.prototype.hasOwnProperty.call(req.body, 'blocked') ? { blocked: req.body.blocked } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body, 'workState') ? { workState: req.body.workState } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body, 'workStateDetails') ? { workStateDetails: req.body.workStateDetails } : {}),
+    }, {
+      // The route chooses the origin. Client-supplied origin/identity claims
+      // are never used to authorize or label this creation path.
+      origin: 'tasks-api',
+      principal: governance.resolvePrincipal(req),
     });
     const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
     try {

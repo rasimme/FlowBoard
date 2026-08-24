@@ -204,6 +204,10 @@ function _toFbTask(hzlTask, project) {
     // task is in Trash and eligible for Empty-Trash bulk hard-delete.
     trashedAt: fb.trashedAt || null,
     specifyConfirmation: fb.specifyConfirmation || null,
+    // T-447-2: durable provenance for the policy-aware creation boundary.
+    // This is deliberately task-local metadata, not the append-only policy
+    // ledger owned by a later T-447 task.
+    creationAudit: fb.creationAudit || null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -831,10 +835,14 @@ function workflowHandoff(project, opts = {}) {
   if (!source) throw new Error(`Task not found: ${fromTaskId}`);
   if (source.status !== 'in-progress') throw new Error(`Cannot handoff task in status "${source.status}"`);
 
-  const followOn = createTask(project, {
+  const followOn = createTaskWithPolicy(project, {
     title,
     priority: source.priority,
     status: 'open',
+  }, {
+    origin: 'handoff',
+    principal: workflowPrincipal(source.agent || agent),
+    sourceTaskId: fromTaskId,
   });
   if (agent) routeTask(project, followOn.id, agent);
 
@@ -876,11 +884,16 @@ function workflowDelegate(project, opts = {}) {
   const source = getTask(project, fromTaskId);
   if (!source) throw new Error(`Task not found: ${fromTaskId}`);
 
-  const delegated = createTask(project, {
+  const delegated = createTaskWithPolicy(project, {
     title,
     priority: source.priority,
     parentId: noDepends ? null : fromTaskId,
     status: 'open',
+  }, {
+    origin: 'delegate',
+    principal: workflowPrincipal(source.agent || agent),
+    sourceTaskId: fromTaskId,
+    noDepends,
   });
   if (agent) routeTask(project, delegated.id, agent);
   if (checkpoint) addCheckpoint(project, fromTaskId, { agent: source.agent || agent || null, message: checkpoint });
@@ -898,11 +911,89 @@ function workflowDelegate(project, opts = {}) {
 }
 
 /**
- * Create a task and update cache.
- * opts: { title, priority?, parentId?, status? }
+ * Create a task through the one policy-aware creation boundary.
+ *
+ * The boundary owns creation provenance and is the only normal runtime entry
+ * point for task creation. Policy decisions are intentionally compatibility
+ * pass-through in T-447-2; later subtasks can consume this context to enforce
+ * Specify/exception predicates without adding another creation path.
+ *
+ * `context` is server-supplied and must never be copied from an HTTP body:
+ *   { origin, principal?, specifyConfirmation?, sourceTaskId?, noDepends? }
+ *
  * Returns FlowBoard-format task.
  */
-function createTask(project, opts) {
+function createTaskWithPolicy(project, opts = {}, context = {}) {
+  const origin = context && typeof context.origin === 'string'
+    ? context.origin.trim()
+    : '';
+  if (!origin) throw Object.assign(new Error('Task creation origin is required'), { status: 400, code: 'CREATION_ORIGIN_REQUIRED' });
+
+  const audit = buildCreationAudit(origin, context);
+  const task = createTaskRaw(project, {
+    ...opts,
+    creationAudit: audit,
+  });
+
+  // Specify confirmation is already verified by governance.js before this
+  // boundary is entered. Keep it on the durable task record so a confirmed
+  // task remains answerable after the in-memory Specify session is gone.
+  if (context.specifyConfirmation) {
+    setSpecifyConfirmation(project, task.id, context.specifyConfirmation);
+  }
+  return getTask(project, task.id) || task;
+}
+
+const CREATION_ORIGINS = new Set(['tasks-api', 'specify', 'handoff', 'delegate', 'migration']);
+
+function workflowPrincipal(agent) {
+  return {
+    kind: 'agent',
+    verified: false,
+    actor: agent ? `agent:${String(agent)}` : 'agent:unverified',
+    humanId: null,
+    authSessionId: null,
+  };
+}
+
+function buildCreationAudit(origin, context) {
+  if (!CREATION_ORIGINS.has(origin)) {
+    throw Object.assign(new Error(`Invalid task creation origin: "${origin}"`), {
+      status: 400,
+      code: 'CREATION_ORIGIN_INVALID',
+    });
+  }
+
+  const principal = context?.principal && typeof context.principal === 'object'
+    ? context.principal
+    : workflowPrincipal(null);
+  const audit = {
+    origin,
+    principal: {
+      kind: principal.kind === 'human' && principal.verified === true ? 'human' : 'agent',
+      actor: typeof principal.actor === 'string' && principal.actor ? principal.actor : 'agent:unverified',
+      verified: principal.kind === 'human' && principal.verified === true,
+    },
+    createdAt: new Date().toISOString(),
+  };
+  if (context.sourceTaskId) audit.sourceTaskId = String(context.sourceTaskId);
+  if (context.noDepends === true) audit.noDepends = true;
+  if (context.specifyConfirmation) {
+    audit.specifySessionId = context.specifyConfirmation.specifySessionId || null;
+    audit.proposalDigest = context.specifyConfirmation.proposalIdentity?.digest || null;
+  }
+  return audit;
+}
+
+/**
+ * Raw FlowBoard/HZL task creation primitive.
+ *
+ * Normal runtime paths must use createTaskWithPolicy(). The explicit
+ * createTaskForMigration() alias is the supported import/migration escape
+ * hatch. createTask() remains as a compatibility alias for existing internal
+ * callers and tests while the migration is rolled out.
+ */
+function createTaskRaw(project, opts) {
   const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null, staleAfterMinutes = null } = opts;
   const tags = opts.tags !== undefined ? _cleanTags(opts.tags) : [];
   const description = typeof opts.description === 'string' ? opts.description : ''; // T-396
@@ -962,6 +1053,7 @@ function createTask(project, opts) {
         workState: workStateResolved.workState,
         workStateDetails: workStateResolved.workStateDetails,
         blocked: workStateResolved.blocked,
+        ...(opts.creationAudit ? { creationAudit: _cloneJson(opts.creationAudit) } : {}),
         ...(staleAfterMinutes !== null ? { staleAfterMinutes } : {}),
       }
     },
@@ -1001,6 +1093,7 @@ function createTask(project, opts) {
     checkpointCount: 0,
     routedAgent: null,
     order: null,
+    creationAudit: opts.creationAudit ? _cloneJson(opts.creationAudit) : null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -1018,6 +1111,16 @@ function createTask(project, opts) {
   }
 
   return _publicTask(fbTask);
+}
+
+function createTaskForMigration(project, opts) {
+  return createTaskRaw(project, opts);
+}
+
+// Compatibility alias for pre-T-447 callers. New production paths must not
+// call this primitive directly; use createTaskWithPolicy instead.
+function createTask(project, opts) {
+  return createTaskRaw(project, opts);
 }
 
 /**
@@ -4224,6 +4327,8 @@ module.exports = {
   setTaskParent,
   listTasks,
   getTask,
+  createTaskWithPolicy,
+  createTaskForMigration,
   createTask,
   updateTask,
   setSpecifyConfirmation,

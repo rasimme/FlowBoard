@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test-t447-1": "node test-t447-1-governance.js && node test-t447-1-governance-endpoints.js && node test-specify-api-confirm.js && node test-specify-e2e-simple.js && node test-specify-e2e-complex.js && node test-specify-e2e-chat-origin.js",
+    "test-t447-2": "node test-t447-2-policy-boundary.js",
     "test:t445": "node test-t445-rate-limit.mjs",
     "test:t446": "node test-active-agents.mjs && node test-active-agents-bar-e2e.js",
     "test:t445:files-race": "node test-files-race-regressions-e2e.js",
