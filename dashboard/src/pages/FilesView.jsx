@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense, useSyncExternalStore } from 'react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
@@ -7,6 +7,7 @@ import { useHaptic } from '../hooks/useHaptic.js';
 import { useCustomScroll } from '../hooks/useCustomScroll.js';
 import { FolderOpen, Folder, FileText, FileJson, FileCode, File, Pencil, Save, X, Trash2, Upload, Download, FilePlus } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
+import { isAuthHalted, subscribeAuthState } from '../state/authState.mjs';
 import {
   fileExists,
   getDefaultFileSelectionAction,
@@ -30,6 +31,10 @@ function retryAfterMs(response) {
   const raw = response.headers?.get?.('Retry-After');
   const seconds = raw && /^\d+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw.trim()) : 60;
   return Math.max(1000, seconds * 1000);
+}
+
+function fileTreeTargetKey(project, includeHidden) {
+  return `${project}\u0000${includeHidden ? 'hidden' : 'visible'}`;
 }
 
 function formatSize(bytes) {
@@ -490,8 +495,11 @@ export default function FilesView() {
   const dirtyRef = useRef(false);
   const ignoredConflictRef = useRef(null);
   const fileTreeRef = useRef(null);
+  const fileTreeCacheRef = useRef(new Map());
   const treeRequestRef = useRef(null);
-  const treeCooldownUntilRef = useRef(0);
+  const treeCooldownsRef = useRef(new Map());
+  const treeTargetRef = useRef({ key: null, generation: 0 });
+  const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
 
   const treeScrollRef = useCustomScroll();
   const previewScrollRef = useCustomScroll();
@@ -523,58 +531,107 @@ export default function FilesView() {
   // Load file tree
   const fetchTree = useCallback(async (opts = {}) => {
     if (!viewedProject) return null;
-    if (treeCooldownUntilRef.current > Date.now()) return fileTreeRef.current;
-    if (treeRequestRef.current) return treeRequestRef.current;
+    const targetKey = fileTreeTargetKey(viewedProject, showHidden);
+    let target = treeTargetRef.current;
+    if (target.key !== targetKey) {
+      target = { key: targetKey, generation: target.generation + 1 };
+      treeTargetRef.current = target;
+      const stale = treeRequestRef.current;
+      if (stale && stale.key !== targetKey) {
+        stale.stale = true;
+        stale.controller.abort(new DOMException('Files target changed', 'AbortError'));
+        treeRequestRef.current = null;
+      }
+      fileTreeRef.current = fileTreeCacheRef.current.get(targetKey) || null;
+      setFileTree(fileTreeRef.current);
+    }
+    const generation = target.generation;
+    const isCurrent = (request = null) => treeTargetRef.current.key === targetKey
+      && treeTargetRef.current.generation === generation
+      && (!request || treeRequestRef.current === request);
+    if (authHalted) return isCurrent() ? fileTreeRef.current : null;
+    const cooldownUntil = treeCooldownsRef.current.get(targetKey) || 0;
+    if (cooldownUntil > Date.now()) return isCurrent() ? fileTreeRef.current : null;
+    const running = treeRequestRef.current;
+    if (running?.key === targetKey && running.generation === generation
+      && !running.controller.signal.aborted) return running.promise;
+    if (running?.controller.signal.aborted && treeRequestRef.current === running) {
+      treeRequestRef.current = null;
+    }
     if (!opts.background) setTreeLoading(true);
+    const active = {
+      key: targetKey,
+      generation,
+      controller: new AbortController(),
+      stale: false,
+      promise: null,
+    };
     const request = (async () => {
       try {
         const qs = showHidden ? '?includeHidden=true' : '';
-        const res = await apiFetch(`/api/projects/${viewedProject}/files${qs}`);
+        const res = await apiFetch(`/api/projects/${viewedProject}/files${qs}`, {
+          signal: active.controller.signal,
+        });
         if (res.status === 429) {
           const cooldown = retryAfterMs(res);
-          treeCooldownUntilRef.current = Date.now() + cooldown;
-          setTreeError(`Files refresh paused for ${Math.ceil(cooldown / 1000)}s after a rate limit.`);
-          return fileTreeRef.current;
+          if (isCurrent(active)) {
+            treeCooldownsRef.current.set(targetKey, Date.now() + cooldown);
+            setTreeError(`Files refresh paused for ${Math.ceil(cooldown / 1000)}s after a rate limit.`);
+          }
+          return isCurrent(active) ? fileTreeRef.current : null;
         }
         if (!res.ok) throw new Error('File tree failed');
         const data = await res.json();
+        // A response is publishable only for the project + includeHidden
+        // target that requested it. The generation check also rejects a late
+        // response after a same-key request was invalidated.
+        if (!isCurrent(active) || active.controller.signal.aborted) return null;
+        fileTreeCacheRef.current.set(targetKey, data);
         fileTreeRef.current = data;
         setFileTree(data);
         setTreeError(null);
         return data;
       } catch (err) {
-        if (err.name !== 'AbortError') {
+        if (err.name !== 'AbortError' && isCurrent(active)) {
           console.warn('[file-tree]', err);
           setTreeError('Files refresh failed; showing the last available file tree.');
         }
-        return fileTreeRef.current;
+        return isCurrent(active) ? fileTreeRef.current : null;
       } finally {
-        if (!opts.background) setTreeLoading(false);
+        if (!opts.background && isCurrent(active)) setTreeLoading(false);
       }
-    })().finally(() => {
-      if (treeRequestRef.current === request) treeRequestRef.current = null;
     });
-    treeRequestRef.current = request;
-    return request;
-  }, [viewedProject, showHidden]);
+    active.promise = request.finally(() => {
+      if (treeRequestRef.current === active) treeRequestRef.current = null;
+    });
+    treeRequestRef.current = active;
+    return active.promise;
+  }, [authHalted, showHidden, viewedProject]);
 
   useEffect(() => {
     if (!viewedProject) {
+      const active = treeRequestRef.current;
+      if (active) active.controller.abort(new DOMException('Files project cleared', 'AbortError'));
+      treeRequestRef.current = null;
+      abortRef.current?.abort();
+      abortRef.current = null;
       setFileTree(null);
       fileTreeRef.current = null;
       setTreeError(null);
-      treeCooldownUntilRef.current = 0;
+      treeTargetRef.current = { key: null, generation: treeTargetRef.current.generation + 1 };
+      treeCooldownsRef.current.clear();
       setSelectedFile(null);
       setFileData(null);
       setFileConflict(null);
       return;
     }
+    abortRef.current?.abort();
+    abortRef.current = null;
     fetchTree();
     setSelectedFile(null);
     setFileData(null);
     setFileConflict(null);
     setTreeError(null);
-    treeCooldownUntilRef.current = 0;
   }, [viewedProject, fetchTree]);
 
   // Consume pending spec file from _openSpec bridge (T-221).
@@ -619,6 +676,7 @@ export default function FilesView() {
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    const targetKey = fileTreeTargetKey(viewedProject, showHidden);
 
     setSelectedFile(filePath);
     if (!opts.background) setLoading(true);
@@ -634,6 +692,7 @@ export default function FilesView() {
       // tree's showHidden toggle here or opening a hidden file would 403.
       const readQs = showHidden ? '?includeHidden=true' : '';
       const res = await apiFetch(`/api/projects/${viewedProject}/files/${filePath}${readQs}`, { signal: controller.signal });
+      if (abortRef.current !== controller || treeTargetRef.current.key !== targetKey) return null;
       if (res.status === 404) {
         clearLastOpenedFile(filePath);
         setSelectedFile(null);
@@ -658,7 +717,7 @@ export default function FilesView() {
       }
       return null;
     } finally {
-      if (!opts.background) setLoading(false);
+      if (!opts.background && abortRef.current === controller) setLoading(false);
     }
   }, [clearLastOpenedFile, setLastOpenedFile, viewedProject, showHidden]);
 

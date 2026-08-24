@@ -27,9 +27,16 @@ metadata and `Retry-After`; clients pause only the affected lane and retain
 their last valid data. Authentication failures stop background polling until an
 explicit retry.
 
+The rollout has an explicit operator switch: setting
+`FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT=false` and restarting makes the dashboard
+use the legacy independent reads. The snapshot endpoint reports
+`503 DASHBOARD_SNAPSHOT_DISABLED` while that manual rollback is active.
+
 ## Consequences
 
 Legacy endpoints remain available for compatibility and agents. The snapshot
 contract can evolve under an explicit version without forcing consumers onto a
 new global state model. In-memory limiter state remains process-local; a
 multi-instance deployment would need a shared limiter in a future decision.
+The rollback flag is deliberately manual and restart-scoped so an operator can
+contain a regression without silently changing the active request lane.

@@ -1,3 +1,5 @@
+import { markAuthHalted } from '../state/authState.mjs';
+
 /**
  * apiFetch — Centralized fetch wrapper for FlowBoard API calls.
  *
@@ -110,7 +112,15 @@ export function apiFetch(path, opts = {}) {
     throw error;
   }
 
-  return request.catch((error) => {
+  return request.then((response) => {
+    // This is deliberately below authentication middleware and therefore sees
+    // every API 401/403, including bootstrap and Files requests. The auth
+    // exchange explicitly clears the breaker after validating its payload.
+    if (response.status === 401 || response.status === 403) {
+      markAuthHalted({ status: response.status, path });
+    }
+    return response;
+  }).catch((error) => {
     if (timedOut) {
       throw new ApiError(`FlowBoard did not respond within ${timeoutMs} ms.`, {
         kind: 'timeout',

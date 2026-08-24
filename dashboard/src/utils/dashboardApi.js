@@ -1,4 +1,6 @@
-import { ApiError, apiJson } from './apiFetch.js';
+import { ApiError, apiJson, abortableAll } from './apiFetch.js';
+import { markAuthSucceeded } from '../state/authState.mjs';
+import { selectViewedProject } from './projectSelection.mjs';
 import {
   WORK_STATE_OPTIONS,
   WORK_STATE_DETAIL_FIELDS,
@@ -261,6 +263,51 @@ function validateSnapshotStatus(status, path) {
   require(typeof status.contextReady === 'boolean', path, 'status.contextReady to be a boolean');
 }
 
+function snapshotSection(ok, data, error = null) {
+  return ok ? { ok: true, data } : { ok: false, error: error || {
+    code: 'SECTION_UNAVAILABLE',
+    message: 'Dashboard snapshot section unavailable',
+  } };
+}
+
+/**
+ * Manual rollback path for FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT=false. Keep
+ * this compatible envelope so the rest of the dashboard does not need a
+ * second state model while operators roll back the snapshot lane.
+ */
+async function fetchLegacyDashboardSnapshot(project, agentId, signal, options = {}) {
+  const [projects, agents, activeProject] = await abortableAll([
+    (groupSignal) => fetchProjectsList(groupSignal, options),
+    (groupSignal) => fetchAgentsList(groupSignal, options),
+    (groupSignal) => fetchActiveProjectForAgent(agentId, groupSignal, options),
+  ], { parentSignal: signal });
+  const viewedProject = selectViewedProject({
+    projects,
+    agents,
+    activeProject,
+    currentViewedProject: project,
+  });
+  const tasks = viewedProject ? await fetchTasksForProject(viewedProject, signal, options) : [];
+  const status = { agentId: agentId || null, activeProject, contextReady: false };
+  return {
+    ok: true,
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    projects,
+    agents,
+    status,
+    activeProject,
+    viewedProject,
+    tasks,
+    sections: {
+      projects: snapshotSection(true, projects),
+      agents: snapshotSection(true, agents),
+      status: snapshotSection(true, status),
+      tasks: snapshotSection(true, tasks),
+    },
+  };
+}
+
 /**
  * Fetch the versioned shell read model. `project` is the currently viewed
  * project, while the server resolves the active project from the agent id.
@@ -278,11 +325,26 @@ export async function fetchDashboardSnapshot(project = null, agentId = null, sig
     agentId = request.agentId || null;
   }
 
+  if (globalThis.window?.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ === false) {
+    return fetchLegacyDashboardSnapshot(project, agentId, signal, options);
+  }
+
   const query = new URLSearchParams();
   if (project) query.set('project', project);
   if (agentId) query.set('agentId', agentId);
   const path = `/dashboard/snapshot/v1${query.toString() ? `?${query}` : ''}`;
-  const data = await apiJson(path, { ...options, signal });
+  let data;
+  try {
+    data = await apiJson(path, { ...options, signal });
+  } catch (error) {
+    // A server-side flag may be changed without a matching frontend build.
+    // Honor the same explicit rollback path when the endpoint advertises that
+    // it is disabled; unrelated 503s must still surface normally.
+    if (error?.status === 503 && error?.code === 'DASHBOARD_SNAPSHOT_DISABLED') {
+      return fetchLegacyDashboardSnapshot(project, agentId, signal, options);
+    }
+    throw error;
+  }
   require(isRecord(data) && data.ok === true, path, 'a snapshot response with ok=true');
   require(data.version === 1, path, 'snapshot version 1');
   require(isNonEmptyString(data.generatedAt), path, 'generatedAt to be a non-empty string');
@@ -292,7 +354,13 @@ export async function fetchDashboardSnapshot(project = null, agentId = null, sig
     const state = data.sections[section];
     require(isRecord(state) && state.ok === true, path,
       `${section} snapshot section to be available`);
+    require(hasOwn(state, 'data'), path, `${section} snapshot section to include data`);
   }
+
+  require(Array.isArray(data.sections.projects.data), path, 'projects snapshot data to be an array');
+  require(Array.isArray(data.sections.agents.data), path, 'agents snapshot data to be an array');
+  validateSnapshotStatus(data.sections.status.data, path);
+  require(Array.isArray(data.sections.tasks.data), path, 'tasks snapshot data to be an array');
 
   require(Array.isArray(data.projects), path, 'projects to be an array');
   require(Array.isArray(data.agents), path, 'agents to be an array');
@@ -327,5 +395,7 @@ export async function authenticateTelegram(initData, signal, options = {}) {
   if (data.user.username !== undefined && typeof data.user.username !== 'string') {
     throw invalidApiPayload(path, 'user.username to be a string when present');
   }
+  // This is the sole success path allowed to clear the shared auth breaker.
+  markAuthSucceeded();
   return data;
 }

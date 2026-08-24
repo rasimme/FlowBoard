@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useAppState } from './AppStateContext.jsx';
 import * as bridge from '../state/appStateBridge.mjs';
-import { apiJson } from '../utils/apiFetch.js';
+import { ApiError, apiJson } from '../utils/apiFetch.js';
 import {
   fetchDashboardSnapshot as fetchDashboardSnapshotApi,
   fetchTasksForProject,
@@ -14,6 +14,12 @@ import {
   connectionRecovery,
   connectionScopeRecovery,
 } from '../state/connectionState.mjs';
+import {
+  isAuthHalted,
+  getAuthHaltError,
+  markAuthHalted,
+  subscribeAuthState,
+} from '../state/authState.mjs';
 
 const DashboardContext = createContext(null);
 
@@ -71,8 +77,8 @@ export function DashboardProvider({ children }) {
   const projectSwitchRef = useRef(null);
   const queuedRetryRef = useRef(null);
   const coreCooldownUntilRef = useRef(0);
-  const pollingStoppedRef = useRef(false);
   const unmountedRef = useRef(false);
+  const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
 
   const publishConnection = useCallback((next) => {
     if (sameConnection(connectionRef.current, next)) return;
@@ -82,6 +88,11 @@ export function DashboardProvider({ children }) {
 
   const markConnectionFailure = useCallback((error, label, scope = 'core') => {
     console.error(`${label}:`, error);
+    if (error?.status === 401 || error?.status === 403) {
+      // apiFetch normally opens the breaker before apiJson rejects. Keep this
+      // safeguard for bootstrap/custom fetch implementations as well.
+      markAuthHalted(error);
+    }
     const next = connectionFailure(connectionRef.current, error, scope);
     if (error?.status === 429) {
       const cooldownUntil = Date.now() + retryAfterMs(error);
@@ -106,6 +117,19 @@ export function DashboardProvider({ children }) {
   useEffect(() => {
     connectionRef.current = state?.connection || INITIAL_CONNECTION_STATE;
   }, [state?.connection]);
+
+  // A 401/403 from Files or another view must put the shell in the same auth
+  // state as a failed snapshot. This also gives the explicit Retry button an
+  // auth-scoped request that can rerun /api/auth.
+  useEffect(() => {
+    if (!authHalted || connectionRef.current.errorScope === 'auth') return;
+    const halted = getAuthHaltError();
+    const error = new ApiError('Authentication required.', {
+      status: halted?.status === 401 || halted?.status === 403 ? halted.status : 401,
+      path: halted?.path || '/api',
+    });
+    publishConnection(connectionFailure(connectionRef.current, error, 'auth'));
+  }, [authHalted, publishConnection]);
 
   // One task-request lane owns every list fetch that can ultimately publish to
   // appState.tasks: full snapshots, project navigation, mutation refreshes and
@@ -223,12 +247,9 @@ export function DashboardProvider({ children }) {
     if (kind === 'poll') {
       // A lane-local cooldown prevents a 429 from turning the five-second
       // reconciliation loop into a retry storm. Auth failures stop polling
-      // entirely until the user explicitly retries authentication.
-      if (pollingStoppedRef.current) return Promise.resolve(false);
+      // entirely until the shared auth state is cleared by /api/auth.
+      if (isAuthHalted()) return Promise.resolve(false);
       if (coreCooldownUntilRef.current > Date.now()) return Promise.resolve(false);
-    }
-    if (kind === 'retry') {
-      pollingStoppedRef.current = false;
     }
     const running = snapshotRequestRef.current.active;
     // React StrictMode deliberately replays mount effects in development. A
@@ -277,7 +298,9 @@ export function DashboardProvider({ children }) {
           if (!superseded) {
             const scope = error?.path === '/api/auth' ? 'auth' : 'core';
             if (error?.status === 401 || error?.status === 403) {
-              pollingStoppedRef.current = true;
+              // apiFetch opens the shared breaker; retain this explicit call
+              // for protocol/auth errors raised by a custom fetcher.
+              markAuthHalted(error);
             }
             if (authRecovered && scope !== 'auth') {
               connectionRef.current = connectionScopeRecovery(

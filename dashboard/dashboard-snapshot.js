@@ -19,11 +19,26 @@ function safeSectionError() {
   };
 }
 
-function readSection(fn) {
+function readSection(fn, validate) {
   try {
-    return { ok: true, data: fn() };
+    const data = fn();
+    if (validate) validate(data);
+    return { ok: true, data };
   } catch {
     return { ok: false, error: safeSectionError() };
+  }
+}
+
+function requireArray(value) {
+  if (!Array.isArray(value)) throw new TypeError('snapshot section must return an array');
+}
+
+function requireStatus(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || (value.agentId !== null && typeof value.agentId !== 'string')
+    || (value.activeProject !== null && typeof value.activeProject !== 'string')
+    || typeof value.contextReady !== 'boolean') {
+    throw new TypeError('snapshot status section has an invalid shape');
   }
 }
 
@@ -42,9 +57,9 @@ function buildDashboardSnapshot({
   }
 
   const sections = {
-    projects: readSection(listProjects),
-    agents: readSection(listAgents),
-    status: readSection(() => getStatus(agentId)),
+    projects: readSection(listProjects, requireArray),
+    agents: readSection(listAgents, requireArray),
+    status: readSection(() => getStatus(agentId), requireStatus),
   };
 
   const status = sections.status.ok ? sections.status.data : null;
@@ -65,9 +80,11 @@ function buildDashboardSnapshot({
     || projects.find(project => project?.name)?.name
     || null;
 
-  sections.tasks = viewedProject
-    ? readSection(() => listTasks(viewedProject))
-    : { ok: true, data: [] };
+  sections.tasks = !sections.projects.ok
+    ? { ok: false, error: safeSectionError() }
+    : (viewedProject
+      ? readSection(() => listTasks(viewedProject), requireArray)
+      : { ok: true, data: [] });
 
   // Keep the top-level fields intentionally boring for consumers that only
   // need a complete snapshot. A failed section is never represented as an
@@ -82,7 +99,6 @@ function buildDashboardSnapshot({
     generatedAt: new Date(now()).toISOString(),
     sections,
     ...data,
-    snapshot: data,
   };
 }
 

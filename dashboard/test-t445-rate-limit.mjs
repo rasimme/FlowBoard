@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 
-import { ApiError, apiJson } from './src/utils/apiFetch.js';
-import { fetchDashboardSnapshot } from './src/utils/dashboardApi.js';
+import { ApiError, apiFetch, apiJson } from './src/utils/apiFetch.js';
+import { authenticateTelegram, fetchDashboardSnapshot } from './src/utils/dashboardApi.js';
+import { isAuthHalted, markAuthSucceeded } from './src/state/authState.mjs';
 
 const require = createRequire(import.meta.url);
 const { buildDashboardSnapshot } = require('./dashboard-snapshot.js');
@@ -41,6 +42,17 @@ assert.equal(partial.ok, true);
 assert.equal(partial.sections.projects.ok, false);
 assert.equal(partial.sections.projects.error.code, 'SECTION_UNAVAILABLE');
 assert.deepEqual(partial.projects, [], 'failed section is not a fabricated success payload');
+assert.equal(partial.sections.tasks.ok, false, 'dependent tasks fail closed when projects are unavailable');
+assert.equal(Object.hasOwn(partial, 'snapshot'), false, 'snapshot response does not duplicate its envelope');
+
+const malformed = buildDashboardSnapshot({
+  listProjects: () => ({ name: 'not-an-array' }),
+  listAgents: () => [],
+  getStatus: () => ({ agentId: null, activeProject: null, contextReady: false }),
+  listTasks: () => [],
+});
+assert.equal(malformed.sections.projects.ok, false, 'malformed section data fails closed');
+markAuthSucceeded();
 
 const request = {
   method: 'GET',
@@ -67,6 +79,9 @@ const source = fs.readFileSync(new URL('./src/context/AppStateContext.jsx', impo
 const filesSource = fs.readFileSync(new URL('./src/pages/FilesView.jsx', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /fetchAgentsList|app-state-initial-agents/, 'AppStateProvider does not duplicate agent reads');
 assert.match(filesSource, /const FILE_POLL_INTERVAL_MS = 15000;/, 'Files lane is visible-only at 15 seconds');
+assert.match(filesSource, /fileTreeTargetKey/, 'Files tree target includes project and includeHidden');
+assert.match(filesSource, /treeTargetRef/, 'Files tree uses generation invalidation for target switches');
+assert.match(filesSource, /isAuthHalted|authHalted/, 'Files polling honors the shared auth halt');
 
 global.window = { location: { origin: 'http://127.0.0.1:18790' }, Telegram: {} };
 global.fetch = async () => new Response(JSON.stringify({
@@ -82,12 +97,46 @@ global.fetch = async () => new Response(JSON.stringify({
   sections: {
     projects: { ok: true, data: [] },
     agents: { ok: true, data: [] },
-    status: { ok: true, data: {} },
+    status: { ok: true, data: { agentId: 'codex', activeProject: null, contextReady: false } },
     tasks: { ok: true, data: [] },
   },
 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const loaded = await fetchDashboardSnapshot(null, 'codex');
 assert.equal(loaded.version, 1);
+assert.equal(Object.hasOwn(loaded, 'snapshot'), false);
+
+global.fetch = async () => new Response(JSON.stringify({ error: 'Forbidden' }), {
+  status: 403,
+  headers: { 'Content-Type': 'application/json' },
+});
+await apiFetch('/api/projects/demo/files');
+assert.equal(isAuthHalted(), true, 'any API 403 opens the shared auth halt');
+
+global.fetch = async () => new Response(JSON.stringify({
+  ok: true,
+  user: { username: 'tester' },
+  agentId: 'codex',
+}), { status: 200, headers: { 'Content-Type': 'application/json' } });
+await authenticateTelegram('signed-init-data');
+assert.equal(isAuthHalted(), false, 'only a validated auth exchange clears the halt');
+
+global.window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = false;
+global.fetch = async (url) => {
+  const path = new URL(url, global.window.location.origin).pathname;
+  const data = path.endsWith('/projects')
+    ? { ok: true, projects: [] }
+    : path.endsWith('/agents')
+      ? { ok: true, agents: [] }
+      : { agentId: 'codex', activeProject: null };
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+};
+const legacy = await fetchDashboardSnapshot(null, 'codex');
+assert.deepEqual(legacy.projects, [], 'manual rollback uses the legacy project lane');
+assert.equal(legacy.sections.tasks.ok, true, 'manual rollback preserves the typed envelope');
+global.window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = true;
 
 global.fetch = async () => new Response(JSON.stringify({
   error: 'Rate limit exceeded', code: 'RATE_LIMIT_EXCEEDED', scope: 'read', retryAfter: 7,

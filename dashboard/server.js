@@ -14,6 +14,9 @@ const app = express();
 const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
 // S-17: Default to localhost — Cloudflare Tunnel connects via 127.0.0.1 anyway
 const HOST = process.env.FLOWBOARD_HOST || '127.0.0.1';
+// T-445 rollback switch. The UI receives this value in its boot config and
+// falls back to the pre-snapshot request lane when explicitly disabled.
+const DASHBOARD_SNAPSHOT_ENABLED = process.env.FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT !== 'false';
 
 const WORKSPACE = process.env.OPENCLAW_WORKSPACE || path.join(process.env.HOME, '.openclaw', 'workspace');
 const OPENCLAW_HOME = path.resolve(WORKSPACE, '..');
@@ -576,7 +579,7 @@ app.get('/', (req, res) => {
   const nonce = res.locals.cspNonce;
   // Inject nonce into existing inline scripts and add config script
   html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
+  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
@@ -606,7 +609,7 @@ app.get('/*path', (req, res, next) => {
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   const nonce = res.locals.cspNonce;
   html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};</script></head>`);
+  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
@@ -1411,6 +1414,9 @@ app.get('/api/info', (req, res) => {
       rules:     '/api/projects/:name/rules/:section',
       tasks:     '/api/projects/:name/tasks',
     },
+    features: {
+      dashboardSnapshot: DASHBOARD_SNAPSHOT_ENABLED,
+    },
     agent_id_convention:
       "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. " +
       "Do not use generated cwd/session names like 'codex-workspace'. " +
@@ -1860,6 +1866,12 @@ app.get('/api/projects', (req, res) => {
 // empty board. Legacy /projects, /agents, /status and /tasks endpoints remain
 // available for agents and other clients.
 app.get('/api/dashboard/snapshot/v1', (req, res) => {
+  if (!DASHBOARD_SNAPSHOT_ENABLED) {
+    return res.status(503).json({
+      error: 'Dashboard snapshot lane is disabled by operator configuration.',
+      code: 'DASHBOARD_SNAPSHOT_DISABLED',
+    });
+  }
   const rawAgentId = req.query.agentId || req.headers['x-openclaw-agent-id'] || null;
   let agentId = null;
   if (rawAgentId !== null) {
