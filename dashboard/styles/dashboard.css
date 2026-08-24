@@ -408,10 +408,9 @@
       }
     }
 
-    /* T-161 C2 Labeled bar — "Active on this project" strip above the kanban.
-       Primary driver: flowboard_agents.active_project == viewedProject.
-       Secondary (per-pill sub-line): the agent's currently-claimed task in this
-       project, if any. Routed agents are intentionally not shown here. */
+    /* T-446 / D1 — compact, project-local active claim strip. The bar is still
+       driven by project activity, while each pill's task list comes directly
+       from the loaded task payload. */
     .active-agents-bar {
       padding: 12px 20px 14px;
       margin: 0 -16px 10px;
@@ -433,6 +432,11 @@
       flex-wrap: wrap;
       gap: 10px;
     }
+    .active-agents-pill-wrap {
+      position: relative;
+      display: inline-flex;
+      min-width: 0;
+    }
     .active-agents-pill {
       display: inline-flex;
       align-items: center;
@@ -441,20 +445,36 @@
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius-full);
-      max-width: 320px;
-      transition: background var(--duration-fast), border-color var(--duration-fast);
+      max-width: min(360px, 100%);
+      min-height: 32px;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      transition: background var(--duration-fast), border-color var(--duration-fast), box-shadow var(--duration-fast);
     }
-    .active-agents-pill.has-task {
+    .active-agents-pill--trigger {
       cursor: pointer;
     }
-    .active-agents-pill.has-task:hover {
+    .active-agents-pill--trigger:hover {
       background: var(--card-highlight);
       border-color: var(--border-strong);
     }
-    .active-agents-pill.has-task:focus-visible {
+    .active-agents-pill--trigger:focus-visible {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 2px var(--accent-subtle);
+    }
+    .active-agents-pill--multi[aria-expanded="true"] {
+      background: var(--card-highlight);
+      border-color: var(--border-strong);
+    }
+    .active-agents-pill--idle {
+      max-width: 240px;
+    }
+    .active-agents-pill__avatar {
+      display: inline-flex;
+      align-items: center;
+      flex: 0 0 auto;
     }
     .active-agents-pill__meta {
       display: inline-flex;
@@ -474,7 +494,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 260px;
+      max-width: 210px;
     }
     .active-agents-pill__task--idle {
       font-style: italic;
@@ -482,6 +502,187 @@
     }
     .active-agents-pill__task-id {
       font-family: "JetBrains Mono", monospace;
+    }
+    .active-agents-pill__count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-full);
+      color: var(--text-strong);
+      background: var(--secondary);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .active-agents-pill__caret {
+      flex: 0 0 auto;
+      color: var(--muted);
+      transition: transform var(--duration-fast);
+    }
+    .active-agents-pill--multi[aria-expanded="true"] .active-agents-pill__caret {
+      transform: rotate(180deg);
+      color: var(--text);
+    }
+    .active-agents-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+      min-width: 0;
+    }
+    .active-agents-status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      box-shadow: 0 0 0 2px rgba(255,255,255,.04);
+      flex: 0 0 auto;
+    }
+    .active-agents-status-dot--backlog { background: var(--status-backlog); }
+    .active-agents-status-dot--open { background: var(--status-open); }
+    .active-agents-status-dot--in-progress { background: var(--status-in-progress); }
+    .active-agents-status-dot--review { background: var(--status-review); }
+    .active-agents-status-dot--done { background: var(--status-done); }
+    .active-agents-status-dot--unknown { background: var(--muted); }
+    .active-agents-status-label {
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    /* D1 popover: a quiet dark surface, anchored to the trigger wrapper. */
+    .active-agents-popover {
+      position: absolute;
+      z-index: 80;
+      top: calc(100% + 8px);
+      left: 0;
+      width: min(360px, calc(100vw - 32px));
+      max-height: min(360px, calc(100dvh - 136px));
+      overflow: hidden;
+      padding: 8px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-md);
+      background: var(--bg-elevated);
+      box-shadow: var(--shadow-lg);
+      animation: active-agents-popover-in var(--duration-fast) var(--ease-out);
+    }
+    .active-agents-popover__header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 3px 5px 8px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-strong);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .active-agents-popover__list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: 310px;
+      padding-top: 5px;
+      overflow-y: auto;
+    }
+    .active-agents-task-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      width: 100%;
+      min-width: 0;
+      padding: 7px 6px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      background: transparent;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: background var(--duration-fast), border-color var(--duration-fast);
+    }
+    .active-agents-task-row:hover,
+    .active-agents-task-row:focus-visible {
+      outline: none;
+      border-color: var(--border-strong);
+      background: var(--bg-hover);
+    }
+    .active-agents-task-row__topline {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      min-width: 0;
+    }
+    .active-agents-task-row__id {
+      flex: 0 0 auto;
+      color: var(--accent-hover);
+      font-size: 10px;
+    }
+    .active-agents-task-row__title {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--text-strong);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .active-agents-task-row__meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--muted);
+    }
+    .active-agents-task-progress {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 54px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px;
+    }
+    .active-agents-task-progress__track {
+      display: block;
+      width: 28px;
+      height: 4px;
+      overflow: hidden;
+      border-radius: var(--radius-full);
+      background: var(--secondary);
+    }
+    .active-agents-task-progress__fill {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent-2);
+    }
+    .active-agents-task-progress__value { white-space: nowrap; }
+    .active-agents-task-row__checkpoint {
+      min-width: 0;
+      overflow: hidden;
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 9px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    @keyframes active-agents-popover-in {
+      from { opacity: 0; transform: translateY(-3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .active-agents-popover { animation: none; }
+    }
+    @media (max-width: 640px) {
+      .active-agents-bar { padding-inline: 12px; }
+      .active-agents-pill__task { max-width: 140px; }
+      .active-agents-popover { left: auto; right: 0; }
     }
 
     /* Grip + kebab — hover-revealed affordances */
