@@ -156,28 +156,47 @@ function expectBlocked(fn, code) {
   });
   const ledgerBeforeShortWrite = ledger.readPolicyLedger(shortWriteLedgerOptions);
   const originalWriteSync = fs.writeSync;
+  const shortWriteTitle = 'Must roll back on short ledger write — Prüfung 🚨';
+  const shortWriteLedgerMarker = 'agent:short-write-ä🚨';
+  let shortWriteObserved = null;
   fs.writeSync = function deterministicShortWrite(fd, data, position, encoding) {
     if (typeof data === 'string') {
       const encoded = Buffer.from(data, encoding || 'utf8');
       const partial = encoded.subarray(0, Math.max(0, encoded.length - 1));
+      if (data.includes(shortWriteLedgerMarker)) {
+        shortWriteObserved = {
+          stringLength: data.length,
+          byteLength: encoded.length,
+          returnedBytes: partial.length,
+        };
+      }
       originalWriteSync(fd, partial, 0, partial.length, position);
       return partial.length;
     }
     return originalWriteSync.apply(this, arguments);
   };
   try {
-    expectBlocked(() => hzl.createTaskWithPolicy(PROJECT, { title: 'Must roll back on short ledger write' }, {
-      origin: 'tasks-api', policyLedgerOptions: shortWriteLedgerOptions,
+    expectBlocked(() => hzl.createTaskWithPolicy(PROJECT, { title: shortWriteTitle }, {
+      origin: 'tasks-api',
+      principal: { kind: 'agent', verified: false, actor: shortWriteLedgerMarker },
+      policyLedgerOptions: shortWriteLedgerOptions,
     }), 'POLICY_LEDGER_SHORT_WRITE');
   } finally {
     fs.writeSync = originalWriteSync;
   }
-  assert.ok(!hzl.listTasks(PROJECT).some(t => t.title === 'Must roll back on short ledger write'),
+  assert.ok(shortWriteObserved, 'short-write mock observed the serialized multibyte ledger record');
+  assert.ok(shortWriteObserved.byteLength > shortWriteObserved.stringLength,
+    'short-write record has more UTF-8 bytes than JavaScript characters');
+  assert.equal(shortWriteObserved.returnedBytes, shortWriteObserved.byteLength - 1,
+    'short-write mock returns a byte count, not a character count');
+  assert.ok(shortWriteObserved.returnedBytes > shortWriteObserved.stringLength,
+    'short-write byte count exceeds the character count, so a character-length check cannot pass');
+  assert.ok(!hzl.listTasks(PROJECT).some(t => t.title === shortWriteTitle),
     'short ledger write leaves no task projection');
   assert.deepEqual(ledger.readPolicyLedger(shortWriteLedgerOptions), ledgerBeforeShortWrite,
     'short ledger write leaves the prior JSONL records intact and parseable');
   await hzl.init(dbPath);
-  assert.ok(!hzl.listTasks(PROJECT).some(t => t.title === 'Must roll back on short ledger write'),
+  assert.ok(!hzl.listTasks(PROJECT).some(t => t.title === shortWriteTitle),
     'short ledger write leaves no persisted task after event-store replay');
 
   // Exception review is one-way and server-authoritative. The public task is
