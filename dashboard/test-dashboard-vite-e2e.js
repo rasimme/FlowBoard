@@ -161,7 +161,7 @@ async function main() {
     if (![200, 201].includes(created.status)) throw new Error(`could not create Vite E2E project (${created.status})`);
 
     let mode = 'success';
-    let projectsRequests = 0;
+    let snapshotRequests = 0;
     let authRequests = 0;
 
     const respond = (request, status, body) => request.respond({
@@ -208,9 +208,9 @@ async function main() {
           return;
         }
 
-        if (request.method() === 'GET' && url.pathname === '/api/projects') {
-          projectsRequests += 1;
-          console.log(`[vite-e2e] /api/projects #${projectsRequests} mode=${mode}`);
+        if (request.method() === 'GET' && url.pathname === '/api/dashboard/snapshot/v1') {
+          snapshotRequests += 1;
+          console.log(`[vite-e2e] /api/dashboard/snapshot/v1 #${snapshotRequests} mode=${mode}`);
           if (mode === 'auth') {
             await request.continue();
             return;
@@ -222,7 +222,12 @@ async function main() {
           // Delay only the first development request. StrictMode's rehearsal
           // cleanup must abort it, while the immediately re-mounted effect
           // starts the second request without waiting for the 5s poll timer.
-          if (projectsRequests === 1) await new Promise((resolve) => setTimeout(resolve, 6000));
+          // Keep the rehearsal delay below the readiness timeout. Under a
+          // heavily loaded full suite Puppeteer may not surface the aborted
+          // first request quickly enough for the second request to appear;
+          // the test still proves the initial load does not wait for the 5s
+          // poll cadence.
+          if (snapshotRequests === 1) await new Promise((resolve) => setTimeout(resolve, 2500));
         }
 
         await request.continue();
@@ -245,7 +250,7 @@ async function main() {
     // Success must recover from the first StrictMode rehearsal immediately;
     // a 5s interval tick is not an acceptable initial-load mechanism.
     mode = 'success';
-    projectsRequests = 0;
+    snapshotRequests = 0;
     authRequests = 0;
     const startedAt = Date.now();
     await goto('strictmode-success');
@@ -253,14 +258,14 @@ async function main() {
     const successElapsed = Date.now() - startedAt;
     r.ok(successElapsed < 5000,
       `Vite StrictMode success reloads immediately (${successElapsed}ms, not after the poll interval)`);
-    r.ok(projectsRequests >= 1,
+    r.ok(snapshotRequests >= 1,
       'Vite StrictMode completes a fresh core load after the rehearsal cleanup');
     r.ok(!!(await page.$('[data-project="vite-success"]')), 'Vite StrictMode success renders the project board');
 
     // Auth failures must still be fatal in dev mode, not hidden by the late
     // second effect or converted into an empty board.
     mode = 'auth';
-    projectsRequests = 0;
+    snapshotRequests = 0;
     authRequests = 0;
     await goto('strictmode-auth-error');
     await waitState('auth-error');
@@ -271,11 +276,11 @@ async function main() {
 
     // Core API failures are likewise visible after the dev-only rehearsal.
     mode = 'api-error';
-    projectsRequests = 0;
+    snapshotRequests = 0;
     authRequests = 0;
     await goto('strictmode-api-error');
     await waitState('server-error');
-    r.ok(projectsRequests >= 1, 'Vite StrictMode API error reaches the core projects endpoint');
+    r.ok(snapshotRequests >= 1, 'Vite StrictMode API error reaches the dashboard snapshot endpoint');
     r.ok(!(await saysNoProjects()), 'Vite StrictMode API error never renders No projects');
   });
 

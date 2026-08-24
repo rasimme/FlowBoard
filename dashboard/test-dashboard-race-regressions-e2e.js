@@ -1,7 +1,7 @@
 'use strict';
 
-// T-440 re-review regressions: bootstrap auth priority, AppStateContext's late
-// agents response, and project-switch invalidation of a stale override refresh.
+// T-440/T-445 re-review regressions: bootstrap auth priority, snapshot section
+// preservation, and project-switch invalidation of a stale override refresh.
 
 const net = require('net');
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
@@ -13,6 +13,21 @@ const validAgent = (overrides = {}) => ({
   active_project: null,
   activated_at: '2026-08-17T10:00:00.000Z',
   last_seen: '2026-08-17T10:00:00.000Z',
+  ...overrides,
+});
+
+const validProject = (overrides = {}) => ({
+  name: 'switch-old',
+  displayName: 'Switch Old',
+  status: 'active',
+  archived: false,
+  group: null,
+  order: null,
+  assignedAgents: [],
+  description: '',
+  createdAt: '2026-08-17T10:00:00.000Z',
+  github: null,
+  taskCounts: { open: 0, 'in-progress': 0, review: 0, done: 0, backlog: 0, archived: 0, blocked: 0 },
   ...overrides,
 });
 
@@ -100,12 +115,30 @@ async function main() {
     let switchTaskLoadStartedResolve;
     let switchTaskLoadStarted = Promise.resolve();
     let retryCoreSnapshotCount = 0;
+    let malformedSnapshotCalls = 0;
 
     const respond = (request, status, body) => request.respond({
       status,
       contentType: 'application/json',
       body: JSON.stringify(body),
     });
+    const snapshotBody = (overrides = {}) => {
+      const projects = overrides.projects || [validProject(), validProject({ name: 'switch-new', displayName: 'Switch New' })];
+      const agents = overrides.agents || [validAgent({ agent_id: freshAgent })];
+      const tasks = overrides.tasks || [];
+      const status = overrides.status || { agentId: 'e2e', activeProject: null, contextReady: false };
+      return {
+        ok: true, version: 1, generatedAt: '2026-08-24T08:00:00.000Z',
+        projects, agents, status, activeProject: status.activeProject,
+        viewedProject: overrides.viewedProject || null, tasks,
+        sections: {
+          projects: { ok: true, data: projects },
+          agents: { ok: true, data: agents },
+          status: { ok: true, data: status },
+          tasks: { ok: true, data: tasks },
+        },
+      };
+    };
 
     await page.setRequestInterception(true);
     page.on('requestfailed', (request) => {
@@ -156,6 +189,39 @@ async function main() {
           }
         }
 
+        if (request.method() === 'GET' && url.pathname === '/api/dashboard/snapshot/v1'
+          && (mode === 'late-agents' || mode === 'late-malformed-agents')) {
+          malformedSnapshotCalls += 1;
+          if (mode === 'late-malformed-agents' && malformedSnapshotCalls > 1) {
+            const body = snapshotBody();
+            body.sections.agents = { ok: false, error: { code: 'SECTION_UNAVAILABLE' } };
+            await respond(request, 200, body);
+          } else {
+            await respond(request, 200, snapshotBody());
+          }
+          return;
+        }
+
+        if (request.method() === 'GET' && url.pathname === '/api/dashboard/snapshot/v1'
+          && (mode === 'auth-403' || mode === 'auth-malformed' || mode === 'auth-recovered-core-500')) {
+          authCoreProjects += 1;
+          if (mode === 'auth-recovered-core-500') {
+            await respond(request, 500, { error: 'Synthetic post-auth core failure' });
+            return;
+          }
+          await respond(request, 200, snapshotBody());
+          return;
+        }
+
+        if (request.method() === 'GET' && url.pathname === '/api/dashboard/snapshot/v1' && mode === 'server') {
+          await respond(request, 500, { error: 'Synthetic poll failure before project-switch Retry' });
+          return;
+        }
+
+        if (request.method() === 'GET' && url.pathname === '/api/dashboard/snapshot/v1' && mode === 'switch-retry-pass') {
+          retryCoreSnapshotCount += 1;
+        }
+
         if (request.method() === 'GET' && url.pathname === '/api/projects' && mode === 'server') {
           await respond(request, 500, { error: 'Synthetic poll failure before project-switch Retry' });
           return;
@@ -163,21 +229,6 @@ async function main() {
 
         if (request.method() === 'GET' && url.pathname === '/api/projects' && mode === 'switch-retry-pass') {
           retryCoreSnapshotCount += 1;
-        }
-
-        if ((mode === 'late-agents' || mode === 'late-malformed-agents')
-          && request.method() === 'GET'
-          && url.pathname === '/api/agents'
-          && loadKind === 'app-state-initial-agents') {
-          lateAgentsStartedResolve();
-          await new Promise((resolve) => { releaseLateAgents = resolve; });
-          await respond(request, 200, mode === 'late-malformed-agents'
-            ? { ok: true, agents: [validAgent({ active_project: 42 })] }
-            : {
-              ok: true,
-              agents: [validAgent({ agent_id: 'stale-late-agent' })],
-            });
-          return;
         }
 
         if (mode === 'hold-old-override'
@@ -219,31 +270,24 @@ async function main() {
       httpStatus: window.appState?.connection?.httpStatus,
     }));
 
-    // AppStateContext's own /agents load is deliberately late. The complete
-    // DashboardContext snapshot must win and remain intact after the late reply.
+    // The complete DashboardContext snapshot owns the agent list. A malformed
+    // later snapshot section must not replace that valid list with emptiness.
     mode = 'late-agents';
-    lateAgentsStarted = new Promise((resolve) => { lateAgentsStartedResolve = resolve; });
     await goto('late-agents');
-    await lateAgentsStarted;
     await page.waitForFunction((id) => window.appState?.agents?.some((agent) => agent.agent_id === id), {}, freshAgent);
-    releaseLateAgents();
     await new Promise((resolve) => setTimeout(resolve, 300));
     const agentsAfterLateReply = await page.evaluate(() => window.appState.agents.map((agent) => agent.agent_id));
-    r.ok(agentsAfterLateReply.includes(freshAgent), 'complete snapshot survives a delayed AppStateContext agents response');
-    r.ok(!agentsAfterLateReply.includes('stale-late-agent'), 'delayed agents response cannot overwrite newer agents data');
+    r.ok(agentsAfterLateReply.includes(freshAgent), 'complete snapshot publishes its agent section');
 
-    // A malformed late 2xx from AppStateContext must reject without publishing
-    // the old [] fallback that used to erase DashboardContext's valid agents.
+    // A malformed section in a later 2xx must reject without publishing the
+    // old [] fallback that used to erase valid agents.
     mode = 'late-malformed-agents';
-    lateAgentsStarted = new Promise((resolve) => { lateAgentsStartedResolve = resolve; });
+    malformedSnapshotCalls = 0;
     await goto('late-malformed-agents');
-    await lateAgentsStarted;
-    await page.waitForFunction((id) => window.appState?.agents?.some((agent) => agent.agent_id === id), {}, freshAgent);
-    releaseLateAgents();
     await new Promise((resolve) => setTimeout(resolve, 300));
     const agentsAfterMalformedReply = await page.evaluate(() => window.appState.agents.map((agent) => agent.agent_id));
     r.ok(agentsAfterMalformedReply.includes(freshAgent),
-      'malformed AppStateContext agents 2xx preserves the valid full-snapshot agents');
+      'malformed snapshot agents section preserves the valid full-snapshot agents');
 
     // /api/auth itself returns 403 while every core GET is allowed to return
     // 2xx. The auth failure remains the central blocking state.

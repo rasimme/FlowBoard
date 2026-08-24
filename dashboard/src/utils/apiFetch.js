@@ -126,13 +126,25 @@ export function apiFetch(path, opts = {}) {
 }
 
 export class ApiError extends Error {
-  constructor(message, { status = null, kind = 'http', path = null, cause = null, code = null } = {}) {
+  constructor(message, {
+    status = null,
+    kind = 'http',
+    path = null,
+    cause = null,
+    code = null,
+    retryAfterSeconds = null,
+    rateLimitScope = null,
+  } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.kind = kind;
     this.path = path;
     if (typeof code === 'string' && code) this.code = code;
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      this.retryAfterSeconds = retryAfterSeconds;
+    }
+    if (typeof rateLimitScope === 'string' && rateLimitScope) this.rateLimitScope = rateLimitScope;
     if (cause) this.cause = cause;
   }
 }
@@ -282,11 +294,19 @@ export async function apiJson(path, opts = {}) {
     }
 
     if (!res.ok) {
+      const retryAfterHeader = res.headers?.get?.('retry-after') || null;
+      const retryAfterSeconds = retryAfterHeader && /^\d+(?:\.\d+)?$/.test(retryAfterHeader.trim())
+        ? Math.max(0, Number(retryAfterHeader.trim()))
+        : (!parseError && Number.isFinite(data?.retryAfter) ? Math.max(0, Number(data.retryAfter)) : null);
       throw new ApiError((!parseError && data?.error) || `HTTP ${res.status}`, {
         status: res.status,
         kind: 'http',
         path: normalizedPath,
         code: !parseError && typeof data?.code === 'string' ? data.code : null,
+        retryAfterSeconds,
+        rateLimitScope: !parseError && typeof data?.scope === 'string'
+          ? data.scope
+          : (!parseError && typeof data?.lane === 'string' ? data.lane : null),
       });
     }
 

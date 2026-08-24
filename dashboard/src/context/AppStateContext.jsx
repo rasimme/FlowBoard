@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useSyncExternalStore } from 'react';
-import { fetchAgentsList } from '../utils/dashboardApi.js';
 import { subscribe, getVersion, getState, dispatch as storeDispatch, notifyChange } from '../state/appStore.mjs';
 
 const AppStateContext = createContext(null);
@@ -12,29 +11,6 @@ const AppStateContext = createContext(null);
 // write path, and `version` drives re-renders via useSyncExternalStore.
 export function AppStateProvider({ children }) {
   const version = useSyncExternalStore(subscribe, getVersion, getVersion);
-
-  // Fetch agents on mount so React doesn't render with an empty agents array.
-  // The shared dashboard API loader enforces the same JSON/schema/deadline
-  // contract as DashboardContext. A late response may only replace the exact
-  // array that existed when this request started; a newer full snapshot wins.
-  useEffect(() => {
-    const controller = new AbortController();
-    const agentsAtStart = window.appState?.agents;
-
-    fetchAgentsList(controller.signal, {
-      headers: { 'X-FlowBoard-Load': 'app-state-initial-agents' },
-    }).then((agents) => {
-      if (!controller.signal.aborted && window.appState?.agents === agentsAtStart) {
-        storeDispatch({ agents });
-      }
-    }).catch((error) => {
-      if (error?.kind !== 'aborted') {
-        console.warn('[AppStateProvider] initial agents fetch failed:', error);
-      }
-    });
-
-    return () => controller.abort(new DOMException('AppStateProvider unmounted', 'AbortError'));
-  }, []);
 
   // Legacy bridge: appStateBridge.notify() / external code can force a re-render.
   useEffect(() => {

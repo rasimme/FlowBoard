@@ -200,6 +200,13 @@
       "doc": "api/projects.md"
     },
     {
+      "method": "GET",
+      "path": "/api/dashboard/snapshot/v1",
+      "auth": "user",
+      "group": "dashboard",
+      "doc": "api/dashboard.md"
+    },
+    {
       "method": "POST",
       "path": "/api/projects",
       "auth": "user",

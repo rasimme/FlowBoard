@@ -238,6 +238,38 @@ function getClientIp(req, options = {}) {
   return socketIp(req);
 }
 
+/**
+ * T-445 lane classification. Checkpoints have their own budget because a
+ * dashboard read storm must not prevent an agent from recording progress.
+ * Everything else that mutates state uses the human/mutation lane.
+ */
+function getRateLimitScope(req) {
+  const pathname = String(req?.originalUrl || req?.path || '').split('?')[0];
+  if (/\/api\/auth(?:\/|$)/.test(pathname)) return 'auth';
+  if (req?.method === 'POST' && /\/tasks\/[^/]+\/checkpoint(?:\/|$)/.test(pathname)) {
+    return 'checkpoint';
+  }
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req?.method)) return 'read';
+  return 'mutation';
+}
+
+/**
+ * Resolve a limiter principal without ever using a bearer/cookie token or an
+ * unchecked request-body agent id. `req.user` exists only after the verified
+ * Telegram/JWT middleware; otherwise the transport address is the safe key.
+ */
+function getTrustedPrincipal(req, trustedProxyIps = []) {
+  const userId = req?.user?.id;
+  if ((typeof userId === 'string' && userId.trim()) || (typeof userId === 'number' && Number.isFinite(userId))) {
+    return `user:${String(userId).trim()}`;
+  }
+  return `ip:${getClientIp(req, trustedProxyIps)}`;
+}
+
+function getRateLimitKey(req, trustedProxyIps = []) {
+  return `${getRateLimitScope(req)}:${getTrustedPrincipal(req, trustedProxyIps)}`;
+}
+
 module.exports = {
   RateLimiter,
   DEFAULT_WINDOW_MS,
@@ -247,4 +279,7 @@ module.exports = {
   parseTrustedProxyIps,
   parseTrustedProxyConfig,
   socketIp,
+  getRateLimitScope,
+  getTrustedPrincipal,
+  getRateLimitKey,
 };

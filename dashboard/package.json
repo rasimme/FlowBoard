@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "test:t445": "node test-t445-rate-limit.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

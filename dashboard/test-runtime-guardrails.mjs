@@ -84,8 +84,8 @@ assert.match(dashboardContext.text, /querySelector\('\.sidebar-backdrop'\)/, 'Da
 assert.match(dashboardContext.text, /addEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is installed')
 assert.match(dashboardContext.text, /removeEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is cleaned up')
 assert.match(dashboardContext.text, /installGlobalToast/, 'DashboardContext installs global toast bridge for migrated React surfaces')
-assert.match(dashboardContext.text, /fetchCoordinatedTasks\(viewedProject, 'Dashboard snapshot'/,
-  'full snapshots use the central task-request coordinator')
+assert.match(dashboardContext.text, /fetchDashboardSnapshotApi\(/,
+  'full snapshots use the versioned dashboard snapshot endpoint')
 assert.equal((dashboardContext.text.match(/fetchTasksForProject\(/g) || []).length, 1,
   'DashboardContext has exactly one low-level task-list fetch site')
 assert.match(dashboardContext.text, /snapshot\.taskGeneration !== taskRequestRef\.current\.generation/,

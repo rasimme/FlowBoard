@@ -1,12 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { useAppState } from './AppStateContext.jsx';
-import { selectViewedProject } from '../utils/projectSelection.mjs';
 import * as bridge from '../state/appStateBridge.mjs';
-import { abortableAll, apiJson } from '../utils/apiFetch.js';
+import { apiJson } from '../utils/apiFetch.js';
 import {
-  fetchActiveProjectForAgent,
-  fetchAgentsList,
-  fetchProjectsList,
+  fetchDashboardSnapshot as fetchDashboardSnapshotApi,
   fetchTasksForProject,
 } from '../utils/dashboardApi.js';
 import { installGlobalToast, showToast } from '../utils/toast.js';
@@ -21,6 +18,11 @@ import {
 const DashboardContext = createContext(null);
 
 const POLL_INTERVAL_MS = 5000;
+
+function retryAfterMs(error) {
+  const seconds = Number(error?.retryAfterSeconds);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.max(1000, seconds * 1000) : 60000;
+}
 
 function isUserInteracting() {
   if (document.getElementById('modalOverlay')) return true;
@@ -68,6 +70,8 @@ export function DashboardProvider({ children }) {
   const taskRequestRef = useRef({ generation: 0, active: null });
   const projectSwitchRef = useRef(null);
   const queuedRetryRef = useRef(null);
+  const coreCooldownUntilRef = useRef(0);
+  const pollingStoppedRef = useRef(false);
   const unmountedRef = useRef(false);
 
   const publishConnection = useCallback((next) => {
@@ -78,10 +82,22 @@ export function DashboardProvider({ children }) {
 
   const markConnectionFailure = useCallback((error, label, scope = 'core') => {
     console.error(`${label}:`, error);
-    publishConnection(connectionFailure(connectionRef.current, error, scope));
+    const next = connectionFailure(connectionRef.current, error, scope);
+    if (error?.status === 429) {
+      const cooldownUntil = Date.now() + retryAfterMs(error);
+      if (scope === 'core') coreCooldownUntilRef.current = cooldownUntil;
+      publishConnection({
+        ...next,
+        cooldownUntil,
+        rateLimitScope: error.rateLimitScope || scope,
+      });
+      return;
+    }
+    publishConnection(next);
   }, [publishConnection]);
 
   const markConnectionSuccess = useCallback((projects, scope = 'core') => {
+    if (scope === 'core') coreCooldownUntilRef.current = 0;
     publishConnection(connectionRecovery(connectionRef.current, projects, scope));
   }, [publishConnection]);
 
@@ -152,32 +168,17 @@ export function DashboardProvider({ children }) {
       onAuthRecovered?.();
     }
     if (signal.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-
-    const [projects, agents, activeProject] = await abortableAll([
-      (groupSignal) => fetchProjectsList(groupSignal),
-      (groupSignal) => fetchAgentsList(groupSignal),
-      (groupSignal) => fetchActiveProjectForAgent(window.appState?.agentId, groupSignal),
-    ], { signal });
-    const viewedProject = selectViewedProject({
-      projects,
-      agents,
-      activeProject,
-      currentViewedProject: window.appState?.viewedProject || null,
-    });
-    const taskSnapshot = viewedProject
-      ? await fetchCoordinatedTasks(viewedProject, 'Dashboard snapshot', { signal })
-      : { tasks: [], generation: taskRequestRef.current.generation };
-    if (taskSnapshot === null) throw new DOMException('Superseded dashboard task snapshot', 'AbortError');
-
-    return {
-      projects,
-      agents,
-      activeProject,
-      viewedProject,
-      tasks: taskSnapshot.tasks,
-      taskGeneration: taskSnapshot.generation,
-    };
-  }, [fetchCoordinatedTasks]);
+    // Capture the task-lane generation before the single request. A direct
+    // navigation/mutation refresh that starts while this snapshot is in flight
+    // invalidates the snapshot's task section before it can commit.
+    const taskGeneration = taskRequestRef.current.generation;
+    const snapshot = await fetchDashboardSnapshotApi(
+      window.appState?.viewedProject || null,
+      window.appState?.agentId || null,
+      signal,
+    );
+    return { ...snapshot, taskGeneration };
+  }, []);
 
   const commitFullSnapshot = useCallback((snapshot, recoveredScope = 'core') => {
     const { projects, agents, activeProject, viewedProject, tasks } = snapshot;
@@ -187,6 +188,7 @@ export function DashboardProvider({ children }) {
     prevTasksRef.current = JSON.stringify(tasks);
 
     const connection = connectionRecovery(connectionRef.current, projects, recoveredScope);
+    if (recoveredScope === 'core') coreCooldownUntilRef.current = 0;
     connectionRef.current = connection;
     dispatch({ projects, agents, activeProject, viewedProject, tasks, connection });
   }, [dispatch]);
@@ -218,6 +220,16 @@ export function DashboardProvider({ children }) {
   }, [dispatch, markConnectionSuccess]);
 
   const runSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
+    if (kind === 'poll') {
+      // A lane-local cooldown prevents a 429 from turning the five-second
+      // reconciliation loop into a retry storm. Auth failures stop polling
+      // entirely until the user explicitly retries authentication.
+      if (pollingStoppedRef.current) return Promise.resolve(false);
+      if (coreCooldownUntilRef.current > Date.now()) return Promise.resolve(false);
+    }
+    if (kind === 'retry') {
+      pollingStoppedRef.current = false;
+    }
     const running = snapshotRequestRef.current.active;
     // React StrictMode deliberately replays mount effects in development. A
     // replayed initial load must replace the rehearsal request instead of
@@ -264,6 +276,9 @@ export function DashboardProvider({ children }) {
             || error?.name === 'AbortError';
           if (!superseded) {
             const scope = error?.path === '/api/auth' ? 'auth' : 'core';
+            if (error?.status === 401 || error?.status === 403) {
+              pollingStoppedRef.current = true;
+            }
             if (authRecovered && scope !== 'auth') {
               connectionRef.current = connectionScopeRecovery(
                 connectionRef.current,

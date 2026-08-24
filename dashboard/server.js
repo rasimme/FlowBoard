@@ -80,7 +80,10 @@ const {
   RateLimiter,
   getClientIp,
   parseTrustedProxyConfig,
+  getRateLimitKey,
+  getRateLimitScope,
 } = require('./rate-limiter.js');
+const { buildDashboardSnapshot } = require('./dashboard-snapshot.js');
 const { installPrivacyFilter } = require('./privacy-filter.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
@@ -409,6 +412,9 @@ app.use('/api/auth', (req, res, next) => {
     return res.status(rateLimitCheck.status).json({
       error: rateLimitCheck.message,
       code: 'RATE_LIMIT_EXCEEDED',
+      scope: 'auth',
+      lane: 'auth',
+      retryAfter: rateLimitCheck.resetSeconds,
     });
   }
 
@@ -488,12 +494,30 @@ app.use('/api/', rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   validate: false,
+  handler: (req, res) => {
+    const resetAt = req.rateLimit?.resetTime instanceof Date
+      ? req.rateLimit.resetTime.getTime()
+      : Date.now() + 60 * 1000;
+    const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
+    const scope = getRateLimitScope(req);
+    res.set('Retry-After', String(retryAfter));
+    return res.status(429).json({
+      error: 'Rate limit exceeded. Please retry after the cooldown.',
+      code: 'RATE_LIMIT_EXCEEDED',
+      scope,
+      lane: scope,
+      retryAfter,
+    });
+  },
   // Skip only requests without a tunnel marker that arrive from loopback.
   // cloudflared also connects from loopback, so a marker must never skip the
   // limiter. Its client-IP header is used only when the socket peer matches
   // TRUSTED_PROXY_IPS; otherwise getClientIp() uses the socket address.
   skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),
-  keyGenerator: (req) => getClientIp(req, TRUSTED_PROXY_IPS),
+  // The key is lane + verified session principal (or trusted transport IP).
+  // It deliberately never includes cookies, bearer tokens, or request-body
+  // agent ids. Separate keys keep reads, mutations, and checkpoints isolated.
+  keyGenerator: (req) => getRateLimitKey(req, TRUSTED_PROXY_IPS),
   message: { error: 'Too many requests, please slow down.' }
 }));
 
@@ -1235,25 +1259,7 @@ app.put('/api/status', async (req, res) => {
 // GET /api/agents — list all known agents and their active project (T-131-3)
 app.get('/api/agents', (req, res) => {
   try {
-    // T-231: lazy idle auto-deactivation. Clear active_project for agents idle
-    // past the TTL that hold no *live* task claim (lease protection). Done on
-    // read so /api/agents reflects truth without a scheduler. Correctness of
-    // the idle window relies on the bootstrap hook calling GET /api/status
-    // before every agent run (that refreshes last_seen) — see GET /api/status.
-    const nowMs = Date.now();
-    const ttlHours = fbMeta.AGENT_IDLE_TTL_HOURS;
-    const agents = fbMeta.listAgents();
-    for (const a of agents) {
-      // Lease-aware: an expired-lease claim is dead work and must not protect.
-      const claimCount = fbMeta.countLiveClaims(hzlService.listTasksClaimedBy(a.agent_id), nowMs);
-      if (fbMeta.isAgentIdleExpired(a, { nowMs, ttlHours, claimCount })) {
-        if (fbMeta.clearAgentActiveProject(a.agent_id)) {
-          const idleH = Math.round((nowMs - Date.parse(a.last_seen)) / 3600000);
-          console.log(`[flowboard-meta] auto-deactivated idle agent "${a.agent_id}" (idle ${idleH}h, no active claims)`);
-        }
-        a.active_project = null;
-      }
-    }
+    const agents = listDashboardAgents();
     res.json({ ok: true, agents });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -1400,6 +1406,7 @@ app.get('/api/info', (req, res) => {
       agents:    '/api/agents',
       status:    '/api/status',
       projects:  '/api/projects',
+      dashboardSnapshot: '/api/dashboard/snapshot/v1',
       bootstrap: '/api/projects/:name/bootstrap',
       rules:     '/api/projects/:name/rules/:section',
       tasks:     '/api/projects/:name/tasks',
@@ -1507,6 +1514,26 @@ function parseIndexMd() {
 
 function getTaskCounts(projectName) {
   return hzlService.getTaskCounts(projectName);
+}
+
+// Shared in-process agent read model for /api/agents and the versioned
+// dashboard snapshot. Keeping the idle cleanup here avoids re-fetching the
+// same agent state through the HTTP stack when the dashboard polls.
+function listDashboardAgents() {
+  const nowMs = Date.now();
+  const ttlHours = fbMeta.AGENT_IDLE_TTL_HOURS;
+  const agents = fbMeta.listAgents();
+  for (const a of agents) {
+    const claimCount = fbMeta.countLiveClaims(hzlService.listTasksClaimedBy(a.agent_id), nowMs);
+    if (fbMeta.isAgentIdleExpired(a, { nowMs, ttlHours, claimCount })) {
+      if (fbMeta.clearAgentActiveProject(a.agent_id)) {
+        const idleH = Math.round((nowMs - Date.parse(a.last_seen)) / 3600000);
+        console.log(`[flowboard-meta] auto-deactivated idle agent "${a.agent_id}" (idle ${idleH}h, no active claims)`);
+      }
+      a.active_project = null;
+    }
+  }
+  return agents;
 }
 
 function nextTaskId(tasks) {
@@ -1823,6 +1850,59 @@ app.get('/api/projects', (req, res) => {
   } catch (e) {
     console.error('[projects] Failed to list DB-backed projects:', e.message);
     return res.status(500).json({ error: 'Failed to load projects from HZL/FlowBoard metadata' });
+  }
+});
+
+// GET /api/dashboard/snapshot/v1 — one in-process read model for the dashboard
+// shell (T-445). The `project` query parameter is the currently viewed project;
+// when omitted, the caller's active project is used. Each section is isolated
+// in the response envelope so a read-model failure cannot be mistaken for an
+// empty board. Legacy /projects, /agents, /status and /tasks endpoints remain
+// available for agents and other clients.
+app.get('/api/dashboard/snapshot/v1', (req, res) => {
+  const rawAgentId = req.query.agentId || req.headers['x-openclaw-agent-id'] || null;
+  let agentId = null;
+  if (rawAgentId !== null) {
+    const identity = agentIdentity.validateAgentId(rawAgentId);
+    if (!identity.ok) return res.status(400).json({ error: identity.error });
+    agentId = identity.id;
+  }
+
+  const requestedProject = req.query.project || req.query.viewedProject || null;
+  if (requestedProject !== null && !sanitizeProjectName(requestedProject)) {
+    return res.status(400).json({ error: 'Invalid project name' });
+  }
+
+  try {
+    const snapshot = buildDashboardSnapshot({
+      agentId,
+      requestedProject,
+      listProjects: () => {
+        const hzlProjects = hzlService.listHzlProjects();
+        return fbMeta.listProjects(hzlProjects).map(p => ({
+          ...p,
+          taskCounts: getTaskCounts(p.name),
+        }));
+      },
+      listAgents: listDashboardAgents,
+      getStatus: (id) => {
+        if (!id) return { agentId: null, activeProject: null, contextReady: false };
+        const row = fbMeta.getAgentRow(id);
+        const activeProject = row?.active_project || null;
+        const readiness = activeProject
+          ? rulesApi.getBootstrapReadiness(activeProject)
+          : { contextReady: false };
+        return { agentId: id, activeProject, contextReady: readiness.contextReady };
+      },
+      listTasks: (project) => {
+        if (!projectExists(project)) throw new Error('Project not found');
+        return enrichTasks(project, hzlService.listTasks(project, { includeArchived: true }));
+      },
+    });
+    return res.json(snapshot);
+  } catch (err) {
+    console.error('[dashboard/snapshot/v1]', err);
+    return res.status(500).json({ error: 'Failed to build dashboard snapshot' });
   }
 });
 

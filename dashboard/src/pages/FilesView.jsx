@@ -24,7 +24,13 @@ function isEditablePath(filePath) {
 
 const CATEGORY_LABELS = { always: 'always loaded', lazy: 'lazy loaded', optional: 'context' };
 const LAST_OPENED_STORAGE_KEY = 'flowboard.files.lastOpenedByProject';
-const FILE_POLL_INTERVAL_MS = 5000;
+const FILE_POLL_INTERVAL_MS = 15000;
+
+function retryAfterMs(response) {
+  const raw = response.headers?.get?.('Retry-After');
+  const seconds = raw && /^\d+(?:\.\d+)?$/.test(raw.trim()) ? Number(raw.trim()) : 60;
+  return Math.max(1000, seconds * 1000);
+}
 
 function formatSize(bytes) {
   if (bytes == null) return '';
@@ -451,6 +457,7 @@ export default function FilesView() {
   const [fileData, setFileData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [treeLoading, setTreeLoading] = useState(false);
+  const [treeError, setTreeError] = useState(null);
   // T-375-1: the tree shows Markdown only by default; reveal operational files on demand.
   const [showHidden, setShowHidden] = useState(false);
   const [fileConflict, setFileConflict] = useState(null);
@@ -482,12 +489,16 @@ export default function FilesView() {
   const fileDataRef = useRef(null);
   const dirtyRef = useRef(false);
   const ignoredConflictRef = useRef(null);
+  const fileTreeRef = useRef(null);
+  const treeRequestRef = useRef(null);
+  const treeCooldownUntilRef = useRef(0);
 
   const treeScrollRef = useCustomScroll();
   const previewScrollRef = useCustomScroll();
 
   useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
   useEffect(() => { fileDataRef.current = fileData; }, [fileData]);
+  useEffect(() => { fileTreeRef.current = fileTree; }, [fileTree]);
 
   const setLastOpenedFile = useCallback((filePath) => {
     if (!viewedProject) return;
@@ -512,25 +523,47 @@ export default function FilesView() {
   // Load file tree
   const fetchTree = useCallback(async (opts = {}) => {
     if (!viewedProject) return null;
+    if (treeCooldownUntilRef.current > Date.now()) return fileTreeRef.current;
+    if (treeRequestRef.current) return treeRequestRef.current;
     if (!opts.background) setTreeLoading(true);
-    try {
-      const qs = showHidden ? '?includeHidden=true' : '';
-      const res = await apiFetch(`/api/projects/${viewedProject}/files${qs}`);
-      if (!res.ok) throw new Error('File tree failed');
-      const data = await res.json();
-      setFileTree(data);
-      return data;
-    } catch (err) {
-      console.warn('[file-tree]', err);
-      return null;
-    } finally {
-      if (!opts.background) setTreeLoading(false);
-    }
+    const request = (async () => {
+      try {
+        const qs = showHidden ? '?includeHidden=true' : '';
+        const res = await apiFetch(`/api/projects/${viewedProject}/files${qs}`);
+        if (res.status === 429) {
+          const cooldown = retryAfterMs(res);
+          treeCooldownUntilRef.current = Date.now() + cooldown;
+          setTreeError(`Files refresh paused for ${Math.ceil(cooldown / 1000)}s after a rate limit.`);
+          return fileTreeRef.current;
+        }
+        if (!res.ok) throw new Error('File tree failed');
+        const data = await res.json();
+        fileTreeRef.current = data;
+        setFileTree(data);
+        setTreeError(null);
+        return data;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.warn('[file-tree]', err);
+          setTreeError('Files refresh failed; showing the last available file tree.');
+        }
+        return fileTreeRef.current;
+      } finally {
+        if (!opts.background) setTreeLoading(false);
+      }
+    })().finally(() => {
+      if (treeRequestRef.current === request) treeRequestRef.current = null;
+    });
+    treeRequestRef.current = request;
+    return request;
   }, [viewedProject, showHidden]);
 
   useEffect(() => {
     if (!viewedProject) {
       setFileTree(null);
+      fileTreeRef.current = null;
+      setTreeError(null);
+      treeCooldownUntilRef.current = 0;
       setSelectedFile(null);
       setFileData(null);
       setFileConflict(null);
@@ -540,6 +573,8 @@ export default function FilesView() {
     setSelectedFile(null);
     setFileData(null);
     setFileConflict(null);
+    setTreeError(null);
+    treeCooldownUntilRef.current = 0;
   }, [viewedProject, fetchTree]);
 
   // Consume pending spec file from _openSpec bridge (T-221).
@@ -881,6 +916,11 @@ export default function FilesView() {
               New .md file
             </button>
             <span className="file-upload-hint">or drop here</span>
+          </div>
+        )}
+        {treeError && (
+          <div className="file-tree-error" role="status" aria-live="polite">
+            {treeError}
           </div>
         )}
         <div className="file-tree-items" ref={treeScrollRef} style={{ overflowY: 'auto' }}>

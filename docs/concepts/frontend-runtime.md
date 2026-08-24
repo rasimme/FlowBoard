@@ -10,6 +10,13 @@ The ownership boundary is explicit. `dashboard/src/bootstrap.js` is bootstrap-on
 
 `appStore` also carries one connection state for the shell: `loading`, `ready`, `empty`, `auth-error`, `offline`, `timeout`, or `server-error`. `empty` is produced only by a successful, schema-valid projects response. Initial failures block the shell with a visible, typed state and **Retry** action — **Sign-in required**, **FlowBoard is offline**, **FlowBoard took too long to respond**, or **Dashboard service error** — rather than presenting a misleading empty board. Failures after a valid snapshot leave that snapshot intact and surface a persistent retry banner.
 
+The dashboard shell uses the additive `GET /api/dashboard/snapshot/v1` read
+model. It is one non-overlapping five-second core poll containing projects,
+agents, the caller's status, and the viewed project's tasks; the legacy reads
+remain available to agents and other clients. A `429` pauses only the affected
+lane using `Retry-After` and keeps the last valid data visible. `401`/`403`
+stops background polling until an explicit authentication retry succeeds.
+
 ## Why
 
 FlowBoard has a clean server-side ownership model:
@@ -120,7 +127,8 @@ Project files are not HZL records. They live on disk under the project directory
 
 1. The server file tree is the canonical metadata snapshot.
 2. Each file entry exposes `modifiedMs`, `size`, and `version` (`mtimeMs:size`) for cheap change detection.
-3. FilesView polls that metadata while the Files tab is visible.
+3. FilesView polls that metadata every 15 seconds while the Files tab is visible,
+   independently of the dashboard shell snapshot lane.
 4. If the selected file's version changes and the editor is clean, FilesView reloads the preview from the API.
 5. If the selected file disappears, FilesView clears the selection and falls back through the normal default-file path.
 6. If the editor is dirty, external changes are surfaced as a conflict prompt instead of overwriting local edits.

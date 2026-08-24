@@ -254,6 +254,60 @@ export async function fetchTasksForProject(project, signal, options = {}) {
   return tasks;
 }
 
+function validateSnapshotStatus(status, path) {
+  require(isRecord(status), path, 'status to be an object');
+  require(isNullableString(status.agentId), path, 'status.agentId to be a string or null');
+  require(isNullableString(status.activeProject), path, 'status.activeProject to be a string or null');
+  require(typeof status.contextReady === 'boolean', path, 'status.contextReady to be a boolean');
+}
+
+/**
+ * Fetch the versioned shell read model. `project` is the currently viewed
+ * project, while the server resolves the active project from the agent id.
+ * A section failure is a protocol error rather than an empty successful
+ * section; callers retain their previous snapshot.
+ */
+export async function fetchDashboardSnapshot(project = null, agentId = null, signal, options = {}) {
+  // Keep the helper convenient for focused callers that prefer an options
+  // object: fetchDashboardSnapshot({ project, agentId }, signal, options).
+  if (isRecord(project)) {
+    const request = project;
+    options = signal || {};
+    signal = agentId;
+    project = request.project || null;
+    agentId = request.agentId || null;
+  }
+
+  const query = new URLSearchParams();
+  if (project) query.set('project', project);
+  if (agentId) query.set('agentId', agentId);
+  const path = `/dashboard/snapshot/v1${query.toString() ? `?${query}` : ''}`;
+  const data = await apiJson(path, { ...options, signal });
+  require(isRecord(data) && data.ok === true, path, 'a snapshot response with ok=true');
+  require(data.version === 1, path, 'snapshot version 1');
+  require(isNonEmptyString(data.generatedAt), path, 'generatedAt to be a non-empty string');
+
+  require(isRecord(data.sections), path, 'sections to be an object');
+  for (const section of ['projects', 'agents', 'status', 'tasks']) {
+    const state = data.sections[section];
+    require(isRecord(state) && state.ok === true, path,
+      `${section} snapshot section to be available`);
+  }
+
+  require(Array.isArray(data.projects), path, 'projects to be an array');
+  require(Array.isArray(data.agents), path, 'agents to be an array');
+  require(Array.isArray(data.tasks), path, 'tasks to be an array');
+  require(data.activeProject === null || isNonEmptyString(data.activeProject), path,
+    'activeProject to be a string or null');
+  require(data.viewedProject === null || isNonEmptyString(data.viewedProject), path,
+    'viewedProject to be a string or null');
+  validateSnapshotStatus(data.status, path);
+  data.projects.forEach((item, index) => validateProject(item, index, path));
+  data.agents.forEach((item, index) => validateAgent(item, index, path));
+  data.tasks.forEach((item, index) => validateTask(item, index, path, data.viewedProject));
+  return data;
+}
+
 export async function authenticateTelegram(initData, signal, options = {}) {
   const path = '/auth';
   const data = await apiJson(path, {

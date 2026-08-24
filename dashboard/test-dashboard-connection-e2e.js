@@ -2,7 +2,7 @@
 
 // T-440 — real-browser coverage for fatal bootstrap/API states, bounded
 // timeouts, partial refresh priority, and poll/retry serialization. Request
-// interception controls only GET /api/projects; the rest of the shell talks to
+// interception controls only GET /api/dashboard/snapshot/v1; the rest of the shell talks to
 // the throwaway real dashboard from browser-harness.
 
 const net = require('net');
@@ -41,12 +41,12 @@ async function main() {
 
     await page.evaluateOnNewDocument(() => {
       const realFetch = window.fetch.bind(window);
-      window.__flowboardProjectFetchProbe = { active: 0, overlapped: false };
+      window.__flowboardSnapshotFetchProbe = { active: 0, overlapped: false };
       window.fetch = (...args) => {
         let pathname = '';
         try { pathname = new URL(typeof args[0] === 'string' ? args[0] : args[0]?.url, location.href).pathname; } catch {}
-        if (pathname !== '/api/projects') return realFetch(...args);
-        const probe = window.__flowboardProjectFetchProbe;
+        if (pathname !== '/api/dashboard/snapshot/v1') return realFetch(...args);
+        const probe = window.__flowboardSnapshotFetchProbe;
         if (probe.active > 0) probe.overlapped = true;
         probe.active += 1;
         return realFetch(...args).finally(() => { probe.active -= 1; });
@@ -57,20 +57,36 @@ async function main() {
     page.on('request', (request) => {
       void (async () => {
         const url = new URL(request.url());
-        if (request.method() !== 'GET' || url.pathname !== '/api/projects') {
+        if (request.method() !== 'GET' || url.pathname !== '/api/dashboard/snapshot/v1') {
           await request.continue();
           return;
         }
 
+        const snapshot = (projects = []) => ({
+          ok: true,
+          version: 1,
+          generatedAt: '2026-08-24T08:00:00.000Z',
+          projects,
+          agents: [],
+          status: { agentId: 'e2e', activeProject: null, contextReady: false },
+          activeProject: null,
+          viewedProject: null,
+          tasks: [],
+          sections: {
+            projects: { ok: true, data: projects },
+            agents: { ok: true, data: [] },
+            status: { ok: true, data: { agentId: 'e2e', activeProject: null, contextReady: false } },
+            tasks: { ok: true, data: [] },
+          },
+        });
+
         if (mode === 'delay-empty') {
           await delayedProjects;
-          await respond(request, 200, { ok: true, projects: [] });
+          await respond(request, 200, snapshot());
         } else if (mode === 'malformed') {
           await respond(request, 200, '<html>not JSON</html>', 'text/html');
         } else if (mode === 'invalid-schema') {
-          await respond(request, 200, {
-            ok: true,
-            projects: [{
+          await respond(request, 200, snapshot([{
               name: 'malformed-project',
               displayName: 'Malformed Project',
               status: 'mystery',
@@ -90,8 +106,7 @@ async function main() {
                 archived: 0,
                 blocked: 0,
               },
-            }],
-          });
+            }]));
         } else if (mode === 'auth') {
           await respond(request, 403, { error: 'Tunnel authentication required' });
         } else if (mode === 'server') {
@@ -106,7 +121,7 @@ async function main() {
           if (raceRequestCount === 1) {
             notifyRacePollStarted();
             await staleRaceResponse;
-            await respond(request, 200, { ok: true, projects: [] });
+            await respond(request, 200, snapshot());
           } else {
             await request.continue();
           }
@@ -234,8 +249,8 @@ async function main() {
     mode = 'race';
     raceRequestCount = 0;
     await page.evaluate(() => {
-      window.__flowboardProjectFetchProbe.active = 0;
-      window.__flowboardProjectFetchProbe.overlapped = false;
+      window.__flowboardSnapshotFetchProbe.active = 0;
+      window.__flowboardSnapshotFetchProbe.overlapped = false;
     });
     racePollStarted = new Promise((resolve) => { notifyRacePollStarted = resolve; });
     staleRaceResponse = new Promise((resolve) => { releaseStaleRace = resolve; });
@@ -245,7 +260,7 @@ async function main() {
     releaseStaleRace();
     await new Promise((resolve) => setTimeout(resolve, 500));
     r.ok(await state() === 'ready', 'a stale poll cannot replace the newer retry connection state');
-    r.ok(!(await page.evaluate(() => window.__flowboardProjectFetchProbe.overlapped)),
+    r.ok(!(await page.evaluate(() => window.__flowboardSnapshotFetchProbe.overlapped)),
       'Retry starts network work only after the aborted poll fetch promise has settled');
     r.ok(!!(await page.$('[data-project="preserved-board"]')),
       'a stale poll cannot overwrite the project snapshot recovered by Retry');
