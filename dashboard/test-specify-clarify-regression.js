@@ -8,6 +8,7 @@
  */
 
 const http = require('http');
+const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -25,6 +26,8 @@ const PORT = 18797;
 const WORKSPACE = path.join(__dirname, 'test-workspace');
 const HZL_DB_PATH = path.join(WORKSPACE, '.hzl', 'flowboard-clarify-regression.db');
 const TEST_PROJECT = 'clarify-regression-proj';
+const JWT_SECRET = 't447-clarify-test-jwt-secret-long-enough';
+const dashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 if (fs.existsSync(HZL_DB_PATH)) {
   try { fs.unlinkSync(HZL_DB_PATH); } catch {}
@@ -40,15 +43,16 @@ function makeRequest(method, reqPath, body) {
       path: reqPath,
       method,
       headers: data
-        ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
-        : {},
+        ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data),
+          ...(dashboardCookie ? { Cookie: dashboardCookie } : {}) }
+        : (dashboardCookie ? { Cookie: dashboardCookie } : {}),
     }, (res) => {
       let raw = '';
       res.on('data', d => { raw += d; });
       res.on('end', () => {
         let parsed = null;
         try { parsed = JSON.parse(raw); } catch {}
-        resolve({ statusCode: res.statusCode, body: parsed, raw });
+        resolve({ statusCode: res.statusCode, body: parsed, raw, headers: res.headers });
       });
     });
     req.on('error', reject);
@@ -99,6 +103,11 @@ async function runTests() {
       FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
       SPECIFY_WORKER_MOCK: path.join(__dirname, 'test-fixtures', 'specify-mock-worker.js'),
+      TELEGRAM_BOT_TOKEN: '123456:t447-clarify-test-bot',
+      FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      JWT_SECRET,
+      ALLOWED_USER_IDS: '42',
+      AUTH_ALWAYS: 'true',
     },
     stdio: 'pipe',
   });

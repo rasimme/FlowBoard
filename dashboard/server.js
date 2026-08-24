@@ -65,7 +65,7 @@ const specifySession = require('./specify-sessions');
 const specifyWorkerBridge = require('./specify-worker-bridge');
 const specifyWorkerOpenclaw = require('./specify-worker-openclaw');
 const specifyPolicy = require('./specify-policy');
-const governance = require('./governance.js');
+const governance = require('./governance');
 
 // Production Specify worker: OpenClaw CLI one-shot adapter (T-262-11).
 // Tests configure their own (fake) adapter; SPECIFY_WORKER_DISABLED opts out.
@@ -365,15 +365,12 @@ function telegramAuthMiddleware(req, res, next) {
     return authenticateOrChallenge(req, res, next);
   }
   if (!AUTH_ENABLED) {
-    // Fail-closed: only allow localhost when auth is not configured (direct local access only)
+    // Fail-closed: only allow localhost when auth is not configured (direct
+    // local access only). This is anonymous transport admission, not a human
+    // principal; governance mutations require the authenticated Telegram
+    // Dashboard path below.
     const ip = req.ip || req.connection?.remoteAddress || '';
     if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) {
-      // T-447-1: when auth is not configured, a direct loopback caller IS the
-      // trusted local operator (this is the same trust the full-access bypass
-      // already grants). Stamp it so governance.resolvePrincipal can treat the
-      // local operator as the verified human on a no-auth deployment. This is
-      // NEVER set for cf-ray/tunnel requests (handled above) or LAN bypass.
-      req.localOperator = true;
       return next();
     }
     return res.status(403).json({ error: 'Auth not configured — only localhost access permitted' });
@@ -381,7 +378,18 @@ function telegramAuthMiddleware(req, res, next) {
   // Direct local requests (no cf-ray) — allow for dev/ops access
   if (!AUTH_ALWAYS) {
     const ip = req.ip || req.connection?.remoteAddress || '';
-    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
+    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) {
+      // Loopback is still a transport bypass for local agents. If a request
+      // carries a real Telegram init-data payload or a server-issued session,
+      // validate it instead of silently treating it as an anonymous local
+      // caller. This is what lets an authenticated Dashboard on localhost
+      // establish a verified human principal without making loopback itself
+      // evidence of one.
+      const hasCredential = typeof req.headers['x-telegram-init-data'] === 'string'
+        || typeof req.cookies?.flowboard_session === 'string';
+      if (hasCredential) return authenticateOrChallenge(req, res, next);
+      return next();
+    }
   }
   // SECURITY WARNING (S-13): LOCAL_HOSTNAME bypass allows unauthenticated LAN access.
   // This ONLY works when the server listens on 0.0.0.0 (not the default 127.0.0.1).
@@ -756,6 +764,14 @@ function persistSpecifyProposal(session, opts = {}) {
       if (firstTask) specFiles.push(writeSpecFileForTask(session.project, firstTask, specContent));
     }
 
+    // Confirmation is an authorization audit record, not session state. Put
+    // it on every task created by this proposal before the optional canvas
+    // cleanup so it survives a process restart and remains attached to the
+    // durable work it authorized.
+    if (opts.confirmation && createdTaskIds.length > 0) {
+      hzlService.setSpecifyConfirmation(session.project, createdTaskIds, opts.confirmation);
+    }
+
     if (cleanupNotes && session.origin === 'canvas' && session.sourceNoteIds?.length > 0) {
       // ADR-0016 "notes deleted last" — runs through the same dual-read
       // switch as the canvas endpoints (T-344-2), so migrated projects clean
@@ -771,6 +787,7 @@ function persistSpecifyProposal(session, opts = {}) {
       specFiles,
       taskIds: createdTaskIds,
       cleanedNoteIds,
+      confirmation: opts.confirmation || null,
     };
   } catch (err) {
     // Roll back partial writes: spec files first, then created task records
@@ -3156,7 +3173,9 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
   const identity = hasTriggerAgent ? agentIdentity.validateAgentId(req.body.agentId) : null;
   if (identity && !identity.ok) return res.status(400).json({ error: identity.error });
   const triggerAgentId = identity?.id || null;
-  const sessionAgentId = triggerAgentId || 'human';
+  const sessionPrincipal = governance.resolvePrincipal(req);
+  const verifiedDashboardHuman = !triggerAgentId && governance.isVerifiedHuman(sessionPrincipal);
+  const sessionAgentId = triggerAgentId || (verifiedDashboardHuman ? 'human' : 'dashboard-unverified');
 
   // The hooks token is only needed for the chat-agent webhook path. The
   // dashboard path (no agentId) runs the Specify Stepper and must work on
@@ -3175,7 +3194,11 @@ app.post('/api/projects/:name/canvas/promote', async (req, res) => {
       sourceNoteIds,
       agentId: sessionAgentId,
       sourceDescription: `${noteLines}\nConnections: ${connLines}`,
-      transport: triggerAgentId ? 'chat' : 'dashboard',
+      transport: triggerAgentId ? 'chat' : (verifiedDashboardHuman ? 'dashboard' : 'api'),
+      principalBinding: verifiedDashboardHuman
+        ? { kind: 'human', actor: sessionPrincipal.actor, humanId: sessionPrincipal.humanId,
+          authSessionId: sessionPrincipal.authSessionId }
+        : null,
     });
   } catch (err) {
     return res.status(409).json({ error: err.message });
@@ -3270,13 +3293,26 @@ app.post('/api/specify/sessions', (req, res) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
+    const principal = governance.resolvePrincipal(req);
+    const requestedDashboardHuman = agentId === 'human' && transport === 'dashboard';
+    // A caller cannot mint a Dashboard-human session by posting agentId=human.
+    // Normalize that claim to an agent/API session unless middleware verified a
+    // human for this request. The caller's requested fields remain descriptive.
+    const verifiedDashboardHuman = requestedDashboardHuman && governance.isVerifiedHuman(principal);
+    const sessionAgentId = verifiedDashboardHuman
+      ? 'human'
+      : (agentId === 'human' ? 'dashboard-unverified' : agentId);
     const session = specifySession.createSession({
       project,
       origin: origin || 'canvas',
-      agentId,
+      agentId: sessionAgentId,
       sourceNoteIds,
       sourceDescription,
-      transport,
+      transport: verifiedDashboardHuman ? 'dashboard' : (transport === 'dashboard' ? 'api' : transport),
+      principalBinding: verifiedDashboardHuman
+        ? { kind: 'human', actor: principal.actor, humanId: principal.humanId,
+          authSessionId: principal.authSessionId }
+        : null,
     });
 
     res.status(201).json({ session });
@@ -3577,39 +3613,39 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
       });
     }
 
-    // T-447-1: server-authoritative human-confirmation gate. The principal is
-    // resolved from verified auth/session/transport context — never from the
-    // request body's `approved`/`human`/`agent` fields (descriptive only).
-    // Rejects agent self-confirmation and missing/stale/mismatched bindings.
+    // T-447-1: confirmation authority comes from the server-verified request
+    // principal and the server-owned session binding. Body fields such as
+    // approved, human, agentId and origin are descriptive only.
     const principal = governance.resolvePrincipal(req);
-    const confirmCheck = governance.verifyHumanConfirmation({
+    const confirmationCheck = governance.verifyHumanConfirmation({
       principal,
       session,
       expectedSessionId: req.params.id,
     });
-    if (!confirmCheck.ok) {
+    if (!confirmationCheck.ok) {
       return res.status(403).json({
-        error: confirmCheck.reason,
-        code: confirmCheck.code,
+        error: confirmationCheck.reason,
+        code: confirmationCheck.code,
         session: specifySession.getSession(req.params.id),
       });
     }
-    const confirmation = confirmCheck.record;
+    // Record the verified binding before persistence. If persistence fails, the
+    // session remains recoverable and the attempted human authorization is not
+    // silently discarded.
+    specifySession.updateSession(req.params.id, { confirmation: confirmationCheck.record });
 
     const result = await specifyWorkerBridge.confirmProposal(req.params.id, approval, customizations);
     const artifacts = persistSpecifyProposal(result.session, {
       cleanupNotes: customizations?.cleanupNotes,
+      confirmation: confirmationCheck.record,
     });
 
-    // Persist the verified confirmation (actor, timestamp, Specify session ID,
-    // proposal identity) onto the session for audit and downstream policy.
-    specifySession.updateSession(req.params.id, { confirmation });
     specifySession.updateSession(req.params.id, { createdArtifacts: artifacts });
     specifySession.updateSession(req.params.id, { status: 'done' });
 
     res.json({
       session: specifySession.getSession(req.params.id),
-      confirmation,
+      confirmation: confirmationCheck.record,
       createdArtifacts: artifacts,
       specPath: artifacts.specFiles[0] || null,
       createdTasks: artifacts.taskIds,
@@ -3641,66 +3677,38 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
   }
 });
 
-// =============================================================================
-// T-447-1: Governance trust surface — mode switch + exception review
-//
-// These mutations resolve the effective principal on the SERVER via
-// governance.resolvePrincipal(req). Caller-supplied `human`/`agent`/`approved`
-// body fields are descriptive only and never authorize the action. Each
-// mutation persists actor + timestamp. This is the small trust contract from
-// T-447-1; the createTaskWithPolicy() wrapper and the four operational
-// exceptions arrive in later subtasks (T-447-2..5).
-// =============================================================================
-
-// GET /api/projects/:name/governance/mode — read persisted mode (+ audit)
+// T-447-1: governance mutations all use the same server-authoritative
+// principal resolver. These small surfaces establish the trust contract used
+// by later policy enforcement work.
 app.get('/api/projects/:name/governance/mode', (req, res) => {
   try {
-    const mode = governance.getGovernanceMode(fbMeta);
     res.json({
-      mode,
+      mode: governance.getGovernanceMode(fbMeta),
       default: governance.DEFAULT_GOVERNANCE_MODE,
       modes: governance.GOVERNANCE_MODES,
       lastChange: governance.getGovernanceModeAudit(fbMeta),
     });
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+    console.error('[api]', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// PUT /api/projects/:name/governance/mode — switch mode (verified human only)
 app.put('/api/projects/:name/governance/mode', (req, res) => {
   try {
-    const principal = governance.resolvePrincipal(req);
     const result = governance.setGovernanceMode({
       store: fbMeta,
-      principal,
+      principal: governance.resolvePrincipal(req),
       nextMode: req.body?.mode,
     });
     if (!result.ok) {
-      const status = result.code === 'invalid_governance_mode' ? 400 : 403;
-      return res.status(status).json({ error: result.reason, code: result.code });
+      return res.status(result.code === 'invalid_governance_mode' ? 400 : 403)
+        .json({ error: result.reason, code: result.code });
     }
-    res.json({ ok: true, mode: result.mode, lastChange: result.record });
+    return res.json({ ok: true, mode: result.mode, lastChange: result.record });
   } catch (err) {
-    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /api/projects/:name/tasks/:id/exception-review — mark reviewed
-// (verified human only). Persists reviewer + review timestamp on the task.
-app.post('/api/projects/:name/tasks/:id/exception-review', (req, res) => {
-  try {
-    const principal = governance.resolvePrincipal(req);
-    const auth = governance.authorizeExceptionReview({ principal });
-    if (!auth.ok) {
-      return res.status(403).json({ error: auth.reason, code: auth.code });
-    }
-    const task = hzlService.setExceptionReview(req.params.name, req.params.id, auth.record);
-    res.json({ ok: true, task, exceptionReview: auth.record });
-  } catch (err) {
-    const status = err.status || (String(err.message).includes('not found') ? 404 : 500);
-    if (status >= 500) console.error('[api]', err);
-    res.status(status).json({ error: err.message });
+    console.error('[api]', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 });
 

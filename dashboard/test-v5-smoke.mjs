@@ -217,9 +217,9 @@ ok(
 
 const serverSource = readFileSync('./server.js', 'utf8');
 ok(
-  serverSource.includes("const sessionAgentId = triggerAgentId || 'human'") &&
+  serverSource.includes("const sessionAgentId = triggerAgentId || (verifiedDashboardHuman ? 'human' : 'dashboard-unverified')") &&
     serverSource.includes("if (triggerAgentId)") &&
-    serverSource.includes("transport: triggerAgentId ? 'chat' : 'dashboard'"),
+    serverSource.includes("transport: triggerAgentId ? 'chat' : (verifiedDashboardHuman ? 'dashboard' : 'api')"),
   'Canvas promote creates Dashboard Specify session locally and dispatches only for explicit agentId'
 );
 ok(

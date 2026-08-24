@@ -37,9 +37,10 @@ async function authenticationFailureForResponse(response, path) {
 export function apiFetch(path, opts = {}) {
   const headers = { ...opts.headers };
 
-  // Identify the dashboard UI to the server so it can tell a human-driven
-  // request from an agent/headless one (e.g. creation-time overview suggestion
-  // is offered for confirmation in the UI but auto-applied for agents — T-365).
+  // Descriptive client marker for UI-specific, non-authoritative behavior
+  // (e.g. creation-time overview suggestions — T-365). It is intentionally not
+  // an authentication or human-authorization signal; request headers are
+  // caller-controlled.
   if (!headers['X-FlowBoard-Client']) headers['X-FlowBoard-Client'] = 'dashboard';
 
   // T-432: reject explicit external URLs before fetch can leave the dashboard origin.

@@ -1,7 +1,7 @@
 # Governance Trust Contract
 
 The small, server-authoritative trust foundation behind task creation, Specify
-confirmation, exception review, and governance-mode changes. Introduced by
+confirmation, and governance-mode changes. Introduced by
 **T-447-1** as the base layer of the larger "govern agent-originated task
 creation" epic (**T-447**).
 
@@ -15,9 +15,8 @@ server, from verified context only:
 2. **May this human confirm a Specify proposal?**
    `verifyHumanConfirmation(...)` gates the Specify `/confirm` mutation and
    produces the record to persist.
-3. **May this actor change governance mode / mark an exception reviewed?**
-   `setGovernanceMode(...)` and `authorizeExceptionReview(...)` require a
-   verified human and return an audit record (actor + timestamp).
+3. **May this actor change governance mode?** `setGovernanceMode(...)`
+   requires a verified human and returns an audit record (actor + timestamp).
 
 It is deliberately **not** a policy engine, roles matrix, or allowlist. Those
 are explicitly out of scope for T-447 (see the parent spec and
@@ -47,16 +46,12 @@ cannot forge it. `req.user.id` is the Telegram user id; `req.user.agentId` is
 the *bot mapping* (attribution, **not** an authorization claim —
 [ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md)).
 
-**One narrow, deployment-scoped exception.** On an install where Telegram auth
-is **not configured** (`AUTH_ENABLED === false`), FlowBoard is a single-operator
-localhost tool and the auth middleware already grants a direct loopback caller
-full access ([ADR-0029](../adr/0029-local-first-single-operator-security-boundary.md)).
-For exactly that request the middleware stamps `req.localOperator = true`
-(**never** for cf-ray/tunnel requests or the LAN-hostname bypass), and the
-resolver treats that trusted loopback operator as the verified human — the same
-actor the loopback bypass already trusts for every other mutation. When
-Telegram auth **is** configured, this flag is never set and only a real
-`req.user` qualifies as human.
+Loopback and LAN bypasses are **transport admission**, not proof of a human
+principal. A request that reaches the API through an anonymous local bypass is
+still an agent principal for policy mutations, including Specify confirmation
+and governance-mode changes. There is no local-operator exception here:
+confirmation requires a server-verified authenticated session (`req.user`) from
+Telegram init-data or a server-issued session cookie.
 
 **Descriptive-only (never authoritative):** everything the client puts in the
 request body or custom headers — `body.agent`, `body.agentId`, `body.human`,
@@ -65,8 +60,8 @@ Specify `session.agentId` (`'human'` for the dashboard stepper is a *routing
 hint* set at session creation, not proof of a human).
 
 Trust boundary in one line: **"did the FlowBoard server verify a human for THIS
-request?"** — a Telegram `req.user`, or (auth-disabled only) the trusted
-loopback operator. Everything else is an `agent` principal.
+request?"** — only a Telegram/JWT-backed `req.user`. Everything else is an
+`agent` principal.
 
 ## 4. Verified human Specify confirmation
 
@@ -91,7 +86,7 @@ Rejections (HTTP 403 with a stable `code`):
 | `session_binding_mismatch` | route `:id` ≠ the bound session, or no session |
 | `confirmation_binding_stale` | proposal older than `FLOWBOARD_CONFIRM_MAX_AGE_MIN` (default 30 min) |
 
-## 5. Governance mode & exception review
+## 5. Governance mode
 
 - **Governance mode** (`compat` \| `enforce`, default `compat`) persists in
   `flowboard_settings` via `fbMeta.getSetting/setSetting`. `GET/PUT
@@ -99,10 +94,8 @@ Rejections (HTTP 403 with a stable `code`):
   writes an audit record (`{ actor, humanId, changedAt, mode }`). `compat` and
   `enforce` semantics for the creation wrapper arrive in later subtasks; T-447-1
   only owns the persisted, human-gated switch + rollback.
-- **Exception review** — `POST /api/projects/:name/tasks/:id/exception-review`
-  requires a verified human and stamps `metadata.flowboard.exceptionReview =
-  { state: 'reviewed', reviewer, reviewerHumanId, reviewedAt }`, surfaced as the
-  first-class `task.exceptionReview` field.
+Exception-review UI/API is intentionally deferred to T-447-3/T-447-4; this
+task does not expose or persist that behavior.
 
 ## 6. Scope boundary (what T-447-1 does NOT do)
 
@@ -113,12 +106,10 @@ concept is only the trust primitives those tasks consume.
 
 ## Where the code lives
 
-- `dashboard/governance.js` — resolver + confirmation/mode/review contract.
-- `dashboard/server.js` — `/specify/.../confirm`, `/governance/mode`,
-  `/tasks/:id/exception-review`; `req.localOperator` stamp in
-  `telegramAuthMiddleware`.
-- `dashboard/hzl-service.js` — `setExceptionReview()` + `exceptionReview` field.
+- `dashboard/governance.js` — resolver + confirmation/mode contract.
+- `dashboard/server.js` — `/specify/.../confirm` and `/governance/mode`.
+- `dashboard/hzl-service.js` — durable `specifyConfirmation` task metadata.
 - `dashboard/flowboard-metadata.js` — `getSetting`/`setSetting` for mode.
-- Tests: `dashboard/test-t447-1-principal.js` (unit),
+- Tests: `dashboard/test-t447-1-governance.js` (unit),
   `dashboard/test-t447-1-governance-endpoints.js` (integration),
   updated `dashboard/test-specify-api-confirm.js` and the Specify E2E suite.

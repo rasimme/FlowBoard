@@ -203,9 +203,7 @@ function _toFbTask(hzlTask, project) {
     // T-161-4: soft-delete pointer into Trash. Null = live task; ISO string =
     // task is in Trash and eligible for Empty-Trash bulk hard-delete.
     trashedAt: fb.trashedAt || null,
-    // T-447-1: verified exception-review record (null when not an exception or
-    // not yet reviewed). Shape: { state, reviewer, reviewerHumanId, reviewedAt }.
-    exceptionReview: fb.exceptionReview || null,
+    specifyConfirmation: fb.specifyConfirmation || null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -3776,27 +3774,43 @@ function routeTask(project, flowboardId, agent) {
   return _publicTask(cached);
 }
 
-/**
- * T-447-1: persist a verified exception-review record onto a task's metadata.
- * `record` is produced by governance.authorizeExceptionReview() AFTER a
- * server-verified human principal was resolved — this function only writes it,
- * it performs no authorization. Stored under metadata.flowboard.exceptionReview
- * = { state: 'pending'|'reviewed', reviewer, reviewerHumanId, reviewedAt }.
- * Returns the updated public task.
- */
-function setExceptionReview(project, flowboardId, record) {
-  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
-  if (!ulid) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
-  const cached = _cache.get(`${project}:${flowboardId}`);
-  if (!cached) throw Object.assign(new Error(`Task not found in cache: ${flowboardId}`), { status: 404 });
-  const hzlTask = _taskService.getTaskById(ulid);
-  const flowboard = {
-    ...(hzlTask?.metadata?.flowboard || {}),
-    exceptionReview: { ...record },
+// T-447-1: persist the verified Specify confirmation on the durable task
+// metadata. This is intentionally narrow: it records only confirmation
+// records produced by the server's Specify confirm path.
+function setSpecifyConfirmation(project, flowboardIds, record) {
+  const ids = Array.isArray(flowboardIds) ? flowboardIds : [flowboardIds];
+  const proposalDigest = record?.proposalIdentity?.digest;
+  if (!record || typeof record.actor !== 'string' ||
+      typeof record.confirmedAt !== 'string' || typeof record.specifySessionId !== 'string' ||
+      typeof proposalDigest !== 'string' || !proposalDigest ||
+      !Number.isInteger(record.proposalVersion) || record.proposalVersion < 1 ||
+      typeof record.proposalBoundAt !== 'string' || !record.proposalBoundAt) {
+    throw new Error('Invalid Specify confirmation record');
+  }
+  const confirmation = {
+    actor: record.actor,
+    humanId: record.humanId ?? null,
+    authSessionId: record.authSessionId ?? null,
+    confirmedAt: record.confirmedAt,
+    specifySessionId: record.specifySessionId,
+    proposalDigest,
+    proposalVersion: record.proposalVersion ?? null,
+    proposalBoundAt: record.proposalBoundAt ?? null,
   };
-  _updateMetadata(ulid, { flowboard });
-  _resyncCachedTask(ulid);
-  return _publicTask(_cache.get(`${project}:${flowboardId}`) || cached);
+  for (const flowboardId of ids) {
+    const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+    if (!ulid) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+    const current = _taskService.getTaskById(ulid);
+    if (!current) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+    _updateMetadata(ulid, {
+      flowboard: {
+        ...(current.metadata?.flowboard || {}),
+        specifyConfirmation: { ...confirmation },
+      },
+    });
+    _resyncCachedTask(ulid);
+  }
+  return ids.map(id => _publicTask(_cache.get(`${project}:${id}`)));
 }
 
 /** Set the completion notification callback */
@@ -4212,7 +4226,7 @@ module.exports = {
   getTask,
   createTask,
   updateTask,
-  setExceptionReview,
+  setSpecifyConfirmation,
   emptyTrash,
   deleteTask,
   getTaskSummary,

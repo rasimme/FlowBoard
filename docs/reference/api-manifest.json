@@ -522,17 +522,11 @@
       "doc": "api/tasks.md"
     },
     {
-      "method": "POST",
-      "path": "/api/projects/:name/tasks/:id/exception-review",
-      "auth": "user",
-      "group": "tasks",
-      "doc": null
-    },
-    {
       "method": "GET",
       "path": "/api/projects/:name/governance/mode",
       "auth": "user",
       "group": "governance",
+      "description": "Read the persisted governance mode and authenticated human audit record.",
       "doc": null
     },
     {
@@ -540,6 +534,7 @@
       "path": "/api/projects/:name/governance/mode",
       "auth": "user",
       "group": "governance",
+      "description": "Change governance mode; requires a server-verified authenticated human session.",
       "doc": null
     },
     {

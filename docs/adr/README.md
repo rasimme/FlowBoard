@@ -73,7 +73,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0030](0030-multi-bot-identity-and-session-rebinding.md) — Multi-bot identities are ordered and fresh init-data rebinds sessions (2026-08-17)
 - [ADR-0031](0031-canonical-work-state-and-transient-indicator.md) — Canonical work state, one transient indicator, and explicit non-destructive actions (2026-08-17; supersedes the execution-context portion of ADR-0009)
 - [ADR-0032](0032-dashboard-snapshot-and-rate-limit-lanes.md) — Versioned dashboard snapshot and isolated rate-limit lanes (2026-08-24)
-- [ADR-0033](0033-server-authoritative-principal-and-specify-confirmation.md) — Server-authoritative principal resolution + verified-human Specify confirmation; caller identity/approval fields are descriptive-only; governance-mode + exception-review are human-gated (2026-08-24)
+- [ADR-0033](0033-server-authoritative-principal-and-specify-confirmation.md) — Server-authoritative principal resolution + verified-human Specify confirmation; caller identity/approval fields are descriptive-only; loopback admission is not human authority (2026-08-24)
 
 ## See also
 

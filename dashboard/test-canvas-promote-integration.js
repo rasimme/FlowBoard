@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const { spawn } = require('child_process');
+const jwt = require('jsonwebtoken');
 const http = require('http');
 const os = require('os');
 const path = require('path');
@@ -11,6 +12,8 @@ const ROOT = __dirname;
 const DASHBOARD_PORT = 18791;
 const TOKEN = 'test-hooks-token';
 const PROJECT = 'canvas-promote-test';
+const JWT_SECRET = 't447-canvas-promote-test-jwt-secret';
+const localDashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 let pass = 0;
 let fail = 0;
@@ -30,7 +33,10 @@ function ok(condition, message) {
 async function fetchJson(base, method, urlPath, body) {
   const res = await fetch(base + urlPath, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(localDashboardCookie ? { Cookie: localDashboardCookie } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   let json = null;
@@ -121,8 +127,12 @@ async function run() {
       HZL_DB_PATH: path.join(tempRoot, 'flowboard.db'),
       OPENCLAW_GATEWAY_URL: `http://127.0.0.1:${gatewayPort}`,
       OPENCLAW_HOOKS_TOKEN: TOKEN,
-      TELEGRAM_BOT_TOKEN: '',
       TELEGRAM_BOT_TOKENS: '',
+      TELEGRAM_BOT_TOKEN: '123456:t447-canvas-promote-test-bot',
+      FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      JWT_SECRET,
+      ALLOWED_USER_IDS: '42',
+      AUTH_ALWAYS: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

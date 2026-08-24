@@ -73,6 +73,13 @@ The first two are pre-decided by environment variables: a request that passes th
 
 **`AUTH_ENABLED` is a derived flag.** It is true if and only if the ordered bot-identity configuration is valid and non-empty, `JWT_SECRET` is set (≥ 32 chars), and `ALLOWED_USER_IDS` is set. Setting only one or two does not partially enable auth — you have the complete set or none. The 32-char minimum on `JWT_SECRET` is enforced at boot (S-03); a weaker secret fails the process startup.
 
+**Policy confirmation has a stricter trust boundary than API admission.** The
+loopback and optional LAN bypasses above allow local transport access without
+credentials, but they do not establish a verified human principal. Specify
+confirmation and governance policy mutations require `req.user` from verified
+Telegram init-data or a server-issued session cookie; an anonymous loopback
+request remains an agent for those decisions.
+
 **`AUTH_ALWAYS` overrides the loopback bypass.** Default false: loopback always passes. Setting `AUTH_ALWAYS=true` removes the loopback shortcut so even local requests must authenticate. Use case: exposing the dashboard via a non-Cloudflare tunnel where the operator wants every request authenticated.
 
 **`LOCAL_HOSTNAME` enables LAN bypass only by explicit opt-in.** Setting

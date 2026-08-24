@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -18,6 +19,8 @@ const PORT = 18795;
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-t262-confirm.db');
 const TEST_PROJECT = 'test-confirm-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
+const JWT_SECRET = 't447-confirm-test-jwt-secret-long-enough';
+const dashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
 fs.mkdirSync(path.join(WORKSPACE, 'projects'), { recursive: true });
@@ -30,15 +33,18 @@ function makeRequest(method, requestPath, body = null) {
       port: PORT,
       path: requestPath,
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(dashboardCookie ? { Cookie: dashboardCookie } : {}),
+      },
     }, (res) => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => {
         try {
-          resolve({ statusCode: res.statusCode, body: data ? JSON.parse(data) : null });
+          resolve({ statusCode: res.statusCode, body: data ? JSON.parse(data) : null, headers: res.headers });
         } catch {
-          resolve({ statusCode: res.statusCode, body: data });
+          resolve({ statusCode: res.statusCode, body: data, headers: res.headers });
         }
       });
     });
@@ -63,16 +69,13 @@ async function waitForServer(child) {
   throw new Error(`server did not become ready: ${stderr}`);
 }
 
-async function createProposalSession(agentId, proposal = {}, opts = {}) {
+async function createProposalSession(agentId, proposal = {}, transport = 'api') {
   const createRes = await makeRequest('POST', '/api/specify/sessions', {
     project: TEST_PROJECT,
     origin: 'canvas',
     agentId,
-    // T-447-1: a legitimate human confirmation requires a Dashboard-human
-    // session (transport 'dashboard' + agentId 'human'). Callers that want
-    // an agent-originated session pass transport explicitly.
-    transport: opts.transport || (agentId === 'human' ? 'dashboard' : 'api'),
-    sourceNoteIds: opts.sourceNoteIds || ['note-1'],
+    transport,
+    sourceNoteIds: ['note-1'],
     sourceDescription: 'Test notes',
   });
   ok(createRes.statusCode === 201, `Session created for ${agentId}`);
@@ -98,53 +101,67 @@ async function runTests() {
       // leak into the spawned server and confuse the m004 migration.
       FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
+      TELEGRAM_BOT_TOKEN: '123456:t447-confirm-test-bot',
+      FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      JWT_SECRET: JWT_SECRET,
+      ALLOWED_USER_IDS: '42',
+      AUTH_ALWAYS: 'true',
     },
     stdio: 'pipe',
   });
 
   try {
     await waitForServer(server);
-  // Register the project canonically — session-create validates project
-  // existence against the registry (T-293); a bare directory is not enough.
-  fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
-  await makeRequest('POST', '/api/projects', { name: TEST_PROJECT });
+    // Register the project canonically — session-create validates project
+    // existence against the registry (T-293); a bare directory is not enough.
+    fs.rmSync(path.join(WORKSPACE, 'projects', TEST_PROJECT), { recursive: true, force: true });
+    await makeRequest('POST', '/api/projects', { name: TEST_PROJECT });
     section('POST /api/specify/sessions/:id/confirm Tests');
 
-    // T-447-1: positive path is a Dashboard-human session confirmed by the
-    // trusted local operator (auth-disabled test server -> req.localOperator).
-    const sessionId = await createProposalSession('human');
+    // Dashboard-human confirmation is the only successful human path.
+    const sessionId = await createProposalSession('human', {}, 'dashboard');
     const confirmRes = await makeRequest('POST', `/api/specify/sessions/${sessionId}/confirm`, { approved: true });
 
     ok(confirmRes.statusCode === 200, `POST /confirm returns 200 (got ${confirmRes.statusCode})`);
     ok(confirmRes.body?.session?.status === 'done', 'Status transitioned to done');
     ok(confirmRes.body.createdArtifacts.specFiles.length === 1, 'Spec file artifact recorded');
     ok(confirmRes.body.createdArtifacts.taskIds.length === 1, 'Task artifact recorded');
-    // T-447-1: the verified confirmation record is persisted.
-    ok(!!confirmRes.body.confirmation, 'confirmation record returned');
-    ok(confirmRes.body.confirmation?.specifySessionId === sessionId, 'confirmation persists Specify session ID');
-    ok(!!confirmRes.body.confirmation?.confirmedAt, 'confirmation persists timestamp');
-    ok(!!confirmRes.body.confirmation?.actor, 'confirmation persists actor');
-    ok(!!confirmRes.body.confirmation?.proposalIdentity, 'confirmation persists proposal identity');
+    ok(confirmRes.body.confirmation?.specifySessionId === sessionId,
+      'Confirmation is bound to the Specify session');
+    ok(confirmRes.body.confirmation?.proposalIdentity?.digest,
+      'Confirmation records proposal identity');
+    const durableTasks = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`);
+    const durableTask = durableTasks.body.tasks?.find((task) =>
+      task.id === confirmRes.body.createdArtifacts.taskIds[0]);
+    ok(durableTask?.specifyConfirmation?.actor === 'telegram:42',
+      'Verified confirmation actor is durable on task metadata');
+    ok(durableTask?.specifyConfirmation?.proposalDigest ===
+      confirmRes.body.confirmation.proposalIdentity.digest,
+    'Durable task metadata binds the proposal digest');
+    ok(durableTask?.specifyConfirmation?.proposalVersion ===
+      confirmRes.body.confirmation.proposalVersion,
+    'Durable task metadata binds the proposal version');
 
     const res404 = await makeRequest('POST', '/api/specify/sessions/nonexistent/confirm', { approved: true });
     ok(res404.statusCode === 404, 'POST /confirm returns 404 for missing session');
 
-    // T-447-1 negative: an agent-originated session (transport != dashboard,
-    // agentId != human) cannot be human-confirmed even by the local operator.
-    const agentSession = await createProposalSession('specify-chat-agent', {}, {
-      transport: 'chat', sourceNoteIds: ['note-agent'],
-    });
-    const selfConfirm = await makeRequest('POST', `/api/specify/sessions/${agentSession}/confirm`, { approved: true });
-    ok(selfConfirm.statusCode === 403, 'agent-originated session confirm returns 403');
-    ok(selfConfirm.body?.code === 'agent_self_confirmation_forbidden', 'reason is agent_self_confirmation_forbidden');
-
-    const session2 = await createProposalSession('human', {
+    const session2 = await createProposalSession('test-agent-4', {
       specContent: '# Rejected',
       taskBreakdown: [{ title: 'Rejected task' }],
-    }, { sourceNoteIds: ['note-reject'] });
+    });
     const rejectRes = await makeRequest('POST', `/api/specify/sessions/${session2}/confirm`, { approved: false });
     ok(rejectRes.statusCode === 200, 'POST /confirm with approved=false returns 200');
     ok(rejectRes.body.session.status === 'aborted', 'Rejection aborts session');
+
+    // A body-level human claim cannot authorize an agent-originated session.
+    const spoof = await createProposalSession('test-agent-5', {}, 'dashboard');
+    const spoofConfirm = await makeRequest('POST', `/api/specify/sessions/${spoof}/confirm`, {
+      approved: true, human: 'Ada', agentId: 'human', origin: 'dashboard',
+    });
+    ok(spoofConfirm.statusCode === 403, 'Spoofed human body cannot confirm');
+    ok(spoofConfirm.body?.code === 'confirmation_requires_verified_human' ||
+      spoofConfirm.body?.code === 'agent_self_confirmation_forbidden',
+      'Spoofed confirmation has a trust-contract rejection code');
 
     if (fail === 0) console.log(`\n✅ All ${pass} tests passed`);
     else {

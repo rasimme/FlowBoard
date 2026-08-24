@@ -1,5 +1,6 @@
 'use strict';
 
+const assert = require('assert');
 const specifySession = require('./specify-sessions');
 
 let pass = 0, fail = 0, failures = [];
@@ -37,6 +38,10 @@ ok(session.project === 'test-proj', 'project field present');
 ok(session.origin === 'canvas', 'origin field present');
 ok(typeof session.createdAt === 'number', 'createdAt is timestamp');
 ok(typeof session.lastActivity === 'number', 'lastActivity is timestamp');
+ok(session.principalBinding && session.principalBinding.sessionId === session.id,
+  'principalBinding is always present and session-bound');
+ok(session.principalBinding.proposalVersion === 0 && session.principalBinding.proposalIdentity === null,
+  'new session binding starts at proposal version zero');
 
 // Test state machine validity
 section('State Machine Validity Tests');
@@ -83,6 +88,26 @@ ok(updated.status === 'analyzing', 'Status updated');
 ok(updated.clarifications.length === 1, 'Clarifications updated');
 ok(updated.agentId === 'agent-1', 'Other fields preserved');
 ok(updated.lastActivity > sess.lastActivity, 'lastActivity bumped');
+
+const proposalUpdated = specifySession.updateSession(sess.id, {
+  draftProposal: {
+    summary: 'Versioned proposal', taskStructure: 'Single task',
+    specContent: '# Versioned proposal', taskBreakdown: [{ title: 'Task' }],
+  },
+});
+ok(proposalUpdated.principalBinding.proposalVersion === 1,
+  'proposal update increments the binding version');
+ok(proposalUpdated.principalBinding.proposalIdentity?.digest,
+  'proposal binding stores an immutable proposal digest');
+ok(typeof proposalUpdated.principalBinding.proposalBoundAt === 'number',
+  'proposal binding stores its own timestamp');
+ok(Object.isFrozen(proposalUpdated.principalBinding),
+  'proposal binding object is immutable');
+assert.throws(() => specifySession.updateSession(sess.id, {
+  principalBinding: { actor: 'forged', humanId: 'forged' },
+}), /server-managed/);
+ok(proposalUpdated.principalBinding.actor === sess.principalBinding.actor,
+  'proposal binding actor remains immutable across proposal updates');
 
 if (fail === 0) {
   console.log(`\n✅ All ${pass} tests passed`);

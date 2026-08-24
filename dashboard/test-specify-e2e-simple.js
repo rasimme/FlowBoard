@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -18,6 +19,8 @@ const PORT = 18796;
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-e2e-simple.db');
 const TEST_PROJECT = 'e2e-simple-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
+const JWT_SECRET = 't447-simple-test-jwt-secret-long-enough';
+const dashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 if (fs.existsSync(HZL_DB_PATH)) {
   try { fs.unlinkSync(HZL_DB_PATH); } catch {}
@@ -46,7 +49,7 @@ function makeRequest(method, path, body = null) {
       port: PORT,
       path,
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(dashboardCookie ? { Cookie: dashboardCookie } : {}) },
     };
 
     const req = http.request(options, (res) => {
@@ -57,11 +60,13 @@ function makeRequest(method, path, body = null) {
           resolve({
             statusCode: res.statusCode,
             body: data ? JSON.parse(data) : null,
+            headers: res.headers,
           });
         } catch (e) {
           resolve({
             statusCode: res.statusCode,
             body: data,
+            headers: res.headers,
           });
         }
       });
@@ -85,6 +90,11 @@ async function runTests() {
       // leak into the spawned server and confuse the m004 migration.
       FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
+      TELEGRAM_BOT_TOKEN: '123456:t447-simple-test-bot',
+      FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      JWT_SECRET,
+      ALLOWED_USER_IDS: '42',
+      AUTH_ALWAYS: 'true',
     },
     stdio: 'pipe',
   });
@@ -102,8 +112,6 @@ async function runTests() {
     const createRes = await makeRequest('POST', '/api/specify/sessions', {
       project: TEST_PROJECT,
       origin: 'canvas',
-      // T-447-1: the dashboard stepper runs as the human ('human' / dashboard),
-      // and confirmation is server-gated to a verified human. Model that here.
       agentId: 'human',
       transport: 'dashboard',
       sourceNoteIds: ['canvas-note-1'],

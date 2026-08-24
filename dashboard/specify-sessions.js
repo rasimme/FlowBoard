@@ -7,6 +7,22 @@
 
 const _sessions = new Map(); // id → session object
 let _sessionSeq = 0;
+const { proposalIdentityOf } = require('./governance');
+
+function freezeProposalIdentity(identity) {
+  if (!identity) return null;
+  return Object.freeze({
+    ...identity,
+    titles: Object.freeze([...(identity.titles || [])]),
+  });
+}
+
+function freezeBinding(binding) {
+  return Object.freeze({
+    ...binding,
+    proposalIdentity: freezeProposalIdentity(binding.proposalIdentity),
+  });
+}
 
 // Valid state transitions (directed graph)
 const TRANSITIONS = {
@@ -28,7 +44,7 @@ const TRANSITIONS = {
  *   - another active session has overlapping sourceNoteIds for same project
  *   - the agent already has an active session
  */
-function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDescription = '', transport = 'api' }) {
+function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDescription = '', transport = 'api', principalBinding = null }) {
   if (!project) throw new Error('project is required');
   if (!agentId) throw new Error('agentId is required');
 
@@ -52,14 +68,32 @@ function createSession({ project, origin, sourceNoteIds = [], agentId, sourceDes
   }
 
   const now = Date.now();
+  const id = `specify-${now}-${++_sessionSeq}`;
+  let binding = principalBinding && typeof principalBinding === 'object'
+    ? { ...principalBinding }
+    : {
+      kind: 'agent',
+      actor: `agent:${agentId}`,
+      humanId: null,
+    };
+  // Every session has an immutable session binding. A Dashboard-human
+  // binding is supplied by the server's verified principal resolver; an
+  // unverified/API session still gets a non-null binding for auditability.
+  binding.sessionId = id;
+  binding.createdAt = Number(binding.createdAt || now);
+  binding.proposalVersion = 0;
+  binding.proposalIdentity = null;
+  binding.proposalBoundAt = null;
+  binding = freezeBinding(binding);
   const session = {
-    id: `specify-${now}-${++_sessionSeq}`,
+    id,
     project,
     origin: origin || 'canvas',
     transport: transport || 'api',
     sourceNoteIds: [...sourceNoteIds],
     sourceDescription: sourceDescription || '',
     agentId,
+    principalBinding: binding,
     status: 'created',
     clarifications: [],
     ambiguityScan: null,
@@ -126,6 +160,10 @@ function updateSession(id, patch) {
   const s = _sessions.get(id);
   if (!s) return null;
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'principalBinding')) {
+    throw new Error('principalBinding is server-managed and cannot be updated directly');
+  }
+
   // If status is changing, validate transition
   if (patch.status && patch.status !== s.status) {
     if (!canTransition(s.status, patch.status)) {
@@ -133,7 +171,18 @@ function updateSession(id, patch) {
     }
   }
 
-  Object.assign(s, patch, { lastActivity: Math.max(Date.now(), s.lastActivity + 1) });
+  const now = Math.max(Date.now(), s.lastActivity + 1);
+  const proposalBoundAt = Date.now();
+  Object.assign(s, patch, { lastActivity: now });
+  if (Object.prototype.hasOwnProperty.call(patch, 'draftProposal')) {
+    const identity = proposalIdentityOf(patch.draftProposal);
+    s.principalBinding = freezeBinding({
+      ...s.principalBinding,
+      proposalVersion: (s.principalBinding?.proposalVersion || 0) + 1,
+      proposalIdentity: identity,
+      proposalBoundAt,
+    });
+  }
   return { ...s };
 }
 

@@ -28,6 +28,7 @@
 // covered on headless CI machines.
 
 const { spawn } = require('child_process');
+const jwt = require('jsonwebtoken');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
@@ -40,6 +41,8 @@ const EDGE = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
 const P_NORMAL = 'cdm-e2e-normal';
 const P_EMPTY = 'cdm-e2e-empty';
 const P_CORRUPT = 'cdm-e2e-corrupt';
+const JWT_SECRET = 't447-canvas-update-test-jwt-secret';
+const localDashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 let pass = 0;
 let fail = 0;
@@ -59,7 +62,10 @@ function ok(condition, message) {
 async function fetchJson(base, method, urlPath, body) {
   const res = await fetch(base + urlPath, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(localDashboardCookie ? { Cookie: localDashboardCookie } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   let json = null;
@@ -189,8 +195,12 @@ async function run() {
       FLOWBOARD_PROJECTS_DIR: projectsDir,
       HZL_DB_PATH: path.join(tempRoot, 'flowboard.db'),
       NODE_ENV: 'test', // Specify worker fallback for the promote happy path
-      TELEGRAM_BOT_TOKEN: '',
       TELEGRAM_BOT_TOKENS: '',
+      TELEGRAM_BOT_TOKEN: '123456:t447-canvas-update-test-bot',
+      FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      JWT_SECRET,
+      ALLOWED_USER_IDS: '42',
+      AUTH_ALWAYS: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -233,6 +243,17 @@ async function run() {
       });
       const page = await browser.newPage();
       await page.setViewport({ width: 1280, height: 900 });
+      // The no-auth loopback bypass is deliberately not a human signal. Give
+      // the browser the same server-issued session a real authenticated
+      // Dashboard would carry so its API calls resolve the human principal.
+      await page.setCookie({
+        name: 'flowboard_session',
+        value: localDashboardCookie.slice('flowboard_session='.length),
+        url: base,
+        path: '/',
+        httpOnly: true,
+        secure: false,
+      });
       await page.goto(base + '/', { waitUntil: 'networkidle2' });
 
       const chip = await waitFor(() => chipText(page), 'migration header chip');

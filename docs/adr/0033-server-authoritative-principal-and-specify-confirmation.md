@@ -8,7 +8,7 @@ Accepted (2026-08-24, T-447-1)
 
 ## Source
 - Spec: `specs/T-447-1-map-task-creation-entry-points-and-defin.md` (subtask of epic **T-447**, "Govern agent-originated task creation through Specify").
-- Code: `dashboard/governance.js`, the confirm / governance-mode / exception-review endpoints in `dashboard/server.js`, `hzl-service.setExceptionReview()`, `flowboard-metadata.get/setSetting`.
+- Code: `dashboard/governance.js`, the confirm / governance-mode endpoints in `dashboard/server.js`, `hzl-service.setSpecifyConfirmation()`, `flowboard-metadata.get/setSetting`.
 - Builds on [ADR-0028](0028-auth-model-middleware.md) (auth model), [ADR-0029](0029-local-first-single-operator-security-boundary.md) (local-first single operator), and [ADR-0003](0003-dashboard-has-no-agent-identity.md) (`agentId` is attribution, not identity).
 - Concept: [Governance Trust Contract](../concepts/governance-trust-contract.md).
 
@@ -23,19 +23,18 @@ human confirmation. That is only sound if the server — not the caller — deci
 FlowBoard already has exactly one cryptographically verified human signal:
 `req.user`, set by the `/api/` auth middleware from HMAC-verified Telegram
 init-data or a server-signed session cookie ([ADR-0028](0028-auth-model-middleware.md)).
-And per [ADR-0029](0029-local-first-single-operator-security-boundary.md), on a
-no-auth install a direct loopback caller *is* the single trusted operator.
+The local-first loopback bypass is only transport admission; it is not a
+verified human signal for policy confirmation. Even on a no-auth install, a
+policy mutation needs the authenticated Telegram/JWT session context.
 
 ## Decision
 Resolve the effective principal on the server and treat all caller-supplied
 identity/approval fields as descriptive only.
 
 - **`resolvePrincipal(req)`** returns `human` iff the FlowBoard server verified
-  the human for *this* request: a real `req.user`, or — only when Telegram auth
-  is not configured — the trusted loopback operator, marked by a
-  middleware-set `req.localOperator` flag (never set for cf-ray/tunnel or the
-  LAN-hostname bypass, and never settable from the request body). Everything
-  else is an `agent` principal.
+  the human for *this* request via a real `req.user` from Telegram init-data or
+  a server-issued JWT session. Loopback/LAN admission and caller-supplied
+  fields do not qualify. Everything else is an `agent` principal.
 - **Body/header claims never authorize.** `agent`, `agentId`, `human`,
   `approved`/`userApproval`, `origin`, `principal`, and the Specify
   `session.agentId` are echoed as descriptive context and ignored for the kind
@@ -49,17 +48,16 @@ identity/approval fields as descriptive only.
   (> `FLOWBOARD_CONFIRM_MAX_AGE_MIN`, default 30 min).
 - **Governance mode** (`compat` | `enforce`, default `compat`) is persisted in
   `flowboard_settings` and switched only by a verified human, with an audit
-  record and rollback. **Exception review** is likewise verified-human-only and
-  stamps reviewer + review timestamp on the task.
+  record and rollback. Exception-review UI/API is deferred to T-447-3/T-447-4.
 
 ## Consequences
-- An agent can no longer confirm its own Specify proposal, change governance
-  mode, or mark its own exception reviewed. The chat-origin Specify pipeline
+- An agent can no longer confirm its own Specify proposal or change governance
+  mode. The chat-origin Specify pipeline
   still runs (next/answer/proposal), but confirmation moves to the human via the
   Dashboard stepper — the E2E chat-origin test now asserts the 403.
 - No new identity system is introduced: this reuses the existing Telegram/JWT
-  human signal and the loopback-operator trust, consistent with the single-user
-  security model of [ADR-0029](0029-local-first-single-operator-security-boundary.md).
+  human signal. The general local-first loopback admission model remains, but
+  it is deliberately not treated as human authority for policy confirmation.
 - **Scope is deliberately narrow.** This ADR covers only the trust primitives.
   The `createTaskWithPolicy()` boundary, the four validated operational
   exceptions and predicates, the append-only policy ledger, and the
