@@ -203,6 +203,9 @@ function _toFbTask(hzlTask, project) {
     // T-161-4: soft-delete pointer into Trash. Null = live task; ISO string =
     // task is in Trash and eligible for Empty-Trash bulk hard-delete.
     trashedAt: fb.trashedAt || null,
+    // T-447-1: verified exception-review record (null when not an exception or
+    // not yet reviewed). Shape: { state, reviewer, reviewerHumanId, reviewedAt }.
+    exceptionReview: fb.exceptionReview || null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -3773,6 +3776,29 @@ function routeTask(project, flowboardId, agent) {
   return _publicTask(cached);
 }
 
+/**
+ * T-447-1: persist a verified exception-review record onto a task's metadata.
+ * `record` is produced by governance.authorizeExceptionReview() AFTER a
+ * server-verified human principal was resolved — this function only writes it,
+ * it performs no authorization. Stored under metadata.flowboard.exceptionReview
+ * = { state: 'pending'|'reviewed', reviewer, reviewerHumanId, reviewedAt }.
+ * Returns the updated public task.
+ */
+function setExceptionReview(project, flowboardId, record) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached) throw Object.assign(new Error(`Task not found in cache: ${flowboardId}`), { status: 404 });
+  const hzlTask = _taskService.getTaskById(ulid);
+  const flowboard = {
+    ...(hzlTask?.metadata?.flowboard || {}),
+    exceptionReview: { ...record },
+  };
+  _updateMetadata(ulid, { flowboard });
+  _resyncCachedTask(ulid);
+  return _publicTask(_cache.get(`${project}:${flowboardId}`) || cached);
+}
+
 /** Set the completion notification callback */
 function setOnComplete(fn) { _onCompleteCallback = fn; }
 
@@ -4186,6 +4212,7 @@ module.exports = {
   getTask,
   createTask,
   updateTask,
+  setExceptionReview,
   emptyTrash,
   deleteTask,
   getTaskSummary,

@@ -65,6 +65,7 @@ const specifySession = require('./specify-sessions');
 const specifyWorkerBridge = require('./specify-worker-bridge');
 const specifyWorkerOpenclaw = require('./specify-worker-openclaw');
 const specifyPolicy = require('./specify-policy');
+const governance = require('./governance.js');
 
 // Production Specify worker: OpenClaw CLI one-shot adapter (T-262-11).
 // Tests configure their own (fake) adapter; SPECIFY_WORKER_DISABLED opts out.
@@ -366,7 +367,15 @@ function telegramAuthMiddleware(req, res, next) {
   if (!AUTH_ENABLED) {
     // Fail-closed: only allow localhost when auth is not configured (direct local access only)
     const ip = req.ip || req.connection?.remoteAddress || '';
-    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return next();
+    if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) {
+      // T-447-1: when auth is not configured, a direct loopback caller IS the
+      // trusted local operator (this is the same trust the full-access bypass
+      // already grants). Stamp it so governance.resolvePrincipal can treat the
+      // local operator as the verified human on a no-auth deployment. This is
+      // NEVER set for cf-ray/tunnel requests (handled above) or LAN bypass.
+      req.localOperator = true;
+      return next();
+    }
     return res.status(403).json({ error: 'Auth not configured — only localhost access permitted' });
   }
   // Direct local requests (no cf-ray) — allow for dev/ops access
@@ -3568,16 +3577,39 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
       });
     }
 
+    // T-447-1: server-authoritative human-confirmation gate. The principal is
+    // resolved from verified auth/session/transport context — never from the
+    // request body's `approved`/`human`/`agent` fields (descriptive only).
+    // Rejects agent self-confirmation and missing/stale/mismatched bindings.
+    const principal = governance.resolvePrincipal(req);
+    const confirmCheck = governance.verifyHumanConfirmation({
+      principal,
+      session,
+      expectedSessionId: req.params.id,
+    });
+    if (!confirmCheck.ok) {
+      return res.status(403).json({
+        error: confirmCheck.reason,
+        code: confirmCheck.code,
+        session: specifySession.getSession(req.params.id),
+      });
+    }
+    const confirmation = confirmCheck.record;
+
     const result = await specifyWorkerBridge.confirmProposal(req.params.id, approval, customizations);
     const artifacts = persistSpecifyProposal(result.session, {
       cleanupNotes: customizations?.cleanupNotes,
     });
 
+    // Persist the verified confirmation (actor, timestamp, Specify session ID,
+    // proposal identity) onto the session for audit and downstream policy.
+    specifySession.updateSession(req.params.id, { confirmation });
     specifySession.updateSession(req.params.id, { createdArtifacts: artifacts });
     specifySession.updateSession(req.params.id, { status: 'done' });
 
     res.json({
       session: specifySession.getSession(req.params.id),
+      confirmation,
       createdArtifacts: artifacts,
       specPath: artifacts.specFiles[0] || null,
       createdTasks: artifacts.taskIds,
@@ -3606,6 +3638,69 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
     } else {
       res.status(404).json({ error: 'Session not found' });
     }
+  }
+});
+
+// =============================================================================
+// T-447-1: Governance trust surface — mode switch + exception review
+//
+// These mutations resolve the effective principal on the SERVER via
+// governance.resolvePrincipal(req). Caller-supplied `human`/`agent`/`approved`
+// body fields are descriptive only and never authorize the action. Each
+// mutation persists actor + timestamp. This is the small trust contract from
+// T-447-1; the createTaskWithPolicy() wrapper and the four operational
+// exceptions arrive in later subtasks (T-447-2..5).
+// =============================================================================
+
+// GET /api/projects/:name/governance/mode — read persisted mode (+ audit)
+app.get('/api/projects/:name/governance/mode', (req, res) => {
+  try {
+    const mode = governance.getGovernanceMode(fbMeta);
+    res.json({
+      mode,
+      default: governance.DEFAULT_GOVERNANCE_MODE,
+      modes: governance.GOVERNANCE_MODES,
+      lastChange: governance.getGovernanceModeAudit(fbMeta),
+    });
+  } catch (err) {
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /api/projects/:name/governance/mode — switch mode (verified human only)
+app.put('/api/projects/:name/governance/mode', (req, res) => {
+  try {
+    const principal = governance.resolvePrincipal(req);
+    const result = governance.setGovernanceMode({
+      store: fbMeta,
+      principal,
+      nextMode: req.body?.mode,
+    });
+    if (!result.ok) {
+      const status = result.code === 'invalid_governance_mode' ? 400 : 403;
+      return res.status(status).json({ error: result.reason, code: result.code });
+    }
+    res.json({ ok: true, mode: result.mode, lastChange: result.record });
+  } catch (err) {
+    console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/projects/:name/tasks/:id/exception-review — mark reviewed
+// (verified human only). Persists reviewer + review timestamp on the task.
+app.post('/api/projects/:name/tasks/:id/exception-review', (req, res) => {
+  try {
+    const principal = governance.resolvePrincipal(req);
+    const auth = governance.authorizeExceptionReview({ principal });
+    if (!auth.ok) {
+      return res.status(403).json({ error: auth.reason, code: auth.code });
+    }
+    const task = hzlService.setExceptionReview(req.params.name, req.params.id, auth.record);
+    res.json({ ok: true, task, exceptionReview: auth.record });
+  } catch (err) {
+    const status = err.status || (String(err.message).includes('not found') ? 404 : 500);
+    if (status >= 500) console.error('[api]', err);
+    res.status(status).json({ error: err.message });
   }
 });
 

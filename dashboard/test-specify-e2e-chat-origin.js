@@ -128,12 +128,20 @@ async function runTests() {
 
     ok(ansRes.statusCode === 200, 'Proposal recorded');
 
+    // T-447-1: a chat-origin session is agent-driven. An agent confirming its
+    // OWN Specify proposal is agent self-confirmation and MUST be rejected by
+    // the server-authoritative trust contract — a verified human confirms via
+    // the Dashboard stepper instead. This test now asserts that rejection so
+    // the chat pipeline (next/answer/proposal) is still covered while the
+    // confirmation gate is proven closed for agents.
     const confirmRes = await makeRequest('POST', `/api/specify/sessions/${sessionId}/confirm`, {
       approved: true,
     });
 
-    ok(confirmRes.statusCode === 200, 'Confirmation successful');
-    ok(confirmRes.body.session.status === 'done', 'Chat-origin session completed');
+    ok(confirmRes.statusCode === 403, `agent self-confirmation rejected 403 (got ${confirmRes.statusCode})`);
+    ok(confirmRes.body.code === 'agent_self_confirmation_forbidden',
+      'reason is agent_self_confirmation_forbidden');
+    ok(confirmRes.body.session.status !== 'done', 'chat-origin session NOT completed by agent self-confirm');
 
     if (fail === 0) {
       console.log(`\n✅ All ${pass} tests passed`);

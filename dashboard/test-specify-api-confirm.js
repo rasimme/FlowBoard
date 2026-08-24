@@ -63,12 +63,16 @@ async function waitForServer(child) {
   throw new Error(`server did not become ready: ${stderr}`);
 }
 
-async function createProposalSession(agentId, proposal = {}) {
+async function createProposalSession(agentId, proposal = {}, opts = {}) {
   const createRes = await makeRequest('POST', '/api/specify/sessions', {
     project: TEST_PROJECT,
     origin: 'canvas',
     agentId,
-    sourceNoteIds: ['note-1'],
+    // T-447-1: a legitimate human confirmation requires a Dashboard-human
+    // session (transport 'dashboard' + agentId 'human'). Callers that want
+    // an agent-originated session pass transport explicitly.
+    transport: opts.transport || (agentId === 'human' ? 'dashboard' : 'api'),
+    sourceNoteIds: opts.sourceNoteIds || ['note-1'],
     sourceDescription: 'Test notes',
   });
   ok(createRes.statusCode === 201, `Session created for ${agentId}`);
@@ -106,21 +110,38 @@ async function runTests() {
   await makeRequest('POST', '/api/projects', { name: TEST_PROJECT });
     section('POST /api/specify/sessions/:id/confirm Tests');
 
-    const sessionId = await createProposalSession('test-agent-3');
+    // T-447-1: positive path is a Dashboard-human session confirmed by the
+    // trusted local operator (auth-disabled test server -> req.localOperator).
+    const sessionId = await createProposalSession('human');
     const confirmRes = await makeRequest('POST', `/api/specify/sessions/${sessionId}/confirm`, { approved: true });
 
     ok(confirmRes.statusCode === 200, `POST /confirm returns 200 (got ${confirmRes.statusCode})`);
     ok(confirmRes.body?.session?.status === 'done', 'Status transitioned to done');
     ok(confirmRes.body.createdArtifacts.specFiles.length === 1, 'Spec file artifact recorded');
     ok(confirmRes.body.createdArtifacts.taskIds.length === 1, 'Task artifact recorded');
+    // T-447-1: the verified confirmation record is persisted.
+    ok(!!confirmRes.body.confirmation, 'confirmation record returned');
+    ok(confirmRes.body.confirmation?.specifySessionId === sessionId, 'confirmation persists Specify session ID');
+    ok(!!confirmRes.body.confirmation?.confirmedAt, 'confirmation persists timestamp');
+    ok(!!confirmRes.body.confirmation?.actor, 'confirmation persists actor');
+    ok(!!confirmRes.body.confirmation?.proposalIdentity, 'confirmation persists proposal identity');
 
     const res404 = await makeRequest('POST', '/api/specify/sessions/nonexistent/confirm', { approved: true });
     ok(res404.statusCode === 404, 'POST /confirm returns 404 for missing session');
 
-    const session2 = await createProposalSession('test-agent-4', {
+    // T-447-1 negative: an agent-originated session (transport != dashboard,
+    // agentId != human) cannot be human-confirmed even by the local operator.
+    const agentSession = await createProposalSession('specify-chat-agent', {}, {
+      transport: 'chat', sourceNoteIds: ['note-agent'],
+    });
+    const selfConfirm = await makeRequest('POST', `/api/specify/sessions/${agentSession}/confirm`, { approved: true });
+    ok(selfConfirm.statusCode === 403, 'agent-originated session confirm returns 403');
+    ok(selfConfirm.body?.code === 'agent_self_confirmation_forbidden', 'reason is agent_self_confirmation_forbidden');
+
+    const session2 = await createProposalSession('human', {
       specContent: '# Rejected',
       taskBreakdown: [{ title: 'Rejected task' }],
-    });
+    }, { sourceNoteIds: ['note-reject'] });
     const rejectRes = await makeRequest('POST', `/api/specify/sessions/${session2}/confirm`, { approved: false });
     ok(rejectRes.statusCode === 200, 'POST /confirm with approved=false returns 200');
     ok(rejectRes.body.session.status === 'aborted', 'Rejection aborts session');

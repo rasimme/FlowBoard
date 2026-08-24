@@ -522,6 +522,27 @@
       "doc": "api/tasks.md"
     },
     {
+      "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/exception-review",
+      "auth": "user",
+      "group": "tasks",
+      "doc": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:name/governance/mode",
+      "auth": "user",
+      "group": "governance",
+      "doc": null
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/governance/mode",
+      "auth": "user",
+      "group": "governance",
+      "doc": null
+    },
+    {
       "method": "GET",
       "path": "/api/projects/:name/tasks/:id/checkpoints",
       "auth": "user",

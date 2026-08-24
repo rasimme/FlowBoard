@@ -102,7 +102,9 @@ async function runTests() {
     const createRes = await makeRequest('POST', '/api/specify/sessions', {
       project: TEST_PROJECT,
       origin: 'canvas',
-      agentId: 'e2e-agent-complex',
+      // T-447-1: dashboard stepper session = verified human confirmation path.
+      agentId: 'human',
+      transport: 'dashboard',
       sourceNoteIds: ['canvas-note-1', 'canvas-note-2'],
       sourceDescription: 'Complex user notes with ambiguities',
     });

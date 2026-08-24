@@ -102,7 +102,10 @@ async function runTests() {
     const createRes = await makeRequest('POST', '/api/specify/sessions', {
       project: TEST_PROJECT,
       origin: 'canvas',
-      agentId: 'e2e-agent-simple',
+      // T-447-1: the dashboard stepper runs as the human ('human' / dashboard),
+      // and confirmation is server-gated to a verified human. Model that here.
+      agentId: 'human',
+      transport: 'dashboard',
       sourceNoteIds: ['canvas-note-1'],
       sourceDescription: 'User canvas notes',
     });
