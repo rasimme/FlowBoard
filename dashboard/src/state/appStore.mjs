@@ -11,6 +11,14 @@
 // replaced on each change, so identity/memo stay meaningful.
 
 import { INITIAL_CONNECTION_STATE } from './connectionState.mjs';
+import { normalizeStaleThresholdMinutes } from '../utils/leaseHealth.js';
+
+// The server injects the scheduler's effective threshold into the page. Keep
+// malformed/missing runtime config fail-safe and aligned with the scheduler's
+// 30-minute default.
+const initialStaleThresholdMinutes = normalizeStaleThresholdMinutes(
+  globalThis.window?.__FLOWBOARD_STALE_THRESHOLD_MINUTES__,
+);
 
 const INITIAL = {
   projects: [],
@@ -19,6 +27,7 @@ const INITIAL = {
   tasks: [],
   currentTab: 'overview',
   agents: [],
+  staleThresholdMinutes: initialStaleThresholdMinutes,
   agentId: null,
   agentIdSource: null,
   agentIdChatBound: false,

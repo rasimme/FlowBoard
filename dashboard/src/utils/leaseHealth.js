@@ -2,10 +2,10 @@
  * Lease health used by claim displays.
  *
  * Keep the threshold in one place for the task surfaces that need to show
- * claim health. Fifteen minutes is the existing LeaseIndicator threshold;
+ * claim health. This default mirrors hzl-service's scheduler threshold;
  * task-level staleAfterMinutes overrides it when present.
  */
-export const DEFAULT_STALE_THRESHOLD_MINUTES = 15;
+export const DEFAULT_STALE_THRESHOLD_MINUTES = 30;
 export const DEFAULT_STALE_THRESHOLD_MS = DEFAULT_STALE_THRESHOLD_MINUTES * 60 * 1000;
 
 export const LEASE_HEALTH = Object.freeze({
@@ -24,18 +24,20 @@ function leaseUntilFor(task) {
   return task?.leaseUntil ?? task?.lease_until ?? null;
 }
 
+export function normalizeStaleThresholdMinutes(value, fallback = DEFAULT_STALE_THRESHOLD_MINUTES) {
+  const safeFallback = Number.isInteger(fallback) && fallback > 0
+    ? fallback
+    : DEFAULT_STALE_THRESHOLD_MINUTES;
+  return Number.isInteger(value) && value > 0 ? value : safeFallback;
+}
+
 function staleThresholdMs(task, options = {}) {
   const taskMinutes = task?.staleAfterMinutes;
   if (Number.isInteger(taskMinutes) && taskMinutes > 0) {
     return taskMinutes * 60 * 1000;
   }
 
-  const configuredMinutes = options.staleThresholdMinutes;
-  if (Number.isFinite(configuredMinutes) && configuredMinutes > 0) {
-    return configuredMinutes * 60 * 1000;
-  }
-
-  return DEFAULT_STALE_THRESHOLD_MS;
+  return normalizeStaleThresholdMinutes(options.staleThresholdMinutes) * 60 * 1000;
 }
 
 function activityTimestamp(task) {

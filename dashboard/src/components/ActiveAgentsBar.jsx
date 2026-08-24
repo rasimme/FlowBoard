@@ -220,6 +220,7 @@ export default function ActiveAgentsBar() {
   const viewedProject = state?.viewedProject;
   const agents = state?.agents || [];
   const tasks = state?.tasks || [];
+  const staleThresholdMinutes = state?.staleThresholdMinutes;
   const [now, setNow] = useState(() => Date.now());
   const [openAgentId, setOpenAgentId] = useState(null);
   const [popoverPosition, setPopoverPosition] = useState(null);
@@ -236,7 +237,13 @@ export default function ActiveAgentsBar() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const rows = useMemo(() => buildActiveAgentRows({ agents, tasks, viewedProject, now }), [agents, tasks, viewedProject, now]);
+  const rows = useMemo(() => buildActiveAgentRows({
+    agents,
+    tasks,
+    viewedProject,
+    now,
+    staleThresholdMinutes,
+  }), [agents, tasks, viewedProject, now, staleThresholdMinutes]);
   const openRow = rows.find((row) => row.agentId === openAgentId);
 
   const focusSurvivingControl = useCallback((closingAgentId) => {

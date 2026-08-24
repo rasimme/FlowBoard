@@ -3,6 +3,7 @@ import {
   aggregateLeaseHealth,
   getLeaseHealth,
   LEASE_HEALTH,
+  normalizeStaleThresholdMinutes,
 } from './leaseHealth.js';
 
 /**
@@ -69,10 +70,17 @@ export function groupActiveClaims(tasks = []) {
  * project: a task claim is the stronger signal that work is active here, and
  * the owner slug is a safe display fallback in that partial-data case.
  */
-export function buildActiveAgentRows({ agents = [], tasks = [], viewedProject, now = Date.now() } = {}) {
+export function buildActiveAgentRows({
+  agents = [],
+  tasks = [],
+  viewedProject,
+  now = Date.now(),
+  staleThresholdMinutes,
+} = {}) {
   if (!viewedProject) return [];
 
   const claimsByAgent = groupActiveClaims(tasks, now);
+  const leaseHealthOptions = { staleThresholdMinutes };
   const rows = [];
   const seenAgents = new Set();
   const knownAgents = Array.isArray(agents) ? agents : [];
@@ -87,7 +95,7 @@ export function buildActiveAgentRows({ agents = [], tasks = [], viewedProject, n
       agentId: slug,
       claims,
       agent,
-      leaseHealth: claims.length ? aggregateLeaseHealth(claims, now) : null,
+      leaseHealth: claims.length ? aggregateLeaseHealth(claims, now, leaseHealthOptions) : null,
     });
   }
 
@@ -103,7 +111,7 @@ export function buildActiveAgentRows({ agents = [], tasks = [], viewedProject, n
       agentId: slug,
       claims,
       agent: null,
-      leaseHealth: claims.length ? aggregateLeaseHealth(claims, now) : null,
+      leaseHealth: claims.length ? aggregateLeaseHealth(claims, now, leaseHealthOptions) : null,
     });
   }
 
@@ -114,6 +122,7 @@ export {
   aggregateLeaseHealth,
   getLeaseHealth,
   LEASE_HEALTH,
+  normalizeStaleThresholdMinutes,
 };
 
 export const ACTIVE_AGENT_STATUS_LABELS = {

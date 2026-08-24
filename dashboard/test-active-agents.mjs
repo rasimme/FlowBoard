@@ -7,6 +7,7 @@ import {
   groupActiveClaims,
   isValidActiveClaim,
   LEASE_HEALTH,
+  normalizeStaleThresholdMinutes,
 } from './src/utils/activeAgents.js';
 
 const NOW = Date.parse('2026-08-24T12:00:00.000Z');
@@ -43,6 +44,9 @@ assert.equal(isValidActiveClaim(claim('T-done', 'a', { status: 'done' }), NOW), 
 
 assert.equal(canonicalAgentSlug(' alpha '), 'alpha', 'task owner is normalized to its canonical slug');
 assert.equal(canonicalAgentSlug({ agent_id: 'beta' }), 'beta', 'agent rows support their canonical id field');
+assert.equal(normalizeStaleThresholdMinutes(undefined), 30, 'stale threshold defaults to the scheduler default');
+assert.equal(normalizeStaleThresholdMinutes(0), 30, 'invalid runtime threshold safely falls back to the scheduler default');
+assert.equal(normalizeStaleThresholdMinutes(10), 10, 'positive runtime threshold is preserved');
 
 assert.equal(
   getLeaseHealth(claim('T-current', 'a', { lastCheckpointAt: '2026-08-24T11:55:00.000Z' }), NOW),
@@ -59,10 +63,17 @@ assert.equal(
 );
 assert.equal(
   getLeaseHealth(claim('T-stale', 'a', {
-    lastCheckpointAt: '2026-08-24T11:44:59.000Z',
+    lastCheckpointAt: '2026-08-24T11:29:59.999Z',
   }), NOW),
   LEASE_HEALTH.STALE,
-  'old checkpoint marks a live lease stale at the existing threshold',
+  'checkpoint one millisecond beyond the 30-minute default is stale',
+);
+assert.equal(
+  getLeaseHealth(claim('T-default-boundary', 'a', {
+    lastCheckpointAt: '2026-08-24T11:30:00.000Z',
+  }), NOW),
+  LEASE_HEALTH.CURRENT,
+  'checkpoint exactly at the 30-minute default boundary is current',
 );
 assert.equal(
   getLeaseHealth(claim('T-expired', 'a', { leaseUntil: '2026-08-24T11:59:59.000Z' }), NOW),
@@ -76,16 +87,38 @@ assert.equal(
 );
 assert.equal(
   getLeaseHealth(claim('T-custom-threshold', 'a', {
-    lastCheckpointAt: '2026-08-24T11:50:00.000Z',
+    lastCheckpointAt: '2026-08-24T11:40:00.000Z',
     staleAfterMinutes: 20,
   }), NOW),
   LEASE_HEALTH.CURRENT,
-  'per-task stale threshold overrides the shared threshold',
+  'per-task stale threshold keeps an exactly-boundary claim current',
+);
+assert.equal(
+  getLeaseHealth(claim('T-custom-threshold-over', 'a', {
+    lastCheckpointAt: '2026-08-24T11:39:59.999Z',
+    staleAfterMinutes: 20,
+  }), NOW),
+  LEASE_HEALTH.STALE,
+  'per-task stale threshold marks a claim stale one millisecond beyond its boundary',
+);
+assert.equal(
+  getLeaseHealth(claim('T-configured-threshold', 'a', {
+    lastCheckpointAt: '2026-08-24T11:50:00.000Z',
+  }), NOW, { staleThresholdMinutes: 10 }),
+  LEASE_HEALTH.CURRENT,
+  'configured scheduler threshold keeps an exactly-boundary claim current',
+);
+assert.equal(
+  getLeaseHealth(claim('T-configured-threshold-over', 'a', {
+    lastCheckpointAt: '2026-08-24T09:49:59.999Z',
+  }), Date.parse('2026-08-24T10:00:00.000Z'), { staleThresholdMinutes: 10 }),
+  LEASE_HEALTH.STALE,
+  'configured scheduler threshold marks a claim stale beyond its boundary',
 );
 assert.equal(
   aggregateLeaseHealth([
     claim('T-current', 'a', { lastCheckpointAt: '2026-08-24T11:55:00.000Z' }),
-    claim('T-stale', 'a', { lastCheckpointAt: '2026-08-24T11:44:59.000Z' }),
+    claim('T-stale', 'a', { lastCheckpointAt: '2026-08-24T11:29:59.999Z' }),
   ], NOW),
   LEASE_HEALTH.STALE,
   'agent health aggregates stale over current',
@@ -93,7 +126,7 @@ assert.equal(
 assert.equal(
   aggregateLeaseHealth([
     claim('T-current', 'a', { lastCheckpointAt: '2026-08-24T11:55:00.000Z' }),
-    claim('T-stale', 'a', { lastCheckpointAt: '2026-08-24T11:44:59.000Z' }),
+    claim('T-stale', 'a', { lastCheckpointAt: '2026-08-24T11:29:59.999Z' }),
     claim('T-expired', 'a', { leaseUntil: '2026-08-24T11:59:59.000Z' }),
   ], NOW),
   LEASE_HEALTH.EXPIRED,
@@ -122,5 +155,20 @@ assert.equal(rows.find((row) => row.agentId === 'beta').leaseHealth, LEASE_HEALT
 assert.equal(rows.find((row) => row.agentId === 'idle').claims.length, 0, 'active idle agent remains visible');
 assert.equal(rows.find((row) => row.agentId === 'idle').leaseHealth, null, 'idle agent has no lease health');
 assert.equal(rows.find((row) => row.agentId === 'zeta').agent, null, 'unknown agent degrades to slug');
+
+const configuredRows = buildActiveAgentRows({
+  viewedProject: 'flowboard',
+  now: NOW,
+  staleThresholdMinutes: 10,
+  agents: [{ agent_id: 'configured', active_project: 'flowboard' }],
+  tasks: [claim('T-configured-row', 'configured', {
+    lastCheckpointAt: '2026-08-24T11:49:59.999Z',
+  })],
+});
+assert.equal(
+  configuredRows[0].leaseHealth,
+  LEASE_HEALTH.STALE,
+  'buildActiveAgentRows forwards the configured scheduler threshold to lease health',
+);
 
 console.log('✅ Active Agents predicate/grouping tests passed');

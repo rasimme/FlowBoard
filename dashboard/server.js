@@ -596,7 +596,7 @@ app.get('/', (req, res) => {
   const nonce = res.locals.cspNonce;
   // Inject nonce into existing inline scripts and add config script
   html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};</script></head>`);
+  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};window.__FLOWBOARD_STALE_THRESHOLD_MINUTES__ = ${JSON.stringify(hzlService.getSchedulerStaleThreshold())};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
@@ -626,7 +626,7 @@ app.get('/*path', (req, res, next) => {
   const localHostname = process.env.LOCAL_HOSTNAME || '';
   const nonce = res.locals.cspNonce;
   html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};</script></head>`);
+  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};window.__FLOWBOARD_STALE_THRESHOLD_MINUTES__ = ${JSON.stringify(hzlService.getSchedulerStaleThreshold())};</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
