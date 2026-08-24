@@ -10,6 +10,8 @@ const {
   resolveWorkStatePayload,
   workStateMetadata,
 } = require('./work-state.js');
+const taskCreationPolicy = require('./task-creation-policy.js');
+const policyLedger = require('./policy-ledger.js');
 
 // =============================================================================
 // T-248: Stuck-Task Notification Contract
@@ -144,6 +146,23 @@ function _normalizeStuckIndicator(value) {
   return _cloneJson(value);
 }
 
+function _normalizeExceptionReview(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const status = value.status;
+  if (status !== 'pending' && status !== 'reviewed') return null;
+  if (status === 'pending') {
+    return { status: 'pending', reviewer: null, reviewedAt: null };
+  }
+  const reviewer = typeof value.reviewer === 'string' && value.reviewer.trim()
+    ? value.reviewer.trim() : null;
+  const reviewedAt = typeof value.reviewedAt === 'string' && value.reviewedAt.trim()
+    ? value.reviewedAt : null;
+  // A reviewed marker without both immutable human evidence fields is not a
+  // reviewed task. The future review endpoint must provide both together.
+  if (!reviewer || !reviewedAt || Number.isNaN(Date.parse(reviewedAt))) return null;
+  return { status: 'reviewed', reviewer, reviewedAt };
+}
+
 function _normalizeTaskWorkState(flowboard = {}, created = null) {
   const normalized = normalizeStoredWorkState(flowboard, { fallbackSetAt: created });
   return {
@@ -206,8 +225,12 @@ function _toFbTask(hzlTask, project) {
     specifyConfirmation: fb.specifyConfirmation || null,
     // T-447-2: durable provenance for the policy-aware creation boundary.
     // This is deliberately task-local metadata, not the append-only policy
-    // ledger owned by a later T-447 task.
+    // ledger. The ledger is written by createTaskWithPolicy().
     creationAudit: fb.creationAudit || null,
+    // T-447-3: exception-created work starts pending and is reviewed by a
+    // later verified-human review action. Keep the shape stable for API/UI
+    // consumers without adding the review surface in this task.
+    exceptionReview: _normalizeExceptionReview(fb.exceptionReview),
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -832,17 +855,18 @@ function workflowHandoff(project, opts = {}) {
   if (opKey && _workflowOps.has(opKey)) return _workflowOps.get(opKey);
 
   const source = getTask(project, fromTaskId);
-  if (!source) throw new Error(`Task not found: ${fromTaskId}`);
-  if (source.status !== 'in-progress') throw new Error(`Cannot handoff task in status "${source.status}"`);
+  const sourceAgent = source?.agent || agent || null;
 
   const followOn = createTaskWithPolicy(project, {
     title,
-    priority: source.priority,
+    priority: source?.priority || 'medium',
     status: 'open',
   }, {
     origin: 'handoff',
-    principal: workflowPrincipal(source.agent || agent),
+    principal: workflowPrincipal(sourceAgent),
     sourceTaskId: fromTaskId,
+    fromTaskId,
+    exception: 'handoff',
   });
   if (agent) routeTask(project, followOn.id, agent);
 
@@ -863,7 +887,7 @@ function workflowHandoff(project, opts = {}) {
     });
   }
 
-  const completedTask = completeTask(project, fromTaskId, { agent: source.agent || agent || null });
+  const completedTask = completeTask(project, fromTaskId, { agent: sourceAgent });
   return _rememberWorkflowOp(opKey, {
     workflow: 'handoff',
     opId,
@@ -882,21 +906,25 @@ function workflowDelegate(project, opts = {}) {
   if (opKey && _workflowOps.has(opKey)) return _workflowOps.get(opKey);
 
   const source = getTask(project, fromTaskId);
-  if (!source) throw new Error(`Task not found: ${fromTaskId}`);
+  const sourceAgent = source?.agent || agent || null;
 
   const delegated = createTaskWithPolicy(project, {
     title,
-    priority: source.priority,
+    priority: source?.priority || 'medium',
     parentId: noDepends ? null : fromTaskId,
     status: 'open',
   }, {
     origin: 'delegate',
-    principal: workflowPrincipal(source.agent || agent),
+    principal: workflowPrincipal(sourceAgent),
     sourceTaskId: fromTaskId,
+    fromTaskId,
     noDepends,
+    // A child with an exact parent relation is the only delegate exception.
+    // The policy evaluator intentionally receives no exception for noDepends.
+    ...(noDepends ? {} : { exception: 'delegate_subtask' }),
   });
   if (agent) routeTask(project, delegated.id, agent);
-  if (checkpoint) addCheckpoint(project, fromTaskId, { agent: source.agent || agent || null, message: checkpoint });
+  if (checkpoint) addCheckpoint(project, fromTaskId, { agent: sourceAgent, message: checkpoint });
   if (pauseParent) updateTask(project, fromTaskId, { blocked: true });
 
   return _rememberWorkflowOp(opKey, {
@@ -924,15 +952,53 @@ function workflowDelegate(project, opts = {}) {
  * Returns FlowBoard-format task.
  */
 function createTaskWithPolicy(project, opts = {}, context = {}) {
-  const origin = context && typeof context.origin === 'string'
-    ? context.origin.trim()
-    : '';
-  if (!origin) throw Object.assign(new Error('Task creation origin is required'), { status: 400, code: 'CREATION_ORIGIN_REQUIRED' });
+  const policy = taskCreationPolicy.evaluateCreationPolicy({
+    project,
+    opts,
+    context,
+    getTask,
+  });
 
-  const audit = buildCreationAudit(origin, context);
+  const appendDecision = (taskId = null) => policyLedger.appendPolicyRecord(project, {
+    decision: policy.decision,
+    origin: policy.origin,
+    exception: policy.exception,
+    taskId,
+    sourceTaskId: policy.sourceTaskId,
+    reason: policy.reason,
+    code: policy.code,
+    principal: policy.principal,
+    evidence: policy.evidence,
+  }, context.policyLedgerOptions || {});
+
+  if (policy.decision === 'blocked') {
+    // Blocked requests have no task to attach to, so the ledger write occurs
+    // before throwing. This is the durable evidence for a zero-task outcome.
+    appendDecision();
+    throw Object.assign(new Error(policy.reason), {
+      status: 400,
+      code: policy.code,
+      policyDecision: policy.decision,
+      exception: policy.exception,
+    });
+  }
+
+  const origin = typeof context.origin === 'string' ? context.origin.trim() : '';
+  const audit = buildCreationAudit(origin, {
+    ...context,
+    policyDecision: policy.decision,
+    policyCode: policy.code,
+    policyReason: policy.reason,
+    exception: policy.exception,
+    incidentRef: policy.incidentRef || context.incidentRef || context.incidentReference || null,
+  });
+  const exceptionReview = policy.exception
+    ? { status: 'pending', reviewer: null, reviewedAt: null }
+    : null;
   const task = createTaskRaw(project, {
     ...opts,
     creationAudit: audit,
+    exceptionReview,
   });
 
   // Specify confirmation is already verified by governance.js before this
@@ -941,10 +1007,14 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
   if (context.specifyConfirmation) {
     setSpecifyConfirmation(project, task.id, context.specifyConfirmation);
   }
+  // Compatibility mode is the only mode owned by this task: a would-block
+  // creation is allowed but remains explicitly visible in the ledger. The
+  // later rollout task owns the switch that turns it into a 409.
+  appendDecision(task.id);
   return getTask(project, task.id) || task;
 }
 
-const CREATION_ORIGINS = new Set(['tasks-api', 'specify', 'handoff', 'delegate', 'migration']);
+const CREATION_ORIGINS = new Set(['tasks-api', 'specify', 'handoff', 'delegate', 'delegate_subtask', 'incident', 'human_requested_trivial', 'migration']);
 
 function workflowPrincipal(agent) {
   return {
@@ -978,6 +1048,11 @@ function buildCreationAudit(origin, context) {
   };
   if (context.sourceTaskId) audit.sourceTaskId = String(context.sourceTaskId);
   if (context.noDepends === true) audit.noDepends = true;
+  if (context.policyDecision) audit.policyDecision = context.policyDecision;
+  if (context.policyCode) audit.policyCode = context.policyCode;
+  if (context.policyReason) audit.policyReason = context.policyReason;
+  if (context.exception) audit.exception = context.exception;
+  if (context.incidentRef) audit.incidentRef = String(context.incidentRef).trim();
   if (context.specifyConfirmation) {
     audit.specifySessionId = context.specifyConfirmation.specifySessionId || null;
     audit.proposalDigest = context.specifyConfirmation.proposalIdentity?.digest || null;
@@ -1054,6 +1129,7 @@ function createTaskRaw(project, opts) {
         workStateDetails: workStateResolved.workStateDetails,
         blocked: workStateResolved.blocked,
         ...(opts.creationAudit ? { creationAudit: _cloneJson(opts.creationAudit) } : {}),
+        ...(opts.exceptionReview ? { exceptionReview: _cloneJson(opts.exceptionReview) } : {}),
         ...(staleAfterMinutes !== null ? { staleAfterMinutes } : {}),
       }
     },
@@ -1094,6 +1170,7 @@ function createTaskRaw(project, opts) {
     routedAgent: null,
     order: null,
     creationAudit: opts.creationAudit ? _cloneJson(opts.creationAudit) : null,
+    exceptionReview: opts.exceptionReview ? _cloneJson(opts.exceptionReview) : null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -1115,6 +1192,10 @@ function createTaskRaw(project, opts) {
 
 function createTaskForMigration(project, opts) {
   return createTaskRaw(project, opts);
+}
+
+function getPolicyLedger(options = {}) {
+  return policyLedger.readPolicyLedger(options);
 }
 
 // Ordinary exported creation remains compatible with pre-T-447 callers while
@@ -4332,6 +4413,7 @@ module.exports = {
   createTaskWithPolicy,
   createTaskForMigration,
   createTask,
+  getPolicyLedger,
   updateTask,
   setSpecifyConfirmation,
   emptyTrash,
