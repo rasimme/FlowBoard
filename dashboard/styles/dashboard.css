@@ -553,11 +553,12 @@
        current/stale/expired claim health. Purple matches the established
        active/recent-activity accent in the dashboard. */
     .active-agents-health--current .active-agents-health__dot { background: var(--hue-8-ring); }
-    .active-agents-health--stale .active-agents-health__dot { background: var(--warn); }
-    .active-agents-health--expired .active-agents-health__dot {
-      background: var(--danger);
-      box-shadow: 0 0 0 2px var(--bg), 0 0 6px var(--danger);
-    }
+    /* T-452-6: stale and expired collapse into one amber attention signal —
+       the human response to either is identical. Red stays retired from
+       lease health (it already means Done / the blocked frame elsewhere on
+       the board); severity stays legible in the label text, not the color. */
+    .active-agents-health--stale .active-agents-health__dot,
+    .active-agents-health--expired .active-agents-health__dot { background: var(--warn); }
     .active-agents-health__label {
       color: var(--muted);
       font-size: 10px;
@@ -3013,11 +3014,3 @@
   }
 }
 
-/* Lease-expired pulse animation */
-@keyframes lease-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .45; }
-}
-.lease-indicator-pulse {
-  animation: lease-pulse 2s ease-in-out infinite;
-}
