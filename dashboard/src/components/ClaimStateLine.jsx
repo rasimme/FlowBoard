@@ -14,11 +14,22 @@ import { isActivelyClaimed } from '../utils/formatting.js';
  *   | Unclaimed, no route                  | "Unclaimed"                           | Claim  |
  *   | Routed unclaimed                     | "Routed to @x"                        | Claim  |
  *   | Claimed by you, healthy              | "Claimed · 23m remaining"             | Release|
- *   | Claimed by you, stale                | "Stale · 18m no checkpoint" (warn)    | Release|
- *   | Claimed by you, expired              | "Lease expired 5m ago" (danger)       | Release|
+ *   | Claimed by you, stale                | "Stale" (warn)                        | Release|
+ *   | Claimed by you, expired              | "Lease expired" (warn)                | Release|
  *   | Claimed by other, healthy            | "Claimed by @x · 23m remaining"       | —      |
- *   | Claimed by other, stale              | "Stale · no checkpoint 18m" (warn)    | —      |
- *   | Claimed by other, expired            | "Lease expired 5m ago" (danger)       | Steal  |
+ *   | Claimed by other, stale              | "@x · Stale" (warn)                   | —      |
+ *   | Claimed by other, expired            | "@x · Lease expired" (warn)           | Steal  |
+ *
+ * T-452-6: expired no longer renders in danger/red. Red is reserved for
+ * "something is being lost" — on the board it already means Done and the
+ * blocked frame — so lease health carries exactly one attention color.
+ * The stale/expired distinction survives in the wording, not the tint.
+ *
+ * T-452-4: the durations moved out of this line into AttentionWarning,
+ * which states them once with the surrounding facts. This line keeps only
+ * the bare condition, so it still signals a stale claim after the warning
+ * has been snoozed — without repeating "no checkpoint 18m" twice, two
+ * lines apart.
  *
  * Done / archived tasks should not render this component at all.
  *
@@ -52,10 +63,10 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
   } else if (isSelf) {
     // Self-claim — Release is always the right action.
     if (health === 'expired') {
-      line = `Lease expired ${formatSince(task.leaseUntil)}`;
-      tone = 'danger';
+      line = 'Lease expired';
+      tone = 'warn';
     } else if (health === 'stale') {
-      line = `Stale · ${formatNoCheckpoint(task)}`;
+      line = 'Stale';
       tone = 'warn';
     } else {
       line = `Claimed · ${formatRemaining(task.leaseUntil)}`;
@@ -64,11 +75,13 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
   } else {
     // Claimed by another agent.
     if (health === 'expired') {
-      line = `${task.agent} · Lease expired ${formatSince(task.leaseUntil)}`;
-      tone = 'danger';
+      line = `${task.agent} · Lease expired`;
+      tone = 'warn';
+      // The Steal CTA stays danger-variant: that is a destructive action on
+      // another agent's claim, not a lease-health tint.
       action = { label: 'Steal', onClick: onSteal, variant: 'danger' };
     } else if (health === 'stale') {
-      line = `${task.agent} · Stale ${formatNoCheckpoint(task)}`;
+      line = `${task.agent} · Stale`;
       tone = 'warn';
     } else {
       line = `Claimed by ${task.agent} · ${formatRemaining(task.leaseUntil)}`;
@@ -132,7 +145,12 @@ function formatRemaining(leaseUntil) {
   return `${h}h remaining`;
 }
 
-function formatSince(ts) {
+// Exported (T-452-4): AttentionWarning.jsx reuses these two so the "no
+// checkpoint" / "expired since" wording stays identical between the
+// combo-chip's inline claim line and the new stale-lease warning banner —
+// the point of that banner is to make the same fact louder, not to say it
+// a second, differently-worded way.
+export function formatSince(ts) {
   if (!ts) return '';
   const ms = Date.now() - new Date(ts).getTime();
   const m = Math.max(1, Math.round(ms / 60000));
@@ -141,7 +159,7 @@ function formatSince(ts) {
   return `${h}h ago`;
 }
 
-function formatNoCheckpoint(task) {
+export function formatNoCheckpoint(task) {
   const ts = task.lastCheckpointAt || task.claimedAt;
   if (!ts) return 'no checkpoint';
   const ms = Date.now() - new Date(ts).getTime();

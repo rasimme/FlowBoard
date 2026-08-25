@@ -12,10 +12,11 @@ import PriorityPill from './PriorityPill.jsx';
 import MoveTaskModal from './MoveTaskModal.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
-import LeaseIndicator from './LeaseIndicator.jsx';
+import LeaseIndicator, { computeHealth } from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
 import WorkStatePicker from './WorkStatePicker.jsx';
 import WorkStateChip from './WorkStateChip.jsx';
+import AttentionWarning from './AttentionWarning.jsx';
 import StuckIndicator from './StuckIndicator.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
@@ -934,6 +935,10 @@ export default function DetailPanel() {
     : workState === 'blocked' || workState === 'paused'
       ? normalizedWork?.workStateDetails?.reason
       : null;
+  // T-452-4: computed once here (not inside AttentionWarning) so this stays
+  // the second, not third, staleThresholdMinutes call site in this file —
+  // see test-t448-1-lease-threshold.mjs, which pins that count at 2.
+  const attentionHealth = task ? computeHealth(task, Date.now(), { staleThresholdMinutes }) : null;
 
   return createPortal(
     <>
@@ -1097,6 +1102,19 @@ export default function DetailPanel() {
                 <div className="h-full bg-danger" style={{ width: `${taskProgress}%` }} />
               </div>
             </div>
+          )}
+          {/* T-452-4: facts-only stale/expired-lease warning. Uses the same
+              client-computed lease health as ClaimStateLine/LeaseIndicator —
+              not the backend's separate task.stuckIndicator (that mechanism
+              keeps rendering unchanged via StuckIndicator.jsx down in Zone 4).
+              See AttentionWarning.jsx for the binding "no action buttons" /
+              "dismiss must expire, not delete" rules. */}
+          {task && (
+            <AttentionWarning
+              task={task}
+              health={attentionHealth}
+              progress={taskProgress}
+            />
           )}
           {task?.exceptionReview?.status === 'pending' && (
             <div className="mt-3 rounded-md border border-warn bg-warn-subtle px-3 py-2" data-exception-review="pending">
