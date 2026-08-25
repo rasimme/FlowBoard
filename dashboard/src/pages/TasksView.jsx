@@ -147,7 +147,7 @@ function SubtaskProgress({ task, allTasks, expanded, onToggle }) {
 }
 
 // --- Subtask card (compact, uses legacy CSS tree-line system) ---
-const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) {
+const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated, staleThresholdMinutes }) {
   const [popover, setPopover] = useState({ type: null, open: false, rect: null });
   const suppressClickRef = useRef(false);
   const haptic = useHaptic();
@@ -230,7 +230,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
         {!task.agent && task.routedAgent && (
           <AgentChip name={task.routedAgent} size="xs" variant="ring" title={`Routed to ${task.routedAgent}`} />
         )}
-        <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
+        <LeaseIndicator task={task} staleThresholdMinutes={staleThresholdMinutes} style={{ marginLeft: -2 }} />
         <span className="subtask-actions">
           {hasUsableSpec
             ? (
@@ -274,7 +274,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated }) 
 });
 
 // --- Parent task card ---
-const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, onCardKeyDown, wasDraggedRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpand, project, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, onCardKeyDown, wasDraggedRef, isNew, addingSubtask, onAddSubtask, onSubtaskCreated, onCancelAddSubtask, staleThresholdMinutes }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [animated, setAnimated] = useState(false);
@@ -520,7 +520,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   title={`Routed to ${task.routedAgent}`}
                 />
               )}
-              <LeaseIndicator task={task} style={{ marginLeft: -2 }} />
+              <LeaseIndicator task={task} staleThresholdMinutes={staleThresholdMinutes} style={{ marginLeft: -2 }} />
             </span>
           </div>
           <div className="task-title">{task.title}</div>
@@ -595,6 +595,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
       {(hasSubtasks && expanded || addingSubtask) && !removing && (
         <ExpandedSubtasks
           task={task} allTasks={allTasks} project={project} onTaskUpdated={onTaskUpdated}
+          staleThresholdMinutes={staleThresholdMinutes}
           showAddForm={addingSubtask}
           onSubtaskCreated={onSubtaskCreated}
           onCancelAdd={onCancelAddSubtask}
@@ -605,7 +606,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
 });
 
 // --- Expanded subtask list (uses legacy CSS tree-line system) ---
-function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated, showAddForm, onSubtaskCreated, onCancelAdd }) {
+function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated, showAddForm, onSubtaskCreated, onCancelAdd, staleThresholdMinutes }) {
   // Stable numeric order by FlowBoard id (T-x-1 … T-x-10) — never by
   // status/update order, so status changes don't reshuffle the list (T-246-6).
   const subtasks = allTasks
@@ -621,7 +622,7 @@ function ExpandedSubtasks({ task, allTasks, project, onTaskUpdated, showAddForm,
   return (
     <div className="subtask-container">
       {subtasks.map(st => (
-        <SubtaskCard key={st.id} task={st} project={project} onTaskUpdated={onTaskUpdated} />
+        <SubtaskCard key={st.id} task={st} project={project} onTaskUpdated={onTaskUpdated} staleThresholdMinutes={staleThresholdMinutes} />
       ))}
       {showAddForm && (
         <AddSubtaskForm parentId={task.id} project={project} onCreated={onSubtaskCreated} onCancel={onCancelAdd} />
@@ -975,7 +976,7 @@ function AddTaskForm({ project, onCreated }) {
 }
 
 // --- Column (drop zone) ---
-const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, onCardKeyDown, wasDraggedRef, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask }) {
+const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, showArchived, onToggleArchived, expandedParents, onToggleExpand, sortMode, project, onTaskCreated, onTaskDeleted, onTaskTrashed, onTaskUpdated, onHandlePointerDown, onCardKeyDown, wasDraggedRef, dropIndex, onColumnScroll, lastCreatedId, addingSubtaskParentId, onAddSubtask, onSubtaskCreated, onCancelAddSubtask, staleThresholdMinutes }) {
   const isDone = status === 'done';
   const isBacklog = status === 'backlog';
   const archivedCount = isDone ? archivedTasks.length : 0;
@@ -1052,6 +1053,7 @@ const Column = memo(function Column({ status, tasks, archivedTasks, allTasks, sh
                   onAddSubtask={onAddSubtask}
                   onSubtaskCreated={onSubtaskCreated}
                   onCancelAddSubtask={onCancelAddSubtask}
+                  staleThresholdMinutes={staleThresholdMinutes}
                 />
               </Fragment>
             ))}
@@ -1097,6 +1099,7 @@ export default function TasksView() {
   const { state } = useAppState();
   const { refreshProjectsOnly, refreshTasks } = useDashboard();
   const viewedProject = state?.viewedProject;
+  const staleThresholdMinutes = state?.staleThresholdMinutes;
   const allTasks = state?.tasks || [];
 
   const [sortMode, setSortMode] = useState(getInitialSortMode);
@@ -1792,6 +1795,7 @@ export default function TasksView() {
             onAddSubtask={handleAddSubtask}
             onSubtaskCreated={handleSubtaskCreated}
             onCancelAddSubtask={handleCancelAddSubtask}
+            staleThresholdMinutes={staleThresholdMinutes}
           />
         ))}
       </div>

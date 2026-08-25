@@ -17,9 +17,9 @@
 import { isActivelyClaimed } from '../utils/formatting.js';
 import { getLeaseHealth, LEASE_HEALTH } from '../utils/leaseHealth.js';
 
-function computeHealth(task, now = Date.now()) {
+function computeHealth(task, now = Date.now(), { staleThresholdMinutes } = {}) {
   if (!isActivelyClaimed(task)) return null; // not actively claimed — no health to report
-  const health = getLeaseHealth(task, now);
+  const health = getLeaseHealth(task, now, { staleThresholdMinutes });
   return health === LEASE_HEALTH.CURRENT ? null : health;
 }
 
@@ -36,8 +36,8 @@ const STYLES = {
   },
 };
 
-export default function LeaseIndicator({ task, style }) {
-  const health = computeHealth(task);
+export default function LeaseIndicator({ task, style, staleThresholdMinutes }) {
+  const health = computeHealth(task, Date.now(), { staleThresholdMinutes });
   if (!health) return null;
 
   const s = STYLES[health];

@@ -29,14 +29,14 @@ import { isActivelyClaimed } from '../utils/formatting.js';
  *   onRelease  — fires when user hits Release
  *   onSteal    — fires when user hits Steal (lease expired by another)
  */
-export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease, onSteal }) {
+export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease, onSteal, staleThresholdMinutes }) {
   if (!task) return null;
 
   // "Currently claimed" requires both agent + claimedAt (HZL-core preserves
   // agent past release as historical attribution, so agent alone is misleading).
   const isClaimed = isActivelyClaimed(task);
   const isSelf = isClaimed && task.agent === currentAgent;
-  const health = computeHealth(task); // 'stale' | 'expired' | null
+  const health = computeHealth(task, Date.now(), { staleThresholdMinutes }); // 'stale' | 'expired' | null
   const routed = !isClaimed && task.routedAgent;
 
   let line = 'Unclaimed';

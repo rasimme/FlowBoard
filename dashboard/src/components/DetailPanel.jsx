@@ -218,6 +218,7 @@ export default function DetailPanel() {
   const stickToBottomRef = useRef(true);
 
   const project = state?.viewedProject;
+  const staleThresholdMinutes = state?.staleThresholdMinutes;
   const isOpen = taskId !== null;
   const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
 
@@ -998,6 +999,7 @@ export default function DetailPanel() {
                   onClaim={handleClaim}
                   onRelease={handleRelease}
                   onSteal={handleSteal}
+                  staleThresholdMinutes={staleThresholdMinutes}
                 />
               )}
               {task.status === 'archived' && (
@@ -1371,7 +1373,7 @@ export default function DetailPanel() {
                       <span className="text-sm text-text truncate flex-1">{sub.title}</span>
                       {sub.agent && <AgentChip name={sub.agent} size="xs" variant={isActivelyClaimed(sub) ? 'solid' : 'soft'} title={ownerLabel(sub)} pulse={isActivelyClaimed(sub)} />}
                       {!sub.agent && sub.routedAgent && <AgentChip name={sub.routedAgent} size="xs" variant="ring" title={`Routed to ${sub.routedAgent}`} />}
-                      <LeaseIndicator task={sub} />
+                      <LeaseIndicator task={sub} staleThresholdMinutes={staleThresholdMinutes} />
                     </div>
                   ))}
               </div>
