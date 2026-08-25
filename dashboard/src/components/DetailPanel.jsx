@@ -24,6 +24,7 @@ import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 import { apiJson as apiFetch } from '../utils/apiFetch.js';
 import { fetchTasksForProject } from '../utils/dashboardApi.js';
 import { isAuthHalted, subscribeAuthState } from '../state/authState.mjs';
+import { describeStructureReasons } from '../utils/exceptionReview.mjs';
 import {
   buildStuckIndicatorActionRequest,
   normalizeTaskWorkState,
@@ -204,6 +205,7 @@ export default function DetailPanel() {
   const [moveModalOpen, setMoveModalOpen] = useState(false);
   const [busyStuckAction, setBusyStuckAction] = useState(null);
   const [reviewingException, setReviewingException] = useState(false);
+  const [reviewingStructure, setReviewingStructure] = useState(false);
   // T-161-4 Zone 3: description inline-edit
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editDescription, setEditDescription] = useState('');
@@ -671,6 +673,29 @@ export default function DetailPanel() {
     }
   }
 
+  // T-449-5: structureReview's one-way pending -> reviewed action mirrors
+  // handleReviewException exactly — same shape, different endpoint — with
+  // no human-confirmation step, which is the entire point of the T-449
+  // rollback: FlowBoard checks form, never who agreed to it.
+  async function handleReviewStructure() {
+    const t = taskRef.current;
+    if (!t || t.structureReview?.status !== 'pending' || reviewingStructure) return;
+    setReviewingStructure(true);
+    try {
+      const result = await apiFetch(`/projects/${project}/tasks/${t.id}/structure-review`, {
+        method: 'POST',
+      });
+      if (result?.error) throw new Error(result.error);
+      if (!result?.task) throw new Error('Review response did not include a task');
+      syncPanelTask(result.task);
+      showToast(`Structure review recorded for ${t.id}`, 'success');
+    } catch (err) {
+      showToast('Structure review failed: ' + (err.message || 'Unknown'), 'error');
+    } finally {
+      setReviewingStructure(false);
+    }
+  }
+
   // Spec actions — mirror the TaskCard behaviour: if spec exists, open it;
   // if not, POST to create one and then open. In both cases the panel
   // closes once the spec opens, because the user's focus is moving to
@@ -1131,19 +1156,54 @@ export default function DetailPanel() {
               busy={busyStuckAction === 'clear'}
             />
           )}
-          {task?.exceptionReview?.status === 'pending' && (
-            <div className="mt-3 rounded-md border border-warn bg-warn-subtle px-3 py-2" data-exception-review="pending">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-[10px] uppercase tracking-wider text-warn font-semibold">Exception review pending</div>
-                  <div className="text-xs text-muted mt-1">
-                    {task.creationAudit?.exception || 'Validated exception'} · {task.creationAudit?.origin || 'server policy'}
+          {/* T-449-5: exceptionReview and structureReview are different
+              facts (a validated creation-policy exception vs. a
+              task-discipline form check) and keep their own row + action,
+              each hitting its own one-way review endpoint — folding them
+              into one row would lose which one a "Mark reviewed" click
+              actually clears. But they share one wrapper instead of two
+              independent top-level banners: T-452-8 already taught this
+              project that two boxes about "something needs a look" stacked
+              in Zone 1 read as one redundant signal. Severity still differs
+              per row: exceptionReview keeps the amber/warn treatment (a
+              human validated an exception, worth noticing); structureReview
+              uses the same neutral border+bg-accent card already used for
+              the Progress indicator above — it is explicitly never a
+              rejection (see task-discipline.js/spec T-449), so it does not
+              get the amber "human must act" color reserved for a genuine
+              attention signal. */}
+          {(task?.exceptionReview?.status === 'pending' || task?.structureReview?.status === 'pending') && (
+            <div className="mt-3 flex flex-col gap-2">
+              {task.exceptionReview?.status === 'pending' && (
+                <div className="rounded-md border border-warn bg-warn-subtle px-3 py-2" data-exception-review="pending">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-warn font-semibold">Exception review pending</div>
+                      <div className="text-xs text-muted mt-1">
+                        {task.creationAudit?.exception || 'Validated exception'} · {task.creationAudit?.origin || 'server policy'}
+                      </div>
+                    </div>
+                    <Button size="xs" variant="accent" onClick={handleReviewException} disabled={reviewingException}>
+                      {reviewingException ? 'Reviewing…' : 'Mark reviewed'}
+                    </Button>
                   </div>
                 </div>
-                <Button size="xs" variant="accent" onClick={handleReviewException} disabled={reviewingException}>
-                  {reviewingException ? 'Reviewing…' : 'Mark reviewed'}
-                </Button>
-              </div>
+              )}
+              {task.structureReview?.status === 'pending' && (
+                <div className="rounded-md border border-border bg-bg-accent px-3 py-2" data-structure-review="pending">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">Structure flagged</div>
+                      <div className="text-xs text-muted mt-1">
+                        {describeStructureReasons(task.structureReview.reasons)}
+                      </div>
+                    </div>
+                    <Button size="xs" variant="secondary" onClick={handleReviewStructure} disabled={reviewingStructure}>
+                      {reviewingStructure ? 'Reviewing…' : 'Mark reviewed'}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {/* Shared popover for Status and Priority pickers */}

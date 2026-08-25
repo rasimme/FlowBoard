@@ -15,11 +15,11 @@ import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { normalizeTaskWorkState } from '../utils/workState.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
-import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check, GripVertical } from 'lucide-react';
+import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check, GripVertical, ListChecks } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import { getTasks, replaceTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
-import { tasksForExceptionReview, boardTopLevelTasks } from '../utils/exceptionReview.mjs';
+import { pendingReviewTasks, boardTopLevelTasks, describeStructureReasons } from '../utils/exceptionReview.mjs';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
 // animates between the soft ring token and the full ring token. Returning null
@@ -58,6 +58,25 @@ function ExceptionReviewBadge({ task }) {
       data-exception-review="pending"
     >
       Exception review
+    </span>
+  );
+}
+
+// T-449-5: structureReview flags a form issue, never a rejection — the task
+// exists and works normally, it's just noteworthy. That's a calmer fact than
+// exceptionReview (a validated policy exception worth a human's attention),
+// so this badge intentionally does NOT use the warn/amber treatment: neutral
+// border + muted text, same "quiet fact" tone as e.g. the id/mono chip next
+// to it, not an attention color.
+function StructureReviewBadge({ task }) {
+  if (task?.structureReview?.status !== 'pending') return null;
+  return (
+    <span
+      className="inline-flex items-center rounded-full border border-border text-muted px-1.5 py-0.5 text-[10px] font-semibold"
+      title={`Structure flagged: ${describeStructureReasons(task.structureReview.reasons)}`}
+      data-structure-review="pending"
+    >
+      Structure flagged
     </span>
   );
 }
@@ -476,6 +495,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
               <span className="task-id mono flex items-center gap-1.5">
                 {task.id}
                 <ExceptionReviewBadge task={task} />
+                <StructureReviewBadge task={task} />
               </span>
             </span>
             {/* Right cluster — hover-revealed admin icons sit directly to
@@ -1157,6 +1177,7 @@ export default function TasksView() {
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(getInitialArchived);
   const [showPendingExceptions, setShowPendingExceptions] = useState(false);
+  const [showPendingStructure, setShowPendingStructure] = useState(false);
   const [expandedParents, setExpandedParents] = useState(() => new Set(loadKanbanView(viewedProject)?.expanded || []));
   const [lastCreatedId, setLastCreatedId] = useState(null);
   const [addingSubtaskParentId, setAddingSubtaskParentId] = useState(null);
@@ -1694,8 +1715,12 @@ export default function TasksView() {
   }, [handleDrop]);
 
   const { grouped, archivedTopLevel, trashedTopLevel } = useMemo(() => {
-    const sourceTasks = tasksForExceptionReview(allTasks, showPendingExceptions);
-    const topLevel = boardTopLevelTasks(sourceTasks, showPendingExceptions);
+    const reviewFilterActive = showPendingExceptions || showPendingStructure;
+    const sourceTasks = pendingReviewTasks(allTasks, {
+      exceptionReview: showPendingExceptions,
+      structureReview: showPendingStructure,
+    });
+    const topLevel = boardTopLevelTasks(sourceTasks, reviewFilterActive);
     const groups = {};
     STATUS_KEYS.forEach(s => { groups[s] = []; });
     const archived = [];
@@ -1722,7 +1747,7 @@ export default function TasksView() {
     // Sort trashed newest-first by trashedAt so recently deleted items surface first
     trashed.sort((a, b) => new Date(b.trashedAt).getTime() - new Date(a.trashedAt).getTime());
     return { grouped: groups, archivedTopLevel: archived, trashedTopLevel: trashed };
-  }, [allTasks, sortMode, showPendingExceptions]);
+  }, [allTasks, sortMode, showPendingExceptions, showPendingStructure]);
 
   if (!viewedProject) {
     return (
@@ -1750,11 +1775,29 @@ export default function TasksView() {
           style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
           onClick={() => setShowPendingExceptions(value => !value)}
           aria-pressed={showPendingExceptions}
-          title="Show tasks awaiting verified human exception review"
+          title="Show tasks with a validated creation-policy exception pending review"
         >
           <span aria-hidden="true">⚠</span>
           <span>Exception review</span>
           <span>{allTasks.filter(task => task.exceptionReview?.status === 'pending').length}</span>
+        </button>
+        {/* T-449-5: structureReview is a separate signal from exceptionReview
+            (a form check, not a creation-policy exception) so it gets its own
+            toggle+counter rather than folding into the one above — the two
+            answer different questions ("what got flagged for form?" vs
+            "what used a validated exception?") and combining them would make
+            neither answerable on its own. */}
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm${showPendingStructure ? ' active' : ''}`}
+          style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+          onClick={() => setShowPendingStructure(value => !value)}
+          aria-pressed={showPendingStructure}
+          title="Show tasks flagged by the project's task-form check"
+        >
+          <ListChecks size={12} aria-hidden="true" />
+          <span>Structure flagged</span>
+          <span>{allTasks.filter(task => task.structureReview?.status === 'pending').length}</span>
         </button>
         <div className="sort-mode" style={{ position: 'relative' }}>
           <button

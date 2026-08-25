@@ -45,7 +45,7 @@ import Modal from '../components/Modal.jsx';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { WIDGET_REGISTRY } from '../components/overview/registry.js';
 import { apiFetch } from '../utils/apiFetch.js';
-import GovernanceModeControl from '../components/GovernanceModeControl.jsx';
+import TaskDisciplineControl from '../components/TaskDisciplineControl.jsx';
 import 'react-grid-layout/css/styles.css';
 import '../../styles/overview.css';
 
@@ -274,7 +274,7 @@ export default function OverviewView() {
                 : 'Custom layout'}
           {!editing && skipped > 0 ? ` · ${skipped} unknown widget(s) skipped` : ''}
         </span>
-        <GovernanceModeControl project={project} />
+        <TaskDisciplineControl project={project} />
         {editing ? (
           <>
             <Button variant="ghost" size="sm" onClick={() => setPresetsOpen(true)}>

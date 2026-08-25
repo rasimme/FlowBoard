@@ -11,25 +11,33 @@
 }
 .ov-toolbar-note { margin-right: auto; font-size: 11.5px; color: var(--muted); }
 
-/* T-447-5 — the mode is readable in every Dashboard session, but the
-   mutation affordance is rendered only when the API confirms a verified human. */
-.governance-mode-control {
-  display: inline-flex; align-items: center; gap: 5px;
+/* T-449-5 — project-type switch (formerly GovernanceModeControl's
+   compat/enforce toggle, replaced by list/standard/development). Always
+   visible and, since the T-447 human-principal gate was removed, always
+   interactive for the local operator: no "verified human required" hint
+   left to render, so this is a plain segmented control — no status color,
+   just the neutral chrome tokens used for mode/utility switches. */
+.task-discipline-control {
+  display: inline-flex; align-items: center; gap: 6px;
   min-height: 26px; padding: 2px 4px 2px 8px;
   border: 1px solid var(--border); border-radius: var(--radius-full);
   color: var(--muted); font-size: 10.5px; white-space: nowrap;
 }
-.governance-mode-control.is-enforce {
-  color: var(--warn); border-color: rgba(245,158,11,.4); background: var(--warn-subtle);
+.task-discipline-label { font-size: 10.5px; color: var(--muted); }
+.task-discipline-options {
+  display: inline-flex; gap: 2px; padding: 2px;
+  border-radius: var(--radius-full); background: var(--bg-hover);
 }
-.governance-mode-control.is-compat { color: var(--muted); }
-.governance-mode-value {
+.task-discipline-option {
+  appearance: none; border: none; background: transparent; cursor: pointer;
+  padding: 2px 8px; border-radius: var(--radius-full);
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  font-size: 10px; font-weight: 600; letter-spacing: .02em;
+  color: var(--muted);
 }
-.governance-mode-hint { font-size: 9.5px; opacity: .8; }
-.governance-mode-action { min-height: 21px; padding: 2px 7px; font-size: 10px; }
-.governance-mode-error { color: var(--danger); }
+.task-discipline-option.is-active { background: var(--bg-accent); color: var(--text); }
+.task-discipline-option:disabled { cursor: default; opacity: .85; }
+.task-discipline-error { color: var(--danger); }
 
 /* ---------- 12-col widget grid ---------- */
 .ov-grid {
