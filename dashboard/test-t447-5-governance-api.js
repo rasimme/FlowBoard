@@ -1,7 +1,7 @@
 'use strict';
 
-// T-447-5 API contract/integration coverage: normal reads, human-only switch,
-// project isolation, compat observation, enforce rejection, and rollback.
+// T-447-5 API contract/integration coverage: task-discipline reads, attribution,
+// and project isolation.
 const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
@@ -16,7 +16,7 @@ const workspace = path.join(root, 'workspace');
 const projects = path.join(root, 'projects');
 const db = path.join(root, 'flowboard.db');
 const ledgerDir = path.join(root, 'audit');
-const project = 'governance-api';
+const project = 'discipline-contract';
 const jwtSecret = 't447-5-test-jwt-secret-long-enough';
 const humanCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'reviewer', agentId: 'main' }, jwtSecret, { algorithm: 'HS256' })}`;
 
@@ -66,43 +66,33 @@ async function main() {
     await waitReady(child);
     assert.equal((await request('POST', '/api/projects', { name: project })).status, 201);
 
-    const initial = await request('GET', `/api/projects/${project}/governance/mode`);
+    const initial = await request('GET', `/api/projects/${project}/task-discipline`);
     assert.equal(initial.status, 200);
-    assert.equal(initial.body.mode, 'compat');
-    assert.equal(initial.body.canChange, false);
+    assert.equal(initial.body.discipline, 'list');
+    assert.equal(initial.body.default, 'list');
+    assert.deepEqual(initial.body.values, ['list', 'standard', 'development']);
+    assert.equal(initial.body.canChange, true);
     assert.equal(initial.body.lastChange, null);
+    assert.equal((await request('GET', `/api/projects/${project}/governance/mode`)).status, 404);
 
-    const local = await request('PUT', `/api/projects/${project}/governance/mode`, {
-      mode: 'enforce', human: 'Ada', agentId: 'human', approved: true,
+    const local = await request('PUT', `/api/projects/${project}/task-discipline`, {
+      discipline: 'development', human: 'Ada', agentId: 'human', approved: true,
     });
     assert.equal(local.status, 200, 'loopback PUT remains available without auth');
+    assert.equal(local.body.discipline, 'development');
     assert.equal(local.body.lastChange.actor, 'local:operator');
     assert.notEqual(local.body.lastChange.actor, 'Ada', 'body identity is descriptive only');
 
-    const enabled = await request('PUT', `/api/projects/${project}/governance/mode`, { mode: 'enforce' }, humanCookie);
-    assert.equal(enabled.status, 200);
-    assert.equal(enabled.body.lastChange.actor, 'session:42');
-    assert.ok(enabled.body.lastChange.changedAt);
+    const authenticated = await request('PUT', `/api/projects/${project}/task-discipline`, { discipline: 'standard' }, humanCookie);
+    assert.equal(authenticated.status, 200);
+    assert.equal(authenticated.body.lastChange.actor, 'session:42');
+    assert.ok(authenticated.body.lastChange.changedAt);
 
     const isolated = await request('POST', '/api/projects', { name: 'governance-other' });
     assert.equal(isolated.status, 201);
-    assert.equal((await request('GET', '/api/projects/governance-other/governance/mode')).body.mode, 'compat');
-
-    const before = await request('GET', `/api/projects/${project}/tasks`);
-    const blocked = await request('POST', `/api/projects/${project}/tasks`, {
-      title: 'Must go through Specify', sourceContext: { requestId: 't447-5' },
-    });
-    assert.equal(blocked.status, 200);
-    assert.equal(blocked.body.task.title, 'Must go through Specify');
-    assert.equal((await request('GET', `/api/projects/${project}/tasks`)).body.tasks.length, before.body.tasks.length + 1);
-
-    const rollback = await request('PUT', `/api/projects/${project}/governance/mode`, { mode: 'compat' }, humanCookie);
-    assert.equal(rollback.status, 200);
-    assert.equal((await request('GET', `/api/projects/${project}/governance/mode`)).body.mode, 'compat');
-
-    const allowed = await request('POST', `/api/projects/${project}/tasks`, { title: 'Compatibility observation' });
-    assert.equal(allowed.status, 200);
-    assert.equal(allowed.body.task.title, 'Compatibility observation');
+    const isolatedDiscipline = await request('GET', '/api/projects/governance-other/task-discipline');
+    assert.equal(isolatedDiscipline.status, 200);
+    assert.equal(isolatedDiscipline.body.discipline, 'list');
 
     console.log('T-447-5 governance API tests: all passed');
   } finally {

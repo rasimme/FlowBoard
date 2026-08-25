@@ -91,8 +91,13 @@ async function main() {
     const humanCookie = sessionCookie(auth);
     assert.ok(humanCookie, 'server-issued Dashboard session cookie is available');
     assert.equal((await request('POST', '/api/projects', { name: project }, humanCookie)).status, 201);
-    const initial = await request('GET', `/api/projects/${project}/governance/mode`, null, humanCookie);
-    assert.equal(initial.body.mode, 'compat');
+    const initial = await request('GET', `/api/projects/${project}/task-discipline`, null, humanCookie);
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.discipline, 'list');
+    assert.equal(initial.body.default, 'list');
+    assert.deepEqual(initial.body.values, ['list', 'standard', 'development']);
+    assert.equal(initial.body.canChange, true);
+    assert.equal((await request('GET', `/api/projects/${project}/governance/mode`, null, humanCookie)).status, 404);
 
     // A plain Node loopback client may reach the local API, but GET / must not
     // give it a human capability. Dashboard-shaped fields and the UI marker
@@ -115,17 +120,18 @@ async function main() {
       }, null, { 'X-FlowBoard-Client': 'dashboard' });
     assert.equal(nodeConfirm.status, 200);
 
-    const mode = await request('PUT', `/api/projects/${project}/governance/mode`,
-      { mode: 'enforce', human: 'forged-agent' });
-    assert.equal(mode.status, 200);
-    const verifiedMode = await request('PUT', `/api/projects/${project}/governance/mode`,
-      { mode: 'enforce', human: 'forged-agent' }, humanCookie);
-    assert.equal(verifiedMode.status, 200);
-    assert.equal(verifiedMode.body.lastChange.actor, 'session:42');
-    assert.ok(verifiedMode.body.lastChange.changedAt);
-    const rollback = await request('PUT', `/api/projects/${project}/governance/mode`,
-      { mode: 'compat' }, humanCookie);
-    assert.equal(rollback.status, 200);
+    const local = await request('PUT', `/api/projects/${project}/task-discipline`,
+      { discipline: 'development', human: 'Ada', agentId: 'human', approved: true });
+    assert.equal(local.status, 200);
+    assert.equal(local.body.discipline, 'development');
+    assert.equal(local.body.lastChange.actor, 'local:operator');
+    assert.notEqual(local.body.lastChange.actor, 'Ada', 'body identity is descriptive only');
+    assert.ok(local.body.lastChange.changedAt);
+    const verified = await request('PUT', `/api/projects/${project}/task-discipline`,
+      { discipline: 'standard', human: 'Ada', agentId: 'human', approved: true }, humanCookie);
+    assert.equal(verified.status, 200);
+    assert.equal(verified.body.lastChange.actor, 'session:42');
+    assert.ok(verified.body.lastChange.changedAt);
 
     // A session already prepared by the authenticated Dashboard still cannot
     // be confirmed by a plain loopback Node client: no cookie means no
