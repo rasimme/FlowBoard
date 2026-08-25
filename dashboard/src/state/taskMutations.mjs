@@ -23,6 +23,29 @@ function currentAgent() {
   return bridge.getAppState()?.agentId || 'human'
 }
 
+// T-454-7: per-task timestamp of the last CONFIRMED canonical publish this
+// tab has applied via mutate(). DashboardContext.jsx's 5s background poll
+// reads this to reconcile a stale in-flight response: if a poll's request
+// started before a mutation's success landed here, its `tasks` entry for
+// that task predates the mutation and must not overwrite it. This is purely
+// a read-side reconciliation signal — it is written only from a server
+// response mutate() has already validated as successful, never from a
+// client guess, so it does not turn any mutation (work-state included)
+// optimistic. See DashboardContext.jsx's commitPollSnapshot for the reader.
+//
+// Deliberately not pruned. An entry stops mattering once one poll cycle has
+// passed (~5s), but the map is keyed by task id, so it is bounded by the
+// number of distinct tasks mutated in a single browser session — a few
+// hundred small entries at worst. A stale entry cannot decide anything
+// wrongly either: the reader compares it against that poll's own start time,
+// so an old timestamp never wins. Pruning would add a code path to maintain
+// for no measurable gain.
+const lastMutationAt = new Map()
+
+export function getLastMutationAt(taskId) {
+  return lastMutationAt.get(taskId) || 0
+}
+
 async function apiRequest(url, method, body) {
   return apiJson(url, { method, body })
 }
@@ -55,6 +78,11 @@ async function mutate(project, taskId, optimisticPatch, mutationFn, { requireCan
     const currentTasks = bridge.getTasks()
     const next = state.applyTaskResponse(currentTasks, result)
     bridge.replaceTasks(next)
+    // T-454-7: record confirmation time for the poll-staleness reconciliation
+    // in DashboardContext.jsx's commitPollSnapshot. Keyed on `taskId` (not
+    // `result.task?.id`) so it still marks freshness for endpoints like
+    // release that intentionally return only `{ok}`.
+    lastMutationAt.set(taskId, Date.now())
 
     return { ok: true, task: result.task }
   } catch (err) {

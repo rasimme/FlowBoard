@@ -106,22 +106,49 @@ function silentDurationText(task, now = Date.now()) {
 }
 
 /**
+ * hasCardStateContent — true when TaskCardStateChip would render a status
+ * half for this task (T-454-1/T-454-2). Exported so TasksView.jsx can decide
+ * whether to render the combo-chip wrapper at all, and which padding it
+ * needs, without duplicating TaskCardStateChip's own health/work-state
+ * computation — a task with neither an active claim nor a status half must
+ * render no chip (unchanged from T-452-5), and a task with only one half
+ * needs padding that matches just that half (T-454-2), not both.
+ */
+export function hasCardStateContent(task, staleThresholdMinutes) {
+  if (!task) return false;
+  const health = computeHealth(task, Date.now(), { staleThresholdMinutes });
+  const workState = normalizeTaskWorkState(task).workState;
+  return Boolean(health) || workState !== 'working';
+}
+
+/**
  * TaskCardStateChip — T-452-5's card-side state half of the agent+workstate
  * combo chip. Sits in TasksView's `.task-meta` row right after the agent
  * avatar; unlike the panel's WorkStateChip above, it is pure display (no
  * onClick) — the card as a whole already opens the detail panel, and a
  * card-level state popover is out of scope here (only T-452-2's panel one
- * exists). Callers render it unconditionally right after the AgentChip:
+ * exists). Callers render it right after the AgentChip when there is an
+ * active claim, e.g.:
  *
- *   {task.agent && (
+ *   {isActivelyClaimed(task) && (
  *     <span className="inline-flex items-center gap-1">
  *       <AgentChip .../>
  *       <TaskCardStateChip task={task} staleThresholdMinutes={...} />
  *     </span>
  *   )}
  *
+ * T-454-1: without an active claim, callers may still render this alone (no
+ * AgentChip) when there is a status to show — HZL-core preserves `agent`
+ * past release as historical attribution, so `task.agent` alone must never
+ * gate the chip. `showDivider` defaults to true (the historical behaviour,
+ * a leading separator before this half) and callers pass `false` when there
+ * is no agent half to separate from (T-454-2).
+ *
  * It renders its own leading divider + content, or null, so the caller
- * never has to know in advance whether there is a state half to show.
+ * never has to know in advance whether there is a state half to show —
+ * though callers that need to know in advance too (to size/show the
+ * wrapper) can call `hasCardStateContent` above instead of duplicating this
+ * logic.
  *
  * Precedence: a stale/expired claim (T-452-6 collapses both to one amber
  * signal — see LeaseIndicator.jsx) always wins over the workState word. A
@@ -135,19 +162,18 @@ function silentDurationText(task, now = Date.now()) {
  * would blow out this narrow row). The detail lives in the `title`
  * attribute instead, which costs no width.
  */
-export function TaskCardStateChip({ task, staleThresholdMinutes }) {
-  if (!task) return null;
+export function TaskCardStateChip({ task, staleThresholdMinutes, showDivider = true }) {
+  if (!hasCardStateContent(task, staleThresholdMinutes)) return null;
 
   const health = computeHealth(task, Date.now(), { staleThresholdMinutes }); // 'stale' | 'expired' | null
   const normalized = normalizeTaskWorkState(task);
   const workState = normalized.workState;
 
-  if (!health && workState === 'working') return null;
-
   // Matches the design's `.combo-sep`: a short 12px tick in the stronger
   // border tone, not a full-height rule. The two halves sit inside one pill,
   // so the separator marks the seam without cutting the chip in two.
-  const divider = <span className="w-px h-3 shrink-0 bg-border-strong" aria-hidden="true" />;
+  // T-454-2: omitted when there is no agent half to separate from.
+  const divider = showDivider ? <span className="w-px h-3 shrink-0 bg-border-strong" aria-hidden="true" /> : null;
 
   if (health) {
     // Same text for 'stale' and 'expired' on purpose — see module comment:

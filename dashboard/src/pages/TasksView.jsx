@@ -8,7 +8,7 @@ import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../compo
 import AgentChip, { agentColor } from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
 import BlockedChip from '../components/BlockedChip.jsx';
-import { TaskCardStateChip } from '../components/WorkStateChip.jsx';
+import { TaskCardStateChip, hasCardStateContent } from '../components/WorkStateChip.jsx';
 import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
@@ -540,21 +540,50 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   onClick={(e) => handlePopoverOpen(e, 'priority')}
                 />
               )}
-              {/* T-452-5: agent+workstate combo chip. Replaces the old
-                  unconditional BlockedChip — blocked is now a workState the
-                  chip carries, not a standalone pill. "No agent → no chip"
-                  (spec): renders nothing when the task is unclaimed. */}
-              {task.agent && (
-                <span className="task-combo-chip inline-flex items-center gap-1.5 rounded-full border border-solid border-border bg-secondary pl-[3px] pr-2 py-[2px] whitespace-nowrap max-w-full">
-                  <AgentChip
-                    name={task.agent}
-                    size="sm"
-                    variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
-                    title={ownerLabel(task)}
-                  />
-                  <TaskCardStateChip task={task} staleThresholdMinutes={staleThresholdMinutes} />
-                </span>
-              )}
+              {/* T-452-5/T-454-1: agent+workstate combo chip. Replaces the
+                  old unconditional BlockedChip — blocked is now a workState
+                  the chip carries, not a standalone pill.
+                  T-454-1 (bug fix): the agent half must gate on
+                  isActivelyClaimed(task), not task.agent — HZL-core keeps
+                  `agent` set after release as historical attribution, so a
+                  released task with a stale `agent` field would otherwise
+                  show a claim that no longer exists. Without an active
+                  claim, only the status half may render (and only when
+                  there is one); with neither, no chip at all (unchanged
+                  "no agent → no chip" spec intent, generalized to "no
+                  active claim and no status → no chip").
+                  T-454-2: the pill's padding matches which half(es) are
+                  actually present, so an avatar-only pill still resolves to
+                  a clean circle instead of a padded-out oval, and a
+                  status-only pill gets its own symmetric text padding
+                  instead of inheriting the avatar's tight left edge. */}
+              {(() => {
+                const activelyClaimed = isActivelyClaimed(task);
+                const hasStateHalf = hasCardStateContent(task, staleThresholdMinutes);
+                if (!activelyClaimed && !hasStateHalf) return null;
+                const paddingClass = activelyClaimed
+                  ? (hasStateHalf ? 'pl-[3px] pr-2' : 'pl-[3px] pr-[3px]')
+                  : 'pl-2 pr-2';
+                return (
+                  <span className={`task-combo-chip inline-flex items-center gap-1.5 rounded-full border border-solid border-border bg-secondary ${paddingClass} py-[2px] whitespace-nowrap max-w-full`}>
+                    {activelyClaimed && (
+                      <AgentChip
+                        name={task.agent}
+                        size="sm"
+                        variant="solid"
+                        title={ownerLabel(task)}
+                      />
+                    )}
+                    {hasStateHalf && (
+                      <TaskCardStateChip
+                        task={task}
+                        staleThresholdMinutes={staleThresholdMinutes}
+                        showDivider={activelyClaimed}
+                      />
+                    )}
+                  </span>
+                );
+              })()}
             </span>
             <span className="task-meta-actions">
               <Tooltip content="Add subtask">

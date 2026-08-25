@@ -3,22 +3,33 @@ import { computeHealth } from './LeaseIndicator.jsx';
 import { isActivelyClaimed } from '../utils/formatting.js';
 
 /**
- * ClaimStateLine — Zone 1 of the DetailPanel.
+ * ClaimStateLine — Zone 1 of the DetailPanel, the agent half of the combo
+ * chip.
  *
- * Renders a context-dependent short line describing the task's
- * ownership state and the appropriate CTA button next to it.
+ * T-454-3/4: this used to spell out the whole claim state as a sentence
+ * ("Claimed by claude-code · 6m remaining", "Unclaimed") — too long once the
+ * WorkState box collapsed into a chip (T-452-1). AgentChip's own `showName`
+ * already carries the identity (avatar + @name); this component's only
+ * remaining inline text is the STALE tone, because that is the quiet
+ * always-on signal that must survive a dismissed AttentionWarning banner
+ * (T-452-4's rationale, unchanged — see the module doc below). Everything
+ * else — remaining time, the "Claimed by"/"Routed to" qualifier — moves
+ * into the `title` attribute, which costs no width. `Unclaimed` no longer
+ * renders any line at all: the Claim button plus the chip's own state
+ * chevron (rendered right after this component by DetailPanel) already say
+ * the same thing without repeating "Unclaimed" in words.
  *
- * The full state matrix is specified in the design doc §5:
+ * The full state matrix:
  *
- *   | Task state                           | line                                  | CTA    |
- *   | Unclaimed, no route                  | "Unclaimed"                           | Claim  |
- *   | Routed unclaimed                     | "Routed to @x"                        | Claim  |
- *   | Claimed by you, healthy              | "Claimed · 23m remaining"             | Release|
- *   | Claimed by you, stale                | "Stale" (warn)                        | Release|
- *   | Claimed by you, expired              | "Lease expired" (warn)                | Release|
- *   | Claimed by other, healthy            | "Claimed by @x · 23m remaining"       | —      |
- *   | Claimed by other, stale              | "@x · Stale" (warn)                   | —      |
- *   | Claimed by other, expired            | "@x · Lease expired" (warn)           | Steal  |
+ *   | Task state                 | shown                        | CTA    |
+ *   | Unclaimed, no route        | Claim button only            | Claim  |
+ *   | Routed unclaimed           | avatar+@name (ring)          | Claim  |
+ *   | Claimed by you, healthy    | avatar+@name                 | Release|
+ *   | Claimed by you, stale      | avatar+@name + "Stale" (warn)| Release|
+ *   | Claimed by you, expired    | avatar+@name + "Lease expired" (warn) | Release |
+ *   | Claimed by other, healthy  | avatar+@name                 | —      |
+ *   | Claimed by other, stale    | avatar+@name + "Stale" (warn)| —      |
+ *   | Claimed by other, expired  | avatar+@name + "Lease expired" (warn) | Steal |
  *
  * T-452-6: expired no longer renders in danger/red. Red is reserved for
  * "something is being lost" — on the board it already means Done and the
@@ -50,45 +61,38 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
   const health = computeHealth(task, Date.now(), { staleThresholdMinutes }); // 'stale' | 'expired' | null
   const routed = !isClaimed && task.routedAgent;
 
-  let line = 'Unclaimed';
-  let tone = 'muted';            // 'muted' | 'warn' | 'danger'
-  let action = null;             // { label, onClick, variant }
+  let staleText = null;           // the only remaining inline word: 'Stale' | 'Lease expired'
+  let action = null;              // { label, onClick, variant }
+  let title = '';                 // full detail (T-454-3: remaining time, qualifier) — costs no width
 
   if (routed) {
-    line = `Routed to ${task.routedAgent}`;
+    title = `Routed to ${task.routedAgent}`;
     action = { label: 'Claim', onClick: onClaim, variant: 'accent' };
   } else if (!isClaimed) {
-    line = 'Unclaimed';
+    // T-454-4: no "Unclaimed" line — Claim plus the chip's own state
+    // chevron already say this without repeating it in words.
     action = { label: 'Claim', onClick: onClaim, variant: 'accent' };
   } else if (isSelf) {
     // Self-claim — Release is always the right action.
+    title = `Claimed by you · ${formatRemaining(task.leaseUntil)}`;
     if (health === 'expired') {
-      line = 'Lease expired';
-      tone = 'warn';
+      staleText = 'Lease expired';
     } else if (health === 'stale') {
-      line = 'Stale';
-      tone = 'warn';
-    } else {
-      line = `Claimed · ${formatRemaining(task.leaseUntil)}`;
+      staleText = 'Stale';
     }
     action = { label: 'Release', onClick: onRelease, variant: 'secondary' };
   } else {
     // Claimed by another agent.
+    title = `Claimed by ${task.agent} · ${formatRemaining(task.leaseUntil)}`;
     if (health === 'expired') {
-      line = `${task.agent} · Lease expired`;
-      tone = 'warn';
+      staleText = 'Lease expired';
       // The Steal CTA stays danger-variant: that is a destructive action on
       // another agent's claim, not a lease-health tint.
       action = { label: 'Steal', onClick: onSteal, variant: 'danger' };
     } else if (health === 'stale') {
-      line = `${task.agent} · Stale`;
-      tone = 'warn';
-    } else {
-      line = `Claimed by ${task.agent} · ${formatRemaining(task.leaseUntil)}`;
+      staleText = 'Stale';
     }
   }
-
-  const toneClass = tone === 'danger' ? 'text-danger' : tone === 'warn' ? 'text-warn' : 'text-muted';
 
   return (
     <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -97,7 +101,8 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
           name={task.agent}
           size="md"
           variant="solid"
-          title={`Claimed by ${task.agent}${isSelf ? ' (you)' : ''}`}
+          showName
+          title={title || `Claimed by ${task.agent}${isSelf ? ' (you)' : ''}`}
         />
       )}
       {!isClaimed && routed && (
@@ -105,12 +110,15 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
           name={task.routedAgent}
           size="md"
           variant="ring"
-          title={`Routed to ${task.routedAgent}`}
+          showName
+          title={title || `Routed to ${task.routedAgent}`}
         />
       )}
-      <span className={`text-xs truncate ${toneClass}`} title={line}>
-        {line}
-      </span>
+      {staleText && (
+        <span className="text-xs truncate text-warn shrink-0" title={title}>
+          {staleText}
+        </span>
+      )}
       {action && (
         <button
           type="button"

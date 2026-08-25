@@ -193,8 +193,11 @@ export default function DetailPanel() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   // T-161-4: header popover (Status or Priority picker) — one shared state
-  // so only one popover can be open at a time.
-  const [headerPopover, setHeaderPopover] = useState({ type: null, rect: null });
+  // so only one popover can be open at a time. T-454-5: `panelWidth` is the
+  // panel's measured width at the moment the popover opened, forwarded only
+  // to WorkStatePopover so its question step can size itself against the
+  // real sidebar instead of a hard-coded guess (see panelRef below).
+  const [headerPopover, setHeaderPopover] = useState({ type: null, rect: null, panelWidth: null });
   // T-161-4 Zone 2: Quick-Action state
   const [routePopover, setRoutePopover] = useState({ open: false, rect: null });
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
@@ -217,6 +220,11 @@ export default function DetailPanel() {
   // focus. Not part of React state: writing it must never trigger a render.
   const headerPopoverTriggerRef = useRef(null);
   const titleTextareaRef = useRef(null);
+  // T-454-5: the panel's own DOM node, measured on popover-open so
+  // WorkStatePopover's question step can size against the actual rendered
+  // sidebar width (which is responsive — `w-full max-w-[480px]` — not a
+  // fixed value we could hard-code).
+  const panelRef = useRef(null);
   // T-161-4 Activity Feed: sticky-to-bottom flag. Starts true so the
   // feed anchors to the latest entry on first open, but flips to false
   // as soon as the user scrolls up, which stops the 12 s poll from
@@ -238,7 +246,7 @@ export default function DetailPanel() {
     setIsEditingTitle(false);
     setIsEditingDescription(false);
     setArchiveConfirmOpen(false);
-    setHeaderPopover({ type: null, rect: null });
+    setHeaderPopover({ type: null, rect: null, panelWidth: null });
     setRoutePopover({ open: false, rect: null });
     setEditTitle('');
     setEditDescription('');
@@ -600,14 +608,18 @@ export default function DetailPanel() {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
     headerPopoverTriggerRef.current = e.currentTarget;
-    setHeaderPopover({ type, rect });
+    // T-454-5: measured once per open, same as `rect` above — Status/Priority
+    // ignore it (WorkStatePopover is the only consumer), so their popovers
+    // still position exactly as before.
+    const panelWidth = panelRef.current?.getBoundingClientRect().width || null;
+    setHeaderPopover({ type, rect, panelWidth });
   }
   // T-452-2: restores focus to whichever chip/pill opened the popover
   // (Status, Priority, WorkState) — Escape-to-close and click-outside both
   // route through here via Popover.jsx's onClose. Matches the focus-return
   // pattern ActiveAgentsBar.jsx already established for its own popovers.
   function closeHeaderPopover() {
-    setHeaderPopover({ type: null, rect: null });
+    setHeaderPopover({ type: null, rect: null, panelWidth: null });
     headerPopoverTriggerRef.current?.focus?.();
     headerPopoverTriggerRef.current = null;
   }
@@ -957,7 +969,7 @@ export default function DetailPanel() {
       />
 
       {/* Panel */}
-      <div data-detail-panel="true" className="fixed top-0 right-0 z-[1600] h-full w-full max-w-[480px] bg-card border-l border-border shadow-[-4px_0_24px_rgba(0,0,0,0.3)] flex flex-col animate-slide-in-right">
+      <div ref={panelRef} data-detail-panel="true" className="fixed top-0 right-0 z-[1600] h-full w-full max-w-[480px] bg-card border-l border-border shadow-[-4px_0_24px_rgba(0,0,0,0.3)] flex flex-col animate-slide-in-right">
         {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-border">
           <div className="flex justify-between items-start mb-3">
@@ -1177,6 +1189,7 @@ export default function DetailPanel() {
           <WorkStatePopover
             open={headerPopover.type === 'workState'}
             anchorRect={headerPopover.rect}
+            panelWidth={headerPopover.panelWidth}
             onClose={closeHeaderPopover}
             task={task}
             onChange={handleWorkStateChange}

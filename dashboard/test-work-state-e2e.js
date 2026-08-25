@@ -272,6 +272,19 @@ async function main() {
     await page.waitForSelector('[data-work-state-question="true"]', { timeout: 3000 });
     r.ok(await page.$('label[for="work-state-question-input"]'), 'work-state question input has an accessible label');
 
+    // T-454-5: the question form used to hard-code 288px; it now derives
+    // from the DetailPanel's actual measured width (minus a margin), so it
+    // should read close to the sidebar's width instead of the old fixed
+    // guess — and noticeably wider than 288 at this desktop viewport.
+    const widthCheck = await page.evaluate(() => {
+      const panel = document.querySelector('[data-detail-panel]')?.getBoundingClientRect().width || 0;
+      const form = document.querySelector('[data-work-state-question="true"]')?.getBoundingClientRect().width || 0;
+      return { panel, form };
+    });
+    r.ok(widthCheck.form > 288, `question form (${widthCheck.form}px) is wider than the old fixed 288px guess`);
+    r.ok(widthCheck.form >= widthCheck.panel - 80,
+      `question form (${widthCheck.form}px) tracks the panel's measured width (${widthCheck.panel}px), not a fixed constant`);
+
     // The seed task already has `responsible`/`checkAgainAt` set, so
     // More-context is auto-expanded on open — no click needed to reach it.
     r.ok(await page.$('input[name="workStateResponsible"]'),
@@ -279,8 +292,12 @@ async function main() {
     await setInput(page, '[data-work-state-answer="true"]', 'Release manager');
     await setInput(page, 'input[name="workStateResponsible"]', 'release');
 
+    // T-454-6: the answer field is a <textarea> now, not an <input> — match
+    // both element kinds via the shared `name` prefix so this keeps covering
+    // every canonical work-state control (answer, responsible, check-again,
+    // save) rather than silently dropping to 3 once the tag changed.
     const pickerControlSizes = await page.$$eval(
-      'input[name^="workState"], button[data-work-state-save]',
+      '[name^="workState"], button[data-work-state-save]',
       (elements) => elements.map((element) => {
         const box = element.getBoundingClientRect();
         return { name: element.getAttribute('name') || 'save', width: box.width, height: box.height };
@@ -460,6 +477,48 @@ async function main() {
     r.ok(mobile.pageWidth <= mobile.viewport + 1, 'work-state popover remains horizontally usable on mobile');
     r.ok(mobile.formWidth <= mobile.viewport, 'work-state question form fits the mobile viewport');
     await page.keyboard.press('Escape');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
+
+    // T-454-6: the answer field is a growing <textarea> now, not a
+    // single-line <input>. Enter must still submit the form ("Ein Feld,
+    // Enter, fertig" from the spec); Shift+Enter must insert a newline
+    // instead, and the field must visibly grow with its content
+    // (scrollHeight-driven) rather than clip it.
+    await page.setViewport({ width: 1400, height: 900 });
+    await chooseWorkStateOption(page, 'blocked');
+    await page.waitForSelector('[data-work-state-question="true"]', { timeout: 3000 });
+    const collapsedHeight = await page.$eval('[data-work-state-answer="true"]', (el) => el.getBoundingClientRect().height);
+
+    await page.click('[data-work-state-answer="true"]');
+    await page.keyboard.type('First line of the blocker explanation');
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Shift');
+    await page.keyboard.type('Second line after an explicit Shift+Enter');
+    await page.keyboard.down('Shift');
+    await page.keyboard.press('Enter');
+    await page.keyboard.up('Shift');
+    await page.keyboard.type('Third line, long enough that the field must grow');
+
+    const answerAfterTyping = await page.$eval('[data-work-state-answer="true"]', (el) => el.value);
+    r.ok((answerAfterTyping.match(/\n/g) || []).length === 2,
+      'Shift+Enter inserts a newline in the answer instead of submitting');
+    r.ok(await page.$('[data-work-state-question="true"]'),
+      'Shift+Enter keeps the popover open — no submit fired');
+
+    const grownHeight = await page.$eval('[data-work-state-answer="true"]', (el) => el.getBoundingClientRect().height);
+    r.ok(grownHeight > collapsedHeight,
+      `answer field grows with its content (${collapsedHeight}px collapsed -> ${grownHeight}px grown)`);
+
+    const beforeEnterSubmitCount = workStatePutCount;
+    await page.keyboard.press('Enter');
+    await waitFor(() => workStatePutCount > beforeEnterSubmitCount);
+    r.ok(lastWorkStateUpdate?.workState === 'blocked',
+      'plain Enter submits the work-state form from the growing answer field');
+    r.ok(lastWorkStateUpdate?.workStateDetails?.reason?.includes('First line')
+      && lastWorkStateUpdate?.workStateDetails?.reason?.includes('Third line'),
+      'the full multi-line answer is sent intact on Enter-submit');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
 
     r.ok(pageErrors.length === 0, `no uncaught page errors during the flow (saw: ${pageErrors.join(' | ')})`);
   });

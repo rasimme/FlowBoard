@@ -21,6 +21,7 @@ import {
   markAuthHalted,
   subscribeAuthState,
 } from '../state/authState.mjs';
+import { getLastMutationAt } from '../state/taskMutations.mjs';
 
 const DashboardContext = createContext(null);
 
@@ -218,8 +219,47 @@ export function DashboardProvider({ children }) {
     dispatch({ projects, agents, activeProject, viewedProject, tasks, connection });
   }, [dispatch]);
 
-  const commitPollSnapshot = useCallback((snapshot) => {
-    const { projects, agents, activeProject, viewedProject, tasks } = snapshot;
+  // T-454-7: reconciles a poll response against tasks this tab has since
+  // mutated. `requestStartedAt` is when THIS poll's request was issued
+  // (captured in runSnapshotRequest, before the network call) — reproduced
+  // and root-caused in test-work-state-poll-race-e2e.js. The failure mode
+  // was never a missing publish: taskMutations.mjs's mutate() always
+  // publishes the server's canonical response on success via
+  // bridge.replaceTasks (work-state PUTs deliberately skip only the
+  // OPTIMISTIC pre-response patch at taskMutations.mjs:200, for the reason
+  // documented there — that decision is untouched by this fix). The bug was
+  // a plain race: a poll request already in flight when a mutation's success
+  // lands still carries the pre-mutation task, and if its response arrives
+  // after, DashboardContext had nothing telling it that data was now stale,
+  // so it overwrote the just-applied canonical task with the older one.
+  //
+  // The reconciliation below is read-side only: for each polled task, if a
+  // CONFIRMED mutation (taskMutations.mjs's getLastMutationAt, written only
+  // from a validated server response — never a client guess) landed after
+  // this poll's request started, keep the task already in the local store
+  // instead of the poll's now-stale copy. Every other task in the response —
+  // the overwhelming majority on any real board — is unaffected and still
+  // comes straight from the poll. This must not become a second optimistic
+  // path: it never invents or predicts a value, it only prefers a
+  // already-confirmed newer one the store already has over a response that
+  // predates it.
+  const reconcilePolledTasks = useCallback((tasks, requestStartedAt) => {
+    if (!Array.isArray(tasks) || typeof requestStartedAt !== 'number') return tasks;
+    let changed = false;
+    const next = tasks.map((polledTask) => {
+      const id = polledTask?.id;
+      if (!id || getLastMutationAt(id) <= requestStartedAt) return polledTask;
+      const local = bridge.getTasks().find((t) => t?.id === id);
+      if (!local || local === polledTask) return polledTask;
+      changed = true;
+      return local;
+    });
+    return changed ? next : tasks;
+  }, []);
+
+  const commitPollSnapshot = useCallback((snapshot, requestStartedAt) => {
+    const { projects, agents, activeProject, viewedProject } = snapshot;
+    const tasks = reconcilePolledTasks(snapshot.tasks, requestStartedAt);
     const projectsJson = JSON.stringify(projects);
     const agentsJson = JSON.stringify(agents);
     const tasksJson = JSON.stringify(tasks);
@@ -242,7 +282,7 @@ export function DashboardProvider({ children }) {
       prevTasksRef.current = tasksJson;
       dispatch({ projects, agents, activeProject, viewedProject, tasks });
     }
-  }, [dispatch, markConnectionSuccess]);
+  }, [dispatch, markConnectionSuccess, reconcilePolledTasks]);
 
   const runSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
     if (kind === 'poll') {
@@ -280,6 +320,11 @@ export function DashboardProvider({ children }) {
       let authRecovered = false;
       let active;
       const request = (async () => {
+        // T-454-7: captured before the network call — the moment this
+        // specific poll started reading task state — so commitPollSnapshot
+        // can tell whether a mutation's confirmed success landed while this
+        // request was in flight (see reconcilePolledTasks above).
+        const requestStartedAt = Date.now();
         try {
           const snapshot = await fetchDashboardSnapshot(controller.signal, {
             retryAuth,
@@ -288,7 +333,7 @@ export function DashboardProvider({ children }) {
           if (controller.signal.aborted
             || snapshotRequestRef.current.generation !== generation
             || snapshot.taskGeneration !== taskRequestRef.current.generation) return false;
-          if (kind === 'poll') commitPollSnapshot(snapshot);
+          if (kind === 'poll') commitPollSnapshot(snapshot, requestStartedAt);
           else commitFullSnapshot(snapshot, retryAuth ? 'auth' : 'core');
           return true;
         } catch (error) {

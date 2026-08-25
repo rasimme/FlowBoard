@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import Popover from './Popover.jsx';
 import Button from './Button.jsx';
 import { WORK_STATE_ICONS } from './WorkStateChip.jsx';
 import Input from './Input.jsx';
+import Textarea from './Textarea.jsx';
 import {
   EMPTY_WORK_STATE_DETAILS,
   WORK_STATE_OPTIONS,
@@ -39,13 +40,42 @@ const QUESTION_FIELD = {
 
 // Popover.jsx clamps horizontal overflow against an assumed content width,
 // sized for short menu rows like Status/Priority. The question step is a real
-// mini-form and is wider — 288px, matching the `w-72` class on its <form>
-// below (keep the two in sync). Left unstated, the clamp under-fires and the
-// form has been observed hanging ~120px off the right edge of the viewport,
-// entirely unreachable. Popover.jsx therefore takes an explicit `width`
-// (T-452-2); its default is unchanged, so Status and Priority position
-// exactly as before.
-const QUESTION_FORM_WIDTH = 288;
+// mini-form and needs to be wider. Left unstated, the clamp under-fires and
+// the form has been observed hanging ~120px off the right edge of the
+// viewport, entirely unreachable. Popover.jsx therefore takes an explicit
+// `width` (T-452-2); its default is unchanged, so Status and Priority
+// position exactly as before.
+//
+// T-454-5: the form used to hard-code that width at 288px — a guess from
+// when the popover was new. The mock shows it filling almost the whole
+// sidebar, so this now derives from DetailPanel's actually-measured panel
+// width (`panelWidth` prop, captured by openHeaderPopover at click-time —
+// the panel is responsive, `w-full max-w-[480px]`, so there is no fixed
+// number to hard-code instead). PANEL_EDGE_MARGIN approximates the header's
+// `px-5` (20px) on both sides so the form reads as "panel width minus a
+// comfortable margin", not edge-to-edge. The min/max bounds keep it sane at
+// the extremes: never so narrow the question wraps awkwardly, never wider
+// than a sidebar has any business being.
+const PANEL_EDGE_MARGIN = 40;
+const QUESTION_FORM_MIN_WIDTH = 260;
+const QUESTION_FORM_MAX_WIDTH = 420;
+// Fallback for the rare case panelWidth isn't measurable yet (e.g. a caller
+// that opens the popover without going through DetailPanel's ref) — the old
+// hard-coded value, so behavior degrades to exactly what it was before.
+const QUESTION_FORM_FALLBACK_WIDTH = 288;
+
+function questionFormWidth(panelWidth) {
+  if (typeof panelWidth !== 'number' || !Number.isFinite(panelWidth) || panelWidth <= 0) {
+    return QUESTION_FORM_FALLBACK_WIDTH;
+  }
+  const target = panelWidth - PANEL_EDGE_MARGIN;
+  return Math.max(QUESTION_FORM_MIN_WIDTH, Math.min(QUESTION_FORM_MAX_WIDTH, target));
+}
+
+// T-454-6: the answer textarea grows with its content up to this height,
+// then scrolls — long blocker/waiting explanations shouldn't be able to push
+// the Save button and More-context toggle off-panel indefinitely.
+const ANSWER_MAX_HEIGHT = 160;
 
 /**
  * The state's icon, from the same map the panel and card chips use
@@ -93,9 +123,10 @@ function StateIcon({ state }) {
  *  - Switching to `working` (Active) clears workStateDetails; switching
  *    among waiting/blocked/paused preserves whatever details already exist.
  */
-export default function WorkStatePopover({ task, open, anchorRect, onClose, onChange }) {
+export default function WorkStatePopover({ task, open, anchorRect, panelWidth, onClose, onChange }) {
   const normalized = normalizeTaskWorkState(task || {});
   const currentState = normalized.workState || 'working';
+  const formWidth = questionFormWidth(panelWidth);
 
   const [step, setStep] = useState('list'); // 'list' | 'question'
   const [pendingState, setPendingState] = useState(null); // state being saved/edited
@@ -106,6 +137,24 @@ export default function WorkStatePopover({ task, open, anchorRect, onClose, onCh
   const [dateError, setDateError] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // T-454-6: the answer field grows with its content (scrollHeight-driven,
+  // same technique DetailPanel's title field already uses), capped at
+  // ANSWER_MAX_HEIGHT and scrollable past that.
+  const answerRef = useRef(null);
+
+  function autoResizeAnswer(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, ANSWER_MAX_HEIGHT)}px`;
+  }
+
+  // Resize on every step/question entry — not just on user typing — so a
+  // pre-filled answer (editing an existing waiting/blocked task) starts at
+  // its correct grown height instead of a single-row default that then
+  // jumps on the first keystroke.
+  useEffect(() => {
+    if (step === 'question') autoResizeAnswer(answerRef.current);
+  }, [step, answer]);
 
   // Fresh draft every time the popover opens. Keyed on `open` alone (not on
   // `task`) so a task update arriving from the background poll while the
@@ -223,6 +272,18 @@ export default function WorkStatePopover({ task, open, anchorRect, onClose, onCh
     if (result !== false) onClose?.();
   }
 
+  // T-454-6: the answer field became a <textarea> so it can grow with its
+  // content, but a plain <textarea> doesn't submit its form on Enter the way
+  // a single-line <input> does — it inserts a newline instead. The spec's
+  // "Ein Feld, Enter, fertig" still has to hold, so Enter is handled
+  // explicitly here; Shift+Enter is left alone and falls through to the
+  // browser's normal newline behavior.
+  function handleAnswerKeyDown(event) {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    handleQuestionSubmit(event);
+  }
+
   const displayedState = pendingState || currentState;
 
   // The one editable field is `waitingFor` for waiting, `reason` for
@@ -243,7 +304,7 @@ export default function WorkStatePopover({ task, open, anchorRect, onClose, onCh
       open={open}
       onClose={onClose}
       anchorRect={anchorRect}
-      width={step === 'question' ? QUESTION_FORM_WIDTH : undefined}
+      width={step === 'question' ? formWidth : undefined}
     >
       {step === 'list' && (
         <div data-work-state-popover="true" data-work-state-list="true">
@@ -270,21 +331,29 @@ export default function WorkStatePopover({ task, open, anchorRect, onClose, onCh
           onSubmit={handleQuestionSubmit}
           data-work-state-popover="true"
           data-work-state-question="true"
-          className="p-3 w-72 max-w-[calc(100vw-16px)]"
+          className="p-3 max-w-[calc(100vw-16px)]"
+          style={{ width: formWidth }}
           aria-busy={saving}
         >
           <label className="block text-[11px] text-muted mb-1" htmlFor="work-state-question-input">
             {QUESTION_TEXT[pendingState]}
           </label>
-          <Input
+          {/* T-454-6: a growing <textarea> replaces the old single-line
+              <input> — content past one line no longer gets clipped. Enter
+              still submits (handleAnswerKeyDown), Shift+Enter still inserts
+              a newline (native <textarea> behavior, left untouched). */}
+          <Textarea
+            ref={answerRef}
             id="work-state-question-input"
             name={answerFieldName}
             data-work-state-answer="true"
-            size="sm"
-            className="min-h-[44px]"
+            rows={1}
+            className="min-h-[44px] px-2 py-1.5 text-[11px] rounded-md overflow-y-auto"
+            style={{ maxHeight: ANSWER_MAX_HEIGHT }}
             autoFocus
             value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
+            onChange={(event) => { setAnswer(event.target.value); autoResizeAnswer(event.target); }}
+            onKeyDown={handleAnswerKeyDown}
             disabled={saving}
           />
 
