@@ -60,6 +60,11 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `TELEGRAM_BOT_TOKENS` | empty | Additional bot tokens, comma-separated (ordered positions 2+). Empty entries and duplicate tokens are startup errors. |
 | `FLOWBOARD_TELEGRAM_AGENT_IDS` | empty | Required to enable auth: ordered 1:1 mapping for every configured token, primary agent first and then one per `TELEGRAM_BOT_TOKENS` entry. With the other auth prerequisites present, a missing/count-mismatched mapping stops startup; gaps, duplicates, and invalid agent IDs are always rejected without logging token values. |
 | `FLOWBOARD_TRUSTED_PROXY_IPS` | empty | Comma-separated IP addresses or CIDRs for immediate proxy/tunnel peers whose `cf-ray` + `cf-connecting-ip` pair may be used for rate-limit identity. For local `cloudflared`, configure its loopback peer (`127.0.0.1,::1`) only when that listener is trusted; empty or invalid entries fail safe to the transport socket IP. |
+| `FLOWBOARD_RATE_LIMIT_READ` | `300` requests/minute | Dashboard/API read-lane token rate. |
+| `FLOWBOARD_RATE_LIMIT_CHECKPOINT` | `120` requests/minute | Agent checkpoint-lane token rate, isolated from reads and other mutations. |
+| `FLOWBOARD_RATE_LIMIT_MUTATION` | `60` requests/minute | General API mutation-lane token rate. |
+| `FLOWBOARD_RATE_LIMIT_AUTH` | `10` requests/minute | Auth-exchange lane token rate. Invalid or non-positive values use the default. |
+| `FLOWBOARD_RATE_LIMIT_BURST` | `30` tokens | Additional bounded burst capacity applied independently to each lane/principal bucket. |
 | `DASHBOARD_ORIGIN` | empty | Allowed CORS origin for browser clients. |
 | `OPENCLAW_HOOKS_TOKEN` (alias `HOOKS_TOKEN`) | empty | Shared secret required on `POST /api/hooks/task-complete`. Empty disables the endpoint. |
 | `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server fails closed at boot (`FATAL`) instead of serving an unauthenticated dashboard. |

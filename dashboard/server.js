@@ -84,12 +84,12 @@ const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegra
 const {
   RateLimiter,
   LaneTokenBucketLimiter,
-  DEFAULT_LANE_BUDGETS,
   getClientIp,
   parseTrustedProxyConfig,
   getRateLimitKey,
   getRateLimitScope,
   getTrustedPrincipal,
+  readRateLimitConfig,
 } = require('./rate-limiter.js');
 const { buildDashboardSnapshot } = require('./dashboard-snapshot.js');
 const { installPrivacyFilter } = require('./privacy-filter.js');
@@ -514,13 +514,7 @@ if (process.env.LOCAL_HOSTNAME) {
 // T-450: independent lane budgets plus a bounded token-bucket burst. The
 // loopback exemption is intentionally unchanged.
 const laneLimiter = new LaneTokenBucketLimiter({
-  budgets: {
-    read: Number(process.env.FLOWBOARD_RATE_LIMIT_READ) || DEFAULT_LANE_BUDGETS.read,
-    checkpoint: Number(process.env.FLOWBOARD_RATE_LIMIT_CHECKPOINT) || DEFAULT_LANE_BUDGETS.checkpoint,
-    mutation: Number(process.env.FLOWBOARD_RATE_LIMIT_MUTATION) || DEFAULT_LANE_BUDGETS.mutation,
-    auth: Number(process.env.FLOWBOARD_RATE_LIMIT_AUTH) || DEFAULT_LANE_BUDGETS.auth,
-  },
-  burst: Number(process.env.FLOWBOARD_RATE_LIMIT_BURST) || 30,
+  ...readRateLimitConfig(),
   keyGenerator: (req) => getTrustedPrincipal(req, TRUSTED_PROXY_IPS),
   scopeFor: getRateLimitScope,
   skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),

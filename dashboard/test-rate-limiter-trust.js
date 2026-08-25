@@ -10,6 +10,11 @@ const {
   getClientIp,
   isTrustedCloudflareRequest,
   parseTrustedProxyConfig,
+  DEFAULT_LANE_BUDGETS,
+  LaneTokenBucketLimiter,
+  getRateLimitScope,
+  getTrustedPrincipal,
+  readRateLimitConfig,
 } = require('./rate-limiter.js');
 
 function request(socketAddress, cloudflareIp, { ray = 'test-ray' } = {}) {
@@ -110,6 +115,48 @@ function run() {
     'a second configured Cloudflare client is not degraded into the first bucket',
   );
   cloudflareLimiter.close();
+
+  assert.deepStrictEqual(DEFAULT_LANE_BUDGETS, {
+    read: 300,
+    checkpoint: 120,
+    mutation: 60,
+    auth: 10,
+  }, 'T-450-2 keeps the four independent default lane budgets');
+  assert.deepStrictEqual(
+    readRateLimitConfig({
+      FLOWBOARD_RATE_LIMIT_READ: '301',
+      FLOWBOARD_RATE_LIMIT_CHECKPOINT: '121',
+      FLOWBOARD_RATE_LIMIT_MUTATION: '61',
+      FLOWBOARD_RATE_LIMIT_AUTH: '11',
+      FLOWBOARD_RATE_LIMIT_BURST: '7',
+    }),
+    { budgets: { read: 301, checkpoint: 121, mutation: 61, auth: 11 }, burst: 7 },
+    'FLOWBOARD_RATE_LIMIT_* overrides are applied per lane',
+  );
+
+  const principalRequest = { method: 'GET', originalUrl: '/api/projects', user: { id: 42 }, headers: {}, socket: { remoteAddress: '127.0.0.1' } };
+  assert.strictEqual(getTrustedPrincipal(principalRequest), 'user:42', 'verified user identity is the limiter principal');
+  assert.strictEqual(getRateLimitScope(principalRequest), 'read');
+
+  const limiter = new LaneTokenBucketLimiter({
+    budgets: DEFAULT_LANE_BUDGETS,
+    burst: 0,
+    keyGenerator: req => getTrustedPrincipal(req),
+    scopeFor: getRateLimitScope,
+  });
+  const responses = [];
+  const middleware = limiter.middleware();
+  const fakeRes = {
+    set() { return this; },
+    status(code) { this.statusCode = code; return this; },
+    json(body) { responses.push(body); },
+  };
+  middleware(principalRequest, fakeRes, () => responses.push('read-next'));
+  middleware({ ...principalRequest, method: 'POST', originalUrl: '/api/projects/x/checkpoint' }, fakeRes, () => responses.push('checkpoint-next'));
+  middleware({ ...principalRequest, method: 'POST', originalUrl: '/api/projects/x' }, fakeRes, () => responses.push('mutation-next'));
+  middleware({ ...principalRequest, method: 'POST', originalUrl: '/api/auth' }, fakeRes, () => responses.push('auth-next'));
+  assert.deepStrictEqual(responses, ['read-next', 'checkpoint-next', 'mutation-next', 'auth-next'], 'each lane has its own bucket for one trusted principal');
+  limiter.close();
 
   console.log('\n# results: all proxy-trust assertions passed');
 }

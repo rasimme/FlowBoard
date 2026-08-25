@@ -12,6 +12,23 @@ const DEFAULT_WINDOW_MS = 60 * 1000; // 1 minute
 const DEFAULT_MAX_REQUESTS = 60; // max 60 requests per minute per IP
 const DEFAULT_LANE_BUDGETS = Object.freeze({ read: 300, checkpoint: 120, mutation: 60, auth: 10 });
 
+function rateLimitNumber(raw, fallback) {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function readRateLimitConfig(env = process.env) {
+  return {
+    budgets: {
+      read: rateLimitNumber(env.FLOWBOARD_RATE_LIMIT_READ, DEFAULT_LANE_BUDGETS.read),
+      checkpoint: rateLimitNumber(env.FLOWBOARD_RATE_LIMIT_CHECKPOINT, DEFAULT_LANE_BUDGETS.checkpoint),
+      mutation: rateLimitNumber(env.FLOWBOARD_RATE_LIMIT_MUTATION, DEFAULT_LANE_BUDGETS.mutation),
+      auth: rateLimitNumber(env.FLOWBOARD_RATE_LIMIT_AUTH, DEFAULT_LANE_BUDGETS.auth),
+    },
+    burst: rateLimitNumber(env.FLOWBOARD_RATE_LIMIT_BURST, 30),
+  };
+}
+
 class RateLimiter {
   constructor({
     windowMs = DEFAULT_WINDOW_MS,
@@ -322,4 +339,5 @@ module.exports = {
   getRateLimitScope,
   getTrustedPrincipal,
   getRateLimitKey,
+  readRateLimitConfig,
 };
