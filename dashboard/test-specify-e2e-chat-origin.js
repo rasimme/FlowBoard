@@ -132,11 +132,18 @@ async function runTests() {
       approved: true,
     });
 
-    ok(confirmRes.statusCode === 403, 'Agent self-confirmation is rejected');
-    ok(confirmRes.body.code === 'confirmation_requires_verified_human' ||
-      confirmRes.body.code === 'agent_self_confirmation_forbidden',
-      'Chat-origin rejection identifies the trust-contract failure');
-    ok(confirmRes.body.session.status !== 'done', 'Chat-origin session remains unpersisted');
+    ok(confirmRes.statusCode === 200, 'Chat-agent confirmation succeeds');
+    ok(confirmRes.body.session.status === 'done', 'Chat-agent confirmation completes the session');
+    ok(confirmRes.body.confirmation?.principalKind === 'agent',
+      'Chat-agent confirmation is attributed to an agent principal');
+    ok(!confirmRes.body.confirmation?.humanId && !confirmRes.body.confirmation?.human,
+      'Chat-agent confirmation makes no human-approval claim');
+
+    const tasksRes = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`);
+    const task = tasksRes.body.tasks?.find((candidate) =>
+      confirmRes.body.createdArtifacts.taskIds.includes(candidate.id));
+    ok(task?.creationAudit?.origin === 'specify', 'Created task carries Specify origin');
+    ok(task?.creationAudit?.principal?.kind === 'agent', 'Created task carries agent principal provenance');
 
     if (fail === 0) {
       console.log(`\n✅ All ${pass} tests passed`);

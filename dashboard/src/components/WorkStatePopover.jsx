@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import Popover from './Popover.jsx';
 import Button from './Button.jsx';
+import { WORK_STATE_ICONS } from './WorkStateChip.jsx';
 import Input from './Input.jsx';
 import {
   EMPTY_WORK_STATE_DETAILS,
@@ -45,6 +46,17 @@ const QUESTION_FIELD = {
 // (T-452-2); its default is unchanged, so Status and Priority position
 // exactly as before.
 const QUESTION_FORM_WIDTH = 288;
+
+/**
+ * The state's icon, from the same map the panel and card chips use
+ * (WorkStateChip.jsx). Shared on purpose: a state must not read as a padlock
+ * on the card and something else in the menu that sets it.
+ */
+function StateIcon({ state }) {
+  const Icon = WORK_STATE_ICONS[state];
+  if (!Icon) return null;
+  return <Icon size={12} className="shrink-0 text-muted" aria-hidden="true" />;
+}
 
 /**
  * WorkStatePopover — the state-selection popover opened from the combo
@@ -243,6 +255,7 @@ export default function WorkStatePopover({ task, open, anchorRect, onClose, onCh
                   className={state === displayedState ? 'opacity-100' : 'opacity-0'}
                   aria-hidden="true"
                 />
+                <StateIcon state={state} />
                 <span>{STATE_LABELS[state]}</span>
               </span>
             </Popover.Option>

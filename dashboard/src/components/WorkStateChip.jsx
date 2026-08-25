@@ -1,4 +1,4 @@
-import { ChevronDown, Hourglass, Ban, PauseCircle, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Play, Hourglass, Lock, PauseCircle, AlertTriangle } from 'lucide-react';
 import { computeHealth } from './LeaseIndicator.jsx';
 import { normalizeTaskWorkState } from '../utils/workState.js';
 
@@ -18,13 +18,28 @@ import { normalizeTaskWorkState } from '../utils/workState.js';
  * (T-452-2), the same headerPopover + Popover.jsx mechanism already used for
  * Status/Priority — see WorkStatePopover.jsx for the popover content.
  */
-const WORK_STATE_ICONS = {
+/**
+ * One icon per work state, shared by every surface that names a state — the
+ * panel chip, the card chip, and WorkStatePopover's option rows. Keeping a
+ * single map is the point: the same state must not be a padlock in one place
+ * and a crossed circle in another.
+ *
+ * Icons follow the design draft (play / hourglass / lock / pause). `Lock` in
+ * particular is deliberate — it is what BlockedChip.jsx has always used, so
+ * blocked keeps one face across the board.
+ *
+ * `working` has an entry for the popover, which lists Active as a choosable
+ * option. The chips never reach it: Active renders no state half at all.
+ */
+export const WORK_STATE_ICONS = {
+  working: Play,
   waiting: Hourglass,
-  blocked: Ban,
+  blocked: Lock,
   paused: PauseCircle,
 };
 
-const WORK_STATE_LABELS = {
+export const WORK_STATE_LABELS = {
+  working: 'Active',
   waiting: 'Waiting',
   blocked: 'Blocked',
   paused: 'Paused',
@@ -129,7 +144,10 @@ export function TaskCardStateChip({ task, staleThresholdMinutes }) {
 
   if (!health && workState === 'working') return null;
 
-  const divider = <span className="w-px self-stretch bg-border" aria-hidden="true" />;
+  // Matches the design's `.combo-sep`: a short 12px tick in the stronger
+  // border tone, not a full-height rule. The two halves sit inside one pill,
+  // so the separator marks the seam without cutting the chip in two.
+  const divider = <span className="w-px h-3 shrink-0 bg-border-strong" aria-hidden="true" />;
 
   if (health) {
     // Same text for 'stale' and 'expired' on purpose — see module comment:

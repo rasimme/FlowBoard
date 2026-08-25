@@ -727,8 +727,8 @@ function persistSpecifyProposal(session, opts = {}) {
         // This record was produced by the server-authoritative confirmation
         // gate in /confirm; it is internal context, never proposal input.
         principal: opts.confirmation ? {
-          kind: 'human',
-          verified: true,
+          kind: opts.confirmation.principalKind || 'agent',
+          verified: opts.confirmation.principalKind === 'human',
           actor: opts.confirmation.actor,
           humanId: opts.confirmation.humanId,
           authSessionId: opts.confirmation.authSessionId,
@@ -3748,9 +3748,10 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
 
     const principal = governance.resolvePrincipal(req);
     const confirmationCheck = { ok: true, record: {
+      principalKind: session.transport === 'dashboard' && session.agentId === 'human' ? 'human' : 'agent',
       actor: principal.actor || 'local:operator',
-      humanId: principal.humanId || null,
-      authSessionId: principal.authSessionId || null,
+      humanId: session.transport === 'dashboard' && session.agentId === 'human' ? (principal.humanId || null) : null,
+      authSessionId: session.transport === 'dashboard' && session.agentId === 'human' ? (principal.authSessionId || null) : null,
       confirmedAt: new Date().toISOString(),
       specifySessionId: session.id,
       proposalIdentity: governance.proposalIdentityOf(session.draftProposal),

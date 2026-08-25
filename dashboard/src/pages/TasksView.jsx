@@ -545,7 +545,7 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   chip carries, not a standalone pill. "No agent → no chip"
                   (spec): renders nothing when the task is unclaimed. */}
               {task.agent && (
-                <span className="task-combo-chip inline-flex items-center gap-1">
+                <span className="task-combo-chip inline-flex items-center gap-1.5 rounded-full border border-solid border-border bg-secondary pl-[3px] pr-2 py-[2px] whitespace-nowrap max-w-full">
                   <AgentChip
                     name={task.agent}
                     size="sm"
