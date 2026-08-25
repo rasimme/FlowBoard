@@ -82,7 +82,6 @@ POST /projects/:name/tasks
 | `status` | string | no | Initial status: `backlog` (default), `open`, `in-progress`, `review`, `done`, `archived`. |
 | `workState` | string | no | Optional canonical state: `working`, `waiting`, `blocked`, or `paused`. |
 | `workStateDetails` | object | no | Optional contextual details; reads normalize all known keys to present-or-null. |
-| `blocked` | boolean | no | Legacy compatibility write. `true` maps to `workState=blocked`; `false` maps to `workState=working`. |
 | `description` | string | no | Short inline context, max 16KB. See **Description vs spec** below — most tasks should have one. |
 | `tags` | string[] | no | Filterable tags, max 100 |
 | `forceId` | string | no | Migration mode: use exact ID instead of auto-generated. Throws on duplicate. |
@@ -120,7 +119,6 @@ PUT /projects/:name/tasks/:id
 | `completed` | string | ISO date, auto-set on `done` |
 | `specFile` | string | Link a spec file to the task |
 | `description` | string | Short inline context, max 16KB (see **Description vs spec**). |
-| `blocked` | boolean | Compatibility projection/write; reads are exactly `workState === "blocked"` and lifecycle changes do not auto-unblock |
 | `workState` | string | Canonical execution context; lifecycle remains independent |
 | `workStateDetails` | object | Replaces normalized contextual details; `checkAgainAt` schedules reevaluation only and accepts strict ISO-8601 date-times with timezone, bounded to ±14:00 (±14 requires minute `00`) |
 | `tags` | string[] | Replaces the full tag list (max 100). `milestone:<name>` tags feed the overview milestones widget. |
@@ -128,8 +126,7 @@ PUT /projects/:name/tasks/:id
 Note: `parentId` cannot be changed via PUT after creation.
 
 The complete PUT payload is validated before any task or spec-link mutation.
-Contradictory `blocked`/`workState` writes return HTTP 400 with
-`code: "WORK_STATE_CONTRADICTION"` and leave every submitted field unchanged.
+The retired top-level `blocked` Boolean is neither accepted nor returned.
 
 ### Description vs spec
 
@@ -192,9 +189,7 @@ Rules:
 - Expired leases allow steal by other agents
 - Completing a subtask triggers parent status recalculation
 
-`blocked` is computed from canonical `workState` on every read. Supplying
-contradictory `blocked` and `workState` values is rejected with HTTP 400 and
-`WORK_STATE_CONTRADICTION`. Stuck monitoring persists one transient indicator
+The canonical `workState` is returned directly. Stuck monitoring persists one transient indicator
 per task, deduplicates delivery with backoff, and clears it after checkpoints,
 recovery/work-state edits, release, review, or completion; it never changes a
 task's lifecycle or work state automatically.

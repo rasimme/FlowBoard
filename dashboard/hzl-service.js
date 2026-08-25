@@ -82,7 +82,7 @@ const PROJECTS_DIR = path.join(WORKSPACE, 'projects');
 // --- Status mapping helpers ---
 
 // FlowBoard status → HZL native status
-// Note: 'blocked' is NOT a status — it's a boolean flag on metadata.flowboard.blocked
+// Note: 'blocked' is a canonical work state, not a lifecycle status.
 const FB_TO_HZL = {
   'open':        'ready',
   'in-progress': 'in_progress',
@@ -183,11 +183,11 @@ function _projectExceptionReview(value) {
 }
 
 function _normalizeTaskWorkState(flowboard = {}, created = null) {
-  const normalized = normalizeStoredWorkState(flowboard, { fallbackSetAt: created });
+  const legacyState = !flowboard.workState && flowboard.blocked === true ? 'blocked' : undefined;
+  const normalized = normalizeStoredWorkState({ ...flowboard, ...(legacyState ? { workState: legacyState } : {}) }, { fallbackSetAt: created });
   return {
     workState: normalized.workState || DEFAULT_WORK_STATE,
     workStateDetails: normalized.workStateDetails,
-    blocked: normalized.blocked === true,
   };
 }
 
@@ -203,9 +203,6 @@ function _toFbTask(hzlTask, project) {
     id,
     title: hzlTask.title,
     status: fb.status || HZL_TO_FB[hzlTask.status] || 'open',
-    // `blocked` is a compatibility projection.  Never trust a stale legacy
-    // boolean when canonical workState is present.
-    blocked: canonicalWorkState.blocked,
     workState: canonicalWorkState.workState,
     workStateDetails: canonicalWorkState.workStateDetails,
     // A stuck indicator is transient task state, not an activity comment.
@@ -502,7 +499,7 @@ function _ensureCanonicalWorkStateMetadata(hzlTask) {
   const normalizedDetails = normalized.workStateDetails;
   const sameDetails = JSON.stringify(flowboard.workStateDetails || null) === JSON.stringify(normalizedDetails);
   const alreadyCanonical = flowboard.workState === normalized.workState
-    && flowboard.blocked === normalized.blocked
+    && !Object.prototype.hasOwnProperty.call(flowboard, 'blocked')
     && sameDetails;
   if (alreadyCanonical) return hzlTask;
 
@@ -738,8 +735,24 @@ function migrateWorkStateMetadata() {
     const before = task?.metadata?.flowboard || {};
     const normalized = _normalizeTaskWorkState(before, before.created || null);
     const detailsEqual = JSON.stringify(before.workStateDetails || null) === JSON.stringify(normalized.workStateDetails);
-    if (before.workState === normalized.workState && before.blocked === normalized.blocked && detailsEqual) continue;
+    if (before.workState === normalized.workState && !Object.prototype.hasOwnProperty.call(before, 'blocked') && detailsEqual) continue;
     _updateMetadata(ulid, { flowboard: workStateMetadata(before, normalized) });
+    _resyncCachedTask(ulid);
+    migrated++;
+  }
+  return { migrated };
+}
+
+/** Remove the retired boolean projection after canonical work-state migration. */
+function migrateLegacyBlockedBoolean() {
+  let migrated = 0;
+  for (const ulid of _ulidToFb.keys()) {
+    let task;
+    try { task = _taskService.getTaskById(ulid); } catch { continue; }
+    const flowboard = task?.metadata?.flowboard || {};
+    if (!Object.prototype.hasOwnProperty.call(flowboard, 'blocked')) continue;
+    const normalized = _normalizeTaskWorkState(flowboard, flowboard.created || null);
+    _updateMetadata(ulid, { flowboard: workStateMetadata(flowboard, normalized) });
     _resyncCachedTask(ulid);
     migrated++;
   }
@@ -800,7 +813,7 @@ function _rememberWorkflowOp(key, result) {
 
 function _publicTask(t) {
   // Return a copy without internal fields; expose canonical work state and
-  // derive blocked on every read for legacy consumers.
+  // Normalize the canonical work-state on every read.
   // Metadata projections contain nested principal/evidence/review objects.
   // A shallow spread would let an API caller mutate the RAM cache (and in
   // turn influence later responses), so clone the complete JSON-shaped task
@@ -810,11 +823,10 @@ function _publicTask(t) {
   const normalized = _normalizeTaskWorkState({
     workState: pub.workState,
     workStateDetails: pub.workStateDetails,
-    blocked: pub.blocked,
   }, pub.created || null);
   pub.workState = normalized.workState;
   pub.workStateDetails = _cloneJson(normalized.workStateDetails);
-  pub.blocked = normalized.blocked;
+  delete pub.blocked;
   pub.stuckIndicator = _normalizeStuckIndicator(pub.stuckIndicator);
   pub.tags = _cloneJson(pub.tags || []);
   pub.specifyConfirmation = _cloneJson(pub.specifyConfirmation || null);
@@ -858,7 +870,7 @@ function workflowStart(project, opts = {}) {
 
   const candidates = tasks
     .filter(t => ['open', 'backlog'].includes(t.status))
-    .filter(t => !t.blocked)
+    .filter(t => t.workState !== 'blocked')
     .filter(t => !(t.subtaskIds && t.subtaskIds.length > 0))
     .filter(t => !t.routedAgent || t.routedAgent === agent)
     .sort(_taskSortPriority);
@@ -960,7 +972,7 @@ function workflowDelegate(project, opts = {}) {
   });
   if (agent) routeTask(project, delegated.id, agent);
   if (checkpoint) addCheckpoint(project, fromTaskId, { agent: sourceAgent, message: checkpoint });
-  if (pauseParent) updateTask(project, fromTaskId, { blocked: true });
+  if (pauseParent) updateTask(project, fromTaskId, { workState: 'paused' });
 
   return _rememberWorkflowOp(opKey, {
     workflow: 'delegate',
@@ -1191,7 +1203,6 @@ function createTaskRaw(project, opts) {
   const tags = opts.tags !== undefined ? _cleanTags(opts.tags) : [];
   const description = typeof opts.description === 'string' ? opts.description : ''; // T-396
   const workStateResolved = resolveWorkStatePayload({
-    ...(Object.prototype.hasOwnProperty.call(opts, 'blocked') ? { blocked: opts.blocked } : {}),
     ...(Object.prototype.hasOwnProperty.call(opts, 'workState') ? { workState: opts.workState } : {}),
     ...(Object.prototype.hasOwnProperty.call(opts, 'workStateDetails') ? { workStateDetails: opts.workStateDetails } : {}),
   }, null);
@@ -1245,7 +1256,6 @@ function createTaskRaw(project, opts) {
         parentId: parentId || null,
         workState: workStateResolved.workState,
         workStateDetails: workStateResolved.workStateDetails,
-        blocked: workStateResolved.blocked,
         ...(opts.creationAudit ? { creationAudit: _cloneJson(opts.creationAudit) } : {}),
         ...(opts.exceptionReview ? { exceptionReview: _cloneJson(opts.exceptionReview) } : {}),
         ...(opts.structureReview ? { structureReview: _cloneJson(opts.structureReview) } : {}),
@@ -1268,7 +1278,6 @@ function createTaskRaw(project, opts) {
     id: newId,
     title,
     status,
-    blocked: workStateResolved.blocked,
     workState: workStateResolved.workState,
     workStateDetails: workStateResolved.workStateDetails,
     stuckIndicator: null,
@@ -1345,8 +1354,7 @@ function updateTask(project, flowboardId, updates) {
   // Resolve the complete work-state payload before any status, child, scalar,
   // or metadata mutation.  In particular, a contradictory dual-write must be
   // a strict no-op even when the same PUT also contains other fields.
-  const hasWorkStatePayload = Object.prototype.hasOwnProperty.call(updates, 'blocked')
-    || Object.prototype.hasOwnProperty.call(updates, 'workState')
+  const hasWorkStatePayload = Object.prototype.hasOwnProperty.call(updates, 'workState')
     || Object.prototype.hasOwnProperty.call(updates, 'workStateDetails');
   let workStateResolved = null;
   if (hasWorkStatePayload) {
@@ -1434,8 +1442,7 @@ function updateTask(project, flowboardId, updates) {
     }
   }
 
-  // T-443: canonical work-state update plus legacy blocked translation.  The
-  // payload was validated above; now prepare one atomic metadata patch.
+  // Prepare one atomic canonical work-state metadata patch.
   if (hasWorkStatePayload) {
     metaUpdates.flowboard = workStateMetadata(metaUpdates.flowboard, workStateResolved);
     // A deliberate state edit is a recovery/acknowledgement boundary.  The
@@ -1531,11 +1538,10 @@ function updateTask(project, flowboardId, updates) {
       && cached.status === 'done' && !Object.prototype.hasOwnProperty.call(cacheUpdates, 'completed')) {
     cacheUpdates.completed = effectiveCompleted;
   }
-  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'blocked', 'workState', 'workStateDetails', 'stuckIndicator', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description'];
+  const ALLOWED = ['title', 'status', 'priority', 'specFile', 'completed', 'workState', 'workStateDetails', 'stuckIndicator', 'trashedAt', 'agent', 'staleAfterMinutes', 'tags', 'order', 'description'];
   for (const key of ALLOWED) {
     if (Object.prototype.hasOwnProperty.call(cacheUpdates, key)) {
-      if (key === 'blocked') cached[key] = workStateResolved ? workStateResolved.blocked : cacheUpdates[key] === true;
-      else if (key === 'workState' && workStateResolved) cached[key] = workStateResolved.workState;
+      if (key === 'workState' && workStateResolved) cached[key] = workStateResolved.workState;
       else if (key === 'workStateDetails' && workStateResolved) cached[key] = workStateResolved.workStateDetails;
       else if (key === 'stuckIndicator') cached[key] = _normalizeStuckIndicator(cacheUpdates[key]);
       else if (key === 'tags') cached[key] = _cleanTags(cacheUpdates[key]);
@@ -1547,7 +1553,7 @@ function updateTask(project, flowboardId, updates) {
   if (workStateResolved) {
     cached.workState = workStateResolved.workState;
     cached.workStateDetails = workStateResolved.workStateDetails;
-    cached.blocked = workStateResolved.blocked;
+    delete cached.blocked;
     cached.stuckIndicator = null;
   } else if (updates.status === 'review' || updates.status === 'done' || updates.status === 'archived') {
     cached.stuckIndicator = null;
@@ -1733,7 +1739,7 @@ function getTaskSummary(project) {
   let blockedCount = 0;
   for (const t of tasks) {
     if (counts[t.status] !== undefined) counts[t.status]++;
-    if (t.blocked) blockedCount++;
+    if (t.workState === 'blocked') blockedCount++;
   }
   const parts = [];
   if (counts.backlog)        parts.push(`${counts.backlog} backlog`);
@@ -1756,7 +1762,7 @@ function getTaskCounts(project) {
     if (task.parentId) continue; // top-level only for badge counts
     // blocked tasks count in their base lane
     if (counts[task.status] !== undefined) counts[task.status]++;
-    if (task.blocked) counts.blocked++;
+    if (task.workState === 'blocked') counts.blocked++;
   }
   return counts;
 }
@@ -1781,7 +1787,7 @@ function getProjectStats(project) {
     if (t.status === 'archived') continue;
     tasks.push(t);
     if (counts[t.status] !== undefined) counts[t.status]++;
-    if (t.blocked) blocked++;
+    if (t.workState === 'blocked') blocked++;
   }
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
@@ -2137,7 +2143,7 @@ function smartSearchTasks(query, opts = {}) {
     id: t.id,
     title: t.title,
     status: t.status,
-    blocked: t.blocked === true,
+    workState: t.workState,
     priority: t.priority,
     created: t.created,
     tags: t.tags || [],
@@ -2470,7 +2476,7 @@ function approveTask(project, flowboardId, opts = {}) {
 /**
  * T-186: Reject a task in review — sends it back to actionable work.
  * Default target: in-progress. With target='blocked', the task lands in
- * in-progress with blocked=true so the reviewer can request changes
+ * in-progress with canonical workState=blocked so the reviewer can request changes
  * without leaving the task adrift in review.
  *
  * A non-empty reason is required so the activity feed records WHY the
@@ -2494,7 +2500,7 @@ function rejectTask(project, flowboardId, opts = {}) {
 
   const wantBlocked = (target === 'blocked');
   const nextUpdates = { status: 'in-progress' };
-  if (wantBlocked) nextUpdates.blocked = true;
+  if (wantBlocked) nextUpdates.workState = 'blocked';
   const updated = updateTask(project, flowboardId, nextUpdates);
 
   const arrow = wantBlocked ? 'review -> in-progress (blocked)' : 'review -> in-progress';
@@ -2914,9 +2920,6 @@ function renderStatusEventMessage(type, data) {
       const parts = [];
       if (newFb.workState !== oldFb.workState && newFb.workState) {
         parts.push(`Work state: ${newFb.workState}`);
-      }
-      if (newFb.blocked !== oldFb.blocked) {
-        parts.push(newFb.blocked ? 'Blocked' : 'Unblocked');
       }
       if (newFb.routedAgent !== oldFb.routedAgent) {
         parts.push(newFb.routedAgent ? `Routed to ${newFb.routedAgent}` : 'Route cleared');
@@ -4593,6 +4596,7 @@ module.exports = {
   init,
   rebuildCache,
   migrateWorkStateMetadata,
+  migrateLegacyBlockedBoolean,
   searchTasks,
   smartSearchTasks,
   searchNotes,

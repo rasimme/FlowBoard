@@ -60,7 +60,7 @@ function clean() {
   eq(delegated.workflow, 'delegate', 'delegate workflow returned');
   eq(delegated.delegatedTask.parentId, high.id, 'delegated task is child of source');
   eq(delegated.delegatedTask.routedAgent, 'claude-code', 'delegated task is routed');
-  eq(delegated.sourceTask.blocked, true, 'pauseParent blocks source task');
+  eq(delegated.sourceTask.workState, 'paused', 'pauseParent pauses source task');
   eq(delegated.checkpointAdded, true, 'checkpoint was added');
   const delegateReplay = hzl.workflowDelegate(PROJECT, {
     fromTaskId: high.id,
@@ -71,7 +71,7 @@ function clean() {
   eq(delegateReplay.delegatedTask.id, delegated.delegatedTask.id, 'delegate opId replay returns same child');
 
   console.log('\n## workflowHandoff()');
-  hzl.updateTask(PROJECT, high.id, { blocked: false });
+  hzl.updateTask(PROJECT, high.id, { workState: 'working' });
   const handoff = hzl.workflowHandoff(PROJECT, {
     fromTaskId: high.id,
     title: 'Follow-on work',

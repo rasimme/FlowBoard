@@ -6,7 +6,7 @@
  * Work state deliberately lives beside, rather than instead of, the
  * FlowBoard lifecycle.  The lifecycle remains `open`, `in-progress`,
  * `review`, and `done`; this module only owns the additional, current
- * execution context and the legacy `blocked` compatibility projection.
+ * execution context.
  */
 
 const WORK_STATES = Object.freeze(['working', 'waiting', 'blocked', 'paused']);
@@ -150,27 +150,14 @@ function assertWorkState(value) {
   return value;
 }
 
-function contradictionError(blocked, workState) {
-  const error = new Error(
-    `Contradictory blocked/workState values: blocked=${String(blocked)} requires workState="${blocked ? 'blocked' : 'working'}", got "${workState}"`
-  );
-  error.code = 'WORK_STATE_CONTRADICTION';
-  error.status = 400;
-  error.field = 'blocked';
-  error.fields = ['blocked', 'workState'];
-  return error;
-}
-
 /**
- * Normalize stored metadata.  Canonical `workState` wins whenever present;
- * the legacy boolean is only consulted for records that predate T-443.
+ * Normalize stored metadata. Records without a canonical state are treated
+ * as working; migration code separately converts legacy records.
  */
 function normalizeStoredWorkState(flowboard = {}, { fallbackSetAt = null } = {}) {
   const source = isPlainObject(flowboard) ? flowboard : {};
   const hasCanonical = typeof source.workState === 'string' && WORK_STATE_SET.has(source.workState);
-  const workState = hasCanonical
-    ? source.workState
-    : source.blocked === true ? 'blocked' : DEFAULT_WORK_STATE;
+  const workState = hasCanonical ? source.workState : DEFAULT_WORK_STATE;
   const workStateDetails = normalizeWorkStateDetails(source.workStateDetails, {
     setAt: fallbackSetAt,
     validate: false,
@@ -178,45 +165,34 @@ function normalizeStoredWorkState(flowboard = {}, { fallbackSetAt = null } = {})
   return {
     workState,
     workStateDetails,
-    blocked: workState === 'blocked',
   };
 }
 
 /**
  * Resolve a create/update payload against the current canonical task.
- * `blocked:false` intentionally maps to the compatibility default `working`
- * instead of guessing whether the caller meant waiting or paused.
  */
 function resolveWorkStatePayload(payload = {}, current = null, { now = new Date().toISOString() } = {}) {
-  const hasBlocked = Object.prototype.hasOwnProperty.call(payload, 'blocked');
-  const hasWorkState = Object.prototype.hasOwnProperty.call(payload, 'workState');
-  const hasDetails = Object.prototype.hasOwnProperty.call(payload, 'workStateDetails');
-
-  if (hasBlocked && typeof payload.blocked !== 'boolean') {
-    const error = new Error('blocked must be a boolean');
-    error.code = 'WORK_STATE_INVALID';
+  if (Object.prototype.hasOwnProperty.call(payload, 'blocked')) {
+    const error = new Error('blocked is retired; use workState');
+    error.code = 'LEGACY_BLOCKED_RETIRED';
     error.status = 400;
     error.field = 'blocked';
     throw error;
   }
+  const hasWorkState = Object.prototype.hasOwnProperty.call(payload, 'workState');
+  const hasDetails = Object.prototype.hasOwnProperty.call(payload, 'workStateDetails');
 
   if (hasWorkState) assertWorkState(payload.workState);
-
-  if (hasBlocked && hasWorkState && payload.blocked !== (payload.workState === 'blocked')) {
-    throw contradictionError(payload.blocked, payload.workState);
-  }
 
   const currentNormalized = current
     ? normalizeStoredWorkState({
       workState: current.workState,
       workStateDetails: current.workStateDetails,
-      blocked: current.blocked,
     })
     : normalizeStoredWorkState({});
 
   let workState = currentNormalized.workState;
   if (hasWorkState) workState = payload.workState;
-  else if (hasBlocked) workState = payload.blocked ? 'blocked' : DEFAULT_WORK_STATE;
 
   const changed = workState !== currentNormalized.workState;
   let workStateDetails;
@@ -235,23 +211,18 @@ function resolveWorkStatePayload(payload = {}, current = null, { now = new Date(
   return {
     workState,
     workStateDetails,
-    blocked: workState === 'blocked',
     changed,
-    hasBlocked,
     hasWorkState,
     hasDetails,
   };
 }
 
 function workStateMetadata(flowboard, resolved) {
+  const { blocked: _legacyBlocked, ...existing } = isPlainObject(flowboard) ? flowboard : {};
   return {
-    ...(isPlainObject(flowboard) ? flowboard : {}),
+    ...existing,
     workState: resolved.workState,
     workStateDetails: resolved.workStateDetails,
-    // Keep the old field physically aligned for old readers, but every
-    // public read still computes it from workState rather than trusting this
-    // compatibility copy.
-    blocked: resolved.blocked,
   };
 }
 

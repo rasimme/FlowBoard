@@ -218,17 +218,17 @@ function buildOperationalTaskStateMarkdown(tasks, options = {}) {
   const open = topLevel.filter(t => t.status === 'open');
   const inProgress = topLevel.filter(t => t.status === 'in-progress');
   const review = topLevel.filter(t => t.status === 'review');
-  const blocked = topLevel.filter(t => t.blocked === true);
+  const blocked = topLevel.filter(t => t.workState === 'blocked');
 
   const countParts = [];
   if (backlog.length) countParts.push(`Backlog: ${backlog.length}`);
   if (open.length) countParts.push(`Open: ${open.length}`);
   if (inProgress.length) {
-    const bCount = inProgress.filter(t => t.blocked).length;
+    const bCount = inProgress.filter(t => t.workState === 'blocked').length;
     countParts.push(`In Progress: ${inProgress.length}${bCount ? ` (${bCount} blocked)` : ''}`);
   }
   if (review.length) {
-    const bCount = review.filter(t => t.blocked).length;
+    const bCount = review.filter(t => t.workState === 'blocked').length;
     countParts.push(`Review: ${review.length}${bCount ? ` (${bCount} blocked)` : ''}`);
   }
   if (blocked.length) countParts.push(`Blocked: ${blocked.length}`);
@@ -242,14 +242,14 @@ function buildOperationalTaskStateMarkdown(tasks, options = {}) {
   if (inProgress.length) {
     lines.push('**In Progress:**');
     for (const t of inProgress) {
-      const blockedTag = t.blocked ? ' BLOCKED' : '';
+      const blockedTag = t.workState === 'blocked' ? ' BLOCKED' : '';
       lines.push(`- ${t.id}: ${neutralizeInline(t.title)}${blockedTag}${t.specFile ? ` (spec: ${neutralizeInline(t.specFile)})` : ''}`);
     }
   }
   if (review.length) {
     lines.push('**Waiting for Review:**');
     for (const t of review) {
-      const blockedTag = t.blocked ? ' BLOCKED' : '';
+      const blockedTag = t.workState === 'blocked' ? ' BLOCKED' : '';
       lines.push(`- ${t.id}: ${neutralizeInline(t.title)}${blockedTag}`);
     }
   }

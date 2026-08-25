@@ -186,7 +186,7 @@ function throws(fn, codeOrPattern, msg) {
     target: 'blocked',
   });
   eq(rejD.status, 'in-progress', 'rejectTask with target=blocked still puts task in in-progress…');
-  eq(rejD.blocked, true, '…but with blocked=true');
+  eq(rejD.workState, 'blocked', '…but with canonical blocked work state');
 
   // Rejecting a non-review task fails
   const tE = hzl.createTask(PROJECT, { title: 'Open already', priority: 'medium', status: 'open' });

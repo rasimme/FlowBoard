@@ -92,7 +92,7 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | Agent Identity | External-Agent Discovery: `/api/info` + self-onboarding + lazy registration | [agent-identity.md](agent-identity.md) | `tasked` → T-199-2 |
 | Agent Identity | `x-openclaw-agent-id` header dual-acceptance on `/api/status` | [api/agents.md](../reference/api/agents.md) | `tasked` → T-199-3 |
 | (cross-cutting) | Bug-fix: `hzl-service.js` reads `process.env.PORT` instead of `FLOWBOARD_PORT` | T-197-8 drift test | `tasked` → T-199-4 (bug, not ADR) |
-| Kanban | `blocked` is a boolean flag, not a status | [kanban.md](kanban.md) | `tasked` → T-199-5 |
+| Kanban | `blocked` is a canonical work state, not a lifecycle status | [kanban.md](kanban.md) | `tasked` → T-199-5 |
 | Kanban | Subtask depth hard-capped at 1 level | [kanban.md](kanban.md) | `tasked` → T-199-6 |
 | Idea Canvas | Canvas migration deferred — vanilla retained pending scope review | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-7 → ADR-0012 |
 | Idea Canvas | Canvas state in `canvas.json` per project — not HZL event-sourced | [idea-canvas.md](idea-canvas.md) | `tasked` → T-199-8 → ADR-0014 (superseded by ADR-0025 — DB tables, still not event-sourced) |

@@ -17,7 +17,7 @@ const TASKS = [
   { id: 'T-8', title: 'Search palette improvements', status: 'backlog', project: 'flowboard', agent: null, specFile: null, tags: [], created: '2026-04-02', priority: 'medium' },
   { id: 'T-9', title: 'auth', status: 'done', project: 'flowboard', agent: null, specFile: null, tags: [], created: '2026-04-03', priority: 'medium' },
   { id: 'T-10', title: 'auth', status: 'in-progress', project: 'flowboard', agent: 'dev-botti', specFile: null, tags: [], created: '2026-04-03', priority: 'medium' },
-  { id: 'T-11', title: 'Mobile layout', status: 'blocked', project: 'other', agent: null, specFile: null, blocked: true, tags: [], created: '2026-04-04', priority: 'medium' },
+  { id: 'T-11', title: 'Mobile layout', status: 'blocked', workState: 'blocked', project: 'other', agent: null, specFile: null, tags: [], created: '2026-04-04', priority: 'medium' },
   { id: 'T-052', title: 'Padding probe', status: 'backlog', project: 'flowboard', agent: null, specFile: null, tags: [], created: '2026-03-01', priority: 'medium' },
 ];
 
@@ -62,7 +62,7 @@ ok(rankTasks(TASKS, 'zzzzz').length === 0, 'nonsense query → no results');
 // --- operator filters ---
 ok(rankTasks(TASKS, 'status:review').every(t => t.status === 'review'), 'status:review filters by status');
 ok(rankTasks(TASKS, 'status:review').length === 1, 'status:review returns the one review task');
-ok(rankTasks(TASKS, 'is:blocked').every(t => t.blocked === true), 'is:blocked filters blocked');
+ok(rankTasks(TASKS, 'is:blocked').every(t => t.workState === 'blocked'), 'is:blocked filters blocked');
 ok(rankTasks(TASKS, 'is:unclaimed').every(t => !t.agent), 'is:unclaimed → no agent');
 ok(rankTasks(TASKS, 'has:spec').every(t => t.specFile), 'has:spec → only tasks with a spec');
 ok(rankTasks(TASKS, 'agent:dev-botti').every(t => t.agent === 'dev-botti'), 'agent filter');

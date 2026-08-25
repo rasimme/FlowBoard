@@ -60,7 +60,7 @@ async function main() {
     });
     if (created.status !== 200) throw new Error(`task create failed: ${created.status}`);
     const id = created.body.task.id;
-    if (created.body.task.blocked !== false || created.body.task.workState !== 'waiting') {
+    if (Object.prototype.hasOwnProperty.call(created.body.task, 'blocked') || created.body.task.workState !== 'waiting') {
       throw new Error('canonical create response is inconsistent');
     }
     if (created.body.task.workStateDetails.setAt === '2000-01-01T00:00:00.000Z') {
@@ -153,21 +153,9 @@ async function main() {
     const beforeContradiction = await api('GET', '/projects/work-state-api/tasks');
     const beforeTask = beforeContradiction.body.tasks.find(task => task.id === id);
 
-    const contradiction = await api('PUT', `/projects/work-state-api/tasks/${id}`, {
-      title: 'must-not-partially-update',
-      specFile: 'specs/after.md',
-      blocked: true,
-      workState: 'waiting',
-    });
-    if (contradiction.status !== 400 || contradiction.body?.code !== 'WORK_STATE_CONTRADICTION') {
-      throw new Error('contradictory dual-write was not rejected with machine-readable 400');
-    }
-    const afterContradiction = await api('GET', '/projects/work-state-api/tasks');
-    const afterTask = afterContradiction.body.tasks.find(task => task.id === id);
-    if (afterContradiction.status !== 200 || !beforeTask || !afterTask
-        || afterTask.title !== beforeTask.title
-        || afterTask.specFile !== 'specs/before.md') {
-      throw new Error('contradictory PUT mutated specFile or another field');
+    const afterTask = (await api('GET', '/projects/work-state-api/tasks')).body.tasks.find(task => task.id === id);
+    if (!beforeTask || !afterTask || afterTask.title !== beforeTask.title || afterTask.specFile !== 'specs/before.md') {
+      throw new Error('work-state validation mutated specFile or another field');
     }
 
     for (const checkAgainAt of [
@@ -198,18 +186,9 @@ async function main() {
       }
     }
 
-    const legacyBlock = await api('PUT', `/projects/work-state-api/tasks/${id}`, { blocked: true });
-    if (legacyBlock.status !== 200 || legacyBlock.body.task.workState !== 'blocked' || legacyBlock.body.task.blocked !== true) {
-      throw new Error('legacy blocked=true translation failed');
-    }
-    const legacyUnblock = await api('PUT', `/projects/work-state-api/tasks/${id}`, { blocked: false });
-    if (legacyUnblock.status !== 200 || legacyUnblock.body.task.workState !== 'working' || legacyUnblock.body.task.blocked !== false) {
-      throw new Error('legacy blocked=false translation failed');
-    }
-
     const list = await api('GET', '/projects/work-state-api/tasks');
     const read = list.body.tasks.find(task => task.id === id);
-    if (!read || read.blocked !== (read.workState === 'blocked') || !read.workStateDetails) {
+    if (!read || Object.prototype.hasOwnProperty.call(read, 'blocked') || !read.workStateDetails) {
       throw new Error('canonical read normalization failed');
     }
     console.log('✅ T-443 work-state API tests');

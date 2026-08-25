@@ -123,7 +123,7 @@ function passesFilters(task, filters) {
   }
   if (filters.hasSpec && !task.specFile) return false;
   for (const facet of filters.is) {
-    if (facet === 'blocked' && task.blocked !== true) return false;
+    if (facet === 'blocked' && task.workState !== 'blocked') return false;
     if (facet === 'claimed' && !task.agent) return false;
     if (facet === 'unclaimed' && task.agent) return false;
     if (facet === 'done' && task.status !== 'done') return false;

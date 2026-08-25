@@ -42,7 +42,7 @@ async function main() {
       });
       created[state] = task.id;
       assert.equal(task.workState, state);
-      assert.equal(task.blocked, state === 'blocked');
+      assert.equal(Object.prototype.hasOwnProperty.call(task, 'blocked'), false);
       assert.equal(task.workStateDetails.reason, `reason-${state}`);
     }
 
@@ -64,28 +64,14 @@ async function main() {
       'malformed client setAt is ignored and replaced by the server timestamp');
 
     const blocked = hzl.getTask('t443', created.blocked);
-    assert.equal(blocked.blocked, true);
     assert.equal(blocked.workState, 'blocked');
-    hzl.updateTask('t443', created.blocked, { blocked: false });
-    assert.equal(hzl.getTask('t443', created.blocked).workState, 'working', 'legacy false uses compatibility default');
-    hzl.updateTask('t443', created.blocked, { blocked: true });
-    assert.equal(hzl.getTask('t443', created.blocked).workState, 'blocked');
-
-    assert.throws(
-      () => hzl.updateTask('t443', created.blocked, { blocked: true, workState: 'waiting' }),
-      error => error.code === 'WORK_STATE_CONTRADICTION' && error.status === 400
-    );
-    assert.equal(hzl.getTask('t443', created.blocked).workState, 'blocked', 'contradiction leaves canonical state unchanged');
 
     // A contradictory update is atomic even when it carries an unrelated
     // scalar field: service-level callers must not get a partial title write.
     const atomic = hzl.createTask('t443', { title: 'atomic-before', status: 'open', workState: 'working' });
-    assert.throws(
-      () => hzl.updateTask('t443', atomic.id, { title: 'atomic-after', blocked: true, workState: 'waiting' }),
-      error => error.code === 'WORK_STATE_CONTRADICTION' && error.status === 400
-    );
-    assert.equal(hzl.getTask('t443', atomic.id).title, 'atomic-before');
-    assert.equal(hzl.getTask('t443', atomic.id).workState, 'working');
+    hzl.updateTask('t443', atomic.id, { title: 'atomic-after', workState: 'waiting' });
+    assert.equal(hzl.getTask('t443', atomic.id).title, 'atomic-after');
+    assert.equal(hzl.getTask('t443', atomic.id).workState, 'waiting');
 
     // Canonical metadata survives a full cache rebuild.
     await hzl.rebuildCache();
@@ -134,7 +120,7 @@ async function main() {
     assert.deepEqual(migratedMeta.runtime, { source: 'old-client', flags: { keep: true } });
     assert.deepEqual(migratedMeta.flowboard.imported, { version: 8 });
     await hzl.rebuildCache();
-    assert.equal(hzl.getTask('t443', legacyMigration.id).blocked, true);
+    assert.equal(Object.prototype.hasOwnProperty.call(hzl.getTask('t443', legacyMigration.id), 'blocked'), false);
 
     // Manual retry must use the scheduler's STALE_THRESHOLD_MINUTES contract
     // (default 30), not getStuckTasks()'s legacy read default of 10.  A task
@@ -221,11 +207,9 @@ async function main() {
     const lifecycleDetails = hzl.getTask('t443', lifecycle.id).workStateDetails;
     hzl.updateTask('t443', lifecycle.id, { status: 'review' });
     assert.equal(hzl.getTask('t443', lifecycle.id).workState, 'blocked');
-    assert.equal(hzl.getTask('t443', lifecycle.id).blocked, true);
     assert.deepEqual(hzl.getTask('t443', lifecycle.id).workStateDetails, lifecycleDetails);
     hzl.updateTask('t443', lifecycle.id, { status: 'backlog' });
     assert.equal(hzl.getTask('t443', lifecycle.id).workState, 'blocked');
-    assert.equal(hzl.getTask('t443', lifecycle.id).blocked, true);
     assert.deepEqual(hzl.getTask('t443', lifecycle.id).workStateDetails, lifecycleDetails);
 
     // Checkpoint, release and completion are all clear boundaries.

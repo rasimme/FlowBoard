@@ -382,6 +382,15 @@ const migrations = [
       }
     },
   },
+  {
+    id: 'm011-remove-legacy-blocked-boolean',
+    name: 'Remove the retired blocked boolean after canonical work-state migration (T-452-7)',
+    run: (_db, { hzlService }) => {
+      if (!hzlService || typeof hzlService.migrateLegacyBlockedBoolean !== 'function') return;
+      const result = hzlService.migrateLegacyBlockedBoolean();
+      if (result?.migrated) console.log(`[m011] removed legacy blocked field from ${result.migrated} task(s)`);
+    },
+  },
 ];
 
 /**

@@ -32,11 +32,9 @@ augmented by the canonical `workState` value `working`, `waiting`, `blocked`,
 or `paused`, persisted in `metadata.flowboard.workState`.  The companion
 `workStateDetails` object is returned with the stable keys `reason`,
 `waitingFor`, `responsible`, `checkAgainAt`, and `setAt`; absent values are
-`null`.  `blocked` is a computed compatibility projection (`true` exactly
-when `workState === "blocked"`).  Legacy writes of `blocked: true` map to
-`blocked`; `blocked: false` maps to the compatibility default `working`.
-Supplying contradictory `blocked` and `workState` fields returns HTTP 400 with
-`code: "WORK_STATE_CONTRADICTION"`.
+`null`. The retired top-level `blocked` Boolean is not part of the API; use
+`workState: "blocked"` for the canonical blocked state. Existing stored
+Boolean values are migrated to the canonical state and removed.
 
 `setAt` is server-owned. A client-supplied value is ignored on create/update,
 including malformed values, and the server stamps the canonical write time;

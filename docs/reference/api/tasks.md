@@ -25,7 +25,7 @@ exception and policy reason) and `exceptionReview`.
 
 Create a task.
 
-**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, "blocked"?: boolean, ...}`. `checkAgainAt` uses an ISO-8601 date-time with an explicit timezone. `setAt` is server-owned: a client value is ignored and the server stamps the write time; responses always expose the normalized key.
+**Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, ...}`. `checkAgainAt` uses an ISO-8601 date-time with an explicit timezone. `setAt` is server-owned: a client value is ignored and the server stamps the write time; responses always expose the normalized key.
 **Response 201:** `{"ok": true, "task": {<created>}}`
 
 When governance mode is `enforce`, a non-exempt direct agent creation returns
@@ -39,17 +39,14 @@ description, priority, server-resolved creator identity, source context and
 
 Update a task. Property whitelist enforced server-side.
 
-**Body:** any whitelisted subset (`title`, `priority`, `status`, `workState`, `workStateDetails`, legacy `blocked`, `routedAgent`, ...).
+**Body:** any whitelisted subset (`title`, `priority`, `status`, `workState`, `workStateDetails`, `routedAgent`, ...).
 **Response 200:** `{"ok": true, "task": {<updated>}}`
 
 `workState` is additional state and does not replace the lifecycle.  Every task
 read returns all five `workStateDetails` keys (missing values are `null`) and
-computes `blocked` as `workState === "blocked"`.  Legacy `blocked: true` maps
-to `workState: "blocked"`; `blocked: false` maps to the compatibility default
-`workState: "working"`.  A contradictory pair returns HTTP 400 with
-`code: "WORK_STATE_CONTRADICTION"`. The full PUT is validated before any task
-or spec-link mutation, so a rejected contradiction is atomic. Lifecycle
-transitions do not auto-unblock or rewrite `workStateDetails`.
+returns the canonical `workState`; the retired top-level `blocked` Boolean is
+neither accepted nor returned. Lifecycle transitions do not auto-unblock or
+rewrite `workStateDetails`.
 
 **Guarded status transitions (T-186).** Generic PUT does NOT silently perform privileged workflow transitions:
 
@@ -132,7 +129,7 @@ Review/admin action — send a reviewed task back to actionable work with a requ
 
 **Body:** `{"actor"?: "<id>", "reason": "<text>", "target"?: "in-progress" | "blocked"}`
 - Default target is `in-progress`.
-- `target: "blocked"` lands the task in `in-progress` with `blocked=true` so the reviewer can request changes without leaving the task adrift in review.
+- `target: "blocked"` lands the task in `in-progress` with `workState="blocked"` so the reviewer can request changes without leaving the task adrift in review.
 
 **Response 200:** `{"ok": true, "task": {<task back in actionable state>}}`
 **400** `REASON_REQUIRED` — `reason` was missing or whitespace-only.

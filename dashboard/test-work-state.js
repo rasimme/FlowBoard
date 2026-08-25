@@ -27,20 +27,7 @@ assert.equal(isValidDateString('2026-08-17T17:00:00+15:00'), false, 'offset hour
 assert.equal(isValidDateString('2026-08-17T17:00:00+23:00'), false, 'large offset hours are rejected');
 
 assert.deepEqual(normalizeStoredWorkState({ blocked: true }), {
-  workState: 'blocked',
-  blocked: true,
-  workStateDetails: {
-    reason: null,
-    waitingFor: null,
-    responsible: null,
-    checkAgainAt: null,
-    setAt: null,
-  },
-});
-
-assert.deepEqual(normalizeStoredWorkState({ blocked: false }), {
   workState: 'working',
-  blocked: false,
   workStateDetails: {
     reason: null,
     waitingFor: null,
@@ -50,8 +37,8 @@ assert.deepEqual(normalizeStoredWorkState({ blocked: false }), {
   },
 });
 
-assert.equal(normalizeStoredWorkState({ workState: 'waiting', blocked: false }).blocked, false);
-assert.equal(normalizeStoredWorkState({ workState: 'blocked', blocked: false }).blocked, true);
+assert.equal(normalizeStoredWorkState({ workState: 'waiting', blocked: false }).workState, 'waiting');
+assert.equal(normalizeStoredWorkState({ workState: 'blocked', blocked: false }).workState, 'blocked');
 
 assert.deepEqual(normalizeWorkStateDetails({ reason: 'vendor' }), {
   reason: 'vendor',
@@ -65,7 +52,6 @@ const created = resolveWorkStatePayload({ workState: 'waiting', workStateDetails
   now: '2026-08-17T17:00:00.000Z',
 });
 assert.equal(created.workState, 'waiting');
-assert.equal(created.blocked, false);
 assert.equal(created.workStateDetails.waitingFor, 'API');
 assert.equal(created.workStateDetails.setAt, '2026-08-17T17:00:00.000Z');
 
@@ -86,13 +72,7 @@ const malformedClientSetAt = resolveWorkStatePayload({
 assert.equal(malformedClientSetAt.workStateDetails.setAt, '2026-08-17T18:01:00.000Z',
   'malformed client setAt is ignored rather than persisted');
 
-assert.equal(resolveWorkStatePayload({ blocked: false }, { workState: 'paused' }).workState, 'working');
-assert.equal(resolveWorkStatePayload({ blocked: true }, { workState: 'working' }).workState, 'blocked');
-
-assert.throws(
-  () => resolveWorkStatePayload({ blocked: true, workState: 'waiting' }),
-  error => error.code === 'WORK_STATE_CONTRADICTION' && error.status === 400
-);
+assert.equal(resolveWorkStatePayload({ workState: 'working' }, { workState: 'paused' }).workState, 'working');
 assert.throws(
   () => resolveWorkStatePayload({ workState: 'not-a-state' }),
   error => error.code === 'WORK_STATE_INVALID' && error.status === 400

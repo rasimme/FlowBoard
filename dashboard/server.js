@@ -1476,18 +1476,17 @@ function getCanonicalActiveProject(agentId) {
 }
 
 function taskWithSpecStatus(projectName, task) {
+  const { blocked: _legacyBlocked, ...taskWithoutLegacy } = task || {};
   const specFile = task?.specFile;
   const hasSpec = Boolean(specFile);
   const specExists = hasSpec && fs.existsSync(path.join(PROJECTS_DIR, projectName, specFile));
-  // Ensure the canonical work-state shape and computed legacy projection are
-  // present on every API response, including old records during migration.
+  // Ensure the canonical work-state shape is present on every API response.
   const normalized = normalizeStoredWorkState(task || {});
   return {
-    ...task,
+    ...taskWithoutLegacy,
     specExists,
     workState: normalized.workState,
     workStateDetails: normalized.workStateDetails,
-    blocked: normalized.blocked,
     stuckIndicator: task?.stuckIndicator || null,
   };
 }
@@ -2298,9 +2297,10 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     return res.status(400).json({ error: 'description must be a string of at most 16KB' });
   }
 
-  // T-443: validate canonical work-state and the legacy blocked projection
-  // before creating anything.  This also rejects contradictory dual-writes
-  // with a stable machine-readable error code.
+  // Validate canonical work-state before creating anything.
+  if (Object.prototype.hasOwnProperty.call(req.body, 'blocked')) {
+    return res.status(400).json({ error: 'blocked is retired; use workState', code: 'LEGACY_BLOCKED_RETIRED' });
+  }
   try {
     resolveWorkStatePayload(req.body, null);
   } catch (err) {
@@ -2333,7 +2333,6 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       staleAfterMinutes,
       ...(req.body.tags !== undefined ? { tags: req.body.tags } : {}),
       ...(req.body.description !== undefined ? { description: req.body.description } : {}),
-      ...(Object.prototype.hasOwnProperty.call(req.body, 'blocked') ? { blocked: req.body.blocked } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body, 'workState') ? { workState: req.body.workState } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body, 'workStateDetails') ? { workStateDetails: req.body.workStateDetails } : {}),
       ...(structureReasons.length ? { structureReview: taskDiscipline.review(structureReasons) } : {}),
@@ -2415,11 +2414,12 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
     return res.status(400).json({ error: 'description must be a string of at most 16KB' });
   }
 
-  // T-443: the canonical work-state contract is validated before any
-  // spec-link or task mutation can be persisted.  `blocked` remains accepted
-  // as a compatibility write, but dual writes must agree.
-  if (Object.prototype.hasOwnProperty.call(updates, 'blocked')
-      || Object.prototype.hasOwnProperty.call(updates, 'workState')
+  // Validate the canonical work-state contract before any spec-link or task
+  // mutation can be persisted.
+  if (Object.prototype.hasOwnProperty.call(updates, 'blocked')) {
+    return res.status(400).json({ error: 'blocked is retired; use workState', code: 'LEGACY_BLOCKED_RETIRED' });
+  }
+  if (Object.prototype.hasOwnProperty.call(updates, 'workState')
       || Object.prototype.hasOwnProperty.call(updates, 'workStateDetails')) {
     try {
       resolveWorkStatePayload(updates, task);
@@ -2448,8 +2448,6 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
   if (hzlUpdates.order !== undefined && hzlUpdates.order !== null && !Number.isFinite(hzlUpdates.order)) {
     return res.status(400).json({ error: 'order must be a finite number or null' });
   }
-  // blocked + trashedAt are handled separately below (not in ALLOWED to keep whitelist clean)
-
   // agent can only be cleared, not set to a value
   if (Object.prototype.hasOwnProperty.call(updates, 'agent') && updates.agent !== null) {
     return res.status(400).json({ error: 'agent can only be cleared (set to null), not set to a value' });
@@ -2514,11 +2512,6 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
         author: actor || null,
       };
     }
-  }
-
-  // Pass blocked flag through
-  if (Object.prototype.hasOwnProperty.call(updates, 'blocked')) {
-    hzlUpdates.blocked = updates.blocked;
   }
 
   // T-161-4: pass trashedAt through (ISO string to send to Trash, null to restore).

@@ -3,7 +3,7 @@
 /**
  * T-186 — Status transition guard for PUT /api/projects/:name/tasks/:id.
  *
- * Generic PUT is meant for metadata edits (title, priority, blocked, etc.)
+ * Generic PUT is meant for metadata edits (title, priority, work state, etc.)
  * and most non-sensitive status changes. The transitions below are
  * sensitive because they bypass first-class workflow/review semantics:
  *
