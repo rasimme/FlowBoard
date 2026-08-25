@@ -1090,23 +1090,19 @@ export default function DetailPanel() {
               {(showClaimLine(task) || workState !== 'working') && (
               <div className="inline-flex items-stretch rounded-full border border-solid border-border bg-secondary overflow-hidden">
                 {showClaimLine(task) && (
-                  // T-455-2: left padding is conditional on whether
-                  // ClaimStateLine's first element is the 24px AgentChip
-                  // circle (claimed or routed) or the bare "Claim" button
-                  // (unclaimed, unrouted). Only the circle needs the
-                  // concentric-with-the-pill-cap math: inner height is
-                  // 24 (avatar) + 3 + 3 (py-[3px]) = 30px, so the pill's
-                  // left cap has radius 15 and the avatar has radius 12 —
-                  // for the two circles to share a center, left padding
-                  // must equal the vertical padding, (30 - 24) / 2 = 3px,
-                  // not the 8px a text/button edge wants. TasksView.jsx's
-                  // card-side combo chip already draws this distinction
-                  // (`pl-[3px]` vs `pl-2`) — mirrored here, the panel was
-                  // the outlier. The right edge of this inner div never
-                  // sits at the pill's own right cap (a divider +
-                  // WorkStateChip always follow when this renders), so it
-                  // keeps its regular pr-2 unconditionally.
-                  <div className={`flex items-center ${(isActivelyClaimed(task) || task.routedAgent) ? 'pl-[3px]' : 'pl-2'} pr-2 py-[3px]`}>
+                  // Left padding always equals the vertical padding, so
+                  // whatever starts this pill shares a centre with its left
+                  // cap. That holds for both cases, which is why there is no
+                  // longer a distinction: the AgentChip is a 24px circle
+                  // (30px inner height, cap radius 15, avatar radius 12 → 3px),
+                  // and the unclaimed "Claim" button is `h-[22px] rounded-full`
+                  // (28px inner, cap radius 14, button radius 11 → 3px too).
+                  // T-455 treated the button as a straight text edge wanting
+                  // 8px; it is round like everything else here, and the extra
+                  // five pixels read as the content sitting off-centre in an
+                  // oblong. The right edge is not this div's problem — a
+                  // divider and WorkStateChip always follow — so pr-2 stays.
+                  <div className="flex items-center pl-[3px] pr-2 py-[3px]">
                     <ClaimStateLine
                       task={task}
                       currentAgent={currentAgent()}
