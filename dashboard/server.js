@@ -89,6 +89,7 @@ const {
   parseTrustedProxyConfig,
   getRateLimitKey,
   getRateLimitScope,
+  getTrustedPrincipal,
 } = require('./rate-limiter.js');
 const { buildDashboardSnapshot } = require('./dashboard-snapshot.js');
 const { installPrivacyFilter } = require('./privacy-filter.js');

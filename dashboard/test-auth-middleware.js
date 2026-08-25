@@ -79,7 +79,7 @@ async function run() {
     // --- Rate limiter: NOT skipped for tunnel traffic, skipped for local ---
     // Authed tunnel requests share one key (cf-connecting-ip) → limited after 60.
     let saw429 = false;
-    for (let i = 0; i < 75; i++) {
+    for (let i = 0; i < 340; i++) {
       const s = (await req(base, '/api/projects', { ...CF, Cookie: goodCookie })).status;
       if (s === 429) { saw429 = true; break; }
     }
