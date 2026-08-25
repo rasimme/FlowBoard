@@ -17,7 +17,11 @@ show only exception-created tasks in that review state.
 
 Return one canonical task projection. Unknown projects or task IDs return **404**.
 
-**Response 200:** `{"ok": true, "task": {<task>}}`
+**Response 200:** `{"ok": true, "task": {<task>}}`. For a parent task,
+`task.progress` is exactly `{ "done": <number>, "inProgress": <number>,
+"total": <number> }`; it is the live subtask summary. Numeric progress is
+only present on checkpoint events (`POST .../checkpoint`) and is not a task
+progress shape.
 
 ### `GET /api/projects/:name/exceptions`
 

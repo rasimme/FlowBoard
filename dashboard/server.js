@@ -2205,7 +2205,11 @@ app.get('/api/projects/:name/tasks/:id', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const task = hzlService.getTask(req.params.name, req.params.id, { includeArchived: true });
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  res.json({ ok: true, task: taskWithSpecStatus(req.params.name, enrichTasks(req.params.name, [task])[0]) });
+  // Enrich against the complete project projection so a parent retains its
+  // canonical subtask progress object on the single-task endpoint.
+  const allTasks = hzlService.listTasks(req.params.name, { includeArchived: true });
+  const canonical = allTasks.find(candidate => candidate.id === task.id) || task;
+  res.json({ ok: true, task: enrichTasks(req.params.name, allTasks).find(candidate => candidate.id === canonical.id) || taskWithSpecStatus(req.params.name, canonical) });
 });
 
 // GET /api/projects/:name/exceptions — minimal exception-review inbox. This

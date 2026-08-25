@@ -31,7 +31,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `workState` | enum | Canonical execution context: `working`, `waiting`, `blocked`, `paused` |
 | `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null`; `checkAgainAt` must be an ISO-8601 date-time with timezone on writes (offsets no larger than ±14:00, with minute `00` at the boundary); `setAt` is server-owned and client values are ignored |
 | `stuckIndicator` | object? | One transient update-in-place monitor signal; `null` when clear |
-| `progress` | object? | Subtask summary { done, inProgress, total }; all values are non-negative integers. Checkpoint events may separately carry numeric progress 0–100. |
+| `progress` | object? | Parent-only subtask summary exactly `{ done, inProgress, total }`; all values are non-negative integers. It is never a numeric task field. Checkpoint events may separately carry numeric progress 0–100. |
 | `lease_until` | ISO timestamp? | Claim expiry |
 | `staleAfterMinutes` | positive int? | Per-task stale threshold for stuck detection; overrides the global `STALE_THRESHOLD_MINUTES` (T-300); `null` clears the override |
 

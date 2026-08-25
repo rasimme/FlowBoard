@@ -38,7 +38,7 @@ const RESPONSE_SCHEMA_HINT = `Respond with EXACTLY ONE JSON object and nothing e
     "summary": "<1-2 sentence summary of what will be built>",
     "taskStructure": "Single task" | "Parent + subtasks" | "Parent + subtasks with individual specs" | "Multiple parents",
     "specContent": "<full spec markdown: Goal, User Stories, Functional Requirements (testable), Success Criteria (measurable), Clarifications (if any were asked)>",
-    "taskBreakdown": [ { "title": "<task title, max 128 chars>", "description": "<short description>", "priority": "low"|"medium"|"high", "role": "parent"|"subtask", "specContent": "<optional own spec markdown for this entry>" }, ... ]
+    "taskBreakdown": [ { "title": "<task title, max 500 chars>", "description": "<short description>", "priority": "low"|"medium"|"high", "role": "parent"|"subtask", "specContent": "<optional own spec markdown for this entry>" }, ... ]
   },
   // taskBreakdown contract — pick the structure by complexity:
   //  * "Single task": exactly one entry, the session spec is attached to it.
