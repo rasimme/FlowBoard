@@ -1629,6 +1629,7 @@ const ERROR_CODE_STATUS = {
   REASON_REQUIRED: 400,
   IS_SUBTASK: 400,
   HAS_SUBTASKS: 409,
+  STRUCTURE_REVIEW_IMMUTABLE: 409,
 };
 function httpStatusForError(err, fallback = 400) {
   if (err && err.code && ERROR_CODE_STATUS[err.code]) return ERROR_CODE_STATUS[err.code];

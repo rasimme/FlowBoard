@@ -64,6 +64,16 @@ Base: `http://localhost:18790/api`
 | `PUT` | `/projects/:name/tasks/:id` | Update task fields or status |
 | `DELETE` | `/projects/:name/tasks/:id` | Archive/delete task |
 
+`GET /projects/:name/tasks?structureReview=pending` (or `reviewed`) filters the
+list to the requested structure-review status. Tasks expose the exact
+`structureReview` shape `{ status, reviewer, reviewedAt, reasons }`, or `null`
+when no review is required. Pending reviews use `reviewer: null` and
+`reviewedAt: null`; `reasons` is an array of machine-readable criteria. A
+review is acknowledged with `POST /projects/:name/tasks/:id/structure-review`
+and needs no human credential: creation remains allowed, and the action
+records the local operator as reviewer with a server-generated ISO-8601
+timestamp. The transition is one-way; a second acknowledgement returns `409`.
+
 ### Create Task — Full Body Reference
 
 Direct task creation is available to agents. Specify is an optional clarification
