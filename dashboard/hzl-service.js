@@ -4197,6 +4197,45 @@ function reviewStructure(project, flowboardId, opts = {}) {
   return _publicTask(_resyncCachedTask(ulid) || cached);
 }
 
+/**
+ * T-458: drop one reason from a PENDING structure review because its cause is
+ * gone, and clear the marker entirely when nothing is left.
+ *
+ * Deliberately not reviewStructure(). That one records a human saying "I
+ * looked, this is fine as it stands" — an accepted deviation, immutable
+ * afterwards. This one records that there is nothing left to accept: a task
+ * flagged `missing_spec_link` that has since been given a spec is not missing
+ * a spec any more.
+ *
+ * Conflating the two is what made the marker cost more than it was worth. An
+ * agent that fixed the problem still left a pending flag behind, so the queue
+ * filled with resolved items and the signal became something you learn to
+ * click away.
+ *
+ * A review a human already accepted (`status: 'reviewed'`) is never touched —
+ * that record is history, not current state.
+ */
+function resolveStructureReason(project, flowboardId, reason) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) return null;
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  const review = cached?.structureReview;
+  if (!review || review.status !== 'pending') return null;
+  const before = Array.isArray(review.reasons) ? review.reasons : [];
+  const remaining = before.filter(r => r !== reason);
+  if (remaining.length === before.length) return null;
+  const current = _taskService.getTaskById(ulid);
+  _updateMetadata(ulid, {
+    flowboard: {
+      ...(current.metadata?.flowboard || {}),
+      structureReview: remaining.length
+        ? { status: 'pending', reviewer: null, reviewedAt: null, reasons: remaining }
+        : null,
+    },
+  });
+  return _publicTask(_resyncCachedTask(ulid) || cached);
+}
+
 /** Set the completion notification callback */
 function setOnComplete(fn) { _onCompleteCallback = fn; }
 
@@ -4620,6 +4659,7 @@ module.exports = {
   setSpecifyConfirmation,
   reviewException,
   reviewStructure,
+  resolveStructureReason,
   emptyTrash,
   deleteTask,
   getTaskSummary,

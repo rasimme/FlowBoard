@@ -94,6 +94,7 @@ POST /projects/:name/tasks
 | `workState` | string | no | Optional canonical state: `working`, `waiting`, `blocked`, or `paused`. |
 | `workStateDetails` | object | no | Optional contextual details; reads normalize all known keys to present-or-null. |
 | `description` | string | no | Short inline context, max 16KB. See **Description vs spec** below — most tasks should have one. |
+| `spec` | string | no | Spec markdown, written as `specs/<taskId>-*.md` **in this same call** — a task and its spec cost one request instead of two. All or nothing: if the spec cannot be written, the task is rolled back. Prefer this over putting spec-shaped content into `description`. |
 | `tags` | string[] | no | Filterable tags, max 100 |
 | `forceId` | string | no | Migration mode: use exact ID instead of auto-generated. Throws on duplicate. |
 | `staleAfterMinutes` | positive int | no | Per-task stale threshold (minutes) for stuck detection; also updatable via `PUT`. `null` clears the override; zero/negative values are rejected. |
@@ -159,9 +160,11 @@ The retired top-level `blocked` Boolean is neither accepted nor returned.
 A task can carry two kinds of detail — use both deliberately:
 
 - **`description`** — a short inline paragraph stored on the task itself: what it is, why, key context. Always visible in the detail panel and full-text searchable. **Most non-trivial tasks should have one.** Set it on create (`POST`) or edit it later (`PUT`).
-- **`specFile`** — a detailed `specs/<taskId>-*.md` document (Goal, Done-When checklist, approach) for substantial or complex work only. Created via `POST /projects/:name/specs/:taskId`, not written by hand. See [Project files](project-files.md).
+- **`specFile`** — a detailed `specs/<taskId>-*.md` document (Goal, Done-When checklist, approach) for substantial or complex work only. Pass `spec` to the create call to write it in the same request, or `POST /projects/:name/specs/:taskId` afterwards. Never written by hand. See [Project files](project-files.md).
 
 Rule of thumb: every non-trivial task gets a one-paragraph `description`; only complex or multi-step tasks additionally get a spec. The description is the quick "what is this", the spec is the detailed plan.
+
+**If you are about to write more than a paragraph into `description`, you are writing a spec.** Put it in `spec` instead — it is the same one request, and the description stays what a board column can show. In a `development` project the server flags the task `missing_spec_link` and the create response tells you the call that fixes it; writing the spec later retires that flag on its own, no acknowledgement needed.
 
 ### Coordination Workflows
 

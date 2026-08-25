@@ -1650,9 +1650,36 @@ function projectExists(projectName) {
  * @param {string|undefined} prevStatus - The previous status (only for status-change)
  * @returns {string|null}
  */
-function getTaskReminder(task, action, newStatus, prevStatus) {
+// T-458: the create reminder used to be the same sentence on every single
+// create, in every project, whether or not anything was actually wrong. It
+// said the right thing \u2014 and it was ignored, including by the agent that then
+// wrote 2700 characters of spec into three consecutive `description` fields.
+// A hint that always fires is one you learn to skip.
+//
+// It now fires only when the server actually flagged something, and it names
+// what and the one call that fixes it. In a `list` project nothing is flagged
+// and nothing is said, which is correct: "water the plant" needs no spec.
+const STRUCTURE_REMINDERS = {
+  missing_spec_link: (task, project) => `\u{1F4A1} Flagged \`missing_spec_link\`: detail belongs in a spec, `
+    + `\`description\` stays a short summary. Fix it in one call \u2014 `
+    + `POST /api/projects/${project}/specs/${task.id} with { "content": "..." } \u2014 `
+    + 'or pass `spec` straight to the create call next time.',
+  missing_description: () => '\u{1F4A1} Flagged `missing_description`: add a one-line `description` '
+    + 'saying what this is and why. It is what the board shows and what search reads.',
+  title_pattern: () => '\u{1F4A1} Flagged `title_pattern`: the title reads like a verb stub. '
+    + 'Say what changes, not that something changes.',
+  flat_batch: () => '\u{1F4A1} Flagged `flat_batch`: several top-level tasks at once. '
+    + 'A parent with subtasks in a single create call keeps them together.',
+};
+
+function getTaskReminder(task, action, newStatus, prevStatus, structureReasons = [], project = null) {
   if (action === 'create') {
-    return '\u{1F4A1} Add a one-line `description` for context (most tasks should have one). Then evaluate a spec: multiple files, new UI pattern, unclear scope or complex logic \u2192 create a spec; a simple fix needs only title + description.';
+    const reasons = Array.isArray(structureReasons) ? structureReasons : [];
+    const lines = reasons
+      .map(r => STRUCTURE_REMINDERS[r])
+      .filter(Boolean)
+      .map(fn => fn(task, project));
+    return lines.length ? lines.join(' ') : null;
   }
   if (action === 'status-change' && newStatus && newStatus !== prevStatus) {
     if (newStatus === 'in-progress') {
@@ -2345,11 +2372,22 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   let projectConfig = {};
   try { projectConfig = JSON.parse(projectMeta?.config || '{}'); } catch {}
   const discipline = taskDiscipline.normalize(projectConfig.taskDiscipline);
+  // T-458: a spec can be written in this one call. Until now it took two —
+  // create, wait for the id, then POST /specs/:taskId — while dropping the
+  // same text into `description` cost nothing. Agents took the cheap path
+  // every time, which is how spec-shaped content ended up in a field meant
+  // for a one-line summary. Making the right path the short one is the
+  // actual lever; the flag alone never moved anybody.
+  const inlineSpec = typeof req.body.spec === 'string' && req.body.spec.trim()
+    ? req.body.spec
+    : null;
   const structureReasons = taskDiscipline.reasonsFor({
     discipline,
     title: cleanTitle,
     description: req.body.description,
-    specFile: req.body.specFile,
+    // An inline spec counts as a spec link: it is written below, before this
+    // response is sent, and a failure there removes the task entirely.
+    specFile: req.body.specFile || (inlineSpec ? 'inline' : undefined),
     batchSize: 1,
   });
   try {
@@ -2374,9 +2412,29 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       sourceContext: req.body.sourceContext,
       structuredDecisions: req.body.structuredDecisions,
     });
-    const response = { ok: true, task: taskWithSpecStatus(req.params.name, task) };
+    let created = task;
+    if (inlineSpec) {
+      // All or nothing, like the batch create: a task that promised a spec
+      // and did not get one is worse than no task, because nothing marks it
+      // as incomplete.
+      try {
+        writeSpecFileForTask(req.params.name, task, inlineSpec);
+        created = hzlService.getTask(req.params.name, task.id) || task;
+      } catch (specErr) {
+        // Same rollback call the Specify persistence uses when a spec write
+        // fails after its tasks already exist (see the createdTaskIds unwind).
+        try { hzlService.deleteTask(req.params.name, task.id, 'all'); } catch (cleanupErr) {
+          console.warn('[spec] rollback failed for', task.id, cleanupErr.message);
+        }
+        return res.status(500).json({
+          error: `Task rolled back — the spec could not be written: ${specErr.message}`,
+          code: 'SPEC_WRITE_FAILED',
+        });
+      }
+    }
+    const response = { ok: true, task: taskWithSpecStatus(req.params.name, created) };
     try {
-      const r = getTaskReminder(task, 'create');
+      const r = getTaskReminder(created, 'create', null, null, structureReasons, req.params.name);
       if (r) response.reminder = r;
     } catch (e) { console.warn('[reminder]', e); }
     return res.json(response);
@@ -3042,6 +3100,13 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
   const template = customContent || `# ${taskId}: ${task.title}\n\n## Goal\n\n\n## Done When\n- [ ] \n\n## Approach\n\n\n## Log\n- ${date}: Spec created\n`;
 
   const specFileRelPath = writeSpecFileForTask(req.params.name, task, template);
+  // T-458: the task was flagged for having no spec and now has one — that
+  // reason is spent. Clearing it here (rather than waiting for a human to
+  // acknowledge something that is no longer true) is what keeps the flag
+  // worth reading: a queue that fills with already-fixed items is a queue
+  // people learn to click away. Any other reason on the task survives, and a
+  // review a human already accepted is left alone.
+  hzlService.resolveStructureReason(req.params.name, task.id, 'missing_spec_link');
   const updatedTask = hzlService.getTask(req.params.name, task.id);
   return res.json({ ok: true, specFile: specFileRelPath, taskId, task: taskWithSpecStatus(req.params.name, updatedTask) });
 });
