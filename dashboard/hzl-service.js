@@ -4179,6 +4179,19 @@ function reviewException(project, flowboardId, opts = {}) {
   return _publicTask(refreshed || cached);
 }
 
+function reviewStructure(project, flowboardId, opts = {}) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw Object.assign(new Error(`Task not found: ${flowboardId}`), { status: 404 });
+  const cached = _cache.get(`${project}:${flowboardId}`);
+  if (!cached?.structureReview) throw Object.assign(new Error(`Task ${flowboardId} has no structure review`), { status: 400, code: 'STRUCTURE_REVIEW_NOT_REQUIRED' });
+  if (cached.structureReview.status !== 'pending') throw Object.assign(new Error(`Task ${flowboardId} structure review is immutable`), { status: 409, code: 'STRUCTURE_REVIEW_IMMUTABLE' });
+  const current = _taskService.getTaskById(ulid);
+  const principal = opts.principal || {};
+  const review = { status: 'reviewed', reviewer: principal.actor || 'local:operator', reviewedAt: new Date().toISOString(), reasons: cached.structureReview.reasons || [] };
+  _updateMetadata(ulid, { flowboard: { ...(current.metadata?.flowboard || {}), structureReview: review } });
+  return _publicTask(_resyncCachedTask(ulid) || cached);
+}
+
 /** Set the completion notification callback */
 function setOnComplete(fn) { _onCompleteCallback = fn; }
 
@@ -4597,6 +4610,7 @@ module.exports = {
   updateTask,
   setSpecifyConfirmation,
   reviewException,
+  reviewStructure,
   emptyTrash,
   deleteTask,
   getTaskSummary,

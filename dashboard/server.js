@@ -2170,8 +2170,11 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   if (requestedExceptionReview && !['pending', 'reviewed'].includes(requestedExceptionReview)) {
     return res.status(400).json({ error: 'exceptionReview must be pending or reviewed' });
   }
+  const requestedStructureReview = req.query.structureReview || null;
+  if (requestedStructureReview && !['pending', 'reviewed'].includes(requestedStructureReview)) return res.status(400).json({ error: 'structureReview must be pending or reviewed' });
   const result = enrichTasks(req.params.name, tasks)
-    .filter(task => !requestedExceptionReview || task.exceptionReview?.status === requestedExceptionReview);
+    .filter(task => !requestedExceptionReview || task.exceptionReview?.status === requestedExceptionReview)
+    .filter(task => !requestedStructureReview || task.structureReview?.status === requestedStructureReview);
   const response = { ok: true, tasks: result };
 
   // Task status nudge
@@ -3970,6 +3973,15 @@ app.post('/api/projects/:name/tasks/:id/exception-review', (req, res) => {
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+  }
+});
+
+app.post('/api/projects/:name/tasks/:id/structure-review', (req, res) => {
+  try {
+    const task = hzlService.reviewStructure(req.params.name, req.params.id, { principal: governance.resolvePrincipal(req) });
+    return res.json({ ok: true, task: taskWithSpecStatus(req.params.name, task) });
+  } catch (err) {
+    return res.status(httpStatusForError(err)).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
   }
 });
 
