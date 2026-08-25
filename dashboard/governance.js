@@ -7,7 +7,8 @@
  * the request body (including agentId, human, origin and approved) describe
  * the caller's claim but never grant authority. Loopback admission is a
  * transport convenience for local agents, not proof of a human Dashboard
- * actor; only the Telegram-authenticated req.user path qualifies here.
+ * actor; an unauthenticated request is attributed to the local operator only
+ * when it arrived over the loopback transport.
  */
 
 const crypto = require('crypto');
@@ -46,6 +47,11 @@ function descriptiveClaims(req) {
   };
 }
 
+function isLoopbackRequest(req) {
+  const ip = req?.ip || req?.connection?.remoteAddress || req?.socket?.remoteAddress;
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
 /** Resolve a principal from middleware-owned state, never caller claims. */
 function resolvePrincipal(req) {
   const descriptive = descriptiveClaims(req);
@@ -54,12 +60,19 @@ function resolvePrincipal(req) {
     return {
       kind: 'human',
       verified: true,
-      actor: 'local:operator',
+      actor: `session:${String(user.id)}`,
       humanId: String(user.id),
       // This is the verified bot/session mapping available in the current
       // auth contract.  It is audit context, not an authorization input.
       authSessionId: user.agentId == null ? null : String(user.agentId),
       descriptive,
+    };
+  }
+
+  if (isLoopbackRequest(req)) {
+    return {
+      kind: 'agent', verified: false, actor: 'local:operator',
+      humanId: null, authSessionId: null, descriptive,
     };
   }
 
@@ -108,6 +121,10 @@ function proposalIdentityOf(proposal) {
  * the audit record that must be persisted with the session.
  */
 function verifyHumanConfirmation({ principal, session, expectedSessionId, now = Date.now() }) {
+  if (!isVerifiedHuman(principal)) {
+    return { ok: false, code: CONFIRM_REJECT.NOT_HUMAN,
+      reason: 'Confirmation requires a verified human principal.' };
+  }
   if (!session) {
     return { ok: false, code: CONFIRM_REJECT.SESSION_MISMATCH,
       reason: 'No Specify session bound to this confirmation.' };
@@ -119,7 +136,10 @@ function verifyHumanConfirmation({ principal, session, expectedSessionId, now = 
   // Only a session created for the dashboard human stepper can be confirmed
   // as human.  Chat/API sessions remain agent-originated even if a human later
   // supplies a forged body claim.
-  // Confirmation is a workflow acknowledgement, not a human-identity gate.
+  if (session.transport !== 'dashboard' || session.agentId !== 'human') {
+    return { ok: false, code: CONFIRM_REJECT.AGENT_SELF_CONFIRM,
+      reason: 'Only a Dashboard-human Specify session can be human-confirmed.' };
+  }
   const binding = session.principalBinding;
   if (!binding || binding.sessionId !== session.id) {
     return { ok: false, code: CONFIRM_REJECT.SESSION_MISMATCH,

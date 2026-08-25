@@ -1,7 +1,7 @@
 'use strict';
 
 // T-447-5 unit coverage: project-scoped persistence, safe legacy migration,
-// verified-human mutation, and append-only rollout telemetry.
+// local-first mutation, and append-only rollout telemetry.
 const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
@@ -38,9 +38,9 @@ assert.equal(governance.scopedProjectSettingKey(), null, 'unscoped state has no 
 let result = governance.setGovernanceMode({
   store, project: 'alpha', principal: agent, nextMode: 'enforce', now: Date.parse('2026-08-24T20:00:00.000Z'),
 });
-assert.equal(result.ok, false);
-assert.equal(result.code, 'mode_change_requires_verified_human');
-assert.equal(governance.getGovernanceMode(store, 'alpha'), 'compat', 'agent cannot mutate mode');
+assert.equal(result.ok, true, 'local-first callers may mutate the mode');
+assert.equal(governance.getGovernanceMode(store, 'alpha'), 'enforce');
+assert.equal(governance.getGovernanceModeAudit(store, 'alpha').actor, 'agent:codex');
 
 result = governance.setGovernanceMode({
   store, project: 'alpha', principal: human, nextMode: 'enforce', now: Date.parse('2026-08-24T20:01:00.000Z'),

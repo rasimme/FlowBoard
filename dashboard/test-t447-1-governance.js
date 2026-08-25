@@ -6,7 +6,7 @@ const assert = require('assert');
 const governance = require('./governance');
 
 const agent = (body = {}) => ({ body });
-const telegramHuman = (body = {}) => ({ body,
+const telegramHuman = (body = {}) => ({ body, ip: '127.0.0.1',
   user: { id: 42, agentId: 'bot-session' } });
 const proposal = { summary: 'Bound proposal', taskStructure: 'Single task',
   specContent: '# Proposal', taskBreakdown: [{ title: 'Task' }] };
@@ -15,7 +15,7 @@ const proposalBoundAt = Date.now();
 
 const session = {
   id: 'specify-test-1', transport: 'dashboard', agentId: 'human',
-  principalBinding: { sessionId: 'specify-test-1', actor: 'telegram:42', humanId: '42',
+  principalBinding: { sessionId: 'specify-test-1', actor: 'session:42', humanId: '42',
     proposalVersion: 1, proposalIdentity, proposalBoundAt },
   createdAt: proposalBoundAt, lastActivity: proposalBoundAt + 999999,
   draftProposal: proposal,
@@ -26,18 +26,19 @@ assert.equal(governance.resolvePrincipal(agent({ localOperator: true })).kind, '
 assert.equal(governance.resolvePrincipal({ localDashboardEvidence: true }).kind, 'agent');
 assert.equal(governance.resolvePrincipal({ query: { transport: 'dashboard', agentId: 'human' } }).kind, 'agent');
 assert.equal(governance.resolvePrincipal(agent({ transport: 'dashboard', agentId: 'human' })).kind, 'agent');
-assert.equal(governance.resolvePrincipal(telegramHuman()).actor, 'local:operator');
+assert.equal(governance.resolvePrincipal(telegramHuman()).actor, 'session:42');
+assert.equal(governance.resolvePrincipal({ ip: '127.0.0.1' }).actor, 'local:operator');
 
 let result = governance.verifyHumanConfirmation({
   principal: governance.resolvePrincipal(telegramHuman()), session: {
     ...session,
-    principalBinding: { ...session.principalBinding, actor: 'local:operator', humanId: '42' },
+    principalBinding: { ...session.principalBinding, actor: 'session:42', humanId: '42' },
   },
   expectedSessionId: session.id,
 });
 assert.equal(result.ok, true);
 assert.equal(result.record.specifySessionId, session.id);
-assert.equal(result.record.actor, 'local:operator');
+assert.equal(result.record.actor, 'session:42');
 assert.ok(result.record.confirmedAt);
 assert.ok(result.record.proposalIdentity.digest);
 
@@ -67,7 +68,7 @@ const changedProposal = { ...session, draftProposal: {
 result = governance.verifyHumanConfirmation({
   principal: governance.resolvePrincipal(telegramHuman()), session: {
     ...changedProposal,
-    principalBinding: { ...changedProposal.principalBinding, actor: 'telegram:42', humanId: '42' },
+    principalBinding: { ...changedProposal.principalBinding, actor: 'session:42', humanId: '42' },
   },
   expectedSessionId: session.id,
 });
@@ -89,7 +90,7 @@ const stale = { ...session, principalBinding: {
 result = governance.verifyHumanConfirmation({
   principal: governance.resolvePrincipal(telegramHuman()), session: {
     ...stale,
-    principalBinding: { ...stale.principalBinding, actor: 'telegram:42', humanId: '42' },
+    principalBinding: { ...stale.principalBinding, actor: 'session:42', humanId: '42' },
   },
   expectedSessionId: session.id,
 });
@@ -102,7 +103,7 @@ const future = { ...session, principalBinding: {
 result = governance.verifyHumanConfirmation({
   principal: governance.resolvePrincipal(telegramHuman()), session: {
     ...future,
-    principalBinding: { ...future.principalBinding, actor: 'telegram:42', humanId: '42' },
+    principalBinding: { ...future.principalBinding, actor: 'session:42', humanId: '42' },
   },
   expectedSessionId: session.id,
 });

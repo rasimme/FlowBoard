@@ -3749,7 +3749,11 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
       specifySessionId: session.id,
       proposalIdentity: governance.proposalIdentityOf(session.draftProposal),
       proposalVersion: session.principalBinding?.proposalVersion || 1,
-      proposalBoundAt: session.principalBinding?.proposalBoundAt || new Date().toISOString(),
+      proposalBoundAt: (() => {
+        const boundAt = session.principalBinding?.proposalBoundAt;
+        const timestamp = typeof boundAt === 'number' ? boundAt : Date.parse(boundAt);
+        return new Date(Number.isFinite(timestamp) ? timestamp : Date.now()).toISOString();
+      })(),
     }};
     // Record the verified binding before persistence. If persistence fails, the
     // session remains recoverable and the attempted human authorization is not
