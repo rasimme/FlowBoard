@@ -13,6 +13,12 @@ show only exception-created tasks in that review state.
 
 **Response 200:** `{"ok": true, "tasks": [{"id": "T-197-7", "title": "...", "status": "review", "agent": "claude-code", "claimedAt": "...", "leaseUntil": "...", "lastCheckpointAt": "...", ...}, ...]}`
 
+### `GET /api/projects/:name/tasks/:id`
+
+Return one canonical task projection. Unknown projects or task IDs return **404**.
+
+**Response 200:** `{"ok": true, "task": {<task>}}`
+
 ### `GET /api/projects/:name/exceptions`
 
 Minimal exception-review inbox. `status` defaults to `pending` and accepts
@@ -112,7 +118,8 @@ Permanently purge all soft-deleted tasks for the project.
 
 ### `POST /api/projects/:name/tasks/:id/claim`
 
-Claim a task. Optimistic-concurrency via lease.
+Claim a task. Optimistic-concurrency via lease. Successful claims automatically
+transition the task to `in-progress`; no additional `PUT` is required.
 
 **Body:** `{"agent": "<id>", "lease"?: <minutes>}`
 

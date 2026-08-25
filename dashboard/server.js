@@ -2200,6 +2200,14 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   res.json(response);
 });
 
+// GET /api/projects/:name/tasks/:id — canonical single-task projection.
+app.get('/api/projects/:name/tasks/:id', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  const task = hzlService.getTask(req.params.name, req.params.id, { includeArchived: true });
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  res.json({ ok: true, task: taskWithSpecStatus(req.params.name, enrichTasks(req.params.name, [task])[0]) });
+});
+
 // GET /api/projects/:name/exceptions — minimal exception-review inbox. This
 // is intentionally a read/filter surface over the canonical task projection;
 // the append-only policy ledger remains the audit source of truth.
@@ -3073,6 +3081,8 @@ app.post('/api/projects/:name/sessions', (req, res) => {
  */
 function writeSpecFileForTask(projectName, task, content) {
   const slug = task.title.toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')

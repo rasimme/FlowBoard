@@ -488,6 +488,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/projects/:name/tasks/:id",
+      "auth": "user",
+      "group": "tasks",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "GET",
       "path": "/api/projects/:name/exceptions",
       "auth": "user",
       "group": "tasks",

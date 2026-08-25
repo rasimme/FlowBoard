@@ -26,6 +26,11 @@ import { getLastMutationAt } from '../state/taskMutations.mjs';
 const DashboardContext = createContext(null);
 
 const POLL_INTERVAL_MS = 5000;
+// T-450-4: stepwise backoff ceiling while consecutive polls come back
+// unchanged (304 — see markPollUnchanged below). "Stufenweise auf 15-30s"
+// per the spec; doubling from the 5s base lands on 5 -> 10 -> 20 -> 30,
+// capped here.
+const POLL_INTERVAL_MAX_MS = 30000;
 
 function retryAfterMs(error) {
   const seconds = Number(error?.retryAfterSeconds);
@@ -80,7 +85,36 @@ export function DashboardProvider({ children }) {
   const queuedRetryRef = useRef(null);
   const coreCooldownUntilRef = useRef(0);
   const unmountedRef = useRef(false);
+  // T-450-4: current delay used by the poll scheduler's self-rescheduling
+  // setTimeout loop (see the "Background refresh poll" effect below). Starts
+  // at, and is reset to, the 5s base by resetPollInterval(); step up happens
+  // only when a poll confirms via ETag/304 (markPollUnchanged) that nothing
+  // changed.
+  const pollIntervalRef = useRef(POLL_INTERVAL_MS);
+  // T-450-4: the ETag from the last snapshot this tab received, sent back as
+  // If-None-Match on the *next* poll only (never on 'initial'/'retry', which
+  // must always get an unconditional full body). Warms up from the first
+  // real poll tick; stays null under the legacy/rollback snapshot path since
+  // that path never returns an etag, which correctly means the interval
+  // never backs off there.
+  const lastSnapshotEtagRef = useRef(null);
+  // T-450-4: set by the poll's own commit path (commitPollSnapshot /
+  // markPollUnchanged) for the *current* tick only; read once by pollOnce
+  // right after startSnapshotRequest('poll') resolves, then irrelevant until
+  // reset to null at the start of the next tick. Stays null (no adaptation)
+  // for a superseded/aborted/cooldown-skipped poll — see pollOnce.
+  const pollOutcomeRef = useRef(null);
   const authHalted = useSyncExternalStore(subscribeAuthState, isAuthHalted, isAuthHalted);
+
+  // T-450-4: "Nutzerinteraktion" reset for the poll cadence. Kept separate
+  // from isUserInteracting() (which only reflects modal-open/input-focus at
+  // the moment a poll lands) because navigating, activating a project, or
+  // mutating a task are real interactions that isUserInteracting() cannot
+  // see. Called eagerly at those entry points below, not only from the poll
+  // tick's own outcome.
+  const resetPollInterval = useCallback(() => {
+    pollIntervalRef.current = POLL_INTERVAL_MS;
+  }, []);
 
   const publishConnection = useCallback((next) => {
     if (sameConnection(connectionRef.current, next)) return;
@@ -181,6 +215,7 @@ export function DashboardProvider({ children }) {
   const fetchDashboardSnapshot = useCallback(async (signal, {
     retryAuth = false,
     onAuthRecovered = null,
+    etag = null,
   } = {}) => {
     // Wait for src/bootstrap.js to finish Telegram auth + agentId resolution so the
     // very first core calls see a populated agentId. An explicit auth Retry uses
@@ -202,6 +237,7 @@ export function DashboardProvider({ children }) {
       window.appState?.viewedProject || null,
       window.appState?.agentId || null,
       signal,
+      etag ? { etag } : undefined,
     );
     return { ...snapshot, taskGeneration };
   }, []);
@@ -257,6 +293,11 @@ export function DashboardProvider({ children }) {
     return changed ? next : tasks;
   }, []);
 
+  // T-450-4: returns { changed, interacting } so the poll scheduler can adapt
+  // pollIntervalRef. This is purely an additional return value — every
+  // existing reconciliation/dispatch decision below (including the T-454-7
+  // reconcilePolledTasks call and the isUserInteracting() dispatch guard) is
+  // unchanged.
   const commitPollSnapshot = useCallback((snapshot, requestStartedAt) => {
     const { projects, agents, activeProject, viewedProject } = snapshot;
     const tasks = reconcilePolledTasks(snapshot.tasks, requestStartedAt);
@@ -273,7 +314,8 @@ export function DashboardProvider({ children }) {
     // auth failures outrank it until /api/auth itself succeeds.
     markConnectionSuccess(projects, 'core');
 
-    if (isUserInteracting() && !projectsChanged) return;
+    const interacting = isUserInteracting();
+    if (interacting && !projectsChanged) return { changed: tasksChanged || agentsChanged, interacting: true };
 
     if (projectsChanged || tasksChanged || agentsChanged) {
       prevProjectsRef.current = projectsJson;
@@ -281,8 +323,20 @@ export function DashboardProvider({ children }) {
       prevActiveRef.current = activeProject;
       prevTasksRef.current = tasksJson;
       dispatch({ projects, agents, activeProject, viewedProject, tasks });
+      return { changed: true, interacting };
     }
+    return { changed: false, interacting };
   }, [dispatch, markConnectionSuccess, reconcilePolledTasks]);
+
+  // T-450-4: the server (T-450-3) answered this poll's If-None-Match with a
+  // bodyless 304 — the digest of the complete snapshot is byte-identical to
+  // what this tab already has, so there is nothing to reconcile or dispatch.
+  // Still clears the core cooldown/failure state exactly like any other
+  // successful poll (a 304 is a success, not a degraded response).
+  const markPollUnchanged = useCallback(() => {
+    markConnectionSuccess(window.appState?.projects || [], 'core');
+    return { changed: false, interacting: isUserInteracting() };
+  }, [markConnectionSuccess]);
 
   const runSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
     if (kind === 'poll') {
@@ -329,12 +383,23 @@ export function DashboardProvider({ children }) {
           const snapshot = await fetchDashboardSnapshot(controller.signal, {
             retryAuth,
             onAuthRecovered: () => { authRecovered = true; },
+            // T-450-4: only a poll sends the conditional header — 'initial'/
+            // 'retry' must always get an unconditional full body, so they
+            // never risk a notModified response with no projects/agents/
+            // tasks for commitFullSnapshot to destructure.
+            etag: kind === 'poll' ? lastSnapshotEtagRef.current : null,
           });
           if (controller.signal.aborted
             || snapshotRequestRef.current.generation !== generation
             || snapshot.taskGeneration !== taskRequestRef.current.generation) return false;
-          if (kind === 'poll') commitPollSnapshot(snapshot, requestStartedAt);
-          else commitFullSnapshot(snapshot, retryAuth ? 'auth' : 'core');
+          if (kind === 'poll') {
+            if (snapshot.etag) lastSnapshotEtagRef.current = snapshot.etag;
+            pollOutcomeRef.current = snapshot.notModified
+              ? markPollUnchanged()
+              : commitPollSnapshot(snapshot, requestStartedAt);
+          } else {
+            commitFullSnapshot(snapshot, retryAuth ? 'auth' : 'core');
+          }
           return true;
         } catch (error) {
           const superseded = controller.signal.aborted
@@ -367,7 +432,7 @@ export function DashboardProvider({ children }) {
       snapshotRequestRef.current.active = active;
       return request;
     })();
-  }, [commitFullSnapshot, commitPollSnapshot, fetchDashboardSnapshot, markConnectionFailure, publishConnection]);
+  }, [commitFullSnapshot, commitPollSnapshot, fetchDashboardSnapshot, markConnectionFailure, markPollUnchanged, publishConnection]);
 
   const startSnapshotRequest = useCallback((kind, { showRetrying = false } = {}) => {
     const projectSwitch = projectSwitchRef.current;
@@ -416,15 +481,23 @@ export function DashboardProvider({ children }) {
     startSnapshotRequest('initial')
   ), [startSnapshotRequest]);
 
-  const retryConnection = useCallback(() => (
-    startSnapshotRequest('retry', { showRetrying: true })
-  ), [startSnapshotRequest]);
+  const retryConnection = useCallback(() => {
+    // T-450-4: an explicit Retry click is a user interaction — resume the
+    // fast 5s poll cadence rather than whatever the backoff had reached.
+    resetPollInterval();
+    return startSnapshotRequest('retry', { showRetrying: true });
+  }, [resetPollInterval, startSnapshotRequest]);
 
   const refreshProjectsOnly = useCallback(() => (
     startSnapshotRequest('retry')
   ), [startSnapshotRequest]);
 
   const refreshTasks = useCallback(async (projectOverride = null, options = {}) => {
+    // T-450-4: this is the bridge target for task mutations (claim/release/
+    // complete/route/etc. via taskMutations.mjs -> appStateBridge's
+    // installRefreshBridge) as well as direct callers — real user actions.
+    // Reset unconditionally, even on an early return below.
+    resetPollInterval();
     const project = projectOverride
       || window.appState?.viewedProject
       || window.appState?.activeProject;
@@ -459,10 +532,12 @@ export function DashboardProvider({ children }) {
       }
       return null;
     }
-  }, [fetchCoordinatedTasks, markConnectionFailure, markConnectionSuccess]);
+  }, [fetchCoordinatedTasks, markConnectionFailure, markConnectionSuccess, resetPollInterval]);
 
   const viewProject = useCallback((name) => {
     if (!name) return Promise.resolve(null);
+    // T-450-4: navigating to a project is a user interaction.
+    resetPollInterval();
 
     const pending = { name, promise: null };
     projectSwitchRef.current = pending;
@@ -491,9 +566,11 @@ export function DashboardProvider({ children }) {
       if (projectSwitchRef.current === pending) projectSwitchRef.current = null;
     });
     return pending.promise;
-  }, [dispatch, fetchCoordinatedTasks, invalidateSnapshotRequest, markConnectionFailure, markConnectionSuccess]);
+  }, [dispatch, fetchCoordinatedTasks, invalidateSnapshotRequest, markConnectionFailure, markConnectionSuccess, resetPollInterval]);
 
   const activateProject = useCallback(async () => {
+    // T-450-4: explicit button action.
+    resetPollInterval();
     const agentId = window.appState?.agentId;
     const viewed = window.appState?.viewedProject;
     if (!agentId) {
@@ -505,9 +582,11 @@ export function DashboardProvider({ children }) {
     dispatch({ activeProject: viewed });
     prevActiveRef.current = viewed;
     showToast(`Project "${viewed}" activated`, 'success');
-  }, [dispatch]);
+  }, [dispatch, resetPollInterval]);
 
   const deactivateProject = useCallback(async () => {
+    // T-450-4: explicit button action.
+    resetPollInterval();
     const agentId = window.appState?.agentId;
     if (!agentId) {
       showToast('No agent context for deactivation.', 'warn');
@@ -517,7 +596,7 @@ export function DashboardProvider({ children }) {
     dispatch({ activeProject: null });
     prevActiveRef.current = null;
     showToast('Project deactivated.', 'info');
-  }, [dispatch]);
+  }, [dispatch, resetPollInterval]);
 
   const switchTab = useCallback((tab) => {
     if (!tab) return;
@@ -570,15 +649,70 @@ export function DashboardProvider({ children }) {
     loadDashboardSnapshot();
   }, [loadDashboardSnapshot]);
 
-  // Background refresh poll — same cadence as legacy app.js (5s).
-  // Skips re-renders when user is interacting unless projects-level changes
-  // happened, mirroring the legacy isUserInteracting() guard.
-  useEffect(() => {
-    const tick = () => startSnapshotRequest('poll');
-
-    const id = setInterval(tick, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+  // T-450-4: one poll tick. Resets pollOutcomeRef first so a tick that never
+  // reaches commitPollSnapshot/markPollUnchanged (superseded, aborted, still
+  // inside the 429 cooldown, auth-halted, or absorbed by an in-flight project
+  // switch — see runSnapshotRequest/startSnapshotRequest) leaves the interval
+  // untouched instead of adapting off a stale prior outcome.
+  const pollOnce = useCallback(async () => {
+    pollOutcomeRef.current = null;
+    const success = await startSnapshotRequest('poll');
+    if (!success || !pollOutcomeRef.current) return;
+    const { changed, interacting } = pollOutcomeRef.current;
+    pollIntervalRef.current = (changed || interacting)
+      ? POLL_INTERVAL_MS
+      : Math.min(pollIntervalRef.current * 2, POLL_INTERVAL_MAX_MS);
   }, [startSnapshotRequest]);
+
+  // Background refresh poll (T-450-1 + T-450-4). A self-rescheduling
+  // setTimeout loop (not setInterval) so the delay between ticks can adapt:
+  //
+  // - T-450-1: paused entirely while document.hidden is true — the tab/
+  //   mini-app going to the background stops issuing requests. Becoming
+  //   visible again reloads immediately (so the first look is current) via
+  //   the visibilitychange listener, which also resumes the loop.
+  // - T-450-4: pollOnce() above steps pollIntervalRef from the 5s base
+  //   toward the 30s ceiling while consecutive polls report unchanged
+  //   (304), and snaps back to 5s on any change or interaction signal.
+  useEffect(() => {
+    let timeoutId = null;
+    let cancelled = false;
+
+    const scheduleNext = () => {
+      if (cancelled || document.hidden) return;
+      timeoutId = setTimeout(runTick, pollIntervalRef.current);
+    };
+
+    const runTick = async () => {
+      timeoutId = null;
+      if (cancelled || document.hidden) return;
+      await pollOnce();
+      scheduleNext();
+    };
+
+    const onVisibilityChange = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (document.hidden) return;
+      // T-450-1: "bei visibilitychange zurück auf sichtbar sofort einmal
+      // nachladen, damit der erste Blick aktuell ist." Also treat regaining
+      // visibility like any other interaction (resetPollInterval) instead of
+      // resuming wherever the backoff had drifted to while unseen.
+      resetPollInterval();
+      runTick();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    scheduleNext();
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [pollOnce, resetPollInterval]);
 
   useEffect(() => {
     unmountedRef.current = false;

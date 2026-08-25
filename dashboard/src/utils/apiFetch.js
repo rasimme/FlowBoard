@@ -287,6 +287,11 @@ export async function apiJson(path, opts = {}) {
   const {
     timeoutMs = DEFAULT_API_TIMEOUT_MS,
     signal: callerSignal,
+    // T-450-4: opt-in only. Every existing caller keeps getting the bare
+    // parsed body back exactly as before; `withETag` is not forwarded to the
+    // underlying fetch() call (it is stripped into requestOptions here, not
+    // spread into it).
+    withETag = false,
     ...requestOptions
   } = opts;
   const deadline = createRequestAbortScope(callerSignal, timeoutMs);
@@ -309,6 +314,17 @@ export async function apiJson(path, opts = {}) {
       });
     } catch (error) {
       throw normalizeRequestError(error, requestContext);
+    }
+
+    // T-450-3/T-450-4: a conditional GET (caller sent If-None-Match) answers
+    // with a bodyless 304 when the digest is unchanged. That is not the
+    // normal !res.ok error path — res.json() would fail on the empty body —
+    // so a `withETag` caller gets this handled explicitly instead. 304 still
+    // counts against the read-lane rate-limit budget server-side (spec's
+    // "Vertragspunkte zwischen den Lanes"); this only changes what the
+    // *client* does with the response.
+    if (withETag && res.status === 304) {
+      return { notModified: true, data: null, etag: res.headers?.get?.('etag') || null };
     }
 
     let data;
@@ -347,7 +363,7 @@ export async function apiJson(path, opts = {}) {
       });
     }
 
-    return data;
+    return withETag ? { notModified: false, data, etag: res.headers?.get?.('etag') || null } : data;
   } finally {
     deadline.cleanup();
   }

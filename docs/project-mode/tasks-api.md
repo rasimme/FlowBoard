@@ -16,7 +16,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | Field | Type | Notes |
 |-------|------|-------|
 | `task_id` | ULID | Immutable, auto-generated |
-| `title` | string | Max 128 chars |
+| `title` | string | Max 500 chars |
 | `project` | string | Project name |
 | `status` | enum | `backlog`, `open`, `in-progress`, `review`, `done`, `archived` (see [Kanban concept](../concepts/kanban.md) for semantics) |
 | `priority` | integer | 0–2 stored (legacy 3 reads as `high`). UI vocabulary: `low`, `medium`, `high` |
@@ -31,7 +31,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `workState` | enum | Canonical execution context: `working`, `waiting`, `blocked`, `paused` |
 | `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null`; `checkAgainAt` must be an ISO-8601 date-time with timezone on writes (offsets no larger than ±14:00, with minute `00` at the boundary); `setAt` is server-owned and client values are ignored |
 | `stuckIndicator` | object? | One transient update-in-place monitor signal; `null` when clear |
-| `progress` | 0–100? | Set via checkpoints |
+| `progress` | object? | Subtask summary { done, inProgress, total }; all values are non-negative integers. Checkpoint events may separately carry numeric progress 0–100. |
 | `lease_until` | ISO timestamp? | Claim expiry |
 | `staleAfterMinutes` | positive int? | Per-task stale threshold for stuck detection; overrides the global `STALE_THRESHOLD_MINUTES` (T-300); `null` clears the override |
 
@@ -60,6 +60,7 @@ Base: `http://localhost:18790/api`
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/projects/:name/tasks` | List tasks. Query: `?status=`, `?sinceDays=`, `?tag=` |
+| `GET` | `/projects/:name/tasks/:id` | Get one canonical task; returns 404 when unknown |
 | `POST` | `/projects/:name/tasks` | Create task. Body: see below |
 | `PUT` | `/projects/:name/tasks/:id` | Update task fields or status |
 | `DELETE` | `/projects/:name/tasks/:id` | Archive/delete task |
@@ -86,7 +87,7 @@ POST /projects/:name/tasks
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `title` | string | **yes** | Max 128 chars |
+| `title` | string | **yes** | Max 500 chars |
 | `priority` | string | no | `low`, `medium`, `high`. Default: `medium`. Legacy `critical` is normalized to `high`; other values are rejected. Subtasks inherit parent priority. |
 | `parentId` | string | no | FlowBoard ID of parent task (e.g. `T-042`). Creates a subtask with auto-incremented ID (`T-042-1`). Max 1 nesting level. |
 | `status` | string | no | Initial status: `backlog` (default), `open`, `in-progress`, `review`, `done`, `archived`. |
@@ -138,7 +139,7 @@ PUT /projects/:name/tasks/:id
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `title` | string | Max 128 chars |
+| `title` | string | Max 500 chars |
 | `status` | string | `backlog`, `open`, `in-progress`, `review`, `done`, `archived` |
 | `priority` | string | `low`, `medium`, `high` (legacy `critical` → `high`) |
 | `completed` | string | ISO date, auto-set on `done` |
@@ -178,7 +179,7 @@ Primitive endpoints are used by the dashboard UI and for explicit edge cases. Ag
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/projects/:name/tasks/:id/claim` | Claim task. Body: `{ agent, lease? }` |
+| `POST` | `/projects/:name/tasks/:id/claim` | Claim task; successful claims automatically set status to `in-progress`. Body: `{ agent, lease? }` |
 | `POST` | `/projects/:name/tasks/:id/release` | Release claim. Body: `{ agent, force? }` |
 | `POST` | `/projects/:name/tasks/:id/complete` | Mark done. Body: `{ agent }` |
 | `POST` | `/projects/:name/tasks/:id/checkpoint` | Progress update. Body: `{ message, agent, progress? }` |

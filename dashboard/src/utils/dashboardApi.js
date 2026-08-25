@@ -334,9 +334,21 @@ export async function fetchDashboardSnapshot(project = null, agentId = null, sig
   if (project) query.set('project', project);
   if (agentId) query.set('agentId', agentId);
   const path = `/dashboard/snapshot/v1${query.toString() ? `?${query}` : ''}`;
-  let data;
+
+  // T-450-4: a caller (DashboardContext's background poll) may pass the ETag
+  // it saw on the last snapshot. The server (T-450-3) answers a matching
+  // If-None-Match with a bodyless 304; apiJson's `withETag` option surfaces
+  // that as `{ notModified: true }` instead of throwing. Non-poll callers
+  // (initial load, explicit Retry) never pass `etag`, so they always get an
+  // unconditional 200 with the complete body — unaffected by any of this.
+  const { etag: ifNoneMatch, ...restOptions } = options;
+  const headers = ifNoneMatch
+    ? { ...restOptions.headers, 'If-None-Match': ifNoneMatch }
+    : restOptions.headers;
+
+  let result;
   try {
-    data = await apiJson(path, { ...options, signal });
+    result = await apiJson(path, { ...restOptions, headers, signal, withETag: true });
   } catch (error) {
     // A server-side flag may be changed without a matching frontend build.
     // Honor the same explicit rollback path when the endpoint advertises that
@@ -346,6 +358,13 @@ export async function fetchDashboardSnapshot(project = null, agentId = null, sig
     }
     throw error;
   }
+
+  if (result.notModified) {
+    return { notModified: true, etag: result.etag || ifNoneMatch || null };
+  }
+
+  const data = result.data;
+  const etag = result.etag || null;
   require(isRecord(data) && data.ok === true, path, 'a snapshot response with ok=true');
   require(data.version === 1, path, 'snapshot version 1');
   require(isNonEmptyString(data.generatedAt), path, 'generatedAt to be a non-empty string');
@@ -374,7 +393,7 @@ export async function fetchDashboardSnapshot(project = null, agentId = null, sig
   data.projects.forEach((item, index) => validateProject(item, index, path));
   data.agents.forEach((item, index) => validateAgent(item, index, path));
   data.tasks.forEach((item, index) => validateTask(item, index, path, data.viewedProject));
-  return data;
+  return { ...data, notModified: false, etag };
 }
 
 export async function authenticateTelegram(initData, signal, options = {}) {
