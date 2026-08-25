@@ -134,23 +134,16 @@ export function validateTask(task, index = 0, path = '/projects/tasks', project 
   require(isNonEmptyString(task.id), path, `${at}.id to be a non-empty string`);
   require(isNonEmptyString(task.title), path, `${at}.title to be a non-empty string`);
   require(TASK_STATUSES.has(task.status), path, `${at}.status to match the task status enum`);
-  // T-452-5: `blocked` is the legacy boolean projection of the canonical work
-  // state and is on its way out (T-452-7 removes it server-side). It stays
-  // tolerated but is no longer required, so a snapshot that omits it still
-  // loads. Requiring it would turn that server-side removal into a total
-  // board outage instead of a missing chip — this validator rejects the whole
-  // snapshot, not the single field. `workState` below stays required: that is
-  // the canonical field and the actual integration contract.
-  require(task.blocked === undefined || typeof task.blocked === 'boolean', path,
-    `${at}.blocked to be a boolean when present`);
+  // T-452-7: `blocked` was a legacy projection and is no longer part of the
+  // task contract. Ignore it when an older server still includes it so a
+  // mixed-version snapshot cannot invalidate the complete board. The
+  // canonical `workState` below remains mandatory.
   // Canonical work-state fields are an atomic integration contract.  A
   // response that omits them is rejected before it can reach appState; the UI
   // must not manufacture local `working`/empty-details success from a legacy
   // response during a partial backend rollout.
   require(hasOwn(task, 'workState') && WORK_STATE_OPTIONS.includes(task.workState), path,
     `${at}.workState to be present and match the canonical work-state enum`);
-  require(task.blocked === (task.workState === 'blocked'), path,
-    `${at}.blocked to match the read-only workState projection`);
   require(hasOwn(task, 'workStateDetails'), path,
     `${at}.workStateDetails to be present as part of the canonical contract`);
   validateWorkStateDetails(task.workStateDetails, path, at);

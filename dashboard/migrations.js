@@ -388,7 +388,9 @@ const migrations = [
     run: (_db, { hzlService }) => {
       if (!hzlService || typeof hzlService.migrateLegacyBlockedBoolean !== 'function') return;
       const result = hzlService.migrateLegacyBlockedBoolean();
+      console.log(`[m011] found ${result?.inconsistent || 0} task(s) with blocked:true without matching workState before migration`);
       if (result?.migrated) console.log(`[m011] removed legacy blocked field from ${result.migrated} task(s)`);
+      return result;
     },
   },
 ];

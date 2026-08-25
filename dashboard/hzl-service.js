@@ -746,17 +746,19 @@ function migrateWorkStateMetadata() {
 /** Remove the retired boolean projection after canonical work-state migration. */
 function migrateLegacyBlockedBoolean() {
   let migrated = 0;
+  let inconsistent = 0;
   for (const ulid of _ulidToFb.keys()) {
     let task;
     try { task = _taskService.getTaskById(ulid); } catch { continue; }
     const flowboard = task?.metadata?.flowboard || {};
     if (!Object.prototype.hasOwnProperty.call(flowboard, 'blocked')) continue;
+    if (flowboard.blocked === true && flowboard.workState !== 'blocked') inconsistent++;
     const normalized = _normalizeTaskWorkState(flowboard, flowboard.created || null);
     _updateMetadata(ulid, { flowboard: workStateMetadata(flowboard, normalized) });
     _resyncCachedTask(ulid);
     migrated++;
   }
-  return { migrated };
+  return { migrated, inconsistent };
 }
 
 // --- Public API ---

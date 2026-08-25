@@ -122,6 +122,24 @@ async function main() {
     await hzl.rebuildCache();
     assert.equal(Object.prototype.hasOwnProperty.call(hzl.getTask('t443', legacyMigration.id), 'blocked'), false);
 
+    // m011 records the legacy inconsistency count before removing the
+    // projection. This fixture intentionally has blocked:true without a
+    // canonical workState, matching the migration spec's open question.
+    const legacyRemoval = hzl.createTask('t443', { title: 'legacy-m011', status: 'open' });
+    const legacyRemovalMeta = rawMetadata(cacheDb, legacyRemoval.id);
+    const { workState: _legacyRemovalState, workStateDetails: _legacyRemovalDetails, ...legacyRemovalFlowboard } = legacyRemovalMeta.flowboard;
+    injectLegacyMetadata(cacheDb, legacyRemoval.id, {
+      flowboard: { ...legacyRemovalFlowboard, blocked: true },
+    });
+    const m011 = migrations.migrations.find(migration => migration.id === 'm011-remove-legacy-blocked-boolean');
+    assert.ok(m011, 'm011 migration is registered');
+    const m011Result = m011.run(cacheDb, { hzlService: hzl });
+    assert.equal(m011Result.inconsistent, 1,
+      'm011 records the inconsistent blocked:true count before removal');
+    assert.ok(m011Result.migrated >= 1, 'm011 removes all remaining legacy blocked fields');
+    assert.equal(hzl.getTask('t443', legacyRemoval.id).workState, 'blocked',
+      'm011 preserves the canonical blocked workState while removing the projection');
+
     // Manual retry must use the scheduler's STALE_THRESHOLD_MINUTES contract
     // (default 30), not getStuckTasks()'s legacy read default of 10.  A task
     // idle for 15 minutes therefore stays clear at the scheduler default but

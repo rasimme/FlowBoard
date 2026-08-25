@@ -44,7 +44,6 @@ const validTask = (overrides = {}) => ({
   id: 'T-001',
   title: 'Test task',
   status: 'open',
-  blocked: false,
   workState: 'working',
   workStateDetails: {
     reason: null,
@@ -184,16 +183,16 @@ assert.deepEqual(
 );
 globalThis.fetch = async () => jsonResponse({ ok: true, tasks: { malformed: true } });
 await expectProtocol(() => fetchTasksForProject('demo'), 'tasks requires an array');
+const legacyProjectionTask = validTask({ workState: 'waiting', blocked: true });
+globalThis.fetch = async () => jsonResponse({ ok: true, tasks: [legacyProjectionTask] });
+assert.deepEqual(await fetchTasksForProject('demo'), [legacyProjectionTask],
+  'tasks tolerate a legacy blocked projection while workState is canonical');
 for (const [label, payload] of [
   ['tasks requires ok=true', { tasks: [validTask()] }],
   ['tasks rejects an unknown status enum', { ok: true, tasks: [validTask({ status: 'ready' })] }],
   ['tasks rejects an unknown priority enum', { ok: true, tasks: [validTask({ priority: 'critical' })] }],
   ['tasks validates subtaskIds as strings', { ok: true, tasks: [validTask({ subtaskIds: ['T-001-1', null] })] }],
   ['tasks validates tags as strings', { ok: true, tasks: [validTask({ tags: ['frontend', 42] })] }],
-  ['tasks rejects contradictory blocked projection', {
-    ok: true,
-    tasks: [validTask({ workState: 'waiting', blocked: true })],
-  }],
   ['tasks rejects unknown canonical workState', {
     ok: true,
     tasks: [validTask({ workState: 'stalled' })],
