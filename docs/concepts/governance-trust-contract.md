@@ -1,5 +1,12 @@
 # Governance Trust Contract
 
+## Provenance, not authorization
+
+FlowBoard records origin, actor, timestamp, and creation audit data server-side.
+These fields explain where a task came from; they do not claim to prove an
+unobservable human approval. Form checks are project-scoped and create a review
+marker rather than blocking task creation.
+
 The small, server-authoritative trust foundation behind task creation, Specify
 confirmation, and governance-mode changes. Introduced by
 **T-447-1** as the base layer of the larger "govern agent-originated task

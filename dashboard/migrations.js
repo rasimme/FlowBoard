@@ -366,6 +366,22 @@ const migrations = [
       if (result?.migrated) console.log(`[m009] normalized ${result.migrated} task work-state record(s)`);
     },
   },
+  {
+    id: 'm010-project-task-discipline',
+    name: 'Set explicit task discipline for existing projects (T-449-2)',
+    run: (_db, { fbMeta, hzlService }) => {
+      const discipline = require('./task-discipline.js');
+      for (const project of (hzlService?.listHzlProjects?.() || [])) {
+        const row = fbMeta.getProject(project.name);
+        if (!row) continue;
+        let config = {};
+        try { config = JSON.parse(row.config || '{}'); } catch {}
+        if (!discipline.VALUES.includes(config.taskDiscipline)) {
+          fbMeta.updateProjectMeta(project.name, { taskDiscipline: discipline.DEFAULT });
+        }
+      }
+    },
+  },
 ];
 
 /**

@@ -10,6 +10,7 @@ const net = require('net');
 
 const DEFAULT_WINDOW_MS = 60 * 1000; // 1 minute
 const DEFAULT_MAX_REQUESTS = 60; // max 60 requests per minute per IP
+const DEFAULT_LANE_BUDGETS = Object.freeze({ read: 300, checkpoint: 120, mutation: 60, auth: 10 });
 
 class RateLimiter {
   constructor({
@@ -82,6 +83,43 @@ class RateLimiter {
       this.cleanupInterval = null;
     }
   }
+}
+
+// T-450-5: token bucket with a small burst allowance. The bucket is keyed by
+// the already trusted lane/principal key; caller-provided agent ids never enter
+// this function.
+class LaneTokenBucketLimiter {
+  constructor({ budgets = DEFAULT_LANE_BUDGETS, burst = 30, keyGenerator, scopeFor, skip } = {}) {
+    this.budgets = { ...DEFAULT_LANE_BUDGETS, ...budgets };
+    this.burst = Number.isFinite(burst) ? burst : 30;
+    this.keyGenerator = keyGenerator;
+    this.scopeFor = scopeFor;
+    this.skip = skip;
+    this.buckets = new Map();
+  }
+  middleware() {
+    return (req, res, next) => {
+      if (this.skip && this.skip(req)) return next();
+      const scope = this.scopeFor(req);
+      const rate = Math.max(1, Number(this.budgets[scope] || this.budgets.mutation));
+      const capacity = rate + this.burst;
+      const key = `${scope}:${this.keyGenerator(req)}`;
+      const now = Date.now();
+      const old = this.buckets.get(key) || { tokens: capacity, at: now };
+      old.tokens = Math.min(capacity, old.tokens + ((now - old.at) / 60000) * rate);
+      old.at = now;
+      if (old.tokens < 1) {
+        const retryAfter = Math.max(1, Math.ceil(((1 - old.tokens) / rate) * 60));
+        this.buckets.set(key, old);
+        res.set('Retry-After', String(retryAfter));
+        return res.status(429).json({ error: 'Rate limit exceeded. Please retry after the cooldown.', code: 'RATE_LIMIT_EXCEEDED', scope, lane: scope, retryAfter });
+      }
+      old.tokens -= 1;
+      this.buckets.set(key, old);
+      return next();
+    };
+  }
+  close() { this.buckets.clear(); }
 }
 
 function socketIp(req) {
@@ -272,6 +310,8 @@ function getRateLimitKey(req, trustedProxyIps = []) {
 
 module.exports = {
   RateLimiter,
+  LaneTokenBucketLimiter,
+  DEFAULT_LANE_BUDGETS,
   DEFAULT_WINDOW_MS,
   DEFAULT_MAX_REQUESTS,
   getClientIp,

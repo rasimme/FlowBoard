@@ -5,6 +5,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const taskDiscipline = require('./task-discipline.js');
 
 // Slug validation: lowercase letters, digits, hyphens; must start with a letter or digit
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -13,7 +14,7 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
  * Validate and normalize project creation input.
  * Throws { code: 'VALIDATION_ERROR', message } on failure.
  */
-function _validateInput({ name, displayName, description, group }) {
+function _validateInput({ name, displayName, description, group, taskDiscipline: requested }) {
   if (!name || typeof name !== 'string') {
     throw Object.assign(new Error('name is required'), { code: 'VALIDATION_ERROR' });
   }
@@ -40,6 +41,7 @@ function _validateInput({ name, displayName, description, group }) {
     displayName: (typeof displayName === 'string' && displayName.trim()) || slug,
     description: (typeof description === 'string' && description.trim()) || '',
     group: cleanGroup,
+    taskDiscipline: taskDiscipline.normalize(requested),
   };
 }
 
@@ -140,6 +142,7 @@ function _scaffoldFilesystem(projectsDir, name, displayName, description) {
 function createProject(input, { hzlService, fbMeta, projectsDir }) {
   // 1. Validate
   const { name, displayName, description, group } = _validateInput(input);
+  const discipline = taskDiscipline.normalize(input.taskDiscipline || taskDiscipline.suggest(input));
 
   // 2. Duplicate detection across all canonical layers
   const hzlProjects = hzlService.listHzlProjects();
@@ -188,7 +191,7 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
       displayName,
       status: 'active',
       createdAt: new Date().toISOString(),
-      config: group ? { group } : {},
+      config: { ...(group ? { group } : {}), taskDiscipline: discipline },
     }, true);
   } catch (e) {
     throw Object.assign(
@@ -231,6 +234,7 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
     description: description || null,
     status: 'active',
     group: group || null,
+    taskDiscipline: discipline,
   };
   return { project, warnings };
 }

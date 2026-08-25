@@ -20,3 +20,9 @@ Graceful-degradation rules when FlowBoard state is partial, stale, or inconsiste
 
 - `key-principles` — why DB is canonical
 - `api-access` — claim/lease semantics and the full endpoint reference
+# Rate limits (429)
+
+API clients, including remote agents, must treat `429 RATE_LIMIT_EXCEEDED` as a
+controlled retry signal. Read the `Retry-After` response header (or the JSON
+`retryAfter` seconds), wait at least that long, add a small random jitter, and
+retry once. Do not immediately repeat the request or spin in a tight loop.

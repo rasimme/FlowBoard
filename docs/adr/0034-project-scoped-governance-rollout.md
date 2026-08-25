@@ -1,4 +1,6 @@
-# ADR-0034: Project-scoped governance rollout with compatibility observation
+# ADR-0034: Project-scoped governance rollout with compatibility observation (Superseded)
+
+> Superseded by ADR-0035: task discipline replaces blocking governance modes.
 
 ## Status
 Accepted (2026-08-24, T-447-5)

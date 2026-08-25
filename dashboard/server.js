@@ -52,6 +52,7 @@ const INTEGRITY_WEBHOOK_URL = process.env.INTEGRITY_WEBHOOK_URL || '';
 const INTEGRITY_WEBHOOK_TOKEN = process.env.INTEGRITY_WEBHOOK_TOKEN || '';
 const hzlService = require('./hzl-service.js');
 const fbMeta = require('./flowboard-metadata.js');
+const taskDiscipline = require('./task-discipline.js');
 const hzlIntegrity = require('./hzl-integrity.js');
 // Boot-time integrity snapshot — set by startServer(), exposed via
 // GET /api/health/integrity. Null until the check has run at least once.
@@ -82,6 +83,8 @@ const agentIdentity = require('./agent-identity.js');
 const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegram-auth.js');
 const {
   RateLimiter,
+  LaneTokenBucketLimiter,
+  DEFAULT_LANE_BUDGETS,
   getClientIp,
   parseTrustedProxyConfig,
   getRateLimitKey,
@@ -507,39 +510,21 @@ if (process.env.LOCAL_HOSTNAME) {
   }
 }
 
-// Rate Limiting — max 60 Requests/Minute pro IP auf API-Routen
-app.use('/api/', rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: false,
-  handler: (req, res) => {
-    const resetAt = req.rateLimit?.resetTime instanceof Date
-      ? req.rateLimit.resetTime.getTime()
-      : Date.now() + 60 * 1000;
-    const retryAfter = Math.max(1, Math.ceil((resetAt - Date.now()) / 1000));
-    const scope = getRateLimitScope(req);
-    res.set('Retry-After', String(retryAfter));
-    return res.status(429).json({
-      error: 'Rate limit exceeded. Please retry after the cooldown.',
-      code: 'RATE_LIMIT_EXCEEDED',
-      scope,
-      lane: scope,
-      retryAfter,
-    });
+// T-450: independent lane budgets plus a bounded token-bucket burst. The
+// loopback exemption is intentionally unchanged.
+const laneLimiter = new LaneTokenBucketLimiter({
+  budgets: {
+    read: Number(process.env.FLOWBOARD_RATE_LIMIT_READ) || DEFAULT_LANE_BUDGETS.read,
+    checkpoint: Number(process.env.FLOWBOARD_RATE_LIMIT_CHECKPOINT) || DEFAULT_LANE_BUDGETS.checkpoint,
+    mutation: Number(process.env.FLOWBOARD_RATE_LIMIT_MUTATION) || DEFAULT_LANE_BUDGETS.mutation,
+    auth: Number(process.env.FLOWBOARD_RATE_LIMIT_AUTH) || DEFAULT_LANE_BUDGETS.auth,
   },
-  // Skip only requests without a tunnel marker that arrive from loopback.
-  // cloudflared also connects from loopback, so a marker must never skip the
-  // limiter. Its client-IP header is used only when the socket peer matches
-  // TRUSTED_PROXY_IPS; otherwise getClientIp() uses the socket address.
+  burst: Number(process.env.FLOWBOARD_RATE_LIMIT_BURST) || 30,
+  keyGenerator: (req) => getTrustedPrincipal(req, TRUSTED_PROXY_IPS),
+  scopeFor: getRateLimitScope,
   skip: (req) => !req.headers['cf-ray'] && (req.ip === '127.0.0.1' || req.ip === '::1'),
-  // The key is lane + verified session principal (or trusted transport IP).
-  // It deliberately never includes cookies, bearer tokens, or request-body
-  // agent ids. Separate keys keep reads, mutations, and checkpoints isolated.
-  keyGenerator: (req) => getRateLimitKey(req, TRUSTED_PROXY_IPS),
-  message: { error: 'Too many requests, please slow down.' }
-}));
+});
+app.use('/api/', laneLimiter.middleware());
 
 // Security + Cache Headers
 // S-25: Nonce-based CSP replaces unsafe-inline for script-src
@@ -1791,6 +1776,22 @@ app.put('/api/projects/:name', (req, res) => {
   }
 });
 
+app.get('/api/projects/:name/task-discipline', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  const project = fbMeta.getProject(req.params.name);
+  const config = project ? (() => { try { return JSON.parse(project.config || '{}'); } catch { return {}; } })() : {};
+  const discipline = taskDiscipline.normalize(config.taskDiscipline);
+  return res.json({ ok: true, project: req.params.name, discipline, default: taskDiscipline.DEFAULT, values: taskDiscipline.VALUES, lastChange: null, canChange: true });
+});
+
+app.put('/api/projects/:name/task-discipline', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  const discipline = req.body?.discipline;
+  if (!taskDiscipline.VALUES.includes(discipline)) return res.status(400).json({ error: `discipline must be one of: ${taskDiscipline.VALUES.join(', ')}` });
+  const updated = fbMeta.updateProjectMeta(req.params.name, { taskDiscipline: discipline });
+  return res.json({ ok: true, project: req.params.name, discipline, lastChange: { actor: 'local:operator', changedAt: new Date().toISOString() }, canChange: true, metadata: updated });
+});
+
 // DELETE /api/projects/:name?confirm=<name> — T-136: hard-delete (tombstone + .trash/)
 app.delete('/api/projects/:name', (req, res) => {
   if (req.query.confirm !== req.params.name) {
@@ -1950,6 +1951,11 @@ app.get('/api/dashboard/snapshot/v1', (req, res) => {
         return enrichTasks(project, hzlService.listTasks(project, { includeArchived: true }));
       },
     });
+    // T-450-3: cache validation saves serialization and response bandwidth;
+    // 304s still pass through the same lane limiter above.
+    const etag = `"${crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}"`;
+    res.set('ETag', etag);
+    if (req.get('If-None-Match') === etag) return res.status(304).end();
     return res.json(snapshot);
   } catch (err) {
     console.error('[dashboard/snapshot/v1]', err);
@@ -2216,6 +2222,37 @@ function normalizePriority(value) {
 // POST /api/projects/:name/tasks
 app.post('/api/projects/:name/tasks', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  // T-449-4: structured parent + subtask creation. Validate the complete
+  // shape before writing, then roll back every created task on any failure.
+  const batchParent = req.body?.parent || (Array.isArray(req.body?.subtasks) ? req.body : null);
+  const batchChildren = Array.isArray(req.body?.subtasks) ? req.body.subtasks : null;
+  if (batchParent && batchChildren) {
+    if (!batchParent.title || batchChildren.length === 0 || batchChildren.length > 50) {
+      return res.status(400).json({ error: 'batch create requires a parent title and 1-50 subtasks' });
+    }
+    const all = [batchParent, ...batchChildren];
+    for (const item of all) {
+      if (!item || typeof item.title !== 'string' || !item.title.trim()) return res.status(400).json({ error: 'every batch task requires a title' });
+      if (item.description !== undefined && (typeof item.description !== 'string' || item.description.length > 16384)) return res.status(400).json({ error: 'description must be a string of at most 16KB' });
+    }
+    const created = [];
+    try {
+      const disciplineMeta = fbMeta.getProject(req.params.name);
+      let cfg = {}; try { cfg = JSON.parse(disciplineMeta?.config || '{}'); } catch {}
+      const discipline = taskDiscipline.normalize(cfg.taskDiscipline);
+      const createBatchItem = (item, parentId = null, batchSize = 1) => {
+        const reasons = taskDiscipline.reasonsFor({ discipline, title: item.title.trim(), description: item.description, specFile: item.specFile, batchSize, siblingBatch: batchSize > 1 });
+        const task = hzlService.createTaskWithPolicy(req.params.name, { title: item.title.trim(), priority: normalizePriority(item.priority) || 'medium', parentId, status: item.status || 'backlog', description: item.description || '', ...(reasons.length ? { structureReview: taskDiscipline.review(reasons) } : {}) }, { origin: 'tasks-api', principal: governance.resolvePrincipal(req), governanceMode: 'compat', taskDiscipline: discipline });
+        created.push(task.id); return task;
+      };
+      const parent = createBatchItem(batchParent, null, batchChildren.length + 1);
+      const subtasks = batchChildren.map(item => createBatchItem(item, parent.id, batchChildren.length + 1));
+      return res.json({ ok: true, batch: true, parent: taskWithSpecStatus(req.params.name, parent), subtasks: subtasks.map(t => taskWithSpecStatus(req.params.name, t)) });
+    } catch (err) {
+      for (const id of created.reverse()) { try { hzlService.deleteTask(req.params.name, id, 'all'); } catch {} }
+      return res.status(err.status || 400).json({ error: err.message, code: err.code || 'BATCH_CREATE_FAILED' });
+    }
+  }
   const { title, priority, parentId } = req.body;
   // Reject empty/whitespace-only titles and bound the length (T-355).
   if (typeof title !== 'string' || !title.trim()) {
@@ -2273,6 +2310,17 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   }
 
   const principal = governance.resolvePrincipal(req);
+  const projectMeta = fbMeta.getProject(req.params.name);
+  let projectConfig = {};
+  try { projectConfig = JSON.parse(projectMeta?.config || '{}'); } catch {}
+  const discipline = taskDiscipline.normalize(projectConfig.taskDiscipline);
+  const structureReasons = taskDiscipline.reasonsFor({
+    discipline,
+    title: cleanTitle,
+    description: req.body.description,
+    specFile: req.body.specFile,
+    batchSize: 1,
+  });
   try {
     const task = hzlService.createTaskWithPolicy(req.params.name, {
       title: cleanTitle,
@@ -2285,12 +2333,14 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       ...(Object.prototype.hasOwnProperty.call(req.body, 'blocked') ? { blocked: req.body.blocked } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body, 'workState') ? { workState: req.body.workState } : {}),
       ...(Object.prototype.hasOwnProperty.call(req.body, 'workStateDetails') ? { workStateDetails: req.body.workStateDetails } : {}),
+      ...(structureReasons.length ? { structureReview: taskDiscipline.review(structureReasons) } : {}),
     }, {
       // The route chooses the origin. Client-supplied origin/identity claims
       // are never used to authorize or label this creation path.
       origin: 'tasks-api',
       principal,
-      governanceMode: governance.getGovernanceMode(fbMeta, req.params.name),
+      governanceMode: 'compat',
+      taskDiscipline: discipline,
       sourceContext: req.body.sourceContext,
       structuredDecisions: req.body.structuredDecisions,
     });

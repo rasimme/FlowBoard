@@ -66,6 +66,10 @@ Base: `http://localhost:18790/api`
 
 ### Create Task — Full Body Reference
 
+Direct task creation is available to agents. Specify is an optional clarification
+workflow, not a human-authorization gate. Structured development work may use
+one request with `{ "parent": { ... }, "subtasks": [{ ... }] }`.
+
 ```
 POST /projects/:name/tasks
 ```

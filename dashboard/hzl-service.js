@@ -11,6 +11,7 @@ const {
   workStateMetadata,
 } = require('./work-state.js');
 const taskCreationPolicy = require('./task-creation-policy.js');
+const taskDiscipline = require('./task-discipline.js');
 const policyLedger = require('./policy-ledger.js');
 
 // =============================================================================
@@ -249,6 +250,11 @@ function _toFbTask(hzlTask, project) {
     // later verified-human review action. Keep the shape stable for API/UI
     // consumers without adding a dashboard surface in this task.
     exceptionReview: _normalizeExceptionReview(fb.exceptionReview),
+    structureReview: fb.structureReview && fb.structureReview.status === 'pending'
+      ? { status: 'pending', reviewer: null, reviewedAt: null, reasons: Array.isArray(fb.structureReview.reasons) ? fb.structureReview.reasons : [] }
+      : fb.structureReview && fb.structureReview.status === 'reviewed'
+        ? { status: 'reviewed', reviewer: fb.structureReview.reviewer || null, reviewedAt: fb.structureReview.reviewedAt || null, reasons: Array.isArray(fb.structureReview.reasons) ? fb.structureReview.reasons : [] }
+        : null,
     _ulid: hzlTask.task_id,
     _project: project,
   };
@@ -1087,11 +1093,12 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     // object from a caller's creation options, including the explicit
     // migration/import escape hatch; only the policy decision below may seed
     // the pending marker.
-    const { exceptionReview: _callerReview, ...safeCreationOpts } = opts || {};
+    const { exceptionReview: _callerReview, structureReview: _callerStructureReview, ...safeCreationOpts } = opts || {};
     task = createTaskRaw(project, {
       ...safeCreationOpts,
       creationAudit: audit,
       exceptionReview,
+      structureReview: opts.structureReview || null,
     });
 
     // Specify confirmation is already verified by governance.js before this
@@ -1241,6 +1248,7 @@ function createTaskRaw(project, opts) {
         blocked: workStateResolved.blocked,
         ...(opts.creationAudit ? { creationAudit: _cloneJson(opts.creationAudit) } : {}),
         ...(opts.exceptionReview ? { exceptionReview: _cloneJson(opts.exceptionReview) } : {}),
+        ...(opts.structureReview ? { structureReview: _cloneJson(opts.structureReview) } : {}),
         ...(staleAfterMinutes !== null ? { staleAfterMinutes } : {}),
       }
     },
@@ -1282,6 +1290,7 @@ function createTaskRaw(project, opts) {
     order: null,
     creationAudit: opts.creationAudit ? _cloneJson(opts.creationAudit) : null,
     exceptionReview: opts.exceptionReview ? _cloneJson(opts.exceptionReview) : null,
+    structureReview: opts.structureReview ? _cloneJson(opts.structureReview) : null,
     _ulid: hzlTask.task_id,
     _project: project,
   };

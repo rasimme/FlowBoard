@@ -215,6 +215,7 @@ function listProjects(hzlProjects) {
         assignedAgents: meta ? _parseJson(meta.assigned_agents, []) : [],
         description: p.description || '',
         createdAt: meta ? meta.created_at : (p.created_at || null),
+        taskDiscipline: meta ? (_parseJson(meta.config, {}).taskDiscipline || 'list') : 'list',
       };
     });
 }
@@ -241,6 +242,7 @@ function updateProjectMeta(name, patch) {
   else if (patch.archived !== undefined) nextStatus = patch.archived ? 'archived' : 'active';
 
   const config = _parseJson(existing.config, {});
+  if (patch.taskDiscipline !== undefined) config.taskDiscipline = patch.taskDiscipline;
   if (patch.group !== undefined) {
     if (patch.group === null || patch.group === '') delete config.group;
     else config.group = String(patch.group);

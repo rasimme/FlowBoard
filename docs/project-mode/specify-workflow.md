@@ -105,6 +105,10 @@ Specs are created via `POST /api/projects/:name/specs/:taskId` (canonical name `
 
 ## Integration with Tasks API
 
+Specify is optional; direct agent task creation is allowed. Project task
+discipline may mark shape violations for later `structureReview`, but never
+rejects a task solely because no human confirmation was observed.
+
 Specify creates tasks via the standard `POST /api/projects/:name/tasks` endpoint. The created tasks reference their spec via `links` or `metadata`. This is not a separate task creation path — Specify is a workflow that uses the Tasks API.
 
 ## Governance rollout and recovery
