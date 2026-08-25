@@ -10,6 +10,11 @@ const tasks = [
   { id: 'T-100-4', parentId: 'T-100', title: 'Historical owner only', agent: 'design-botti', status: 'in-progress' },
   { id: 'T-100-5', parentId: 'T-100', title: 'Done child', agent: 'review-botti', claimedAt: '2026-05-29T12:03:00Z', status: 'done' },
   { id: 'T-100-6', parentId: 'T-100', title: 'Trashed child', agent: 'trash-botti', claimedAt: '2026-05-29T12:04:00Z', status: 'in-progress', trashedAt: '2026-05-29T12:05:00Z' },
+  // T-459: archived by status, and archived by the boolean alone. The local
+  // predicate this file used to carry checked only the former, which is the
+  // gap that made it a third copy rather than the shared rule.
+  { id: 'T-100-7', parentId: 'T-100', title: 'Archived by status', agent: 'arch-status-botti', claimedAt: '2026-05-29T12:07:00Z', status: 'archived' },
+  { id: 'T-100-8', parentId: 'T-100', title: 'Archived by flag', agent: 'arch-flag-botti', claimedAt: '2026-05-29T12:08:00Z', status: 'in-progress', archived: true },
   { id: 'T-101-1', parentId: 'T-101', title: 'Other parent', agent: 'other-botti', claimedAt: '2026-05-29T12:06:00Z', status: 'in-progress' },
 ];
 
@@ -20,7 +25,12 @@ assert.deepEqual(
     { agent: 'dev-botti', taskId: 'T-100-1', title: 'Claimed child' },
     { agent: 'claude', taskId: 'T-100-3', title: 'Other active child' },
   ],
-  'active subtask claims are unique per agent and ignore historical/done/trashed tasks',
+  'active subtask claims are unique per agent and ignore historical/done/trashed/archived tasks',
+);
+
+assert.ok(
+  !claims.some(c => c.agent === 'arch-flag-botti'),
+  'a claim on a task archived by the boolean alone does not pulse — the shared predicate catches what the local copy missed',
 );
 
 assert.deepEqual(
