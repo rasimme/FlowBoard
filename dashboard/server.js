@@ -3800,29 +3800,6 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
 // T-447-1: governance mutations all use the same server-authoritative
 // principal resolver. These small surfaces establish the trust contract used
 // by later policy enforcement work.
-app.get('/api/projects/:name/governance/mode', (req, res) => {
-  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
-  try {
-    const principal = governance.resolvePrincipal(req);
-    res.json({
-      ok: true,
-      project: req.params.name,
-      mode: governance.getGovernanceMode(fbMeta, req.params.name),
-      default: governance.DEFAULT_GOVERNANCE_MODE,
-      modes: governance.GOVERNANCE_MODES,
-      lastChange: governance.getGovernanceModeAudit(fbMeta, req.params.name),
-      // Reads stay available to agents and anonymous local callers, while the
-      // Dashboard can disable its mutation control before making a request
-      // that the server would reject. This is a capability hint, never the
-      // authorization decision.
-      canChange: governance.isVerifiedHuman(principal),
-    });
-  } catch (err) {
-    console.error('[api]', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 app.put('/api/projects/:name/governance/mode', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   try {

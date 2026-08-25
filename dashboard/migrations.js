@@ -14,6 +14,18 @@
 
 const fs   = require('fs');
 const path = require('path');
+const taskDiscipline = require('./task-discipline.js');
+
+function deriveProjectDisciplines(projects) {
+  const distribution = { list: 0, standard: 0, development: 0 };
+  const assignments = [];
+  for (const project of projects || []) {
+    const discipline = taskDiscipline.normalize(taskDiscipline.suggest(project));
+    distribution[discipline]++;
+    assignments.push({ name: project.name, discipline });
+  }
+  return { assignments, distribution };
+}
 
 // System docs m005 validates on startup. Post-lazy-load the canonical rule
 // sections live at the top level and the monolithic PROJECT-RULES.md is
@@ -370,14 +382,14 @@ const migrations = [
     id: 'm010-project-task-discipline',
     name: 'Set explicit task discipline for existing projects (T-449-2)',
     run: (_db, { fbMeta, hzlService }) => {
-      const discipline = require('./task-discipline.js');
-      for (const project of (hzlService?.listHzlProjects?.() || [])) {
+      const projects = fbMeta.listProjects(hzlService?.listHzlProjects?.() || []);
+      for (const project of projects) {
         const row = fbMeta.getProject(project.name);
         if (!row) continue;
         let config = {};
         try { config = JSON.parse(row.config || '{}'); } catch {}
-        if (!discipline.VALUES.includes(config.taskDiscipline)) {
-          fbMeta.updateProjectMeta(project.name, { taskDiscipline: discipline.DEFAULT });
+        if (!taskDiscipline.VALUES.includes(config.taskDiscipline)) {
+          fbMeta.updateProjectMeta(project.name, { taskDiscipline: taskDiscipline.normalize(taskDiscipline.suggest(project)) });
         }
       }
     },
@@ -445,4 +457,4 @@ function runPending(db, context) {
 
 // `migrations` is exported for tests that need to pre-mark earlier migrations
 // as applied (e.g. test-canvas-db-store.js exercises m008 in isolation).
-module.exports = { runPending, migrations };
+module.exports = { runPending, migrations, deriveProjectDisciplines };

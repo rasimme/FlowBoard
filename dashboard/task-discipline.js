@@ -12,6 +12,7 @@ function suggest(signals = {}) {
   const text = [signals.name, signals.displayName, signals.description, signals.group]
     .filter(v => typeof v === 'string').join(' ').toLowerCase();
   if (/\b(repo|repository|code|coding|backend|frontend|api|service|server|library|sdk|cli|build|deploy|development|software)\b/.test(text)) return 'development';
+  if (/\b(docs?|documentation|wiki|notes?|research|knowledge|handbook|writing|content|book|article|blog|journal|orchestrat\w*|coordinat\w*|mission|ops|operations|fleet|swarm|multi-agent|agents?)\b/.test(text)) return 'standard';
   return DEFAULT;
 }
 
