@@ -14,11 +14,9 @@ import { normalizeTaskWorkState } from '../utils/workState.js';
  * werden"). For waiting/blocked/paused it renders the state icon + English
  * label (`Waiting` / `Blocked` / `Paused`).
  *
- * T-452-2 TODO / seam: `onClick` currently opens the legacy WorkStatePicker
- * inline as an interim measure (see DetailPanel's `workStateEditorOpen`
- * toggle). Replace this whole trigger with the shared headerPopover +
- * Popover.jsx pattern already used for Status/Priority (DetailPanel.jsx
- * `openHeaderPopover`/`closeHeaderPopover`) and drop the toggle.
+ * `onClick` is wired by DetailPanel to `openHeaderPopover(e, 'workState')`
+ * (T-452-2), the same headerPopover + Popover.jsx mechanism already used for
+ * Status/Priority — see WorkStatePopover.jsx for the popover content.
  */
 const WORK_STATE_ICONS = {
   waiting: Hourglass,
@@ -40,6 +38,7 @@ export default function WorkStateChip({ workState, onClick }) {
       <button
         type="button"
         onClick={onClick}
+        data-work-state-trigger="true"
         aria-label="Change work state"
         title="Change work state"
         className="inline-flex items-center justify-center px-1.5 self-stretch text-muted bg-transparent border-0 appearance-none cursor-pointer outline-none hover:text-text hover:bg-bg-hover transition-colors duration-fast"
@@ -56,6 +55,7 @@ export default function WorkStateChip({ workState, onClick }) {
     <button
       type="button"
       onClick={onClick}
+      data-work-state-trigger="true"
       aria-label={`Work state: ${label}. Change work state`}
       title={`Work state: ${label}`}
       className="inline-flex items-center gap-1 px-2 py-[3px] text-[11px] font-medium text-text bg-transparent border-0 appearance-none cursor-pointer outline-none hover:bg-bg-hover transition-colors duration-fast"

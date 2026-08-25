@@ -14,8 +14,8 @@ import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
 import LeaseIndicator, { computeHealth } from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
-import WorkStatePicker from './WorkStatePicker.jsx';
 import WorkStateChip from './WorkStateChip.jsx';
+import WorkStatePopover from './WorkStatePopover.jsx';
 import AttentionWarning from './AttentionWarning.jsx';
 import StuckIndicator from './StuckIndicator.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
@@ -208,15 +208,15 @@ export default function DetailPanel() {
   // T-311: tag editor
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTag, setNewTag] = useState('');
-  // T-452-1: interim work-state editor toggle. WorkStatePicker used to render
-  // unconditionally as a standalone box; it now only appears on demand from
-  // the combo chip's state half. T-452-2 replaces this with the shared
-  // headerPopover + Popover.jsx pattern (see WorkStateChip.jsx).
-  const [workStateEditorOpen, setWorkStateEditorOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
   const taskRef = useRef(null); // always-current task for action handlers
+  // T-452-2: the DOM node that opened the current header popover (Status,
+  // Priority, or WorkState), so closeHeaderPopover can return focus to it —
+  // Popover.jsx closes on Escape/click-outside but does not itself manage
+  // focus. Not part of React state: writing it must never trigger a render.
+  const headerPopoverTriggerRef = useRef(null);
   const titleTextareaRef = useRef(null);
   // T-161-4 Activity Feed: sticky-to-bottom flag. Starts true so the
   // feed anchors to the latest entry on first open, but flips to false
@@ -245,7 +245,7 @@ export default function DetailPanel() {
     setEditDescription('');
     setBusyStuckAction(null);
     setReviewingException(false);
-    setWorkStateEditorOpen(false);
+    headerPopoverTriggerRef.current = null;
     stickToBottomRef.current = true;
   }, []);
 
@@ -395,15 +395,28 @@ export default function DetailPanel() {
     stickToBottomRef.current = atBottom;
   }
 
-  // Close on Escape (but not while editing title)
+  // Close on Escape (but not while editing title). A header popover (Status/
+  // Priority/WorkState) or the route popover takes precedence: this document
+  // listener and Popover.jsx's own Escape listener both fire on the same
+  // keydown, so without this guard the first Escape closed a popover AND the
+  // whole panel at once (discovered while wiring T-452-2's WorkStatePopover —
+  // it applied to Status/Priority already, just never had a keyboard-driven
+  // test to surface it). First Escape closes only the popover; a second one
+  // closes the panel.
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e) => {
-      if (e.key === 'Escape' && !isEditingTitle) close();
+      if (e.key !== 'Escape' || isEditingTitle) return;
+      if (headerPopover.type || routePopover.open) {
+        if (headerPopover.type) closeHeaderPopover();
+        if (routePopover.open) closeRoutePopover();
+        return;
+      }
+      close();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [isOpen, isEditingTitle]);
+  }, [isOpen, isEditingTitle, headerPopover.type, routePopover.open]);
 
   function close() {
     setTaskId(null);
@@ -587,17 +600,17 @@ export default function DetailPanel() {
   function openHeaderPopover(e, type) {
     e.stopPropagation();
     const rect = e.currentTarget.getBoundingClientRect();
+    headerPopoverTriggerRef.current = e.currentTarget;
     setHeaderPopover({ type, rect });
   }
+  // T-452-2: restores focus to whichever chip/pill opened the popover
+  // (Status, Priority, WorkState) — Escape-to-close and click-outside both
+  // route through here via Popover.jsx's onClose. Matches the focus-return
+  // pattern ActiveAgentsBar.jsx already established for its own popovers.
   function closeHeaderPopover() {
     setHeaderPopover({ type: null, rect: null });
-  }
-
-  // T-452-1: state-half of the combo chip toggles the interim WorkStatePicker
-  // open/closed. T-452-2 replaces this with the shared Popover.jsx pattern.
-  function toggleWorkStateEditor(e) {
-    e.stopPropagation();
-    setWorkStateEditorOpen((open) => !open);
+    headerPopoverTriggerRef.current?.focus?.();
+    headerPopoverTriggerRef.current = null;
   }
 
   // T-161-4 Zone 2 handlers
@@ -1028,8 +1041,10 @@ export default function DetailPanel() {
                   four-field WorkStatePicker box. Two click targets live in
                   here: the agent half keeps ClaimStateLine's existing
                   claim/release/steal actions untouched; the state half opens
-                  the interim work-state editor below (see
-                  workStateEditorOpen / WorkStateChip.jsx).
+                  the WorkState popover (T-452-2 — see openHeaderPopover /
+                  closeHeaderPopover and the WorkStatePopover render below,
+                  same headerPopover + Popover.jsx mechanism as Status/
+                  Priority).
 
                   Rendered only when it carries information. showStatusRail is
                   true for every non-trashed task, but showClaimLine is false
@@ -1058,7 +1073,7 @@ export default function DetailPanel() {
                 )}
                 <WorkStateChip
                   workState={workState}
-                  onClick={toggleWorkStateEditor}
+                  onClick={(e) => openHeaderPopover(e, 'workState')}
                 />
               </div>
               )}
@@ -1072,25 +1087,13 @@ export default function DetailPanel() {
           {/* Quiet, read-only detail line beneath the rail — never inside
               the chip, never an input field (T-452-1). `waitingFor` for
               `waiting`, `reason` for `blocked`/`paused`; nothing for
-              `working`. Editing still happens via the interim picker below
-              until T-452-3 replaces the four-field form with one question. */}
+              `working`. Editing happens via the WorkStatePopover opened from
+              the chip's state half — one question for waiting/blocked, no
+              question for paused/active (T-452-2/T-452-3). */}
           {workStateDetailText && (
             <div className="mt-1.5 text-[11px] text-muted truncate" title={workStateDetailText}>
               {workStateDetailText}
             </div>
-          )}
-          {/* T-452-1 interim: WorkStatePicker only appears on demand from the
-              combo chip's state half now, instead of always rendering as its
-              own box. T-452-2 replaces this toggle with the shared
-              headerPopover + Popover.jsx pattern (see openHeaderPopover /
-              closeHeaderPopover above and the status/priority Popovers
-              below). Kept as WorkStatePicker verbatim so the full selection
-              mechanism (and the "Save details" fields) stays functional. */}
-          {task && hzlAvailable && showStatusRail(task) && workStateEditorOpen && (
-            <WorkStatePicker
-              task={task}
-              onChange={handleWorkStateChange}
-            />
           )}
           {taskProgress !== null && (
             <div className="mt-3 rounded-md border border-border bg-bg-accent px-3 py-2">
@@ -1167,6 +1170,17 @@ export default function DetailPanel() {
               ))}
             </div>
           </Popover>
+          {/* T-452-2/T-452-3: third instance of the headerPopover +
+              Popover.jsx pattern, opened from the combo chip's state half.
+              Owns its own two-step list/question flow — see
+              WorkStatePopover.jsx. */}
+          <WorkStatePopover
+            open={headerPopover.type === 'workState'}
+            anchorRect={headerPopover.rect}
+            onClose={closeHeaderPopover}
+            task={task}
+            onChange={handleWorkStateChange}
+          />
         </div>
 
         {/* T-161-4 Zone 2 — Quick Actions: Route / Spec on the

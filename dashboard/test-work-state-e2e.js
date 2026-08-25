@@ -1,15 +1,19 @@
 'use strict';
 
-// Browser-rendered T-443-4 coverage. The task API response is intercepted with
-// the expected canonical fields and exact action contract so this test remains
-// deterministic while the backend action routes are still an integration
-// dependency. The real React shell must still fail closed for other shapes.
+// Browser-rendered T-443-4 coverage, translated for T-452-2/T-452-3: the
+// always-visible four-field WorkStatePicker box is gone, replaced by the
+// combo chip's state half (WorkStateChip) opening a two-step WorkStatePopover
+// (list of four states -> one question for waiting/blocked). The task API
+// response is intercepted with the expected canonical fields and exact
+// action contract so this test remains deterministic while the backend
+// action routes are still an integration dependency. The real React shell
+// must still fail closed for other shapes.
 
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
 const { expectedStuckIndicatorAction, expectedStuckIndicatorActionPath } = require('./test-fixtures/work-state-contract.cjs');
 
 const PROJECT = 'work-state-ui';
-const r = reporter('Work-state picker and living stuck indicator (T-443-4)');
+const r = reporter('Work-state popover and living stuck indicator (T-443-4 / T-452-2 / T-452-3)');
 
 function taskShape(id) {
   return {
@@ -76,6 +80,26 @@ async function waitFor(predicate, timeoutMs = 3000) {
   throw new Error('Timed out waiting for browser API assertion');
 }
 
+// Opens the combo chip's state popover (assumes it is currently closed).
+// T-452-2 replaced the always-visible WorkStatePicker box with this
+// click-to-open popover, so every interaction below opens it explicitly.
+async function openWorkStatePopover(page) {
+  await page.click('[data-work-state-trigger="true"]');
+  await page.waitForSelector('[data-work-state-popover="true"]', { timeout: 3000 });
+}
+
+// Opens the popover and clicks one of its four list entries. Waits for the
+// specific option (not just the popover wrapper) before clicking it: the
+// wrapper and its four Popover.Option children commit in the same React
+// render, but Puppeteer's click needs a settled layout/paint, not just a
+// matching selector, so this closes that gap explicitly rather than relying
+// on incidental delays elsewhere in the flow.
+async function chooseWorkStateOption(page, state) {
+  await openWorkStatePopover(page);
+  await page.waitForSelector(`[data-work-state-option="${state}"]`, { timeout: 3000 });
+  await page.click(`[data-work-state-option="${state}"]`);
+}
+
 async function main() {
   const res = await withDashboard(async ({ api, page, base }) => {
     await api('POST', '/projects', { name: PROJECT });
@@ -116,12 +140,17 @@ async function main() {
           return;
         }
         if (raceMode && body.workState === 'waiting') {
+          // A second, newer canonical update lands the moment this PUT goes
+          // out, then this PUT itself is rejected. The field that changes is
+          // `waitingFor` (not `reason`) because the new popover's one
+          // question for `waiting` maps onto `waitingFor` — see
+          // WorkStatePopover.jsx's QUESTION_FIELD.
           currentTask = {
             ...currentTask,
             workState: 'waiting',
             workStateDetails: {
               ...currentTask.workStateDetails,
-              reason: 'newer external state',
+              waitingFor: 'newer external waiting reason',
             },
           };
           await page.evaluate((task) => {
@@ -170,49 +199,98 @@ async function main() {
       await request.continue();
     });
 
+    // Regression guard for the class of bug this suite's development turned
+    // up: an uncaught render error (e.g. indexing a lookup table with a
+    // value it doesn't cover) unmounts the whole React tree with no visible
+    // trace beyond a browser console error, and every subsequent selector
+    // wait times out with a confusing "element not found" instead of
+    // pointing at the real cause. Collect page errors and assert none fired.
+    const pageErrors = [];
+    page.on('pageerror', (err) => pageErrors.push(err.message));
     await page.goto(`${base}/?agentId=e2e`, { waitUntil: 'networkidle2' });
     await page.waitForSelector('.app', { timeout: 8000 });
     await page.evaluate((project) => window._viewProject && window._viewProject(project), PROJECT);
     await page.waitForFunction((project) => window.appState?.viewedProject === project, { timeout: 8000 }, PROJECT);
     await page.evaluate((id) => window.openTaskDetail && window.openTaskDetail(id), taskId);
-    await page.waitForSelector('[data-work-state-picker="true"]', { timeout: 8000 });
+    await page.waitForSelector('[data-work-state-trigger="true"]', { timeout: 8000 });
+    // The panel slides in via CSS animation (animate-slide-in-right,
+    // ~0.35s); clicking before it settles hits Puppeteer's "not clickable"
+    // guard because the element is still translated off-screen mid-animation.
+    await page.waitForFunction(() => {
+      const el = document.querySelector('[data-work-state-trigger="true"]');
+      const rect = el?.getBoundingClientRect();
+      return !!rect && rect.width > 0 && rect.right <= window.innerWidth + 1;
+    }, { timeout: 3000 });
 
-    r.ok(await page.$('#work-state-select'), 'work-state select renders in task detail');
-    r.ok(await page.$('label[for="work-state-select"]'), 'work-state select has an accessible label');
+    r.ok(await page.$('[data-work-state-trigger="true"]'), 'work-state trigger renders in task detail');
+    r.ok(await page.$eval('[data-work-state-trigger="true"]', (el) => !!el.getAttribute('aria-label')),
+      'work-state trigger has an accessible label');
     r.ok(await page.$('[data-stuck-indicator="true"]'), 'living stuck indicator renders in activity area');
     r.ok((await page.$eval('[data-stuck-indicator="true"]', (el) => el.textContent)).includes('No checkpoint recently'),
       'stuck indicator renders current message, not a comment');
     r.ok((await page.$eval('[data-stuck-indicator="true"]', (el) => el.textContent)).includes('Detected'),
       'stuck indicator renders the canonical detectedAt timestamp');
 
-    await page.select('#work-state-select', 'waiting');
-    await waitFor(() => lastWorkStateUpdate?.workState === 'waiting');
-    r.ok(lastWorkStateUpdate?.workState === 'waiting', 'picker sends canonical waiting workState');
-    r.ok(!Object.prototype.hasOwnProperty.call(lastWorkStateUpdate || {}, 'blocked'),
-      'picker does not write the legacy blocked projection');
+    // Popover basics (T-452-2): the current state is checked and no other;
+    // Escape closes it and returns focus to the trigger chip (a11y contract
+    // shared with the Status/Priority popovers).
+    await openWorkStatePopover(page);
+    const markedOptions = await page.$$eval('[data-work-state-option]', (elements) => elements
+      .filter((el) => el.querySelector('svg')?.classList.contains('opacity-100'))
+      .map((el) => el.getAttribute('data-work-state-option')));
+    r.ok(markedOptions.length === 1 && markedOptions[0] === 'blocked', 'popover marks the current state and no other');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
+    r.ok(await page.evaluate(() => document.activeElement?.matches('[data-work-state-trigger="true"]')),
+      'Escape closes the work-state popover and returns focus to its trigger chip');
 
-    await setInput(page, 'input[name="workStateReason"]', 'Need an approval');
-    await setInput(page, 'input[name="workStateWaitingFor"]', 'Release manager');
+    // Waiting: exactly one question, optional More-context, one combined PUT
+    // (T-452-3). NOTE on scope vs. the old test: the old picker fired a bare
+    // state-only PUT the instant `waiting` was selected, then a second PUT
+    // when "Save details" was clicked. T-452-3 deliberately collapses that
+    // into a single atomic write ("Ein Feld, Enter, fertig") — selecting
+    // `waiting` only opens the question, it does not write anything until
+    // Save/Enter. That two-PUT sequence is therefore not translated as two
+    // steps; this block asserts the one combined PUT carries everything the
+    // two old ones together used to prove (canonical fields, no legacy
+    // `blocked`, the answer, and the More-context field).
+    await chooseWorkStateOption(page, 'waiting');
+    await page.waitForSelector('[data-work-state-question="true"]', { timeout: 3000 });
+    r.ok(await page.$('label[for="work-state-question-input"]'), 'work-state question input has an accessible label');
+
+    // The seed task already has `responsible`/`checkAgainAt` set, so
+    // More-context is auto-expanded on open — no click needed to reach it.
+    r.ok(await page.$('input[name="workStateResponsible"]'),
+      'More context auto-expands when responsible/check-again values already exist');
+    await setInput(page, '[data-work-state-answer="true"]', 'Release manager');
     await setInput(page, 'input[name="workStateResponsible"]', 'release');
-    await page.click('[data-work-state-save="true"]');
-    await waitFor(() => lastWorkStateUpdate?.workStateDetails?.reason === 'Need an approval');
-    r.ok(lastWorkStateUpdate?.workState === 'waiting' && lastWorkStateUpdate?.workStateDetails?.reason === 'Need an approval',
-      'details form persists reason through canonical task PUT');
-    r.ok(lastWorkStateUpdate?.workStateDetails?.waitingFor === 'Release manager',
-      'details form persists waitingFor through canonical task PUT');
+
     const pickerControlSizes = await page.$$eval(
-      '#work-state-select, input[name^="workState"], button[data-work-state-save]',
+      'input[name^="workState"], button[data-work-state-save]',
       (elements) => elements.map((element) => {
         const box = element.getBoundingClientRect();
-        return { name: element.getAttribute('name') || element.id, width: box.width, height: box.height };
+        return { name: element.getAttribute('name') || 'save', width: box.width, height: box.height };
       }),
     );
-    r.ok(pickerControlSizes.length === 6 && pickerControlSizes.every((box) => box.width >= 44 && box.height >= 44),
-      'work-state picker controls have 44px touch targets');
+    r.ok(pickerControlSizes.length === 4 && pickerControlSizes.every((box) => box.width >= 44 && box.height >= 44),
+      'work-state popover controls have 44px touch targets');
+
+    await page.click('[data-work-state-save="true"]');
+    await waitFor(() => lastWorkStateUpdate?.workState === 'waiting');
+    r.ok(lastWorkStateUpdate?.workState === 'waiting', 'popover sends canonical waiting workState');
+    r.ok(!Object.prototype.hasOwnProperty.call(lastWorkStateUpdate || {}, 'blocked'),
+      'popover does not write the legacy blocked projection');
+    r.ok(lastWorkStateUpdate?.workStateDetails?.waitingFor === 'Release manager',
+      'the one question answer persists as waitingFor through the canonical task PUT');
+    r.ok(lastWorkStateUpdate?.workStateDetails?.responsible === 'release',
+      'More-context responsible persists through the same canonical task PUT');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
 
     // No executable action is invented from a string/boolean hint.  The
     // backend must provide an explicit non-destructive descriptor first; this
     // synthetic response includes exactly that agreed descriptor.
+    // (Unchanged from before T-452-2/3 — the stuck-indicator banner itself
+    // is out of scope for these two tasks.)
     const actionBoxes = await page.$$eval('[data-stuck-action]', (elements) => elements.map((el) => {
       const box = el.getBoundingClientRect();
       return { action: el.getAttribute('data-stuck-action'), width: box.width, height: box.height };
@@ -231,7 +309,7 @@ async function main() {
     await page.waitForSelector('[data-stuck-indicator="true"]', { hidden: true, timeout: 3000 });
 
     // Browser race: an external canonical update lands while a work-state
-    // request is pending and then the request fails. The newer same-value
+    // request is pending and then that request fails. The newer same-value
     // state/details must not be restored from the stale local snapshot.
     currentTask = {
       ...currentTask,
@@ -251,31 +329,60 @@ async function main() {
       if (typeof window._notifyReact === 'function') window._notifyReact();
       else window.dispatchEvent(new CustomEvent('appstate:change'));
     }, currentTask);
-    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'working', { timeout: 3000 });
-    raceMode = true;
-    await page.select('#work-state-select', 'waiting');
-    await page.waitForFunction(() => window.appState?.tasks?.[0]?.workState === 'waiting', { timeout: 3000 });
-    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'waiting', { timeout: 3000 });
+    // `working`/Active is invisible: the chip falls back to its bare,
+    // unlabeled chevron once the external reset lands.
     await page.waitForFunction(
-      () => document.querySelector('input[name="workStateReason"]')?.value === 'newer external state',
+      () => document.querySelector('[data-work-state-trigger="true"]')?.getAttribute('title') === 'Change work state',
       { timeout: 3000 },
     );
-    r.ok(await page.$eval('#work-state-select', (el) => el.value) === 'waiting',
-      'failed mutation does not overwrite a newer external work state');
-    r.ok(await page.$eval('input[name="workStateReason"]', (el) => el.value) === 'newer external state',
-      'newer external details survive the rejected optimistic mutation');
 
-    // A rejected PUT with no external publication must still roll the draft
-    // back explicitly. This covers the referential/content-equal prop case
-    // where the parent effect cannot observe a canonical change, and proves
-    // that the same selection can be saved again immediately afterwards.
+    await chooseWorkStateOption(page, 'waiting');
+    await page.waitForSelector('[data-work-state-question="true"]', { timeout: 3000 });
+    r.ok(!(await page.$('input[name="workStateResponsible"]')),
+      'More context starts collapsed for a task with no existing responsible/check-again values');
+    await page.click('[data-work-state-more="true"]');
+    r.ok(await page.$('input[name="workStateResponsible"]'),
+      'the More-context toggle expands the collapsed technical fields');
+    await setInput(page, '[data-work-state-answer="true"]', 'stale local answer');
+
+    raceMode = true;
+    await page.click('[data-work-state-save="true"]');
+    await page.waitForFunction(
+      () => window.appState?.tasks?.[0]?.workStateDetails?.waitingFor === 'newer external waiting reason',
+      { timeout: 3000 },
+    );
+    await page.waitForFunction(
+      () => document.querySelector('[data-work-state-answer="true"]')?.value === 'newer external waiting reason',
+      { timeout: 3000 },
+    );
+    r.ok(await page.$eval('[data-work-state-answer="true"]', (el) => el.value) === 'newer external waiting reason',
+      'failed mutation does not overwrite a newer external work state with the stale local draft');
+    r.ok(await page.$('[data-work-state-question="true"]'),
+      'the popover stays open on a failed write instead of silently closing on a lost mutation');
+
+    // Close explicitly before the next scenario. The popover is deliberately
+    // left open above (a failed write must not silently close), and it stays
+    // mounted with `open` unchanged across renders — WorkStatePopover only
+    // resets its list/question step on a false->true `open` transition (so a
+    // background poll mid-edit can't clobber an in-progress answer), so
+    // reopening it without first closing would not refresh its draft from
+    // the next external update.
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
+
+    // A rejected PUT with no external publication mid-flight must still roll
+    // the draft back to the true canonical state (not a stale earlier one),
+    // and the same choice must be retryable immediately afterward. This is
+    // the exact bug the old WorkStatePicker's rollbackDraft() comment guards
+    // against: a rejected selection must not get stuck and become impossible
+    // to submit again.
     currentTask = {
       ...currentTask,
       workState: 'waiting',
       blocked: false,
       workStateDetails: {
-        reason: 'canonical waiting state',
-        waitingFor: 'canonical owner',
+        reason: null,
+        waitingFor: 'canonical waiting reason',
         responsible: 'canonical owner',
         checkAgainAt: null,
         setAt: currentTask.workStateDetails.setAt,
@@ -287,40 +394,54 @@ async function main() {
       if (typeof window._notifyReact === 'function') window._notifyReact();
       else window.dispatchEvent(new CustomEvent('appstate:change'));
     }, currentTask);
-    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'waiting', { timeout: 3000 });
     await page.waitForFunction(
-      () => document.querySelector('input[name="workStateReason"]')?.value === 'canonical waiting state',
+      () => document.querySelector('[data-work-state-trigger="true"]')?.getAttribute('title') === 'Work state: Waiting',
       { timeout: 3000 },
     );
+
     const failedPutCount = workStatePutCount;
     failNextWorkStatePut = true;
-    await page.select('#work-state-select', 'paused');
+    await chooseWorkStateOption(page, 'paused');
     await waitFor(() => workStatePutCount > failedPutCount);
-    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'waiting', { timeout: 3000 });
-    await page.waitForFunction(
-      () => document.querySelector('input[name="workStateReason"]')?.value === 'canonical waiting state',
-      { timeout: 3000 },
-    );
-    r.ok(await page.$eval('#work-state-select', (el) => el.value) === 'waiting',
-      'failed PUT rolls the picker state back to the canonical shared state');
-    r.ok(await page.$eval('input[name="workStateReason"]', (el) => el.value) === 'canonical waiting state',
-      'failed PUT rolls all picker details back to the canonical shared details');
+    // The failed attempt rolls back to the true canonical state. Since that
+    // is `waiting`, the popover lands on its question step pre-filled with
+    // the canonical answer — not the abandoned "paused" attempt, and not a
+    // blank/stale draft.
+    await page.waitForSelector('[data-work-state-question="true"]', { timeout: 3000 });
+    r.ok(await page.$eval('[data-work-state-answer="true"]', (el) => el.value) === 'canonical waiting reason',
+      'failed PUT rolls the popover back to the canonical shared answer, not a stale local one');
 
+    // The same choice (paused) is retryable right after. Unlike the old
+    // always-visible box, the rolled-back popover parked on the question
+    // step rather than the list, so retrying means closing and reopening —
+    // the property under test (a rejected choice is not permanently stuck)
+    // is unchanged.
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
     const retryPutCount = workStatePutCount;
-    await page.select('#work-state-select', 'paused');
+    await chooseWorkStateOption(page, 'paused');
     await waitFor(() => workStatePutCount > retryPutCount && lastWorkStateUpdate?.workState === 'paused');
-    await page.waitForFunction(() => document.querySelector('#work-state-select')?.value === 'paused', { timeout: 3000 });
     r.ok(lastWorkStateUpdate?.workState === 'paused',
       'same work-state selection can be saved again after a rejected PUT');
+    await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
+    await page.waitForFunction(
+      () => document.querySelector('[data-work-state-trigger="true"]')?.getAttribute('title') === 'Work state: Paused',
+      { timeout: 3000 },
+    );
 
     await page.setViewport({ width: 390, height: 844 });
+    await chooseWorkStateOption(page, 'waiting');
+    await page.waitForSelector('[data-work-state-question="true"]', { timeout: 3000 });
     const mobile = await page.evaluate(() => ({
       viewport: window.innerWidth,
       pageWidth: document.documentElement.scrollWidth,
-      selectWidth: document.querySelector('#work-state-select')?.getBoundingClientRect().width || 0,
+      formWidth: document.querySelector('[data-work-state-question="true"]')?.getBoundingClientRect().width || 0,
     }));
-    r.ok(mobile.pageWidth <= mobile.viewport + 1, 'work-state detail remains horizontally usable on mobile');
-    r.ok(mobile.selectWidth <= mobile.viewport, 'work-state picker fits the mobile viewport');
+    r.ok(mobile.pageWidth <= mobile.viewport + 1, 'work-state popover remains horizontally usable on mobile');
+    r.ok(mobile.formWidth <= mobile.viewport, 'work-state question form fits the mobile viewport');
+    await page.keyboard.press('Escape');
+
+    r.ok(pageErrors.length === 0, `no uncaught page errors during the flow (saw: ${pageErrors.join(' | ')})`);
   });
 
   if (res?.skipped) r.skip(res.reason);

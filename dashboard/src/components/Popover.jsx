@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
  *   <Popover.Option onClick={handleB}>Option B</Popover.Option>
  * </Popover>
  */
-export default function Popover({ open, onClose, anchorRect, children }) {
+export default function Popover({ open, onClose, anchorRect, children, width }) {
   const ref = useRef(null);
 
   const handleClose = useCallback(() => {
@@ -47,7 +47,12 @@ export default function Popover({ open, onClose, anchorRect, children }) {
   // Position: default below anchor, flip above if overflows viewport
   const gap = 4;
   const popH = 200; // estimated max height for flip check
-  const popW = 160; // estimated max width for clamp check
+  // Width used for the right-edge clamp. 160 fits the short menus this was
+  // built for (Status, Priority); anything wider under-clamps and can hang
+  // off the right edge. Callers with wider content pass their own `width`
+  // (T-452-2's work-state question form is 288). Default unchanged, so
+  // existing call sites keep their exact positioning.
+  const popW = typeof width === 'number' && width > 0 ? width : 160;
 
   let top = anchorRect.bottom + gap;
   let left = anchorRect.left;
