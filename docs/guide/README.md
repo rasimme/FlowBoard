@@ -15,7 +15,7 @@ Task-oriented answers to "how do I …?":
 - [Work the Kanban board](how-to/work-the-kanban.md) — columns, drag, sort modes, subtasks, review, trash.
 - [Search and filter tasks](how-to/search-and-filter.md) — the `Cmd/Ctrl+K` palette and its query operators.
 - [Customize the project overview](how-to/customize-overview.md) — edit the widget grid, presets, GitHub binding.
-- [Roll out task-creation governance](how-to/roll-out-task-governance.md) — observe compat mode, enable enforcement, and manually roll back.
+- [Review task discipline](how-to/roll-out-task-governance.md) — find and acknowledge non-blocking structure reviews.
 - [Brainstorm on the canvas and promote to tasks](how-to/canvas-and-promote.md) — notes, clusters, the Specify stepper.
 
 **Projects & files**

@@ -532,6 +532,14 @@
     },
     {
       "method": "POST",
+      "path": "/api/projects/:name/tasks/:id/structure-review",
+      "auth": "user",
+      "group": "tasks",
+      "description": "Acknowledge a pending non-blocking task structure review.",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "POST",
       "path": "/api/projects/:name/tasks/:id/checkpoint",
       "auth": "user",
       "group": "tasks",
@@ -539,11 +547,19 @@
     },
     {
       "method": "GET",
-      "path": "/api/projects/:name/governance/mode",
+      "path": "/api/projects/:name/task-discipline",
       "auth": "user",
-      "group": "governance",
-      "description": "Read the project-scoped persisted governance mode, rollout audit record, and whether this request has a verified-human mutation capability.",
-      "doc": "api/governance.md"
+      "group": "tasks",
+      "description": "Read the project task-discipline contract and current value.",
+      "doc": "api/tasks.md"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:name/task-discipline",
+      "auth": "user",
+      "group": "tasks",
+      "description": "Set the project task discipline to list, standard, or development.",
+      "doc": "api/tasks.md"
     },
     {
       "method": "PUT",

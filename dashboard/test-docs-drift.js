@@ -30,6 +30,7 @@ const TOOL_PATHS     = [
   path.join(REPO_ROOT, 'dashboard', 'hzl-service.js'),
   path.join(REPO_ROOT, 'dashboard', 'flowboard-metadata.js'),
   path.join(REPO_ROOT, 'dashboard', 'agent-identity.js'),
+  path.join(REPO_ROOT, 'dashboard', 'rate-limiter.js'),
 ];
 const MANIFEST_PATH  = path.join(REPO_ROOT, 'docs', 'reference', 'api-manifest.json');
 const ENV_DOCS_PATH  = path.join(REPO_ROOT, 'docs', 'reference', 'env-vars.md');
@@ -167,7 +168,7 @@ section('env-var coverage — server.js + handler.js + tooling ↔ env-vars.md')
     ...extractEnvVarsFromSource(hook),
     ...toolSrcs.flatMap(({ path: sourcePath, source }) => [
       ...extractEnvVarsFromSource(source, {
-        allowInjectedEnv: path.basename(sourcePath) === 'flowboard-url.cjs',
+        allowInjectedEnv: ['flowboard-url.cjs', 'rate-limiter.js'].includes(path.basename(sourcePath)),
       }),
     ]),
   ]);

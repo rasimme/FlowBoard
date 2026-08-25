@@ -74,7 +74,8 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0031](0031-canonical-work-state-and-transient-indicator.md) — Canonical work state, one transient indicator, and explicit non-destructive actions (2026-08-17; supersedes the execution-context portion of ADR-0009)
 - [ADR-0032](0032-dashboard-snapshot-and-rate-limit-lanes.md) — Versioned dashboard snapshot and isolated rate-limit lanes (2026-08-24)
 - [ADR-0033](0033-server-authoritative-principal-and-specify-confirmation.md) — Server-authoritative principal resolution + verified-human Specify confirmation; caller identity/approval fields are descriptive-only; loopback admission is not human authority (2026-08-24)
-- [ADR-0034](0034-project-scoped-governance-rollout.md) — Project-scoped compat/enforce governance rollout with observation telemetry and manual rollback (2026-08-24)
+- [ADR-0034](0034-project-scoped-governance-rollout.md) — Project-scoped compat/enforce governance rollout with observation telemetry and manual rollback (2026-08-24; superseded by ADR-0035)
+- [ADR-0035](0035-task-form-not-authorization.md) — Task discipline and structure review are form checks, not task-creation authorization (2026-08-25)
 
 ## See also
 

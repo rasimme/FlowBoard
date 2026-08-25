@@ -52,12 +52,26 @@ validated before the first write, and any later failure purges all tasks from
 the request, so the operation is all-or-nothing. Batch items cannot set
 `parentId` or `forceId`.
 
-When governance mode is `enforce`, a non-exempt direct agent creation returns
-HTTP 409 with `{"code":"SPECIFY_REQUIRED", "specifyRequest": {...}}` and
-creates no task. The `specifyRequest` can be passed unchanged as
-`specifyRequest` to `POST /api/specify/sessions`; it carries the title,
-description, priority, server-resolved creator identity, source context and
-`structuredDecisions`. Rejection does not create a Specify session.
+Task creation is not gated on governance mode or Specify. Project
+`taskDiscipline` (`list`, `standard`, or `development`) may attach a
+`structureReview` marker to an item when its server-visible shape needs
+follow-up; it does not reject the item. Specify is an optional clarification
+workflow. The legacy governance-mode endpoint remains a separate
+compatibility/configuration surface; its `compat`/`enforce` value is not the
+task-creation contract.
+
+### `GET|PUT /api/projects/:name/task-discipline`
+
+Read or set the project's `discipline` (`list`, `standard`, or `development`).
+The read response includes `default`, `values`, and `canChange`; setting an
+invalid value returns `400`. This setting controls non-blocking structure
+reviews only.
+
+### `POST /api/projects/:name/tasks/:id/structure-review`
+
+Acknowledge a pending `structureReview`. The server supplies reviewer and
+timestamp from the resolved principal; the transition is one-way and a second
+acknowledgement returns `409`.
 
 ### `PUT /api/projects/:name/tasks/:id`
 

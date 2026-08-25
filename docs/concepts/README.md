@@ -23,7 +23,7 @@ Each concept doc answers five questions:
 - [Specify Workflow](specify-workflow.md) — 6-step agent process for unstructured-to-structured work, session lifecycle, RAM-only sessions
 - [Modular Project Overview](overview-widgets.md) — server-driven widget grid, trusted registry, presets, GitHub binding, milestones/questions as task conventions
 - [Auth Model](auth-model.md) — middleware decision tree, Telegram init-data + JWT cookie, loopback / tunnel / LAN bypasses, fail-closed in production
-- [Governance Trust Contract](governance-trust-contract.md) — server-authoritative principal resolution (human vs agent), authenticated Specify confirmation, governance-mode switch
+- [Governance Trust Contract](governance-trust-contract.md) — server-authoritative attribution, authenticated Specify confirmation, and task-discipline boundary
 - [Smart Search](smart-search.md) — cross-project `Cmd/Ctrl+K` palette; query parser, operators, typo-tolerant matching
 - [Mobile & Touch](mobile-and-touch.md) — responsive single app; Pointer-Events drag, full-screen sheets, master-detail, safe-area
 - [Accessibility](accessibility.md) — keyboard drag-and-drop, `aria-live` announcements, focusable cards (not buttons)
@@ -68,7 +68,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Stuck Detection & Notifications | Stale/expired/routed-unclaimed; one transient indicator; notification guards | ✅ [stuck-notifications.md](stuck-notifications.md) | ✅ ADR-0031 | T-443 |
 | Testing Strategy | Browser E2E harness; runtime guardrails; the `npm test` gate | ✅ [testing-strategy.md](testing-strategy.md) | ✅ ADR-0026 (frontend invariants) | — |
 | Docs-Drift Enforcement | Drift-test family ties docs to code | ✅ [docs-drift-enforcement.md](docs-drift-enforcement.md) | ⬜ none yet | — |
-| Governance Trust Contract | Server-authoritative principal (human vs agent); authenticated Specify confirmation; project-scoped compat/enforce rollout and manual rollback | ✅ [governance-trust-contract.md](governance-trust-contract.md) | ✅ ADR-0033, ADR-0034 (builds on ADR-0028, ADR-0029, ADR-0003) | T-447 (governance rollout) |
+| Governance Trust Contract | Server-authoritative attribution; authenticated Specify confirmation; task discipline and non-blocking structure review | ✅ [governance-trust-contract.md](governance-trust-contract.md) | ✅ ADR-0033, ADR-0035 (ADR-0034 superseded) | T-449 |
 
 **Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
 

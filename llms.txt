@@ -64,6 +64,7 @@
 - [ADR-0031](docs/adr/0031-canonical-work-state-and-transient-indicator.md) — Canonical work state, one transient indicator, and explicit non-destructive actions
 - [ADR-0033](docs/adr/0033-server-authoritative-principal-and-specify-confirmation.md) — Server-authoritative principal resolution + authenticated Specify confirmation; caller identity/approval fields descriptive-only; loopback admission is not human authority
 - [ADR-0034](docs/adr/0034-project-scoped-governance-rollout.md) — Project-scoped compat/enforce rollout, would-block observation telemetry, and manual human rollback
+- [ADR-0035](docs/adr/0035-task-form-not-authorization.md) — Task discipline and structure review are form checks, not task-creation authorization
 
 ## Reference
 

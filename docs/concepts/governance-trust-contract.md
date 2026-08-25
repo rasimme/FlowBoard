@@ -1,150 +1,69 @@
-# Governance Trust Contract
+# Task Creation Trust Contract
 
 ## Provenance, not authorization
 
 FlowBoard records origin, actor, timestamp, and creation audit data server-side.
-These fields explain where a task came from; they do not claim to prove an
-unobservable human approval. Form checks are project-scoped and create a review
-marker rather than blocking task creation.
+These fields explain where a task came from; they do not prove an unobservable
+human approval. Task-form checks are project-scoped and create a review marker
+instead of blocking task creation. This is the current T-449 end state and is
+recorded in [ADR-0035](../adr/0035-task-form-not-authorization.md).
 
-The small, server-authoritative trust foundation behind task creation, Specify
-confirmation, and governance-mode changes. Introduced by
-**T-447-1** as the base layer of the larger "govern agent-originated task
-creation" epic (**T-447**).
+## Task discipline
 
-## 1. What is this concept?
+Project metadata stores `taskDiscipline` as `list`, `standard`, or
+`development`. Existing-project migration derives it from project signals and
+invalid values normalize to `list`. On direct or batch task creation,
+`dashboard/task-discipline.js` evaluates server-visible shape. A violation
+produces:
 
-A single place — `dashboard/governance.js` — that answers three questions on the
-server, from verified context only:
-
-1. **Who is acting?** `resolvePrincipal(req)` returns a `human` or `agent`
-   principal derived from *authenticated / session / transport* context.
-2. **May this human confirm a Specify proposal?**
-   `verifyHumanConfirmation(...)` gates the Specify `/confirm` mutation and
-   produces the record to persist.
-3. **May this actor change governance mode?** `setGovernanceMode(...)`
-   requires a verified human and returns an audit record (actor + timestamp).
-
-It is deliberately **not** a policy engine, roles matrix, or allowlist. Those
-are explicitly out of scope for T-447 (see the parent spec and
-[ADR-0029](../adr/0029-local-first-single-operator-security-boundary.md)).
-
-## 2. Why does it exist?
-
-Agents can call the FlowBoard API. Without a trust boundary, an agent could
-originate work and *self-certify* it as human-approved by putting
-`{ "human": "...", "approved": true }` in a request body. The governance trust
-contract makes that impossible: **the effective principal is resolved on the
-server; caller-supplied fields are descriptive only.**
-
-## 3. Exact principal sources — the trust boundary
-
-The single authoritative signal for a **verified human** is `req.user`,
-populated by the `/api/` auth middleware
-([Auth Model](auth-model.md), `dashboard/server.js` →
-`telegramAuthMiddleware` → `authenticateOrChallenge`) from either:
-
-- **(a)** fresh, HMAC-verified Telegram Mini App init-data, or
-- **(b)** a server-signed session cookie (`flowboard_session`) whose JWT was
-  minted from a prior (a).
-
-In both cases the FlowBoard server itself verified the identity; the client
-cannot forge it. `req.user.id` is the Telegram user id; `req.user.agentId` is
-the *bot mapping* (attribution, **not** an authorization claim —
-[ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md)).
-
-Loopback and LAN bypasses are **transport admission**, not proof of a human
-principal. A request that reaches the API through an anonymous local bypass is
-still an agent principal for policy mutations, including Specify confirmation
-and governance-mode changes. There is no local-operator exception here:
-confirmation requires a server-verified authenticated session (`req.user`) from
-Telegram init-data or a server-issued session cookie.
-
-**Descriptive-only (never authoritative):** everything the client puts in the
-request body or custom headers — `body.agent`, `body.agentId`, `body.human`,
-`body.approved` / `body.userApproval`, `body.origin`, `body.principal`, and the
-Specify `session.agentId` (`'human'` for the dashboard stepper is a *routing
-hint* set at session creation, not proof of a human).
-
-Trust boundary in one line: **"did the FlowBoard server verify a human for THIS
-request?"** — only a Telegram/JWT-backed `req.user`. Everything else is an
-`agent` principal.
-
-## 4. Verified human Specify confirmation
-
-`POST /api/specify/sessions/:id/confirm` resolves the principal and calls
-`verifyHumanConfirmation({ principal, session, expectedSessionId })`. On success
-it persists a confirmation record on the session:
-
-```
-{ actor, humanId, authSessionId, confirmedAt, specifySessionId, proposalIdentity }
+```json
+{
+  "status": "pending",
+  "reviewer": null,
+  "reviewedAt": null,
+  "reasons": ["missing_description"]
+}
 ```
 
-`proposalIdentity` fingerprints the confirmed draft (summary + task count +
-titles) so the record names *what* was confirmed, not just *that* something was.
+The marker is exposed as `structureReview`; it is not an authorization gate.
+Specify is optional and direct agent creation remains allowed.
 
-Rejections (HTTP 403 with a stable `code`):
+`GET /api/projects/:name/tasks?structureReview=pending|reviewed` filters the
+inbox. `POST /api/projects/:name/tasks/:id/structure-review` performs the
+one-way acknowledgement. The server resolves the reviewer and timestamp from
+the request principal. Body-supplied `agent` or `actor` values cannot replace
+that attribution. Anonymous local requests use `local:operator`; authenticated
+requests use the resolved session actor.
 
-| Code | When |
-|------|------|
-| `confirmation_requires_verified_human` | principal is not a verified human |
-| `agent_self_confirmation_forbidden` | the session is agent-originated (transport ≠ `dashboard` or agentId ≠ `human`); an agent cannot confirm its own proposal, and even a verified human confirms via the Dashboard stepper, not an agent's chat session |
-| `no_proposal_to_confirm` | session has no draft proposal |
-| `session_binding_mismatch` | route `:id` ≠ the bound session, or no session |
-| `confirmation_binding_stale` | proposal older than `FLOWBOARD_CONFIRM_MAX_AGE_MIN` (default 30 min) |
+## Atomic structured creation
 
-## 5. Governance mode and rollout
+`POST /api/projects/:name/tasks` also accepts one explicit
+`{ parent, subtasks }` unit. The server validates every item before the first
+write, allocates child IDs and `parentId`, inherits the parent's priority when
+needed, and purges all tasks from the request if a later write fails. Each
+item receives its own discipline evaluation.
 
-- **Governance mode** (`compat` \| `enforce`, default `compat`) persists in
-  project-scoped `flowboard_settings` keys via `fbMeta.getSetting/setSetting`.
-  `GET/PUT /api/projects/:name/governance/mode` is the supported surface. The
-  former instance-wide setting is not an automatic fallback; migration is an
-  explicit, verified-human switch for each project. Unscoped reads remain
-  `compat` and have no audit record.
-- `GET` is readable by normal callers and exposes `canChange` as a UI hint.
-  `PUT` requires a server-verified Telegram/JWT human and writes
-  `{ actor, humanId, changedAt, mode }`; body identity claims never authorize.
-  The same endpoint with `{ "mode": "compat" }` is the manual rollback.
-- In `compat`, a `would_block` decision is allowed and written to the
-  append-only policy ledger. In `enforce`, it is written to the ledger and
-  rejected before task creation with `409 SPECIFY_REQUIRED` and a reusable
-  Specify request. Ledger records include `governanceMode` for observation.
+## Specify confirmation
 
-In `enforce`, a non-exempt direct agent task request returns HTTP 409 with
-`code: SPECIFY_REQUIRED` and a reusable `specifyRequest`; no Specify session
-is created implicitly and no task is written. A Dashboard or chat caller can
-POST that request unchanged to `/api/specify/sessions`, let the worker use its
-`structuredDecisions`, and complete the normal proposal → verified-human
-confirmation flow. Fields already covered by those decisions are not asked
-again. Exception-created tasks are visible through the exception inbox/filter;
-only the authenticated human principal can perform its immutable
-`pending → reviewed` action.
+Specify remains a clarification and proposal workflow. Dashboard-human
+confirmation is required for the Specify confirmation action itself and is
+bound to the server-owned session and proposal identity. It does not authorize
+unrelated direct task creation. Caller-supplied identity or approval fields
+are descriptive only.
 
-## 6. Migration guidance
+## Legacy governance endpoint
 
-Legacy task imports use the explicit `migration` origin and are not blocked.
-Keep imported projects in `compat`, review the ledger, then switch to
-`enforce` manually. Never copy settings or ledger files between projects and
-never edit either file/table by hand; rollback is the verified-human `PUT`
-with `mode: compat`.
-
-## 7. Scope boundary (what T-447-1 does NOT do)
-
-The task-creation policy remains deliberately narrow: it is not a generic
-roles matrix, allowlist, or persistent per-project configuration surface.
+`GET/PUT /api/projects/:name/governance/mode` may remain available as a legacy
+compatibility/configuration and audit surface. Its `compat`/`enforce` value does
+not define current task-creation behavior and must not be documented as a
+Specify release gate. [ADR-0034](../adr/0034-project-scoped-governance-rollout.md)
+is retained as a historical record and explicitly superseded by ADR-0035.
 
 ## Where the code lives
 
-- `dashboard/governance.js` — resolver + confirmation/mode contract.
-- `dashboard/server.js` — `/specify/.../confirm` and `/governance/mode`.
-- `dashboard/hzl-service.js` — durable `specifyConfirmation` task metadata.
-- `dashboard/flowboard-metadata.js` — `getSetting`/`setSetting` for mode.
-- `dashboard/policy-ledger.js` — append-only decision telemetry, including
-  the evaluated rollout mode.
-- `dashboard/src/components/GovernanceModeControl.jsx` — Overview read/control
-  surface; the server remains the authorization boundary.
-- Tests: `dashboard/test-t447-1-governance.js` and
-  `dashboard/test-t447-1-governance-endpoints.js` (trust contract),
-  `dashboard/test-t447-5-governance-rollout.js` (unit),
-  `dashboard/test-t447-5-governance-api.js` (API), and
-  `dashboard/test-t447-5-governance-e2e.js` (browser).
+- `dashboard/task-discipline.js` — discipline values and review reasons.
+- `dashboard/server.js` — task, batch, filter, and structure-review routes.
+- `dashboard/governance.js` — principal resolution and Specify confirmation.
+- `dashboard/hzl-service.js` — durable task metadata and review acknowledgement.
+- `dashboard/test-t449-2-migration.js`, `test-t449-3-structure-review.js`, and
+  `test-t449-4-batch-create.js` — focused T-449 contract tests.

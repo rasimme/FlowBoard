@@ -1,42 +1,16 @@
-# Governance mode API
+# Legacy governance mode API
 
-Task creation governance is stored per project in the FlowBoard settings
-table. New projects and projects without an explicit setting start in
+This endpoint remains exposed for compatibility with a separate project
+settings/audit surface. It is not the current task-creation policy: tasks use
+`taskDiscipline` and non-blocking `structureReview` checks; Specify is optional.
+
+The legacy mode is stored per project in the FlowBoard settings table. New
+projects and projects without an explicit setting start in
 `compat`. The former instance-wide `governance_mode` and audit keys are not
 read as fallbacks: a legacy `enforce` value must not leak into a new or
 unscoped project, and its actor/timestamp must not appear as that project's
 audit. Migration is explicit and project-scoped: a verified human must select
 the desired mode through the endpoint for each project.
-
-## `GET /api/projects/:name/governance/mode`
-
-Read the current mode. This is a normal read surface and does not require a
-verified human session.
-
-```json
-{
-  "ok": true,
-  "project": "example",
-  "mode": "compat",
-  "default": "compat",
-  "modes": ["compat", "enforce"],
-  "canChange": false,
-  "lastChange": null
-}
-```
-
-`canChange` is only a UI capability hint. The server repeats the authorization
-check on every write. `lastChange`, when present, contains the server-derived
-actor and timestamp:
-
-```json
-{
-  "actor": "telegram:42",
-  "humanId": "42",
-  "changedAt": "2026-08-24T21:30:00.000Z",
-  "mode": "enforce"
-}
-```
 
 ## `PUT /api/projects/:name/governance/mode`
 
@@ -62,23 +36,17 @@ Rollback is immediate and leaves the audit record showing who performed it
 and when. No automatic rollout, timer, or environment-variable override is
 used.
 
-## Creation semantics
+## Task-creation boundary
 
-In `compat`, a policy decision of `would_block` is allowed to create the task
-and the append-only policy ledger records the decision. In `enforce`, the same
-decision is recorded and rejected before any task event is written with
-`409 SPECIFY_REQUIRED`; the response includes a reusable `specifyRequest`.
-Allowed Specify and validated exception paths continue to work in either mode.
-New ledger records include `governanceMode` for observation and migration
-verification; records from older versions may omit it.
+The `compat`/`enforce` setting is not a task-creation gate in the current
+contract. Direct task creation remains allowed; project `taskDiscipline` may
+attach a `structureReview` marker without rejecting the task. Specify is an
+optional clarification workflow. Older ledger records may contain historical
+`would_block` observations; do not use them as current task-policy behavior.
 
 ## Migration/import guidance
 
-Task imports and explicit migration paths use the `migration` origin and are
-not blocked by this policy. Imports should preserve their source metadata and
-be followed by a read of this endpoint plus a ledger review. Do not edit the
-settings table or ledger file by hand. If an older install contains a global
-`governance_mode` value, do not rely on it as policy state; explicitly set the
-mode for each project with the verified-human `PUT` endpoint. See
-[Migrations](migrations.md#task-creation-governance-rollout) for the staged
-rollout checklist.
+Task imports and explicit migration paths use the `migration` origin and should
+preserve their source metadata. Do not edit the settings table or ledger file
+by hand. If an older install contains a global `governance_mode` value, do not
+use it as current task-policy state. See [ADR-0035](../../adr/0035-task-form-not-authorization.md).

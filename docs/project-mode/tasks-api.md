@@ -104,16 +104,31 @@ POST /projects/:name/tasks
 - Max 1 nesting level: a subtask cannot have its own subtasks.
 - Completing a subtask triggers parent status recalculation.
 
-### Governance rollout
+### Task discipline and structure review
 
-The project governance mode is read from
-`GET /api/projects/:name/governance/mode`. Agents may read it and should treat
-`canChange: false` as non-authoritative UI information: only a verified human
-may change it. In `compat`, `would_block` requests are intentionally allowed
-and recorded in the policy ledger for rollout observation. In `enforce`, they
-are recorded and rejected before task creation. Agents must not edit the
-settings table or ledger file; for a recovery, pass the returned
-`specifyRequest` to Specify.
+Project metadata exposes `taskDiscipline` as `list`, `standard`, or
+`development`. Direct task creation remains allowed for agents and the local
+dashboard. Shape checks may attach `structureReview` with machine-readable
+reasons; they never make Specify a prerequisite or reject a task because a
+human approval was not observed.
+
+Filter pending or completed markers with
+`GET /projects/:name/tasks?structureReview=pending|reviewed`. A pending marker
+is acknowledged once with
+`POST /projects/:name/tasks/:id/structure-review` (no human credential is
+required). The server resolves the reviewer and timestamp: request-body
+`agent`/`actor` claims are attribution hints only. Anonymous local requests use
+`local:operator`; authenticated requests use the resolved session actor.
+
+For structured development work, use one atomic
+`POST /projects/:name/tasks` request with `{ parent, subtasks }`. The server
+validates all items before writing, allocates child IDs and `parentId`, applies
+priority inheritance, and purges the request's tasks if a later write fails.
+
+Specify remains an optional clarification/proposal workflow. The old
+`governance/mode` route is a separate compatibility surface, not task-creation
+authorization; agents must not describe `compat`/`enforce` as a current task
+gate.
 
 ### Update Task — Full Body Reference
 

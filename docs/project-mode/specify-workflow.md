@@ -111,17 +111,15 @@ rejects a task solely because no human confirmation was observed.
 
 Specify creates tasks via the standard `POST /api/projects/:name/tasks` endpoint. The created tasks reference their spec via `links` or `metadata`. This is not a separate task creation path — Specify is a workflow that uses the Tasks API.
 
-## Governance rollout and recovery
+## Task creation relationship
 
-The normal Specify path is allowed in both `compat` and `enforce` mode because
-it carries the server-bound verified-human confirmation. A direct agent task
-request that evaluates to `would_block` behaves as follows:
+Specify is optional. Direct task creation remains available to agents and the
+local dashboard; project `taskDiscipline` may mark shape violations for later
+`structureReview`, but it never makes Specify a release or authorization gate.
+Structured work can use the atomic `{ parent, subtasks }` task API contract.
 
-- `compat`: the task is created and the policy ledger records the observation;
-- `enforce`: no task is written and the API returns `409 SPECIFY_REQUIRED` with
-  a reusable `specifyRequest`.
-
-Pass that object unchanged to `POST /api/specify/sessions`, preserve its
-`structuredDecisions`, and complete the normal proposal plus Dashboard-human
-confirmation flow. A verified human controls rollout and rollback through
-`/api/projects/:name/governance/mode`; agents may only read the mode.
+The Dashboard-human confirmation in this workflow is still required for the
+Dashboard Specify confirmation action itself. It does not authorize unrelated
+direct task creation. The legacy `governance/mode` route is a separate
+compatibility/configuration surface and does not define current task-creation
+behavior.
