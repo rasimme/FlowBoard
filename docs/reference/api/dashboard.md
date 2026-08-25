@@ -45,8 +45,16 @@ rate-limit budget. When the snapshot content changes, the endpoint returns
 All `/api/` requests use independent token buckets per rate-limit lane and
 trusted principal. Each bucket refills at its configured lane rate and starts
 with that rate plus the configured `FLOWBOARD_RATE_LIMIT_BURST` capacity. A
-depleted bucket returns `429 RATE_LIMIT_EXCEEDED` with a `Retry-After` header
-(in seconds); clients should wait that long before retrying the affected lane.
+depleted bucket returns `429 RATE_LIMIT_EXCEEDED` with both a `Retry-After`
+header and JSON `retryAfter` seconds. Clients must wait at least the advertised
+cooldown, add a small random jitter, and retry the affected lane once only; a
+second failure is terminal for that request.
+
+The trusted principal is the verified session user when available, otherwise
+the transport IP. Thus remote agents without a verified session share one
+bucket per source IP. Caller-supplied `agentId`/`agent` values (query, header,
+or body) are not limiter keys. Direct loopback requests from `127.0.0.1` or
+`::1` without a trusted tunnel marker retain the existing lane-limiter skip.
 
 Set `FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT=false` and restart the service for a
 manual rollback. The dashboard then uses the legacy independent reads; restore

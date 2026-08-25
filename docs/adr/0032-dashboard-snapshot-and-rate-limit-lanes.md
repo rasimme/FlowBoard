@@ -23,9 +23,12 @@ React shell uses one non-overlapping five-second snapshot lane; FilesView keeps
 an independent visible-only 15-second metadata lane. Server rate limiting uses
 separate read, mutation, and checkpoint keys based on a verified session
 principal or trusted transport identity. Rejections return structured `429`
-metadata and `Retry-After`; clients pause only the affected lane and retain
-their last valid data. Authentication failures stop background polling until an
-explicit retry.
+metadata and `Retry-After`; clients pause only the affected lane, wait for the
+advertised duration plus jitter, and make at most one retry while retaining
+their last valid data. Unauthenticated remote clients share a bucket per
+transport IP; caller-supplied agent ids never form a key. The existing direct
+loopback skip remains in force. Authentication failures stop background polling
+until an explicit retry.
 
 The rollout has an explicit operator switch: setting
 `FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT=false` and restarting makes the dashboard

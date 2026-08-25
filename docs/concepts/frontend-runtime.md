@@ -14,8 +14,9 @@ The dashboard shell uses the additive `GET /api/dashboard/snapshot/v1` read
 model. It is one non-overlapping five-second core poll containing projects,
 agents, the caller's status, and the viewed project's tasks; the legacy reads
 remain available to agents and other clients. A `429` pauses only the affected
-lane using `Retry-After` and keeps the last valid data visible. `401`/`403`
-stops background polling until an explicit authentication retry succeeds.
+lane, honors `Retry-After` (or JSON `retryAfter`) plus jitter, and permits one
+retry while keeping the last valid data visible. `401`/`403` stops background
+polling until an explicit authentication retry succeeds.
 
 ## Why
 

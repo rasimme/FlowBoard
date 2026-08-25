@@ -23,6 +23,17 @@ Graceful-degradation rules when FlowBoard state is partial, stale, or inconsiste
 # Rate limits (429)
 
 API clients, including remote agents, must treat `429 RATE_LIMIT_EXCEEDED` as a
-controlled retry signal. Read the `Retry-After` response header (or the JSON
-`retryAfter` seconds), wait at least that long, add a small random jitter, and
-retry once. Do not immediately repeat the request or spin in a tight loop.
+controlled retry signal. Read the `Retry-After` response header; if it is not
+available, use the JSON `retryAfter` value (seconds). Wait at least that long,
+then add a small random jitter, and retry the same request exactly once. Do not
+immediately repeat the request, retry more than once, or spin in a loop. If the
+single retry fails, report the endpoint and stop.
+
+The server's lane bucket is keyed by a verified session principal when one is
+available, otherwise by the transport IP. Consequently, remote agents without
+a verified session share the bucket for their source IP; a client-supplied
+`agentId`/`agent` in a query, header, or request body never selects or creates a
+limiter bucket. The existing local-first exception remains: direct loopback
+requests (`127.0.0.1` or `::1`, without a trusted tunnel marker) skip the lane
+limiter. This is a rate-limit exception, not a remote-agent identity or
+authorization mechanism.
