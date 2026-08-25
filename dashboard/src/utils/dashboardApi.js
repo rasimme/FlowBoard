@@ -134,7 +134,15 @@ export function validateTask(task, index = 0, path = '/projects/tasks', project 
   require(isNonEmptyString(task.id), path, `${at}.id to be a non-empty string`);
   require(isNonEmptyString(task.title), path, `${at}.title to be a non-empty string`);
   require(TASK_STATUSES.has(task.status), path, `${at}.status to match the task status enum`);
-  require(typeof task.blocked === 'boolean', path, `${at}.blocked to be a boolean`);
+  // T-452-5: `blocked` is the legacy boolean projection of the canonical work
+  // state and is on its way out (T-452-7 removes it server-side). It stays
+  // tolerated but is no longer required, so a snapshot that omits it still
+  // loads. Requiring it would turn that server-side removal into a total
+  // board outage instead of a missing chip — this validator rejects the whole
+  // snapshot, not the single field. `workState` below stays required: that is
+  // the canonical field and the actual integration contract.
+  require(task.blocked === undefined || typeof task.blocked === 'boolean', path,
+    `${at}.blocked to be a boolean when present`);
   // Canonical work-state fields are an atomic integration contract.  A
   // response that omits them is rejected before it can reach appState; the UI
   // must not manufacture local `working`/empty-details success from a legacy

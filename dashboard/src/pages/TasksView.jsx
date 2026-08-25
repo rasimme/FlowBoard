@@ -8,10 +8,12 @@ import { Modal, PriorityPill, Popover, ActiveAgentsBar, Tooltip } from '../compo
 import AgentChip, { agentColor } from '../components/AgentChip.jsx';
 import LeaseIndicator from '../components/LeaseIndicator.jsx';
 import BlockedChip from '../components/BlockedChip.jsx';
+import { TaskCardStateChip } from '../components/WorkStateChip.jsx';
 import UndoToast from '../components/UndoToast.jsx';
 import TrashPanel from '../components/TrashPanel.jsx';
 import { useHaptic } from '../hooks/useHaptic.js';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
+import { normalizeTaskWorkState } from '../utils/workState.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check, GripVertical } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
@@ -202,12 +204,18 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated, st
 
   const hasUsableSpec = task.specFile && task.specExists !== false;
   const claimColors = activeClaimColors(task);
+  // T-452-5: read blocked from the canonical work state, never from the
+  // legacy `task.blocked` boolean. T-452-7 removes that field server-side,
+  // and the frontend has to stop reading it first — subtask cards included,
+  // or the removal breaks them one commit later.
+  const subtaskWorkState = normalizeTaskWorkState(task).workState;
+  const subtaskBlocked = subtaskWorkState === 'blocked';
   const subtaskClass = [
     'subtask-card',
     claimColors && 'subtask-card-active-claim',
     // Blocked subtasks get the same dashed card treatment as blocked
     // parents — not just the chip (T-246-9).
-    task.blocked && 'is-blocked',
+    subtaskBlocked && 'is-blocked',
   ].filter(Boolean).join(' ');
   const subtaskStyle = { cursor: 'pointer', ...(claimColors || null) };
 
@@ -253,7 +261,7 @@ const SubtaskCard = memo(function SubtaskCard({ task, project, onTaskUpdated, st
       {/* T-161-4: Blocked signal drops to its own line under the title so
           the main row's content (title + identity chips + spec) never gets
           truncated. Card grows vertically only when blocked is true. */}
-      {task.blocked && (
+      {subtaskBlocked && (
         <div className="subtask-card-blocked">
           <BlockedChip />
         </div>
@@ -392,9 +400,13 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
   };
 
   // Build card class
+  // T-452-5: `blocked` is read only through the canonical-workState
+  // compatibility projection (normalizeTaskWorkState), never as the raw
+  // legacy boolean — this card no longer reads `task.blocked` anywhere.
+  const canonicalWorkState = normalizeTaskWorkState(task).workState;
   let cardClass = 'task-card';
   if (task.status === 'archived') cardClass += ' is-archived';
-  if (task.blocked) cardClass += ' is-blocked';
+  if (canonicalWorkState === 'blocked') cardClass += ' is-blocked';
   if (removing) cardClass += ' animate-shrink overflow-hidden';
   else if (isNew && !animated) cardClass += ' animate-rise';
 
@@ -504,14 +516,11 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   title={`Active subtask ${claim.taskId} claimed by ${claim.agent}: ${claim.title}`}
                 />
               ))}
-              {!hasDerivedSubtaskActivity && task.agent && (
-                <AgentChip
-                  name={task.agent}
-                  size="sm"
-                  variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
-                  title={ownerLabel(task)}
-                />
-              )}
+              {/* T-452-5: the task's own AgentChip (and its LeaseIndicator
+                  health dot) moved into the .task-meta combo chip below, next
+                  to the PriorityPill — showing it here too would put the same
+                  agent on the card twice. routedAgent stays: it is not claim
+                  information. */}
               {!task.agent && task.routedAgent && (
                 <AgentChip
                   name={task.routedAgent}
@@ -520,7 +529,6 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   title={`Routed to ${task.routedAgent}`}
                 />
               )}
-              <LeaseIndicator task={task} staleThresholdMinutes={staleThresholdMinutes} style={{ marginLeft: -2 }} />
             </span>
           </div>
           <div className="task-title">{task.title}</div>
@@ -532,7 +540,21 @@ const TaskCard = memo(function TaskCard({ task, allTasks, expanded, onToggleExpa
                   onClick={(e) => handlePopoverOpen(e, 'priority')}
                 />
               )}
-              {task.blocked && <BlockedChip />}
+              {/* T-452-5: agent+workstate combo chip. Replaces the old
+                  unconditional BlockedChip — blocked is now a workState the
+                  chip carries, not a standalone pill. "No agent → no chip"
+                  (spec): renders nothing when the task is unclaimed. */}
+              {task.agent && (
+                <span className="task-combo-chip inline-flex items-center gap-1">
+                  <AgentChip
+                    name={task.agent}
+                    size="sm"
+                    variant={isActivelyClaimed(task) ? 'solid' : 'soft'}
+                    title={ownerLabel(task)}
+                  />
+                  <TaskCardStateChip task={task} staleThresholdMinutes={staleThresholdMinutes} />
+                </span>
+              )}
             </span>
             <span className="task-meta-actions">
               <Tooltip content="Add subtask">

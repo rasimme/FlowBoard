@@ -1,18 +1,21 @@
 import { Lock } from 'lucide-react';
 
 /**
- * BlockedChip — small pill shown in the task Meta-Row when `task.blocked`
- * is true. Replaces the earlier inline "Blocked" text label that truncated
- * the title on narrow cards.
+ * BlockedChip — small pill shown on a subtask card whose canonical work
+ * state is `blocked`. Replaces the earlier inline "Blocked" text label that
+ * truncated the title on narrow cards.
  *
  * Design matches the `AxBlockedChip` from the Claude-Design handoff bundle
  * (ax-section5 § Blocked): slate-tinted neutral pill with a lock icon.
  * Deliberately not using the warn/danger palette — blocked is a persistent
  * context signal, not an acute warning.
  *
- * The `count` prop is reserved for dependency-based blockers (T-154). The
- * chip consumes the read-only `task.blocked` compatibility projection; the
- * canonical workState is edited in the detail panel.
+ * The `count` prop is reserved for dependency-based blockers (T-154).
+ *
+ * T-452-5: callers pass the canonical `workState === 'blocked'`, never the
+ * legacy `task.blocked` projection — T-452-7 removes that field server-side.
+ * Parent cards no longer render this chip at all; the combo chip next to the
+ * priority pill carries the state there.
  */
 export default function BlockedChip({ count, className = '' }) {
   const label = typeof count === 'number' && count > 0 ? `blocked × ${count}` : 'blocked';

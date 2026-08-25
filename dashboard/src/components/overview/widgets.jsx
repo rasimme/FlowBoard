@@ -8,6 +8,7 @@ import { useDashboard } from '../../context/DashboardContext.jsx';
 import { useNavigation } from '../../context/NavigationContext.jsx';
 import { apiFetch } from '../../utils/apiFetch.js';
 import { extractGoal } from '../../utils/projectGoal.mjs';
+import { normalizeTaskWorkState } from '../../utils/workState.js';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -572,7 +573,11 @@ export function CurrentFocusWidget({ widget, editing }) {
 export function BlockedWidget({ widget, editing }) {
   const goTab = useGoTab();
   const { goToTask } = useNavigation();
-  const tasks = useProjectTasks().filter(t => t.blocked && t.status !== 'archived' && t.status !== 'done');
+  // T-452-5: filter on the canonical work state, not the legacy `blocked`
+  // boolean that T-452-7 removes server-side. Reading the old field here
+  // would leave this widget permanently empty after that removal.
+  const tasks = useProjectTasks().filter(t => normalizeTaskWorkState(t).workState === 'blocked'
+    && t.status !== 'archived' && t.status !== 'done');
   return (
     <OvWidget title={widget?.title || 'Blocked'} meta={tasks.length ? `${tasks.length} waiting` : null}>
       <ScrollArea className="flex-1 min-h-0" innerClassName="ov-tasks">
