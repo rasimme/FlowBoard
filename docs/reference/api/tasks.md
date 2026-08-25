@@ -28,6 +28,30 @@ Create a task.
 **Body:** `{"title": "...", "priority": "high|medium|low", "parentId"?, "workState"?: "working|waiting|blocked|paused", "workStateDetails"?: {"reason"?, "waitingFor"?, "responsible"?, "checkAgainAt"?, "setAt"?}, ...}`. `checkAgainAt` uses an ISO-8601 date-time with an explicit timezone. `setAt` is server-owned: a client value is ignored and the server stamps the write time; responses always expose the normalized key.
 **Response 201:** `{"ok": true, "task": {<created>}}`
 
+#### Structured batch creation (T-449-4)
+
+For a structured unit of work, the endpoint also accepts exactly one parent and
+one or more subtasks in a single request:
+
+```json
+{
+  "parent": { "title": "Release API", "description": "...", "priority": "high" },
+  "subtasks": [
+    { "title": "Implement endpoint", "description": "..." },
+    { "title": "Add coverage", "description": "...", "priority": "low" }
+  ]
+}
+```
+
+The response is `200 { "ok": true, "batch": true, "parent": {...},
+"subtasks": [...] }`. IDs are allocated by the server; each child has
+`parentId` set to the returned parent ID. A child priority is preserved when
+provided, otherwise it inherits the parent's priority. Structure-discipline
+reviews are calculated for every item independently. The complete request is
+validated before the first write, and any later failure purges all tasks from
+the request, so the operation is all-or-nothing. Batch items cannot set
+`parentId` or `forceId`.
+
 When governance mode is `enforce`, a non-exempt direct agent creation returns
 HTTP 409 with `{"code":"SPECIFY_REQUIRED", "specifyRequest": {...}}` and
 creates no task. The `specifyRequest` can be passed unchanged as

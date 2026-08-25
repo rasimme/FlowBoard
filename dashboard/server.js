@@ -2228,16 +2228,22 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   // T-449-4: structured parent + subtask creation. Validate the complete
   // shape before writing, then roll back every created task on any failure.
-  const batchParent = req.body?.parent || (Array.isArray(req.body?.subtasks) ? req.body : null);
-  const batchChildren = Array.isArray(req.body?.subtasks) ? req.body.subtasks : null;
-  if (batchParent && batchChildren) {
-    if (!batchParent.title || batchChildren.length === 0 || batchChildren.length > 50) {
+  const isBatch = req.body && Object.prototype.hasOwnProperty.call(req.body, 'parent');
+  const batchParent = isBatch ? req.body.parent : null;
+  const batchChildren = isBatch ? req.body.subtasks : null;
+  if (isBatch) {
+    if (!batchParent || !Array.isArray(batchChildren) || batchChildren.length === 0 || batchChildren.length > 50) {
       return res.status(400).json({ error: 'batch create requires a parent title and 1-50 subtasks' });
     }
     const all = [batchParent, ...batchChildren];
     for (const item of all) {
       if (!item || typeof item.title !== 'string' || !item.title.trim()) return res.status(400).json({ error: 'every batch task requires a title' });
+      if (item.title.trim().length > 500) return res.status(400).json({ error: 'title too long (max 500 characters)' });
       if (item.description !== undefined && (typeof item.description !== 'string' || item.description.length > 16384)) return res.status(400).json({ error: 'description must be a string of at most 16KB' });
+      if (item.priority !== undefined && !normalizePriority(item.priority)) return res.status(400).json({ error: `Invalid priority "${item.priority}" — use low, medium or high` });
+      if (item.status !== undefined && !['backlog', 'open', 'in-progress', 'review', 'done', 'archived'].includes(item.status)) return res.status(400).json({ error: `Invalid status "${item.status}"` });
+      if (item.tags !== undefined && (!Array.isArray(item.tags) || item.tags.some(tag => typeof tag !== 'string'))) return res.status(400).json({ error: 'tags must be an array of strings' });
+      if (item.parentId !== undefined || item.forceId !== undefined) return res.status(400).json({ error: 'batch items cannot set parentId or forceId' });
     }
     const created = [];
     try {
@@ -2246,14 +2252,22 @@ app.post('/api/projects/:name/tasks', (req, res) => {
       const discipline = taskDiscipline.normalize(cfg.taskDiscipline);
       const createBatchItem = (item, parentId = null, batchSize = 1) => {
         const reasons = taskDiscipline.reasonsFor({ discipline, title: item.title.trim(), description: item.description, specFile: item.specFile, batchSize, siblingBatch: batchSize > 1 });
-        const task = hzlService.createTaskWithPolicy(req.params.name, { title: item.title.trim(), priority: normalizePriority(item.priority) || 'medium', parentId, status: item.status || 'backlog', description: item.description || '', ...(reasons.length ? { structureReview: taskDiscipline.review(reasons) } : {}) }, { origin: 'tasks-api', principal: governance.resolvePrincipal(req), governanceMode: 'compat', taskDiscipline: discipline });
+        const priority = item.priority !== undefined
+          ? normalizePriority(item.priority)
+          : (parentId ? normalizePriority(batchParent.priority) : 'medium');
+        const task = hzlService.createTaskWithPolicy(req.params.name, { title: item.title.trim(), priority: priority || 'medium', parentId, status: item.status || 'backlog', description: item.description || '', ...(item.tags !== undefined ? { tags: item.tags } : {}), ...(reasons.length ? { structureReview: taskDiscipline.review(reasons) } : {}) }, { origin: 'tasks-api', principal: governance.resolvePrincipal(req), governanceMode: 'compat', taskDiscipline: discipline });
         created.push(task.id); return task;
       };
       const parent = createBatchItem(batchParent, null, batchChildren.length + 1);
       const subtasks = batchChildren.map(item => createBatchItem(item, parent.id, batchChildren.length + 1));
       return res.json({ ok: true, batch: true, parent: taskWithSpecStatus(req.params.name, parent), subtasks: subtasks.map(t => taskWithSpecStatus(req.params.name, t)) });
     } catch (err) {
-      for (const id of created.reverse()) { try { hzlService.deleteTask(req.params.name, id, 'all'); } catch {} }
+      for (const id of created.reverse()) {
+        try {
+          const task = hzlService.getTask(req.params.name, id, { includeArchived: true });
+          if (task) hzlService.purgeTaskForCreationRollback(req.params.name, task);
+        } catch (rollbackError) { console.error('[batch-create rollback]', rollbackError); }
+      }
       return res.status(err.status || 400).json({ error: err.message, code: err.code || 'BATCH_CREATE_FAILED' });
     }
   }

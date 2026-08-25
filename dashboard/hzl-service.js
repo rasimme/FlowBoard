@@ -4610,6 +4610,9 @@ module.exports = {
   listTasks,
   getTask,
   createTaskWithPolicy,
+  // Batch creation uses this only to undo tasks from a request that failed
+  // after an earlier item had already been persisted.
+  purgeTaskForCreationRollback: _purgeTaskForCreationRollback,
   createTaskForMigration,
   createTask,
   getPolicyLedger,
