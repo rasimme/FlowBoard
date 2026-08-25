@@ -1947,8 +1947,11 @@ app.get('/api/dashboard/snapshot/v1', (req, res) => {
       },
     });
     // T-450-3: cache validation saves serialization and response bandwidth;
-    // 304s still pass through the same lane limiter above.
-    const etag = `"${crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}"`;
+    // 304s still pass through the same lane limiter above. generatedAt is
+    // observability metadata, not snapshot content: excluding it keeps the
+    // digest stable while the underlying read model is unchanged.
+    const { generatedAt: _generatedAt, ...snapshotContent } = snapshot;
+    const etag = `"${crypto.createHash('sha256').update(JSON.stringify(snapshotContent)).digest('hex')}"`;
     res.set('ETag', etag);
     if (req.get('If-None-Match') === etag) return res.status(304).end();
     return res.json(snapshot);

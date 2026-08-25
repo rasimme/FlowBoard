@@ -35,6 +35,13 @@ are the compatibility read model; there is no second nested `snapshot` envelope.
 The existing project, agent, status, and task endpoints remain the canonical
 compatibility surface for agents and other clients.
 
+The response includes a quoted SHA-256 digest in the `ETag` header. The digest
+covers the snapshot read model and remains stable when only `generatedAt`
+changes. Send that value as `If-None-Match` on the next request to receive
+`304 Not Modified` with no response body. A `304` still consumes the read-lane
+rate-limit budget. When the snapshot content changes, the endpoint returns
+`200 OK` with the new snapshot and digest.
+
 Set `FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT=false` and restart the service for a
 manual rollback. The dashboard then uses the legacy independent reads; restore
 the default (`true`) and restart after the incident.
