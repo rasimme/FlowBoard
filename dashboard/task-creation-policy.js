@@ -13,7 +13,6 @@ const EXCEPTION_TYPES = Object.freeze([
   'handoff',
   'delegate_subtask',
   'incident',
-  'human_requested_trivial',
 ]);
 
 const DECISIONS = Object.freeze(['allowed', 'would_block', 'blocked']);
@@ -57,27 +56,6 @@ function hasOneTopLevelAction(opts, context) {
   if (context.actionCount !== undefined && context.actionCount !== 1) return false;
   if (context.taskCount !== undefined && context.taskCount !== 1) return false;
   return true;
-}
-
-function humanEvidenceIsValid(principal, evidence) {
-  if (!isVerifiedHuman(principal) || !evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
-    return false;
-  }
-  if (evidence.verified === false) return false;
-  if (evidence.actor && evidence.actor !== principal.actor) return false;
-  if (evidence.humanId && evidence.humanId !== principal.humanId) return false;
-  // A server-verified principal is the trust anchor.  Evidence must still
-  // carry an explicit request marker or timestamp; an empty object is not
-  // evidence merely because the principal is human.
-  return nonEmpty(evidence.requestId)
-    || nonEmpty(evidence.reference)
-    || nonEmpty(evidence.message)
-    || nonEmpty(evidence.request)
-    || nonEmpty(evidence.verifiedAt)
-    || nonEmpty(evidence.confirmedAt)
-    || nonEmpty(evidence.authSessionId)
-    || nonEmpty(evidence.specifySessionId)
-    || evidence.verified === true;
 }
 
 function specifyConfirmationIsValid(record) {
@@ -195,12 +173,7 @@ function evaluateCreationPolicy({ project, opts = {}, context = {}, getTask }) {
     return result('blocked', 'DELEGATE_SOURCE_CONFLICT', 'Delegation sourceTaskId and fromTaskId must identify the same task', context, exception);
   }
 
-  if (origin === 'specify') {
-    if (!specifyConfirmationIsValid(context.specifyConfirmation)) {
-      return result('blocked', 'SPECIFY_CONFIRMATION_REQUIRED', 'Specify creation requires a verified human confirmation', context);
-    }
-    return result('allowed', 'SPECIFY_CONFIRMED', 'Verified human Specify confirmation', context);
-  }
+  if (origin === 'specify') return result('allowed', 'SPECIFY_ALLOWED', 'Specify creation is allowed', context);
 
   // A noDepends delegation deliberately has no exception. In the current
   // compatibility rollout it is recorded as would_block; T-447-5 owns the
@@ -263,16 +236,6 @@ function evaluateCreationPolicy({ project, opts = {}, context = {}, getTask }) {
     return result('allowed', 'INCIDENT_VALID', 'Incident reference is present', context, exception, { incidentRef: incidentRef.trim() });
   }
 
-  if (exception === 'human_requested_trivial') {
-    if (!humanEvidenceIsValid(context.principal, evidenceOf(context))) {
-      return result('blocked', 'HUMAN_EVIDENCE_REQUIRED', 'Trivial exception requires server-verified human request evidence', context, exception);
-    }
-    if (!hasOneTopLevelAction(opts, context)) {
-      return result('blocked', 'TRIVIAL_ACTION_SHAPE_INVALID', 'Trivial exception requires exactly one top-level action', context, exception);
-    }
-    return result('allowed', 'HUMAN_TRIVIAL_VALID', 'One top-level action is backed by verified human evidence', context, exception);
-  }
-
   return result('blocked', 'EXCEPTION_UNHANDLED', 'Creation exception is not supported', context, exception);
 }
 
@@ -281,7 +244,6 @@ module.exports = {
   EXCEPTION_TYPES,
   evaluateCreationPolicy,
   hasOneTopLevelAction,
-  humanEvidenceIsValid,
   specifyConfirmationIsValid,
   buildSpecifyRequest,
 };

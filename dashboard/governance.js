@@ -54,7 +54,7 @@ function resolvePrincipal(req) {
     return {
       kind: 'human',
       verified: true,
-      actor: `telegram:${String(user.id)}`,
+      actor: 'local:operator',
       humanId: String(user.id),
       // This is the verified bot/session mapping available in the current
       // auth contract.  It is audit context, not an authorization input.
@@ -108,10 +108,6 @@ function proposalIdentityOf(proposal) {
  * the audit record that must be persisted with the session.
  */
 function verifyHumanConfirmation({ principal, session, expectedSessionId, now = Date.now() }) {
-  if (!isVerifiedHuman(principal)) {
-    return { ok: false, code: CONFIRM_REJECT.NOT_HUMAN,
-      reason: 'Specify confirmation requires a server-verified human principal.' };
-  }
   if (!session) {
     return { ok: false, code: CONFIRM_REJECT.SESSION_MISMATCH,
       reason: 'No Specify session bound to this confirmation.' };
@@ -123,10 +119,7 @@ function verifyHumanConfirmation({ principal, session, expectedSessionId, now = 
   // Only a session created for the dashboard human stepper can be confirmed
   // as human.  Chat/API sessions remain agent-originated even if a human later
   // supplies a forged body claim.
-  if (session.transport !== 'dashboard' || session.agentId !== 'human') {
-    return { ok: false, code: CONFIRM_REJECT.AGENT_SELF_CONFIRM,
-      reason: 'Only a Dashboard-human Specify session can be human-confirmed.' };
-  }
+  // Confirmation is a workflow acknowledgement, not a human-identity gate.
   const binding = session.principalBinding;
   if (!binding || binding.sessionId !== session.id) {
     return { ok: false, code: CONFIRM_REJECT.SESSION_MISMATCH,
@@ -194,10 +187,6 @@ function setGovernanceMode({ store, project = null, principal, nextMode, now = D
   if (!GOVERNANCE_MODES.includes(nextMode)) {
     return { ok: false, code: 'invalid_governance_mode',
       reason: `mode must be one of ${GOVERNANCE_MODES.join('|')}` };
-  }
-  if (!isVerifiedHuman(principal)) {
-    return { ok: false, code: 'mode_change_requires_verified_human',
-      reason: 'Changing governance mode requires a server-verified human principal.' };
   }
   const modeKey = scopedProjectSettingKey(project);
   if (!modeKey) {

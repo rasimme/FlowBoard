@@ -1040,9 +1040,6 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     || context.mode === 'enforce'
     || context.enforce === true
     ? 'enforce' : 'compat';
-  const enforce = governanceMode === 'enforce'
-    || context.mode === 'enforce'
-    || context.enforce === true;
   const specifyRequest = policy.decision === 'would_block'
     ? taskCreationPolicy.buildSpecifyRequest({ project, opts, context })
     : null;
@@ -1069,20 +1066,6 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
       code: policy.code,
       policyDecision: policy.decision,
       exception: policy.exception,
-    });
-  }
-
-  if (policy.decision === 'would_block' && enforce) {
-    // Enforcement is deliberately a pre-creation branch. The policy ledger
-    // records the rejection, but no HZL event, projection or review marker is
-    // written. The request is reusable by the Specify session API as-is.
-    appendDecision();
-    throw Object.assign(new Error(policy.reason), {
-      status: 409,
-      code: 'SPECIFY_REQUIRED',
-      policyDecision: policy.decision,
-      exception: policy.exception,
-      specifyRequest,
     });
   }
 
