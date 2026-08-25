@@ -113,6 +113,15 @@
   background: var(--bg-accent);
 }
 .ov-agent-row.idle { border-style: dashed; opacity: .65; }
+/* T-457: small section label ("Working" / "Needs attention" / "Idle here")
+   — the widget already showed claims then idle agents one after another;
+   this just names the grouping that was already there. */
+.ov-agent-group {
+  flex-shrink: 0;
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); padding: 4px 2px 0;
+}
+.ov-agent-group:first-child { padding-top: 0; }
 .ov-agent-id { position: relative; display: inline-flex; flex-shrink: 0; }
 .ov-agent-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ov-agent-handle {
@@ -133,8 +142,12 @@
   white-space: nowrap; flex-shrink: 0;
 }
 .ov-lease svg { width: 10px; height: 10px; }
-.ov-lease.expiring { color: var(--warn); border-color: rgba(245,158,11,.35); background: var(--warn-subtle); }
-.ov-lease.expired { color: var(--danger); border-color: rgba(239,68,68,.35); background: var(--danger-subtle); }
+/* T-457: stale and expired render identically here too — one amber
+   "attention" signal, matching the bar/card (T-452-6 retired red for lease
+   health). The `.active-agents-health__dot` nested inside (dashboard.css)
+   is the same unscoped class the bar uses, so a future health-color change
+   applies to both without touching this file. */
+.ov-lease.attention { color: var(--warn); border-color: var(--warn-border); background: var(--warn-subtle); }
 
 /* activity pulse — same neutral signal as agent-layer exploration */
 .ov-pulse {

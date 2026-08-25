@@ -126,6 +126,63 @@ export {
 };
 
 /**
+ * T-457: adapt `buildActiveAgentRows` into the shape the Overview widgets
+ * (ActiveAgentsWidget, CurrentFocusWidget) render — a compact list rather
+ * than the bar's grouped pills. This is deliberately an ADAPTER around the
+ * shared predicate, not a second filter: it calls `buildActiveAgentRows`
+ * (which already applies `isValidActiveClaim` via `groupActiveClaims`) and
+ * only reshapes its output.
+ *
+ * A widget row is one claim (one task), unlike the bar's one-pill-per-agent,
+ * so a multi-claim agent still gets one line per task — the granularity the
+ * widgets always rendered. Every row is bucketed into exactly one of the
+ * three states the design settled on (T-457 spec):
+ *   - "working"         — a live claim with current lease health
+ *   - "needs-attention"  — a claim whose lease health is stale or expired
+ *                          (T-452-6 collapsed both into one amber signal —
+ *                          the severity word, not a color, carries the
+ *                          distinction)
+ *   - "idle"             — an agent active on the project with no claim
+ * Ordering within working/needs-attention mirrors the widgets' historical
+ * sort: most recently checkpointed (or claimed) first.
+ */
+export function buildActiveAgentWidgetRows({
+  agents = [],
+  tasks = [],
+  viewedProject,
+  now = Date.now(),
+  staleThresholdMinutes,
+} = {}) {
+  const agentRows = buildActiveAgentRows({ agents, tasks, viewedProject, now, staleThresholdMinutes });
+  const working = [];
+  const needsAttention = [];
+  const idle = [];
+
+  for (const row of agentRows) {
+    if (row.claims.length === 0) {
+      idle.push({ group: 'idle', agentId: row.agentId, agent: row.agent, task: null, leaseHealth: null });
+      continue;
+    }
+    for (const task of row.claims) {
+      // isValidActiveClaim already guarantees agent+claimedAt and a
+      // non-done/archived/trashed task, so getLeaseHealth cannot actually
+      // return null here — the fallback just keeps this defensive.
+      const health = getLeaseHealth(task, now, { staleThresholdMinutes }) || LEASE_HEALTH.CURRENT;
+      const entry = { agentId: row.agentId, agent: row.agent, task, leaseHealth: health };
+      if (health === LEASE_HEALTH.CURRENT) working.push({ ...entry, group: 'working' });
+      else needsAttention.push({ ...entry, group: 'needs-attention' });
+    }
+  }
+
+  const recency = (entry) => entry.task?.lastCheckpointAt || entry.task?.claimedAt || '';
+  const byRecency = (a, b) => String(recency(b)).localeCompare(String(recency(a)));
+  working.sort(byRecency);
+  needsAttention.sort(byRecency);
+
+  return { working, needsAttention, idle };
+}
+
+/**
  * T-455-3: agents eligible for the DetailPanel's Route popover.
  *
  * DetailPanel.jsx used to render every row from `/api/agents` unfiltered —

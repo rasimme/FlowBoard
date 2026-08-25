@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Plus, Lightbulb, FileText, FilePlus } from 'lucide-react';
 import AgentChip from '../AgentChip.jsx';
@@ -9,6 +9,11 @@ import { useNavigation } from '../../context/NavigationContext.jsx';
 import { apiFetch } from '../../utils/apiFetch.js';
 import { extractGoal } from '../../utils/projectGoal.mjs';
 import { normalizeTaskWorkState } from '../../utils/workState.js';
+import {
+  activeAgentLeaseHealthLabel,
+  buildActiveAgentWidgetRows,
+  LEASE_HEALTH,
+} from '../../utils/activeAgents.js';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -76,12 +81,48 @@ function useGoTab() {
 }
 
 /* ---------- active-agents ---------- */
-function leaseState(task) {
-  if (!task.leaseUntil) return { label: '—', cls: '' };
+// T-457: wording/color for a claim's lease now comes from the same source
+// as the bar and the task card (`getLeaseHealth`/`LEASE_HEALTH` via
+// `activeAgents.js`, `activeAgentLeaseHealthLabel`). "stealable" is gone —
+// stale and expired render identically (one amber signal, `.ov-lease
+// attention`, reusing the bar's own `.active-agents-health` dot classes so
+// a future color change cannot land in one place and not the other); the
+// severity still lives in the word, never the color.
+const GROUP_LABELS = { working: 'Working', 'needs-attention': 'Needs attention', idle: 'Idle here' };
+
+function leaseCountdownText(task) {
+  if (!task?.leaseUntil) return '—';
   const ms = new Date(task.leaseUntil).getTime() - Date.now();
-  if (ms <= 0) return { label: 'stealable', cls: ' expired' };
-  const min = Math.round(ms / 60000);
-  return { label: `lease ${min}m`, cls: min <= 5 ? ' expiring' : '' };
+  const min = Math.max(0, Math.round(ms / 60000));
+  return `${min}m`;
+}
+
+function LeaseBadge({ task, health }) {
+  const label = health === LEASE_HEALTH.CURRENT ? leaseCountdownText(task) : activeAgentLeaseHealthLabel(health);
+  const attention = health !== LEASE_HEALTH.CURRENT;
+  return (
+    <span className={'ov-lease' + (attention ? ' attention' : '')} title={`Lease health: ${activeAgentLeaseHealthLabel(health)}`}>
+      <span className={`active-agents-health active-agents-health--${health}`}>
+        <span className="active-agents-health__dot" aria-hidden="true" />
+      </span>
+      <Clock size={10} /> {label}
+    </span>
+  );
+}
+
+// Distributes a maxRows display budget across ordered, non-empty groups —
+// group labels themselves don't count against it, only agent/claim rows do
+// (matches the widgets' prior "claims then idle, sliced" behavior, now
+// labeled per group instead of run together, T-457).
+function sliceGroupSections(sections, maxRows) {
+  let budget = maxRows;
+  return sections
+    .map(s => {
+      const rows = s.rows.slice(0, Math.max(0, budget));
+      budget -= rows.length;
+      return { key: s.key, rows };
+    })
+    .filter(s => s.rows.length > 0);
 }
 
 export function ActiveAgentsWidget({ widget, editing, onRemove }) {
@@ -91,61 +132,72 @@ export function ActiveAgentsWidget({ widget, editing, onRemove }) {
   const { state } = useAppState();
   const maxRows = widget?.props?.maxRows || 14;
 
-  const claims = tasks
-    .filter(t => t.agent && t.claimedAt)
-    .map(t => ({ agent: t.agent, task: t }))
-    .sort((a, b) => String(b.task.lastCheckpointAt || '').localeCompare(String(a.task.lastCheckpointAt || '')));
-  const claiming = new Set(claims.map(c => c.agent));
-  const idle = (state?.agents || [])
-    .filter(a => a.active_project === state?.viewedProject && !claiming.has(a.agent_id))
-    .map(a => ({ agent: a.agent_id }));
-  const rows = [...claims, ...idle].slice(0, maxRows);
+  const { working, needsAttention, idle } = buildActiveAgentWidgetRows({
+    agents: state?.agents,
+    tasks,
+    viewedProject: state?.viewedProject,
+    staleThresholdMinutes: state?.staleThresholdMinutes,
+  });
+  const claiming = working.length + needsAttention.length;
+  const sections = sliceGroupSections(
+    [
+      { key: 'working', rows: working },
+      { key: 'needs-attention', rows: needsAttention },
+      { key: 'idle', rows: idle },
+    ],
+    maxRows,
+  );
 
   return (
-    <OvWidget title={widget?.title || 'Active Agents'} meta={`${claims.length} claiming`}>
+    <OvWidget title={widget?.title || 'Active Agents'} meta={`${claiming} claiming`}>
       <ScrollArea className="flex-1 min-h-0" innerClassName="ov-agents">
-        {rows.length === 0 && (
+        {sections.length === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">No agents on this project</span>
             <span className="ov-empty-hint">Agents appear here as soon as they claim a task or activate the project.</span>
           </div>
         )}
-        {rows.map(({ agent, task }) => {
-          if (!task) {
-            return (
-              <div key={agent} className="ov-agent-row idle">
-                <span className="ov-agent-id"><AgentChip name={agent} size="md" variant="soft" /></span>
-                <span className="ov-agent-main">
-                  <span className="ov-agent-handle">@{agent}</span>
-                  <span className="ov-agent-task hide-narrow">idle · no claim</span>
-                </span>
-                <span className="ov-lease">—</span>
-              </div>
-            );
-          }
-          const lease = leaseState(task);
-          const fresh = task.lastCheckpointAt && (Date.now() - new Date(task.lastCheckpointAt).getTime()) < 10 * 60 * 1000;
-          return (
-            <div
-              key={agent + task.id}
-              className="ov-agent-row"
-              style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => { goTab('tasks'); goToTask(task.id); }}
-              title={editing ? undefined : `Open ${task.id} on the board`}
-            >
-              <span className="ov-agent-id"><AgentChip name={agent} size="md" /></span>
-              <span className="ov-agent-main">
-                <span className="ov-agent-handle">@{agent}</span>
-                <span className="ov-agent-task">
-                  <span className="tid">{task.id}</span>
-                  <span className="ttl"> · {task.title}</span>
-                </span>
-              </span>
-              <span className={'ov-lease' + lease.cls}><Clock size={10} /> {lease.label}</span>
-              {fresh && <span className="ov-pulse" title="Active — checkpointing"></span>}
-            </div>
-          );
-        })}
+        {sections.map(section => (
+          <Fragment key={section.key}>
+            <div className="ov-agent-group">{GROUP_LABELS[section.key]}</div>
+            {section.rows.map(entry => {
+              const { agentId, task } = entry;
+              if (!task) {
+                return (
+                  <div key={agentId} className="ov-agent-row idle">
+                    <span className="ov-agent-id"><AgentChip name={agentId} size="md" variant="soft" /></span>
+                    <span className="ov-agent-main">
+                      <span className="ov-agent-handle">@{agentId}</span>
+                      <span className="ov-agent-task hide-narrow">idle · no claim</span>
+                    </span>
+                    <span className="ov-lease">—</span>
+                  </div>
+                );
+              }
+              const fresh = task.lastCheckpointAt && (Date.now() - new Date(task.lastCheckpointAt).getTime()) < 10 * 60 * 1000;
+              return (
+                <div
+                  key={agentId + task.id}
+                  className="ov-agent-row"
+                  style={{ cursor: editing ? undefined : 'pointer' }}
+                  onClick={editing ? undefined : () => { goTab('tasks'); goToTask(task.id); }}
+                  title={editing ? undefined : `Open ${task.id} on the board`}
+                >
+                  <span className="ov-agent-id"><AgentChip name={agentId} size="md" /></span>
+                  <span className="ov-agent-main">
+                    <span className="ov-agent-handle">@{agentId}</span>
+                    <span className="ov-agent-task">
+                      <span className="tid">{task.id}</span>
+                      <span className="ttl"> · {task.title}</span>
+                    </span>
+                  </span>
+                  <LeaseBadge task={task} health={entry.leaseHealth} />
+                  {fresh && <span className="ov-pulse" title="Active — checkpointing"></span>}
+                </div>
+              );
+            })}
+          </Fragment>
+        ))}
       </ScrollArea>
     </OvWidget>
   );
@@ -526,44 +578,68 @@ function timeAgo(ts) {
 }
 
 /* ---------- current-focus: the prominent "who is on what, since when" ---------- */
+// T-457: this widget carried the exact same self-filter bug as
+// ActiveAgentsWidget (`t.agent && t.claimedAt`, no archived/done/trashed
+// check, its own "stealable" wording) — found via the T-457 sweep for other
+// `claimedAt` filters, not something the original bug report named. Same
+// predicate/vocabulary source as ActiveAgentsWidget; the task-first row
+// layout (its reason for existing as a separate widget) is unchanged, and it
+// intentionally has no idle section — it has only ever shown claims.
 export function CurrentFocusWidget({ widget, editing }) {
   const goTab = useGoTab();
   const { goToTask } = useNavigation();
   const tasks = useProjectTasks();
-  const claims = tasks
-    .filter(t => t.agent && t.claimedAt)
-    .sort((a, b) => String(b.lastCheckpointAt || b.claimedAt).localeCompare(String(a.lastCheckpointAt || a.claimedAt)))
-    .slice(0, widget?.props?.maxRows || 10);
+  const { state } = useAppState();
+  const maxRows = widget?.props?.maxRows || 10;
+
+  const { working, needsAttention } = buildActiveAgentWidgetRows({
+    agents: state?.agents,
+    tasks,
+    viewedProject: state?.viewedProject,
+    staleThresholdMinutes: state?.staleThresholdMinutes,
+  });
+  const claims = working.length + needsAttention.length;
+  const sections = sliceGroupSections(
+    [
+      { key: 'working', rows: working },
+      { key: 'needs-attention', rows: needsAttention },
+    ],
+    maxRows,
+  );
 
   return (
-    <OvWidget title={widget?.title || 'Current Focus'} meta={claims.length ? `${claims.length} in flight` : null}>
+    <OvWidget title={widget?.title || 'Current Focus'} meta={claims ? `${claims} in flight` : null}>
       <ScrollArea className="flex-1 min-h-0" innerClassName="ov-agents">
-        {claims.length === 0 && (
+        {claims === 0 && (
           <div className="ov-empty">
             <span className="ov-empty-title">Nothing claimed right now</span>
             <span className="ov-empty-hint">As soon as an agent claims a task, it shows up here with its lease.</span>
           </div>
         )}
-        {claims.map(t => {
-          const lease = leaseState(t);
-          const fresh = t.lastCheckpointAt && (Date.now() - new Date(t.lastCheckpointAt).getTime()) < 10 * 60 * 1000;
-          return (
-            <div
-              key={t.id}
-              className="ov-agent-row"
-              style={{ cursor: editing ? undefined : 'pointer' }}
-              onClick={editing ? undefined : () => { goTab('tasks'); goToTask(t.id); }}
-            >
-              <span className="ov-agent-id"><AgentChip name={t.agent} size="md" /></span>
-              <span className="ov-agent-main">
-                <span className="ov-agent-handle">{t.id} · {t.title}</span>
-                <span className="ov-agent-task hide-narrow">@{t.agent} · for {timeAgo(t.claimedAt)}</span>
-              </span>
-              <span className={'ov-lease' + lease.cls}><Clock size={10} /> {lease.label}</span>
-              {fresh && <span className="ov-pulse" title="Active — checkpointing"></span>}
-            </div>
-          );
-        })}
+        {sections.map(section => (
+          <Fragment key={section.key}>
+            <div className="ov-agent-group">{GROUP_LABELS[section.key]}</div>
+            {section.rows.map(({ agentId, task, leaseHealth }) => {
+              const fresh = task.lastCheckpointAt && (Date.now() - new Date(task.lastCheckpointAt).getTime()) < 10 * 60 * 1000;
+              return (
+                <div
+                  key={agentId + task.id}
+                  className="ov-agent-row"
+                  style={{ cursor: editing ? undefined : 'pointer' }}
+                  onClick={editing ? undefined : () => { goTab('tasks'); goToTask(task.id); }}
+                >
+                  <span className="ov-agent-id"><AgentChip name={agentId} size="md" /></span>
+                  <span className="ov-agent-main">
+                    <span className="ov-agent-handle">{task.id} · {task.title}</span>
+                    <span className="ov-agent-task hide-narrow">@{agentId} · for {timeAgo(task.claimedAt)}</span>
+                  </span>
+                  <LeaseBadge task={task} health={leaseHealth} />
+                  {fresh && <span className="ov-pulse" title="Active — checkpointing"></span>}
+                </div>
+              );
+            })}
+          </Fragment>
+        ))}
       </ScrollArea>
     </OvWidget>
   );

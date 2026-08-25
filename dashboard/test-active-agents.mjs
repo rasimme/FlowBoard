@@ -3,6 +3,7 @@ import {
   aggregateLeaseHealth,
   activeAgentLeaseHealthLabel,
   buildActiveAgentRows,
+  buildActiveAgentWidgetRows,
   buildRoutableAgentRows,
   canonicalAgentSlug,
   getLeaseHealth,
@@ -254,4 +255,77 @@ assert.deepEqual(
   'idle agents with neither active_project nor a live claim are dropped; agents active on the viewed project sort first, both groups keeping their original (alphabetical /api/agents) order',
 );
 
+// ---------------------------------------------------------------------------
+// T-457 — the Overview widgets (ActiveAgentsWidget, CurrentFocusWidget)
+// consume `buildActiveAgentWidgetRows`, an adapter around the same
+// predicate/health used above, instead of re-filtering `claimedAt`
+// themselves. The regression this fixed: both widgets filtered
+// `t.agent && t.claimedAt` with no archived/done/trashed check, so a task
+// that had been archived while still carrying its old `claimedAt` rendered
+// as an active claim — exactly the shape of T-074 on the live instance
+// (archived 2026-08-12, claimedAt/leaseUntil from before that still set).
+// ---------------------------------------------------------------------------
+const widgetFixtures = [
+  claim('T-w-current', 'alpha', { lastCheckpointAt: '2026-08-24T11:55:00.000Z' }),
+  claim('T-w-stale', 'alpha', { lastCheckpointAt: '2026-08-24T11:00:00.000Z' }),
+  claim('T-w-expired-lease', 'alpha', {
+    leaseUntil: '2026-08-24T11:59:59.000Z',
+    lastCheckpointAt: '2026-08-24T11:58:00.000Z',
+  }),
+  // The T-457 regression case: an archived task that still carries its old
+  // agent/claimedAt/leaseUntil — this is exactly T-074's shape in production.
+  claim('T-w-archived', 'codex', {
+    status: 'archived',
+    lastCheckpointAt: '2026-08-12T00:00:00.000Z',
+    leaseUntil: '2026-08-12T00:20:00.000Z',
+  }),
+  claim('T-w-done', 'alpha', { status: 'done' }),
+  claim('T-w-trashed', 'alpha', { trashedAt: '2026-08-24T11:30:00.000Z' }),
+];
+
+const widgetRows = buildActiveAgentWidgetRows({
+  viewedProject: 'flowboard',
+  now: NOW,
+  agents: [
+    { agent_id: 'alpha', active_project: 'flowboard' },
+    { agent_id: 'codex', active_project: null },
+    { agent_id: 'idle-agent', active_project: 'flowboard' },
+  ],
+  tasks: widgetFixtures,
+});
+
+const workingIds = widgetRows.working.map((e) => e.task.id);
+const attentionIds = widgetRows.needsAttention.map((e) => e.task.id);
+const shownIds = [...workingIds, ...attentionIds];
+
+assert.ok(
+  !shownIds.includes('T-w-archived'),
+  'T-457: an archived task with claimedAt still set does not appear in the widget rows (this is the T-074 production bug, reproduced)',
+);
+assert.ok(!shownIds.includes('T-w-done'), 'a done claim does not appear in the widget rows');
+assert.ok(!shownIds.includes('T-w-trashed'), 'a trashed claim does not appear in the widget rows');
+assert.deepEqual(workingIds, ['T-w-current'], 'only the healthy claim lands in the working group');
+assert.deepEqual(
+  attentionIds.sort(),
+  ['T-w-expired-lease', 'T-w-stale'],
+  'a stale-activity claim and an expired-lease claim both land in needs-attention — one amber signal, not split by severity (T-452-6)',
+);
+assert.equal(widgetRows.working[0].leaseHealth, LEASE_HEALTH.CURRENT, 'working row exposes CURRENT health');
+assert.ok(
+  widgetRows.needsAttention.every((e) => e.leaseHealth === LEASE_HEALTH.STALE || e.leaseHealth === LEASE_HEALTH.EXPIRED),
+  'needs-attention rows are always stale or expired health, never current',
+);
+assert.deepEqual(
+  widgetRows.idle.map((e) => e.agentId),
+  ['idle-agent'],
+  'an agent active on the project with no claim appears in the idle group, not mixed into the claim groups',
+);
+assert.equal(widgetRows.idle[0].task, null, 'idle rows carry no task');
+assert.equal(widgetRows.idle[0].leaseHealth, null, 'idle rows carry no lease health');
+assert.ok(
+  !widgetRows.idle.some((e) => e.agentId === 'codex'),
+  'codex has no active_project and (after the archived claim is excluded) no valid claim, so it does not appear in idle either — it disappears entirely, not "no reason shown"',
+);
+
 console.log('✅ Active Agents predicate/grouping tests passed');
+console.log('✅ Overview widget claim rows (T-457) tests passed');
