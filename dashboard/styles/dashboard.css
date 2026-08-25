@@ -628,7 +628,13 @@
     /* T-453: 44px id column / flexible title column / auto time column. */
     .active-agents-task-row {
       display: grid;
-      grid-template-columns: 44px 1fr auto;
+      /* The id column sizes to the longest id in the list instead of the
+         draft's fixed 44px. Subtask ids ("T-449-5") do not fit that at
+         10.5px mono and wrapped their suffix onto a second line. `auto`
+         resolves once per grid, so every row still aligns — the column is
+         just as wide as it has to be. The 44px floor keeps short ids from
+         collapsing the column. */
+      grid-template-columns: minmax(44px, auto) 1fr auto;
       align-items: start;
       gap: 10px;
       width: 100%;
@@ -656,6 +662,8 @@
       font-family: "JetBrains Mono", monospace;
       font-size: 10.5px;
       color: var(--muted);
+      /* An id is one token — it never breaks, however long it gets. */
+      white-space: nowrap;
     }
     .active-agents-task-row__title {
       display: block;
