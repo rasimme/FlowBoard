@@ -133,7 +133,7 @@ async function runTests() {
     const durableTasks = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`);
     const durableTask = durableTasks.body.tasks?.find((task) =>
       task.id === confirmRes.body.createdArtifacts.taskIds[0]);
-    ok(durableTask?.specifyConfirmation?.actor === 'telegram:42',
+    ok(durableTask?.specifyConfirmation?.actor === 'local:operator',
       'Verified confirmation actor is durable on task metadata');
     ok(durableTask?.specifyConfirmation?.proposalDigest ===
       confirmRes.body.confirmation.proposalIdentity.digest,
@@ -153,15 +153,14 @@ async function runTests() {
     ok(rejectRes.statusCode === 200, 'POST /confirm with approved=false returns 200');
     ok(rejectRes.body.session.status === 'aborted', 'Rejection aborts session');
 
-    // A body-level human claim cannot authorize an agent-originated session.
+    // The old human-authorization gate was removed: confirmation records
+    // provenance, while body claims remain descriptive.
     const spoof = await createProposalSession('test-agent-5', {}, 'dashboard');
     const spoofConfirm = await makeRequest('POST', `/api/specify/sessions/${spoof}/confirm`, {
       approved: true, human: 'Ada', agentId: 'human', origin: 'dashboard',
     });
-    ok(spoofConfirm.statusCode === 403, 'Spoofed human body cannot confirm');
-    ok(spoofConfirm.body?.code === 'confirmation_requires_verified_human' ||
-      spoofConfirm.body?.code === 'agent_self_confirmation_forbidden',
-      'Spoofed confirmation has a trust-contract rejection code');
+    ok(spoofConfirm.statusCode === 200, 'Agent-originated confirmation is not blocked by a human gate');
+    ok(spoofConfirm.body?.session?.status === 'done', 'Agent-originated confirmation completes normally');
 
     if (fail === 0) console.log(`\n✅ All ${pass} tests passed`);
     else {

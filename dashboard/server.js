@@ -3759,7 +3759,7 @@ app.post('/api/specify/sessions/:id/confirm', async (req, res) => {
     const result = await specifyWorkerBridge.confirmProposal(req.params.id, approval, customizations);
     const artifacts = persistSpecifyProposal(result.session, {
       cleanupNotes: customizations?.cleanupNotes,
-      confirmation: null,
+      confirmation: confirmationCheck.record,
     });
 
     specifySession.updateSession(req.params.id, { createdArtifacts: artifacts });

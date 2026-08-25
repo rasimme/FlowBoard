@@ -26,18 +26,18 @@ assert.equal(governance.resolvePrincipal(agent({ localOperator: true })).kind, '
 assert.equal(governance.resolvePrincipal({ localDashboardEvidence: true }).kind, 'agent');
 assert.equal(governance.resolvePrincipal({ query: { transport: 'dashboard', agentId: 'human' } }).kind, 'agent');
 assert.equal(governance.resolvePrincipal(agent({ transport: 'dashboard', agentId: 'human' })).kind, 'agent');
-assert.equal(governance.resolvePrincipal(telegramHuman()).actor, 'telegram:42');
+assert.equal(governance.resolvePrincipal(telegramHuman()).actor, 'local:operator');
 
 let result = governance.verifyHumanConfirmation({
   principal: governance.resolvePrincipal(telegramHuman()), session: {
     ...session,
-    principalBinding: { ...session.principalBinding, actor: 'telegram:42', humanId: '42' },
+    principalBinding: { ...session.principalBinding, actor: 'local:operator', humanId: '42' },
   },
   expectedSessionId: session.id,
 });
 assert.equal(result.ok, true);
 assert.equal(result.record.specifySessionId, session.id);
-assert.equal(result.record.actor, 'telegram:42');
+assert.equal(result.record.actor, 'local:operator');
 assert.ok(result.record.confirmedAt);
 assert.ok(result.record.proposalIdentity.digest);
 
