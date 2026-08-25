@@ -27,7 +27,7 @@ const STYLES = {
   stale: {
     bg: 'var(--warn)',
     shadow: 'none',
-    title: 'Stale — no checkpoint in 15+ min',
+    title: 'Lease activity is stale',
   },
   expired: {
     bg: 'var(--danger)',
