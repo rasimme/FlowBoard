@@ -2138,7 +2138,15 @@ app.get('/api/projects/:name/rules', (req, res) => {
 
 // GET /api/projects/:name/rules/:section — fetch one rule section as markdown
 app.get('/api/projects/:name/rules/:section', (req, res) => {
-  const content = rulesApi.readRuleSection(req.params.section);
+  // T-458: the discipline decides what a section has to say. Until now every
+  // project got identical rules and the discipline only showed up after the
+  // fact, as a mark on a task the agent had already created wrongly.
+  let sectionDiscipline = null;
+  try {
+    const meta = fbMeta.getProject(req.params.name);
+    sectionDiscipline = taskDiscipline.normalize(JSON.parse(meta?.config || '{}').taskDiscipline);
+  } catch { /* unknown project or unreadable config — serve the shared text */ }
+  const content = rulesApi.readRuleSection(req.params.section, sectionDiscipline);
   if (content === null) {
     logRuleHit(req, `${req.params.section}[404]`);
     return res.status(404).json({ error: 'Rule section not found', section: req.params.section });

@@ -128,11 +128,24 @@ async function main() {
     ok(stillReviewed.body.task.structureReview.reasons.includes('missing_spec_link'),
       'and it keeps the reasons it was accepted for — that record is history');
 
-    // ── 6. A list project says nothing at all ───────────────────────────
+    // ── 6. The rules a project serves depend on its discipline ──────────
+    const devRules = await request('GET', `/api/projects/${project}/rules/api-access`);
+    ok(devRules.status === 200 && String(devRules.body).includes('This project is `development`'),
+      'a development project serves the development note with api-access');
+    ok(String(devRules.body).includes('Detail belongs in the spec'),
+      'and the note says where detail goes before a task is created wrongly');
+    const devOther = await request('GET', `/api/projects/${project}/rules/hzl`);
+    ok(!String(devOther.body).includes('This project is'),
+      'sections whose meaning does not change stay identical');
+
+    // ── 7. A list project says nothing at all ───────────────────────────
     assert.equal((await request('PUT', `/api/projects/${project}/task-discipline`, { discipline: 'list' })).status, 200);
     const listTask = await request('POST', `/api/projects/${project}/tasks`, { title: 'Water the plant' });
     ok(!listTask.body.task.structureReview, 'a list project flags nothing');
     ok(!listTask.body.reminder, 'and therefore says nothing — no advice nobody asked for');
+    const listRules = await request('GET', `/api/projects/${project}/rules/api-access`);
+    ok(!String(listRules.body).includes('This project is'),
+      'and its rules carry no discipline note either');
 
     for (const c of checks) console.log(`  ok - ${c.label}`);
     console.log(`\n✅ Spec on create, spent flags, quiet reminders (T-458): all ${checks.length} checks passed`);

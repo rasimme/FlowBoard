@@ -49,11 +49,61 @@ function resolveRuleSectionPath(name) {
   return normalized;
 }
 
-function readRuleSection(name) {
+/**
+ * T-458: what a section says can depend on the project's task discipline.
+ *
+ * Appended rather than kept in separate per-discipline files: the shared text
+ * stays one source, and a note that only applies to some projects cannot
+ * silently drift from the rules it qualifies. Only sections that actually
+ * change meaning get one — everything else reads identically everywhere.
+ *
+ * `list` adds nothing at all. A todo list has no form to keep, and advice
+ * nobody asked for is what taught agents to skim these sections.
+ */
+const DISCIPLINE_NOTES = {
+  'api-access': {
+    development: [
+      '',
+      '---',
+      '',
+      '## This project is `development`',
+      '',
+      'Task form is checked here, so two things follow when you create a task:',
+      '',
+      '- **Detail belongs in the spec, not in `description`.** Pass `spec` to the'
+        + ' create call — same one request, no second round trip. `description`'
+        + ' stays a line a board column can show.',
+      '- **Related tasks go in one call**, a parent with its subtasks, rather'
+        + ' than several separate top-level creates.',
+      '',
+      'Nothing is rejected. A task that misses this is created and marked with'
+      + ' `structureReview`, and the create response names the call that clears'
+      + ' it. Writing the spec afterwards retires that mark on its own — no'
+      + ' acknowledgement needed.',
+      '',
+    ].join('\n'),
+    standard: [
+      '',
+      '---',
+      '',
+      '## This project is `standard`',
+      '',
+      'Give every task a one-line `description` saying what it is and why, and'
+      + ' a title that names what changes rather than that something changes.'
+      + ' Missing either marks the task with `structureReview`; nothing is'
+      + ' rejected.',
+      '',
+    ].join('\n'),
+  },
+};
+
+function readRuleSection(name, discipline = null) {
   const p = resolveRuleSectionPath(name);
   if (!p) return null;
   try {
-    return fs.readFileSync(p, 'utf8');
+    const content = fs.readFileSync(p, 'utf8');
+    const note = DISCIPLINE_NOTES[name]?.[discipline];
+    return note ? content + note : content;
   } catch {
     return null;
   }
