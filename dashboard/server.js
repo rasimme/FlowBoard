@@ -53,6 +53,7 @@ const INTEGRITY_WEBHOOK_TOKEN = process.env.INTEGRITY_WEBHOOK_TOKEN || '';
 const hzlService = require('./hzl-service.js');
 const fbMeta = require('./flowboard-metadata.js');
 const taskDiscipline = require('./task-discipline.js');
+const bundleFreshness = require('./bundle-freshness.js');
 const hzlIntegrity = require('./hzl-integrity.js');
 // Boot-time integrity snapshot — set by startServer(), exposed via
 // GET /api/health/integrity. Null until the check has run at least once.
@@ -557,6 +558,18 @@ if (!DIST_BUILT) {
     '[startup] ⚠️  dashboard/dist/index.html not found — the frontend is not built.\n' +
     '[startup] ⚠️  Run "npm run build" in the dashboard/ directory to serve the UI.'
   );
+}
+
+// T-456: built is not the same as current. A filter that excluded archived
+// claims lived in src/ for a day while dist/ still served the old behaviour,
+// so a fix that was committed, tested and green was not what the operator
+// saw. Warn, never build — see bundle-freshness.js for why.
+const BUNDLE_FRESHNESS = bundleFreshness.checkBundleFreshness({
+  srcDir: path.join(__dirname, 'src'),
+  distDir: path.join(__dirname, 'dist'),
+});
+if (BUNDLE_FRESHNESS.stale) {
+  console.error(bundleFreshness.describeStaleBundle(BUNDLE_FRESHNESS));
 }
 
 // Serve index.html with injected config (from dist/ — never serve raw source)
@@ -1432,6 +1445,15 @@ app.get('/api/info', (req, res) => {
     features: {
       dashboardSnapshot: DASHBOARD_SNAPSHOT_ENABLED,
     },
+    // T-456: whether the UI being served was built from the sources currently
+    // on disk. Re-checked per request rather than reused from boot, because a
+    // rebuild while the service runs is the normal way this gets fixed and a
+    // cached "stale" would then be a lie. `applicable: false` means there is
+    // nothing to compare — a published install ships no sources.
+    bundle: bundleFreshness.checkBundleFreshness({
+      srcDir: path.join(__dirname, 'src'),
+      distDir: path.join(__dirname, 'dist'),
+    }),
     agent_id_convention:
       "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. " +
       "Do not use generated cwd/session names like 'codex-workspace'. " +

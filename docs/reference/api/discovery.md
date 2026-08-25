@@ -78,6 +78,34 @@ The `trigger_snippet` field is read fresh from disk per request and rendered wit
 the currently configured `FLOWBOARD_PORT` — editing `snippets/external-trigger.md`
 takes effect without dashboard restart.
 
+### `bundle` — is the served UI built from the sources on disk?
+
+```json
+"bundle": {
+  "applicable": true,
+  "stale": false,
+  "reason": "fresh",
+  "newestSourceAt": "2026-08-25T15:27:18.913Z",
+  "builtAt": "2026-08-25T15:34:31.904Z",
+  "staleBySeconds": 0
+}
+```
+
+`stale: true` means `dashboard/dist` is older than the newest file under
+`dashboard/src`: the UI being served does not carry the newest frontend
+changes, however green the tests are. Run `npx vite build` in `dashboard/`.
+A restart does not help — it replaces the process, not the script an
+already-open browser tab is still running.
+
+`applicable: false` means there is nothing to compare and nothing is wrong.
+`reason` says which: `no-sources` for a published install (the package ships
+runtime files only), `not-built` when the frontend was never built — that case
+has its own startup message.
+
+Re-read per request, so a rebuild while the service runs shows up immediately.
+The same check runs at startup and logs a warning; it never builds anything
+by itself.
+
 ## See also
 
 - [Agent Identity concept](../../concepts/agent-identity.md) — the agent-id convention referenced by `/api/info`
