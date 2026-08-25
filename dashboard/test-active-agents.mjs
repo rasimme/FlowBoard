@@ -3,9 +3,11 @@ import {
   aggregateLeaseHealth,
   activeAgentLeaseHealthLabel,
   buildActiveAgentRows,
+  buildRoutableAgentRows,
   canonicalAgentSlug,
   getLeaseHealth,
   groupActiveClaims,
+  isRoutableAgent,
   isValidActiveClaim,
   LEASE_HEALTH,
   normalizeStaleThresholdMinutes,
@@ -175,5 +177,81 @@ assert.equal(
 assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.CURRENT), 'Current', 'current lease health has a visible label');
 assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.STALE), 'Stale', 'stale lease health has a visible label');
 assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.EXPIRED), 'Expired', 'expired lease health has a visible label');
+
+// T-455-3: isRoutableAgent / buildRoutableAgentRows — the Route popover's
+// filter down from "every agent ever registered" to the same "still live"
+// set the backend's own idle-expiry (isAgentIdleExpired, flowboard-metadata.js)
+// already tolerates: active_project set, or a currently-claimed task whose
+// lease has not expired.
+assert.equal(
+  isRoutableAgent({ agent_id: 'active', active_project: 'flowboard' }, [], NOW),
+  true,
+  'agent with active_project set is routable with no claims at all',
+);
+assert.equal(
+  isRoutableAgent({ agent_id: 'idle', active_project: null }, [], NOW),
+  false,
+  'agent with no active_project and no claims is not routable',
+);
+assert.equal(
+  isRoutableAgent(
+    { agent_id: 'live-claimer', active_project: null },
+    [claim('T-live', 'live-claimer')],
+    NOW,
+  ),
+  true,
+  'agent with no active_project but a live (unexpired-lease) claim is routable',
+);
+assert.equal(
+  isRoutableAgent(
+    { agent_id: 'live-claimer-no-lease', active_project: null },
+    [claim('T-live', 'live-claimer-no-lease', { leaseUntil: null })],
+    NOW,
+  ),
+  true,
+  'a claim with no lease at all is conservatively treated as live, mirroring countLiveClaims',
+);
+assert.equal(
+  isRoutableAgent(
+    { agent_id: 'expired-claimer', active_project: null },
+    [claim('T-expired-only', 'expired-claimer', { leaseUntil: '2026-08-24T11:59:59.000Z' })],
+    NOW,
+  ),
+  false,
+  'an expired-lease claim does not count as live — expired claims are dead work, not a routability signal',
+);
+assert.equal(
+  isRoutableAgent(
+    { agent_id: 'done-claimer', active_project: null },
+    [claim('T-done-only', 'done-claimer', { status: 'done' })],
+    NOW,
+  ),
+  false,
+  'a done task keeps `agent` as historical attribution — isActivelyClaimed excludes it, so it grants no routability',
+);
+assert.equal(
+  isRoutableAgent('bare-string-agent', [], NOW),
+  false,
+  'a bare agent slug (no active_project field) with no claims is not routable',
+);
+
+const routableRows = buildRoutableAgentRows({
+  viewedProject: 'flowboard',
+  now: NOW,
+  agents: [
+    { agent_id: 'idle-1', active_project: null },
+    { agent_id: 'other-project', active_project: 'creon' },
+    { agent_id: 'here-1', active_project: 'flowboard' },
+    { agent_id: 'idle-2', active_project: null },
+    { agent_id: 'here-2', active_project: 'flowboard' },
+    { agent_id: 'live-claim-elsewhere', active_project: null },
+  ],
+  tasks: [claim('T-live-elsewhere', 'live-claim-elsewhere')],
+});
+assert.deepEqual(
+  routableRows.map((a) => a.agent_id),
+  ['here-1', 'here-2', 'other-project', 'live-claim-elsewhere'],
+  'idle agents with neither active_project nor a live claim are dropped; agents active on the viewed project sort first, both groups keeping their original (alphabetical /api/agents) order',
+);
 
 console.log('✅ Active Agents predicate/grouping tests passed');

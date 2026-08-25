@@ -1,3 +1,4 @@
+import { AlertTriangle } from 'lucide-react';
 import AgentChip from './AgentChip.jsx';
 import { computeHealth } from './LeaseIndicator.jsx';
 import { isActivelyClaimed } from '../utils/formatting.js';
@@ -10,7 +11,7 @@ import { isActivelyClaimed } from '../utils/formatting.js';
  * ("Claimed by claude-code · 6m remaining", "Unclaimed") — too long once the
  * WorkState box collapsed into a chip (T-452-1). AgentChip's own `showName`
  * already carries the identity (avatar + @name); this component's only
- * remaining inline text is the STALE tone, because that is the quiet
+ * remaining inline marker is the STALE tone, because that is the quiet
  * always-on signal that must survive a dismissed AttentionWarning banner
  * (T-452-4's rationale, unchanged — see the module doc below). Everything
  * else — remaining time, the "Claimed by"/"Routed to" qualifier — moves
@@ -19,17 +20,25 @@ import { isActivelyClaimed } from '../utils/formatting.js';
  * chevron (rendered right after this component by DetailPanel) already say
  * the same thing without repeating "Unclaimed" in words.
  *
+ * T-455-1: the STALE tone used to spell out "Stale"/"Lease expired" as
+ * thirteen characters of text. AttentionWarning already carries that exact
+ * wording with the full facts once it fires, so the word here was saying
+ * the same thing twice. It is now a single amber `AlertTriangle` glyph —
+ * still the quiet marker that survives a dismissed banner, just without the
+ * redundant text. The full word ("Stale" / "Lease expired") moved into the
+ * icon's `title`, which costs no width.
+ *
  * The full state matrix:
  *
- *   | Task state                 | shown                        | CTA    |
- *   | Unclaimed, no route        | Claim button only            | Claim  |
- *   | Routed unclaimed           | avatar+@name (ring)          | Claim  |
- *   | Claimed by you, healthy    | avatar+@name                 | Release|
- *   | Claimed by you, stale      | avatar+@name + "Stale" (warn)| Release|
- *   | Claimed by you, expired    | avatar+@name + "Lease expired" (warn) | Release |
- *   | Claimed by other, healthy  | avatar+@name                 | —      |
- *   | Claimed by other, stale    | avatar+@name + "Stale" (warn)| —      |
- *   | Claimed by other, expired  | avatar+@name + "Lease expired" (warn) | Steal |
+ *   | Task state                 | shown                          | CTA    |
+ *   | Unclaimed, no route        | Claim button only              | Claim  |
+ *   | Routed unclaimed           | avatar+@name (ring)            | Claim  |
+ *   | Claimed by you, healthy    | avatar+@name                   | Release|
+ *   | Claimed by you, stale      | avatar+@name + amber icon (title "Stale") | Release |
+ *   | Claimed by you, expired    | avatar+@name + amber icon (title "Lease expired") | Release |
+ *   | Claimed by other, healthy  | avatar+@name                   | —      |
+ *   | Claimed by other, stale    | avatar+@name + amber icon (title "Stale") | — |
+ *   | Claimed by other, expired  | avatar+@name + amber icon (title "Lease expired") | Steal |
  *
  * T-452-6: expired no longer renders in danger/red. Red is reserved for
  * "something is being lost" — on the board it already means Done and the
@@ -115,9 +124,12 @@ export default function ClaimStateLine({ task, currentAgent, onClaim, onRelease,
         />
       )}
       {staleText && (
-        <span className="text-xs truncate text-warn shrink-0" title={title}>
-          {staleText}
-        </span>
+        <AlertTriangle
+          size={12}
+          className="text-warn shrink-0"
+          aria-label={staleText}
+          title={title ? `${staleText} — ${title}` : staleText}
+        />
       )}
       {action && (
         <button

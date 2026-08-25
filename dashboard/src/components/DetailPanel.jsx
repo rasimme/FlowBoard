@@ -19,6 +19,7 @@ import WorkStatePopover from './WorkStatePopover.jsx';
 import AttentionWarning from './AttentionWarning.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
+import { buildRoutableAgentRows } from '../utils/activeAgents.js';
 import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse, patchTask } from '../state/taskState.mjs';
 import { apiJson as apiFetch } from '../utils/apiFetch.js';
@@ -1089,7 +1090,23 @@ export default function DetailPanel() {
               {(showClaimLine(task) || workState !== 'working') && (
               <div className="inline-flex items-stretch rounded-full border border-solid border-border bg-secondary overflow-hidden">
                 {showClaimLine(task) && (
-                  <div className="flex items-center pl-2 pr-2 py-[3px]">
+                  // T-455-2: left padding is conditional on whether
+                  // ClaimStateLine's first element is the 24px AgentChip
+                  // circle (claimed or routed) or the bare "Claim" button
+                  // (unclaimed, unrouted). Only the circle needs the
+                  // concentric-with-the-pill-cap math: inner height is
+                  // 24 (avatar) + 3 + 3 (py-[3px]) = 30px, so the pill's
+                  // left cap has radius 15 and the avatar has radius 12 —
+                  // for the two circles to share a center, left padding
+                  // must equal the vertical padding, (30 - 24) / 2 = 3px,
+                  // not the 8px a text/button edge wants. TasksView.jsx's
+                  // card-side combo chip already draws this distinction
+                  // (`pl-[3px]` vs `pl-2`) — mirrored here, the panel was
+                  // the outlier. The right edge of this inner div never
+                  // sits at the pill's own right cap (a divider +
+                  // WorkStateChip always follow when this renders), so it
+                  // keeps its regular pr-2 unconditionally.
+                  <div className={`flex items-center ${(isActivelyClaimed(task) || task.routedAgent) ? 'pl-[3px]' : 'pl-2'} pr-2 py-[3px]`}>
                     <ClaimStateLine
                       task={task}
                       currentAgent={currentAgent()}
@@ -1371,21 +1388,45 @@ export default function DetailPanel() {
         />
 
         {/* Route popover — lives here (outside the header) so it anchors
-            to the Route button in Zone 2. */}
+            to the Route button in Zone 2.
+
+            T-455-3: `state.agents` is every agent ever registered — 1091 on
+            the live instance, nearly all of them idle registrations from
+            months-old one-off subagents. buildRoutableAgentRows filters to
+            the same "still live" test the backend's own idle-expiry already
+            uses (see its doc comment in utils/activeAgents.js for why this
+            doesn't duplicate AGENT_IDLE_TTL_HOURS), and sorts agents active
+            on this project first. `getTasks()` is the currently loaded
+            project's tasks — the same live-data source every other render
+            in this component already reads claims from. */}
         <Popover open={routePopover.open} onClose={closeRoutePopover} anchorRect={routePopover.rect}>
-          {(state?.agents || []).map((a) => (
-            <Popover.Option key={a.agent_id} onClick={() => handleRoute(a.agent_id)}>
-              <span className="flex items-center gap-2">
-                <span className="font-mono text-xs">@{a.agent_id}</span>
-                {a.active_project && <span className="text-[10px] text-muted">on {a.active_project}</span>}
-              </span>
-            </Popover.Option>
-          ))}
-          {(state?.agents || []).length === 0 && (
-            <Popover.Option onClick={closeRoutePopover}>
-              <span className="text-xs text-muted italic">No agents registered</span>
-            </Popover.Option>
-          )}
+          {(() => {
+            const allAgents = state?.agents || [];
+            const routableAgents = buildRoutableAgentRows({
+              agents: allAgents,
+              tasks: getTasks(),
+              viewedProject: project,
+            });
+            return (
+              <>
+                {routableAgents.map((a) => (
+                  <Popover.Option key={a.agent_id} onClick={() => handleRoute(a.agent_id)}>
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-xs">@{a.agent_id}</span>
+                      {a.active_project && <span className="text-[10px] text-muted">on {a.active_project}</span>}
+                    </span>
+                  </Popover.Option>
+                ))}
+                {routableAgents.length === 0 && (
+                  <Popover.Option onClick={closeRoutePopover}>
+                    <span className="text-xs text-muted italic">
+                      {allAgents.length === 0 ? 'No agents registered' : 'No recently active agents'}
+                    </span>
+                  </Popover.Option>
+                )}
+              </>
+            );
+          })()}
           {task?.routedAgent && (
             <Popover.Option onClick={() => handleRoute(null)}>
               <span className="text-xs text-danger">Clear route</span>

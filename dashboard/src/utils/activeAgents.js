@@ -125,6 +125,62 @@ export {
   normalizeStaleThresholdMinutes,
 };
 
+/**
+ * T-455-3: agents eligible for the DetailPanel's Route popover.
+ *
+ * DetailPanel.jsx used to render every row from `/api/agents` unfiltered —
+ * on the live instance that is 1091 rows, almost all idle registrations
+ * from months-old one-off subagents. The system already has an idle
+ * threshold that decides exactly this question:
+ * `AGENT_IDLE_TTL_HOURS` (flowboard-metadata.js), enforced by
+ * `isAgentIdleExpired` — idle longer than the TTL AND no live claim. Rather
+ * than duplicate that number (and drift the moment
+ * `FLOWBOARD_AGENT_IDLE_TTL_HOURS` changes), this filters on the
+ * threshold's observable *effect*: auto-deactivation nulls `active_project`
+ * once an agent trips it. So "routable" mirrors `isAgentIdleExpired`'s own
+ * guard clauses — an agent stays eligible when `active_project` is set, or
+ * it holds a currently-claimed task whose lease has not expired (mirrors
+ * the backend's `countLiveClaims`: a claim with no lease is conservatively
+ * treated as live).
+ *
+ * `tasks` only needs to cover the currently loaded project — that is all
+ * DetailPanel has in `state`. An agent live-claiming in a *different*
+ * project will in the ordinary flow also carry `active_project` for that
+ * project (set by the same activation call that produced the claim), so
+ * the first branch still catches it. The one gap this leaves is an agent
+ * that claimed a task without ever activating a project — the same edge
+ * case the backend's own idle-expiry already tolerates (a live claim alone
+ * protects it from being cleared).
+ */
+export function isRoutableAgent(agent, tasks = [], now = Date.now()) {
+  if (activeProject(agent) != null) return true;
+  const slug = canonicalAgentSlug(agent);
+  if (!slug) return false;
+  return (Array.isArray(tasks) ? tasks : []).some((task) => {
+    if (canonicalAgentSlug(task?.agent) !== slug) return false;
+    if (!isActivelyClaimed(task)) return false;
+    return getLeaseHealth(task, now) !== LEASE_HEALTH.EXPIRED;
+  });
+}
+
+/**
+ * Route popover's agent list: `isRoutableAgent`-filtered, with agents whose
+ * `active_project` matches the currently viewed project sorted first (spec:
+ * "Agenten mit active_project === aktuelles Projekt zuerst"). `/api/agents`
+ * is already alphabetical by agent_id (flowboard-metadata.js's
+ * `ORDER BY agent_id`), and Array#sort is stable, so both the "active
+ * here" group and the rest keep that alphabetical order.
+ */
+export function buildRoutableAgentRows({ agents = [], tasks = [], viewedProject = null, now = Date.now() } = {}) {
+  const list = Array.isArray(agents) ? agents : [];
+  const routable = list.filter((agent) => isRoutableAgent(agent, tasks, now));
+  return routable.sort((a, b) => {
+    const aHere = viewedProject != null && activeProject(a) === viewedProject ? 0 : 1;
+    const bHere = viewedProject != null && activeProject(b) === viewedProject ? 0 : 1;
+    return aHere - bHere;
+  });
+}
+
 export const ACTIVE_AGENT_STATUS_LABELS = {
   backlog: 'Backlog',
   open: 'Open',
