@@ -4,18 +4,11 @@ import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
 import AgentChip from './AgentChip.jsx';
 import {
+  activeAgentLeaseHealthLabel,
   activeAgentStatusLabel,
   buildActiveAgentRows,
   taskId,
 } from '../utils/activeAgents.js';
-
-const STATUS_CLASS = {
-  backlog: 'backlog',
-  open: 'open',
-  'in-progress': 'in-progress',
-  review: 'review',
-  done: 'done',
-};
 
 function formatHandle(agentId) {
   const s = String(agentId || '');
@@ -24,10 +17,6 @@ function formatHandle(agentId) {
 
 function popoverId(agentId) {
   return `active-agents-popover-${String(agentId || 'agent').replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-}
-
-function statusClass(status) {
-  return STATUS_CLASS[status] || 'unknown';
 }
 
 function taskTitle(task) {
@@ -45,15 +34,20 @@ function formatCheckpoint(value) {
   return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function StatusDot({ status, label = false }) {
-  const text = activeAgentStatusLabel(status);
+function LeaseHealthIndicator({ health }) {
+  if (!health) return null;
+  const text = activeAgentLeaseHealthLabel(health);
   return (
-    <span className="active-agents-status" title={text}>
+    <span
+      className={`active-agents-health active-agents-health--${health}`}
+      title={`Lease health: ${text}`}
+      data-lease-health={health}
+    >
       <span
-        className={`active-agents-status-dot active-agents-status-dot--${statusClass(status)}`}
+        className="active-agents-health__dot"
         aria-hidden="true"
       />
-      {label && <span className="active-agents-status-label">{text}</span>}
+      <span className="active-agents-health__label">{text}</span>
     </span>
   );
 }
@@ -81,7 +75,7 @@ function ActiveTaskRow({ task, onOpen }) {
         <span className="active-agents-task-row__title">{title}</span>
       </span>
       <span className="active-agents-task-row__meta">
-        <StatusDot status={task?.status} label />
+        <span className="active-agents-status-label">{status}</span>
         {checkpointText && (
           <time
             className="active-agents-task-row__checkpoint"
@@ -108,6 +102,7 @@ function AgentAvatar({ agentId }) {
 function ActiveAgentPill({
   agentId,
   claims,
+  leaseHealth,
   open,
   onToggle,
   onOpenTask,
@@ -120,11 +115,12 @@ function ActiveAgentPill({
   const multi = claims.length > 1;
   const task = claims[0] || null;
   const id = popoverId(agentId);
+  const healthLabel = activeAgentLeaseHealthLabel(leaseHealth);
 
   const singleLabel = task
-    ? `${handle}, ${taskId(task) || 'task'}: ${taskTitle(task)}`
+    ? `${handle}, ${taskId(task) || 'task'}: ${taskTitle(task)}. Lease health: ${healthLabel}`
     : handle;
-  const multiLabel = `${handle}, ${claims.length} active tasks`;
+  const multiLabel = `${handle}, ${claims.length} active tasks. Lease health: ${healthLabel}`;
 
   if (!claims.length) {
     return (
@@ -167,6 +163,7 @@ function ActiveAgentPill({
         title={singleLabel}
         data-agent-id={agentId}
         data-claim-count={claims.length}
+        data-lease-health={leaseHealth || undefined}
       >
         <AgentAvatar agentId={agentId} />
         <span className="active-agents-pill__meta">
@@ -177,7 +174,7 @@ function ActiveAgentPill({
             </span>
           )}
         </span>
-        <StatusDot status={multi ? 'in-progress' : task?.status} />
+        <LeaseHealthIndicator health={leaseHealth} />
         {multi && (
           <>
             <span className="active-agents-pill__count">{claims.length}</span>
@@ -429,11 +426,12 @@ export default function ActiveAgentsBar() {
     >
       <div className="active-agents-bar__label">Active on this project</div>
       <div className="active-agents-bar__list">
-        {rows.map(({ agentId, claims }) => (
+        {rows.map(({ agentId, claims, leaseHealth }) => (
           <ActiveAgentPill
             key={agentId}
             agentId={agentId}
             claims={claims}
+            leaseHealth={leaseHealth}
             open={openAgentId === agentId}
             onToggle={togglePopover}
             onOpenTask={openTask}

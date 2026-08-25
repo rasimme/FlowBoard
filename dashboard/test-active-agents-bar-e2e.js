@@ -60,11 +60,16 @@ async function waitFor(page, predicate, label, timeout = 8000) {
       popup: el.getAttribute('aria-haspopup'),
       expanded: el.getAttribute('aria-expanded'),
       text: el.textContent,
+      health: el.getAttribute('data-lease-health'),
+      healthLabel: el.querySelector('.active-agents-health__label')?.textContent,
+      lifecycleDot: !!el.querySelector('.active-agents-status-dot'),
     }));
     r.ok(triggerInfo.tag === 'BUTTON', 'multi-claim pill uses a native button');
     r.ok(triggerInfo.popup === 'dialog' && triggerInfo.expanded === 'false', 'multi-claim pill exposes dialog state');
     r.ok(triggerInfo.text.includes('2'), 'multi-claim pill shows exact task count');
     r.ok(await page.$('.active-agents-pill__caret'), 'multi-claim pill shows a caret');
+    r.ok(triggerInfo.health === 'current' && triggerInfo.healthLabel === 'Current', 'pill exposes current lease health independently of lifecycle status');
+    r.ok(!triggerInfo.lifecycleDot, 'pill does not render lifecycle status dots');
 
     await page.evaluate(() => document.querySelector('.active-agents-pill[data-agent-id="agent-a"]')?.click());
     await waitFor(page, () => page.$('.active-agents-popover'), 'multi-claim popover opens');
@@ -77,6 +82,7 @@ async function waitFor(page, predicate, label, timeout = 8000) {
       rows: el.querySelectorAll('.active-agents-task-row').length,
       title: el.querySelector('.active-agents-task-row__title')?.textContent,
       status: el.querySelector('.active-agents-status-label')?.textContent,
+      lifecycleDots: el.querySelectorAll('.active-agents-status-dot').length,
       checkpoint: !!el.querySelector('[data-checkpoint]'),
       parent: el.parentElement?.tagName,
       contentOverflow: getComputedStyle(document.querySelector('.content')).overflow,
@@ -87,6 +93,7 @@ async function waitFor(page, predicate, label, timeout = 8000) {
     r.ok(popupInfo.rows === 2, 'popover retains both task rows');
     r.ok(popupInfo.title.includes('complete accessible title'), 'task title remains available in the row');
     r.ok(popupInfo.status === 'In progress' && popupInfo.checkpoint, 'popover shows task status and checkpoint metadata from the task payload');
+    r.ok(popupInfo.lifecycleDots === 0, 'popover keeps lifecycle status textual without lifecycle-colored dots');
     r.ok(popupInfo.parent === 'BODY' && popupInfo.contentOverflow === 'hidden', 'popover is portalled outside the overflowing content surface');
     r.ok(popupInfo.viewport.width === 390
       && popupInfo.rect.left >= 0

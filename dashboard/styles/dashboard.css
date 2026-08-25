@@ -532,14 +532,14 @@
       transform: rotate(180deg);
       color: var(--text);
     }
-    .active-agents-status {
+    .active-agents-health {
       display: inline-flex;
       align-items: center;
       gap: 4px;
       flex: 0 0 auto;
       min-width: 0;
     }
-    .active-agents-status-dot {
+    .active-agents-health__dot {
       display: inline-block;
       width: 7px;
       height: 7px;
@@ -548,12 +548,21 @@
       box-shadow: 0 0 0 2px rgba(255,255,255,.04);
       flex: 0 0 auto;
     }
-    .active-agents-status-dot--backlog { background: var(--status-backlog); }
-    .active-agents-status-dot--open { background: var(--status-open); }
-    .active-agents-status-dot--in-progress { background: var(--status-in-progress); }
-    .active-agents-status-dot--review { background: var(--status-review); }
-    .active-agents-status-dot--done { background: var(--status-done); }
-    .active-agents-status-dot--unknown { background: var(--muted); }
+    /* Lease health owns this visual signal. Lifecycle status stays textual in
+       popover rows so an in-progress/review color cannot be mistaken for
+       current/stale/expired claim health. Purple matches the established
+       active/recent-activity accent in the dashboard. */
+    .active-agents-health--current .active-agents-health__dot { background: var(--hue-8-ring); }
+    .active-agents-health--stale .active-agents-health__dot { background: var(--warn); }
+    .active-agents-health--expired .active-agents-health__dot {
+      background: var(--danger);
+      box-shadow: 0 0 0 2px var(--bg), 0 0 6px var(--danger);
+    }
+    .active-agents-health__label {
+      color: var(--muted);
+      font-size: 10px;
+      white-space: nowrap;
+    }
     .active-agents-status-label {
       color: var(--muted);
       font-size: 10px;
@@ -670,7 +679,11 @@
     }
     @media (max-width: 640px) {
       .active-agents-bar { padding-inline: 12px; }
-      .active-agents-pill__task { max-width: 140px; }
+      .active-agents-bar__list { gap: 8px; }
+      .active-agents-pill-wrap,
+      .active-agents-pill { max-width: 100%; }
+      .active-agents-pill__task { max-width: min(140px, 32vw); }
+      .active-agents-health__label { font-size: 9px; }
     }
 
     /* Grip + kebab — hover-revealed affordances */

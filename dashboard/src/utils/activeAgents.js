@@ -137,3 +137,13 @@ export const ACTIVE_AGENT_STATUS_LABELS = {
 export function activeAgentStatusLabel(status) {
   return ACTIVE_AGENT_STATUS_LABELS[status] || (status ? String(status) : 'Unknown');
 }
+
+export const ACTIVE_AGENT_LEASE_HEALTH_LABELS = {
+  [LEASE_HEALTH.CURRENT]: 'Current',
+  [LEASE_HEALTH.STALE]: 'Stale',
+  [LEASE_HEALTH.EXPIRED]: 'Expired',
+};
+
+export function activeAgentLeaseHealthLabel(health) {
+  return ACTIVE_AGENT_LEASE_HEALTH_LABELS[health] || 'Unknown';
+}

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   aggregateLeaseHealth,
+  activeAgentLeaseHealthLabel,
   buildActiveAgentRows,
   canonicalAgentSlug,
   getLeaseHealth,
@@ -170,5 +171,9 @@ assert.equal(
   LEASE_HEALTH.STALE,
   'buildActiveAgentRows forwards the configured scheduler threshold to lease health',
 );
+
+assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.CURRENT), 'Current', 'current lease health has a visible label');
+assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.STALE), 'Stale', 'stale lease health has a visible label');
+assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.EXPIRED), 'Expired', 'expired lease health has a visible label');
 
 console.log('✅ Active Agents predicate/grouping tests passed');
