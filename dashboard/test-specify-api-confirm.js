@@ -133,7 +133,7 @@ async function runTests() {
     const durableTasks = await makeRequest('GET', `/api/projects/${TEST_PROJECT}/tasks`);
     const durableTask = durableTasks.body.tasks?.find((task) =>
       task.id === confirmRes.body.createdArtifacts.taskIds[0]);
-    ok(durableTask?.specifyConfirmation?.actor === 'local:operator',
+    ok(durableTask?.specifyConfirmation?.actor === 'session:42',
       'Verified confirmation actor is durable on task metadata');
     ok(durableTask?.specifyConfirmation?.proposalDigest ===
       confirmRes.body.confirmation.proposalIdentity.digest,
