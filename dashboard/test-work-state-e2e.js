@@ -8,12 +8,21 @@
 // action contract so this test remains deterministic while the backend
 // action routes are still an integration dependency. The real React shell
 // must still fail closed for other shapes.
+//
+// T-452-8 additionally merges the two attention banners (Zone-1
+// client-computed AttentionWarning + Zone-4 backend-driven StuckIndicator,
+// the latter deleted) into one, rendered in the header from
+// task.stuckIndicator only. The coverage below for the merged banner is
+// unchanged in substance from the old Zone-4 assertions — same message/
+// Detected text, same backend-supplied clear descriptor — just retargeted
+// at the single banner and its one remaining action (dismiss/"clear";
+// Retry is gone from the UI).
 
 const { withDashboard, reporter } = require('./test-support/browser-harness.js');
 const { expectedStuckIndicatorAction, expectedStuckIndicatorActionPath } = require('./test-fixtures/work-state-contract.cjs');
 
 const PROJECT = 'work-state-ui';
-const r = reporter('Work-state popover and living stuck indicator (T-443-4 / T-452-2 / T-452-3)');
+const r = reporter('Work-state popover and merged attention banner (T-443-4 / T-452-2 / T-452-3 / T-452-8)');
 
 function taskShape(id) {
   return {
@@ -225,11 +234,16 @@ async function main() {
     r.ok(await page.$('[data-work-state-trigger="true"]'), 'work-state trigger renders in task detail');
     r.ok(await page.$eval('[data-work-state-trigger="true"]', (el) => !!el.getAttribute('aria-label')),
       'work-state trigger has an accessible label');
-    r.ok(await page.$('[data-stuck-indicator="true"]'), 'living stuck indicator renders in activity area');
+    // T-452-8: the two attention banners (Zone-1 client-computed and Zone-4
+    // backend-driven) were merged into one, sourced exclusively from
+    // task.stuckIndicator and rendered in the header (Zone 1) — data-attribute
+    // stays data-stuck-indicator="true" since the backend indicator remains
+    // the single source of truth.
+    r.ok(await page.$('[data-stuck-indicator="true"]'), 'merged attention banner renders in the task detail header');
     r.ok((await page.$eval('[data-stuck-indicator="true"]', (el) => el.textContent)).includes('No checkpoint recently'),
-      'stuck indicator renders current message, not a comment');
+      "attention banner renders the backend's current message, not a comment");
     r.ok((await page.$eval('[data-stuck-indicator="true"]', (el) => el.textContent)).includes('Detected'),
-      'stuck indicator renders the canonical detectedAt timestamp');
+      'attention banner renders the canonical detectedAt timestamp');
 
     // Popover basics (T-452-2): the current state is checked and no other;
     // Escape closes it and returns focus to the trigger chip (a11y contract
@@ -286,26 +300,32 @@ async function main() {
       'More-context responsible persists through the same canonical task PUT');
     await page.waitForSelector('[data-work-state-popover="true"]', { hidden: true, timeout: 3000 });
 
-    // No executable action is invented from a string/boolean hint.  The
-    // backend must provide an explicit non-destructive descriptor first; this
-    // synthetic response includes exactly that agreed descriptor.
-    // (Unchanged from before T-452-2/3 — the stuck-indicator banner itself
-    // is out of scope for these two tasks.)
+    // No executable action is invented from a string/boolean hint. The
+    // backend must provide an explicit non-destructive descriptor first;
+    // this synthetic response includes exactly that agreed descriptor.
+    // T-452-8 merged the two attention banners into one and dropped Retry
+    // from the UI entirely — the scheduler's own reevaluateStuckIndicator
+    // already covers that path, so a second, UI-triggered path onto the
+    // same mutation would just be upkeep without benefit. Only the
+    // dismiss ("x", data-stuck-action="clear") remains clickable; the
+    // retry mock route above stays wired (it is part of the shared
+    // backend contract) but nothing in the UI can trigger it anymore.
     const actionBoxes = await page.$$eval('[data-stuck-action]', (elements) => elements.map((el) => {
       const box = el.getBoundingClientRect();
       return { action: el.getAttribute('data-stuck-action'), width: box.width, height: box.height };
     }));
-    r.ok(actionBoxes.length === 2 && actionBoxes.every((box) => box.width >= 44 && box.height >= 44),
-      'Retry and Clear actions have 44px touch targets');
-    await page.click('[data-stuck-action="retry"]');
-    await waitFor(() => lastIndicatorAction?.path === expectedStuckIndicatorActionPath(PROJECT, taskId, 'retry'));
-    r.ok(lastIndicatorAction?.path === expectedStuckIndicatorActionPath(PROJECT, taskId, 'retry'),
-      'retry uses the exact project/task-bound endpoint');
+    r.ok(actionBoxes.length === 1 && actionBoxes[0].action === 'clear'
+      && actionBoxes[0].width >= 44 && actionBoxes[0].height >= 44,
+      'the merged banner exposes exactly one action — dismiss ("x") — with a 44px touch target, no Retry button');
+    await page.click('[data-stuck-action="clear"]');
+    await waitFor(() => lastIndicatorAction?.path === expectedStuckIndicatorActionPath(PROJECT, taskId, 'clear'));
+    r.ok(lastIndicatorAction?.path === expectedStuckIndicatorActionPath(PROJECT, taskId, 'clear'),
+      'dismiss uses the exact project/task-bound clear endpoint');
     r.ok(lastIndicatorAction?.body?.indicatorId === 'stuck-1',
-      'retry uses the backend-provided explicit action payload');
+      'dismiss uses the backend-provided explicit action payload');
     r.ok(!lastWorkStateUpdate || lastWorkStateUpdate.workState === 'waiting',
-      'retry does not issue a destructive workState PUT');
-    r.ok(commentPosts === 0, 'retry/indicator lifecycle does not append a comment');
+      'dismiss does not issue a destructive workState PUT');
+    r.ok(commentPosts === 0, 'clear/indicator lifecycle does not append a comment');
     await page.waitForSelector('[data-stuck-indicator="true"]', { hidden: true, timeout: 3000 });
 
     // Browser race: an external canonical update lands while a work-state

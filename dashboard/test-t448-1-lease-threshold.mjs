@@ -53,16 +53,41 @@ assert.match(
 assert.match(tasksView, /const \{ state \} = useAppState\(\);[\s\S]*?const staleThresholdMinutes = state\?\.staleThresholdMinutes;/,
   'TasksView obtains and threads the configured threshold into its board columns',
 );
-assert.equal(
-  (tasksView.match(/<LeaseIndicator task=/g) || []).length,
-  2,
-  'TasksView has the expected parent and subtask LeaseIndicator callsites',
+// T-452-5 removed the parent card's LeaseIndicator: the combo chip next to
+// the priority pill states the same fact in words ("2d silent"), so the dot
+// would have said it twice. Only SubtaskCard still draws one.
+//
+// Counting callsites was the wrong anchor — it pinned a layout decision, not
+// the invariant. What has to hold is that EVERY health consumer receives the
+// runtime threshold, however many there are. Asserted that way, adding or
+// removing a card is free; forgetting to thread the threshold still fails.
+const leaseIndicatorCallsites = tasksView.match(/<LeaseIndicator[^>]*>/g) || [];
+assert.ok(
+  leaseIndicatorCallsites.length >= 1,
+  'TasksView still renders at least one LeaseIndicator',
 );
-assert.equal(
-  (tasksView.match(/<LeaseIndicator task=\{task\} staleThresholdMinutes=\{staleThresholdMinutes\}/g) || []).length,
-  2,
-  'both TasksView LeaseIndicator callsites receive the configured threshold',
+for (const callsite of leaseIndicatorCallsites) {
+  assert.match(
+    callsite,
+    /staleThresholdMinutes=\{staleThresholdMinutes\}/,
+    `every TasksView LeaseIndicator receives the configured threshold: ${callsite}`,
+  );
+}
+
+// The card chip took over the parent card's health display, so it inherits
+// the same obligation.
+const stateChipCallsites = tasksView.match(/<TaskCardStateChip[^>]*>/g) || [];
+assert.ok(
+  stateChipCallsites.length >= 1,
+  'TasksView renders the card state chip that replaced the parent LeaseIndicator',
 );
+for (const callsite of stateChipCallsites) {
+  assert.match(
+    callsite,
+    /staleThresholdMinutes=\{staleThresholdMinutes\}/,
+    `every TaskCardStateChip receives the configured threshold: ${callsite}`,
+  );
+}
 assert.match(detailPanel, /const staleThresholdMinutes = state\?\.staleThresholdMinutes;/,
   'DetailPanel reads the configured threshold from app state',
 );

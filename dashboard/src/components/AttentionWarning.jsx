@@ -1,142 +1,109 @@
-import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
-import { formatNoCheckpoint, formatSince } from './ClaimStateLine.jsx';
+import { getStuckIndicator, hasStuckAction } from '../utils/workState.js';
 
 /**
- * AttentionWarning — T-452-4. Facts-only amber banner in the DetailPanel
- * header (same area as the exceptionReview block, which is its visual
- * template) for a claimed task whose lease is stale or expired.
+ * AttentionWarning — T-452-8. The single, merged attention banner in the
+ * DetailPanel header (Zone 1). Before this task there were two banners for
+ * one concept: this component (introduced T-452-4, client-computed via
+ * computeHealth, dismissed into localStorage) and the older
+ * StuckIndicator.jsx (backend-driven from task.stuckIndicator, rendered
+ * separately down in Zone 4, since deleted). After a restart both showed at
+ * once, saying the same thing twice.
  *
- * Spec (T-452-workstate-im-ui-vereinfachen-kombi-chip.md, "Der
- * Attention-Alarm bekommt keine Handlungsknöpfe"): no action buttons at
- * all. Waiting/Blocked/Paused already live in the T-452-1 combo chip,
- * Steal already lives in ClaimStateLine's agent half, and "let it keep
- * working" would mean a human faking a checkpoint in the agent's name —
- * which poisons the very staleness signal this banner is reporting. So
- * this renders only the facts plus a dismiss ("x").
+ * Sourced exclusively from task.stuckIndicator via getStuckIndicator() —
+ * deliberately no computeHealth() fallback. If this banner could also be
+ * produced client-side, the backend's `clear` (below) would not make it
+ * disappear: the client would just recompute the same stale/expired signal
+ * on the very next render, and the dismiss ("x") would be silently
+ * ineffective. Both thresholds already sit at 30 minutes, and the
+ * scheduler's detection delay is immaterial for a signal that spans hours
+ * to days, not seconds (T-452-8 task description).
  *
- * T-452-6 already collapsed stale/expired into one visual amber signal
- * (see LeaseIndicator.jsx); this banner keeps the textual distinction
- * (only the color collapsed, not the words) since knowing "stale" vs
- * "expired since Xm" is itself one of the facts being reported.
- *
- * Dismiss ("x") snooze: THERE IS NO BACKEND FIELD FOR THIS. The backend
- * owns `task.stuckIndicator` / getNotifiableStuckTasks() (hzl-service.js)
- * for its own, separately-rendered attention signal (see
- * StuckIndicator.jsx) — that lane is out of scope here and untouched.
- * This banner's dismiss state is client-only, kept in
- * localStorage["flowboard.attentionWarningSnooze"] as
- * `{ [taskId]: expiresAtEpochMs }`, and expires after a fixed 60-minute
- * window — the same default window getNotifiableStuckTasks() uses to
- * throttle its own repeats (hzl-service.js). It deliberately expires by
- * wall-clock time rather than being deleted-on-dismiss: the underlying
- * staleness persists and would otherwise never resurface, which would
- * make a genuinely dead task invisible instead of just quiet for a while.
+ * Facts-only, one dismiss ("x"), no action row — spec, "Der Attention-Alarm
+ * bekommt keine Handlungsknöpfe": Waiting/Blocked/Paused already live in the
+ * T-452-1 combo chip, and "Retry" is redundant with the scheduler's own
+ * reevaluateStuckIndicator — a second path onto the same mutation, so it is
+ * not rendered at all here. The "x" invokes the backend-supplied `clear`
+ * action descriptor through the caller's `onDismiss` (DetailPanel's
+ * handleStuckIndicatorAction / buildStuckIndicatorActionRequest) — never a
+ * client-only/localStorage dismiss. Clearing is real server state, shared
+ * across devices and visible to agents via /api/status; the scheduler
+ * re-raises the indicator on its own schedule if the underlying condition
+ * persists, so a clear is a real "not now", not a permanent hide.
+ * StuckIndicator.jsx's former doc comment called this "never a
+ * client-only dismiss operation" — that guarantee is what this banner now
+ * inherits, in the one place it renders.
  *
  * Props:
- *   task     — the task object (agent/lastCheckpointAt/leaseUntil/id)
- *   health   — 'stale' | 'expired' | null, precomputed by the caller via
- *              LeaseIndicator.jsx's computeHealth() so DetailPanel only
- *              has one staleThresholdMinutes call site per consumer
- *              (see test-t448-1-lease-threshold.mjs)
- *   progress — the same 0-100 value already shown in the Progress bar
+ *   task      — the task object (passed straight to getStuckIndicator)
+ *   project   — authoritative project context for the exact action route;
+ *               project-scoped task-list responses do not repeat the
+ *               project on the task itself
+ *   onDismiss — (indicator) => void, invoked on "x" click; the caller
+ *               resolves this to the backend clear descriptor and issues
+ *               the POST
+ *   busy      — true while a previously-triggered clear request is still
+ *               in flight (disables the button, no duplicate submits)
  */
 
-const SNOOZE_STORAGE_KEY = 'flowboard.attentionWarningSnooze';
-const SNOOZE_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
-
-function readSnoozeMap() {
-  try {
-    const raw = window.localStorage.getItem(SNOOZE_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
-  } catch {
-    return {};
-  }
+function displayTime(timestamp) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString();
 }
 
-function writeSnoozeMap(map) {
-  try {
-    window.localStorage.setItem(SNOOZE_STORAGE_KEY, JSON.stringify(map));
-  } catch {
-    // localStorage unavailable (private mode / quota) — dismiss just won't
-    // persist across a reload. Failing open (banner keeps showing) is the
-    // safe direction here, not failing closed.
-  }
-}
+export default function AttentionWarning({ task, project = null, onDismiss, busy = false }) {
+  const indicator = getStuckIndicator(task, project);
+  if (!indicator) return null;
 
-function isSnoozed(taskId, now) {
-  if (!taskId) return false;
-  const expiresAt = readSnoozeMap()[taskId];
-  return typeof expiresAt === 'number' && expiresAt > now;
-}
-
-function snoozeTask(taskId, now) {
-  if (!taskId) return;
-  const map = readSnoozeMap();
-  map[taskId] = now + SNOOZE_WINDOW_MS;
-  // Opportunistic cleanup so the map doesn't grow forever across a long
-  // session — drop anything that's already expired.
-  for (const id of Object.keys(map)) {
-    if (typeof map[id] !== 'number' || map[id] <= now) delete map[id];
-  }
-  writeSnoozeMap(map);
-}
-
-export default function AttentionWarning({ task, health, progress }) {
-  // Local tick so clicking dismiss re-renders this component out of the
-  // tree immediately, without needing DetailPanel to know about snoozing.
-  const [dismissTick, setDismissTick] = useState(0);
-
-  if (!task || !health) return null; // health: 'stale' | 'expired' | null — computed by the caller (DetailPanel), same computeHealth() ClaimStateLine uses
-  if (isSnoozed(task.id, Date.now())) return null;
-
-  const noCheckpointText = formatNoCheckpoint(task); // e.g. "no checkpoint 18m"
-  const headline = noCheckpointText.charAt(0).toUpperCase() + noCheckpointText.slice(1);
-  const leaseStateText = health === 'expired'
-    ? `Lease expired ${formatSince(task.leaseUntil)}`
-    : 'Lease is stale';
-  const lastCheckpointText = task.lastCheckpointAt
-    ? new Date(task.lastCheckpointAt).toLocaleString()
-    : 'never';
-  const progressText = typeof progress === 'number' ? `${progress}%` : 'n/a';
+  const detectedAt = displayTime(indicator.detectedAt);
+  const checkAgainAt = displayTime(indicator.checkAgainAt);
+  const canDismiss = hasStuckAction(indicator, 'clear');
 
   function handleDismiss(e) {
     e.stopPropagation();
-    snoozeTask(task.id, Date.now());
-    setDismissTick((n) => n + 1);
+    if (busy) return;
+    onDismiss?.(indicator);
   }
 
   return (
     <div
       className="mt-3 rounded-md border border-warn bg-warn-subtle px-3 py-2"
-      data-attention-warning={health}
+      data-stuck-indicator="true"
       role="status"
+      aria-live="polite"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
           <AlertTriangle size={14} className="text-warn shrink-0 mt-0.5" aria-hidden="true" />
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-wider text-warn font-semibold">
-              {headline}
+              Needs attention
             </div>
-            <div className="text-xs text-muted mt-1 space-y-0.5">
-              <div>Agent: {task.agent || 'unknown'}</div>
-              <div>Last checkpoint: {lastCheckpointText}</div>
-              <div>Progress: {progressText}</div>
-              <div>{leaseStateText}</div>
+            <div className="text-xs text-text mt-1 break-words">{indicator.message}</div>
+            {indicator.reason && indicator.reason !== indicator.message && (
+              <div className="text-[11px] text-muted mt-1 break-words">Reason: {indicator.reason}</div>
+            )}
+            <div className="mt-1 space-y-0.5 text-[11px] text-muted">
+              {detectedAt && <div>Detected {detectedAt}</div>}
+              {checkAgainAt && <div>Check again at {checkAgainAt}</div>}
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          aria-label="Dismiss for now"
-          title="Dismiss for now — reappears if it's still stale in an hour"
-          className="shrink-0 w-6 h-6 inline-flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover border-0 bg-transparent appearance-none outline-none cursor-pointer transition-colors duration-fast"
-        >
-          <X size={13} />
-        </button>
+        {canDismiss && (
+          <button
+            type="button"
+            data-stuck-action="clear"
+            onClick={handleDismiss}
+            disabled={busy}
+            aria-label="Clear attention indicator"
+            title="Clear — reappears automatically if it's still stale"
+            className="shrink-0 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-bg-hover border-0 bg-transparent appearance-none outline-none cursor-pointer transition-colors duration-fast disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <X size={13} />
+          </button>
+        )}
       </div>
     </div>
   );

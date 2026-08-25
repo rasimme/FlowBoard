@@ -12,12 +12,11 @@ import PriorityPill from './PriorityPill.jsx';
 import MoveTaskModal from './MoveTaskModal.jsx';
 import ClaimStateLine from './ClaimStateLine.jsx';
 import AgentChip from './AgentChip.jsx';
-import LeaseIndicator, { computeHealth } from './LeaseIndicator.jsx';
+import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
 import WorkStateChip from './WorkStateChip.jsx';
 import WorkStatePopover from './WorkStatePopover.jsx';
 import AttentionWarning from './AttentionWarning.jsx';
-import StuckIndicator from './StuckIndicator.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
 import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
@@ -948,10 +947,6 @@ export default function DetailPanel() {
     : workState === 'blocked' || workState === 'paused'
       ? normalizedWork?.workStateDetails?.reason
       : null;
-  // T-452-4: computed once here (not inside AttentionWarning) so this stays
-  // the second, not third, staleThresholdMinutes call site in this file —
-  // see test-t448-1-lease-threshold.mjs, which pins that count at 2.
-  const attentionHealth = task ? computeHealth(task, Date.now(), { staleThresholdMinutes }) : null;
 
   return createPortal(
     <>
@@ -1106,17 +1101,22 @@ export default function DetailPanel() {
               </div>
             </div>
           )}
-          {/* T-452-4: facts-only stale/expired-lease warning. Uses the same
-              client-computed lease health as ClaimStateLine/LeaseIndicator —
-              not the backend's separate task.stuckIndicator (that mechanism
-              keeps rendering unchanged via StuckIndicator.jsx down in Zone 4).
-              See AttentionWarning.jsx for the binding "no action buttons" /
-              "dismiss must expire, not delete" rules. */}
+          {/* T-452-8: single merged attention banner — the former Zone-1
+              AttentionWarning (T-452-4, client-computed via computeHealth)
+              and the former Zone-4 StuckIndicator (backend-driven,
+              deleted) said the same thing twice after a restart. This one
+              is sourced exclusively from task.stuckIndicator (see
+              AttentionWarning.jsx for why no computeHealth fallback), and
+              its "x" calls the backend-supplied `clear` descriptor through
+              the same handleStuckIndicatorAction/buildStuckIndicatorActionRequest
+              path Zone 4 used to own. See AttentionWarning.jsx for the
+              "no action buttons" / "never a client-only dismiss" rules. */}
           {task && (
             <AttentionWarning
               task={task}
-              health={attentionHealth}
-              progress={taskProgress}
+              project={project}
+              onDismiss={(indicator) => handleStuckIndicatorAction('clear', indicator)}
+              busy={busyStuckAction === 'clear'}
             />
           )}
           {task?.exceptionReview?.status === 'pending' && (
@@ -1508,14 +1508,11 @@ export default function DetailPanel() {
             </div>
           )}
 
-          {/* Zone 4 - Activity Feed */}
+          {/* Zone 4 - Activity Feed. The attention banner used to render
+              here too (StuckIndicator.jsx, deleted in T-452-8) — it now
+              lives once, in Zone 1 above (see the merged AttentionWarning
+              render there). */}
           <div className="px-4 py-3">
-            <StuckIndicator
-              task={task}
-              project={project}
-              onAction={handleStuckIndicatorAction}
-              busyAction={busyStuckAction}
-            />
             <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-2">Activity</div>
             {loading && (
               <div className="text-sm text-muted py-4 text-center">Loading...</div>
