@@ -42,6 +42,12 @@ changes. Send that value as `If-None-Match` on the next request to receive
 rate-limit budget. When the snapshot content changes, the endpoint returns
 `200 OK` with the new snapshot and digest.
 
+All `/api/` requests use independent token buckets per rate-limit lane and
+trusted principal. Each bucket refills at its configured lane rate and starts
+with that rate plus the configured `FLOWBOARD_RATE_LIMIT_BURST` capacity. A
+depleted bucket returns `429 RATE_LIMIT_EXCEEDED` with a `Retry-After` header
+(in seconds); clients should wait that long before retrying the affected lane.
+
 Set `FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT=false` and restart the service for a
 manual rollback. The dashboard then uses the legacy independent reads; restore
 the default (`true`) and restart after the incident.
