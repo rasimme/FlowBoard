@@ -15,6 +15,7 @@ import AgentChip from './AgentChip.jsx';
 import LeaseIndicator from './LeaseIndicator.jsx';
 import Tooltip from './Tooltip.jsx';
 import WorkStatePicker from './WorkStatePicker.jsx';
+import WorkStateChip from './WorkStateChip.jsx';
 import StuckIndicator from './StuckIndicator.jsx';
 import useTaskActions from '../hooks/useTaskActions.jsx';
 import { isActivelyClaimed, ownerLabel } from '../utils/formatting.js';
@@ -206,6 +207,11 @@ export default function DetailPanel() {
   // T-311: tag editor
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [newTag, setNewTag] = useState('');
+  // T-452-1: interim work-state editor toggle. WorkStatePicker used to render
+  // unconditionally as a standalone box; it now only appears on demand from
+  // the combo chip's state half. T-452-2 replaces this with the shared
+  // headerPopover + Popover.jsx pattern (see WorkStateChip.jsx).
+  const [workStateEditorOpen, setWorkStateEditorOpen] = useState(false);
 
   const scrollRef = useRef(null);
   const pollRef = useRef(null);
@@ -238,6 +244,7 @@ export default function DetailPanel() {
     setEditDescription('');
     setBusyStuckAction(null);
     setReviewingException(false);
+    setWorkStateEditorOpen(false);
     stickToBottomRef.current = true;
   }, []);
 
@@ -585,6 +592,13 @@ export default function DetailPanel() {
     setHeaderPopover({ type: null, rect: null });
   }
 
+  // T-452-1: state-half of the combo chip toggles the interim WorkStatePicker
+  // open/closed. T-452-2 replaces this with the shared Popover.jsx pattern.
+  function toggleWorkStateEditor(e) {
+    e.stopPropagation();
+    setWorkStateEditorOpen((open) => !open);
+  }
+
   // T-161-4 Zone 2 handlers
 
   function openRoutePopover(e) {
@@ -910,6 +924,16 @@ export default function DetailPanel() {
     return ta - tb;
   });
   const taskProgress = taskProgressFor(task, allFeedItems);
+  // T-452-1: canonical work state backing the combo chip's state half and
+  // the quiet detail line beneath the rail. `working` intentionally carries
+  // no visible detail — see WorkStateChip.jsx.
+  const normalizedWork = task ? normalizeTaskWorkState(task) : null;
+  const workState = normalizedWork?.workState || 'working';
+  const workStateDetailText = workState === 'waiting'
+    ? normalizedWork?.workStateDetails?.waitingFor
+    : workState === 'blocked' || workState === 'paused'
+      ? normalizedWork?.workStateDetails?.reason
+      : null;
 
   return createPortal(
     <>
@@ -970,8 +994,10 @@ export default function DetailPanel() {
 
           {/* T-161-4 Zone 1 — Status Rail. Status + Priority pickers are
               always visible for non-trashed tasks so the user can restore
-              archived/done tasks by changing the status. The ClaimStateLine
-              (agent identity + action CTA) only renders for active tasks. */}
+              archived/done tasks by changing the status. The agent+workstate
+              combo chip (T-452-1) only renders its agent half for active
+              tasks; the state half follows showStatusRail like the old
+              WorkStatePicker did, so archived/done tasks keep it too. */}
           {task && hzlAvailable && showStatusRail(task) && (
             <div className="flex items-center gap-2 mt-4 flex-wrap">
               <Tooltip content="Change status">
@@ -992,15 +1018,44 @@ export default function DetailPanel() {
                   onClick={(e) => openHeaderPopover(e, 'priority')}
                 />
               )}
-              {showClaimLine(task) && (
-                <ClaimStateLine
-                  task={task}
-                  currentAgent={currentAgent()}
-                  onClaim={handleClaim}
-                  onRelease={handleRelease}
-                  onSteal={handleSteal}
-                  staleThresholdMinutes={staleThresholdMinutes}
+              {/* T-452-1 combo chip: Agent-Avatar + Agentname | divider |
+                  state icon + word. Replaces the old always-visible
+                  four-field WorkStatePicker box. Two click targets live in
+                  here: the agent half keeps ClaimStateLine's existing
+                  claim/release/steal actions untouched; the state half opens
+                  the interim work-state editor below (see
+                  workStateEditorOpen / WorkStateChip.jsx).
+
+                  Rendered only when it carries information. showStatusRail is
+                  true for every non-trashed task, but showClaimLine is false
+                  for done/archived — without this guard those tasks (the bulk
+                  of a mature board) would show an empty bordered pill holding
+                  nothing but a bare chevron, because `working` is invisible by
+                  spec. A terminal task in `working` has no execution state
+                  worth stating; one that is still blocked/waiting/paused keeps
+                  the chip, so the state never becomes unreachable. */}
+              {(showClaimLine(task) || workState !== 'working') && (
+              <div className="inline-flex items-stretch rounded-full border border-solid border-border bg-secondary overflow-hidden">
+                {showClaimLine(task) && (
+                  <div className="flex items-center pl-2 pr-2 py-[3px]">
+                    <ClaimStateLine
+                      task={task}
+                      currentAgent={currentAgent()}
+                      onClaim={handleClaim}
+                      onRelease={handleRelease}
+                      onSteal={handleSteal}
+                      staleThresholdMinutes={staleThresholdMinutes}
+                    />
+                  </div>
+                )}
+                {showClaimLine(task) && (
+                  <span className="w-px self-stretch bg-border" aria-hidden="true" />
+                )}
+                <WorkStateChip
+                  workState={workState}
+                  onClick={toggleWorkStateEditor}
                 />
+              </div>
               )}
               {task.status === 'archived' && (
                 <span className="text-[10px] uppercase tracking-wider text-muted ml-auto">
@@ -1009,7 +1064,24 @@ export default function DetailPanel() {
               )}
             </div>
           )}
-          {task && hzlAvailable && showStatusRail(task) && (
+          {/* Quiet, read-only detail line beneath the rail — never inside
+              the chip, never an input field (T-452-1). `waitingFor` for
+              `waiting`, `reason` for `blocked`/`paused`; nothing for
+              `working`. Editing still happens via the interim picker below
+              until T-452-3 replaces the four-field form with one question. */}
+          {workStateDetailText && (
+            <div className="mt-1.5 text-[11px] text-muted truncate" title={workStateDetailText}>
+              {workStateDetailText}
+            </div>
+          )}
+          {/* T-452-1 interim: WorkStatePicker only appears on demand from the
+              combo chip's state half now, instead of always rendering as its
+              own box. T-452-2 replaces this toggle with the shared
+              headerPopover + Popover.jsx pattern (see openHeaderPopover /
+              closeHeaderPopover above and the status/priority Popovers
+              below). Kept as WorkStatePicker verbatim so the full selection
+              mechanism (and the "Save details" fields) stays functional. */}
+          {task && hzlAvailable && showStatusRail(task) && workStateEditorOpen && (
             <WorkStatePicker
               task={task}
               onChange={handleWorkStateChange}
