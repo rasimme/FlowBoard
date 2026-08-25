@@ -147,3 +147,24 @@ export const ACTIVE_AGENT_LEASE_HEALTH_LABELS = {
 export function activeAgentLeaseHealthLabel(health) {
   return ACTIVE_AGENT_LEASE_HEALTH_LABELS[health] || 'Unknown';
 }
+
+/**
+ * T-453: 0-100 progress for a claim row's mini progress bar.
+ *
+ * `task.progress` is the checkpoint-driven subtask tally the API already
+ * computes ({ done, inProgress, total }, see dashboardApi.js's schema) — not
+ * a literal percentage field. `done / total` is the percentage that tally
+ * implies. review/done tasks read as complete even without a progress
+ * object; everything else without usable counts renders an empty bar rather
+ * than being hidden, so every popover row keeps the same 3-column shape.
+ */
+export function activeAgentTaskProgress(task) {
+  if (!task) return 0;
+  if (task.status === 'review' || task.status === 'done') return 100;
+  const progress = task.progress;
+  if (progress && typeof progress === 'object' && Number.isFinite(progress.total) && progress.total > 0) {
+    const done = Number.isFinite(progress.done) ? progress.done : 0;
+    return Math.max(0, Math.min(100, Math.round((done / progress.total) * 100)));
+  }
+  return 0;
+}

@@ -127,11 +127,16 @@ async function waitFor(page, predicate, label, timeout = 8000) {
       popup: el.getAttribute('aria-haspopup'),
       caret: !!el.querySelector('.active-agents-pill__caret'),
       health: el.getAttribute('data-lease-health'),
-      healthLabel: el.querySelector('.active-agents-health__label')?.textContent,
+      // T-453: the pill collapsed the lease-health word to a dot-only visual
+      // (design template — "Zustandspunkt 6x6", no label). The word still
+      // lives in the pill's accessible name, so read it from there instead
+      // of a dedicated `.active-agents-health__label` span, which no longer
+      // renders inside the pill (it still renders inside popover rows).
+      healthLabel: el.getAttribute('aria-label'),
       lifecycleDot: !!el.querySelector('.active-agents-status-dot'),
     }));
     r.ok(directInfo.count === '1' && directInfo.popup === null && !directInfo.caret, 'single claim stays a direct navigation control');
-    r.ok(directInfo.health === 'current' && directInfo.healthLabel === 'Current', 'single claim exposes a visible current health label');
+    r.ok(directInfo.health === 'current' && directInfo.healthLabel?.includes('Lease health: Current'), 'single claim exposes current health via its accessible name');
     r.ok(!directInfo.lifecycleDot, 'single claim does not render a lifecycle-colored dot');
     await page.evaluate(() => document.querySelector('.active-agents-pill[data-agent-id="agent-c"]')?.click());
     await waitFor(page, () => page.$('[data-detail-panel]'), 'single-claim task detail opens');
@@ -148,14 +153,16 @@ async function waitFor(page, predicate, label, timeout = 8000) {
       text: el.textContent,
       count: el.getAttribute('data-claim-count'),
       health: el.getAttribute('data-lease-health'),
-      healthLabel: el.querySelector('.active-agents-health__label')?.textContent,
+      // See the single-claim pill above: T-453 dropped the visible label
+      // span from the pill, so read the word from the accessible name.
+      healthLabel: el.getAttribute('aria-label'),
       lifecycleDot: !!el.querySelector('.active-agents-status-dot'),
     }));
     r.ok(triggerInfo.tag === 'BUTTON', 'multi-claim pill uses a native button');
     r.ok(triggerInfo.popup === 'dialog' && triggerInfo.expanded === 'false', 'multi-claim pill exposes dialog state');
     r.ok(triggerInfo.count === '6' && triggerInfo.text.includes('6'), 'multi-claim pill shows the exact active claim count');
     r.ok(await page.$('.active-agents-pill__caret'), 'multi-claim pill shows a caret');
-    r.ok(triggerInfo.health === 'expired' && triggerInfo.healthLabel === 'Expired', 'pill exposes worst lease health independently of lifecycle status');
+    r.ok(triggerInfo.health === 'expired' && triggerInfo.healthLabel?.includes('Lease health: Expired'), 'pill exposes worst lease health independently of lifecycle status');
     r.ok(!triggerInfo.lifecycleDot, 'pill does not render lifecycle status dots');
 
     await page.evaluate(() => document.querySelector('.active-agents-pill[data-agent-id="agent-a"]')?.click());
@@ -169,7 +176,14 @@ async function waitFor(page, predicate, label, timeout = 8000) {
       rows: el.querySelectorAll('.active-agents-task-row').length,
       rowIds: [...el.querySelectorAll('.active-agents-task-row')].map((row) => row.dataset.taskId),
       title: el.querySelector('.active-agents-task-row__title')?.textContent,
-      status: el.querySelector('.active-agents-status-label')?.textContent,
+      // T-453: the popover row's meta line now shows the per-row lease
+      // health word (the whole point of the redesign — "which task is
+      // silent" must be visible per row, not only aggregated on the pill),
+      // reusing the same `.active-agents-health__label` class the pill used
+      // to render. Lifecycle status (`In progress`, ...) moved into the
+      // row's title/aria-label instead of a dedicated visible span.
+      firstRowHealthLabel: el.querySelector('.active-agents-task-row .active-agents-health__label')?.textContent,
+      firstRowTitleAttr: el.querySelector('.active-agents-task-row')?.getAttribute('title'),
       lifecycleDots: el.querySelectorAll('.active-agents-status-dot').length,
       checkpoint: !!el.querySelector('[data-checkpoint]'),
       parent: el.parentElement?.tagName,
@@ -182,7 +196,8 @@ async function waitFor(page, predicate, label, timeout = 8000) {
     r.ok([first, second, stale, expired, malformed, missingLease].every((id) => popupInfo.rowIds.includes(id)), 'expired, malformed, and missing leases remain visible');
     r.ok([done, archived, trashed].every((id) => !popupInfo.rowIds.includes(id)), 'done, archived, and trashed claims are excluded');
     r.ok(popupInfo.title.includes('complete accessible title'), 'task title remains available in the row');
-    r.ok(popupInfo.status === 'In progress' && popupInfo.checkpoint, 'popover shows task status and checkpoint metadata from the task payload');
+    r.ok(popupInfo.firstRowHealthLabel === 'Current', 'popover shows this row\'s own lease health, not just the pill aggregate');
+    r.ok(popupInfo.firstRowTitleAttr?.includes('In progress') && popupInfo.checkpoint, 'popover row still carries lifecycle status and checkpoint metadata (now in title/aria-label)');
     r.ok(popupInfo.lifecycleDots === 0, 'popover keeps lifecycle status textual without lifecycle-colored dots');
     r.ok(popupInfo.parent === 'BODY' && popupInfo.contentOverflow === 'hidden', 'popover is portalled outside the overflowing content surface');
     r.ok(popupInfo.viewport.width === 390

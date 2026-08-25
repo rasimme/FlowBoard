@@ -445,7 +445,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 4px 10px 4px 4px;
+      padding: 4px 8px 4px 4px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius-full);
@@ -459,17 +459,20 @@
     .active-agents-pill--trigger {
       cursor: pointer;
     }
+    /* T-453 design template: hover/expanded both resolve to the same
+       bg-hover + border-strong treatment (not the generic card-highlight
+       overlay used elsewhere). */
     .active-agents-pill--trigger:hover {
-      background: var(--card-highlight);
+      background: var(--bg-hover);
       border-color: var(--border-strong);
     }
     .active-agents-pill--trigger:focus-visible {
       outline: none;
       border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-subtle);
+      box-shadow: 0 0 0 3px var(--accent-subtle);
     }
     .active-agents-pill--multi[aria-expanded="true"] {
-      background: var(--card-highlight);
+      background: var(--bg-hover);
       border-color: var(--border-strong);
     }
     .active-agents-pill--idle {
@@ -487,18 +490,18 @@
       min-width: 0;
     }
     .active-agents-pill__name {
-      font-size: 11px;
+      font-size: 11.5px;
       color: var(--text-strong);
       font-family: "JetBrains Mono", monospace;
       font-weight: 500;
     }
     .active-agents-pill__task {
-      font-size: 10px;
+      font-size: 11px;
       color: var(--muted);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 210px;
+      max-width: 150px;
     }
     .active-agents-pill__task--idle {
       font-style: italic;
@@ -507,21 +510,13 @@
     .active-agents-pill__task-id {
       font-family: "JetBrains Mono", monospace;
     }
+    /* T-453: plain "N tasks" text replaces the old numeric badge — the
+       caret next to it is enough of an affordance to signal "expandable". */
     .active-agents-pill__count {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 20px;
-      height: 20px;
-      padding: 0 5px;
-      border: 1px solid var(--border-strong);
-      border-radius: var(--radius-full);
-      color: var(--text-strong);
-      background: var(--secondary);
-      font-family: "JetBrains Mono", monospace;
-      font-size: 10px;
-      font-weight: 600;
-      line-height: 1;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+      flex: 0 0 auto;
     }
     .active-agents-pill__caret {
       flex: 0 0 auto;
@@ -535,53 +530,67 @@
     .active-agents-health {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 6px;
       flex: 0 0 auto;
       min-width: 0;
     }
     .active-agents-health__dot {
       display: inline-block;
-      width: 7px;
-      height: 7px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: var(--muted);
       box-shadow: 0 0 0 2px rgba(255,255,255,.04);
       flex: 0 0 auto;
     }
-    /* Lease health owns this visual signal. Lifecycle status stays textual in
-       popover rows so an in-progress/review color cannot be mistaken for
-       current/stale/expired claim health. Purple matches the established
-       active/recent-activity accent in the dashboard. */
+    /* Lease health owns this visual signal — on the pill (aggregate) and on
+       every popover row (per-claim). Purple matches the established
+       active/recent-activity accent in the dashboard; T-452-6 collapses
+       stale+expired into one amber attention signal (severity stays legible
+       in the label text, not the color) and retires red entirely. */
     .active-agents-health--current .active-agents-health__dot { background: var(--hue-8-ring); }
-    /* T-452-6: stale and expired collapse into one amber attention signal —
-       the human response to either is identical. Red stays retired from
-       lease health (it already means Done / the blocked frame elsewhere on
-       the board); severity stays legible in the label text, not the color. */
     .active-agents-health--stale .active-agents-health__dot,
     .active-agents-health--expired .active-agents-health__dot { background: var(--warn); }
     .active-agents-health__label {
       color: var(--muted);
-      font-size: 10px;
+      font-size: 9.5px;
       white-space: nowrap;
+      flex: 0 0 auto;
     }
-    .active-agents-status-label {
-      color: var(--muted);
-      font-size: 10px;
-      white-space: nowrap;
+    /* T-453: the mini progress bar shares its row's health color — same
+       modifier classes as the dot above, just a different descendant. */
+    .active-agents-task-row__progress {
+      flex: 1 1 auto;
+      max-width: 60px;
+      height: 2px;
+      min-width: 16px;
+      border-radius: 2px;
+      background: var(--secondary);
+      overflow: hidden;
     }
+    .active-agents-task-row__progress-fill {
+      display: block;
+      height: 100%;
+      border-radius: 2px;
+      opacity: .8;
+      background: var(--muted);
+    }
+    .active-agents-health--current .active-agents-task-row__progress-fill { background: var(--hue-8-ring); }
+    .active-agents-health--stale .active-agents-task-row__progress-fill,
+    .active-agents-health--expired .active-agents-task-row__progress-fill { background: var(--warn); }
 
     /* D1 popover: portalled to body and positioned in viewport coordinates so
        .content/.column overflow cannot clip it on narrow screens. */
     .active-agents-popover {
       position: fixed;
       z-index: 1000;
-      width: min(360px, calc(100vw - 24px));
+      width: min(300px, calc(100vw - 24px));
       max-height: min(360px, calc(100vh - 24px));
       box-sizing: border-box;
       overflow: hidden;
-      padding: 8px;
+      padding: 4px;
       border: 1px solid var(--border-strong);
-      border-radius: var(--radius-md);
+      border-radius: 9px;
       background: var(--bg-elevated);
       box-shadow: var(--shadow-lg);
       animation: active-agents-popover-in var(--duration-fast) var(--ease-out);
@@ -591,11 +600,13 @@
       align-items: baseline;
       justify-content: space-between;
       gap: 12px;
-      padding: 3px 5px 8px;
+      padding: 4px 6px 6px;
       border-bottom: 1px solid var(--border);
-      color: var(--text-strong);
-      font-size: 11px;
+      color: var(--muted);
+      font-size: 9.5px;
       font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
     .active-agents-popover__header h2 {
       margin: 0;
@@ -604,23 +615,25 @@
     .active-agents-popover__list {
       display: flex;
       flex-direction: column;
-      gap: 3px;
+      gap: 2px;
       max-height: min(310px, calc(100vh - 84px));
       margin: 0;
-      padding-top: 5px;
+      padding-top: 4px;
       overflow-y: auto;
       list-style: none;
     }
     .active-agents-popover__list > li {
       min-width: 0;
     }
+    /* T-453: 44px id column / flexible title column / auto time column. */
     .active-agents-task-row {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      align-items: start;
+      gap: 10px;
       width: 100%;
       min-width: 0;
-      padding: 7px 6px;
+      padding: 7px 10px;
       border: 1px solid transparent;
       border-radius: var(--radius-sm);
       color: var(--text);
@@ -636,40 +649,38 @@
       border-color: var(--border-strong);
       background: var(--bg-hover);
     }
-    .active-agents-task-row__topline {
-      display: flex;
-      align-items: baseline;
-      gap: 7px;
+    .active-agents-task-row__body {
       min-width: 0;
     }
     .active-agents-task-row__id {
-      flex: 0 0 auto;
-      color: var(--accent-hover);
-      font-size: 10px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 10.5px;
+      color: var(--muted);
     }
     .active-agents-task-row__title {
+      display: block;
       min-width: 0;
       overflow: hidden;
       color: var(--text-strong);
-      font-size: 11px;
+      font-size: 11.5px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    /* Meta line under the title: health dot, health word, mini progress
+       bar. Reuses .active-agents-health as its color-scope wrapper. */
     .active-agents-task-row__meta {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      margin-top: 3px;
+      width: 100%;
       min-width: 0;
-      color: var(--muted);
     }
     .active-agents-task-row__checkpoint {
-      min-width: 0;
-      overflow: hidden;
-      margin-left: auto;
       color: var(--muted);
-      font-size: 9px;
-      text-overflow: ellipsis;
+      font-size: 9.5px;
       white-space: nowrap;
+      text-align: right;
     }
     @keyframes active-agents-popover-in {
       from { opacity: 0; transform: translateY(-3px); }

@@ -6,7 +6,9 @@ import AgentChip from './AgentChip.jsx';
 import {
   activeAgentLeaseHealthLabel,
   activeAgentStatusLabel,
+  activeAgentTaskProgress,
   buildActiveAgentRows,
+  getLeaseHealth,
   taskId,
 } from '../utils/activeAgents.js';
 
@@ -34,12 +36,38 @@ function formatCheckpoint(value) {
   return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function LeaseHealthIndicator({ health }) {
+// Relative "Xm/h/d ago" for the popover row's time column (T-453). The row's
+// title/aria-label carries the exact timestamp via formatCheckpoint above,
+// so this stays a coarse, always-short label — never wraps, never truncates.
+function formatRelativeTime(value, now = Date.now()) {
+  if (!value) return '';
+  const ts = Date.parse(value);
+  if (!Number.isFinite(ts)) return '';
+  const diffMs = Math.max(0, now - ts);
+  const m = Math.round(diffMs / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
+}
+
+/**
+ * Lease health visual, shared by the pill (aggregate, dot-only) and every
+ * popover row (per-claim, dot + word + mini progress bar). `showLabel` and
+ * `showProgress` are independent because the pill never shows either, while
+ * the popover row always shows both — this is the single place lease-health
+ * color lives (`.active-agents-health--{current|stale|expired}` in
+ * dashboard.css), so a row's progress fill automatically matches its dot.
+ */
+function LeaseHealthIndicator({ health, showLabel = false, showProgress = false, progress = 0 }) {
   if (!health) return null;
   const text = activeAgentLeaseHealthLabel(health);
+  const rowMetaClass = showProgress ? ' active-agents-task-row__meta' : '';
   return (
     <span
-      className={`active-agents-health active-agents-health--${health}`}
+      className={`active-agents-health active-agents-health--${health}${rowMetaClass}`}
       title={`Lease health: ${text}`}
       data-lease-health={health}
     >
@@ -47,19 +75,32 @@ function LeaseHealthIndicator({ health }) {
         className="active-agents-health__dot"
         aria-hidden="true"
       />
-      <span className="active-agents-health__label">{text}</span>
+      {showLabel && <span className="active-agents-health__label">{text}</span>}
+      {showProgress && (
+        <span className="active-agents-task-row__progress" aria-hidden="true">
+          <span
+            className="active-agents-task-row__progress-fill"
+            style={{ width: `${progress}%` }}
+          />
+        </span>
+      )}
     </span>
   );
 }
 
-function ActiveTaskRow({ task, onOpen }) {
+function ActiveTaskRow({ task, onOpen, now, staleThresholdMinutes }) {
   const id = taskId(task);
   const title = taskTitle(task);
-  const status = activeAgentStatusLabel(task?.status);
+  const lifecycleStatus = activeAgentStatusLabel(task?.status);
+  const health = getLeaseHealth(task, now, { staleThresholdMinutes });
+  const healthLabel = activeAgentLeaseHealthLabel(health);
+  const progress = activeAgentTaskProgress(task);
   const checkpoint = checkpointTimestamp(task);
   const checkpointText = formatCheckpoint(checkpoint);
-  const aria = `${id || 'Task'}: ${title}. Status: ${status}`
-    + (checkpointText ? `. Last checkpoint: ${checkpointText}` : '');
+  const timeSource = checkpoint || task?.claimedAt || null;
+  const relativeText = formatRelativeTime(timeSource, now);
+  const aria = `${id || 'Task'}: ${title}. Status: ${lifecycleStatus}. Lease health: ${healthLabel}.`
+    + (checkpointText ? ` Last checkpoint: ${checkpointText}.` : '');
 
   return (
     <button
@@ -69,23 +110,18 @@ function ActiveTaskRow({ task, onOpen }) {
       aria-label={aria}
       title={aria}
       data-task-id={id || undefined}
+      data-lease-health={health || undefined}
     >
-      <span className="active-agents-task-row__topline">
-        <span className="active-agents-task-row__id mono">{id || '—'}</span>
+      <span className="active-agents-task-row__id">{id || '—'}</span>
+      <span className="active-agents-task-row__body">
         <span className="active-agents-task-row__title">{title}</span>
+        <LeaseHealthIndicator health={health} showLabel showProgress progress={progress} />
       </span>
-      <span className="active-agents-task-row__meta">
-        <span className="active-agents-status-label">{status}</span>
-        {checkpointText && (
-          <time
-            className="active-agents-task-row__checkpoint"
-            dateTime={checkpoint}
-            title={`Last checkpoint: ${checkpointText}`}
-            data-checkpoint={checkpoint}
-          >
-            checkpoint {checkpointText}
-          </time>
-        )}
+      <span
+        className="active-agents-task-row__checkpoint"
+        data-checkpoint={checkpoint || undefined}
+      >
+        {relativeText}
       </span>
     </button>
   );
@@ -109,6 +145,8 @@ function ActiveAgentPill({
   triggerRef,
   popoverRef,
   popoverPosition,
+  now,
+  staleThresholdMinutes,
 }) {
   const handle = formatHandle(agentId);
   const single = claims.length === 1;
@@ -177,7 +215,7 @@ function ActiveAgentPill({
         <LeaseHealthIndicator health={leaseHealth} />
         {multi && (
           <>
-            <span className="active-agents-pill__count">{claims.length}</span>
+            <span className="active-agents-pill__count">{claims.length} tasks</span>
             <ChevronDown className="active-agents-pill__caret" size={13} aria-hidden="true" />
           </>
         )}
@@ -204,7 +242,12 @@ function ActiveAgentPill({
           >
             {claims.map((claim, index) => (
               <li key={taskId(claim) || `${agentId}-${index}`}>
-                <ActiveTaskRow task={claim} onOpen={onOpenTask} />
+                <ActiveTaskRow
+                  task={claim}
+                  onOpen={onOpenTask}
+                  now={now}
+                  staleThresholdMinutes={staleThresholdMinutes}
+                />
               </li>
             ))}
           </ul>
@@ -339,7 +382,7 @@ export default function ActiveAgentsBar() {
     const offset = 8;
     const triggerRect = trigger.getBoundingClientRect();
     const measured = popover.getBoundingClientRect();
-    const width = Math.min(measured.width || 360, Math.max(0, viewportWidth - (gap * 2)));
+    const width = Math.min(measured.width || 300, Math.max(0, viewportWidth - (gap * 2)));
     const height = Math.min(measured.height || 0, Math.max(0, viewportHeight - (gap * 2)));
     const belowSpace = viewportHeight - triggerRect.bottom - offset - gap;
     const aboveSpace = triggerRect.top - offset - gap;
@@ -436,6 +479,8 @@ export default function ActiveAgentsBar() {
             onToggle={togglePopover}
             onOpenTask={openTask}
             popoverPosition={openAgentId === agentId ? popoverPosition : null}
+            now={now}
+            staleThresholdMinutes={staleThresholdMinutes}
             triggerRef={(element) => {
               if (element) triggerRefs.current.set(agentId, element);
               else triggerRefs.current.delete(agentId);
