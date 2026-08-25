@@ -587,13 +587,22 @@
       font-size: 11px;
       font-weight: 600;
     }
+    .active-agents-popover__header h2 {
+      margin: 0;
+      font: inherit;
+    }
     .active-agents-popover__list {
       display: flex;
       flex-direction: column;
       gap: 3px;
       max-height: min(310px, calc(100vh - 84px));
+      margin: 0;
       padding-top: 5px;
       overflow-y: auto;
+      list-style: none;
+    }
+    .active-agents-popover__list > li {
+      min-width: 0;
     }
     .active-agents-task-row {
       display: flex;

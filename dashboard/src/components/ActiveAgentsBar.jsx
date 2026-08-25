@@ -116,6 +116,7 @@ function ActiveAgentPill({
   popoverPosition,
 }) {
   const handle = formatHandle(agentId);
+  const single = claims.length === 1;
   const multi = claims.length > 1;
   const task = claims[0] || null;
   const id = popoverId(agentId);
@@ -144,11 +145,14 @@ function ActiveAgentPill({
         type="button"
         className={`active-agents-pill active-agents-pill--trigger${multi ? ' active-agents-pill--multi' : ' active-agents-pill--single'}`}
         onClick={() => {
-          if (!multi) {
+          // The aggregation model deliberately keeps lease health separate
+          // from claim visibility. A single visible claim always has a
+          // deterministic destination, even when its lease is stale/expired.
+          if (single) {
             onOpenTask(task);
             return;
           }
-          onToggle(agentId);
+          if (multi) onToggle(agentId);
         }}
         onKeyDown={(event) => {
           if (multi && event.key === 'ArrowDown') {
@@ -162,6 +166,7 @@ function ActiveAgentPill({
         aria-controls={multi ? id : undefined}
         title={singleLabel}
         data-agent-id={agentId}
+        data-claim-count={claims.length}
       >
         <AgentAvatar agentId={agentId} />
         <span className="active-agents-pill__meta">
@@ -194,13 +199,18 @@ function ActiveAgentPill({
           }}
         >
           <div className="active-agents-popover__header">
-            <span id={`${id}-title`}>Active tasks · {claims.length}</span>
+            <h2 id={`${id}-title`}>Active tasks · {claims.length}</h2>
           </div>
-          <div className="active-agents-popover__list">
-            {claims.map((claim) => (
-              <ActiveTaskRow key={taskId(claim) || `${agentId}-${claims.indexOf(claim)}`} task={claim} onOpen={onOpenTask} />
+          <ul
+            className="active-agents-popover__list"
+            aria-label={`${handle} active tasks`}
+          >
+            {claims.map((claim, index) => (
+              <li key={taskId(claim) || `${agentId}-${index}`}>
+                <ActiveTaskRow task={claim} onOpen={onOpenTask} />
+              </li>
             ))}
-          </div>
+          </ul>
         </div>,
         document.body,
       )}
