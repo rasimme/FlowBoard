@@ -121,9 +121,9 @@ async function run() {
   assertEqual(t1reopen.status, 'open', 'Status reopened to open');
   assertEqual(t1reopen.completed, null, 'Completed cleared on reopen');
 
-  // blocked is a flag, not a status (ADR-0009)
-  hzl.updateTask(PROJECT, 'T-002', { blocked: true });
-  assertEqual(hzl.getTask(PROJECT, 'T-002').blocked, true, 'Blocked flag works');
+  // blocked is a canonical work state, independent of task status.
+  hzl.updateTask(PROJECT, 'T-002', { workState: 'blocked' });
+  assertEqual(hzl.getTask(PROJECT, 'T-002').workState, 'blocked', 'Blocked work state works');
 
   // Set various tasks to known states for restart test
   hzl.updateTask(PROJECT, 'T-001', { status: 'in-progress' });
@@ -173,6 +173,7 @@ async function run() {
 
   // Snapshot expected state before restart
   const preRestart = {};
+  const preRestartBlockedWorkState = hzl.getTask(PROJECT, 'T-002').workState;
   for (const t of hzl.listTasks(PROJECT)) {
     preRestart[t.id] = { status: t.status, title: t.title, completed: t.completed, priority: t.priority };
   }
@@ -204,6 +205,8 @@ async function run() {
       assertEqual(actual.priority, expected.priority, `${id} priority persisted`);
     }
   }
+  assertEqual(hzl.getTask(PROJECT, 'T-002').workState, preRestartBlockedWorkState,
+    'T-002 canonical blocked workState persists after restart');
 
   // Verify deleted tasks don't reappear
   assertEqual(hzl.getTask(PROJECT, 'T-004'), null, 'Deleted T-004 stays deleted after restart');
@@ -340,8 +343,8 @@ async function run() {
   hzl.recalcParentStatus(PROJECT, 'T-001');
   assertEqual(hzl.getTask(PROJECT, 'T-001').status, 'in-progress', 'Subtask reopened → parent in-progress');
 
-  // One blocked (flag), one open → parent stays in-progress (some activity)
-  hzl.updateTask(PROJECT, 'T-001-1', { status: 'in-progress', blocked: true });
+  // One blocked work state, one open → parent stays in-progress (some activity)
+  hzl.updateTask(PROJECT, 'T-001-1', { status: 'in-progress', workState: 'blocked' });
   hzl.updateTask(PROJECT, 'T-001-2', { status: 'open' });
   hzl.recalcParentStatus(PROJECT, 'T-001');
   const parentBlocked = hzl.getTask(PROJECT, 'T-001');
@@ -373,10 +376,10 @@ async function run() {
   const finalT1 = hzl.getTask(PROJECT, 'T-001');
   assertEqual(finalT1.status, 'in-progress', 'T-001 status correct after double restart');
   const finalT001_1 = hzl.getTask(PROJECT, 'T-001-1');
-  assertEqual(finalT001_1.blocked, true, 'T-001-1 blocked flag correct after double restart');
+  assertEqual(finalT001_1.workState, 'blocked', 'T-001-1 workState correct after double restart');
   const finalT001_2 = hzl.getTask(PROJECT, 'T-001-2');
   assertEqual(finalT001_2.status, 'open', 'T-001-2 open status correct after double restart');
-  assertEqual(hzl.getTask(PROJECT, 'T-002').blocked, true, 'T-002 blocked flag survives double restart');
+  assertEqual(hzl.getTask(PROJECT, 'T-002').workState, 'blocked', 'T-002 workState survives double restart');
   assertEqual(hzl.getTask(PROJECT, 'T-003').status, 'open', 'T-003 status survives double restart');
 
   // Archived/deleted tasks still not reused
@@ -474,7 +477,7 @@ async function run() {
   hzl.updateTask(PROJECT, 'T-001-1', { status: 'done' });
   hzl.updateTask(PROJECT, 'T-001-2', { status: 'done' });
   hzl.updateTask(PROJECT, 'T-002', { status: 'open' });
-  hzl.updateTask(PROJECT, 'T-003', { blocked: true });
+  hzl.updateTask(PROJECT, 'T-003', { workState: 'blocked' });
 
   const exactCounts = hzl.getTaskCounts(PROJECT);
   console.log('  Exact counts:', JSON.stringify(exactCounts));
@@ -482,7 +485,7 @@ async function run() {
   const countSum = Object.values(exactCounts).reduce((a, b) => a + b, 0);
   assert(countSum > 0, 'Task counts sum > 0');
   assert(exactCounts.review >= 1, 'At least 1 review task');
-  assert(exactCounts.blocked >= 1, 'At least 1 blocked task');
+  assert(exactCounts.blocked >= 1, 'At least 1 blocked task derived from workState');
   assert('open' in exactCounts && 'done' in exactCounts && 'archived' in exactCounts,
     'Counts include all expected status keys');
 
