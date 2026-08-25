@@ -1784,7 +1784,10 @@ app.put('/api/projects/:name/task-discipline', (req, res) => {
   const discipline = req.body?.discipline;
   if (!taskDiscipline.VALUES.includes(discipline)) return res.status(400).json({ error: `discipline must be one of: ${taskDiscipline.VALUES.join(', ')}` });
   const updated = fbMeta.updateProjectMeta(req.params.name, { taskDiscipline: discipline });
-  return res.json({ ok: true, project: req.params.name, discipline, lastChange: { actor: 'local:operator', changedAt: new Date().toISOString() }, canChange: true, metadata: updated });
+  const principal = governance.resolvePrincipal(req);
+  return res.json({ ok: true, project: req.params.name, discipline,
+    lastChange: { actor: principal.actor, changedAt: new Date().toISOString() },
+    canChange: true, metadata: updated });
 });
 
 // DELETE /api/projects/:name?confirm=<name> — T-136: hard-delete (tombstone + .trash/)
