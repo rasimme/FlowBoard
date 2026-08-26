@@ -1,17 +1,20 @@
 # Changelog
 
-### Unreleased
+### v5.2.0 (2026-08-26) — Project Export & Import
 
-- **Portable project review bundles (T-468).** Projects can be exported as a
-  sanitized, deterministic JSON review bundle and inspected with a read-only
-  preview before **Import project** creates a new project on another FlowBoard
-  instance. **Export project** omits runtime ownership, HZL events, sessions,
-  credentials and executable content; **Include task history** is opt-in and
-  remains off by default. Imports are create-only, never merge or overwrite,
-  remap destination IDs, do not auto-activate agents, and expose warnings plus
-  journaled recovery metadata. Review imported Markdown as untrusted content;
-  this is not a database/disaster-recovery backup, has no bidirectional sync or
-  cryptographic signature, and supports JSON format version 1 only.
+- **Move or copy whole projects with confidence.** Export a project and import it
+  into the same or another FlowBoard session using the new **Export project** and
+  **Import project** actions.
+- **Keep your work together.** Tasks, subtasks, specs, project files, Canvas and
+  Overview layouts, comments, and optional checkpoint history are transferred as
+  one complete project bundle.
+- **Start clean in the new session.** Imported projects do not carry over active
+  assignments or expired work locks, so the destination project is ready for
+  your team to pick up safely.
+- **Preview before importing.** Review what the bundle contains before FlowBoard
+  creates the new project.
+- **Clear guidance included.** The project-management guide now explains how to
+  export, import, and continue working with project bundles.
 
 ### v5.1.0 (2026-08-26) — Project Discipline & Collaborative Work State
 
