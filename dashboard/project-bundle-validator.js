@@ -325,7 +325,9 @@ function validateTasks(tasks, errors) {
     timestampField(task, 'updatedAt', path, errors);
     timestampField(task, 'dueAt', path, errors);
     timestampField(task, 'completedAt', path, errors, { required: true, dateOnlyStrict: true, nullable: true });
-    timestampField(task, 'enteredStatusAt', path, errors, { required: true });
+    // New tasks expose a zoned ISO timestamp; legacy rows fall back to the
+    // public `created` date, so both exact representations are portable.
+    timestampField(task, 'enteredStatusAt', path, errors, { required: true, dateOnly: true });
     if (!Object.prototype.hasOwnProperty.call(task, 'order')) requiredField(task, 'order', path, errors);
     else if (task.order !== null) finiteNumberField(task, 'order', path, errors);
     validateWorkStateDetails(task.workStateDetails, `${path}.workStateDetails`, errors);

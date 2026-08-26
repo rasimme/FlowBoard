@@ -264,12 +264,23 @@ for (const slug of ['Portable-review', 'portable_review', `a${'b'.repeat(63)}`])
   assert.equal(hasCode(validateBundle(missingHistoryTarget), 'FIELD_REQUIRED'), true);
 }
 
-// Runtime task completion is a YYYY-MM-DD value; the full timestamp belongs
-// to enteredStatusAt and is validated separately.
+// Runtime task completion is a YYYY-MM-DD value; new enteredStatusAt values
+// are zoned timestamps and are validated separately.
 {
   const timestampCompletion = fixture();
   timestampCompletion.tasks[0].completedAt = '2026-08-26T12:00:00.000Z';
   assert.equal(hasCode(validateBundle(timestampCompletion), 'TIMESTAMP_INVALID'), true);
+}
+
+// Legacy public API rows can expose enteredStatusAt as the date-only created
+// fallback. The exact value is retained rather than upgraded or fabricated.
+{
+  const legacyEntered = fixture();
+  const legacyTask = legacyEntered.tasks.find((task) => task.id === 'T-1');
+  legacyTask.enteredStatusAt = '2026-08-01';
+  legacyEntered.manifest.checksums.payload = sha256(payloadForChecksum(legacyEntered));
+  assert.equal(validateBundle(legacyEntered).ok, true);
+  assert.equal(validateBundle(legacyEntered).bundle.tasks.find((task) => task.id === 'T-1').enteredStatusAt, '2026-08-01');
 }
 
 // Unsupported format versions are not guessed or downgraded.
