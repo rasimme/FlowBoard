@@ -24,6 +24,7 @@ const TARGET = 'portable-http-copy';
 const SOURCE_AGENT = 'bundle-roundtrip-fast';
 const FAKE_SECRET = 'ghp_fake_source_global_secret_1234567890';
 const FAKE_RUNTIME = 'source-runtime-agent-field';
+const UNICODE_TAGS = ['prüfung', '🚀'];
 
 async function bundleRequest(ctx, endpoint, bundle) {
   const response = await fetch(`${ctx.base}/api/projects/import/${endpoint}`, {
@@ -79,6 +80,10 @@ async function createSourceFixture(ctx) {
     repo: 'example/portable-http', branch: 'main',
   });
   assert.equal(github.status, 200, JSON.stringify(github.body));
+  const globalToken = await ctx.api('PUT', '/settings/github-token', { token: FAKE_SECRET });
+  assert.equal(globalToken.status, 200, JSON.stringify(globalToken.body));
+  const activated = await ctx.api('PUT', '/status', { project: SOURCE, agentId: SOURCE_AGENT });
+  assert.equal(activated.status, 200, JSON.stringify(activated.body));
 
   const context = await ctx.api('PUT', `/projects/${SOURCE}/files/context/PORTABLE.md`, {
     content: 'Kontext mit Unicode: Prüfung ✓ — safe to review.\n',
@@ -116,16 +121,24 @@ async function createSourceFixture(ctx) {
 
   const mediumResponse = await ctx.api('POST', `/projects/${SOURCE}/tasks`, {
     title: 'Mittlere Priorität', description: 'Review task with blocked work state.',
-    priority: 'medium', status: 'review', workState: 'blocked',
+    priority: 'medium', status: 'review', workState: 'blocked', tags: UNICODE_TAGS,
     workStateDetails: { reason: 'Needs a decision', responsible: 'operator' },
   });
   assert.equal(mediumResponse.status, 200, JSON.stringify(mediumResponse.body));
+  const ordered = await ctx.api('PUT', `/projects/${SOURCE}/tasks/${mediumResponse.body.task.id}`, { order: 7 });
+  assert.equal(ordered.status, 200, JSON.stringify(ordered.body));
 
   const lowResponse = await ctx.api('POST', `/projects/${SOURCE}/tasks`, {
     title: 'Niedrige Priorität', description: 'Paused low-priority task.',
     priority: 'low', status: 'backlog', workState: 'paused',
   });
   assert.equal(lowResponse.status, 200, JSON.stringify(lowResponse.body));
+
+  const archivedResponse = await ctx.api('POST', `/projects/${SOURCE}/tasks`, {
+    title: 'Archivierte Prüfung', description: 'Archived task remains portable.',
+    priority: 'low', status: 'archived', workState: 'paused', tags: ['archiv'],
+  });
+  assert.equal(archivedResponse.status, 200, JSON.stringify(archivedResponse.body));
 
   const claimedResponse = await ctx.api('POST', `/projects/${SOURCE}/tasks`, {
     title: 'Claimed route state', description: 'Runtime ownership must not travel.',
@@ -185,9 +198,13 @@ async function main() {
     const valid = validateBundle(bundle);
     assert.equal(valid.ok, true, JSON.stringify(valid.errors));
     assert.equal(bundle.project.slug, SOURCE);
-    assert.equal(bundle.tasks.length, 5);
+    assert.equal(bundle.tasks.length, 6);
     assert.ok(bundle.tasks.some((task) => task.title.includes('Übergeordnete')));
     assert.ok(bundle.tasks.some((task) => task.parentId));
+    const taggedTask = bundle.tasks.find((task) => task.title === 'Mittlere Priorität');
+    assert.deepEqual(taggedTask.tags, UNICODE_TAGS);
+    assert.equal(taggedTask.order, 7);
+    assert.ok(bundle.tasks.some((task) => task.status === 'archived'));
     assert.ok(bundle.specs.some((spec) => spec.taskId === bundle.tasks.find((task) => task.title.includes('Übergeordnete')).id));
     assert.ok(bundle.files.some((file) => file.path === 'context/PORTABLE.md'));
     assert.equal(bundle.canvas.connections.length, 1);
@@ -199,7 +216,7 @@ async function main() {
     for (const id of sourceInternalIds) assert.equal(serialized.includes(id), false, `internal ULID leaked: ${id}`);
     for (const forbidden of [
       'Unrelated secret task', FAKE_SECRET, FAKE_RUNTIME, 'AGENTS.md', 'runtime.json',
-      'flowboard.db-wal', source.tempRoot,
+      'flowboard.db-wal', source.tempRoot, FAKE_SECRET, SOURCE_AGENT,
     ]) assert.equal(serialized.includes(forbidden), false, `forbidden source text leaked: ${forbidden}`);
     for (const forbiddenKey of ['"agent":', '"leaseUntil":', '"claimedAt":', '"routedAgent":', '"runtime":']) {
       assert.equal(serialized.includes(forbiddenKey), false, `runtime field leaked: ${forbiddenKey}`);
@@ -266,7 +283,11 @@ async function main() {
       const destinationAgents = await destination.api('GET', '/agents');
       assert.equal(destinationAgents.status, 200, JSON.stringify(destinationAgents.body));
       assert.equal(
-        destinationAgents.body.agents.some((agent) => agent.id === SOURCE_AGENT && agent.active_project === TARGET),
+        destinationAgents.body.agents.some((agent) => {
+          const id = agent.id || agent.agent_id;
+          const activeProject = agent.activeProject || agent.active_project;
+          return id === SOURCE_AGENT && activeProject === TARGET;
+        }),
         false,
         'source agent activation is not imported',
       );
