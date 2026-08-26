@@ -216,6 +216,38 @@ included/excluded content, manifest warnings, security warnings and target
 availability. Preview is read-only: it does not append HZL events/audits,
 write metadata or files, or activate a project.
 
+### POST /api/projects/import?targetName=<slug>
+
+Imports a previously validated JSON review bundle as a new project. The
+destination is create-only: registered projects, tombstones, reserved names,
+and existing directories are conflicts. A failed journal with the identical
+target and bundle digest may be resumed idempotently; a different digest may
+not reuse that name. Claims, leases, routes, agent ownership and runtime
+notifications are never imported.
+
+The importer persists a recovery journal before lifecycle/HZL/filesystem
+mutation. Non-committed targets stay hidden from the ordinary project list and
+project routes. Files and specs are checksum-verified in an owner-private
+staging directory before publication; canvas and overview are restored through
+their canonical server-owned writers.
+
+**201** `{ ok, importId, state: "committed", project, counts }`.
+**409** target conflict or concurrent import lock. **415** unsupported media or
+compression. **422** invalid/incompatible/sensitive bundle. A caught mutation
+failure returns **500** with `{ code, importId, state: "failed", recoverable: true }`.
+
+### GET /api/projects/import/status?targetName=<slug>
+
+Returns safe journal metadata (`importId`, destination, bundle digest, state,
+bounded progress counters and error code). No bundle content, task text,
+staging paths or credentials are returned.
+
+### GET /api/projects/import/<importId>
+
+Returns one safe recovery journal. An active journal found during startup is
+marked `failed` with `IMPORT_INTERRUPTED`; retrying the same digest/target is
+safe and idempotent.
+
 ### PUT /api/projects/:name/overview
 Body is either `{ preset: "default" | "coding" | "knowledge" | "mission" }` (materializes the
 preset) or a full config:

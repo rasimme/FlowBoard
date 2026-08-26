@@ -307,6 +307,30 @@
       "description": "Validate a JSON project review bundle without creating projects, events, metadata or files."
     },
     {
+      "method": "POST",
+      "path": "/api/projects/import",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md",
+      "description": "Create-only, journaled import of a validated JSON project review bundle."
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/import/status",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md",
+      "description": "Read safe project import journal/status metadata."
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/import/:importId",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md",
+      "description": "Read one safe project import recovery journal."
+    },
+    {
       "method": "PUT",
       "path": "/api/projects/:name/overview",
       "auth": "user",

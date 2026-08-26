@@ -239,6 +239,65 @@ function createProject(input, { hzlService, fbMeta, projectsDir }) {
   return { project, warnings };
 }
 
+/**
+ * Complete the filesystem scaffold for an already-created project.  Import
+ * recovery uses this only after the canonical lifecycle writer has created the
+ * HZL/metadata rows and a previous attempt stopped before the scaffold was
+ * complete.  Existing files are preserved; the helper only fills missing
+ * lifecycle-owned defaults.
+ */
+function ensureProjectScaffold(projectsDir, name, displayName, description) {
+  const projectDir = path.join(projectsDir, name);
+  const today = new Date().toISOString().slice(0, 10);
+  fs.mkdirSync(projectDir, { recursive: true });
+  const defaults = {
+    'PROJECT.md': [
+      `# ${displayName || name}`,
+      '',
+      description ? `${description}\n` : '',
+      '## Goal',
+      '[What should be achieved?]',
+      '',
+      '## Operational State',
+      'Current work, task status, claims, priorities, and next implementation steps live in FlowBoard/HZL tasks, not in this file.',
+      '',
+      '## Project Files',
+      '[List stable non-standard project knowledge files when created. Specs are linked via FlowBoard tasks and do not need entries here.]',
+      '',
+      '## Development rules (read before changing code)',
+      '[Project-specific rules for working on this project. Served to every agent via bootstrap — the single place for how to develop here (branch/commit flow, build & test gate, where shared-file changes go, what must never be committed, deploy/restart steps). Fill in or delete this stub.]',
+      '',
+    ].join('\n'),
+    'SESSIONS.md': [
+      `# Sessions — ${displayName || name}`,
+      '',
+      `### ${today}`,
+      '- Project created',
+      '',
+    ].join('\n'),
+    'DECISIONS.md': [
+      `# Decisions — ${displayName || name}`,
+      '',
+      'Decisions are logged here when significant choices are made. Only loaded on demand.',
+      '',
+      '<!-- Format:',
+      '### [DATE] — [Short Title]',
+      '**Decision:** What was decided',
+      '**Reasoning:** Why',
+      '**Alternatives considered:** What else was on the table',
+      '-->',
+      '',
+    ].join('\n'),
+  };
+  for (const [filename, content] of Object.entries(defaults)) {
+    const target = path.join(projectDir, filename);
+    if (!fs.existsSync(target)) fs.writeFileSync(target, content, { mode: 0o600 });
+  }
+  fs.mkdirSync(path.join(projectDir, 'context'), { recursive: true });
+  fs.mkdirSync(path.join(projectDir, 'specs'), { recursive: true });
+  return { warnings: [] };
+}
+
 // --- T-136: update + hard-delete ---
 
 const VALID_UPDATE_STATUSES = new Set(['active', 'archived']);
@@ -593,4 +652,12 @@ function detectProjectDrift({ hzlService, fbMeta, projectsDir }) {
   return [...drift.values()];
 }
 
-module.exports = { createProject, healProject, updateProject, deleteProject, restoreProject, detectProjectDrift };
+module.exports = {
+  createProject,
+  ensureProjectScaffold,
+  healProject,
+  updateProject,
+  deleteProject,
+  restoreProject,
+  detectProjectDrift,
+};

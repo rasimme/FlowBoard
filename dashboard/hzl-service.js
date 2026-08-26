@@ -233,6 +233,8 @@ function _toFbTask(hzlTask, project) {
     // Filterable tags (HZL native column) — milestone:<name> drives the
     // overview milestones widget
     tags: _cloneJson(hzlTask.tags || []),
+    links: _cloneJson(hzlTask.links || []),
+    ...(hzlTask.due_at ? { dueAt: hzlTask.due_at } : {}),
     // T-396: short inline context (HZL native column). Returned so the detail
     // panel can show/edit it and search can match it.
     description: hzlTask.description ?? '',
@@ -775,7 +777,9 @@ function listTasks(project, opts = {}) {
   for (const [key, task] of _cache) {
     if (!key.startsWith(`${project}:`)) continue;
     if (!opts.includeArchived && task.status === 'archived') continue;
-    tasks.push(_publicTask(task));
+    const publicTask = _publicTask(task);
+    publicTask.dependsOn = getTaskDependencies(project, publicTask.id);
+    tasks.push(publicTask);
   }
   // Derive subtaskIds on read so push-update races (parent missing the
   // forward pointer after a subtask insert) cannot hide children. Full
@@ -792,7 +796,57 @@ function getTask(project, flowboardId, opts = {}) {
   if (!task) return null;
   // Archived tasks are kept in cache for ID-reuse prevention but hidden by default
   if (!opts.includeArchived && task.status === 'archived') return null;
-  return _publicTask(task);
+  const publicTask = _publicTask(task);
+  publicTask.dependsOn = getTaskDependencies(project, publicTask.id);
+  return publicTask;
+}
+
+/** Return a task's FlowBoard dependency ids through the HZL projection. */
+function getTaskDependencies(project, flowboardId) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid || !_cacheDb) return [];
+  const rows = _cacheDb.prepare(
+    'SELECT depends_on_id FROM task_dependencies WHERE task_id = ? ORDER BY rowid'
+  ).all(ulid);
+  return rows.map(row => {
+    const key = _ulidToFb.get(row.depends_on_id);
+    if (!key || !key.startsWith(`${project}:`)) return null;
+    return key.slice(project.length + 1);
+  }).filter(Boolean);
+}
+
+/** Resolve an internal ULID for migration/import adapters without exposing DB writes. */
+function getTaskUlid(project, flowboardId) {
+  return _fbToUlid.get(`${project}:${flowboardId}`) || null;
+}
+
+/**
+ * Clear live ownership/runtime delivery state on an imported task.  This is
+ * an explicit service primitive so import code never reaches into SQLite
+ * tables directly.  Historical claim/checkpoint events are intentionally not
+ * copied; only the current projection is sanitized.
+ */
+function clearTaskRuntimeStateForMigration(project, flowboardId) {
+  const ulid = getTaskUlid(project, flowboardId);
+  if (!ulid || !_cacheDb) return null;
+  _cacheDb.prepare(`
+    UPDATE tasks_current
+       SET agent = NULL, claimed_at = NULL, lease_until = NULL, progress = NULL
+     WHERE task_id = ?
+  `).run(ulid);
+  const current = _taskService.getTaskById(ulid);
+  if (current) {
+    const flowboard = { ...(current.metadata?.flowboard || {}) };
+    delete flowboard.routedAgent;
+    delete flowboard.stuckIndicator;
+    delete flowboard.lastCheckpointAt;
+    delete flowboard.checkpointCount;
+    if (flowboard.workStateDetails && typeof flowboard.workStateDetails === 'object') {
+      flowboard.workStateDetails = { ...flowboard.workStateDetails, responsible: null };
+    }
+    _updateMetadata(ulid, { flowboard });
+  }
+  return _resyncCachedTask(ulid);
 }
 
 function _priorityRank(priority) {
@@ -1195,13 +1249,31 @@ function buildCreationAudit(origin, context) {
  * cannot bypass the policy boundary.
  */
 function createTaskRaw(project, opts) {
-  const { title, priority = 'medium', parentId = null, status = 'backlog', forceId = null, staleAfterMinutes = null } = opts;
+  const {
+    title,
+    priority = 'medium',
+    parentId = null,
+    status = 'backlog',
+    forceId = null,
+    staleAfterMinutes = null,
+    created: requestedCreated,
+    enteredStatusAt: requestedEnteredStatusAt,
+    completed: requestedCompleted,
+    dueAt,
+    dependsOnUlids,
+  } = opts;
   const tags = opts.tags !== undefined ? _cleanTags(opts.tags) : [];
+  const links = opts.links !== undefined ? _cleanTags(opts.links) : [];
   const description = typeof opts.description === 'string' ? opts.description : ''; // T-396
-  const workStateResolved = resolveWorkStatePayload({
-    ...(Object.prototype.hasOwnProperty.call(opts, 'workState') ? { workState: opts.workState } : {}),
-    ...(Object.prototype.hasOwnProperty.call(opts, 'workStateDetails') ? { workStateDetails: opts.workStateDetails } : {}),
-  }, null);
+  const workStateResolved = opts.preserveImportedWorkStateDetails
+    ? {
+      workState: opts.workState || DEFAULT_WORK_STATE,
+      workStateDetails: normalizeWorkStateDetails(opts.workStateDetails, { validate: true }),
+    }
+    : resolveWorkStatePayload({
+      ...(Object.prototype.hasOwnProperty.call(opts, 'workState') ? { workState: opts.workState } : {}),
+      ...(Object.prototype.hasOwnProperty.call(opts, 'workStateDetails') ? { workStateDetails: opts.workStateDetails } : {}),
+    }, null);
   if (staleAfterMinutes !== null && (!Number.isInteger(staleAfterMinutes) || staleAfterMinutes <= 0)) {
     throw new Error('staleAfterMinutes must be a positive integer or null');
   }
@@ -1229,9 +1301,13 @@ function createTaskRaw(project, opts) {
   }
 
   const hzlStatus = FB_TO_HZL[status] || 'ready';
-  const created = new Date().toISOString().slice(0, 10);
+  const created = typeof requestedCreated === 'string' && requestedCreated ? requestedCreated : new Date().toISOString().slice(0, 10);
   // T-379: full-ISO timestamp of entering the current status (for recency sort).
-  const enteredStatusAt = new Date().toISOString();
+  const enteredStatusAt = typeof requestedEnteredStatusAt === 'string' && requestedEnteredStatusAt
+    ? requestedEnteredStatusAt : new Date().toISOString();
+  const completed = requestedCompleted === undefined
+    ? (status === 'done' ? created : null)
+    : requestedCompleted;
 
   // Ensure project exists in HZL (lazy creation on first task)
   if (!_projectService.projectExists(project)) {
@@ -1248,7 +1324,7 @@ function createTaskRaw(project, opts) {
         status,
         created,
         enteredStatusAt,
-        completed: null,
+        completed,
         parentId: parentId || null,
         workState: workStateResolved.workState,
         workStateDetails: workStateResolved.workStateDetails,
@@ -1259,6 +1335,9 @@ function createTaskRaw(project, opts) {
       }
     },
     priority: _priorityToInt(priority),
+    links,
+    ...(Array.isArray(dependsOnUlids) && dependsOnUlids.length > 0 ? { depends_on: dependsOnUlids } : {}),
+    ...(dueAt !== undefined ? { due_at: dueAt } : {}),
     ...(parentId && _fbToUlid.get(`${project}:${parentId}`) ? { parent_id: _fbToUlid.get(`${project}:${parentId}`) } : {}),
     initial_status: hzlStatus,
     tags,
@@ -1280,12 +1359,14 @@ function createTaskRaw(project, opts) {
     priority,
     tags,
     description,
+    links,
+    dependsOn: [],
     parentId,
     subtaskIds: [],
     specFile: null,
     created,
     enteredStatusAt,
-    completed: null,
+    completed,
     agent: null,
     claimedAt: null,
     leaseUntil: null,
@@ -1318,6 +1399,20 @@ function createTaskRaw(project, opts) {
 function createTaskForMigration(project, opts) {
   const { exceptionReview: _callerReview, ...safeOpts } = opts || {};
   return createTaskRaw(project, safeOpts);
+}
+
+/**
+ * Imports restore terminal tasks without producing on_done notifications.
+ * The hook is a delivery side effect of normal user work, not portable
+ * project content.  This helper is intentionally explicit and scoped to the
+ * migration/import primitive; ordinary task creation keeps the hook intact.
+ */
+function withMigrationHooksSuppressed(fn) {
+  if (typeof fn !== 'function') throw new Error('migration callback is required');
+  if (!_taskService) return fn();
+  const previous = _taskService.onDoneHook;
+  _taskService.onDoneHook = null;
+  try { return fn(); } finally { _taskService.onDoneHook = previous; }
 }
 
 function getPolicyLedger(options = {}) {
@@ -4642,11 +4737,15 @@ module.exports = {
   setTaskParent,
   listTasks,
   getTask,
+  getTaskDependencies,
+  getTaskUlid,
+  clearTaskRuntimeStateForMigration,
   createTaskWithPolicy,
   // Batch creation uses this only to undo tasks from a request that failed
   // after an earlier item had already been persisted.
   purgeTaskForCreationRollback: _purgeTaskForCreationRollback,
   createTaskForMigration,
+  withMigrationHooksSuppressed,
   createTask,
   getPolicyLedger,
   updateTask,

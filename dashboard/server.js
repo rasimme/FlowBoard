@@ -115,6 +115,21 @@ const {
   parseJsonBody,
   previewBundle,
 } = require('./project-bundle-import-preview.js');
+const {
+  ProjectBundleImporter,
+  ProjectBundleImportError,
+  createProjectBundleImporter,
+} = require('./project-bundle-import.js');
+const { importLockKey } = require('./project-bundle-safety.js');
+const projectLifecycle = require('./project-lifecycle.js');
+
+const projectBundleImporter = createProjectBundleImporter({
+  hzlService,
+  fbMeta,
+  projectsDir: PROJECTS_DIR,
+  overview,
+  lifecycle: projectLifecycle,
+});
 const { formatSessionEntry, insertEntry } = require('./session-log.js');
 const {
   normalizeStoredWorkState,
@@ -432,7 +447,7 @@ installPrivacyFilter();
 // that route or it would consume the upload before the media/UTF-8 checks run.
 const globalJsonParser = express.json();
 app.use((req, res, next) => {
-  if (req.method === 'POST' && req.path === '/api/projects/import/preview') return next();
+  if (req.method === 'POST' && (req.path === '/api/projects/import/preview' || req.path === '/api/projects/import')) return next();
   return globalJsonParser(req, res, next);
 });
 
@@ -1459,6 +1474,9 @@ app.get('/api/info', (req, res) => {
       bootstrap: '/api/projects/:name/bootstrap',
       rules:     '/api/projects/:name/rules/:section',
       tasks:     '/api/projects/:name/tasks',
+      projectImportPreview: '/api/projects/import/preview',
+      projectImport: '/api/projects/import?targetName=<slug>',
+      projectImportStatus: '/api/projects/import/status?targetName=<slug>',
     },
     features: {
       dashboardSnapshot: DASHBOARD_SNAPSHOT_ENABLED,
@@ -2075,6 +2093,135 @@ app.post('/api/projects/import/preview', (req, res, next) => {
     });
   }
   return res.status(200).json(result.preview);
+});
+
+// GET /api/projects/import/status — bounded, content-free journal read model.
+// A target filter is optional; without it callers receive only safe journal
+// metadata (never bundle content, task text or staging paths).
+app.get('/api/projects/import/status', (req, res) => {
+  const targetName = req.query.targetName;
+  if (targetName !== undefined && !TARGET_NAME_RE.test(String(targetName))) {
+    return res.status(400).json({ error: 'Invalid target project name', code: 'TARGET_INVALID' });
+  }
+  try {
+    return res.json({ ok: true, journals: fbMeta.listProjectImportJournals({ targetName: targetName ? String(targetName) : undefined }) });
+  } catch (error) {
+    console.error('[project-import-status]', error.message);
+    return res.status(500).json({ error: 'Project import status unavailable', code: 'IMPORT_JOURNAL_UNAVAILABLE' });
+  }
+});
+
+// GET /api/projects/import/:importId — one durable recovery record.
+app.get('/api/projects/import/:importId', (req, res) => {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/.test(req.params.importId)) {
+    return res.status(404).json({ error: 'Import journal not found' });
+  }
+  try {
+    const journal = fbMeta.getProjectImportJournal(req.params.importId);
+    if (!journal) return res.status(404).json({ error: 'Import journal not found' });
+    return res.json({ ok: true, journal });
+  } catch (error) {
+    console.error('[project-import-status]', error.message);
+    return res.status(500).json({ error: 'Project import status unavailable', code: 'IMPORT_JOURNAL_UNAVAILABLE' });
+  }
+});
+
+// POST /api/projects/import — create-only, journaled project import.
+// Transport deliberately mirrors the preview boundary: raw bytes, strict
+// UTF-8, identity content encoding and a bounded JSON body.  No write is
+// reachable until the importer has performed schema/security/target
+// revalidation and persisted its journal.
+app.post('/api/projects/import', (req, res, next) => {
+  if (!isSupportedMediaType(req.headers['content-type'])) {
+    return res.status(415).json({
+      error: 'Unsupported project bundle media type.',
+      code: 'MEDIA_TYPE_UNSUPPORTED',
+      supported: ['application/vnd.flowboard.project+json', 'application/octet-stream'],
+    });
+  }
+  const contentEncoding = String(req.headers['content-encoding'] || '')
+    .split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (contentEncoding.some((value) => value !== 'identity')) {
+    return res.status(415).json({
+      error: 'Compressed project bundle uploads are not supported.',
+      code: 'CONTENT_ENCODING_UNSUPPORTED',
+    });
+  }
+  return express.raw({ type: () => true, limit: RAW_BODY_LIMIT })(req, res, (error) => {
+    if (!error) return next();
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({
+        error: 'Project bundle exceeds the raw upload limit.',
+        code: 'RAW_SIZE_LIMIT',
+        limitBytes: RAW_BODY_LIMIT,
+      });
+    }
+    return res.status(400).json({ error: 'Project bundle body could not be read.', code: 'BODY_READ_FAILED' });
+  });
+}, async (req, res) => {
+  let parsed;
+  try {
+    parsed = parseJsonBody(req.body);
+  } catch (error) {
+    const status = error.code === 'RAW_SIZE_LIMIT' ? 413 : 400;
+    return res.status(status).json({
+      error: error.message,
+      code: error.code || 'BUNDLE_BODY_INVALID',
+      ...(error.code === 'RAW_SIZE_LIMIT' ? { limitBytes: RAW_BODY_LIMIT } : {}),
+    });
+  }
+
+  let testLockKey = null;
+  try {
+    // Focused failure-injection is a test-only dependency option.  It is
+    // deliberately unreachable outside NODE_ENV=test and is never read from
+    // production environment variables or operator configuration.
+    const testFailure = process.env.NODE_ENV === 'test'
+      ? String(req.headers['x-flowboard-test-import-failure'] || '')
+      : '';
+    const importer = ['staging', 'project', 'task', 'file', 'canvas', 'finalize'].includes(testFailure)
+      ? createProjectBundleImporter({
+        hzlService,
+        fbMeta,
+        projectsDir: PROJECTS_DIR,
+        overview,
+        lifecycle: projectLifecycle,
+        hooks: { failAt: testFailure },
+      })
+      : projectBundleImporter;
+    if (process.env.NODE_ENV === 'test' && req.headers['x-flowboard-test-import-lock'] === 'true') {
+      const requestedTarget = req.query.targetName || parsed.bundle?.project?.slug;
+      testLockKey = importLockKey(String(requestedTarget));
+      ProjectBundleImporter.locks.set(testLockKey, true);
+    }
+    const result = await importer.importBundle(parsed.bundle, {
+      targetName: req.query.targetName,
+    });
+    // The audit record is emitted only after COMMITTED made the project
+    // visible.  It contains an import id, never bundle content or a secret.
+    audit({ action: 'project.import', project: result.project.name, target: result.importId }, req);
+    return res.status(201).json(result);
+  } catch (error) {
+    const safeCode = /^[A-Z0-9_:-]{1,96}$/.test(String(error?.code || 'PROJECT_IMPORT_FAILED'))
+      ? String(error.code) : 'PROJECT_IMPORT_FAILED';
+    const journal = error?.journal || (error?.importId ? fbMeta.getProjectImportJournal(error.importId) : null);
+    const status = error instanceof ProjectBundleImportError
+      ? (error.status || 500)
+      : (error?.status || 500);
+    const body = {
+      error: status === 409 ? 'Project import target is not available.' : 'Project import failed.',
+      code: safeCode,
+      ...(journal ? {
+        importId: journal.importId,
+        state: journal.state,
+        recoverable: journal.state === 'failed',
+      } : {}),
+    };
+    if (status >= 500) console.error('[project-import]', safeCode, error?.message || error);
+    return res.status(status).json(body);
+  } finally {
+    if (testLockKey) ProjectBundleImporter.locks.delete(testLockKey);
+  }
 });
 
 // GET /api/dashboard/snapshot/v1 — one in-process read model for the dashboard
@@ -4905,6 +5052,17 @@ async function startServer() {
 
     // Init FlowBoard metadata tables (creates flowboard_projects, flowboard_agents, flowboard_migrations)
     fbMeta.init(hzlService.getCacheDb());
+    // Mark imports that were active when the process stopped as recoverable.
+    // The project read model filters every non-COMMITTED journal state, so a
+    // restart cannot accidentally expose a half-imported project.
+    try {
+      const recoveredImports = fbMeta.recoverInterruptedProjectImports();
+      if (recoveredImports.length > 0) {
+        console.warn(`[project-import] marked ${recoveredImports.length} interrupted import(s) failed/recoverable`);
+      }
+    } catch (error) {
+      console.warn('[project-import] startup recovery failed:', error.message);
+    }
     github.setTokenProvider(() => fbMeta.getSetting('github_token'));
 
     // Run all pending migrations via the registry. agentId is read directly

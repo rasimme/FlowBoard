@@ -62,6 +62,26 @@ const CREATE_SETTINGS_TABLE_SQL = `
   )
 `;
 
+// T-468-5: durable, FlowBoard-owned import journal.  This table deliberately
+// lives in the cache/metadata database rather than the HZL event stream: an
+// import is an operational recovery workflow, not project work.  The journal
+// contains only a digest and bounded progress counters; bundle content and
+// runtime ownership never cross this boundary.
+const CREATE_PROJECT_IMPORTS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_project_imports (
+    import_id      TEXT PRIMARY KEY,
+    target_name    TEXT NOT NULL,
+    bundle_digest  TEXT NOT NULL,
+    state          TEXT NOT NULL,
+    progress       TEXT NOT NULL DEFAULT '{}',
+    error_code     TEXT,
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_flowboard_project_imports_target
+    ON flowboard_project_imports(target_name, updated_at);
+`;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -73,6 +93,7 @@ function init(db) {
   _db.prepare(CREATE_MIGRATIONS_TABLE_SQL).run();
   _db.prepare(CREATE_DELETED_PROJECTS_TABLE_SQL).run();
   _db.prepare(CREATE_SETTINGS_TABLE_SQL).run();
+  _db.exec(CREATE_PROJECT_IMPORTS_TABLE_SQL);
   console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations, flowboard_deleted_projects, flowboard_settings');
 }
 
@@ -198,8 +219,24 @@ function listProjects(hzlProjects) {
   const deleted = _db
     ? new Set(_db.prepare('SELECT name FROM flowboard_deleted_projects').all().map(r => r.name))
     : new Set();
+  // An imported project is not part of the ordinary project read model until
+  // its journal reaches COMMITTED.  This keeps partially-created HZL rows and
+  // scaffolds private to the importer and makes projectExists-backed routes
+  // return the same not-found response while recovery is in progress.
+  const pendingImports = _db
+    ? new Set(_db.prepare(`
+        SELECT target_name
+          FROM flowboard_project_imports i
+         WHERE i.state <> 'committed'
+           AND i.updated_at = (
+             SELECT MAX(i2.updated_at)
+               FROM flowboard_project_imports i2
+              WHERE i2.target_name = i.target_name
+           )
+      `).all().map(r => r.target_name))
+    : new Set();
   return hzlProjects
-    .filter(p => !deleted.has(p.name))
+    .filter(p => !deleted.has(p.name) && !pendingImports.has(p.name))
     .map(p => {
       const meta = _db ? getProject(p.name) : null;
       const config = meta ? _parseJson(meta.config, {}) : {};
@@ -316,6 +353,118 @@ function isProjectDeleted(name) {
   if (!_db) return false;
   const row = _db.prepare('SELECT 1 FROM flowboard_deleted_projects WHERE name = ?').get(name);
   return !!row;
+}
+
+// --- Portable project import journal (T-468-5) ----------------------------
+
+const IMPORT_ACTIVE_STATES = Object.freeze([
+  'validating', 'staging', 'creating-project', 'importing-tasks',
+  'importing-files', 'importing-canvas', 'verifying',
+]);
+
+function _parseImportProgress(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function _publicImportJournal(row) {
+  if (!row) return null;
+  return {
+    importId: row.import_id,
+    targetName: row.target_name,
+    bundleDigest: row.bundle_digest,
+    state: row.state,
+    progress: _parseImportProgress(row.progress),
+    ...(row.error_code ? { errorCode: row.error_code } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function createProjectImportJournal({ importId, targetName, bundleDigest, state = 'validating', progress = {} } = {}) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  if (!importId || !targetName || !bundleDigest) throw new Error('importId, targetName and bundleDigest are required');
+  const now = new Date().toISOString();
+  _db.prepare(`
+    INSERT INTO flowboard_project_imports
+      (import_id, target_name, bundle_digest, state, progress, error_code, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+  `).run(importId, targetName, bundleDigest, state, JSON.stringify(_parseImportProgress(progress)), now, now);
+  return getProjectImportJournal(importId);
+}
+
+function getProjectImportJournal(importId) {
+  if (!_db || !importId) return null;
+  return _publicImportJournal(_db.prepare(
+    'SELECT * FROM flowboard_project_imports WHERE import_id = ?'
+  ).get(importId));
+}
+
+function listProjectImportJournals({ targetName, states } = {}) {
+  if (!_db) return [];
+  const where = [];
+  const params = [];
+  if (targetName) { where.push('target_name = ?'); params.push(targetName); }
+  if (Array.isArray(states) && states.length > 0) {
+    where.push(`state IN (${states.map(() => '?').join(',')})`);
+    params.push(...states);
+  }
+  const rows = _db.prepare(`
+    SELECT * FROM flowboard_project_imports
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY updated_at DESC, import_id DESC
+  `).all(...params);
+  return rows.map(_publicImportJournal);
+}
+
+function getLatestProjectImport(targetName) {
+  return listProjectImportJournals({ targetName })[0] || null;
+}
+
+function updateProjectImportJournal(importId, { state, progress, errorCode, clearError = false } = {}) {
+  if (!_db || !importId) throw new Error('[flowboard-meta] Import journal is unavailable');
+  const current = _db.prepare('SELECT * FROM flowboard_project_imports WHERE import_id = ?').get(importId);
+  if (!current) throw Object.assign(new Error(`Import journal not found: ${importId}`), { code: 'IMPORT_JOURNAL_NOT_FOUND' });
+  const nextProgress = progress === undefined
+    ? _parseImportProgress(current.progress)
+    : _parseImportProgress(progress);
+  const nextState = state === undefined ? current.state : state;
+  const nextError = clearError ? null : (errorCode === undefined ? current.error_code : (errorCode || null));
+  _db.prepare(`
+    UPDATE flowboard_project_imports
+       SET state = ?, progress = ?, error_code = ?, updated_at = ?
+     WHERE import_id = ?
+  `).run(nextState, JSON.stringify(nextProgress), nextError, new Date().toISOString(), importId);
+  return getProjectImportJournal(importId);
+}
+
+function recoverInterruptedProjectImports() {
+  if (!_db) return [];
+  const placeholders = IMPORT_ACTIVE_STATES.map(() => '?').join(',');
+  const rows = _db.prepare(`
+    SELECT import_id, progress
+      FROM flowboard_project_imports
+     WHERE state IN (${placeholders})
+  `).all(...IMPORT_ACTIVE_STATES);
+  const recovered = [];
+  for (const row of rows) {
+    const progress = { ..._parseImportProgress(row.progress), recovered: true };
+    recovered.push(updateProjectImportJournal(row.import_id, {
+      state: 'failed',
+      progress,
+      errorCode: 'IMPORT_INTERRUPTED',
+    }));
+  }
+  return recovered;
+}
+
+function projectImportIsVisible(name) {
+  const journal = getLatestProjectImport(name);
+  return !journal || journal.state === 'committed';
 }
 
 function _parseJson(str, defaultVal) {
@@ -511,6 +660,13 @@ module.exports = {
   restoreProjectMeta,
   listDeletedProjects,
   isProjectDeleted,
+  projectImportIsVisible,
+  createProjectImportJournal,
+  getProjectImportJournal,
+  getLatestProjectImport,
+  listProjectImportJournals,
+  updateProjectImportJournal,
+  recoverInterruptedProjectImports,
   migrateFromIndexMd,
   listProjects,
   getAgentRow,
