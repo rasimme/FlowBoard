@@ -11,10 +11,13 @@ recorded in [ADR-0035](../adr/0035-task-form-not-authorization.md).
 ## Task discipline
 
 Project metadata stores `taskDiscipline` as `list`, `standard`, or
-`development`. Existing-project migration derives it from project signals and
-invalid values normalize to `list`. On direct or batch task creation,
-`dashboard/task-discipline.js` evaluates server-visible shape. A violation
-produces:
+`development`. New-project creation and existing-project migration both fall
+back to the same signal-derived suggestion (`dashboard/task-discipline.js`
+`suggest()`: GitHub-repo binding or coding-shaped keywords suggest
+`development`, docs/coordination-shaped keywords suggest `standard`) when no
+explicit value is given, and invalid values normalize to `list`. On direct or
+batch task creation, `dashboard/task-discipline.js` evaluates server-visible
+shape. A violation produces:
 
 ```json
 {
@@ -26,7 +29,20 @@ produces:
 ```
 
 The marker is exposed as `structureReview`; it is not an authorization gate.
-Specify is optional and direct agent creation remains allowed.
+Specify is optional and direct agent creation remains allowed. Two reasons
+exist: `missing_description` (the task has no `description`) and
+`title_pattern` (the title reads as a bare verb stub, e.g. "Fix API"). Both
+apply to `standard` and `development` tasks; a `list` project is never
+evaluated. Both are checks on the request's own content, not a judgment about
+scope or future work.
+
+A marker is attached only at creation — a later `PUT` never adds one. A
+still-`pending` marker can lose reasons afterwards: fixing the underlying
+form (adding the missing `description`, renaming a stub title) drops that one
+reason on the next `PUT`, and once the last reason is gone the marker itself
+is cleared. This is separate from acknowledgement below: acknowledging is a
+human saying the review is fine as it stands, and once a marker is
+`reviewed` it is history and is never rewritten or self-retired.
 
 `GET /api/projects/:name/tasks?structureReview=pending|reviewed` filters the
 inbox. `POST /api/projects/:name/tasks/:id/structure-review` performs the

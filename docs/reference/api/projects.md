@@ -27,9 +27,19 @@ Create a new project.
 {
   "name": "myproject",
   "displayName": "My Project",
-  "group": "personal"
+  "group": "personal",
+  "taskDiscipline": "standard"
 }
 ```
+
+`taskDiscipline` is optional (`list`, `standard`, or `development`; an unknown
+value normalizes to the default `list`). When omitted, the server derives an
+initial value from `name`/`displayName`/`description`/`group`: a keyword
+match for coding-shaped terms (repo, backend, api, deploy, …) suggests
+`development`, a match for docs/coordination-shaped terms (docs, research,
+mission, multi-agent, …) suggests `standard`, and anything else defaults to
+`list`. This is a one-time starting point, not a lock — change it later via
+`GET|PUT /api/projects/:name/task-discipline` (see [tasks.md](tasks.md)).
 
 **Response 201:** `{"project": {<created project>}, "warnings"?: [...]}`
 **400** validation error. **409** duplicate name. **501** if HZL is not enabled.

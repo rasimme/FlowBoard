@@ -62,11 +62,12 @@ validated before the first write, and any later failure purges all tasks from
 the request, so the operation is all-or-nothing. Batch items cannot set
 `parentId` or `forceId`.
 
-Task creation is not gated on governance mode or Specify. Project
-`taskDiscipline` (`list`, `standard`, or `development`) may attach a
-`structureReview` marker to an item when its server-visible shape needs
-follow-up; it does not reject the item. Specify is an optional clarification
-workflow. The legacy governance-mode endpoint remains a separate
+Task creation is not gated on governance mode or Specify. On a
+`standard`/`development` item, `taskDiscipline` may attach a `structureReview`
+marker with one or both machine-readable reasons — `missing_description` (no
+`description`) and `title_pattern` (a bare verb-stub title, e.g. "Fix API") —
+without rejecting the item. Specify is an optional clarification workflow.
+The legacy governance-mode endpoint remains a separate
 compatibility/configuration surface; its `compat`/`enforce` value is not the
 task-creation contract.
 
@@ -82,6 +83,13 @@ reviews only.
 Acknowledge a pending `structureReview`. The server supplies reviewer and
 timestamp from the resolved principal; the transition is one-way and a second
 acknowledgement returns `409`.
+
+A marker is attached only at creation — `PUT` never adds one — but a
+still-`pending` marker is not otherwise permanent: fixing the reason a `PUT`
+addresses (giving the task a `description`, renaming a stub title) drops that
+one reason, and the marker clears once none remain. This self-retirement only
+ever touches a `pending` marker; once `reviewed`, a marker is history and is
+never rewritten or cleared by a later edit.
 
 ### `PUT /api/projects/:name/tasks/:id`
 

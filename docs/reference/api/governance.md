@@ -9,8 +9,8 @@ projects and projects without an explicit setting start in
 `compat`. The former instance-wide `governance_mode` and audit keys are not
 read as fallbacks: a legacy `enforce` value must not leak into a new or
 unscoped project, and its actor/timestamp must not appear as that project's
-audit. Migration is explicit and project-scoped: a verified human must select
-the desired mode through the endpoint for each project.
+audit. Migration is explicit and project-scoped: the endpoint is called
+per project.
 
 ## `PUT /api/projects/:name/governance/mode`
 
@@ -20,11 +20,15 @@ Switch the project immediately:
 { "mode": "enforce" }
 ```
 
-Only the server-verified Telegram/JWT human principal may mutate this route.
-Body fields such as `human`, `agent`, `agentId`, or `approved` are descriptive
-claims and cannot grant authority. Unauthenticated, agent, ambiguous, or
-spoofed callers receive `403` with
-`mode_change_requires_verified_human`. Invalid modes receive `400`.
+Any caller may mutate this legacy surface — it is not gated on a verified
+human (that requirement was walked back with the rest of the T-447
+authorization layer; see [ADR-0035](../../adr/0035-task-form-not-authorization.md)).
+`resolvePrincipal()` resolves `actor`/`humanId` from server-owned session
+state (or `local:operator` for a trusted loopback caller, or
+`agent:unverified` otherwise) purely for the audit record below — body
+fields such as `human`, `agent`, `agentId`, or `approved` are descriptive
+claims and cannot grant or block authority. Only an invalid `mode` value is
+rejected, with `400`.
 
 Use the same endpoint for manual rollback:
 

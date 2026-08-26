@@ -34,6 +34,8 @@ The lazy-loading machinery is a small registry plus three endpoints.
 
 The manifest format is plain markdown — the section names appear as code-formatted bullet items with their labels, and the URL template is given verbatim. An agent reading the manifest can construct the section URL directly without a separate schema lookup.
 
+**Discipline-dependent content (T-458).** A section's body can vary by the requesting project's `taskDiscipline`. `api-access` appends a short, project-type-specific note (e.g. "this project is `development`: pass `spec` on create, batch related subtasks in one call") after the shared content, rather than forking into separate per-discipline files — the base text stays one source, and a discipline note cannot silently drift from the rules it qualifies. `list` projects get no appendix at all: a todo list has no form to keep, so there is nothing to add. This only changes what one `GET /rules/api-access` call returns for a given project; the registry, manifest, and file mapping are unaffected.
+
 ## Consequences
 
 - **Token cost scales with use.** A session that only triggers the status check costs a manifest (~20 lines). A session that touches three rule sections costs the manifest plus those three sections — never the unused six.
@@ -45,7 +47,7 @@ The manifest format is plain markdown — the section names appear as code-forma
 
 ## Code
 
-- `dashboard/rules-api.js` — the registry, `listRuleSections`, `readRuleSection`, `buildRulesManifest`, `buildBootstrapDocument`.
+- `dashboard/rules-api.js` — the registry, `listRuleSections`, `readRuleSection`, `buildRulesManifest`, `buildBootstrapDocument`, and the `DISCIPLINE_NOTES` appendix map (T-458).
 - `dashboard/server.js` — endpoint wiring at `/api/projects/:name/rules/`, `/rules/:section`, `/bootstrap`.
 - `hooks/project-context/handler.js` — calls `buildRulesManifest()` (not `buildBootstrapDocument`); the live-inject path uses the manifest, never the full bundle.
 - `docs/project-mode/` — the section markdown files behind the registry.

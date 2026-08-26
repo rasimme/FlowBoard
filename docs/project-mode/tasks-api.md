@@ -37,7 +37,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 
 ### FlowBoard ID Mapping
 
-FlowBoard assigns human-readable IDs (e.g. `T-042`) stored in `metadata.flowboard.id`. The API accepts both FlowBoard IDs and ULIDs.
+FlowBoard assigns human-readable IDs (e.g. `T-042`) stored in `metadata.flowboard.id`. The FlowBoard ID is the only form the API accepts in a path: task lookup resolves it directly, and an unknown value is a `404`. The HZL ULID stays internal — it is not returned on a task, so there is nothing to address a request with.
 
 ### Human-Readable Text Encoding
 
@@ -110,9 +110,17 @@ POST /projects/:name/tasks
 
 Project metadata exposes `taskDiscipline` as `list`, `standard`, or
 `development`. Direct task creation remains allowed for agents and the local
-dashboard. Shape checks may attach `structureReview` with machine-readable
-reasons; they never make Specify a prerequisite or reject a task because a
-human approval was not observed.
+dashboard. On `standard`/`development` tasks, shape checks may attach
+`structureReview` with one or both machine-readable reasons —
+`missing_description` (no `description`) and `title_pattern` (a bare
+verb-stub title) — never Specify-prerequisite or human-approval reasons. A
+marker is attached only at creation; `PUT` never adds one.
+
+A still-`pending` marker is not permanent: giving the task a `description` or
+renaming a stub title on a later `PUT` drops that reason, and the marker
+clears entirely once none remain. That is separate from acknowledgement — a
+`reviewed` marker is a human's explicit "fine as-is" and is never rewritten or
+self-cleared.
 
 Filter pending or completed markers with
 `GET /projects/:name/tasks?structureReview=pending|reviewed`. A pending marker
@@ -164,7 +172,7 @@ A task can carry two kinds of detail — use both deliberately:
 
 Rule of thumb: every non-trivial task gets a one-paragraph `description`; only complex or multi-step tasks additionally get a spec. The description is the quick "what is this", the spec is the detailed plan.
 
-**If you are about to write more than a paragraph into `description`, you are writing a spec.** Put it in `spec` instead — it is the same one request, and the description stays what a board column can show. In a `development` project the server flags the task `missing_spec_link` and the create response tells you the call that fixes it; writing the spec later retires that flag on its own, no acknowledgement needed.
+**If you are about to write more than a paragraph into `description`, you are writing a spec.** Put it in `spec` instead — it is the same one request, and the description stays what a board column can show. Nothing marks a missing spec: whether a task needs one is a judgment about scope that the server cannot make from the request (T-464). Write it because detail belongs there, not because a check would flag its absence.
 
 ### Coordination Workflows
 

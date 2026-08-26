@@ -1,7 +1,21 @@
 # ADR-0031: Canonical work state and transient stuck indicator
 
 ## Status
-Accepted — supersedes the execution-context portion of ADR-0009
+Accepted — supersedes the execution-context portion of ADR-0009 — **amended
+2026-08-25** (T-452-7)
+
+> **Amendment (T-452-7):** the legacy top-level `blocked` boolean — described
+> in point 2 below as "a compatibility read/write projection" and restated in
+> Consequences as something "existing cards and API consumers can continue
+> reading" — was retired instead: the API neither accepts nor returns it, and
+> a `POST` or `PUT` carrying a `blocked` key now returns
+> `400 LEGACY_BLOCKED_RETIRED` (`dashboard/server.js`). Canonical
+> `workState`/`workStateDetails` are
+> unaffected and remain exactly as decided below. The withdrawn sentence was a
+> migration convenience for existing card/search surfaces; once the frontend
+> finished reading `workState` directly, keeping a second writable projection
+> of the same fact was a divergence risk with no remaining reader. See
+> [Kanban concept](../concepts/kanban.md) for the current UI treatment.
 
 ## Date
 2026-08-17
