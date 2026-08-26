@@ -191,6 +191,29 @@ project does not exist. **500** if a canonical project read or linked spec
 cannot be completed. Importing the artifact is a separate server-side
 operation; this endpoint never mutates project files or task state.
 
+### POST /api/projects/import/preview
+
+Previews a portable project review bundle without creating a project or
+retaining upload state. v1 accepts only
+`application/vnd.flowboard.project+json` (and the optional
+`application/octet-stream` transport alias); ZIP/archive media is rejected.
+The route uses a bounded raw parser, strict UTF-8 decoding, schema/checksum and
+reference validation, path/link metadata checks, case-fold collision checks,
+and value-blind sensitive-content warnings.
+
+The optional `targetName` query parameter is the lowercase destination slug.
+An existing, tombstoned, or already-present destination returns a successful
+preview with `target.availability: "conflict"` and `canImport: false`. A
+malformed body returns **400**, unsupported media **415**, and invalid or
+unsafe bundle content **422**. Sensitive-content warnings never contain a
+secret value or content snippet and set `canImport: false`.
+
+**200** returns a structured preview containing the stable `bundleDigest`,
+source/provenance, format compatibility, counts, options, redactions,
+included/excluded content, manifest warnings, security warnings and target
+availability. Preview is read-only: it does not append HZL events/audits,
+write metadata or files, or activate a project.
+
 ### PUT /api/projects/:name/overview
 Body is either `{ preset: "default" | "coding" | "knowledge" | "mission" }` (materializes the
 preset) or a full config:

@@ -299,6 +299,14 @@
       "description": "Download a sanitized deterministic v1 project review bundle as JSON."
     },
     {
+      "method": "POST",
+      "path": "/api/projects/import/preview",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md",
+      "description": "Validate a JSON project review bundle without creating projects, events, metadata or files."
+    },
+    {
       "method": "PUT",
       "path": "/api/projects/:name/overview",
       "auth": "user",

@@ -108,6 +108,13 @@ const {
   exportProjectReviewBundle,
   safeDownloadFilename,
 } = require('./project-bundle-export.js');
+const {
+  RAW_BODY_LIMIT,
+  TARGET_NAME_RE,
+  isSupportedMediaType,
+  parseJsonBody,
+  previewBundle,
+} = require('./project-bundle-import-preview.js');
 const { formatSessionEntry, insertEntry } = require('./session-log.js');
 const {
   normalizeStoredWorkState,
@@ -421,7 +428,13 @@ function telegramAuthMiddleware(req, res, next) {
 
 app.use(cookieParser());
 installPrivacyFilter();
-app.use(express.json());
+// Import preview owns a bounded raw JSON parser. The global parser must skip
+// that route or it would consume the upload before the media/UTF-8 checks run.
+const globalJsonParser = express.json();
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/api/projects/import/preview') return next();
+  return globalJsonParser(req, res, next);
+});
 
 // S-15: Request logger — only in development or when explicitly enabled
 if (process.env.LOG_REQUESTS === 'true' || process.env.DEBUG || process.env.NODE_ENV !== 'production') {
@@ -1988,6 +2001,71 @@ app.get('/api/projects/:name/export', (req, res) => {
     console.error(`[project-export] ${req.params.name}:`, error);
     return res.status(500).json({ error: 'Project export failed', code: 'PROJECT_EXPORT_FAILED' });
   }
+});
+
+// POST /api/projects/import/preview — bounded, read-only bundle admission.
+// This is deliberately not a multipart/archive endpoint in v1: the supported
+// transport is a single JSON document with no decompression or extraction.
+app.post('/api/projects/import/preview', (req, res, next) => {
+  if (!isSupportedMediaType(req.headers['content-type'])) {
+    return res.status(415).json({
+      error: 'Unsupported project bundle media type.',
+      code: 'MEDIA_TYPE_UNSUPPORTED',
+      supported: ['application/vnd.flowboard.project+json', 'application/octet-stream'],
+    });
+  }
+  return express.raw({ type: () => true, limit: RAW_BODY_LIMIT })(req, res, (error) => {
+    if (!error) return next();
+    if (error.type === 'entity.too.large') {
+      return res.status(413).json({
+        error: 'Project bundle exceeds the raw upload limit.',
+        code: 'RAW_SIZE_LIMIT',
+        limitBytes: RAW_BODY_LIMIT,
+      });
+    }
+    return res.status(400).json({ error: 'Project bundle body could not be read.', code: 'BODY_READ_FAILED' });
+  });
+}, (req, res) => {
+  let parsed;
+  try {
+    parsed = parseJsonBody(req.body);
+  } catch (error) {
+    const status = error.code === 'RAW_SIZE_LIMIT' ? 413 : 400;
+    return res.status(status).json({
+      error: error.message,
+      code: error.code || 'BUNDLE_BODY_INVALID',
+      ...(error.code === 'RAW_SIZE_LIMIT' ? { limitBytes: RAW_BODY_LIMIT } : {}),
+    });
+  }
+
+  const requestedTarget = req.query.targetName;
+  const canCheckDirectory = typeof requestedTarget === 'string' && TARGET_NAME_RE.test(requestedTarget);
+  let existingProjects;
+  let deletedProjects;
+  try {
+    // These are canonical read-model reads. No ensureProject(), metadata
+    // upsert, audit, journal, event or filesystem write is allowed here.
+    existingProjects = fbMeta.listProjects(hzlService.listHzlProjects());
+    deletedProjects = fbMeta.listDeletedProjects();
+  } catch (error) {
+    console.error('[project-import-preview] canonical state read failed:', error.message);
+    return res.status(500).json({ error: 'Project import preview unavailable.', code: 'CANONICAL_STATE_READ_FAILED' });
+  }
+
+  const result = previewBundle(parsed.bundle, {
+    targetName: requestedTarget,
+    existingProjects,
+    deletedProjects,
+    directoryExists: canCheckDirectory && fs.existsSync(path.join(PROJECTS_DIR, requestedTarget)),
+  });
+  if (!result.ok) {
+    return res.status(422).json({
+      error: 'Project bundle failed preview validation.',
+      code: 'BUNDLE_PREVIEW_INVALID',
+      ...result,
+    });
+  }
+  return res.status(200).json(result.preview);
 });
 
 // GET /api/dashboard/snapshot/v1 — one in-process read model for the dashboard
