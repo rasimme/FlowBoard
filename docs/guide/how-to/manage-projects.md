@@ -20,7 +20,7 @@ sharing.
 
 To bring a snapshot into another FlowBoard instance, use **New → Import
 project…**. Choose the JSON file, review the source, counts, compatibility,
-warnings and destination slug, then explicitly choose **Import project**. An
+warnings and destination slug, then explicitly choose **Import as new project**. An
 import always creates a new project: existing projects are never merged,
 replaced or overwritten. Import does not activate agents or open the project
 automatically; use **Open project** in the success dialog when you are ready.

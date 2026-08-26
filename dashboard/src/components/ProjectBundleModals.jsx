@@ -23,6 +23,15 @@ import { apiFetch } from '../utils/apiFetch.js';
 
 const BUNDLE_MEDIA_TYPE = 'application/vnd.flowboard.project+json';
 const MAX_WARNING_ITEMS = 5;
+const IMPORT_PHASES = [
+  'Validating bundle',
+  'Staging files',
+  'Creating project',
+  'Importing tasks',
+  'Importing files and specs',
+  'Restoring canvas',
+  'Verifying project',
+];
 const COUNT_LABELS = {
   tasks: 'Tasks',
   specs: 'Specs',
@@ -247,6 +256,14 @@ function ExportSnapshotModal({ open, onClose, project }) {
     }, 0);
   }
 
+  async function continueWithoutHistory() {
+    setIncludeHistory(false);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    await loadBundle(false, controller.signal);
+  }
+
   const counts = bundle?.manifest?.counts || {};
   const manifestWarnings = bundle?.manifest?.warnings || [];
   const dismissible = state !== 'downloading';
@@ -262,6 +279,7 @@ function ExportSnapshotModal({ open, onClose, project }) {
       actions={state === 'blocked' ? (
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+          {includeHistory && <Button variant="secondary" size="sm" onClick={continueWithoutHistory}>Continue without history</Button>}
           <Button size="sm" onClick={() => loadBundle(includeHistory)}><RefreshCw size={13} /> Try again</Button>
         </>
       ) : (
@@ -329,7 +347,7 @@ function ImportSteps({ stage }) {
   );
 }
 
-function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSuggested }) {
+function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSuggested, targetInputRef }) {
   const counts = preview?.counts || {};
   const conflict = preview?.target?.availability === 'conflict';
   const targetValid = /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName);
@@ -352,8 +370,9 @@ function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSugges
         </div>
       </div>
       <CountGrid counts={counts} includeHistory={preview?.options?.includeHistory === true} />
+      <ScopeLists includeHistory={preview?.options?.includeHistory === true} />
       <FormGroup label="New project name" htmlFor="import-target" error={!targetValid ? 'Use a lowercase project slug (letters, numbers and hyphens).' : null} hint="Import always creates a new project.">
-        <Input id="import-target" value={targetName} onChange={(event) => onTargetChange(event.target.value)} aria-invalid={!targetValid} />
+        <Input ref={targetInputRef} id="import-target" value={targetName} onChange={(event) => onTargetChange(event.target.value)} aria-invalid={!targetValid} />
       </FormGroup>
       {conflict && (
         <Alert variant="warn" title="Project name is already in use" action={<Button variant="secondary" size="xs" onClick={onUseSuggested}>Use {suggestedCopyName(targetName)}</Button>}>
@@ -381,9 +400,12 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
   const [importId, setImportId] = useState(null);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState(null);
+  const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
+  const targetInputRef = useRef(null);
   const previewTimer = useRef(null);
   const previewRequest = useRef(0);
+  const targetFocusNeeded = useRef(false);
 
   const reset = useCallback(() => {
     setStage('select');
@@ -396,6 +418,8 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     setImportId(null);
     setImportResult(null);
     setImportError(null);
+    setDragActive(false);
+    targetFocusNeeded.current = false;
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
@@ -403,6 +427,15 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     if (open) reset();
     return () => window.clearTimeout(previewTimer.current);
   }, [open, reset]);
+
+  useEffect(() => {
+    const targetInvalid = !/^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName);
+    const targetConflict = preview?.target?.availability === 'conflict';
+    const needsFocus = stage === 'review' && (targetInvalid || targetConflict);
+    const wasNeeded = targetFocusNeeded.current;
+    targetFocusNeeded.current = needsFocus;
+    if (needsFocus && !wasNeeded) window.setTimeout(() => targetInputRef.current?.focus(), 0);
+  }, [preview?.target?.availability, stage, targetName]);
 
   const requestPreview = useCallback(async (body, target) => {
     if (!body) return;
@@ -435,8 +468,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     }
   }, []);
 
-  async function handleFile(event) {
-    const picked = event.target.files?.[0];
+  const processPickedFile = useCallback(async (picked) => {
     if (!picked) return;
     setFileError(null);
     setPreview(null);
@@ -467,6 +499,36 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
       setFileError(error?.message || 'The selected file could not be read.');
       setStage('select');
     }
+  }, [requestPreview]);
+
+  async function handleFile(event) {
+    await processPickedFile(event.target.files?.[0]);
+  }
+
+  function handleDragEnter(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(true);
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    setDragActive(true);
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false);
+  }
+
+  async function handleDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    await processPickedFile(event.dataTransfer?.files?.[0]);
   }
 
   function updateTarget(value) {
@@ -534,7 +596,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
       ) : stage === 'review' ? (
         <>
           <Button variant="ghost" size="sm" onClick={() => { setStage('select'); setFileError(null); }}>Choose another file</Button>
-          <Button size="sm" onClick={submitImport} disabled={!canImport}>{previewing ? <><Spinner size="sm" /> Checking…</> : <><Upload size={13} /> Import project</>}</Button>
+          <Button size="sm" onClick={submitImport} disabled={!canImport} data-testid="import-submit">{previewing ? <><Spinner size="sm" /> Checking…</> : <><Upload size={13} /> Import as new project</>}</Button>
         </>
       ) : stage === 'progress' ? null : stage === 'failure' ? (
         <>
@@ -553,7 +615,24 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
         {stage === 'select' && (
           <>
             <BundleHeader icon={Upload} title="Choose a project bundle" subtitle="Select a sanitized FlowBoard JSON snapshot to inspect before importing." />
-            <label htmlFor="project-bundle-file" className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-border-strong bg-bg-elevated px-5 py-9 text-center hover:border-accent" data-testid="import-dropzone">
+            <label
+              htmlFor="project-bundle-file"
+              className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-5 py-9 text-center transition-colors ${dragActive ? 'border-accent bg-accent-subtle' : 'border-border-strong bg-bg-elevated hover:border-accent'}`}
+              data-testid="import-dropzone"
+              data-drag-active={dragActive ? 'true' : 'false'}
+              role="button"
+              tabIndex={0}
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onKeyDown={(event) => {
+                if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget) {
+                  event.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+            >
               <FileJson size={28} className="text-muted" />
               <span className="text-sm text-text-strong">Choose a .flowboard.json file</span>
               <span className="text-xs text-muted">The file is sent to the server for a read-only safety preview.</span>
@@ -572,13 +651,16 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
               title="Bundle cannot be imported"
               action={rawBody ? <Button variant="secondary" size="xs" onClick={() => requestPreview(rawBody, targetName)}><RefreshCw size={12} /> Try again</Button> : null}
             ><span data-testid="import-preview-error">{fileError}</span></Alert>}
-            <ImportPreviewSummary preview={preview} targetName={targetName} onTargetChange={updateTarget} onUseSuggested={useSuggestedTarget} />
+            <ImportPreviewSummary preview={preview} targetName={targetName} onTargetChange={updateTarget} onUseSuggested={useSuggestedTarget} targetInputRef={targetInputRef} />
           </>
         )}
         {stage === 'progress' && (
           <div className="flex flex-col gap-4" data-testid="import-progress">
             <BundleHeader icon={Upload} title="Importing project…" subtitle="Keep this dialog open while FlowBoard writes the new project." />
-            <div className="flex items-center gap-3 rounded-lg border border-solid border-border bg-bg-elevated p-4"><Spinner size="md" /><div><div className="text-sm font-semibold text-text-strong">Import in progress</div><div className="mt-1 text-xs text-muted">Validating bundle · Writing project · Finalizing</div></div></div>
+            <div className="flex items-center gap-3 rounded-lg border border-solid border-border bg-bg-elevated p-4"><Spinner size="md" /><div><div className="text-sm font-semibold text-text-strong">Import in progress</div><div className="mt-1 text-xs text-muted">FlowBoard is processing the named import phases below.</div></div></div>
+            <ul className="m-0 flex list-none flex-col gap-2 rounded-lg border border-solid border-border bg-bg-elevated p-3 text-xs text-muted" data-testid="import-phases">
+              {IMPORT_PHASES.map((phase) => <li key={phase} className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-border-strong" aria-hidden="true" />{phase}</li>)}
+            </ul>
             <div className="text-[11px] text-muted">This operation cannot be cancelled while writing.</div>
           </div>
         )}
@@ -592,6 +674,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
         {stage === 'success' && (
           <div className="flex flex-col gap-4" data-testid="import-success">
             <div className="flex items-start gap-3 rounded-lg border border-solid border-ok bg-ok-subtle p-4"><CheckCircle2 size={20} className="mt-0.5 shrink-0 text-ok" /><div><div className="text-sm font-semibold text-text-strong">{projectName} is ready</div><div className="mt-1 text-xs leading-5 text-muted">No agents were activated. Choose Open project when you are ready to view the imported copy.</div></div></div>
+            <CountGrid counts={importResult?.counts || {}} includeHistory={preview?.options?.includeHistory === true} />
             {importId && <div className="font-mono text-[11px] text-muted">Import ID: {importId}</div>}
           </div>
         )}

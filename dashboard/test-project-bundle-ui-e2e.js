@@ -32,6 +32,26 @@ async function text(page) {
   return page.evaluate(() => document.body.innerText);
 }
 
+async function dragBundle(page, body, filename) {
+  const payload = { body, filename };
+  await page.evaluate(({ body: value, filename: name }) => {
+    const zone = document.querySelector('[data-testid="import-dropzone"]');
+    const data = new DataTransfer();
+    data.items.add(new File([value], name, { type: 'application/json' }));
+    for (const type of ['dragenter', 'dragover']) {
+      zone.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: data }));
+    }
+  }, payload);
+  await page.waitForFunction(() => document.querySelector('[data-testid="import-dropzone"]')?.dataset.dragActive === 'true');
+  await page.evaluate(({ body: value, filename: name }) => {
+    const zone = document.querySelector('[data-testid="import-dropzone"]');
+    const data = new DataTransfer();
+    data.items.add(new File([value], name, { type: 'application/json' }));
+    zone.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+  }, payload);
+  return true;
+}
+
 (async () => {
   const result = await withDashboard(async ({ api, page, base }) => {
     const created = await api('POST', '/projects', { name: 'ui-source', displayName: 'UI Source' });
@@ -51,9 +71,27 @@ async function text(page) {
     page.on('request', (request) => {
       if (request.url().includes('/export?includeHistory=true')) historyRequest = true;
     });
+    let blockHistory = true;
+    await page.setRequestInterception(true);
+    const exportIntercept = async (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname.endsWith('/export') && url.searchParams.get('includeHistory') === 'true' && blockHistory) {
+        blockHistory = false;
+        await request.respond({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Synthetic history export block', code: 'HISTORY_BLOCKED' }) });
+        return;
+      }
+      await request.continue();
+    };
+    page.on('request', exportIntercept);
     await page.click('#include-task-history');
-    await page.waitForFunction(() => document.body.innerText.includes('History may contain sensitive context'));
+    await page.waitForSelector('[data-testid="export-error"]');
     r.ok(historyRequest, 'history opt-in refetches export with includeHistory=true');
+    r.ok((await text(page)).includes('Continue without history'), 'blocked history export offers a safe fallback');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Continue without history'))?.click());
+    await page.waitForSelector('#include-task-history');
+    r.ok(!(await page.$eval('#include-task-history', (input) => input.checked)), 'safe fallback refetches with history disabled');
+    page.off('request', exportIntercept);
+    await page.setRequestInterception(false);
     await page.click('button[aria-label="Close"]');
 
     await page.click('.sidebar-new');
@@ -61,19 +99,39 @@ async function text(page) {
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project'))?.click());
     await page.waitForSelector('#project-bundle-file');
     const exported = await fetch(`${base}/api/projects/ui-source/export`).then((response) => response.json());
+    const historyExported = await fetch(`${base}/api/projects/ui-source/export?includeHistory=true`).then((response) => response.json());
     const validFile = jsonFile('ui-source.flowboard.json', exported);
-    await (await page.$('#project-bundle-file')).uploadFile(validFile);
+    r.ok(await dragBundle(page, JSON.stringify(exported), 'ui-source.flowboard.json'), 'dropzone accepts a dragged bundle through the same preview path');
     await page.waitForSelector('#import-target');
     r.ok((await text(page)).includes('Review before importing'), 'file selection reaches server preview review');
     r.ok((await text(page)).includes('Project name is already in use'), 'existing target is shown as a conflict');
+    r.ok((await page.$('[data-testid="bundle-scope"]')) !== null, 'import review renders included and excluded scope');
+    r.ok(await page.evaluate(() => document.activeElement?.id === 'import-target'), 'conflict review focuses the destination input');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Use ui-source-copy'))?.click());
-    await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent.includes('Import project') && !button.disabled));
-    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project') && !button.disabled)?.click());
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-testid="import-submit"]');
+      return button && !button.disabled;
+    });
+    r.ok((await page.$eval('[data-testid="import-submit"]', (button) => button.textContent)).includes('Import as new project'), 'primary import CTA uses the explicit create-only wording');
+    await page.click('[data-testid="import-submit"]');
     await page.waitForSelector('[data-testid="import-success"]');
     r.ok((await text(page)).includes('No agents were activated'), 'success explicitly says agents were not activated');
+    r.ok((await page.$('[data-testid="import-success"] [data-testid="bundle-counts"]')) !== null, 'success renders imported counts');
+    r.ok((await text(page)).includes('Open project'), 'success offers explicit Open project action');
     const viewedAfterImport = await page.evaluate(() => window.appState?.viewedProject);
     r.ok(viewedAfterImport === 'ui-source', 'successful import does not auto-open the new project');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Done')?.click());
+
+    // History-enabled previews reuse the same scope component and expose the
+    // optional history rows before the user confirms the create-only import.
+    await page.click('.sidebar-new');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project'))?.click());
+    await page.waitForSelector('#project-bundle-file');
+    const historyFile = jsonFile('ui-source-history.flowboard.json', historyExported);
+    await (await page.$('#project-bundle-file')).uploadFile(historyFile);
+    await page.waitForSelector('#import-target');
+    r.ok((await text(page)).includes('Task comments and checkpoints'), 'history-enabled import review shows history scope');
+    await page.click('button[aria-label="Close"]');
 
     // Invalid local file is actionable without reaching the server.
     await page.click('.sidebar-new');
@@ -110,13 +168,17 @@ async function text(page) {
     const intercept = async (request) => {
       if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/projects/import' && failOnce) {
         failOnce = false;
+        await new Promise((resolve) => setTimeout(resolve, 500));
         await request.continue({ headers: { ...request.headers(), 'x-flowboard-test-import-failure': 'finalize' } });
       } else {
         await request.continue();
       }
     };
     page.on('request', intercept);
-    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project') && !button.disabled)?.click());
+    await page.click('[data-testid="import-submit"]');
+    await page.waitForSelector('[data-testid="import-phases"]');
+    const phaseText = await page.$eval('[data-testid="import-phases"]', (list) => list.innerText);
+    r.ok(['Validating bundle', 'Staging files', 'Creating project', 'Importing tasks', 'Importing files and specs', 'Restoring canvas', 'Verifying project'].every((phase) => phaseText.includes(phase)), 'import progress renders all named indeterminate phases');
     await page.waitForSelector('[data-testid="import-failure"]');
     r.ok((await text(page)).includes('Import ID:') && (await text(page)).includes('Retry import'), 'recoverable failure provides import ID and retry');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Retry import'))?.click());
