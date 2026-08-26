@@ -49,6 +49,13 @@ async function main() {
     await waitReady(child);
     assert.equal((await request('POST', '/api/projects', { name: project })).status, 201);
 
+    const maxTitle = 'x'.repeat(128);
+    const atLimit = await request('POST', `/api/projects/${project}/tasks`, { title: maxTitle });
+    assert.equal(atLimit.status, 200, JSON.stringify(atLimit.body));
+    const overLimit = await request('POST', `/api/projects/${project}/tasks`, { title: `${maxTitle}x` });
+    assert.equal(overLimit.status, 400, JSON.stringify(overLimit.body));
+    assert.match(overLimit.body.error, /max 128/);
+
     const parent = (await request('POST', `/api/projects/${project}/tasks`, { title: 'Parent' })).body.task;
     const childTask = (await request('POST', `/api/projects/${project}/tasks`, { title: 'Child', parentId: parent.id })).body.task;
     const canonical = await request('GET', `/api/projects/${project}/tasks/${parent.id}`);

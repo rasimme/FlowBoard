@@ -16,7 +16,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | Field | Type | Notes |
 |-------|------|-------|
 | `task_id` | ULID | Immutable, auto-generated |
-| `title` | string | Max 500 chars |
+| `title` | string | Max 128 chars |
 | `project` | string | Project name |
 | `status` | enum | `backlog`, `open`, `in-progress`, `review`, `done`, `archived` (see [Kanban concept](../concepts/kanban.md) for semantics) |
 | `priority` | integer | 0–2 stored (legacy 3 reads as `high`). UI vocabulary: `low`, `medium`, `high` |
@@ -87,7 +87,7 @@ POST /projects/:name/tasks
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| `title` | string | **yes** | Max 500 chars |
+| `title` | string | **yes** | Max 128 chars |
 | `priority` | string | no | `low`, `medium`, `high`. Default: `medium`. Legacy `critical` is normalized to `high`; other values are rejected. Subtasks inherit parent priority. |
 | `parentId` | string | no | FlowBoard ID of parent task (e.g. `T-042`). Creates a subtask with auto-incremented ID (`T-042-1`). Max 1 nesting level. |
 | `status` | string | no | Initial status: `backlog` (default), `open`, `in-progress`, `review`, `done`, `archived`. |
@@ -148,7 +148,7 @@ PUT /projects/:name/tasks/:id
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `title` | string | Max 500 chars |
+| `title` | string | Max 128 chars |
 | `status` | string | `backlog`, `open`, `in-progress`, `review`, `done`, `archived` |
 | `priority` | string | `low`, `medium`, `high` (legacy `critical` → `high`) |
 | `completed` | string | ISO date, auto-set on `done` |

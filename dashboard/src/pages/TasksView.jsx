@@ -957,7 +957,7 @@ function AddTaskForm({ project, onCreated }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: trimmed, priority, status: 'backlog' }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         // Enforce-mode direct creation returns a reusable request. Starting
         // Specify here is the explicit Dashboard recovery action; the API
@@ -1024,6 +1024,7 @@ function AddTaskForm({ project, onCreated }) {
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Task title..."
+        maxLength={128}
         disabled={submitting}
       />
       <div className="priority-selector">

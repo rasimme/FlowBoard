@@ -157,7 +157,11 @@ async function main() {
     for (const c of checks) console.log(`  ok - ${c.label}`);
     console.log(`\n✅ Structure-review retirement on update: all ${checks.length} checks passed`);
   } finally {
-    child.kill();
+    if (child.exitCode === null) {
+      child.kill();
+      await new Promise(resolve => child.once('exit', resolve));
+    }
+    fs.rmSync(path.join(projectsDir, project), { recursive: true, force: true });
   }
 }
 

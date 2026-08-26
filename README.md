@@ -59,6 +59,8 @@ Activate a project and the agent gets the context it needs — goal, scope, arch
 
 - Structured project files: `PROJECT.md` → `DECISIONS.md` → `specs/` (canvas lives in the database)
 - HZL-backed task runtime with claims, leases, checkpoints, comments, and review gates
+- A per-project **Project type** (`List`, `Standard`, or `Development`) that tunes agent guidance without blocking task creation
+- Non-blocking **Structure review** for vague titles or missing descriptions, visible and acknowledgeable from the Overview
 - Lazy loading — zero overhead when no project is active
 - Session handoff — pick up exactly where you left off
 
@@ -87,8 +89,9 @@ Your agent operates the board through the same REST API as the dashboard. It cre
 
 - Tasks with workflow: `backlog → open → in-progress → review → done`
 - Parent tasks with subtasks, progress tracking, and automatic parent status updates
-- Spec files with acceptance criteria and logs
-- Multi-agent visibility: active agents, claimed cards, checkpoints, comments, and review approvals
+- Spec files with acceptance criteria and logs; agents can create a task and its spec atomically
+- Canonical work states (`Working`, `Waiting`, `Blocked`, `Paused`) with a compact claim/state control and one attention signal
+- Multi-agent visibility: every active claim, task title, progress, lease health, checkpoints, comments, and review approvals
 
 ![FlowBoard Kanban — agents and you on the same board](docs/screenshot-kanban.png)
 
