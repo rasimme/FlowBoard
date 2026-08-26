@@ -2334,7 +2334,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     const all = [batchParent, ...batchChildren];
     for (const item of all) {
       if (!item || typeof item.title !== 'string' || !item.title.trim()) return res.status(400).json({ error: 'every batch task requires a title' });
-      if (item.title.trim().length > 500) return res.status(400).json({ error: 'title too long (max 500 characters)' });
+      if (item.title.trim().length > 128) return res.status(400).json({ error: 'title too long (max 128 characters)' });
       if (item.description !== undefined && (typeof item.description !== 'string' || item.description.length > 16384)) return res.status(400).json({ error: 'description must be a string of at most 16KB' });
       if (item.priority !== undefined && !normalizePriority(item.priority)) return res.status(400).json({ error: `Invalid priority "${item.priority}" — use low, medium or high` });
       if (item.status !== undefined && !['backlog', 'open', 'in-progress', 'review', 'done', 'archived'].includes(item.status)) return res.status(400).json({ error: `Invalid status "${item.status}"` });
@@ -2371,8 +2371,8 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     return res.status(400).json({ error: 'Title required' });
   }
   const cleanTitle = title.trim();
-  if (cleanTitle.length > 500) {
-    return res.status(400).json({ error: 'Title too long (max 500 characters)' });
+  if (cleanTitle.length > 128) {
+    return res.status(400).json({ error: 'Title too long (max 128 characters)' });
   }
 
   const normalizedPriority = normalizePriority(priority);
