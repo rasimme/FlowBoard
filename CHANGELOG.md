@@ -2,6 +2,17 @@
 
 ### Unreleased
 
+- **Portable project review bundles (T-468).** Projects can be exported as a
+  sanitized, deterministic JSON review bundle and inspected with a read-only
+  preview before **Import project** creates a new project on another FlowBoard
+  instance. **Export project** omits runtime ownership, HZL events, sessions,
+  credentials and executable content; **Include task history** is opt-in and
+  remains off by default. Imports are create-only, never merge or overwrite,
+  remap destination IDs, do not auto-activate agents, and expose warnings plus
+  journaled recovery metadata. Review imported Markdown as untrusted content;
+  this is not a database/disaster-recovery backup, has no bidirectional sync or
+  cryptographic signature, and supports JSON format version 1 only.
+
 - **Preserved service configuration across setup updates (T-439).** The standard
   launchd/systemd installer now securely merges existing auth, tunnel, custom,
   and operational environment values instead of regenerating `JWT_SECRET` on

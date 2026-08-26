@@ -9,21 +9,23 @@ Each project is an isolated workspace with its own goal, tasks, specs, and conte
 - **Rename:** from the project's actions menu in the sidebar.
 - **Organize:** group projects into folders, and reorder them by dragging — or with the keyboard (focus a project, then move it; the dashboard announces the new position for screen readers).
 
-## Export and import a review snapshot
+## Export and import a project review bundle
 
-Open a project's actions menu and choose **Export snapshot…** to download a
-sanitized JSON review bundle. The dialog fetches the bundle first and shows its
-content counts, included and excluded data, and any manifest warnings before
-the download. **Include task history** is optional and adds comments and
-checkpoints; review their potentially sensitive attribution and context before
-sharing.
+On the source FlowBoard instance, open a project's actions menu and choose
+**Export project** to download a sanitized JSON review bundle. The dialog
+fetches the bundle first and shows its content counts, included and excluded
+data, and manifest warnings before the download. **Include task history** is
+optional and adds comments and checkpoints; review their potentially sensitive
+attribution and context before sharing.
 
-To bring a snapshot into another FlowBoard instance, use **New → Import
-project…**. Choose the JSON file, review the source, counts, compatibility,
-warnings and destination slug, then explicitly choose **Import as new project**. An
-import always creates a separate destination: existing projects are never merged,
-replaced or overwritten. Import does not activate agents or open the project
-automatically; use **Open project** in the success dialog when you are ready.
+On the destination FlowBoard instance, use **New → Import project**. Choose the
+JSON file, review the source, counts, compatibility, warnings and destination
+slug, then explicitly choose **Import as new project**. This is a cross-instance
+working-copy flow: copy the downloaded file through your approved channel and
+review it on the destination before committing. An import always creates a
+separate destination: existing projects are never merged, replaced or
+overwritten. Import does not activate agents or open the project automatically;
+use **Open project** in the success dialog when you are ready.
 
 The file is a v1 JSON review document, not a disaster-recovery backup. It is
 limited to a 72 MB request and excludes HZL events, live ownership, claims,
