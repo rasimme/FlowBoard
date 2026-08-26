@@ -176,6 +176,21 @@ presets (`default`, `coding`, `knowledge`, `mission`) and the grid contract
 `default` preset (`source: "default"`) when no file exists or the
 stored file no longer validates.
 
+### GET /api/projects/:name/export
+
+Downloads a sanitized v1 project review bundle as a `.flowboard.json` file.
+The response is read-only and contains only this project's portable metadata,
+all current and archived tasks, linked specs, canvas, overview and selected
+knowledge Markdown (`PROJECT.md`, `DECISIONS.md`, and safe `context/*.md`).
+Internal HZL identifiers, ownership, claims, leases, routes, sessions,
+credentials, backups, hidden files and executables are excluded. Optional file
+exclusions are recorded as deterministic `manifest.warnings` entries.
+
+**200** `application/json` attachment with a safe filename. **404** if the
+project does not exist. **500** if a canonical project read or linked spec
+cannot be completed. Importing the artifact is a separate server-side
+operation; this endpoint never mutates project files or task state.
+
 ### PUT /api/projects/:name/overview
 Body is either `{ preset: "default" | "coding" | "knowledge" | "mission" }` (materializes the
 preset) or a full config:

@@ -83,6 +83,8 @@ const LIMITS = Object.freeze({
   files: 10000,
   historyItems: 50000,
   propsBytes: 64 * 1024,
+  warnings: 1000,
+  warningMessage: 1024,
 });
 
 const TASK_STATUSES = Object.freeze(['backlog', 'open', 'in-progress', 'review', 'done', 'archived']);
@@ -371,6 +373,10 @@ function toPortableTask(task = {}) {
   if (task.enteredStatusAt !== undefined) output.enteredStatusAt = cloneJson(task.enteredStatusAt);
   output.order = task.order === undefined ? null : cloneJson(task.order);
   output.workStateDetails = normalizeWorkStateDetails(task.workStateDetails);
+  // A responsible value is an agent-ownership hint in the live task model.
+  // Preserve the normalized shape for import compatibility, but never carry
+  // the source runtime owner into a review artifact.
+  output.workStateDetails.responsible = null;
   return output;
 }
 
@@ -470,6 +476,13 @@ function createBundle(input = {}, options = {}) {
       minImporterVersion: IMPORTER_VERSION,
     },
   };
+  if (Array.isArray(options.warnings) && options.warnings.length > 0) {
+    manifest.warnings = options.warnings.map((warning) => ({
+      code: String(warning?.code || 'OPTIONAL_CONTENT_EXCLUDED'),
+      ...(warning?.path ? { path: String(warning.path) } : {}),
+      message: String(warning?.message || 'Optional content was excluded from the bundle.'),
+    })).sort((a, b) => `${a.code}\0${a.path || ''}\0${a.message}`.localeCompare(`${b.code}\0${b.path || ''}\0${b.message}`));
+  }
   return canonicalizeBundle({ manifest, ...payload });
 }
 

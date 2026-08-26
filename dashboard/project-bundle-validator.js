@@ -258,6 +258,17 @@ function validateManifest(manifest, errors, warnings) {
     if (typeof manifest.compatibility.maxImporterVersion !== 'string') addIssue(errors, 'TYPE_INVALID', `${path}.compatibility.maxImporterVersion`, 'must be a semantic version');
     else if (compareVersions(IMPORTER_VERSION, manifest.compatibility.maxImporterVersion) > 0) addIssue(errors, 'COMPATIBILITY_UNSUPPORTED', `${path}.compatibility.maxImporterVersion`, `is incompatible with importer ${IMPORTER_VERSION}`);
   }
+
+  if (manifest.warnings !== undefined) {
+    if (!requireArray(manifest.warnings, `${path}.warnings`, errors, LIMITS.warnings)) return;
+    manifest.warnings.forEach((warning, index) => {
+      const warningPath = `${path}.warnings[${index}]`;
+      if (!requireObject(warning, warningPath, errors)) return;
+      stringField(warning, 'code', warningPath, errors, { required: true, max: 128, min: 1, pattern: /^[A-Z0-9_:-]+$/ });
+      stringField(warning, 'path', warningPath, errors, { max: LIMITS.path, min: 1 });
+      stringField(warning, 'message', warningPath, errors, { required: true, max: LIMITS.warningMessage, min: 1 });
+    });
+  }
 }
 
 function compareVersions(a, b) {

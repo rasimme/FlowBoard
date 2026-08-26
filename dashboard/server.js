@@ -103,6 +103,11 @@ const github = require('./github.js');
 const { isEditorVisible } = require('./file-visibility.js');
 const { isLoopbackHost } = require('./host-utils.js');
 const { buildStuckNotifications } = require('./stuck-notify.js');
+const {
+  ProjectBundleExportError,
+  exportProjectReviewBundle,
+  safeDownloadFilename,
+} = require('./project-bundle-export.js');
 const { formatSessionEntry, insertEntry } = require('./session-log.js');
 const {
   normalizeStoredWorkState,
@@ -1941,6 +1946,47 @@ app.get('/api/projects', (req, res) => {
   } catch (e) {
     console.error('[projects] Failed to list DB-backed projects:', e.message);
     return res.status(500).json({ error: 'Failed to load projects from HZL/FlowBoard metadata' });
+  }
+});
+
+// GET /api/projects/:name/export — deterministic, sanitized review bundle.
+// This route is intentionally read-only: all task/canvas/overview data comes
+// from the canonical server-owned read functions, while the exporter applies
+// explicit portable DTO allowlists and the project-file boundary.
+app.get('/api/projects/:name/export', (req, res) => {
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    const project = fbMeta.listProjects(hzlService.listHzlProjects())
+      .find(candidate => candidate.name === req.params.name);
+    const tasks = enrichTasks(req.params.name, hzlService.listTasks(req.params.name, { includeArchived: true }));
+    const canvas = canvasBackend(req.params.name).canvasGet(req.params.name);
+    const projectOverview = overview.readOverview(PROJECTS_DIR, req.params.name);
+    const result = exportProjectReviewBundle({
+      projectName: req.params.name,
+      project,
+      tasks,
+      canvas,
+      overview: projectOverview,
+      projectDir: path.join(PROJECTS_DIR, req.params.name),
+      options: {
+        producerVersion: _packageVersion,
+      },
+    });
+    const filename = safeDownloadFilename(result.bundle.project.slug);
+    audit({ action: 'project.export', project: req.params.name, target: filename }, req);
+    res.set({
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    });
+    return res.send(`${JSON.stringify(result.bundle)}\n`);
+  } catch (error) {
+    if (error instanceof ProjectBundleExportError) {
+      console.error(`[project-export] ${req.params.name}: ${error.code}: ${error.message}`);
+      return res.status(500).json({ error: 'Project export failed', code: error.code });
+    }
+    console.error(`[project-export] ${req.params.name}:`, error);
+    return res.status(500).json({ error: 'Project export failed', code: 'PROJECT_EXPORT_FAILED' });
   }
 });
 

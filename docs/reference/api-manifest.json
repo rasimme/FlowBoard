@@ -291,6 +291,14 @@
       "doc": "api/projects.md"
     },
     {
+      "method": "GET",
+      "path": "/api/projects/:name/export",
+      "auth": "user",
+      "group": "projects",
+      "doc": "api/projects.md",
+      "description": "Download a sanitized deterministic v1 project review bundle as JSON."
+    },
+    {
       "method": "PUT",
       "path": "/api/projects/:name/overview",
       "auth": "user",
