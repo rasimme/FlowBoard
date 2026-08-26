@@ -13,62 +13,47 @@
   this is not a database/disaster-recovery backup, has no bidirectional sync or
   cryptographic signature, and supports JSON format version 1 only.
 
-- **Preserved service configuration across setup updates (T-439).** The standard
-  launchd/systemd installer now securely merges existing auth, tunnel, custom,
-  and operational environment values instead of regenerating `JWT_SECRET` on
-  every update. First install and update are distinct, secret rotation is
-  explicit and restart-backed, shell overrides require named `--override-env`
-  keys, and ordered systemd `EnvironmentFile=` sources retain runtime
-  precedence (including health-check port resolution). `UnsetEnvironment=` and
-  unit specifiers now normalize fail-safe, while literal percent signs
-  round-trip correctly. Generated service files are owner-only, launchctl
-  inspection output is suppressed, macOS logging moved from shared `/tmp` into
-  an owner-only `~/Library/Logs/FlowBoard` path, and the Linux template now
-  consistently uses `flowboard-dashboard.service`.
+### v5.1.0 (2026-08-26) — Project Discipline & Collaborative Work State
 
-- **Made stuck-task notifications session-safe (T-434).** The stuck-check
-  scheduler no longer runs `/hooks/agent` turns against live
-  `agent:<x>:main` session keys — the gateway force-rolls the targeted key,
-  which reset the operator's interactive main session every round and
-  injected unrelated project context into it. Reminders are now durable
-  board state (a throttled `⚠️ Stuck reminder:` task comment) plus a per-agent
-  `attention.stuckTasks` block on `GET /api/status`; the gateway default
-  agent (`FLOWBOARD_WAKE_AGENT`, default `main`) is nudged via a
-  non-destructive `/hooks/wake` system event, and unowned tasks escalate
-  once per window on the dedicated throwaway key
-  `agent:main:flowboard-stuck-check`. The opt-in completion notifier uses
-  `/hooks/wake` as well. `FLOWBOARD_STUCK_WAKE_CHANNEL` is removed.
+- **Added project types and non-blocking structure review.** Projects can now be
+  configured as List, Standard, or Development from the Overview. FlowBoard
+  adapts agent guidance to that choice, flags vague titles or missing
+  descriptions for review without blocking creation, and supports atomic parent
+  + subtask batches and task + spec creation in one request.
+- **Rebuilt work-state UX around one canonical model.** Working, Waiting,
+  Blocked, and Paused are now independent from Kanban status. The detail panel
+  combines claim and state controls, cards use compact state indicators, stale
+  and expired leases share one attention treatment, and transient warnings can
+  be dismissed against canonical server state.
+- **Expanded multi-agent visibility.** The Active Agents bar and Overview show
+  every claim per agent with task titles, progress, relative activity, and lease
+  health. Shared claim predicates keep archived or completed work out of active
+  views.
+- **Made the dashboard more resilient under real traffic.** Snapshot reads,
+  conditional ETags, independent rate-limit lanes, visibility-aware polling,
+  adaptive Specify backoff, stale-response protection, and explicit offline,
+  timeout, authentication, and server-error states prevent background refreshes
+  from hiding valid board data or reverting fresh mutations.
+- **Improved task and agent APIs.** Added canonical single-task reads, working
+  status/tag filters, strict priority and title contracts, Unicode-safe spec
+  slugs, correct parent progress shapes, claim-to-in-progress semantics, and
+  atomic task/spec persistence. Manual task creation now enforces the upstream
+  128-character title limit and returns an actionable 400 instead of a masked
+  server error.
+- **Hardened local-first governance and authentication.** Task creation no
+  longer depends on a Telegram-specific human gate; provenance remains
+  server-authoritative, project-scoped policy and review history stay auditable,
+  multi-bot Telegram sessions are isolated, trusted-proxy handling is explicit,
+  and authentication/rate-limit failures fail closed without leaking secrets.
+- **Improved setup, updates, and diagnostics.** Standard service updates preserve
+  persisted configuration and secrets, startup reports stale frontend bundles,
+  test servers clean up their own project fixtures, listener failures are
+  handled explicitly, and documentation now covers Project type, bundle
+  freshness, task governance, WorkState, Active Agents, and the updated API.
+- **Kept stuck notifications session-safe.** Reminders remain durable board
+  state and use non-destructive wake events instead of running agent turns on
+  interactive main-session keys.
 
-### T-441 Security Review Findings
-
-- **Legacy-cookie migration security (T-441-1).** Old or malformed session
-  cookies are now strictly validated before use. Invalid cookies are rejected
-  immediately with HTTP 403; they cannot mask fresh Telegram init-data validation
-  errors (fresh credentials are authoritative).
-
-- **Verified EXPIRED fallback (T-441-2).** The `/api/auth` endpoint treats
-  init-data expiration strictly: even with a valid session cookie present,
-  aged init-data (>5 minutes old) is rejected. Steady-state API calls may use
-  an established valid cookie with aged init-data only after HMAC, user, bot,
-  and agent mapping verification confirms the exact same identity. Cross-bot
-  and forged-expired payloads are rejected and both root and legacy `/api`
-  cookie paths are cleared; `/api/auth` is a strict credential exchange.
-
-- **Auth-endpoint rate limiting (T-441-3).** The `/api/auth` POST endpoint
-  enforces a sliding-window rate limit: 60 requests per minute per source IP.
-  Cloudflare `cf-connecting-ip` is used only when the existing `cf-ray` tunnel
-  marker is present; direct requests use the socket address. This defends
-  against brute-force attempts and header rotation. Rejected requests return
-  HTTP 429 with a `Retry-After` header. The check is at the application level;
-  production deployments may add reverse-proxy rate limiting as well.
-
-- **Privacy-filter for logs (T-441-4).** Console warnings, errors, and logs
-  are sanitized to prevent accidental token leaks. Telegram bot tokens, JWT
-  tokens, bearer tokens, and secret/password strings are redacted from all
-  output while preserving the event identity. The repository privacy scan also
-  detects plural `TELEGRAM_BOT_TOKENS` comma-separated lists and assignments.
-  This prevents secrets from reaching logs or the published source even if an
-  unguarded error path includes them.
 ### v5.0.4 (2026-06-25) — ClawHub Security Hardening
 
 - **Hardened dashboard file and task mutation surfaces.** Project file reads now
