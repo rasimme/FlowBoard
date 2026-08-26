@@ -11,7 +11,7 @@
     "test:t445": "node test-t445-rate-limit.mjs",
     "test:t446": "node test-active-agents.mjs && node test-active-agents-bar-e2e.js",
     "test:t445:files-race": "node test-files-race-regressions-e2e.js",
-    "test:t468": "node test-project-bundle-safety-harness.js && node test-project-bundle-schema.js && node test-project-bundle-export.js && node test-project-bundle-export-api.js && node test-project-bundle-history.js && node test-project-bundle-import-preview.js && node test-project-bundle-import.js && node test-project-bundle-roundtrip-http.js",
+    "test:t468": "node test-project-bundle-safety-harness.js && node test-project-bundle-schema.js && node test-project-bundle-export.js && node test-project-bundle-export-api.js && node test-project-bundle-history.js && node test-project-bundle-import-preview.js && node test-project-bundle-import.js && node test-project-bundle-roundtrip-http.js && node test-project-bundle-ui-e2e.js",
     "test:t468:full": "npm run test:t468",
     "dev": "vite",
     "build": "vite build",

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus } from 'lucide-react';
+import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus, Upload } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
@@ -13,6 +13,7 @@ import FormGroup from './FormGroup.jsx';
 import DeleteProjectModal from './DeleteProjectModal.jsx';
 import DeletedProjectsTrash from './DeletedProjectsTrash.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';
+import ImportProjectModal, { ExportSnapshotModal } from './ProjectBundleModals.jsx';
 import Popover from './Popover.jsx';
 
 const COLLAPSE_KEY = 'flowboard_sidebar_collapsed';
@@ -100,6 +101,7 @@ function ProjectItem({
   onCommitRename,
   onCancelRename,
   onDeleteRequest,
+  onExportRequest,
   onDragStart,
   onDragEnd,
   onDragOverItem,
@@ -189,6 +191,7 @@ function ProjectItem({
           folders={folders}
           onRenameRequest={onStartRename}
           onDeleteRequest={onDeleteRequest}
+          onExportRequest={onExportRequest}
         />
       )}
     </div>
@@ -207,6 +210,8 @@ export default function Sidebar() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [exportTarget, setExportTarget] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [renamingName, setRenamingName] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // { kind, itemName?, section }
   const dragState = useRef({ sourceName: null, sourceSection: null });
@@ -726,6 +731,7 @@ export default function Sidebar() {
       onCommitRename={(v) => commitRename(p.name, v)}
       onCancelRename={() => setRenamingName(null)}
       onDeleteRequest={setDeleteTarget}
+      onExportRequest={setExportTarget}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragOverItem={onDragOverItem}
@@ -797,6 +803,11 @@ export default function Sidebar() {
         <Popover.Option onClick={() => { setNewMenuOpen(false); setCreateOpen(true); }}>
           <span className="inline-flex items-center gap-2">
             <Plus size={13} /> New project
+          </span>
+        </Popover.Option>
+        <Popover.Option onClick={() => { setNewMenuOpen(false); setImportOpen(true); }}>
+          <span className="inline-flex items-center gap-2">
+            <Upload size={13} /> Import project…
           </span>
         </Popover.Option>
         <Popover.Option onClick={() => { setNewMenuOpen(false); setNewFolderValue(''); setNewFolderOpen(true); }}>
@@ -956,6 +967,23 @@ export default function Sidebar() {
         project={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDeleted={() => { refreshProjectsOnly(); }}
+      />
+
+      <ExportSnapshotModal
+        open={!!exportTarget}
+        project={exportTarget}
+        onClose={() => setExportTarget(null)}
+      />
+
+      <ImportProjectModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => { refreshProjectsOnly(); }}
+        onOpenProject={(name) => {
+          refreshProjectsOnly().then(() => {
+            if (name) viewProject(name);
+          });
+        }}
       />
     </>,
     container

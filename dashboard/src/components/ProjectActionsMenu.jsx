@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Archive, ArchiveRestore, Folder, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Download, Folder, FolderPlus, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import Popover from './Popover.jsx';
 import Input from './Input.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
@@ -24,7 +24,7 @@ async function putProject(name, patch) {
  *  - onDeleteRequest(project) — hands off to the parent's DeleteProjectModal
  *  - folders: string[] — existing folder names for the "Move to folder" submenu
  */
-export default function ProjectActionsMenu({ project, folders = [], onRenameRequest, onDeleteRequest }) {
+export default function ProjectActionsMenu({ project, folders = [], onRenameRequest, onDeleteRequest, onExportRequest }) {
   const { refreshProjectsOnly } = useDashboard();
   const btnRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -75,6 +75,12 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
     e.stopPropagation();
     closeMenu();
     onDeleteRequest?.(project);
+  }
+
+  function handleExport(e) {
+    e.stopPropagation();
+    closeMenu();
+    onExportRequest?.(project);
   }
 
   function handlePickFolder(target) {
@@ -133,9 +139,24 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
             {project.archived && (
               <>
                 <div className="h-px bg-border my-1" />
+                <Popover.Option onClick={handleExport}>
+                  <span className="inline-flex items-center gap-2">
+                    <Download size={13} /> Export snapshot…
+                  </span>
+                </Popover.Option>
                 <Popover.Option onClick={handleDelete} className="text-danger">
                   <span className="inline-flex items-center gap-2">
                     <Trash2 size={13} /> Delete permanently…
+                  </span>
+                </Popover.Option>
+              </>
+            )}
+            {!project.archived && (
+              <>
+                <div className="h-px bg-border my-1" />
+                <Popover.Option onClick={handleExport}>
+                  <span className="inline-flex items-center gap-2">
+                    <Download size={13} /> Export snapshot…
                   </span>
                 </Popover.Option>
               </>
