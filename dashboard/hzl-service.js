@@ -102,6 +102,9 @@ const HZL_TO_FB = {
   'archived':    'archived',
 };
 
+// The canonical task status set. Exported (T-463) so the API validates
+// against the same list the writes do, rather than a hand-copied array that
+// can fall behind it.
 const VALID_STATUSES = new Set(['open', 'in-progress', 'review', 'done', 'backlog', 'archived']);
 
 // Keep task-scoped manual re-evaluation aligned with the scheduler.  The
@@ -4657,6 +4660,7 @@ module.exports = {
   getPolicyLedger,
   updateTask,
   setSpecifyConfirmation,
+  VALID_STATUSES,
   reviewException,
   reviewStructure,
   resolveStructureReason,

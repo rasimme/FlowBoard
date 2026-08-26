@@ -59,7 +59,7 @@ Base: `http://localhost:18790/api`
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/projects/:name/tasks` | List tasks. Query: `?status=`, `?sinceDays=`, `?tag=` |
+| `GET` | `/projects/:name/tasks` | List tasks. Query: `?status=` (one of the task statuses; an unknown value is rejected with 400), `?tag=`, `?includeArchived=true`, `?exceptionReview=`, `?structureReview=`. Filters combine. |
 | `GET` | `/projects/:name/tasks/:id` | Get one canonical task; returns 404 when unknown |
 | `POST` | `/projects/:name/tasks` | Create task. Body: see below |
 | `PUT` | `/projects/:name/tasks/:id` | Update task fields or status |

@@ -2230,9 +2230,26 @@ app.get('/api/projects/:name/tasks', (req, res) => {
   }
   const requestedStructureReview = req.query.structureReview || null;
   if (requestedStructureReview && !['pending', 'reviewed'].includes(requestedStructureReview)) return res.status(400).json({ error: 'structureReview must be pending or reviewed' });
+  // T-463: `status` and `tag` were documented but never implemented, and an
+  // unknown value was answered with the full list. A filter that silently
+  // does nothing is worse than a missing one: the caller gets a plausible
+  // result and believes it filtered. That sent two investigations in the
+  // wrong direction before anyone noticed the parameter was inert.
+  const requestedStatus = req.query.status || null;
+  if (requestedStatus && !hzlService.VALID_STATUSES.has(requestedStatus)) {
+    return res.status(400).json({
+      error: `status must be one of ${[...hzlService.VALID_STATUSES].join(', ')}`,
+      code: 'INVALID_STATUS_FILTER',
+    });
+  }
+  const requestedTag = typeof req.query.tag === 'string' && req.query.tag.trim()
+    ? req.query.tag.trim()
+    : null;
   const result = enrichTasks(req.params.name, tasks)
     .filter(task => !requestedExceptionReview || task.exceptionReview?.status === requestedExceptionReview)
-    .filter(task => !requestedStructureReview || task.structureReview?.status === requestedStructureReview);
+    .filter(task => !requestedStructureReview || task.structureReview?.status === requestedStructureReview)
+    .filter(task => !requestedStatus || task.status === requestedStatus)
+    .filter(task => !requestedTag || (Array.isArray(task.tags) && task.tags.includes(requestedTag)));
   const response = { ok: true, tasks: result };
 
   // Task status nudge
