@@ -296,7 +296,7 @@
       "auth": "user",
       "group": "projects",
       "doc": "api/projects.md",
-      "description": "Download a sanitized deterministic v1 project review bundle as JSON."
+      "description": "Download a sanitized deterministic v1 project review bundle as JSON; includeHistory=true opts into comments and checkpoints."
     },
     {
       "method": "POST",

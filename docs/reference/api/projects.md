@@ -191,6 +191,14 @@ project does not exist. **500** if a canonical project read or linked spec
 cannot be completed. Importing the artifact is a separate server-side
 operation; this endpoint never mutates project files or task state.
 
+Pass `?includeHistory=true` to opt in to portable task comments and
+checkpoints. The default remains history-free. History entries preserve their
+task FlowBoard ID, source-visible timestamp, text/message, progress, kind and
+safe author label. Question/answer links use portable digest IDs; HZL event
+row IDs, ULIDs, sessions, claims and leases are never exported. History is
+scanned with the same value-blind secret scanner as canonical task content and
+the export fails closed if credential-like content is found.
+
 ### POST /api/projects/import/preview
 
 Previews a portable project review bundle without creating a project or
@@ -230,6 +238,14 @@ mutation. Non-committed targets stay hidden from the ordinary project list and
 project routes. Files and specs are checksum-verified in an owner-private
 staging directory before publication; canvas and overview are restored through
 their canonical server-owned writers.
+
+When `manifest.options.includeHistory` is true, comments and checkpoints are
+written through HZL migration primitives. Destination events and task ULIDs
+are fresh; source-visible timestamps and attribution are rendered through
+explicit portable source metadata. Import never creates claims, leases,
+routes, agent activation, notifications or checkpoint ownership. A stable
+portable history ID makes journal resume idempotent and prevents duplicate
+entries.
 
 The journal progress contains only bounded provenance (bundle format identity/
 version, bundle id, producer metadata, and redaction labels/count). It never

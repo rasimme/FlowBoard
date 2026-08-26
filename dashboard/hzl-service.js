@@ -2667,31 +2667,166 @@ function addCheckpoint(project, flowboardId, opts) {
   };
 }
 
+const HISTORY_IMPORT_VERSION = 1;
+
+function historyImportMetadata(value) {
+  const marker = value && typeof value === 'object' && !Array.isArray(value)
+    ? value.flowboardImport : null;
+  return marker && typeof marker === 'object' ? marker : null;
+}
+
+function historyTimestamp(event, marker) {
+  return typeof marker?.sourceTimestamp === 'string' && marker.sourceTimestamp
+    ? marker.sourceTimestamp : event.timestamp;
+}
+
+function historyAuthor(event) {
+  return event.author || event.agent_id || null;
+}
+
 /**
- * Get all checkpoints for a task.
- * Reads checkpoint events directly so author/agent metadata survives.
+ * Read the portable subset of a project's history through the HZL service.
+ * Event row ids are deliberately kept private to this service adapter: the
+ * exporter uses them only to resolve answer links and derives opaque portable
+ * ids from the visible content instead.
  */
-function getCheckpoints(project, flowboardId) {
+function getProjectHistory(project, flowboardIds = null) {
+  const wanted = Array.isArray(flowboardIds) && flowboardIds.length > 0
+    ? new Set(flowboardIds.map(String)) : null;
+  const events = [];
+  for (const [key, ulid] of _fbToUlid) {
+    if (!key.startsWith(`${project}:`)) continue;
+    const flowboardId = key.slice(project.length + 1);
+    if (wanted && !wanted.has(flowboardId)) continue;
+    for (const event of _eventStore.getByTaskId(ulid)) {
+      if (event.type !== 'comment_added' && event.type !== 'checkpoint_recorded') continue;
+      const data = (event.data && typeof event.data === 'object') ? event.data : safeJson(event.data) || {};
+      const marker = historyImportMetadata(data) || historyImportMetadata(data.data);
+      const common = {
+        _eventRowId: event.rowid,
+        taskId: flowboardId,
+        createdAt: historyTimestamp(event, marker),
+        authorLabel: historyAuthor(event),
+        agentId: event.agent_id || null,
+        sourceId: typeof marker?.sourceId === 'string' ? marker.sourceId : null,
+        sourceQuestionId: typeof marker?.sourceQuestionId === 'string' ? marker.sourceQuestionId : null,
+        sequence: Number.isInteger(marker?.sourceSequence) ? marker.sourceSequence : null,
+        _eventTimestamp: event.timestamp,
+      };
+      if (event.type === 'comment_added') {
+        events.push({
+          ...common,
+          type: 'comment',
+          body: String(data.text || ''),
+          kind: HISTORY_IMPORT_KINDS.has(data.kind) ? data.kind : 'comment',
+          questionEventRowId: Number.isInteger(data.questionId) ? data.questionId : null,
+        });
+      } else {
+        const checkpointData = data.data && typeof data.data === 'object' ? data.data : {};
+        events.push({
+          ...common,
+          type: 'checkpoint',
+          message: String(data.name || ''),
+          progress: typeof data.progress === 'number' ? data.progress : null,
+          checkpointData,
+        });
+      }
+    }
+  }
+  return events.sort((left, right) => left._eventRowId - right._eventRowId);
+}
+
+const HISTORY_IMPORT_KINDS = new Set(['comment', 'question', 'answer', 'decision']);
+
+function importedHistoryMarker({ sourceId, sourceTimestamp, sourceQuestionId, sequence } = {}) {
+  if (typeof sourceId !== 'string' || sourceId.length === 0 || sourceId.length > 128) {
+    throw Object.assign(new Error('sourceId is required for imported history'), { code: 'HISTORY_SOURCE_ID_INVALID' });
+  }
+  if (typeof sourceTimestamp !== 'string' || !Number.isFinite(Date.parse(sourceTimestamp))) {
+    throw Object.assign(new Error('sourceTimestamp must be an ISO timestamp'), { code: 'HISTORY_TIMESTAMP_INVALID' });
+  }
+  return {
+    version: HISTORY_IMPORT_VERSION,
+    sourceId,
+    sourceTimestamp,
+    ...(typeof sourceQuestionId === 'string' ? { sourceQuestionId } : {}),
+    ...(Number.isInteger(sequence) ? { sourceSequence: sequence } : {}),
+  };
+}
+
+/** Create a fresh HZL comment event while retaining portable source semantics. */
+function addImportedComment(project, flowboardId, opts = {}) {
   const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
   if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
-
-  // hzl-core's getCheckpoints() returns the checkpoint payload but currently
-  // drops event author/agent metadata. Read the immutable event rows directly
-  // so the activity feed can show the real writer.
-  const rows = _eventStore.getByTaskId(ulid)
-    .filter(ev => ev.type === 'checkpoint_recorded');
-  return rows.map(ev => {
-    const data = (typeof ev.data === 'string') ? safeJson(ev.data) : (ev.data || {});
-    return {
-      id: ev.id || ev.event_rowid || ev.event_id || ev.eventId,
-      taskId: flowboardId,
-      message: data.name || ev.name || '',
-      data: data.data || {},
-      agent: ev.author || ev.agent_id || null,
-      progress: typeof data.progress === 'number' ? data.progress : null,
-      timestamp: ev.timestamp,
-    };
+  const message = String(opts.message || '');
+  if (!message.trim()) throw new Error('Comment message is required');
+  const kind = opts.kind || 'comment';
+  if (!HISTORY_IMPORT_KINDS.has(kind)) throw new Error('Unsupported imported comment kind');
+  const marker = importedHistoryMarker(opts);
+  const event = _eventStore.append({
+    task_id: ulid,
+    type: 'comment_added',
+    data: {
+      text: message,
+      ...(kind !== 'comment' ? { kind } : {}),
+      ...(Number.isInteger(opts.questionEventRowId) ? { questionId: opts.questionEventRowId } : {}),
+      flowboardImport: marker,
+    },
+    author: opts.authorLabel ? String(opts.authorLabel).slice(0, 128) : null,
   });
+  _projectionEngine.applyEvent(event);
+  return { eventRowId: event.rowid, eventId: event.event_id, timestamp: event.timestamp, sourceId: marker.sourceId };
+}
+
+/** Create a fresh HZL checkpoint event without ownership, lease or agent data. */
+function addImportedCheckpoint(project, flowboardId, opts = {}) {
+  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
+  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
+  const message = String(opts.message || '');
+  if (!message.trim()) throw new Error('Checkpoint message is required');
+  if (opts.progress !== undefined && opts.progress !== null
+    && (!Number.isInteger(opts.progress) || opts.progress < 0 || opts.progress > 100)) {
+    throw new Error('Checkpoint progress must be an integer between 0 and 100');
+  }
+  const marker = importedHistoryMarker(opts);
+  const event = _eventStore.append({
+    task_id: ulid,
+    type: 'checkpoint_recorded',
+    data: {
+      name: message,
+      data: { flowboardImport: marker },
+      ...(opts.progress !== undefined && opts.progress !== null ? { progress: opts.progress } : {}),
+    },
+    author: opts.authorLabel ? String(opts.authorLabel).slice(0, 128) : null,
+  });
+  _projectionEngine.applyEvent(event);
+  return { eventRowId: event.rowid, eventId: event.event_id, timestamp: event.timestamp, sourceId: marker.sourceId };
+}
+
+/**
+ * Get all checkpoints for a task. Imported events render their source-visible
+ * timestamp and author while retaining fresh local event identity internally.
+ */
+function getCheckpoints(project, flowboardId) {
+  if (!_fbToUlid.get(`${project}:${flowboardId}`)) throw new Error(`Task not found: ${flowboardId}`);
+  const rows = getProjectHistory(project, [flowboardId]);
+  return rows.filter(item => item.type === 'checkpoint').map(item => ({
+    // The migration marker is service-owned source metadata, not user-facing
+    // checkpoint data. Read APIs render the source timestamp/author below but
+    // never expose the marker itself.
+    data: (() => {
+      const { flowboardImport: _ignored, ...portableData } = item.checkpointData || {};
+      return portableData;
+    })(),
+    id: item._eventRowId,
+    taskId: flowboardId,
+    message: item.message,
+    agent: item.agentId,
+    author: item.authorLabel,
+    progress: item.progress,
+    timestamp: item.createdAt,
+    ...(item.sourceId ? { sourceId: item.sourceId } : {}),
+  }));
 }
 
 /**
@@ -2759,18 +2894,17 @@ function addComment(project, flowboardId, opts) {
  * Uses hzl-core native getComments().
  */
 function getComments(project, flowboardId) {
-  const ulid = _fbToUlid.get(`${project}:${flowboardId}`);
-  if (!ulid) throw new Error(`Task not found: ${flowboardId}`);
-
-  const rows = _taskService.getComments(ulid);
-  return rows.map(r => ({
-    id: r.event_rowid,
+  if (!_fbToUlid.get(`${project}:${flowboardId}`)) throw new Error(`Task not found: ${flowboardId}`);
+  const rows = getProjectHistory(project, [flowboardId]);
+  return rows.filter(item => item.type === 'comment').map(r => ({
+    id: r._eventRowId,
     taskId: flowboardId,
-    message: r.text,
-    author: r.author || r.agent_id || null,
+    message: r.body,
+    author: r.authorLabel,
     ...(r.kind ? { kind: r.kind } : {}),
-    ...(r.questionId ? { questionId: r.questionId } : {}),
-    timestamp: r.timestamp,
+    ...(r.questionEventRowId ? { questionId: r.questionEventRowId } : {}),
+    timestamp: r.createdAt,
+    ...(r.sourceId ? { sourceId: r.sourceId } : {}),
   }));
 }
 
@@ -4769,9 +4903,12 @@ module.exports = {
   approveTask,
   rejectTask,
   addCheckpoint,
+  addImportedCheckpoint,
   getCheckpoints,
+  getProjectHistory,
   getStatusEvents,
   addComment,
+  addImportedComment,
   getComments,
   getStuckTasks,
   getSchedulerStaleThreshold,

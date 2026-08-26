@@ -247,8 +247,14 @@ function canonicalizeBundle(bundle) {
     );
   }
   if (output.history && typeof output.history === 'object') {
-    if (Array.isArray(output.history.comments)) output.history.comments.sort(compareBy('id'));
-    if (Array.isArray(output.history.checkpoints)) output.history.checkpoints.sort(compareBy('id'));
+    const historyOrder = (left, right) => {
+      const sequence = (item) => Number.isInteger(item?.sequence) ? item.sequence : Number.MAX_SAFE_INTEGER;
+      return sequence(left) - sequence(right)
+        || String(left?.createdAt ?? '').localeCompare(String(right?.createdAt ?? ''))
+        || String(left?.id ?? '').localeCompare(String(right?.id ?? ''));
+    };
+    if (Array.isArray(output.history.comments)) output.history.comments.sort(historyOrder);
+    if (Array.isArray(output.history.checkpoints)) output.history.checkpoints.sort(historyOrder);
   }
   if (Array.isArray(output.files)) {
     for (const file of output.files) {
@@ -411,10 +417,10 @@ function toPortableFile(file = {}) {
 
 function toPortableHistory(history = {}) {
   const comments = Array.isArray(history.comments) ? history.comments.map((comment) => pickDefined(comment, [
-    'id', 'taskId', 'body', 'kind', 'createdAt', 'authorLabel',
+    'id', 'taskId', 'body', 'kind', 'createdAt', 'authorLabel', 'questionId', 'sequence',
   ])) : [];
   const checkpoints = Array.isArray(history.checkpoints) ? history.checkpoints.map((checkpoint) => pickDefined(checkpoint, [
-    'id', 'taskId', 'message', 'progress', 'createdAt',
+    'id', 'taskId', 'message', 'progress', 'createdAt', 'authorLabel', 'sequence',
   ])) : [];
   return { comments, checkpoints };
 }

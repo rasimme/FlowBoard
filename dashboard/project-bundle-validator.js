@@ -548,16 +548,26 @@ function validateHistory(history, tasks, errors) {
     if (!(typeof value === 'string' || (Number.isInteger(value) && value >= 0))) addIssue(errors, 'TYPE_INVALID', path, 'must be a stable string or non-negative integer id');
   };
   const ids = { comments: new Set(), checkpoints: new Set() };
+  const commentsById = new Map();
+  const questionRefs = [];
   history.comments.forEach((comment, index) => {
     const path = `history.comments[${index}]`;
     if (!requireObject(comment, path, errors)) return;
     requiredField(comment, 'id', path, errors); validateHistoryId(comment.id, `${path}.id`);
     if (ids.comments.has(String(comment.id))) addIssue(errors, 'DUPLICATE_ID', `${path}.id`, 'comment id is duplicated');
     ids.comments.add(String(comment.id));
+    commentsById.set(String(comment.id), comment);
     idField(comment, 'taskId', path, errors, { required: true });
     stringField(comment, 'body', path, errors, { required: true, max: LIMITS.description });
     enumField(comment, 'kind', path, errors, HISTORY_COMMENT_KINDS);
     stringField(comment, 'authorLabel', path, errors, { max: 128 });
+    if (comment.questionId !== undefined
+      && !(typeof comment.questionId === 'string' || (Number.isInteger(comment.questionId) && comment.questionId >= 0))) {
+      addIssue(errors, 'TYPE_INVALID', `${path}.questionId`, 'must be a portable string or non-negative integer id');
+    } else if (comment.questionId !== undefined) {
+      questionRefs.push({ value: String(comment.questionId), taskId: comment.taskId, path: `${path}.questionId` });
+    }
+    finiteNumberField(comment, 'sequence', path, errors, { min: 0, max: LIMITS.historyItems, integer: true });
     timestampField(comment, 'createdAt', path, errors, { required: true });
     if (comment.taskId && !tasks.has(comment.taskId)) addIssue(errors, 'REFERENCE_MISSING', `${path}.taskId`, `task ${comment.taskId} does not exist`);
   });
@@ -570,9 +580,19 @@ function validateHistory(history, tasks, errors) {
     idField(checkpoint, 'taskId', path, errors, { required: true });
     stringField(checkpoint, 'message', path, errors, { required: true, max: LIMITS.description });
     finiteNumberField(checkpoint, 'progress', path, errors, { min: 0, max: 100 });
+    stringField(checkpoint, 'authorLabel', path, errors, { max: 128 });
+    finiteNumberField(checkpoint, 'sequence', path, errors, { min: 0, max: LIMITS.historyItems, integer: true });
     timestampField(checkpoint, 'createdAt', path, errors, { required: true });
     if (checkpoint.taskId && !tasks.has(checkpoint.taskId)) addIssue(errors, 'REFERENCE_MISSING', `${path}.taskId`, `task ${checkpoint.taskId} does not exist`);
   });
+  for (const ref of questionRefs) {
+    const question = commentsById.get(ref.value);
+    if (!question) addIssue(errors, 'REFERENCE_MISSING', ref.path, 'questionId does not reference a comment in this bundle');
+    else if (question.kind !== 'question') addIssue(errors, 'REFERENCE_INVALID', ref.path, 'questionId must reference a question comment');
+    else if (question.taskId !== ref.taskId) {
+      addIssue(errors, 'REFERENCE_INVALID', ref.path, 'questionId must reference a question on the same task');
+    }
+  }
 }
 
 function validateCounts(bundle, errors) {

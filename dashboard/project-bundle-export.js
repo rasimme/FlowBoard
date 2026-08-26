@@ -14,8 +14,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   LIMITS,
+  canonicalJson,
   createBundle,
   normalizeRelativePath,
+  sha256,
+  toPortableHistory,
   toPortableTask,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
@@ -278,12 +281,76 @@ function normalizeProject(project, projectName) {
   };
 }
 
+function historyIdentity(event, sequence) {
+  if (typeof event?.sourceId === 'string' && event.sourceId.length > 0) return event.sourceId;
+  return `history-${sha256(canonicalJson({
+    taskId: event?.taskId,
+    type: event?.type,
+    body: event?.body ?? event?.message ?? '',
+    kind: event?.kind || 'comment',
+    createdAt: event?.createdAt,
+    authorLabel: event?.authorLabel || null,
+    progress: event?.progress ?? null,
+    sequence,
+  })).slice(0, 48)}`;
+}
+
+/** Convert the HZL service's event-shaped read into the portable history DTO. */
+function toPortableHistoryFromEvents(events = []) {
+  const ordered = [...events].sort((left, right) => {
+    const task = String(left?.taskId || '').localeCompare(String(right?.taskId || ''));
+    return task || Number(left?._eventRowId || 0) - Number(right?._eventRowId || 0);
+  });
+  const sourceIds = new Map();
+  const perTaskSequence = new Map();
+  for (const event of ordered) {
+    const sequence = perTaskSequence.get(event.taskId) || 0;
+    perTaskSequence.set(event.taskId, sequence + 1);
+    sourceIds.set(event._eventRowId, historyIdentity(event, sequence));
+  }
+  const comments = [];
+  const checkpoints = [];
+  const seenByTask = new Map();
+  for (const event of ordered) {
+    const prior = seenByTask.get(event.taskId) || 0;
+    seenByTask.set(event.taskId, prior + 1);
+    const sequence = Number.isInteger(event.sequence) ? event.sequence : prior;
+    const id = sourceIds.get(event._eventRowId) || historyIdentity(event, prior);
+    if (event.type === 'comment') {
+      comments.push({
+        id,
+        taskId: event.taskId,
+        body: event.body,
+        kind: event.kind || 'comment',
+        createdAt: event.createdAt,
+        ...(event.authorLabel ? { authorLabel: event.authorLabel } : {}),
+        ...(event.sourceQuestionId || Number.isInteger(event.questionEventRowId)
+          ? { questionId: event.sourceQuestionId || sourceIds.get(event.questionEventRowId) }
+          : {}),
+        sequence,
+      });
+    } else if (event.type === 'checkpoint') {
+      checkpoints.push({
+        id,
+        taskId: event.taskId,
+        message: event.message,
+        ...(event.progress !== null && event.progress !== undefined ? { progress: event.progress } : {}),
+        createdAt: event.createdAt,
+        ...(event.authorLabel ? { authorLabel: event.authorLabel } : {}),
+        sequence,
+      });
+    }
+  }
+  return toPortableHistory({ comments, checkpoints });
+}
+
 function exportProjectReviewBundle({
   projectName,
   project,
   tasks,
   canvas,
   overview,
+  history,
   projectDir,
   fsModule = fs,
   options = {},
@@ -298,6 +365,8 @@ function exportProjectReviewBundle({
   const warnings = [];
   const publicProject = normalizeProject(project, projectName);
   const publicTasks = tasks.map(toPortableTask);
+  const includeHistory = options.includeHistory === true;
+  const portableHistory = includeHistory ? toPortableHistoryFromEvents(history || []) : undefined;
   const specs = readLinkedSpecs({ projectDir, tasks: publicTasks, fsModule });
   const files = collectKnowledgeFiles({
     projectDir,
@@ -312,12 +381,13 @@ function exportProjectReviewBundle({
     canvas,
     overview,
     files,
+    ...(portableHistory ? { history: portableHistory } : {}),
   }, {
     producerName: options.producerName || 'FlowBoard',
     producerVersion: options.producerVersion,
     bundleId: options.bundleId,
     createdAt: options.createdAt,
-    includeHistory: false,
+    includeHistory,
     warnings,
   });
   const canonicalSections = [
@@ -326,6 +396,7 @@ function exportProjectReviewBundle({
     ['specs', bundle.specs],
     ['canvas', bundle.canvas],
     ['overview', bundle.overview],
+    ...(bundle.history ? [['history', bundle.history]] : []),
   ];
   for (const [, section] of canonicalSections) {
     if (scanSensitiveContent(section).length > 0) {
@@ -352,5 +423,6 @@ module.exports = {
   exportProjectReviewBundle,
   normalizeProject,
   readLinkedSpecs,
+  toPortableHistoryFromEvents,
   safeDownloadFilename,
 };

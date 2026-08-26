@@ -59,8 +59,8 @@ const SAFE_CHILD_KEYS = Object.freeze({
   overviewWidget: new Set(['id', 'type', 'title', 'props', 'grid']),
   overviewGrid: new Set(['x', 'y', 'w', 'h']),
   history: new Set(['comments', 'checkpoints']),
-  historyComment: new Set(['id', 'taskId', 'body', 'kind', 'createdAt', 'authorLabel']),
-  historyCheckpoint: new Set(['id', 'taskId', 'message', 'progress', 'createdAt']),
+  historyComment: new Set(['id', 'taskId', 'body', 'kind', 'createdAt', 'authorLabel', 'questionId', 'sequence']),
+  historyCheckpoint: new Set(['id', 'taskId', 'message', 'progress', 'createdAt', 'authorLabel', 'sequence']),
 });
 
 const KEY_TRANSITIONS = Object.freeze({

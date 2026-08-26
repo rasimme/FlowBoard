@@ -28,6 +28,7 @@ const {
   assertImportJournalTransition,
   importLockKey,
 } = require('./project-bundle-safety.js');
+const { toPortableHistoryFromEvents } = require('./project-bundle-export.js');
 
 const RESERVED_TARGET_NAMES = new Set([
   '.audit', '.trash', '_index', 'projects', 'workspace',
@@ -675,40 +676,66 @@ class ProjectBundleImporter {
 
   _restoreHistory(target, bundle) {
     if (!bundle.history) return { comments: 0, checkpoints: 0 };
-    const existingComments = [];
-    const existingCheckpoints = [];
-    for (const task of bundle.tasks || []) {
-      try { existingComments.push(...this.hzlService.getComments(target, task.id)); } catch {}
-      try { existingCheckpoints.push(...this.hzlService.getCheckpoints(target, task.id)); } catch {}
-    }
-    const commentKey = item => `${item.taskId}\0${item.message || item.body || ''}\0${item.kind || 'comment'}`;
-    const checkpointKey = item => `${item.taskId}\0${item.message || ''}\0${item.progress ?? ''}`;
+    const existing = typeof this.hzlService.getProjectHistory === 'function'
+      ? this.hzlService.getProjectHistory(target, (bundle.tasks || []).map(task => task.id)) : [];
+    const existingBySourceId = new Map(existing.filter(item => item.sourceId).map(item => [item.sourceId, item]));
+    const existingComments = existing.filter(item => item.type === 'comment');
+    const existingCheckpoints = existing.filter(item => item.type === 'checkpoint');
+    const commentKey = item => `${item.taskId}\0${item.body || item.message || ''}\0${item.kind || 'comment'}\0${item.createdAt || ''}`;
+    const checkpointKey = item => `${item.taskId}\0${item.message || ''}\0${item.progress ?? ''}\0${item.createdAt || ''}`;
     const commentKeys = new Set(existingComments.map(commentKey));
     const checkpointKeys = new Set(existingCheckpoints.map(checkpointKey));
+    const importedEventIds = new Map(existing.filter(item => item.sourceId).map(item => [item.sourceId, item._eventRowId]));
+    const items = [
+      ...(bundle.history.comments || []).map(item => ({ ...item, _kind: 'comment' })),
+      ...(bundle.history.checkpoints || []).map(item => ({ ...item, _kind: 'checkpoint' })),
+    ].sort((left, right) => {
+      const seq = Number(left.sequence ?? Number.MAX_SAFE_INTEGER) - Number(right.sequence ?? Number.MAX_SAFE_INTEGER);
+      return String(left.taskId).localeCompare(String(right.taskId)) || seq || String(left.id).localeCompare(String(right.id));
+    });
     let comments = 0;
     let checkpoints = 0;
-    for (const item of bundle.history.comments || []) {
-      // A retry after a post-history failure must not duplicate content. HZL
-      // event ids are intentionally not portable, so the stable semantic
-      // tuple is the resume identity.
-      const key = commentKey(item);
-      if (commentKeys.has(key)) { comments += 1; continue; }
-      this.hzlService.addComment(target, item.taskId, {
-        message: item.body,
-        author: item.authorLabel || null,
-        ...(item.kind && item.kind !== 'comment' && item.kind !== 'answer' ? { kind: item.kind } : {}),
-      });
-      commentKeys.add(key);
-      comments += 1;
-    }
-    for (const item of bundle.history.checkpoints || []) {
+    for (const item of items) {
+      if (item._kind === 'comment') {
+        const existingImported = existingBySourceId.get(String(item.id));
+        if (existingImported) { comments += 1; continue; }
+        const key = commentKey(item);
+        if (commentKeys.has(key)) { comments += 1; continue; }
+        const questionEventRowId = item.questionId === undefined || item.questionId === null
+          ? undefined : importedEventIds.get(String(item.questionId));
+        if (item.kind === 'answer' && !Number.isInteger(questionEventRowId)) {
+          throw errorWithCode('Imported answer references a question that is not available yet', 'HISTORY_LINK_MISSING', 422);
+        }
+        const created = this.hzlService.addImportedComment(target, item.taskId, {
+          message: item.body,
+          authorLabel: item.authorLabel || null,
+          kind: item.kind || 'comment',
+          sourceId: String(item.id),
+          sourceTimestamp: item.createdAt,
+          sourceQuestionId: item.questionId === undefined || item.questionId === null ? undefined : String(item.questionId),
+          questionEventRowId,
+          sequence: item.sequence,
+        });
+        importedEventIds.set(String(item.id), created.eventRowId);
+        existingBySourceId.set(String(item.id), { ...item, _eventRowId: created.eventRowId, sourceId: String(item.id) });
+        commentKeys.add(key);
+        comments += 1;
+        continue;
+      }
+      const existingImported = existingBySourceId.get(String(item.id));
+      if (existingImported) { checkpoints += 1; continue; }
       const key = checkpointKey(item);
       if (checkpointKeys.has(key)) { checkpoints += 1; continue; }
-      this.hzlService.addCheckpoint(target, item.taskId, {
+      const created = this.hzlService.addImportedCheckpoint(target, item.taskId, {
         message: item.message,
-        agent: null,
-        ...(item.progress !== undefined ? { progress: item.progress } : {}),
+        progress: item.progress,
+        authorLabel: item.authorLabel || null,
+        sourceId: String(item.id),
+        sourceTimestamp: item.createdAt,
+        sequence: item.sequence,
       });
+      importedEventIds.set(String(item.id), created.eventRowId);
+      existingBySourceId.set(String(item.id), { ...item, _eventRowId: created.eventRowId, sourceId: String(item.id) });
       checkpointKeys.add(key);
       checkpoints += 1;
     }
@@ -748,6 +775,7 @@ class ProjectBundleImporter {
     if (canonicalJson(toPortableOverview(actualOverview)) !== canonicalJson(toPortableOverview(expectedOverview))) {
       throw errorWithCode('Imported overview verification failed', 'OVERVIEW_VERIFY_FAILED', 500);
     }
+    const historyCounts = this._verifyHistory(target, bundle);
     return {
       tasks: tasks.length,
       specs: (bundle.specs || []).length,
@@ -755,7 +783,37 @@ class ProjectBundleImporter {
       canvasNotes: actualCanvas.notes.length,
       canvasConnections: actualCanvas.connections.length,
       overviewWidgets: actualOverview.widgets.length,
+      ...historyCounts,
     };
+  }
+
+  _verifyHistory(target, bundle) {
+    if (!bundle.history) return { historyComments: 0, historyCheckpoints: 0 };
+    const actualEvents = typeof this.hzlService.getProjectHistory === 'function'
+      ? this.hzlService.getProjectHistory(target, (bundle.tasks || []).map(task => task.id)) : [];
+    const actual = toPortableHistoryFromEvents(actualEvents);
+    const expected = bundle.history;
+    const compare = (left, right, label) => {
+      const fields = label === 'comment'
+        ? ['id', 'taskId', 'body', 'kind', 'createdAt', 'authorLabel', 'questionId', 'sequence']
+        : ['id', 'taskId', 'message', 'progress', 'createdAt', 'authorLabel', 'sequence'];
+      const project = item => Object.fromEntries(fields
+        .filter(key => Object.prototype.hasOwnProperty.call(item, key))
+        .map(key => [key, item[key]]));
+      const rightById = new Map((right || []).map(item => [String(item.id), item]));
+      for (const item of left || []) {
+        const counterpart = rightById.get(String(item.id));
+        if (!counterpart || canonicalJson(project(item)) !== canonicalJson(project(counterpart))) {
+          throw errorWithCode(`Imported ${label} history verification failed`, 'HISTORY_VERIFY_FAILED', 500);
+        }
+      }
+      if ((left || []).length !== (right || []).length) {
+        throw errorWithCode(`Imported ${label} history count verification failed`, 'HISTORY_COUNT_MISMATCH', 500);
+      }
+    };
+    compare(expected.comments, actual.comments, 'comment');
+    compare(expected.checkpoints, actual.checkpoints, 'checkpoint');
+    return { historyComments: expected.comments.length, historyCheckpoints: expected.checkpoints.length };
   }
 
   async importBundle(bundle, { targetName } = {}) {

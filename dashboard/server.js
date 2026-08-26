@@ -2002,15 +2002,21 @@ app.get('/api/projects/:name/export', (req, res) => {
     const tasks = enrichTasks(req.params.name, hzlService.listTasks(req.params.name, { includeArchived: true }));
     const canvas = canvasBackend(req.params.name).canvasGet(req.params.name);
     const projectOverview = overview.readOverview(PROJECTS_DIR, req.params.name);
+    const includeHistory = String(req.query.includeHistory || '').toLowerCase() === 'true';
+    const history = includeHistory
+      ? hzlService.getProjectHistory(req.params.name, tasks.map(task => task.id))
+      : undefined;
     const result = exportProjectReviewBundle({
       projectName: req.params.name,
       project,
       tasks,
       canvas,
       overview: projectOverview,
+      history,
       projectDir: path.join(PROJECTS_DIR, req.params.name),
       options: {
         producerVersion: _packageVersion,
+        includeHistory,
       },
     });
     const filename = safeDownloadFilename(result.bundle.project.slug);
