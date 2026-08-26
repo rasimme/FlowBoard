@@ -16,14 +16,31 @@ function suggest(signals = {}) {
   return DEFAULT;
 }
 
-function reasonsFor({ discipline, title, description, specFile, batchSize = 1, siblingBatch = false } = {}) {
+// T-464: `missing_spec_link` used to fire here for any `development` task
+// without a spec. Measured 2026-08-26: 16 of 16 structureReview flags across
+// two projects carried this one reason, and the other reasons below — the
+// ones that describe observable form — never fired once. "Does this task
+// need a spec?" is a judgment about scope and future work that the server
+// cannot see; ADR-0035's line is that FlowBoard enforces only what it can
+// see, which is form. The spec is still recommended (see rules-api.js's
+// `api-access` note for `development`) — it is just no longer marked.
+//
+// `flat_batch` is gone for the same reason. It fired on `batchSize > 1` or
+// `siblingBatch`, but the only caller that ever set either was the batch
+// endpoint's own `{parent, subtasks}` branch — the correct mechanism for
+// keeping related tasks together. A well-formed batch create flagged its
+// parent and every subtask with advice to do exactly what the call just
+// did. The shape it claimed to catch — several separate top-level creates —
+// is invisible to the server (each is a separate HTTP request) and
+// structurally impossible through this endpoint anyway, since it rejects
+// any item that sets `parentId`. What remains, `missing_description` and
+// `title_pattern`, is derivable from `title`/`description` alone.
+function reasonsFor({ discipline, title, description } = {}) {
   const mode = normalize(discipline);
   if (mode === DEFAULT) return [];
   const reasons = [];
-  if (mode === 'development' && (batchSize > 1 || siblingBatch)) reasons.push('flat_batch');
   if (mode !== DEFAULT && (!description || !String(description).trim())) reasons.push('missing_description');
   if (mode !== 'list' && typeof title === 'string' && /^(fix|update|change|do|task|work on)\b/i.test(title.trim()) && title.trim().length < 24) reasons.push('title_pattern');
-  if (mode === 'development' && !specFile) reasons.push('missing_spec_link');
   return [...new Set(reasons)];
 }
 

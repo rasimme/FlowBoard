@@ -49,6 +49,11 @@ export function boardTopLevelTasks(tasks, reviewFilterEnabled) {
 // dashboard/task-discipline.js:reasonsFor(). Kept next to the review
 // selection helpers so the Kanban badge and the DetailPanel block share one
 // vocabulary instead of duplicating it.
+// `flat_batch` and `missing_spec_link` are no longer produced — both asked a
+// question the server cannot answer from the request (ADR-0035), and
+// `flat_batch` fired on the correct usage. They stay here because tasks
+// flagged before their removal still carry them until an edit retires the
+// reason; without a label such a task would render the raw key.
 const STRUCTURE_REASON_LABELS = {
   flat_batch: 'flat batch of tasks',
   missing_description: 'missing description',

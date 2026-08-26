@@ -7,8 +7,15 @@
  * Run: node test-spawn-wrapper.js
  */
 
-const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+// T-460: hzl-service resolves its project/spec/audit dirs from
+// OPENCLAW_WORKSPACE at require-time; without it the fallback lands under the
+// repo root. Point it at a scratch dir before requiring hzl-service.
+process.env.OPENCLAW_WORKSPACE = path.join(os.tmpdir(), 'flowboard-test-workspace-spawn-wrapper');
+
+const fs = require('fs');
 const hzlService = require('./hzl-service.js');
 
 let pass = 0;

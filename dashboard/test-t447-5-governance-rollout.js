@@ -70,7 +70,7 @@ assert.equal(governance.getGovernanceMode(store), 'compat');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-governance-ledger-'));
 try {
   const entry = policyLedger.appendPolicyRecord('alpha', {
-    decision: 'would_block', origin: 'tasks-api', code: 'SPECIFY_REQUIRED', governanceMode: 'compat',
+    decision: 'allowed', origin: 'tasks-api', code: 'DIRECT_CREATION_ALLOWED', governanceMode: 'compat',
   }, { dir });
   assert.equal(entry.governanceMode, 'compat');
   assert.equal(policyLedger.readPolicyLedger({ dir })[0].governanceMode, 'compat');

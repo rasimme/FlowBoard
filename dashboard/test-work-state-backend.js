@@ -4,10 +4,16 @@
 // exercise persistence, cache rebuilds, monitoring and lifecycle clear paths
 // without coupling the assertions to a running operator service.
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+
+// T-460: hzl-service resolves its project/spec/audit dirs from
+// OPENCLAW_WORKSPACE at require-time; without it the fallback lands under the
+// repo root. Point it at a scratch dir before requiring hzl-service.
+process.env.OPENCLAW_WORKSPACE = path.join(os.tmpdir(), 'flowboard-test-workspace-work-state-backend');
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const hzl = require('./hzl-service.js');
 const migrations = require('./migrations.js');
 const { buildStuckNotifications } = require('./stuck-notify.js');

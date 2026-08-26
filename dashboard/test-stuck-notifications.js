@@ -12,6 +12,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// T-460: hzl-service resolves its own PROJECTS_DIR from OPENCLAW_WORKSPACE at
+// require-time (module-level constant, independent of FLOWBOARD_PROJECTS_DIR
+// below, which only redirects the policy ledger). Set it — and compute
+// WORKDIR — before requiring hzl-service.js, or the fallback lands under the
+// repo root.
+const WORKDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-stuck-'));
+process.env.OPENCLAW_WORKSPACE = WORKDIR;
+
 const hzlService = require('./hzl-service.js');
 
 let pass = 0;
@@ -23,7 +32,6 @@ function ok(cond, msg) {
   else      { fail++; failures.push(msg); console.log(`  ❌ ${msg}`); }
 }
 
-const WORKDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-stuck-'));
 process.env.FLOWBOARD_PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR || path.join(WORKDIR, 'projects');
 fs.mkdirSync(path.join(WORKDIR, 'projects'), { recursive: true });
 const PROJECT = 'stuck-test';

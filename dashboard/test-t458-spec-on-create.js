@@ -1,8 +1,15 @@
 'use strict';
 
-// T-458: a spec can be written in the create call, a spec written later
-// retires the flag it was flagged for, and the create reminder only speaks
-// when the server actually flagged something.
+// T-458: a spec can be written in the create call, and the create reminder
+// only speaks when the server actually flagged something.
+//
+// T-464: `missing_spec_link` is retired as a flaggable reason — 16 of 16
+// measured structureReview flags carried it and the other form-based
+// reasons never fired once, so a missing spec is no longer marked. The
+// spec is still recommended (see the `api-access` discipline note in
+// rules-api.js) and still writable in the same create call or via
+// POST /specs/:id — that mechanism is untouched, it just no longer clears
+// anything, because nothing is ever flagged for lacking a spec any more.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -81,43 +88,54 @@ async function main() {
     ok(!withSpec.body.reminder,
       'nothing flagged means the create response says nothing');
 
-    // ── 2. No spec: flagged, and the reminder names the fix ─────────────
-    const noSpec = await request('POST', `/api/projects/${project}/tasks`, {
-      title: 'Rebuild the snapshot cache layer again',
+    // ── 2. No spec at all, otherwise well-formed: not flagged (T-464) ───
+    // The behavior T-464 changes: whether a spec exists is no longer part
+    // of what gets a task marked. A well-formed task with no spec sails
+    // through exactly like one with a spec (case 1 above).
+    const noSpecWellFormed = await request('POST', `/api/projects/${project}/tasks`, {
+      title: 'Retire the legacy webhook shim',
       description: 'Short summary line.',
     });
-    ok(noSpec.status === 200, 'create without a spec still succeeds — nothing blocks');
-    const flagged = noSpec.body.task;
-    ok(flagged.structureReview?.reasons.includes('missing_spec_link'),
-      'a development task without a spec is flagged missing_spec_link');
-    ok(typeof noSpec.body.reminder === 'string' && noSpec.body.reminder.includes('missing_spec_link'),
-      'the reminder names the reason it was flagged for');
-    ok(noSpec.body.reminder.includes(`/specs/${flagged.id}`),
-      'the reminder carries the exact call that fixes it');
+    ok(noSpecWellFormed.status === 200, 'create without a spec still succeeds — nothing blocks');
+    ok(!noSpecWellFormed.body.task.structureReview,
+      'a well-formed task with no spec at all is not flagged — missing_spec_link is gone (T-464)');
+    ok(!noSpecWellFormed.body.reminder, 'and the create response says nothing');
 
-    // ── 3. Writing the spec later retires that reason ───────────────────
-    const later = await request('POST', `/api/projects/${project}/specs/${flagged.id}`, {
+    // ── 3. A real form problem still flags, and the reminder names it ───
+    const noDescription = await request('POST', `/api/projects/${project}/tasks`, {
+      title: 'Rebuild the snapshot cache layer once more',
+    });
+    ok(noDescription.status === 200, 'create without a description still succeeds — nothing blocks');
+    const flagged = noDescription.body.task;
+    ok(flagged.structureReview?.reasons.includes('missing_description'),
+      'a development task without a description is still flagged missing_description');
+    ok(typeof noDescription.body.reminder === 'string' && noDescription.body.reminder.includes('missing_description'),
+      'the reminder names the reason it was flagged for');
+
+    // ── 4. The spec route still works, and stays scoped to what it fixed ─
+    // writeSpecFileForTask() used to call resolveStructureReason() with
+    // 'missing_spec_link' after every spec write. That call was removed —
+    // missing_spec_link can never be assigned any more, so it was dead code.
+    // Writing a spec through this route was never the fix for
+    // missing_description, and still is not: this checks the mechanism does
+    // not overreach and clear an unrelated reason just because a spec
+    // arrived.
+    const specLater = await request('POST', `/api/projects/${project}/specs/${flagged.id}`, {
       content: '# Goal\n\nWritten after the fact.\n',
     });
-    ok(later.status === 200, 'a spec can still be written the old way');
-    ok(!later.body.task.structureReview,
-      'the flag is gone once its only reason is spent — no human acknowledgement needed');
-
-    // ── 4. Other reasons survive; only the spent one goes ───────────────
-    const multi = await request('POST', `/api/projects/${project}/tasks`, { title: 'Fix API' });
-    const multiReasons = multi.body.task.structureReview?.reasons || [];
-    ok(multiReasons.includes('missing_description') && multiReasons.includes('missing_spec_link'),
-      'a bare task collects several reasons');
-    const multiSpec = await request('POST', `/api/projects/${project}/specs/${multi.body.task.id}`, {
-      content: '# Goal\n\nStill has no description.\n',
-    });
-    const after = multiSpec.body.task.structureReview;
-    ok(after && after.status === 'pending', 'the review stays pending while other reasons remain');
-    ok(!after.reasons.includes('missing_spec_link'), 'the spent reason is dropped');
-    ok(after.reasons.includes('missing_description'), 'the unrelated reason survives untouched');
+    ok(specLater.status === 200, 'a spec can still be written the old way');
+    ok(specLater.body.task.structureReview?.reasons.includes('missing_description'),
+      'writing a spec does not retire an unrelated reason — missing_description is not what a spec fixes');
 
     // ── 5. An accepted review is history and stays put ──────────────────
+    // Same contract as before T-464, exercised with a different reason pair
+    // (title_pattern + missing_description instead of missing_spec_link):
+    // a spec written after acceptance never rewrites a 'reviewed' record,
+    // whatever reasons it was accepted for.
     const accepted = await request('POST', `/api/projects/${project}/tasks`, { title: 'Fix router' });
+    const acceptedReasons = accepted.body.task.structureReview?.reasons || [];
+    ok(acceptedReasons.includes('title_pattern') && acceptedReasons.includes('missing_description'),
+      'a bare stub-titled task collects both form reasons at once');
     await request('POST', `/api/projects/${project}/tasks/${accepted.body.task.id}/structure-review`, {});
     await request('POST', `/api/projects/${project}/specs/${accepted.body.task.id}`, {
       content: '# Goal\n\nAdded after a human already accepted the deviation.\n',
@@ -125,20 +143,9 @@ async function main() {
     const stillReviewed = await request('GET', `/api/projects/${project}/tasks/${accepted.body.task.id}`);
     ok(stillReviewed.body.task.structureReview?.status === 'reviewed',
       'a review a human accepted is never rewritten by a later spec');
-    ok(stillReviewed.body.task.structureReview.reasons.includes('missing_spec_link'),
+    ok(stillReviewed.body.task.structureReview.reasons.includes('title_pattern')
+      && stillReviewed.body.task.structureReview.reasons.includes('missing_description'),
       'and it keeps the reasons it was accepted for — that record is history');
-
-    // ── 5b. Every spec-writing path retires the flag, not just this route ─
-    // Regression for T-459: the clearing used to sit at one of four call
-    // sites of writeSpecFileForTask, so the Specify persistence left flagged
-    // tasks flagged after giving them a spec.
-    const viaRoute = await request('POST', `/api/projects/${project}/tasks`, { title: 'Yet another unspecced thing' });
-    ok(viaRoute.body.task.structureReview?.reasons.includes('missing_spec_link'),
-      'a fresh unspecced task is flagged');
-    await request('POST', `/api/projects/${project}/specs/${viaRoute.body.task.id}`, { content: '# Goal\n\nx\n' });
-    const reread = await request('GET', `/api/projects/${project}/tasks/${viaRoute.body.task.id}`);
-    ok(!(reread.body.task.structureReview?.reasons || []).includes('missing_spec_link'),
-      'and the flag is retired inside the spec write itself, wherever it is called from');
 
     // ── 6. The rules a project serves depend on its discipline ──────────
     const devRules = await request('GET', `/api/projects/${project}/rules/api-access`);
@@ -160,7 +167,7 @@ async function main() {
       'and its rules carry no discipline note either');
 
     for (const c of checks) console.log(`  ok - ${c.label}`);
-    console.log(`\n✅ Spec on create, spent flags, quiet reminders (T-458): all ${checks.length} checks passed`);
+    console.log(`\n✅ Spec on create, quiet reminders, no spec-based flagging (T-458/T-464): all ${checks.length} checks passed`);
   } finally {
     child.kill();
   }

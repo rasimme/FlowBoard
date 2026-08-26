@@ -8,8 +8,17 @@
  * Run: node test-handoff-package.js
  */
 
-const fs = require('fs');
+const os = require('os');
 const path = require('path');
+
+// T-460: hzl-service resolves its project/spec/audit dirs from
+// OPENCLAW_WORKSPACE at require-time; without it the fallback lands under the
+// repo root. Point it at a scratch dir before requiring hzl-service, and
+// derive TEST_PROJECT_DIR below from the same variable so this test's own
+// filesystem writes agree with where hzl-service reads from.
+process.env.OPENCLAW_WORKSPACE = path.join(os.tmpdir(), 'flowboard-test-workspace-handoff-package');
+
+const fs = require('fs');
 const hzlService = require('./hzl-service.js');
 
 let pass = 0;
@@ -26,7 +35,7 @@ function section(title) {
 }
 
 const TEST_PROJECT = 'test-handoff';
-const TEST_PROJECT_DIR = path.join(__dirname, '..', 'projects', TEST_PROJECT);
+const TEST_PROJECT_DIR = path.join(process.env.OPENCLAW_WORKSPACE, 'projects', TEST_PROJECT);
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-test-handoff.db');
 const TEST_ROOT = path.join(__dirname, 'test-workspace');
 

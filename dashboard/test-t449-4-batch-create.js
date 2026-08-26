@@ -54,7 +54,7 @@ async function main() {
       parent: { title: 'Release API', description: 'Parent description', priority: 'high' },
       subtasks: [
         { title: 'Implement endpoint', description: 'Child one', priority: 'low' },
-        { title: 'Add coverage', description: 'Child two' },
+        { title: 'Add coverage' },
       ],
     });
     assert.equal(created.status, 200, JSON.stringify(created.body));
@@ -66,8 +66,17 @@ async function main() {
     assert.equal(created.body.parent.priority, 'high');
     assert.equal(created.body.subtasks[0].priority, 'low');
     assert.equal(created.body.subtasks[1].priority, 'high');
-    assert.equal(created.body.parent.structureReview.status, 'pending');
-    assert.equal(created.body.subtasks[0].structureReview.status, 'pending');
+    // `flat_batch` is retired: a well-formed batch create (a parent and
+    // subtasks with descriptions, non-stub titles) is the correct mechanism
+    // for keeping related tasks together, so nothing about doing it in one
+    // call gets flagged on its own.
+    assert.equal(created.body.parent.structureReview, null);
+    assert.equal(created.body.subtasks[0].structureReview, null);
+    // A genuine form problem is still flagged inside a batch create — the
+    // flag tracks the item's own title/description, not the batch shape.
+    // subtasks[1] ("Add coverage") has no description.
+    assert.equal(created.body.subtasks[1].structureReview.status, 'pending');
+    assert.deepEqual(created.body.subtasks[1].structureReview.reasons, ['missing_description']);
 
     const before = await request('GET', `/api/projects/${project}/tasks?includeArchived=true`);
     const rejected = await request('POST', `/api/projects/${project}/tasks`, {

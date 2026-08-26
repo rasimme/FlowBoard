@@ -68,7 +68,10 @@ async function main() {
     assert.equal(devReview.status, 'pending');
     assert.equal(devReview.reviewer, null);
     assert.equal(devReview.reviewedAt, null);
-    assert.deepEqual(devReview.reasons, ['missing_description', 'title_pattern', 'missing_spec_link']);
+    // T-464: missing_spec_link is no longer a reason — 16 of 16 measured
+    // flags carried it and none of the form-based reasons ever fired, so it
+    // was cut. Only the two observable-form reasons remain for "Fix API".
+    assert.deepEqual(devReview.reasons, ['missing_description', 'title_pattern']);
     const pending = await request('GET', `/api/projects/${project}/tasks?structureReview=pending`);
     assert.deepEqual(pending.body.tasks.map(task => task.id), [development.body.task.id]);
 

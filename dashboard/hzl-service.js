@@ -1042,9 +1042,11 @@ function _purgeTaskForCreationRollback(project, task) {
  * Create a task through the one policy-aware creation boundary.
  *
  * The boundary owns creation provenance and is the only normal runtime entry
- * point for task creation. Policy decisions are intentionally compatibility
- * pass-through in T-447-2; later subtasks can consume this context to enforce
- * Specify/exception predicates without adding another creation path.
+ * point for task creation. Per ADR-0035, task form is not authorization:
+ * direct creation is allowed once the shape checks in
+ * task-creation-policy.js pass, and Specify remains an optional workflow
+ * rather than a creation gate. Every decision — allowed or blocked — is
+ * still appended to the policy ledger for provenance.
  *
  * `context` is server-supplied and must never be copied from an HTTP body:
  *   { origin, principal?, specifyConfirmation?, sourceTaskId?, noDepends? }
@@ -1063,9 +1065,6 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     || context.mode === 'enforce'
     || context.enforce === true
     ? 'enforce' : 'compat';
-  const specifyRequest = policy.decision === 'would_block'
-    ? taskCreationPolicy.buildSpecifyRequest({ project, opts, context })
-    : null;
 
   const appendDecision = (taskId = null) => policyLedger.appendPolicyRecord(project, {
     decision: policy.decision,
@@ -1095,9 +1094,6 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
   const origin = typeof context.origin === 'string' ? context.origin.trim() : '';
   const audit = buildCreationAudit(origin, {
     ...context,
-    policyDecision: policy.decision,
-    policyCode: policy.code,
-    policyReason: policy.reason,
     exception: policy.exception,
     incidentRef: policy.incidentRef || context.incidentRef || context.incidentReference || null,
   });
@@ -1124,11 +1120,9 @@ function createTaskWithPolicy(project, opts = {}, context = {}) {
     if (context.specifyConfirmation) {
       setSpecifyConfirmation(project, task.id, context.specifyConfirmation);
     }
-    // In compatibility mode a would-block creation is allowed but remains
-    // explicitly visible in the ledger; enforce mode returned before this
-    // branch. Append only after the task id is known, and purge the task if
-    // this durable write fails; otherwise an allowed/would_block task could
-    // escape without audit.
+    // Only a blocked decision returns before this point. Append the ledger
+    // record after the task id is known, and purge the task if this durable
+    // write fails; otherwise an allowed task could escape without audit.
     appendDecision(task.id);
     return getTask(project, task.id) || task;
   } catch (error) {
@@ -1177,9 +1171,6 @@ function buildCreationAudit(origin, context) {
   };
   if (context.sourceTaskId) audit.sourceTaskId = String(context.sourceTaskId);
   if (context.noDepends === true) audit.noDepends = true;
-  if (context.policyDecision) audit.policyDecision = context.policyDecision;
-  if (context.policyCode) audit.policyCode = context.policyCode;
-  if (context.policyReason) audit.policyReason = context.policyReason;
   if (context.exception) audit.exception = context.exception;
   if (context.incidentRef) audit.incidentRef = String(context.incidentRef).trim();
   if (context.specifyConfirmation) {
@@ -4207,8 +4198,8 @@ function reviewStructure(project, flowboardId, opts = {}) {
  * Deliberately not reviewStructure(). That one records a human saying "I
  * looked, this is fine as it stands" — an accepted deviation, immutable
  * afterwards. This one records that there is nothing left to accept: a task
- * flagged `missing_spec_link` that has since been given a spec is not missing
- * a spec any more.
+ * flagged `missing_description` that has since been given one is not missing
+ * a description any more.
  *
  * Conflating the two is what made the marker cost more than it was worth. An
  * agent that fixed the problem still left a pending flag behind, so the queue

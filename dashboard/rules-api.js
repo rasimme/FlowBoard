@@ -76,10 +76,13 @@ const DISCIPLINE_NOTES = {
       '- **Related tasks go in one call**, a parent with its subtasks, rather'
         + ' than several separate top-level creates.',
       '',
-      'Nothing is rejected. A task that misses this is created and marked with'
-      + ' `structureReview`, and the create response names the call that clears'
-      + ' it. Writing the spec afterwards retires that mark on its own — no'
-      + ' acknowledgement needed.',
+      'Nothing is rejected, and neither bullet is marked with'
+      + ' `structureReview`. Skipping the spec is not marked (T-464) — write'
+      + ' it because it is where detail belongs, not because a check will'
+      + ' flag its absence. Splitting related tasks into separate top-level'
+      + ' creates instead of one batch call is not marked either — batch'
+      + ' them because it keeps related work together, not because a check'
+      + ' will catch it.',
       '',
     ].join('\n'),
     standard: [

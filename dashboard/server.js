@@ -1641,7 +1641,6 @@ const ERROR_CODE_STATUS = {
   EXCEPTION_REVIEW_REQUIRES_VERIFIED_HUMAN: 403,
   EXCEPTION_REVIEW_IMMUTABLE: 409,
   EXCEPTION_REVIEW_NOT_REQUIRED: 400,
-  SPECIFY_REQUIRED: 409,
   REASON_REQUIRED: 400,
   IS_SUBTASK: 400,
   HAS_SUBTASKS: 409,
@@ -1681,17 +1680,16 @@ function projectExists(projectName) {
 // It now fires only when the server actually flagged something, and it names
 // what and the one call that fixes it. In a `list` project nothing is flagged
 // and nothing is said, which is correct: "water the plant" needs no spec.
+//
+// T-464 removed the `missing_spec_link` entry with its reason: whether a task
+// needs a spec is a judgment the server cannot make from the request. The
+// advice itself survives where it belongs \u2014 the `development` note in
+// rules-api.js, which an agent reads before it creates anything.
 const STRUCTURE_REMINDERS = {
-  missing_spec_link: (task, project) => `\u{1F4A1} Flagged \`missing_spec_link\`: detail belongs in a spec, `
-    + `\`description\` stays a short summary. Fix it in one call \u2014 `
-    + `POST /api/projects/${project}/specs/${task.id} with { "content": "..." } \u2014 `
-    + 'or pass `spec` straight to the create call next time.',
   missing_description: () => '\u{1F4A1} Flagged `missing_description`: add a one-line `description` '
     + 'saying what this is and why. It is what the board shows and what search reads.',
   title_pattern: () => '\u{1F4A1} Flagged `title_pattern`: the title reads like a verb stub. '
     + 'Say what changes, not that something changes.',
-  flat_batch: () => '\u{1F4A1} Flagged `flat_batch`: several top-level tasks at once. '
-    + 'A parent with subtasks in a single create call keeps them together.',
 };
 
 function getTaskReminder(task, action, newStatus, prevStatus, structureReasons = [], project = null) {
@@ -2309,6 +2307,18 @@ function normalizePriority(value) {
   return null;
 }
 
+// Every caller of taskDiscipline.reasonsFor() needs the same project ->
+// discipline resolution (stored config -> taskDiscipline.normalize). One
+// helper instead of each call site parsing project.config inline, so the
+// rule cannot drift between the create path, the batch-create path, and the
+// structure-review retirement on the update path below.
+function getProjectDiscipline(projectName) {
+  const meta = fbMeta.getProject(projectName);
+  let config = {};
+  try { config = JSON.parse(meta?.config || '{}'); } catch {}
+  return taskDiscipline.normalize(config.taskDiscipline);
+}
+
 // POST /api/projects/:name/tasks
 app.post('/api/projects/:name/tasks', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
@@ -2333,19 +2343,17 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     }
     const created = [];
     try {
-      const disciplineMeta = fbMeta.getProject(req.params.name);
-      let cfg = {}; try { cfg = JSON.parse(disciplineMeta?.config || '{}'); } catch {}
-      const discipline = taskDiscipline.normalize(cfg.taskDiscipline);
-      const createBatchItem = (item, parentId = null, batchSize = 1) => {
-        const reasons = taskDiscipline.reasonsFor({ discipline, title: item.title.trim(), description: item.description, specFile: item.specFile, batchSize, siblingBatch: batchSize > 1 });
+      const discipline = getProjectDiscipline(req.params.name);
+      const createBatchItem = (item, parentId = null) => {
+        const reasons = taskDiscipline.reasonsFor({ discipline, title: item.title.trim(), description: item.description });
         const priority = item.priority !== undefined
           ? normalizePriority(item.priority)
           : (parentId ? normalizePriority(batchParent.priority) : 'medium');
         const task = hzlService.createTaskWithPolicy(req.params.name, { title: item.title.trim(), priority: priority || 'medium', parentId, status: item.status || 'backlog', description: item.description || '', ...(item.tags !== undefined ? { tags: item.tags } : {}), ...(reasons.length ? { structureReview: taskDiscipline.review(reasons) } : {}) }, { origin: 'tasks-api', principal: governance.resolvePrincipal(req), governanceMode: 'compat', taskDiscipline: discipline });
         created.push(task.id); return task;
       };
-      const parent = createBatchItem(batchParent, null, batchChildren.length + 1);
-      const subtasks = batchChildren.map(item => createBatchItem(item, parent.id, batchChildren.length + 1));
+      const parent = createBatchItem(batchParent, null);
+      const subtasks = batchChildren.map(item => createBatchItem(item, parent.id));
       return res.json({ ok: true, batch: true, parent: taskWithSpecStatus(req.params.name, parent), subtasks: subtasks.map(t => taskWithSpecStatus(req.params.name, t)) });
     } catch (err) {
       for (const id of created.reverse()) {
@@ -2415,10 +2423,7 @@ app.post('/api/projects/:name/tasks', (req, res) => {
   }
 
   const principal = governance.resolvePrincipal(req);
-  const projectMeta = fbMeta.getProject(req.params.name);
-  let projectConfig = {};
-  try { projectConfig = JSON.parse(projectMeta?.config || '{}'); } catch {}
-  const discipline = taskDiscipline.normalize(projectConfig.taskDiscipline);
+  const discipline = getProjectDiscipline(req.params.name);
   // T-458: a spec can be written in this one call. Until now it took two —
   // create, wait for the id, then POST /specs/:taskId — while dropping the
   // same text into `description` cost nothing. Agents took the cheap path
@@ -2432,10 +2437,6 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     discipline,
     title: cleanTitle,
     description: req.body.description,
-    // An inline spec counts as a spec link: it is written below, before this
-    // response is sent, and a failure there removes the task entirely.
-    specFile: req.body.specFile || (inlineSpec ? 'inline' : undefined),
-    batchSize: 1,
   });
   try {
     const task = hzlService.createTaskWithPolicy(req.params.name, {
@@ -2486,13 +2487,6 @@ app.post('/api/projects/:name/tasks', (req, res) => {
     } catch (e) { console.warn('[reminder]', e); }
     return res.json(response);
   } catch (err) {
-    if (err?.code === 'SPECIFY_REQUIRED' && err?.status === 409) {
-      return res.status(409).json({
-        error: err.message,
-        code: 'SPECIFY_REQUIRED',
-        specifyRequest: err.specifyRequest,
-      });
-    }
     if (err?.status) return res.status(err.status).json({ error: err.message, code: err.code });
     console.error('[api]', err); return res.status(500).json({ error: 'Internal server error' });
   }
@@ -2702,7 +2696,50 @@ app.put('/api/projects/:name/tasks/:id', (req, res) => {
       } catch (e) { console.warn('[recalcParent]', e); }
     }
 
-    const response = { ok: true, task: taskWithSpecStatus(req.params.name, updatedTask) };
+    // Retire structure-review reasons this update just fixed — e.g. a task
+    // flagged `missing_description` that now has one, or a stub title that
+    // was renamed. Retiring only, never marking: this must never add a
+    // reason or create a structureReview that was not already there —
+    // marking happens only at creation (POST /tasks and the batch endpoint
+    // above). hzlService.resolveStructureReason() owns every read and write
+    // of the marker itself, including its guard that a 'reviewed' record (a
+    // human's accepted deviation) is immutable — this block never touches
+    // structureReview directly, it only decides which already-pending
+    // reasons the task's new form no longer produces.
+    let finalTask = updatedTask;
+    try {
+      const pendingReview = updatedTask.structureReview;
+      if (pendingReview && pendingReview.status === 'pending') {
+        const discipline = getProjectDiscipline(req.params.name);
+        // A `list` project never marks in the first place; a pending review
+        // left over from before the project switched to `list` is not
+        // re-evaluated either — reasonsFor() always returns [] for `list`,
+        // which would otherwise look like every reason's cause was fixed
+        // and clear a review that nothing about the task actually changed.
+        if (discipline !== 'list') {
+          const stillReasons = new Set(taskDiscipline.reasonsFor({
+            discipline,
+            title: updatedTask.title,
+            description: updatedTask.description,
+          }));
+          for (const reason of pendingReview.reasons) {
+            if (stillReasons.has(reason)) continue;
+            // updatedTask.id, not req.params.id: this route accepts a ULID as
+            // well as a FlowBoard ID, and resolveStructureReason resolves only
+            // the latter — addressed by ULID it would find nothing and skip the
+            // retiring silently.
+            const retired = hzlService.resolveStructureReason(req.params.name, updatedTask.id, reason);
+            if (retired) finalTask = retired;
+          }
+        }
+      }
+    } catch (e) {
+      // The update is the user's request; the marker is bookkeeping. A
+      // failure here must never fail the update it rides along with.
+      console.warn('[structure-review-retire]', e);
+    }
+
+    const response = { ok: true, task: taskWithSpecStatus(req.params.name, finalTask) };
     if (parentUpdated) response.parentUpdated = parentUpdated;
     try {
       const r = getTaskReminder(updatedTask, 'status-change', updates.status, prevStatus);
@@ -3210,13 +3247,6 @@ function writeSpecFileForTask(projectName, task, content) {
 
   const specFileRelPath = `specs/${specFilename}`;
   hzlService.setSpecLink(projectName, task.id, specFileRelPath);
-  // T-459: a task that has just been given a spec is not missing one, no
-  // matter which path wrote it. This sits here rather than at a call site
-  // because there are four of them — the Specify persistence writes specs
-  // twice, the inline create once, the specs route once — and T-458 only
-  // cleared the flag at the last of those. Putting the rule at the caller is
-  // exactly how the same rule ends up in several places, half-applied.
-  hzlService.resolveStructureReason(projectName, task.id, 'missing_spec_link');
   return specFileRelPath;
 }
 
@@ -4595,8 +4625,6 @@ app.post('/api/workflows/delegate', (req, res) => {
     res.status(status).json({
       error: err.message,
       ...(err.code ? { code: err.code } : {}),
-      ...(err.code === 'SPECIFY_REQUIRED' && err.specifyRequest
-        ? { specifyRequest: err.specifyRequest } : {}),
     });
   }
 });

@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const DECISIONS = Object.freeze(['allowed', 'would_block', 'blocked']);
+const DECISIONS = Object.freeze(['allowed', 'blocked']);
 
 function defaultAuditDir() {
   if (process.env.FLOWBOARD_POLICY_LEDGER_DIR) {

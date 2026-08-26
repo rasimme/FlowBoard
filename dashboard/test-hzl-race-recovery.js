@@ -5,9 +5,16 @@
  * Comprehensive tests for concurrent operations and recovery scenarios
  */
 
+const os = require('os');
+const path = require('path');
+
+// T-460: hzl-service resolves its project/spec/audit dirs from
+// OPENCLAW_WORKSPACE at require-time; without it the fallback lands under the
+// repo root. Point it at a scratch dir before requiring hzl-service.
+process.env.OPENCLAW_WORKSPACE = path.join(os.tmpdir(), 'flowboard-test-workspace-hzl-race-recovery');
+
 const hzl = require('./hzl-service.js');
 const fs = require('fs');
-const path = require('path');
 
 const DB_PATH = '/tmp/hzl-race-recovery-test.db';
 const CACHE_PATH = DB_PATH.replace(/\.db$/, '-cache.db');

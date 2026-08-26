@@ -41,5 +41,9 @@ dashboard/test-workspace-endpoint/
 dashboard/test-workspace-*/
 # Test-run artifacts — created when e2e suites run with a repo-local projects dir
 dashboard/projects/
+# T-460: same test-run leak, one level up — hzl-service.js/policy-ledger.js
+# fall back to the repo root when OPENCLAW_WORKSPACE isn't set. Tests are
+# fixed to set it, but this is the safety net for a shared multi-agent worktree.
+/projects/
 hzl-spike/
 specs/
