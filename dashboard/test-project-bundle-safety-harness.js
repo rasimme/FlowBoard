@@ -3,6 +3,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  HAPPY_PATH,
+  IMPORT_JOURNAL_STATES,
+  assertImportJournalTransition,
+  importedProjectIsVisible,
+  importLockKey,
+  recoveryDisposition,
+} = require('./project-bundle-safety.js');
 const { isolatedEnvironment, withIsolatedDashboard } = require('./test-support/server-harness.js');
 
 async function main() {
@@ -22,6 +30,21 @@ async function main() {
   assert.equal(environment.TEST_PARENT_SECRET, undefined);
   assert.equal(environment.TELEGRAM_BOT_TOKEN, '');
   assert.equal(environment.OPENCLAW_WORKSPACE, '/tmp/test-workspace');
+
+  for (let index = 0; index < HAPPY_PATH.length - 1; index += 1) {
+    assert.doesNotThrow(() => assertImportJournalTransition(HAPPY_PATH[index], HAPPY_PATH[index + 1]));
+  }
+  assert.throws(
+    () => assertImportJournalTransition(IMPORT_JOURNAL_STATES.STAGING, IMPORT_JOURNAL_STATES.COMMITTED),
+    (error) => error.code === 'IMPORT_JOURNAL_TRANSITION_INVALID',
+  );
+  assert.equal(recoveryDisposition(IMPORT_JOURNAL_STATES.IMPORTING_TASKS), 'mark-failed');
+  assert.equal(recoveryDisposition(IMPORT_JOURNAL_STATES.FAILED), 'resume-or-cleanup');
+  assert.equal(recoveryDisposition(IMPORT_JOURNAL_STATES.COMMITTED), 'none');
+  assert.equal(importedProjectIsVisible(IMPORT_JOURNAL_STATES.VERIFYING), false);
+  assert.equal(importedProjectIsVisible(IMPORT_JOURNAL_STATES.COMMITTED), true);
+  assert.equal(importLockKey('review-copy'), 'project-import:review-copy');
+  assert.throws(() => importLockKey('../unsafe'), (error) => error.code === 'IMPORT_TARGET_INVALID');
 
   await withIsolatedDashboard(async (ctx) => {
     tempRoot = ctx.tempRoot;
