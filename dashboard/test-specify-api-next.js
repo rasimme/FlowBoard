@@ -15,7 +15,10 @@ function ok(cond, msg) {
 
 function section(title) { console.log(`\n## ${title}\n`); }
 
-const PORT = 18793;
+// Not 18793: that is the OpenClaw canvas host's configured port. FlowBoard is
+// built to run next to OpenClaw, so a test port inside the range OpenClaw
+// claims is a collision waiting for the day that feature gets switched on.
+const PORT = 18861;
 // Hermetic per-run workspace — shared test-workspace state leaks across
 // tests via the m004 projects-dir import (T-291 finding).
 const WORKDIR = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-specify-next-'));

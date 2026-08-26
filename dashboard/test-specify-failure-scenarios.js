@@ -15,7 +15,12 @@ function ok(cond, msg) {
 
 function section(title) { console.log(`\n## ${title}\n`); }
 
-const PORT = 18799;
+// Not 18799: that is the OpenClaw extension relay, and FlowBoard is built to
+// run next to OpenClaw. The failure does not look like a port conflict — the
+// spawned server still logs "running on http://127.0.0.1:18799" while requests
+// to that address are answered by the relay (401, realm openclaw-extension-relay),
+// so the readiness probe times out and quotes our own boot output as the reason.
+const PORT = 18860;
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-failure.db');
 const TEST_PROJECT = 'failure-test-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
