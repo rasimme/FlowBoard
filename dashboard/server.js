@@ -4936,8 +4936,12 @@ async function startServer() {
     if (aborted > 0) console.log(`[specify] Cleaned up ${aborted} expired sessions`);
   }, 30 * 60 * 1000);
 
-  app.listen(PORT, HOST, () => {
+  const server = app.listen(PORT, HOST, () => {
     console.log(`Dashboard API running on http://${HOST}:${PORT}`);
+  });
+  server.on('error', (error) => {
+    console.error(`[startup] Failed to listen on http://${HOST}:${PORT}:`, error.message);
+    process.exitCode = 1;
   });
 startServer().catch(err => {
   console.error('Startup failed:', err);

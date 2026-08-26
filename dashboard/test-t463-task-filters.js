@@ -105,7 +105,11 @@ async function main() {
     for (const label of checks) console.log(`  ok - ${label}`);
     console.log(`\n✅ Task list filters (T-463): all ${checks.length} checks passed`);
   } finally {
-    child.kill();
+    if (child.exitCode === null) {
+      child.kill();
+      await new Promise(resolve => child.once('exit', resolve));
+    }
+    fs.rmSync(path.join(projectsDir, project), { recursive: true, force: true });
   }
 }
 

@@ -97,7 +97,11 @@ async function main() {
     assert.equal((await request('GET', `/api/projects/${project}/tasks?structureReview=pending`)).body.tasks.length, 1);
     console.log('T-449-3 structure review contract tests passed');
   } finally {
-    child.kill();
+    if (child.exitCode === null) {
+      child.kill();
+      await new Promise(resolve => child.once('exit', resolve));
+    }
+    fs.rmSync(path.join(projectsDir, project), { recursive: true, force: true });
   }
 }
 
