@@ -148,6 +148,8 @@ async function main() {
       'Bearer review-only-fake-bearer-value-123456',
       'eyJreviewonlyheader1234.eyJreviewonlypayload1234.review-only-signature-1234',
       'sk-reviewonlyprefixvalue123456',
+      'sk-proj-reviewonlyvalue_1234567890-abcdef',
+      'sk-ant_reviewonlyvalue-1234567890_abcdef',
       'ghp_reviewonlygithubvalue1234567890',
       'github_pat_reviewonlygithubvalue1234567890',
       '123456789:review-only-telegram-bot-token-123456',
@@ -158,6 +160,8 @@ async function main() {
       assert.equal(containsSensitiveContent(example), true, `scanner should detect ${example.slice(0, 12)}`);
       assert.equal(JSON.stringify(scanSensitiveContent(example)).includes(example), false);
     }
+    assert.equal(containsSensitiveContent('The sk-proj-token format is documented here.'), false);
+    assert.equal(containsSensitiveContent('The sk-ant-format uses provider markers.'), false);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

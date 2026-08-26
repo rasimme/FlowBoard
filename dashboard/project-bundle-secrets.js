@@ -23,7 +23,10 @@ const RULES = Object.freeze([
   },
   {
     code: 'OPENAI_STYLE_TOKEN',
-    pattern: /\bsk-[A-Za-z0-9]{16,}\b/,
+    // Modern OpenAI/Anthropic keys carry a provider marker and may use either
+    // hyphens or underscores in the value. Keep the minimum long enough that
+    // documentation prose such as "sk-proj-token format" remains harmless.
+    pattern: /\bsk-(?:(?:proj|ant)[-_][A-Za-z0-9][A-Za-z0-9_-]{20,}|[A-Za-z0-9]{16,})\b/,
   },
   {
     code: 'GITHUB_TOKEN',
