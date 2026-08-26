@@ -10,7 +10,7 @@
     "test:t445": "node test-t445-rate-limit.mjs",
     "test:t446": "node test-active-agents.mjs && node test-active-agents-bar-e2e.js",
     "test:t445:files-race": "node test-files-race-regressions-e2e.js",
-    "test:t468": "node test-project-bundle-safety-harness.js",
+    "test:t468": "node test-project-bundle-safety-harness.js && node test-project-bundle-schema.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
