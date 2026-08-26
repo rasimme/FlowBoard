@@ -373,10 +373,9 @@ function toPortableTask(task = {}) {
   if (task.enteredStatusAt !== undefined) output.enteredStatusAt = cloneJson(task.enteredStatusAt);
   output.order = task.order === undefined ? null : cloneJson(task.order);
   output.workStateDetails = normalizeWorkStateDetails(task.workStateDetails);
-  // A responsible value is an agent-ownership hint in the live task model.
-  // Preserve the normalized shape for import compatibility, but never carry
-  // the source runtime owner into a review artifact.
-  output.workStateDetails.responsible = null;
+  // `responsible` is portable semantic context (for example a role or
+  // decision owner), not the live HZL claim owner.  Runtime ownership lives in
+  // agent/claim fields, which are never part of this DTO.
   return output;
 }
 

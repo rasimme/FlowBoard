@@ -29,7 +29,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 | `due_at` | ISO timestamp? | Optional deadline |
 | `metadata` | object? | Max 64KB, arbitrary JSON |
 | `workState` | enum | Canonical execution context: `working`, `waiting`, `blocked`, `paused` |
-| `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null`; `checkAgainAt` must be an ISO-8601 date-time with timezone on writes (offsets no larger than ±14:00, with minute `00` at the boundary); `setAt` is server-owned and client values are ignored |
+| `workStateDetails` | object | Normalized keys: `reason`, `waitingFor`, `responsible`, `checkAgainAt`, `setAt`; absent values read as `null`; `responsible` is semantic context and is portable in review bundles, while live claim ownership remains in `agent`/lease fields; `checkAgainAt` must be an ISO-8601 date-time with timezone on writes (offsets no larger than ±14:00, with minute `00` at the boundary); `setAt` is server-owned and client values are ignored |
 | `stuckIndicator` | object? | One transient update-in-place monitor signal; `null` when clear |
 | `progress` | object? | Parent-only subtask summary exactly `{ done, inProgress, total }`; all values are non-negative integers. It is never a numeric task field. Checkpoint events may separately carry numeric progress 0–100. |
 | `lease_until` | ISO timestamp? | Claim expiry |

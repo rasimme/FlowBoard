@@ -18,6 +18,8 @@ const {
   canonicalJson,
   normalizeRelativePath,
   sha256,
+  toPortableCanvas,
+  toPortableOverview,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
 const { previewBundle, TARGET_NAME_RE } = require('./project-bundle-import-preview.js');
@@ -153,6 +155,34 @@ function taskGraphOrder(tasks) {
   return ordered;
 }
 
+// Journal provenance is deliberately a bounded, value-free summary.  Do not
+// add source project names, descriptions, task text, paths or bundle payloads
+// here: the journal is durable operational metadata, not a second artifact.
+function safeImportProvenance(bundle) {
+  const manifest = bundle?.manifest || {};
+  const producer = manifest.producer || {};
+  const labels = Array.isArray(manifest.redactions)
+    ? manifest.redactions
+      .filter(label => typeof label === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(label))
+      .slice(0, 64)
+    : [];
+  return {
+    format: {
+      identity: String(manifest.identity || '').slice(0, 128),
+      version: Number.isInteger(manifest.formatVersion) ? manifest.formatVersion : null,
+    },
+    bundleId: String(manifest.bundleId || '').slice(0, 128),
+    producer: {
+      name: String(producer.name || '').slice(0, 128),
+      version: String(producer.version || '').slice(0, 64),
+    },
+    redactions: {
+      count: Array.isArray(manifest.redactions) ? manifest.redactions.length : 0,
+      labels,
+    },
+  };
+}
+
 class ProjectBundleImporter {
   static locks = new Map();
 
@@ -190,6 +220,21 @@ class ProjectBundleImporter {
       throw errorWithCode(`Injected project import failure at ${phase}`, `IMPORT_INJECTED_${String(phase).toUpperCase()}`);
     }
     if (typeof this.hooks.onPhase === 'function') this.hooks.onPhase(phase);
+  }
+
+  _maybeCorrupt(phase, admission) {
+    if (this.hooks.corruptAt !== phase) return;
+    if (phase === 'canvas-content') {
+      const current = this.hzlService.canvasGet(admission.target);
+      if (current.notes.length > 0) current.notes[0].text = `${current.notes[0].text} (corrupt)"`;
+      this.hzlService.canvasImportFromJson(admission.target, current);
+      return;
+    }
+    if (phase === 'overview-content') {
+      const current = this.overview.readOverview(this.projectsDir, admission.target);
+      if (current.widgets.length > 0) current.widgets[0].title = `${current.widgets[0].title || ''} (corrupt)`;
+      this.overview.writeOverview(this.projectsDir, admission.target, current);
+    }
   }
 
   _journal(importId) {
@@ -317,12 +362,27 @@ class ProjectBundleImporter {
     }
     const digest = sha256(canonicalJson(normalized));
     const latest = this.fbMeta.getLatestProjectImport(target);
-    const resumable = latest && latest.bundleDigest === digest && latest.state === IMPORT_JOURNAL_STATES.FAILED;
+    const sameDigestFailed = latest
+      && latest.bundleDigest === digest
+      && latest.state === IMPORT_JOURNAL_STATES.FAILED;
     const targetRegistered = hzlProjects.some(project => project.name === target)
       || Boolean(this.fbMeta.getProject(target));
     const targetDeleted = typeof this.fbMeta.isProjectDeleted === 'function' && this.fbMeta.isProjectDeleted(target);
     const targetDir = safeProjectPath(this.projectsDir, target);
     const directoryExists = this.fs.existsSync(targetDir);
+    const projectStarted = latest?.progress?.projectStarted === true;
+    // A failure before lifecycle mutation can safely retry when no target
+    // layer exists yet. Existing HZL/metadata/dir layers are resumable only
+    // when the journal proves this importer started the lifecycle phase.
+    const resumable = Boolean(sameDigestFailed && (
+      projectStarted || (!targetRegistered && !directoryExists)
+    ));
+    // Tombstones are permanent create-only boundaries.  A matching failed
+    // import must never resurrect one through the resume path.
+    if (targetDeleted) throw errorWithCode('Import target is tombstoned', 'IMPORT_TARGET_CONFLICT', 409);
+    if (latest && latest.bundleDigest === digest && latest.state !== IMPORT_JOURNAL_STATES.COMMITTED && !resumable) {
+      throw errorWithCode('Import journal is not resumable for this target', 'IMPORT_NOT_RESUMABLE', 409);
+    }
     const preview = previewBundle(normalized, {
       targetName: target,
       existingProjects: resumable ? existingProjects.filter(project => project.name !== target) : existingProjects,
@@ -342,7 +402,6 @@ class ProjectBundleImporter {
       throw errorWithCode('A different bundle digest already targets this project name', 'IMPORT_DIGEST_CONFLICT', 409);
     }
     if (targetRegistered && !resumable) throw errorWithCode('Import target is already registered', 'IMPORT_TARGET_CONFLICT', 409);
-    if (targetDeleted && !resumable) throw errorWithCode('Import target is tombstoned', 'IMPORT_TARGET_CONFLICT', 409);
     if (directoryExists && !resumable) throw errorWithCode('Import target directory already exists', 'IMPORT_TARGET_CONFLICT', 409);
 
     const overviewResult = this.overview.validateOverview(normalized.overview);
@@ -370,6 +429,11 @@ class ProjectBundleImporter {
     if (this.fs.existsSync(stagingDir)) this.fs.rmSync(stagingDir, { recursive: true, force: true });
     this.fs.mkdirSync(stagingDir, { recursive: true, mode: 0o700 });
     try { this.fs.chmodSync(stagingDir, 0o700); } catch {}
+    // Test-only dependency hook placed after the owner-private directory is
+    // created so failure cleanup exercises the pre-return staging path.
+    if (this.hooks.failAt === 'staging-write') {
+      throw errorWithCode('Injected project import failure during staging', 'IMPORT_INJECTED_STAGING_WRITE');
+    }
     const entries = [
       ...(bundle.files || []).map(file => ({ ...file, section: 'files' })),
       ...(bundle.specs || []).map(spec => ({ ...spec, section: 'specs' })),
@@ -499,6 +563,18 @@ class ProjectBundleImporter {
     } else {
       throw errorWithCode('Import target changed while import was running', 'IMPORT_TARGET_CONFLICT', 409);
     }
+    // Project GitHub metadata is part of the portable project DTO, not a
+    // runtime credential.  Route it through the metadata writer's allowlist;
+    // the bundle validator already bounds repo/branch syntax and length.
+    if (bundle.project.github !== undefined) {
+      const github = bundle.project.github === null
+        ? null
+        : {
+          repo: bundle.project.github.repo,
+          ...(bundle.project.github.branch ? { branch: bundle.project.github.branch } : {}),
+        };
+      this.fbMeta.updateProjectMeta(target, { github });
+    }
     if (!this.fs.existsSync(targetDir)) throw errorWithCode('Imported project scaffold is missing', 'PROJECT_SCAFFOLD_FAILED');
     try {
       if (!this.hzlService.canvasIsMigrated(target)) this.hzlService.canvasMarkMigrated(target);
@@ -580,11 +656,8 @@ class ProjectBundleImporter {
   }
 
   _restoreSpecsIndex(target, bundle) {
-    for (const spec of bundle.specs || []) {
-      this.hzlService.setSpecLink(target, spec.taskId, spec.path);
-    }
-    // Re-emit every canonical link in stable order.  setSpecLink is an
-    // idempotent server-owned writer and materializes specs/_index.json.
+    // setSpecLink is an idempotent server-owned writer and materializes the
+    // canonical specs index. Emit links once in stable order.
     for (const spec of [...(bundle.specs || [])].sort((a, b) => a.path.localeCompare(b.path))) {
       this.hzlService.setSpecLink(target, spec.taskId, spec.path);
     }
@@ -593,9 +666,8 @@ class ProjectBundleImporter {
   _restoreCanvas(target, bundle) {
     const imported = this.hzlService.canvasImportFromJson(target, bundle.canvas);
     const current = this.hzlService.canvasGet(target);
-    if (current.notes.length !== bundle.canvas.notes.length
-      || current.connections.length !== bundle.canvas.connections.length) {
-      throw errorWithCode('Canvas count verification failed after import', 'CANVAS_COUNT_MISMATCH', 500);
+    if (canonicalJson(toPortableCanvas(current)) !== canonicalJson(toPortableCanvas(bundle.canvas))) {
+      throw errorWithCode('Canvas content verification failed after import', 'CANVAS_CONTENT_MISMATCH', 500);
     }
     this.hzlService.canvasMarkMigrated(target);
     return imported;
@@ -669,11 +741,11 @@ class ProjectBundleImporter {
       if (sha256(content, { canonical: false }) !== file.sha256) throw errorWithCode(`Imported file checksum failed: ${file.path}`, 'FILE_CHECKSUM_FAILED', 500);
     }
     const actualCanvas = this.hzlService.canvasGet(target);
-    if (actualCanvas.notes.length !== bundle.canvas.notes.length || actualCanvas.connections.length !== bundle.canvas.connections.length) {
+    if (canonicalJson(toPortableCanvas(actualCanvas)) !== canonicalJson(toPortableCanvas(bundle.canvas))) {
       throw errorWithCode('Imported canvas verification failed', 'CANVAS_VERIFY_FAILED', 500);
     }
     const actualOverview = this.overview.readOverview(this.projectsDir, target);
-    if (actualOverview.version !== expectedOverview.version || actualOverview.widgets.length !== expectedOverview.widgets.length) {
+    if (canonicalJson(toPortableOverview(actualOverview)) !== canonicalJson(toPortableOverview(expectedOverview))) {
       throw errorWithCode('Imported overview verification failed', 'OVERVIEW_VERIFY_FAILED', 500);
     }
     return {
@@ -688,6 +760,7 @@ class ProjectBundleImporter {
 
   async importBundle(bundle, { targetName } = {}) {
     const admission = this._canonicalAdmission(bundle, targetName);
+    const provenance = safeImportProvenance(admission.bundle);
     const lock = importLockKey(admission.target);
     if (ProjectBundleImporter.locks.has(lock)) {
       throw errorWithCode('Another import is already running for this target', 'IMPORT_IN_PROGRESS', 409);
@@ -704,7 +777,7 @@ class ProjectBundleImporter {
           targetName: admission.target,
           bundleDigest: admission.digest,
           state: IMPORT_JOURNAL_STATES.VALIDATING,
-          progress: { phase: 'validating', recoverable: false },
+          progress: { phase: 'validating', recoverable: false, provenance },
         });
       } else {
         journal = this._journal(importId);
@@ -714,7 +787,9 @@ class ProjectBundleImporter {
         if (journal.state !== IMPORT_JOURNAL_STATES.FAILED) {
           throw errorWithCode('Import journal is not resumable', 'IMPORT_NOT_RESUMABLE', 409);
         }
-        journal = this._transition(importId, IMPORT_JOURNAL_STATES.STAGING, { phase: 'staging', resumed: true }, undefined, { clearError: true });
+        journal = this._transition(importId, IMPORT_JOURNAL_STATES.STAGING, {
+          phase: 'staging', resumed: true, provenance,
+        }, undefined, { clearError: true });
       }
       if (journal.state === IMPORT_JOURNAL_STATES.VALIDATING) {
         journal = this._transition(importId, IMPORT_JOURNAL_STATES.STAGING, { phase: 'staging' }, undefined, { clearError: true });
@@ -724,9 +799,11 @@ class ProjectBundleImporter {
       stagingDir = staged.stagingDir;
       journal = this._transition(importId, IMPORT_JOURNAL_STATES.CREATING_PROJECT, {
         phase: 'creating-project', stagedFiles: staged.stagedFiles, stagedSpecs: staged.stagedSpecs,
+        projectStarted: true,
       });
       this._maybeFail('project');
       this._ensureProject(admission);
+      journal = this._transition(importId, IMPORT_JOURNAL_STATES.CREATING_PROJECT, { projectCreated: true });
       journal = this._transition(importId, IMPORT_JOURNAL_STATES.IMPORTING_TASKS, { phase: 'importing-tasks' });
       this._maybeFail('task');
       let taskResult;
@@ -747,10 +824,12 @@ class ProjectBundleImporter {
       });
       this._maybeFail('canvas');
       const canvas = this._restoreCanvas(admission.target, admission.bundle);
+      this._maybeCorrupt('canvas-content', admission);
       journal = this._transition(importId, IMPORT_JOURNAL_STATES.VERIFYING, {
         phase: 'verifying', canvasNotes: canvas.notes, canvasConnections: canvas.connections,
       });
       this._maybeFail('finalize');
+      this._maybeCorrupt('overview-content', admission);
       const counts = this._verify(admission);
       if (stagingDir && this.fs.existsSync(stagingDir)) this.fs.rmSync(stagingDir, { recursive: true, force: true });
       journal = this._transition(importId, IMPORT_JOURNAL_STATES.COMMITTED, {
@@ -775,8 +854,12 @@ class ProjectBundleImporter {
         ? error
         : errorWithCode(error?.message || 'Project import failed', error?.code || 'PROJECT_IMPORT_FAILED', error?.status || 500);
       const failed = this._failJournal(importId, failure, { phase: this._journal(importId)?.progress?.phase || 'failed' });
-      if (stagingDir && this.fs.existsSync(stagingDir)) {
-        try { this.fs.rmSync(stagingDir, { recursive: true, force: true }); } catch {}
+      let cleanupDir = stagingDir;
+      if (!cleanupDir && importId) {
+        try { cleanupDir = this._stagingDir(importId); } catch {}
+      }
+      if (cleanupDir && this.fs.existsSync(cleanupDir)) {
+        try { this.fs.rmSync(cleanupDir, { recursive: true, force: true }); } catch {}
       }
       failure.importId = importId;
       failure.journal = failed || this._journal(importId);
@@ -800,6 +883,7 @@ module.exports = {
   ProjectBundleImporter,
   createProjectBundleImporter,
   portableContentPath,
+  safeImportProvenance,
   sameTaskSemantics,
   taskGraphOrder,
 };

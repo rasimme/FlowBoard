@@ -836,14 +836,11 @@ function clearTaskRuntimeStateForMigration(project, flowboardId) {
   `).run(ulid);
   const current = _taskService.getTaskById(ulid);
   if (current) {
-    const flowboard = { ...(current.metadata?.flowboard || {}) };
+    const flowboard = _clearStuckStateMetadata(current.metadata?.flowboard || {});
     delete flowboard.routedAgent;
     delete flowboard.stuckIndicator;
     delete flowboard.lastCheckpointAt;
     delete flowboard.checkpointCount;
-    if (flowboard.workStateDetails && typeof flowboard.workStateDetails === 'object') {
-      flowboard.workStateDetails = { ...flowboard.workStateDetails, responsible: null };
-    }
     _updateMetadata(ulid, { flowboard });
   }
   return _resyncCachedTask(ulid);

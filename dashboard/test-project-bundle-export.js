@@ -98,7 +98,7 @@ async function main() {
     assert.deepEqual(first.bundle.tasks.map((item) => item.id), ['T-1', 'T-2', 'T-3']);
     assert.equal(first.bundle.tasks[0].agent, undefined);
     assert.equal(first.bundle.tasks[0].metadata, undefined);
-    assert.equal(first.bundle.tasks[0].workStateDetails.responsible, null);
+    assert.equal(first.bundle.tasks[0].workStateDetails.responsible, 'must-drop');
     assert.equal(first.bundle.project.github.token, undefined);
     assert.equal(first.bundle.specs.some((spec) => spec.path === 'specs/T-2-review.md' && spec.taskId === 'T-2' && spec.content === '# Review spec\n'), true);
     assert.equal(first.bundle.specs.some((spec) => spec.path === 'context/T-3-context-spec.md'), true);

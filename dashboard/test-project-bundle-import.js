@@ -15,7 +15,7 @@ const { withIsolatedDashboard } = require('./test-support/server-harness.js');
 const DETAILS = Object.freeze({
   reason: 'Imported review state',
   waitingFor: null,
-  responsible: null,
+  responsible: 'review-role',
   checkAgainAt: null,
   setAt: '2026-08-01T10:00:00.000Z',
 });
@@ -28,6 +28,7 @@ function fixture(bundleId = 'import-fixture') {
       description: 'Generic review fixture.',
       group: 'Review',
       taskDiscipline: 'development',
+      github: { repo: 'example/review-fixture', branch: 'main' },
     },
     tasks: [
       {
@@ -79,13 +80,14 @@ function fixture(bundleId = 'import-fixture') {
   });
 }
 
-async function postImport(ctx, bundle, targetName, failure, lock = false) {
+async function postImport(ctx, bundle, targetName, failure, lock = false, corrupt = null) {
   const response = await fetch(`${ctx.base}/api/projects/import?targetName=${encodeURIComponent(targetName)}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/vnd.flowboard.project+json',
       ...(failure ? { 'X-FlowBoard-Test-Import-Failure': failure } : {}),
       ...(lock ? { 'X-FlowBoard-Test-Import-Lock': 'true' } : {}),
+      ...(corrupt ? { 'X-FlowBoard-Test-Import-Corrupt': corrupt } : {}),
     },
     body: JSON.stringify(bundle),
   });
@@ -112,7 +114,20 @@ async function main() {
     assert.equal(imported.body.state, 'committed');
     assert.equal(imported.body.counts.tasks, 2);
     const projects = await ctx.api('GET', '/projects');
-    assert.equal(projects.body.projects.some(project => project.name === 'review-copy'), true);
+    const importedProject = projects.body.projects.find(project => project.name === 'review-copy');
+    assert.ok(importedProject);
+    assert.deepEqual(importedProject.github, { repo: 'example/review-fixture', branch: 'main' });
+    const journal = await ctx.api('GET', `/projects/import/${imported.body.importId}`);
+    assert.equal(journal.status, 200);
+    assert.deepEqual(journal.body.journal.progress.provenance, {
+      format: { identity: 'flowboard.project-bundle', version: 1 },
+      bundleId: 'import-fixture',
+      producer: { name: 'FlowBoard', version: '1.0.0' },
+      redactions: {
+        count: bundle.manifest.redactions.length,
+        labels: bundle.manifest.redactions,
+      },
+    });
     const tasks = await ctx.api('GET', '/projects/review-copy/tasks?includeArchived=true');
     assert.equal(tasks.status, 200, JSON.stringify(tasks.body));
     assert.deepEqual(tasks.body.tasks.map(task => task.id), ['T-001', 'T-001-1']);
@@ -193,19 +208,50 @@ async function main() {
     // Every mutation phase leaves a recoverable, hidden journal and the same
     // target+digest resumes idempotently once the injected test dependency is
     // removed.  This covers project/task/file/canvas/finalize boundaries.
-    for (const [index, phase] of ['project', 'task', 'file', 'canvas', 'finalize'].entries()) {
+    for (const [index, phase] of ['staging-write', 'project', 'task', 'file', 'canvas', 'finalize'].entries()) {
       const target = `resume-${phase}`;
       const failure = await postImport(ctx, fixture(`resume-${phase}-fixture`), target, phase);
       assert.equal(failure.status, 500, `${phase}: ${JSON.stringify(failure.body)}`);
       assert.equal(failure.body.state, 'failed');
       assert.equal(failure.body.recoverable, true);
+      assert.equal(fs.existsSync(path.join(ctx.projectsDir, '.flowboard-import-staging', failure.body.importId)), false);
       assert.equal((await ctx.api('GET', '/projects')).body.projects.some(project => project.name === target), false);
       assert.equal((await ctx.api('GET', `/projects/${target}/tasks`)).status, 404);
+      assert.equal((await ctx.api('GET', `/projects/${target}/files`)).status, 404);
+      assert.equal((await ctx.api('GET', `/projects/${target}/files/PROJECT.md`)).status, 404);
+      assert.equal((await ctx.api('PUT', `/projects/${target}/files/context/ATTACK.md`, { content: 'must stay hidden' })).status, 404);
+      assert.equal((await ctx.api('POST', `/projects/${target}/files/context`, { filename: 'UPLOAD.md', content: 'must stay hidden' })).status, 404);
+      assert.equal((await ctx.api('DELETE', `/projects/${target}/files/context/REVIEW.md`)).status, 404);
+      if (phase === 'project') {
+        const reservedCreate = await ctx.api('POST', '/projects', { name: target, displayName: 'Must stay reserved' });
+        assert.equal(reservedCreate.status, 409);
+        assert.equal(reservedCreate.body.code, 'IMPORT_TARGET_RESERVED');
+      }
       const resumed = await postImport(ctx, fixture(`resume-${phase}-fixture`), target);
       assert.equal(resumed.status, 201, `${phase} resume: ${JSON.stringify(resumed.body)}`);
       assert.equal((await ctx.api('GET', `/projects/import/${resumed.body.importId}`)).body.journal.state, 'committed');
       assert.equal(index >= 0, true);
     }
+
+    // Same-count content corruption must be detected by canonical verification
+    // rather than slipping through count-only checks.
+    for (const [corrupt, code] of [['canvas-content', 'CANVAS_VERIFY_FAILED'], ['overview-content', 'OVERVIEW_VERIFY_FAILED']]) {
+      const target = `corrupt-${corrupt}`;
+      const corrupted = await postImport(ctx, fixture(`${corrupt}-fixture`), target, null, false, corrupt);
+      assert.equal(corrupted.status, 500, JSON.stringify(corrupted.body));
+      assert.equal(corrupted.body.code, code);
+      const repaired = await postImport(ctx, fixture(`${corrupt}-fixture`), target);
+      assert.equal(repaired.status, 201, JSON.stringify(repaired.body));
+    }
+
+    // Tombstones remain permanent boundaries even when an unrelated failed
+    // import or bundle digest happens to use the same name.
+    assert.equal((await ctx.api('POST', '/projects', { name: 'tombstone-copy' })).status, 201);
+    assert.equal((await ctx.api('PUT', '/projects/tombstone-copy', { archived: true })).status, 200);
+    assert.equal((await ctx.api('DELETE', '/projects/tombstone-copy?confirm=tombstone-copy&hardDelete=true')).status, 200);
+    const tombstoneImport = await postImport(ctx, fixture('tombstone-fixture'), 'tombstone-copy');
+    assert.equal(tombstoneImport.status, 409);
+    assert.equal(tombstoneImport.body.code, 'IMPORT_TARGET_CONFLICT');
   }, { prefix: 'flowboard-t468-import-api-' });
 
   // A journal left active by a stopped process is marked failed/recoverable
@@ -237,7 +283,7 @@ async function main() {
         VALUES (?, ?, ?, 'importing-tasks', ?, ?, ?)
       `).run(
         'restart-recovery-import', 'recovered-copy', recoveryDigest,
-        JSON.stringify({ phase: 'importing-tasks', tasksImported: 0 }),
+        JSON.stringify({ phase: 'importing-tasks', tasksImported: 0, projectStarted: true }),
         '2026-08-26T09:00:00.000Z', '2026-08-26T09:00:00.000Z',
       );
       db.close();

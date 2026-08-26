@@ -1755,6 +1755,16 @@ function getTaskReminder(task, action, newStatus, prevStatus, structureReasons =
 // POST /api/projects — T-131-6: canonical project creation
 app.post('/api/projects', (req, res) => {
   const lifecycle = require('./project-lifecycle.js');
+  const requestedName = typeof req.body?.name === 'string' ? req.body.name.trim().toLowerCase() : null;
+  if (requestedName) {
+    const latestImport = fbMeta.getLatestProjectImport(requestedName);
+    if (latestImport && latestImport.state !== 'committed') {
+      return res.status(409).json({
+        error: 'Project name is reserved by an incomplete project import.',
+        code: 'IMPORT_TARGET_RESERVED',
+      });
+    }
+  }
   try {
     const result = lifecycle.createProject(req.body, {
       hzlService,
@@ -2179,14 +2189,18 @@ app.post('/api/projects/import', (req, res, next) => {
     const testFailure = process.env.NODE_ENV === 'test'
       ? String(req.headers['x-flowboard-test-import-failure'] || '')
       : '';
-    const importer = ['staging', 'project', 'task', 'file', 'canvas', 'finalize'].includes(testFailure)
+    const testCorruption = process.env.NODE_ENV === 'test'
+      ? String(req.headers['x-flowboard-test-import-corrupt'] || '')
+      : '';
+    const importer = ['staging', 'staging-write', 'project', 'task', 'file', 'canvas', 'finalize'].includes(testFailure)
+      || ['canvas-content', 'overview-content'].includes(testCorruption)
       ? createProjectBundleImporter({
         hzlService,
         fbMeta,
         projectsDir: PROJECTS_DIR,
         overview,
         lifecycle: projectLifecycle,
-        hooks: { failAt: testFailure },
+        hooks: { failAt: testFailure, corruptAt: testCorruption },
       })
       : projectBundleImporter;
     if (process.env.NODE_ENV === 'test' && req.headers['x-flowboard-test-import-lock'] === 'true') {
@@ -3112,7 +3126,18 @@ function getFileCategory(relPath) {
   return 'optional';
 }
 
+// Incomplete/failed imports own a real scaffold directory while they recover,
+// but that directory is not an ordinary project.  Keep every File Explorer
+// surface aligned with the metadata read model without changing normal
+// filesystem drift/heal behavior (projects without an import journal remain
+// visible).
+function projectVisibleToFileApi(projectName) {
+  return typeof fbMeta.projectImportIsVisible !== 'function'
+    || fbMeta.projectImportIsVisible(projectName);
+}
+
 function buildFileTree(projectName, { includeHidden = false } = {}) {
+  if (!projectVisibleToFileApi(projectName)) return null;
   const projectDir = path.join(PROJECTS_DIR, projectName);
   if (!fs.existsSync(projectDir)) return null;
 
@@ -3254,6 +3279,7 @@ function resolveProjectFile(projectDir, filePath, { forWrite = false } = {}) {
 
 // GET /api/projects/:name/files/{*filePath} — read file content
 app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
+  if (!projectVisibleToFileApi(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 
@@ -3300,6 +3326,7 @@ app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
 
 // PUT /api/projects/:name/files/{*filePath} — write file content (Phase 2)
 app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
+  if (!projectVisibleToFileApi(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 
@@ -3347,6 +3374,7 @@ app.put('/api/projects/:name/files/{*filePath}', (req, res) => {
 // markdown-only upload path. The body parser is scoped to 5 MB just for this
 // route — global express.json() stays at its default 100 KB limit.
 app.post('/api/projects/:name/files/context', express.json({ limit: '5mb' }), (req, res) => {
+  if (!projectVisibleToFileApi(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
 
@@ -3398,6 +3426,7 @@ app.post('/api/projects/:name/files/context', express.json({ limit: '5mb' }), (r
 
 // DELETE /api/projects/:name/files/{*filePath} — delete files (only context/ and specs/)
 app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
+  if (!projectVisibleToFileApi(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   const projectDir = path.join(PROJECTS_DIR, req.params.name);
   const filePath = Array.isArray(req.params.filePath) ? req.params.filePath.join('/') : req.params.filePath;
 

@@ -228,10 +228,12 @@ function listProjects(hzlProjects) {
         SELECT target_name
           FROM flowboard_project_imports i
          WHERE i.state <> 'committed'
-           AND i.updated_at = (
-             SELECT MAX(i2.updated_at)
+           AND NOT EXISTS (
+             SELECT 1
                FROM flowboard_project_imports i2
               WHERE i2.target_name = i.target_name
+                AND (i2.updated_at > i.updated_at
+                  OR (i2.updated_at = i.updated_at AND i2.import_id > i.import_id))
            )
       `).all().map(r => r.target_name))
     : new Set();

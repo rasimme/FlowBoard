@@ -231,6 +231,12 @@ project routes. Files and specs are checksum-verified in an owner-private
 staging directory before publication; canvas and overview are restored through
 their canonical server-owned writers.
 
+The journal progress contains only bounded provenance (bundle format identity/
+version, bundle id, producer metadata, and redaction labels/count). It never
+stores bundle content. While an import journal is non-committed, the same
+destination is reserved against ordinary `POST /api/projects` creation; a
+matching failed import can resume when its lifecycle-start marker permits it.
+
 **201** `{ ok, importId, state: "committed", project, counts }`.
 **409** target conflict or concurrent import lock. **415** unsupported media or
 compression. **422** invalid/incompatible/sensitive bundle. A caught mutation
