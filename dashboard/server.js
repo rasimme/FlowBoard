@@ -2014,6 +2014,14 @@ app.post('/api/projects/import/preview', (req, res, next) => {
       supported: ['application/vnd.flowboard.project+json', 'application/octet-stream'],
     });
   }
+  const contentEncoding = String(req.headers['content-encoding'] || '')
+    .split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
+  if (contentEncoding.some((value) => value !== 'identity')) {
+    return res.status(415).json({
+      error: 'Compressed project bundle uploads are not supported.',
+      code: 'CONTENT_ENCODING_UNSUPPORTED',
+    });
+  }
   return express.raw({ type: () => true, limit: RAW_BODY_LIMIT })(req, res, (error) => {
     if (!error) return next();
     if (error.type === 'entity.too.large') {
@@ -2039,7 +2047,8 @@ app.post('/api/projects/import/preview', (req, res, next) => {
   }
 
   const requestedTarget = req.query.targetName;
-  const canCheckDirectory = typeof requestedTarget === 'string' && TARGET_NAME_RE.test(requestedTarget);
+  const effectiveTarget = requestedTarget || parsed.bundle?.project?.slug;
+  const canCheckDirectory = typeof effectiveTarget === 'string' && TARGET_NAME_RE.test(effectiveTarget);
   let existingProjects;
   let deletedProjects;
   try {
@@ -2053,10 +2062,10 @@ app.post('/api/projects/import/preview', (req, res, next) => {
   }
 
   const result = previewBundle(parsed.bundle, {
-    targetName: requestedTarget,
+    targetName: effectiveTarget,
     existingProjects,
     deletedProjects,
-    directoryExists: canCheckDirectory && fs.existsSync(path.join(PROJECTS_DIR, requestedTarget)),
+    directoryExists: canCheckDirectory && fs.existsSync(path.join(PROJECTS_DIR, effectiveTarget)),
   });
   if (!result.ok) {
     return res.status(422).json({

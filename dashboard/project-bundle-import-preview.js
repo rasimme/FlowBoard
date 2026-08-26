@@ -36,6 +36,51 @@ const ARCHIVE_METADATA_KEYS = Object.freeze([
 ]);
 const archiveMetadataToken = (key) => String(key).toLowerCase().replaceAll('_', '').replaceAll('-', '');
 const ARCHIVE_METADATA_KEY_SET = new Set(ARCHIVE_METADATA_KEYS.map(archiveMetadataToken));
+const REDACTED_VALUE = '[redacted]';
+
+// Secret warning paths are a user-facing API surface. Only fields from the
+// portable contract may be reflected; an arbitrary object key must collapse
+// to the nearest known container so a bundle cannot smuggle data through a
+// warning path.
+const SAFE_CHILD_KEYS = Object.freeze({
+  root: new Set(['manifest', 'project', 'tasks', 'specs', 'canvas', 'overview', 'files', 'history']),
+  manifest: new Set(['identity', 'formatVersion', 'producer', 'bundleId', 'createdAt', 'source', 'counts', 'checksums', 'options', 'redactions', 'compatibility', 'warnings']),
+  'manifest.source': new Set(['slug', 'displayName', 'group', 'description', 'taskDiscipline', 'github']),
+  'source.github': new Set(['repo', 'branch']),
+  project: new Set(['slug', 'displayName', 'description', 'group', 'taskDiscipline', 'github', 'createdAt', 'updatedAt']),
+  task: new Set(['id', 'title', 'status', 'priority', 'description', 'tags', 'links', 'dependsOn', 'parentId', 'specFile', 'workState', 'updatedAt', 'dueAt', 'completedAt', 'createdAt', 'enteredStatusAt', 'order', 'workStateDetails']),
+  'task.workStateDetails': new Set(['reason', 'waitingFor', 'responsible', 'checkAgainAt', 'setAt']),
+  spec: new Set(['path', 'taskId', 'content']),
+  file: new Set(['path', 'content', 'encoding', 'sizeBytes', 'sha256']),
+  canvas: new Set(['version', 'notes', 'connections']),
+  canvasNote: new Set(['id', 'text', 'x', 'y', 'color', 'size', 'created']),
+  canvasConnection: new Set(['from', 'to', 'fromPort', 'toPort']),
+  overview: new Set(['version', 'layout', 'preset', 'widgets']),
+  overviewWidget: new Set(['id', 'type', 'title', 'props', 'grid']),
+  overviewGrid: new Set(['x', 'y', 'w', 'h']),
+  history: new Set(['comments', 'checkpoints']),
+  historyComment: new Set(['id', 'taskId', 'body', 'kind', 'createdAt', 'authorLabel']),
+  historyCheckpoint: new Set(['id', 'taskId', 'message', 'progress', 'createdAt']),
+});
+
+const KEY_TRANSITIONS = Object.freeze({
+  root: { manifest: 'manifest', project: 'project', tasks: 'tasksArray', specs: 'specsArray', canvas: 'canvas', overview: 'overview', files: 'filesArray', history: 'history' },
+  manifest: { source: 'manifest.source' },
+  'manifest.source': { github: 'source.github' },
+  project: { github: 'source.github' },
+  task: { workStateDetails: 'task.workStateDetails', tags: 'scalarArray', links: 'scalarArray', dependsOn: 'scalarArray' },
+  canvas: { notes: 'canvasNotesArray', connections: 'canvasConnectionsArray' },
+  overview: { widgets: 'overviewWidgetsArray' },
+  overviewWidget: { grid: 'overviewGrid' },
+  history: { comments: 'historyCommentsArray', checkpoints: 'historyCheckpointsArray' },
+});
+
+const ARRAY_TRANSITIONS = Object.freeze({
+  tasksArray: 'task', specsArray: 'spec', filesArray: 'file',
+  canvasNotesArray: 'canvasNote', canvasConnectionsArray: 'canvasConnection',
+  overviewWidgetsArray: 'overviewWidget', historyCommentsArray: 'historyComment',
+  historyCheckpointsArray: 'historyCheckpoint', scalarArray: 'scalarArrayItem',
+});
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -79,11 +124,111 @@ function safeIssue(issue) {
   };
 }
 
+function parsePathTokens(location) {
+  if (location === '$' || location === '') return [];
+  const raw = String(location).startsWith('$.') ? String(location).slice(2) : String(location);
+  const tokens = [];
+  let cursor = 0;
+  while (cursor < raw.length) {
+    if (cursor > 0 && raw[cursor] === '.') cursor += 1;
+    if (raw[cursor] === '[') {
+      const match = raw.slice(cursor).match(/^\[(\d+)\]/);
+      if (!match) return null;
+      tokens.push({ type: 'index', value: Number(match[1]) });
+      cursor += match[0].length;
+    } else {
+      const match = raw.slice(cursor).match(/^[A-Za-z][A-Za-z0-9_]*/);
+      if (!match) return null;
+      tokens.push({ type: 'key', value: match[0] });
+      cursor += match[0].length;
+    }
+    if (cursor < raw.length && raw[cursor] !== '.' && raw[cursor] !== '[') return null;
+  }
+  return tokens;
+}
+
+function safeFindingPath(location) {
+  const tokens = parsePathTokens(location);
+  if (!tokens) return '$';
+  let state = 'root';
+  let output = '$';
+  for (const token of tokens) {
+    if (token.type === 'index') {
+      if (!Object.prototype.hasOwnProperty.call(ARRAY_TRANSITIONS, state)) return output;
+      output += `[${token.value}]`;
+      state = ARRAY_TRANSITIONS[state];
+      continue;
+    }
+    const allowed = SAFE_CHILD_KEYS[state];
+    if (!allowed || !allowed.has(token.value)) return output;
+    output = output === '$' ? token.value : `${output}.${token.value}`;
+    state = KEY_TRANSITIONS[state]?.[token.value] || 'scalar';
+  }
+  return output;
+}
+
 function safeManifestWarning(warning) {
-  const output = { code: String(warning?.code || 'MANIFEST_WARNING') };
+  const candidateCode = String(warning?.code || '');
+  const output = {
+    code: /^[A-Z][A-Z0-9_:-]{0,63}$/.test(candidateCode) && scanSensitiveContent(candidateCode).length === 0
+      ? candidateCode
+      : 'MANIFEST_WARNING',
+  };
   const path = safeLocationPath(warning?.path);
   if (path) output.path = path;
   return output;
+}
+
+function safeSourceValue(value) {
+  if (typeof value !== 'string') return value;
+  return scanSensitiveContent(value).length > 0 ? REDACTED_VALUE : value;
+}
+
+function buildSourcePreview(manifest) {
+  const source = manifest?.source || {};
+  const output = {};
+  for (const key of ['slug', 'displayName', 'description', 'group', 'taskDiscipline']) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    output[key] = key === 'slug' || key === 'taskDiscipline' ? source[key] : safeSourceValue(source[key]);
+  }
+  if (source.github === null) {
+    output.github = null;
+  } else if (isObject(source.github)) {
+    const github = {};
+    for (const key of ['repo', 'branch']) {
+      if (Object.prototype.hasOwnProperty.call(source.github, key)) github[key] = safeSourceValue(source.github[key]);
+    }
+    output.github = github;
+  }
+  const producer = {};
+  for (const key of ['name', 'version']) {
+    if (Object.prototype.hasOwnProperty.call(manifest?.producer || {}, key)) {
+      producer[key] = safeSourceValue(manifest.producer[key]);
+    }
+  }
+  output.producer = producer;
+  output.createdAt = manifest?.createdAt;
+  return output;
+}
+
+function buildCompatibilityPreview(compatibility) {
+  const output = { minImporterVersion: compatibility?.minImporterVersion };
+  if (compatibility?.maxImporterVersion !== undefined) output.maxImporterVersion = compatibility.maxImporterVersion;
+  return output;
+}
+
+function buildOptionsPreview(options) {
+  return {
+    includeHistory: options?.includeHistory === true,
+    includeExecutable: options?.includeExecutable === true,
+  };
+}
+
+function buildRedactionsPreview(redactions) {
+  if (!Array.isArray(redactions)) return [];
+  return redactions.filter((value) => typeof value === 'string'
+    && /^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(value)
+    && scanSensitiveContent(value).length === 0);
 }
 
 function mediaType(value) {
@@ -182,7 +327,7 @@ function collectSensitiveFindings(value, location = '$', findings = [], seen = n
   if (value === null || value === undefined) return findings;
   if (typeof value === 'string') {
     for (const finding of scanSensitiveContent(value)) {
-      findings.push({ code: finding.code, path: location });
+      findings.push({ code: finding.code, path: safeFindingPath(location) });
     }
     return findings;
   }
@@ -193,8 +338,11 @@ function collectSensitiveFindings(value, location = '$', findings = [], seen = n
     value.forEach((child, index) => collectSensitiveFindings(child, `${location}[${index}]`, findings, seen));
   } else {
     Object.entries(value).forEach(([key, child]) => {
-      // Keys are not content, but the field name is useful as a stable
-      // location and does not disclose a value.
+      // Unknown keys are content too: scan them, but report only their safe
+      // parent container if the key is not part of the portable grammar.
+      for (const finding of scanSensitiveContent(key)) {
+        findings.push({ code: finding.code, path: safeFindingPath(location) });
+      }
       collectSensitiveFindings(child, location === '$' ? key : `${location}.${key}`, findings, seen);
     });
   }
@@ -248,7 +396,7 @@ function buildTargetAvailability(name, { existingProjects = [], deletedProjects 
   if (deleted.has(name)) conflicts.push('deleted-project');
   if (directoryExists) conflicts.push('existing-directory');
   return {
-    name,
+    name: TARGET_NAME_RE.test(name) ? name : '[invalid]',
     valid: TARGET_NAME_RE.test(name),
     availability: conflicts.length === 0 ? 'available' : 'conflict',
     conflicts,
@@ -302,21 +450,17 @@ function previewBundle(bundle, { targetName: requestedTarget, existingProjects, 
     ok: true,
     preview: {
       bundleDigest: makeDigest(normalized),
-      source: {
-        ...manifest.source,
-        producer: manifest.producer,
-        createdAt: manifest.createdAt,
-      },
+      source: buildSourcePreview(manifest),
       format: {
         identity: manifest.identity,
         version: manifest.formatVersion,
         importerVersion: IMPORTER_VERSION,
-        compatibility: manifest.compatibility,
+        compatibility: buildCompatibilityPreview(manifest.compatibility),
         status: 'compatible',
       },
       counts: manifest.counts,
-      options: manifest.options,
-      redactions: [...manifest.redactions],
+      options: buildOptionsPreview(manifest.options),
+      redactions: buildRedactionsPreview(manifest.redactions),
       ...contentSummary(normalized),
       manifestWarnings: (manifest.warnings || []).map(safeManifestWarning),
       securityWarnings,
@@ -329,6 +473,7 @@ function previewBundle(bundle, { targetName: requestedTarget, existingProjects, 
 module.exports = {
   ARCHIVE_METADATA_KEYS,
   RAW_BODY_LIMIT,
+  REDACTED_VALUE,
   SUPPORTED_MEDIA_TYPES,
   TARGET_NAME_RE,
   buildTargetAvailability,
@@ -339,6 +484,7 @@ module.exports = {
   previewBundle,
   safeIssue,
   safeLocationPath,
+  safeFindingPath,
   sanitizeIssuePath,
   strictDecodeUtf8,
 };

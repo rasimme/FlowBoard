@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const Database = require('libsql');
 const { createBundle, payloadForChecksum, sha256 } = require('./project-bundle-schema.js');
 const {
   RAW_BODY_LIMIT,
@@ -104,18 +107,40 @@ for (const mutate of [
   assert.equal(result.preview.securityWarnings[0].path, 'tasks[0].description');
   assert.equal(JSON.stringify(result).includes('ghp_fake_review_value_1234567890'), false);
   assert.deepEqual(collectSensitiveFindings({ file: 'token: ghp_fake_review_value_1234567890' }), [{
-    code: 'CREDENTIAL_ASSIGNMENT', path: 'file',
+    code: 'CREDENTIAL_ASSIGNMENT', path: '$',
   }]);
+
+  const sourceSecret = fixture();
+  sourceSecret.manifest.source.description = 'apiKey: ghp_source_value_1234567890';
+  refreshPayloadChecksum(sourceSecret);
+  const sourceResult = previewBundle(sourceSecret, { targetName: 'review-copy' });
+  assert.equal(sourceResult.ok, true);
+  assert.equal(sourceResult.preview.source.description, '[redacted]');
+  assert.equal(JSON.stringify(sourceResult).includes('ghp_source_value_1234567890'), false);
+
+  const unknownKeySecret = fixture();
+  unknownKeySecret.tasks[0]['apiKey: ghp_abcdefghijklmnopqrstuvwxyz123456'] = 'unknown-key-value';
+  refreshPayloadChecksum(unknownKeySecret);
+  const unknownKeyResult = previewBundle(unknownKeySecret, { targetName: 'review-copy' });
+  assert.equal(unknownKeyResult.ok, true);
+  assert.ok(unknownKeyResult.preview.securityWarnings.length > 0);
+  assert.ok(unknownKeyResult.preview.securityWarnings.every((warning) => warning.path === 'tasks[0]'));
+  assert.equal(JSON.stringify(unknownKeyResult).includes('apiKey: ghp_abcdefghijklmnopqrstuvwxyz123456'), false);
+  assert.equal(JSON.stringify(unknownKeyResult).includes('unknown-key-value'), false);
 }
 
 assert.throws(() => parseJsonBody(Buffer.from([0xc3, 0x28])), (error) => error.code === 'INVALID_UTF8');
 assert.throws(() => parseJsonBody(Buffer.from('{')), (error) => error.code === 'MALFORMED_JSON');
 assert.throws(() => parseJsonBody(Buffer.alloc(RAW_BODY_LIMIT + 1)), (error) => error.code === 'RAW_SIZE_LIMIT');
 
-async function rawRequest(ctx, body, contentType = 'application/vnd.flowboard.project+json', target = 'review-copy') {
-  const response = await fetch(`${ctx.base}/api/projects/import/preview?targetName=${encodeURIComponent(target)}`, {
+async function rawRequest(ctx, body, contentType = 'application/vnd.flowboard.project+json', target, contentEncoding) {
+  const query = target === undefined || target === null ? '' : `?targetName=${encodeURIComponent(target)}`;
+  const response = await fetch(`${ctx.base}/api/projects/import/preview${query}`, {
     method: 'POST',
-    headers: { 'Content-Type': contentType },
+    headers: {
+      'Content-Type': contentType,
+      ...(contentEncoding ? { 'Content-Encoding': contentEncoding } : {}),
+    },
     body,
   });
   return {
@@ -133,14 +158,32 @@ async function main() {
     const beforeProjects = await ctx.api('GET', '/projects');
     const beforeTasks = await ctx.api('GET', '/projects/existing-review/tasks?includeArchived=true');
     const beforeFiles = await ctx.api('GET', '/projects/existing-review/files');
-    const beforeDir = require('node:fs').readdirSync(ctx.projectsDir, { withFileTypes: true })
+    const beforeDir = fs.readdirSync(ctx.projectsDir, { withFileTypes: true })
       .map((entry) => entry.name).sort();
+    const readEventWatermark = () => {
+      const db = new Database(ctx.dbPath, { readonly: true });
+      try {
+        const row = db.prepare('SELECT COUNT(*) AS count, MAX(id) AS maxId FROM events').get();
+        return { count: Number(row.count), maxId: row.maxId === null ? null : Number(row.maxId) };
+      } finally {
+        db.close();
+      }
+    };
+    const beforeEvents = readEventWatermark();
 
     const bundle = fixture();
+    fs.mkdirSync(path.join(ctx.projectsDir, 'review-fixture'), { recursive: true });
+    const orphan = await rawRequest(ctx, JSON.stringify(bundle));
+    assert.equal(orphan.status, 200, JSON.stringify(orphan.body));
+    assert.equal(orphan.body.canImport, false);
+    assert.ok(orphan.body.target.conflicts.includes('existing-directory'));
+    fs.rmSync(path.join(ctx.projectsDir, 'review-fixture'), { recursive: true, force: true });
+
     const valid = await rawRequest(ctx, JSON.stringify(bundle));
     assert.equal(valid.status, 200, JSON.stringify(valid.body));
     assert.equal(valid.body.canImport, true);
     assert.equal(typeof valid.body.bundleDigest, 'string');
+    assert.equal(valid.body.target.name, 'review-fixture');
     assert.equal(valid.body.target.availability, 'available');
 
     const repeated = await rawRequest(ctx, JSON.stringify(bundle));
@@ -156,6 +199,9 @@ async function main() {
     assert.equal(unsupportedJson.status, 415);
     const unsupportedZip = await rawRequest(ctx, Buffer.from('PK\\x03\\x04'), 'application/zip');
     assert.equal(unsupportedZip.status, 415);
+    const compressed = await rawRequest(ctx, JSON.stringify(bundle), 'application/vnd.flowboard.project+json', undefined, 'gzip');
+    assert.equal(compressed.status, 415);
+    assert.equal(compressed.body.code, 'CONTENT_ENCODING_UNSUPPORTED');
 
     const malformed = await rawRequest(ctx, Buffer.from('{'));
     assert.equal(malformed.status, 400);
@@ -175,12 +221,14 @@ async function main() {
     const afterProjects = await ctx.api('GET', '/projects');
     const afterTasks = await ctx.api('GET', '/projects/existing-review/tasks?includeArchived=true');
     const afterFiles = await ctx.api('GET', '/projects/existing-review/files');
-    const afterDir = require('node:fs').readdirSync(ctx.projectsDir, { withFileTypes: true })
+    const afterDir = fs.readdirSync(ctx.projectsDir, { withFileTypes: true })
       .map((entry) => entry.name).sort();
+    const afterEvents = readEventWatermark();
     assert.deepEqual(afterProjects.body, beforeProjects.body, 'preview does not change project registry');
     assert.deepEqual(afterTasks.body, beforeTasks.body, 'preview does not change tasks');
     assert.deepEqual(afterFiles.body, beforeFiles.body, 'preview does not change files');
     assert.deepEqual(afterDir, beforeDir, 'preview does not create a project directory');
+    assert.deepEqual(afterEvents, beforeEvents, 'preview does not append events');
   }, { prefix: 'flowboard-t468-preview-' });
   console.log('T-468-4 import preview tests passed');
 }

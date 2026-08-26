@@ -197,6 +197,8 @@ Previews a portable project review bundle without creating a project or
 retaining upload state. v1 accepts only
 `application/vnd.flowboard.project+json` (and the optional
 `application/octet-stream` transport alias); ZIP/archive media is rejected.
+Any non-identity `Content-Encoding` is rejected as well; v1 never decompresses
+uploads.
 The route uses a bounded raw parser, strict UTF-8 decoding, schema/checksum and
 reference validation, path/link metadata checks, case-fold collision checks,
 and value-blind sensitive-content warnings.
