@@ -127,6 +127,18 @@ for (const mutate of [
   assert.ok(unknownKeyResult.preview.securityWarnings.every((warning) => warning.path === 'tasks[0]'));
   assert.equal(JSON.stringify(unknownKeyResult).includes('apiKey: ghp_abcdefghijklmnopqrstuvwxyz123456'), false);
   assert.equal(JSON.stringify(unknownKeyResult).includes('unknown-key-value'), false);
+
+  const unknownCountSecret = fixture();
+  unknownCountSecret.manifest.counts['apiKey: ghp_count_abcdefghijklmnopqrstuvwxyz123456'] = 1;
+  refreshPayloadChecksum(unknownCountSecret);
+  const unknownCountResult = previewBundle(unknownCountSecret, { targetName: 'review-copy' });
+  assert.equal(unknownCountResult.ok, true);
+  assert.equal(unknownCountResult.preview.canImport, false);
+  assert.deepEqual(unknownCountResult.preview.counts, {
+    tasks: 1, specs: 0, canvasNotes: 0, canvasConnections: 0,
+    overviewWidgets: 0, files: 1, historyComments: 0, historyCheckpoints: 0,
+  });
+  assert.equal(JSON.stringify(unknownCountResult).includes('apiKey: ghp_count_abcdefghijklmnopqrstuvwxyz123456'), false);
 }
 
 assert.throws(() => parseJsonBody(Buffer.from([0xc3, 0x28])), (error) => error.code === 'INVALID_UTF8');

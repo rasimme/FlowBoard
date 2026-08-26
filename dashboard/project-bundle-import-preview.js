@@ -81,6 +81,10 @@ const ARRAY_TRANSITIONS = Object.freeze({
   overviewWidgetsArray: 'overviewWidget', historyCommentsArray: 'historyComment',
   historyCheckpointsArray: 'historyCheckpoint', scalarArray: 'scalarArrayItem',
 });
+const COUNT_FIELDS = Object.freeze([
+  'tasks', 'specs', 'canvasNotes', 'canvasConnections',
+  'overviewWidgets', 'files', 'historyComments', 'historyCheckpoints',
+]);
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -222,6 +226,10 @@ function buildOptionsPreview(options) {
     includeHistory: options?.includeHistory === true,
     includeExecutable: options?.includeExecutable === true,
   };
+}
+
+function buildCountsPreview(counts) {
+  return Object.fromEntries(COUNT_FIELDS.map((key) => [key, counts[key]]));
 }
 
 function buildRedactionsPreview(redactions) {
@@ -458,7 +466,7 @@ function previewBundle(bundle, { targetName: requestedTarget, existingProjects, 
         compatibility: buildCompatibilityPreview(manifest.compatibility),
         status: 'compatible',
       },
-      counts: manifest.counts,
+      counts: buildCountsPreview(manifest.counts),
       options: buildOptionsPreview(manifest.options),
       redactions: buildRedactionsPreview(manifest.redactions),
       ...contentSummary(normalized),
