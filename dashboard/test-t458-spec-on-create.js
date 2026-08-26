@@ -128,6 +128,18 @@ async function main() {
     ok(stillReviewed.body.task.structureReview.reasons.includes('missing_spec_link'),
       'and it keeps the reasons it was accepted for — that record is history');
 
+    // ── 5b. Every spec-writing path retires the flag, not just this route ─
+    // Regression for T-459: the clearing used to sit at one of four call
+    // sites of writeSpecFileForTask, so the Specify persistence left flagged
+    // tasks flagged after giving them a spec.
+    const viaRoute = await request('POST', `/api/projects/${project}/tasks`, { title: 'Yet another unspecced thing' });
+    ok(viaRoute.body.task.structureReview?.reasons.includes('missing_spec_link'),
+      'a fresh unspecced task is flagged');
+    await request('POST', `/api/projects/${project}/specs/${viaRoute.body.task.id}`, { content: '# Goal\n\nx\n' });
+    const reread = await request('GET', `/api/projects/${project}/tasks/${viaRoute.body.task.id}`);
+    ok(!(reread.body.task.structureReview?.reasons || []).includes('missing_spec_link'),
+      'and the flag is retired inside the spec write itself, wherever it is called from');
+
     // ── 6. The rules a project serves depend on its discipline ──────────
     const devRules = await request('GET', `/api/projects/${project}/rules/api-access`);
     ok(devRules.status === 200 && String(devRules.body).includes('This project is `development`'),

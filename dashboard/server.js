@@ -3131,12 +3131,9 @@ app.post('/api/projects/:name/specs/:taskId', (req, res) => {
 
   const specFileRelPath = writeSpecFileForTask(req.params.name, task, template);
   // T-458: the task was flagged for having no spec and now has one — that
-  // reason is spent. Clearing it here (rather than waiting for a human to
-  // acknowledge something that is no longer true) is what keeps the flag
-  // worth reading: a queue that fills with already-fixed items is a queue
-  // people learn to click away. Any other reason on the task survives, and a
-  // review a human already accepted is left alone.
-  hzlService.resolveStructureReason(req.params.name, task.id, 'missing_spec_link');
+  // The flag is retired inside writeSpecFileForTask above — every path that
+  // writes a spec, not just this one. Clearing it here too would be the same
+  // rule stated twice.
   const updatedTask = hzlService.getTask(req.params.name, task.id);
   return res.json({ ok: true, specFile: specFileRelPath, taskId, task: taskWithSpecStatus(req.params.name, updatedTask) });
 });
@@ -3196,6 +3193,13 @@ function writeSpecFileForTask(projectName, task, content) {
 
   const specFileRelPath = `specs/${specFilename}`;
   hzlService.setSpecLink(projectName, task.id, specFileRelPath);
+  // T-459: a task that has just been given a spec is not missing one, no
+  // matter which path wrote it. This sits here rather than at a call site
+  // because there are four of them — the Specify persistence writes specs
+  // twice, the inline create once, the specs route once — and T-458 only
+  // cleared the flag at the last of those. Putting the rule at the caller is
+  // exactly how the same rule ends up in several places, half-applied.
+  hzlService.resolveStructureReason(projectName, task.id, 'missing_spec_link');
   return specFileRelPath;
 }
 
