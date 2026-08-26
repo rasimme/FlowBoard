@@ -7,9 +7,19 @@ import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import { apiFetch } from '../utils/apiFetch.js';
 import { isAuthHalted, subscribeAuthState } from '../state/authState.mjs';
+import { startAdaptivePoll } from '../utils/adaptivePoll.mjs';
 
 // Mirrors MAX_CLARIFICATIONS in specify-policy.js (server-enforced cap).
 const MAX_QUESTIONS = 4;
+
+// T-461: base/ceiling for the adaptive session-poll cadence (see the poll
+// effect below). Base stays the original 2s — this panel is actively
+// worked, and the seconds right after a response are the ones that matter.
+// The ceiling backs a sustained-idle session (e.g. sitting unanswered) off
+// to 1/6th the request rate, same ratio as DashboardContext's 5s->30s board
+// poll backoff (T-450-4).
+const SPECIFY_POLL_BASE_MS = 2000;
+const SPECIFY_POLL_MAX_MS = 12000;
 
 // NOTE: Tailwind preflight is disabled in this project (legacy CSS coexists),
 // so raw <button> elements keep the UA's light default background. Every
@@ -45,36 +55,84 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
   const [isOpen, setIsOpen] = useState(true);
   const requestedNext = useRef(new Set());
   const lastQuestionId = useRef(null);
+  // T-461: JSON snapshot of the last session seen, used to detect "nothing
+  // changed" for the poll backoff below — the route has no ETag/conditional
+  // GET (unlike the board snapshot's 304 path), so this compares session
+  // state directly. Safe because GET /api/specify/sessions/:id is a plain
+  // shallow copy of stored state (specify-sessions.js's getSession) with no
+  // per-read volatile fields (lastActivity only bumps on a real
+  // updateSession, never on a read) — so an unchanged fetch really does
+  // yield byte-identical JSON, not just "no field I bothered to check".
+  const lastSessionSnapshotRef = useRef(null);
+  // T-461: holds the running adaptive poller's controls ({ stop, reset }) —
+  // see the poll effect below. resetPollInterval() is called by every
+  // mutating action (postStep/requestNext) so the *next* background poll
+  // tick resumes at the fast base cadence instead of wherever the backoff
+  // had drifted to, mirroring DashboardContext's resetPollInterval calls at
+  // its own action entry points (T-450-4).
+  const pollControlRef = useRef(null);
+
+  function resetPollInterval() {
+    pollControlRef.current?.reset();
+  }
 
   useEffect(() => {
     if (authHalted) return undefined;
+    lastSessionSnapshotRef.current = null;
+    // Unconditional initial load, same as before T-461 — mirrors
+    // DashboardContext's separate always-unconditional initial snapshot
+    // fetch. Only the *recurring* poll below is paused while hidden.
     fetchSession();
-    const interval = setInterval(fetchSession, 2000);
-    return () => clearInterval(interval);
+    const poller = startAdaptivePoll({
+      poll: fetchSession,
+      baseMs: SPECIFY_POLL_BASE_MS,
+      maxMs: SPECIFY_POLL_MAX_MS,
+    });
+    pollControlRef.current = poller;
+    return () => {
+      poller.stop();
+      pollControlRef.current = null;
+    };
   }, [authHalted, sessionId]);
 
+  // Returns whether the session differs from the last one fetched — the
+  // poll loop's backoff signal (see startAdaptivePoll above). Resolves to
+  // `false` on a fetch error so a transient failure backs polling off
+  // instead of retrying at the fast cadence, without ever claiming a change
+  // that wasn't observed.
   async function fetchSession() {
-    if (isAuthHalted()) return;
+    if (isAuthHalted()) return false;
     try {
       const res = await apiFetch(`/api/specify/sessions/${sessionId}`);
       if (!res.ok) throw new Error('Failed to load session');
-      if (isAuthHalted()) return;
+      if (isAuthHalted()) return false;
       const data = await res.json();
-      if (isAuthHalted()) return;
-      applySession(data);
+      if (isAuthHalted()) return false;
+      const changed = applySession(data);
       if (data.status === 'created' && !requestedNext.current.has(data.id)) {
         requestedNext.current.add(data.id);
         requestNext(data.id);
       }
       setLoading(false);
+      return changed;
     } catch (e) {
       setError(e.message);
       setLoading(false);
+      return false;
     }
   }
 
   // Preselect the recommended option whenever a new question arrives.
+  // Returns whether `data` differs from the last session applied, for the
+  // poll loop's backoff decision (see fetchSession/lastSessionSnapshotRef
+  // above). Every caller — the poll and each mutating action's own POST
+  // response (postStep/requestNext) — routes through here, so the
+  // comparison baseline never goes stale after an action applies a change
+  // locally before the next poll tick runs.
   function applySession(data) {
+    const nextSnapshot = JSON.stringify(data);
+    const changed = nextSnapshot !== lastSessionSnapshotRef.current;
+    lastSessionSnapshotRef.current = nextSnapshot;
     setSession(data);
     const openQ = (data?.clarifications || []).find(c => !c.answer);
     if (openQ && openQ.id !== lastQuestionId.current) {
@@ -82,9 +140,13 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
       setSelectedOption(openQ.recommended ?? null);
       setAnswerText('');
     }
+    return changed;
   }
 
   async function requestNext(id = sessionId) {
+    // T-461: kicking off the worker is exactly the moment the fast poll
+    // cadence matters most — see resetPollInterval above.
+    resetPollInterval();
     try {
       const res = await apiFetch(`/api/specify/sessions/${id}/next`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to start analysis');
@@ -96,6 +158,12 @@ export default function SpecifyStepper({ sessionId, onComplete, onCancel }) {
   }
 
   async function postStep(path, body) {
+    // T-461: every mutating action (answer/skip/revise/retry/confirm) is a
+    // "Nutzerinteraktion" — resume the fast poll cadence immediately. Its
+    // own POST response below already applies the new state locally via
+    // applySession, before the next background poll tick would otherwise
+    // run, so this can't rely on the poll's own change detection to notice.
+    resetPollInterval();
     setLoading(true);
     setError(null);
     try {
