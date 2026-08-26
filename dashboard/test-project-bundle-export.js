@@ -12,6 +12,7 @@ const {
 } = require('./project-bundle-export.js');
 const { canonicalJson } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+const { containsSensitiveContent, scanSensitiveContent } = require('./project-bundle-secrets.js');
 
 function task(id, extra = {}) {
   return {
@@ -38,6 +39,7 @@ function fixture(root) {
   fs.writeFileSync(path.join(root, 'SESSIONS.md'), 'private session history\n');
   fs.writeFileSync(path.join(root, 'context', 'NOTES.md'), 'Safe review context.\n');
   fs.writeFileSync(path.join(root, 'context', 'nested', 'MORE.md'), 'Nested context.\n');
+  fs.writeFileSync(path.join(root, 'context', 'T-3-context-spec.md'), '# Context linked spec\n');
   fs.writeFileSync(path.join(root, 'context', 'secrets.md'), 'must be excluded\n');
   fs.writeFileSync(path.join(root, 'context', 'tool.sh'), '#!/bin/sh\n');
   fs.writeFileSync(path.join(root, 'context', 'notes.md.bak'), 'backup\n');
@@ -65,6 +67,7 @@ function input(root, options = {}) {
     tasks: [
       task('T-1', { status: 'done', agent: 'must-drop', leaseUntil: 'must-drop', metadata: { raw: true }, workStateDetails: { responsible: 'must-drop' } }),
       task('T-2', { parentId: 'T-1', specFile: 'specs/T-2-review.md', status: 'archived', claimedBy: 'must-drop' }),
+      task('T-3', { specFile: 'context/T-3-context-spec.md' }),
     ],
     canvas: {
       version: 1,
@@ -92,12 +95,13 @@ async function main() {
     const second = exportProjectReviewBundle(input(root));
     assert.equal(canonicalJson(first.bundle), canonicalJson(second.bundle), 'fixed provenance export is deterministic');
     assert.equal(validateBundle(first.bundle).ok, true, JSON.stringify(validateBundle(first.bundle).errors));
-    assert.deepEqual(first.bundle.tasks.map((item) => item.id), ['T-1', 'T-2']);
+    assert.deepEqual(first.bundle.tasks.map((item) => item.id), ['T-1', 'T-2', 'T-3']);
     assert.equal(first.bundle.tasks[0].agent, undefined);
     assert.equal(first.bundle.tasks[0].metadata, undefined);
     assert.equal(first.bundle.tasks[0].workStateDetails.responsible, null);
     assert.equal(first.bundle.project.github.token, undefined);
-    assert.deepEqual(first.bundle.specs, [{ path: 'specs/T-2-review.md', taskId: 'T-2', content: '# Review spec\n' }]);
+    assert.equal(first.bundle.specs.some((spec) => spec.path === 'specs/T-2-review.md' && spec.taskId === 'T-2' && spec.content === '# Review spec\n'), true);
+    assert.equal(first.bundle.specs.some((spec) => spec.path === 'context/T-3-context-spec.md'), true);
     assert.deepEqual(first.bundle.files.map((file) => file.path), [
       'context/nested/MORE.md', 'context/NOTES.md', 'DECISIONS.md', 'PROJECT.md',
     ]);
@@ -106,6 +110,7 @@ async function main() {
     assert.equal(first.bundle.manifest.options.includeHistory, false);
     assert.equal(first.bundle.history, undefined);
     assert.equal(first.bundle.manifest.checksums.files['specs/T-2-review.md'], undefined);
+    assert.equal(first.bundle.manifest.checksums.files['context/T-3-context-spec.md'], undefined);
 
     fs.unlinkSync(path.join(root, 'DECISIONS.md'));
     const missingOptional = exportProjectReviewBundle(input(root));
@@ -120,6 +125,39 @@ async function main() {
     const before = fs.readFileSync(path.join(root, 'PROJECT.md'), 'utf8');
     exportProjectReviewBundle(input(root));
     assert.equal(fs.readFileSync(path.join(root, 'PROJECT.md'), 'utf8'), before, 'export does not mutate project files');
+
+    const fakeSecret = 'sk-review-only-fake-value-1234567890';
+    fs.writeFileSync(path.join(root, 'context', 'NOTES.md'), `Review note with apiKey: ${fakeSecret}\n`);
+    const redacted = exportProjectReviewBundle(input(root));
+    assert.equal(redacted.bundle.files.some((file) => file.path === 'context/NOTES.md'), false);
+    assert.ok(redacted.bundle.manifest.warnings.some((item) => item.code === WARNING_CODES.SENSITIVE_CONTENT_EXCLUDED));
+    assert.equal(JSON.stringify(redacted.bundle).includes(fakeSecret), false);
+
+    const canonicalHit = 'ghp_review_only_fake_value_1234567890';
+    assert.throws(() => exportProjectReviewBundle(input(root, {
+      tasks: [task('T-1', { description: `token: ${canonicalHit}` })],
+    })), (error) => error.code === 'SENSITIVE_CONTENT_DETECTED' && !error.message.includes(canonicalHit));
+
+    const safeProse = 'This review explains token handling and HMAC verification without embedding credentials.';
+    assert.equal(containsSensitiveContent(safeProse), false);
+    const findings = scanSensitiveContent(`Bearer ${fakeSecret}`);
+    assert.equal(findings.length > 0, true);
+    assert.equal(JSON.stringify(findings).includes(fakeSecret), false);
+    const highConfidenceExamples = [
+      '-----BEGIN RSA PRIVATE KEY-----\nZmFrZS1rZXktbG9uZy12YWx1ZQ==\n-----END RSA PRIVATE KEY-----',
+      'Bearer review-only-fake-bearer-value-123456',
+      'eyJreviewonlyheader1234.eyJreviewonlypayload1234.review-only-signature-1234',
+      'sk-reviewonlyprefixvalue123456',
+      'ghp_reviewonlygithubvalue1234567890',
+      'github_pat_reviewonlygithubvalue1234567890',
+      '123456789:review-only-telegram-bot-token-123456',
+      'https://review-user:review-password@example.test/path',
+      'password: review-only-assignment-value-123456',
+    ];
+    for (const example of highConfidenceExamples) {
+      assert.equal(containsSensitiveContent(example), true, `scanner should detect ${example.slice(0, 12)}`);
+      assert.equal(JSON.stringify(scanSensitiveContent(example)).includes(example), false);
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

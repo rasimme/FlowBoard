@@ -48,6 +48,14 @@ async function main() {
       content: '# Portable fixture review\n\nReview the export boundary.\n',
     });
     assert.equal(spec.status, 200, JSON.stringify(spec.body));
+    const contextSpecWrite = await ctx.api('PUT', '/projects/portable-review-fixture/files/context/CONTEXT-SPEC.md', {
+      content: '# Context-linked fixture spec\n\nThis is canonical spec content.\n',
+    });
+    assert.equal(contextSpecWrite.status, 200, JSON.stringify(contextSpecWrite.body));
+    const contextSpecLink = await ctx.api('PUT', `/projects/portable-review-fixture/tasks/${childId}`, {
+      specFile: 'context/CONTEXT-SPEC.md',
+    });
+    assert.equal(contextSpecLink.status, 200, JSON.stringify(contextSpecLink.body));
 
     const canvas = await ctx.api('POST', '/projects/portable-review-fixture/canvas/notes', {
       text: 'Review canvas idea', x: 10, y: 20, color: 'yellow', size: 'small',
@@ -72,7 +80,10 @@ async function main() {
     assert.equal(result.ok, true, JSON.stringify(result.errors));
     assert.equal(response.body.project.slug, 'portable-review-fixture');
     assert.equal(response.body.tasks.some((task) => task.id === childId && task.status === 'archived'), true);
-    assert.equal(response.body.specs.length, 1);
+    assert.equal(response.body.specs.length, 2);
+    assert.equal(response.body.specs.some((spec) => spec.path === 'specs/T-001-review-the-portable-fixture.md'), true);
+    assert.equal(response.body.specs.some((spec) => spec.path === 'context/CONTEXT-SPEC.md'), true);
+    assert.equal(response.body.files.some((file) => file.path === 'context/CONTEXT-SPEC.md'), false);
     assert.equal(response.body.files.some((file) => file.path === 'SESSIONS.md'), false);
     assert.equal(response.body.files.some((file) => file.path.includes('secret')), false);
     assert.equal(response.body.tasks.some((task) => task.title === 'Unrelated secret task'), false);
@@ -88,6 +99,27 @@ async function main() {
     const auditFile = path.join(ctx.projectsDir, '.audit', 'destructive.log');
     assert.equal(fs.existsSync(auditFile), true);
     assert.match(fs.readFileSync(auditFile, 'utf8'), /"action":"project\.export"/);
+
+    const fakeOptionalSecret = 'sk-review-api-fake-value-1234567890';
+    const secretFileWrite = await ctx.api('PUT', '/projects/portable-review-fixture/files/context/REVIEW.md', {
+      content: `Review-only note with apiKey: ${fakeOptionalSecret}\n`,
+    });
+    assert.equal(secretFileWrite.status, 200, JSON.stringify(secretFileWrite.body));
+    const redactedResponse = await ctx.api('GET', '/projects/portable-review-fixture/export');
+    assert.equal(redactedResponse.status, 200, JSON.stringify(redactedResponse.body));
+    assert.equal(JSON.stringify(redactedResponse.body).includes(fakeOptionalSecret), false);
+    assert.equal(redactedResponse.body.files.some((file) => file.path === 'context/REVIEW.md'), false);
+    assert.ok(redactedResponse.body.manifest.warnings.some((item) => item.code === 'SENSITIVE_CONTENT_EXCLUDED'));
+
+    const fakeCanonicalSecret = 'ghp_review_api_fake_value_1234567890';
+    const canonicalSecretWrite = await ctx.api('PUT', `/projects/portable-review-fixture/tasks/${parentId}`, {
+      description: `token: ${fakeCanonicalSecret}`,
+    });
+    assert.equal(canonicalSecretWrite.status, 200, JSON.stringify(canonicalSecretWrite.body));
+    const blocked = await ctx.api('GET', '/projects/portable-review-fixture/export');
+    assert.equal(blocked.status, 500, JSON.stringify(blocked.body));
+    assert.deepEqual(blocked.body, { error: 'Project export failed', code: 'SENSITIVE_CONTENT_DETECTED' });
+    assert.equal(JSON.stringify(blocked.body).includes(fakeCanonicalSecret), false);
 
     const missing = await ctx.api('GET', '/projects/does-not-exist/export');
     assert.equal(missing.status, 404);

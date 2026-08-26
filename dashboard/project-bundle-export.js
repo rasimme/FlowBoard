@@ -19,6 +19,7 @@ const {
   toPortableTask,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+const { scanSensitiveContent } = require('./project-bundle-secrets.js');
 
 const DEFAULT_FILE_POLICY = Object.freeze({
   rootFiles: Object.freeze(['PROJECT.md', 'DECISIONS.md']),
@@ -39,6 +40,7 @@ const WARNING_CODES = Object.freeze({
   SYMLINK_EXCLUDED: 'SYMLINK_EXCLUDED',
   EXCLUDED_FILE: 'EXCLUDED_FILE',
   OPTIONAL_FILE_TOO_LARGE: 'OPTIONAL_FILE_TOO_LARGE',
+  SENSITIVE_CONTENT_EXCLUDED: 'SENSITIVE_CONTENT_EXCLUDED',
 });
 
 const EXCLUDED_PATH_SEGMENTS = new Set([
@@ -132,7 +134,13 @@ function readOptionalFile({ projectDir, relativePath, fsModule, warnings }) {
     return null;
   }
   try {
-    return { path: target.normalized, content: fsModule.readFileSync(target.resolved, 'utf8'), encoding: 'utf8' };
+    const content = fsModule.readFileSync(target.resolved, 'utf8');
+    if (scanSensitiveContent(content).length > 0) {
+      addOptionalFileWarning(warnings, warning(WARNING_CODES.SENSITIVE_CONTENT_EXCLUDED,
+        'Credential-like content was excluded from the review bundle.', target.normalized));
+      return null;
+    }
+    return { path: target.normalized, content, encoding: 'utf8' };
   } catch (error) {
     addOptionalFileWarning(warnings, warning(WARNING_CODES.OPTIONAL_FILE_UNREADABLE,
       'Optional project knowledge file could not be read.', target.normalized));
@@ -140,7 +148,7 @@ function readOptionalFile({ projectDir, relativePath, fsModule, warnings }) {
   }
 }
 
-function walkContextFiles({ projectDir, fsModule, warnings, policy }) {
+function walkContextFiles({ projectDir, fsModule, warnings, policy, excludedPaths }) {
   const result = [];
   const contextRoot = projectPath(projectDir, policy.contextDirectory).resolved;
 
@@ -162,6 +170,7 @@ function walkContextFiles({ projectDir, fsModule, warnings, policy }) {
       }
       const relativePath = `${relativeDirectory}/${entry.name}`;
       const absolutePath = path.join(directory, entry.name);
+      if (excludedPaths.has(relativePath)) continue;
       if (isExcludedKnowledgePath(relativePath)) {
         addOptionalFileWarning(warnings, warning(WARNING_CODES.EXCLUDED_FILE,
           'Backups, secrets and runtime files are excluded from review bundles.', relativePath));
@@ -198,7 +207,7 @@ function walkContextFiles({ projectDir, fsModule, warnings, policy }) {
   return result;
 }
 
-function collectKnowledgeFiles({ projectDir, fsModule = fs, warnings = [], policy = DEFAULT_FILE_POLICY }) {
+function collectKnowledgeFiles({ projectDir, fsModule = fs, warnings = [], policy = DEFAULT_FILE_POLICY, excludedPaths = new Set() }) {
   if (!projectDir || typeof projectDir !== 'string') {
     throw new ProjectBundleExportError('A project directory is required', 'PROJECT_DIR_REQUIRED');
   }
@@ -207,7 +216,7 @@ function collectKnowledgeFiles({ projectDir, fsModule = fs, warnings = [], polic
     const file = readOptionalFile({ projectDir, relativePath, fsModule, warnings });
     if (file) files.push(file);
   }
-  files.push(...walkContextFiles({ projectDir, fsModule, warnings, policy }));
+  files.push(...walkContextFiles({ projectDir, fsModule, warnings, policy, excludedPaths }));
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
@@ -222,8 +231,8 @@ function readLinkedSpecs({ projectDir, tasks, fsModule = fs }) {
     } catch (error) {
       throw new ProjectBundleExportError(`Task ${task.id} has an unsafe spec path`, 'SPEC_PATH_UNSAFE', { cause: error });
     }
-    if (!target.normalized.startsWith('specs/')) {
-      throw new ProjectBundleExportError(`Task ${task.id} spec must live below specs/`, 'SPEC_PATH_INVALID');
+    if (!target.normalized.startsWith('specs/') && !target.normalized.startsWith('context/')) {
+      throw new ProjectBundleExportError(`Task ${task.id} spec must live below specs/ or context/`, 'SPEC_PATH_INVALID');
     }
     if (seen.has(target.normalized)) continue;
     seen.add(target.normalized);
@@ -239,6 +248,9 @@ function readLinkedSpecs({ projectDir, tasks, fsModule = fs }) {
     let content;
     try { content = fsModule.readFileSync(target.resolved, 'utf8'); } catch (error) {
       throw new ProjectBundleExportError(`Linked spec ${target.normalized} is not readable`, 'SPEC_READ_FAILED', { cause: error });
+    }
+    if (scanSensitiveContent(content).length > 0) {
+      throw new ProjectBundleExportError('Credential-like content detected in a linked canonical spec', 'SENSITIVE_CONTENT_DETECTED');
     }
     specs.push({ path: target.normalized, taskId: task.id, content });
   }
@@ -287,7 +299,12 @@ function exportProjectReviewBundle({
   const publicProject = normalizeProject(project, projectName);
   const publicTasks = tasks.map(toPortableTask);
   const specs = readLinkedSpecs({ projectDir, tasks: publicTasks, fsModule });
-  const files = collectKnowledgeFiles({ projectDir, fsModule, warnings });
+  const files = collectKnowledgeFiles({
+    projectDir,
+    fsModule,
+    warnings,
+    excludedPaths: new Set(specs.filter((spec) => spec.path.startsWith('context/')).map((spec) => spec.path)),
+  });
   const bundle = createBundle({
     project: publicProject,
     tasks: publicTasks,
@@ -303,6 +320,18 @@ function exportProjectReviewBundle({
     includeHistory: false,
     warnings,
   });
+  const canonicalSections = [
+    ['project', bundle.project],
+    ['tasks', bundle.tasks],
+    ['specs', bundle.specs],
+    ['canvas', bundle.canvas],
+    ['overview', bundle.overview],
+  ];
+  for (const [, section] of canonicalSections) {
+    if (scanSensitiveContent(section).length > 0) {
+      throw new ProjectBundleExportError('Credential-like content detected in canonical project data', 'SENSITIVE_CONTENT_DETECTED');
+    }
+  }
   const validation = validateBundle(bundle);
   if (!validation.ok) {
     throw new ProjectBundleExportError('Generated project bundle failed schema validation', 'BUNDLE_INVALID', { errors: validation.errors });

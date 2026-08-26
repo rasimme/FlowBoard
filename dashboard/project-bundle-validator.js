@@ -416,7 +416,9 @@ function validateSpecs(specs, tasks, errors) {
     if (filePath) {
       try {
         normalizedPath = normalizeRelativePath(filePath);
-        if (!normalizedPath.startsWith('specs/')) addIssue(errors, 'PATH_INVALID', `${path}.path`, 'spec paths must live below specs/');
+        if (!normalizedPath.startsWith('specs/') && !normalizedPath.startsWith('context/')) {
+          addIssue(errors, 'PATH_INVALID', `${path}.path`, 'spec paths must live below specs/ or context/');
+        }
       } catch (error) { addIssue(errors, error.code || 'PATH_UNSAFE', `${path}.path`, error.message); }
     }
     const taskId = idField(spec, 'taskId', path, errors, { required: true });
