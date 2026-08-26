@@ -2,6 +2,14 @@
 
 ### Unreleased
 
+- **Project discipline and structure review.** Projects can declare a type and task-discipline policy; task creation supports atomic parent batches and spec-on-create, with policy-aware exceptions, server-authoritative attribution, and observable structure-review checks that can self-heal. The Specify stepper avoids redundant polling, and retired spec flags are cleaned up at the write boundary.
+- **Canonical work state and attention.** The blocked boolean and multi-field work-state form are retired in favor of canonical `WorkState` facts, a compact agent/work combo chip, state icons, stale-lease facts, and one dismissible server-backed attention banner. Transient stuck indicators expose safe retry/clear actions and only target active claims.
+- **Multi-agent operations.** Active Agents now shows multiple claims and lease health, routes single active claims directly, preserves task identity in the popover, and uses one claim predicate across cards and overview widgets. Claim, checkpoint, release, route, and completion attribution remain server-authoritative.
+- **Snapshots and API resilience.** Dashboard task snapshots are serialized and recover from races and fatal API failures with retry behavior. Snapshot ETags and independent token-bucket lanes are enforced; documented task filters and canonical task/API contracts now match the implementation.
+- **Security and authentication hardening.** Multi-bot Telegram sessions validate the server-confirmed agent identity, reject cross-bot or forged-expired credentials, strictly validate legacy cookies, rate-limit `/api/auth`, and redact tokens and secrets from logs and privacy scans. CORS, trusted-proxy rate keys, client fetch URLs, scheduler datetimes, policy ledgers, and task-creation exception boundaries are hardened.
+- **Setup reliability.** launchd/systemd updates preserve existing service configuration and secrets, with explicit rotation, safe escaping, correct restart behavior, ordered environment-file precedence, owner-only generated files/logs, and reliable health-check port handling.
+- **Stuck notifications and workflow integration.** Reminders are durable throttled task comments plus per-agent status attention, delivered through non-destructive wake events without resetting interactive sessions; unowned-task escalation uses a safe isolated check. Agent bootstrap/rules and task workflow contracts were refreshed for external agents and release documentation.
+
 - **Preserved service configuration across setup updates (T-439).** The standard
   launchd/systemd installer now securely merges existing auth, tunnel, custom,
   and operational environment values instead of regenerating `JWT_SECRET` on
