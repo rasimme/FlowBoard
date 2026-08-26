@@ -11,7 +11,7 @@
 // bridge.replaceTasks (mutate()'s `bridge.replaceTasks(next)` call). That
 // canonical publish is real and happens synchronously once the PUT resolves.
 //
-// The bug Simeon reported ("the card doesn't update immediately after
+// The reported bug ("the card doesn't update immediately after
 // setting the state in the detail panel") is a race, not a missing publish:
 // if a poll's snapshot GET was already in flight *before* the PUT started,
 // its response reflects pre-mutation data. If that response arrives *after*
