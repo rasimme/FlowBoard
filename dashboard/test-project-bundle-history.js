@@ -1,8 +1,28 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const Database = require('libsql');
 const { withIsolatedDashboard } = require('./test-support/server-harness.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+
+function historyEventIds(ctx, project) {
+  const cache = new Database(ctx.cacheDbPath, { readonly: true });
+  const events = new Database(ctx.dbPath, { readonly: true });
+  try {
+    const taskIds = cache.prepare('SELECT task_id FROM tasks_current WHERE project = ?').all(project).map(row => row.task_id);
+    if (taskIds.length === 0) return [];
+    const placeholders = taskIds.map(() => '?').join(',');
+    return events.prepare(`
+      SELECT event_id, type FROM events
+       WHERE task_id IN (${placeholders})
+         AND type IN ('comment_added', 'checkpoint_recorded')
+       ORDER BY id
+    `).all(...taskIds);
+  } finally {
+    cache.close();
+    events.close();
+  }
+}
 
 async function bundleRequest(ctx, path, bundle, failure = null) {
   const response = await fetch(`${ctx.base}${path}`, {
@@ -55,7 +75,28 @@ async function main() {
     assert.equal(exported.body.history.comments[1].questionId, exported.body.history.comments[0].id);
     assert.equal(exported.body.history.checkpoints[0].progress, 25);
     assert.equal(exported.body.history.comments[0].authorLabel, 'reviewer');
+    assert.equal(exported.body.history.checkpoints[0].authorLabel, 'history-worker');
     assert.equal(JSON.stringify(exported.body).includes('event_rowid'), false);
+
+    const sourceEventIds = historyEventIds(source, 'history-source').map(event => event.event_id);
+    assert.equal(sourceEventIds.length, 3);
+
+    const secretTask = await source.api('POST', '/projects/history-source/tasks', {
+      title: 'History secret fixture', description: 'Safe task metadata.', status: 'open',
+    });
+    assert.equal(secretTask.status, 200, JSON.stringify(secretTask.body));
+    const fakeHistoryToken = 'sk-proj-history-secret-value-1234567890';
+    const secretComment = await source.api('POST', `/projects/history-source/tasks/${secretTask.body.task.id}/comment`, {
+      message: `Do not export this token: ${fakeHistoryToken}`, author: 'reviewer',
+    });
+    assert.equal(secretComment.status, 200, JSON.stringify(secretComment.body));
+    const defaultWithHistoryFixture = await source.api('GET', '/projects/history-source/export');
+    assert.equal(defaultWithHistoryFixture.status, 200, JSON.stringify(defaultWithHistoryFixture.body));
+    const blockedHistoryExport = await source.api('GET', '/projects/history-source/export?includeHistory=true');
+    assert.equal(blockedHistoryExport.status, 500, JSON.stringify(blockedHistoryExport.body));
+    assert.equal(blockedHistoryExport.body.code, 'SENSITIVE_CONTENT_DETECTED');
+    assert.equal(JSON.stringify(blockedHistoryExport.body).includes(fakeHistoryToken), false);
+    assert.equal(source.readLogs().includes(fakeHistoryToken), false);
 
     await withIsolatedDashboard(async (destination) => {
       const preview = await bundleRequest(destination, '/api/projects/import/preview?targetName=history-copy', exported.body);
@@ -77,12 +118,39 @@ async function main() {
       assert.equal(imported.body.counts.historyCheckpoints, 1);
       const importedComments = await destination.api('GET', `/projects/history-copy/tasks/${taskId}/comments`);
       const importedCheckpoints = await destination.api('GET', `/projects/history-copy/tasks/${taskId}/checkpoints`);
+      const importedTask = await destination.api('GET', `/projects/history-copy/tasks/${taskId}`);
       assert.equal(importedComments.body.comments.length, 2);
       assert.equal(importedCheckpoints.body.checkpoints.length, 1);
-      assert.equal(importedComments.body.comments[0].timestamp, exported.body.history.comments[0].createdAt);
+      assert.deepEqual(importedComments.body.comments.map(comment => ({
+        message: comment.message,
+        kind: comment.kind,
+        author: comment.author,
+        timestamp: comment.timestamp,
+      })), exported.body.history.comments.map(comment => ({
+        message: comment.body,
+        kind: comment.kind,
+        author: comment.authorLabel,
+        timestamp: comment.createdAt,
+      })));
       assert.equal(importedComments.body.comments[1].questionId, importedComments.body.comments[0].id);
-      assert.equal(importedCheckpoints.body.checkpoints[0].timestamp, exported.body.history.checkpoints[0].createdAt);
+      assert.deepEqual(importedCheckpoints.body.checkpoints.map(checkpoint => ({
+        message: checkpoint.message,
+        progress: checkpoint.progress,
+        author: checkpoint.author,
+        timestamp: checkpoint.timestamp,
+      })), exported.body.history.checkpoints.map(checkpoint => ({
+        message: checkpoint.message,
+        progress: checkpoint.progress,
+        author: checkpoint.authorLabel,
+        timestamp: checkpoint.createdAt,
+      })));
       assert.equal(importedCheckpoints.body.checkpoints[0].agent, null);
+      assert.equal(importedTask.body.task.agent, null);
+      assert.equal(importedTask.body.task.leaseUntil, null);
+      const destinationEventIds = historyEventIds(destination, 'history-copy')
+        .map(event => event.event_id);
+      assert.equal(destinationEventIds.length, 3);
+      assert.equal(destinationEventIds.some(eventId => sourceEventIds.includes(eventId)), false);
       const retry = await bundleRequest(destination, '/api/projects/import?targetName=history-copy', exported.body);
       assert.equal(retry.status, 409);
     }, { prefix: 'flowboard-t468-history-destination-' });
