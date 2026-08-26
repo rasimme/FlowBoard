@@ -13,7 +13,7 @@ import FormGroup from './FormGroup.jsx';
 import DeleteProjectModal from './DeleteProjectModal.jsx';
 import DeletedProjectsTrash from './DeletedProjectsTrash.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';
-import ImportProjectModal, { ExportSnapshotModal } from './ProjectBundleModals.jsx';
+import ImportProjectModal, { ExportProjectModal } from './ProjectBundleModals.jsx';
 import Popover from './Popover.jsx';
 
 const COLLAPSE_KEY = 'flowboard_sidebar_collapsed';
@@ -807,7 +807,7 @@ export default function Sidebar() {
         </Popover.Option>
         <Popover.Option onClick={() => { setNewMenuOpen(false); setImportOpen(true); }}>
           <span className="inline-flex items-center gap-2">
-            <Upload size={13} /> Import project…
+            <Upload size={13} /> Import project
           </span>
         </Popover.Option>
         <Popover.Option onClick={() => { setNewMenuOpen(false); setNewFolderValue(''); setNewFolderOpen(true); }}>
@@ -969,7 +969,7 @@ export default function Sidebar() {
         onDeleted={() => { refreshProjectsOnly(); }}
       />
 
-      <ExportSnapshotModal
+      <ExportProjectModal
         open={!!exportTarget}
         project={exportTarget}
         onClose={() => setExportTarget(null)}

@@ -141,7 +141,7 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
                 <div className="h-px bg-border my-1" />
                 <Popover.Option onClick={handleExport}>
                   <span className="inline-flex items-center gap-2">
-                    <Download size={13} /> Export snapshot…
+                    <Download size={13} /> Export project
                   </span>
                 </Popover.Option>
                 <Popover.Option onClick={handleDelete} className="text-danger">
@@ -156,7 +156,7 @@ export default function ProjectActionsMenu({ project, folders = [], onRenameRequ
                 <div className="h-px bg-border my-1" />
                 <Popover.Option onClick={handleExport}>
                   <span className="inline-flex items-center gap-2">
-                    <Download size={13} /> Export snapshot…
+                    <Download size={13} /> Export project
                   </span>
                 </Popover.Option>
               </>

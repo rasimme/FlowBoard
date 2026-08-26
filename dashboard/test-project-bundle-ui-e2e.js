@@ -62,8 +62,8 @@ async function dragBundle(page, body, filename) {
 
     // Existing entry points.
     await page.click('.row-kebab');
-    r.ok((await text(page)).includes('Export snapshot…'), 'project actions menu exposes Export snapshot');
-    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Export snapshot'))?.click());
+    r.ok((await text(page)).includes('Export project'), 'project actions menu exposes Export project');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Export project'))?.click());
     await page.waitForSelector('#include-task-history');
     r.ok((await text(page)).toLowerCase().includes('included') && (await text(page)).toLowerCase().includes('not included'), 'export ready state renders included and excluded scope');
     r.ok((await page.$$('[data-testid="bundle-counts"]')) .length > 0, 'export renders server counts before download');
@@ -95,7 +95,7 @@ async function dragBundle(page, body, filename) {
     await page.click('button[aria-label="Close"]');
 
     await page.click('.sidebar-new');
-    r.ok((await text(page)).includes('Import project…'), 'New menu exposes Import project');
+    r.ok((await text(page)).includes('Import project'), 'New menu exposes Import project');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project'))?.click());
     await page.waitForSelector('#project-bundle-file');
     const exported = await fetch(`${base}/api/projects/ui-source/export`).then((response) => response.json());

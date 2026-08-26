@@ -164,7 +164,7 @@ function BundleHeader({ icon: Icon, title, subtitle }) {
   );
 }
 
-function ExportSnapshotModal({ open, onClose, project }) {
+function ExportProjectModal({ open, onClose, project }) {
   const [includeHistory, setIncludeHistory] = useState(false);
   const [state, setState] = useState('loading');
   const [bundle, setBundle] = useState(null);
@@ -272,7 +272,7 @@ function ExportSnapshotModal({ open, onClose, project }) {
     <Modal
       open={open}
       onClose={onClose}
-      title="Export snapshot"
+      title="Export project"
       size="lg"
       showClose
       dismissible={dismissible}
@@ -286,7 +286,7 @@ function ExportSnapshotModal({ open, onClose, project }) {
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={state === 'downloading'}>Cancel</Button>
           <Button size="sm" onClick={handleDownload} disabled={!['ready', 'warnings'].includes(state)}>
-            {state === 'downloading' ? <><Spinner size="sm" /> Downloading…</> : <><Download size={13} /> Download snapshot</>}
+            {state === 'downloading' ? <><Spinner size="sm" /> Downloading…</> : <><Download size={13} /> Download project bundle</>}
           </Button>
         </>
       )}
@@ -295,7 +295,7 @@ function ExportSnapshotModal({ open, onClose, project }) {
         {state === 'loading' && (
           <div className="flex items-center gap-3 rounded-lg border border-solid border-border bg-bg-elevated p-4" data-testid="export-loading">
             <Spinner size="md" />
-            <div><div className="text-sm font-semibold text-text-strong">Preparing snapshot…</div><div className="mt-1 text-xs text-muted">Reading the project manifest and content counts.</div></div>
+            <div><div className="text-sm font-semibold text-text-strong">Preparing project review bundle…</div><div className="mt-1 text-xs text-muted">Reading the project manifest and content counts.</div></div>
           </div>
         )}
         {state === 'blocked' && (
@@ -303,7 +303,7 @@ function ExportSnapshotModal({ open, onClose, project }) {
         )}
         {state !== 'blocked' && state !== 'loading' && bundle && (
           <>
-            <BundleHeader icon={FileJson} title={bundle.project?.displayName || project?.displayName || project?.name} subtitle={`Project snapshot · ${bundle.project?.slug || project?.name || ''}`} />
+            <BundleHeader icon={FileJson} title={bundle.project?.displayName || project?.displayName || project?.name} subtitle={`Project review bundle · ${bundle.project?.slug || project?.name || ''}`} />
             <CountGrid counts={counts} includeHistory={includeHistory} />
             <div className="rounded-lg border border-solid border-border bg-bg-elevated p-3">
               <label className="flex cursor-pointer items-start gap-2 text-xs text-text" htmlFor="include-task-history">
@@ -311,7 +311,7 @@ function ExportSnapshotModal({ open, onClose, project }) {
                 <span><span className="font-medium text-text-strong">Include task history</span><span className="mt-1 block text-[11px] leading-4 text-muted">Includes comments and checkpoints. Agent attribution and historical context may contain sensitive information.</span></span>
               </label>
             </div>
-            {includeHistory && <Alert variant="warn" title="History may contain sensitive context">Review comments and checkpoints before sharing this snapshot.</Alert>}
+            {includeHistory && <Alert variant="warn" title="History may contain sensitive context">Review comments and checkpoints before sharing this project bundle.</Alert>}
             <ScopeLists includeHistory={includeHistory} />
             <WarningList title="Manifest warnings" items={manifestWarnings} />
           </>
@@ -614,7 +614,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
         {stage !== 'success' && <ImportSteps stage={stage === 'failure' ? 'progress' : stage} />}
         {stage === 'select' && (
           <>
-            <BundleHeader icon={Upload} title="Choose a project bundle" subtitle="Select a sanitized FlowBoard JSON snapshot to inspect before importing." />
+            <BundleHeader icon={Upload} title="Choose a project bundle" subtitle="Select a sanitized FlowBoard JSON review bundle to inspect before importing." />
             <label
               htmlFor="project-bundle-file"
               className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed px-5 py-9 text-center transition-colors ${dragActive ? 'border-accent bg-accent-subtle' : 'border-border-strong bg-bg-elevated hover:border-accent'}`}
@@ -683,5 +683,5 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
   );
 }
 
-export { ExportSnapshotModal };
+export { ExportProjectModal };
 export default ImportProjectModal;
