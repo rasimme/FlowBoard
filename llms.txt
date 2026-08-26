@@ -12,6 +12,8 @@
 
 <!-- Concept docs are listed here once they contain substantive content (>50 lines or marked v1-complete). Stubs are intentionally not linked. -->
 
+- [Portable Project Review Bundles](docs/concepts/project-review-bundles.md) — JSON-only v1 review copies; create-only import; redaction, optional history, untrusted content, and journaled recovery
+
 - [Lazy Loading](docs/concepts/lazy-loading.md) — rule sections served on demand; manifest/section split; eager-load escape hatch for external agents
 - [Agent Identity](docs/concepts/agent-identity.md) — agent-id as a string contract; OpenClaw vs. FlowBoard layers; lazy registration; attribution
 - [Hook Architecture](docs/concepts/hook-architecture.md) — the single `agent:bootstrap` subscription; mutates `bootstrapFiles`; no on-disk writes
@@ -65,6 +67,7 @@
 - [ADR-0033](docs/adr/0033-server-authoritative-principal-and-specify-confirmation.md) — Server-authoritative principal resolution + authenticated Specify confirmation; caller identity/approval fields descriptive-only; loopback admission is not human authority
 - [ADR-0034](docs/adr/0034-project-scoped-governance-rollout.md) — Project-scoped compat/enforce rollout, would-block observation telemetry, and manual human rollback
 - [ADR-0035](docs/adr/0035-task-form-not-authorization.md) — Task discipline and structure review are form checks, not task-creation authorization
+- [ADR-0036](docs/adr/0036-portable-project-review-bundles.md) — Portable project review bundles are create-only application documents
 
 ## Reference
 
@@ -87,6 +90,7 @@ Human-facing how-to guides live under the user guide:
 - [Update FlowBoard](docs/guide/how-to/update-flowboard.md) — service-preserving update and autostart verification
 - [Troubleshooting](docs/guide/how-to/troubleshooting.md) — visible auth/API failures and remote access recovery
 - [Use FlowBoard on a phone or in Telegram](docs/guide/how-to/work-on-mobile.md) — Mini App and multi-bot sessions
+- [Manage projects](docs/guide/how-to/manage-projects.md) — export, preview, import, recovery, and archive/delete flows
 
 ## Operational rules (NOT for human reading)
 

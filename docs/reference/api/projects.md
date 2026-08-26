@@ -253,6 +253,13 @@ stores bundle content. While an import journal is non-committed, the same
 destination is reserved against ordinary `POST /api/projects` creation; a
 matching failed import can resume when its lifecycle-start marker permits it.
 
+The raw JSON upload ceiling is 72 MB. v1 has no ZIP/archive transport,
+signature verification or bidirectional sync; `bundleDigest` supports
+integrity and safe retry matching, not producer authentication. Treat all
+imported Markdown and task text as untrusted data. The sensitive-content
+scanner is pattern-based and value-blind: it can miss novel encodings and may
+flag benign prose, so a preview review remains required.
+
 **201** `{ ok, importId, state: "committed", project, counts }`.
 **409** target conflict or concurrent import lock. **415** unsupported media or
 compression. **422** invalid/incompatible/sensitive bundle. A caught mutation

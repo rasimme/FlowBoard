@@ -24,6 +24,7 @@ Each concept doc answers five questions:
 - [Modular Project Overview](overview-widgets.md) — server-driven widget grid, trusted registry, presets, GitHub binding, milestones/questions as task conventions
 - [Auth Model](auth-model.md) — middleware decision tree, Telegram init-data + JWT cookie, loopback / tunnel / LAN bypasses, fail-closed in production
 - [Governance Trust Contract](governance-trust-contract.md) — server-authoritative attribution, authenticated Specify confirmation, and task-discipline boundary
+- [Portable Project Review Bundles](project-review-bundles.md) — JSON-only v1 review copies, create-only import, redaction, history privacy, and journaled recovery
 - [Smart Search](smart-search.md) — cross-project `Cmd/Ctrl+K` palette; query parser, operators, typo-tolerant matching
 - [Mobile & Touch](mobile-and-touch.md) — responsive single app; Pointer-Events drag, full-screen sheets, master-detail, safe-area
 - [Accessibility](accessibility.md) — keyboard drag-and-drop, `aria-live` announcements, focusable cards (not buttons)
@@ -69,6 +70,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Testing Strategy | Browser E2E harness; runtime guardrails; the `npm test` gate | ✅ [testing-strategy.md](testing-strategy.md) | ✅ ADR-0026 (frontend invariants) | — |
 | Docs-Drift Enforcement | Drift-test family ties docs to code | ✅ [docs-drift-enforcement.md](docs-drift-enforcement.md) | ⬜ none yet | — |
 | Governance Trust Contract | Server-authoritative attribution; authenticated Specify confirmation; task discipline and non-blocking structure review | ✅ [governance-trust-contract.md](governance-trust-contract.md) | ✅ ADR-0033, ADR-0035 (ADR-0034 superseded) | T-449 |
+| Portable Project Review Bundles | Export/preview/import DTO; create-only semantics; ID remapping; untrusted content; privacy and journaled recovery | ✅ [project-review-bundles.md](project-review-bundles.md) | ✅ ADR-0036 | T-468 |
 
 **Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
 

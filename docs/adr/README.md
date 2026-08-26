@@ -76,6 +76,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0033](0033-server-authoritative-principal-and-specify-confirmation.md) — Server-authoritative principal resolution + verified-human Specify confirmation; caller identity/approval fields are descriptive-only; loopback admission is not human authority (2026-08-24)
 - [ADR-0034](0034-project-scoped-governance-rollout.md) — Project-scoped compat/enforce governance rollout with observation telemetry and manual rollback (2026-08-24; superseded by ADR-0035)
 - [ADR-0035](0035-task-form-not-authorization.md) — Task discipline and structure review are form checks, not task-creation authorization (2026-08-25)
+- [ADR-0036](0036-portable-project-review-bundles.md) — Portable project review bundles are create-only application documents (2026-08-26)
 
 ## See also
 

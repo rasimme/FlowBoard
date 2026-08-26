@@ -14,6 +14,11 @@ OpenClaw-managed agents get FlowBoard context live-injected by the hook (see [Ho
 - **Trigger install:** `install-trigger.mjs --repo <path>` writes the external-trigger block into the repo's `AGENTS.md` (wrapped in idempotent markers, re-runnable) and symlinks `CLAUDE.md → AGENTS.md` so Claude Code reads the same content.
 - **Lazy registration:** an external agent picks a stable id and is auto-registered in `flowboard_agents` on its first `PUT /api/status` — no pre-registration ([Agent Identity](agent-identity.md)).
 - **No live inject:** external agents fetch context on demand via `GET /api/projects/<name>/bootstrap` instead of receiving an injected `BOOTSTRAP.md`.
+- **Project review bundles:** external agents can use the documented export,
+  preview and import routes for a portable review DTO. The API manifest and
+  [projects reference](../reference/api/projects.md) are authoritative for
+  request media, format version, warnings and error codes; bundle import is
+  create-only and never activates a project.
 
 ## Consequences
 
@@ -26,3 +31,5 @@ OpenClaw-managed agents get FlowBoard context live-injected by the hook (see [Ho
 - `dashboard/install-trigger.mjs` — the trigger installer.
 - `snippets/external-trigger.md` — the installed block.
 - Foundation: [ADR-0011](../adr/0011-external-agent-discovery.md).
+- Bundle architecture: [Portable Project Review Bundles](project-review-bundles.md)
+  and [ADR-0036](../adr/0036-portable-project-review-bundles.md).

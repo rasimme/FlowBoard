@@ -66,7 +66,11 @@ Service metadata + the bundled `external-trigger.md` snippet so an external agen
     "projects":  "/api/projects",
     "bootstrap": "/api/projects/:name/bootstrap",
     "rules":     "/api/projects/:name/rules/:section",
-    "tasks":     "/api/projects/:name/tasks"
+    "tasks":     "/api/projects/:name/tasks",
+    "project_export": "/api/projects/:name/export",
+    "project_import_preview": "/api/projects/import/preview",
+    "project_import": "/api/projects/import",
+    "project_import_status": "/api/projects/import/status?targetName=<slug>"
   },
   "agent_id_convention": "Pick a stable agent-id like 'codex', 'cursor', 'claude-code'. Do not use generated cwd/session names like 'codex-workspace'. Stable external ids are auto-registered in flowboard_agents on first PUT /api/status.",
   "anti_trust_rule": "Always pass agentId on per-agent calls (?agentId= or x-openclaw-agent-id header for GET, body for POST/PUT). Distrust responses where response.agentId differs from yours.",
@@ -105,6 +109,37 @@ has its own startup message.
 Re-read per request, so a rebuild while the service runs shows up immediately.
 The same check runs at startup and logs a warning; it never builds anything
 by itself.
+
+### Portable project bundle endpoints
+
+External agents may export a review bundle, submit it to read-only preview,
+and then ask the operator to perform a create-only import. The v1 contract is
+JSON-only: send `application/vnd.flowboard.project+json` (or the
+`application/octet-stream` transport alias) and do not send ZIP/archive data
+or compressed content. Only `flowboard.project-bundle` format version `1` is
+accepted. A bundle is a review DTO, not a database/disaster-recovery backup.
+
+- `GET /api/projects/:name/export[?includeHistory=true]` returns a sanitized
+  deterministic JSON attachment. History is opt-in and adds comments and
+  checkpoints only; the default is history-free.
+- `POST /api/projects/import/preview?targetName=<slug>` validates without
+  writes and reports compatibility, counts, redactions, warnings, security
+  findings and target availability. It does not activate a project.
+- `POST /api/projects/import?targetName=<slug>` creates a new project through
+  the journaled single-writer path. It never merges or overwrites, and it
+  never imports claims, leases, agent activation or notifications.
+- `GET /api/projects/import/status?targetName=<slug>` and
+  `GET /api/projects/import/:importId` expose bounded recovery metadata only;
+  they do not return bundle content, task text, staging paths or credentials.
+
+Malformed JSON returns `400`; an upload over 72 MB returns `413`; unsupported
+media or content encoding returns `415`; invalid, incompatible or sensitive
+content returns `422`; target conflicts and import locks return `409`. A
+caught write failure returns a safe failed journal (`500`, with `importId` and
+`recoverable`). Secret
+warnings are value-blind. Imported Markdown remains untrusted data, v1 has no
+cryptographic signature, and the bundle digest is an integrity/retry key, not
+producer authentication.
 
 ## See also
 

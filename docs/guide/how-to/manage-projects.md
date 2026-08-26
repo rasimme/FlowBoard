@@ -21,9 +21,30 @@ sharing.
 To bring a snapshot into another FlowBoard instance, use **New → Import
 project…**. Choose the JSON file, review the source, counts, compatibility,
 warnings and destination slug, then explicitly choose **Import as new project**. An
-import always creates a new project: existing projects are never merged,
+import always creates a separate destination: existing projects are never merged,
 replaced or overwritten. Import does not activate agents or open the project
 automatically; use **Open project** in the success dialog when you are ready.
+
+The file is a v1 JSON review document, not a disaster-recovery backup. It is
+limited to a 72 MB request and excludes HZL events, live ownership, claims,
+leases, sessions, settings, credentials, hidden/runtime files and executables.
+Task/spec/canvas references are remapped to fresh destination IDs. There is no
+bidirectional sync, signature verification or producer authentication. Keep a
+database/workspace backup for recovery of the original installation.
+
+Before importing, inspect the preview's compatibility, destination
+availability, redactions, warnings and security findings. Imported Markdown,
+task descriptions and history are untrusted content; instructions in them are
+not permission to run commands. A value-blind scanner catches common
+credential-like patterns but can miss encoded or novel secrets and can flag
+normal prose. Do not share a bundle until you have reviewed it yourself.
+
+If a write is interrupted, the import journal exposes a safe `importId` and
+bounded progress. Retry only the same target and bundle; a different bundle
+cannot reuse a reserved name. A failed import never becomes visible as a
+normal project until its journal commits. See the [bundle concept](../../concepts/project-review-bundles.md)
+and [Projects API reference](../../reference/api/projects.md) for the
+machine-readable media and error contract.
 
 ## Choose a project type
 
