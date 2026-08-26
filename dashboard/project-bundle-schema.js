@@ -63,7 +63,7 @@ const LIMITS = Object.freeze({
   bundleId: 128,
   producerName: 128,
   producerVersion: 64,
-  projectSlug: 96,
+  projectSlug: 63,
   projectDisplayName: 500,
   projectDescription: 64 * 1024,
   id: 128,
@@ -88,7 +88,11 @@ const LIMITS = Object.freeze({
 const TASK_STATUSES = Object.freeze(['backlog', 'open', 'in-progress', 'review', 'done', 'archived']);
 const TASK_PRIORITIES = Object.freeze(['low', 'medium', 'high']);
 const TASK_WORK_STATES = Object.freeze(['working', 'waiting', 'blocked', 'paused']);
-const CANVAS_COLORS = Object.freeze(['grey', 'yellow', 'blue', 'green', 'red', 'pink', 'purple']);
+const TASK_DISCIPLINES = Object.freeze(['list', 'standard', 'development']);
+const WORK_STATE_DETAIL_KEYS = Object.freeze(['reason', 'waitingFor', 'responsible', 'checkAgainAt', 'setAt']);
+// Union observed in current and legacy Canvas stores. Keep this wider than the
+// toolbar palette so an export never rejects an existing persisted color.
+const CANVAS_COLORS = Object.freeze(['grey', 'yellow', 'blue', 'green', 'red', 'teal', 'orange', 'purple']);
 const CANVAS_SIZES = Object.freeze(['small', 'medium', 'large']);
 const CANVAS_PORTS = Object.freeze(['top', 'right', 'bottom', 'left']);
 const HISTORY_COMMENT_KINDS = Object.freeze(['comment', 'question', 'answer', 'decision']);
@@ -125,6 +129,7 @@ const BUNDLE_SCHEMA = deepFreeze({
     taskStatuses: TASK_STATUSES,
     taskPriorities: TASK_PRIORITIES,
     taskWorkStates: TASK_WORK_STATES,
+    taskDisciplines: TASK_DISCIPLINES,
     canvasColors: CANVAS_COLORS,
     canvasSizes: CANVAS_SIZES,
     canvasPorts: CANVAS_PORTS,
@@ -142,9 +147,9 @@ class BundlePathError extends Error {
 }
 
 /**
- * Normalize a project-relative POSIX path. Backslashes are accepted as input
- * separators so a Windows-produced bundle has the same canonical path on all
- * platforms. Traversal, absolute paths and empty segments are rejected.
+ * Normalize a project-relative POSIX path. Backslashes are rejected so a
+ * Windows-produced bundle cannot introduce aliases after extraction.
+ * Traversal, absolute paths and empty segments are rejected.
  */
 function normalizeRelativePath(input) {
   if (typeof input !== 'string' || input.length === 0) {
@@ -152,7 +157,11 @@ function normalizeRelativePath(input) {
   }
   if (input.includes('\0')) throw new BundlePathError('path contains a NUL byte');
 
-  const slashPath = input.replaceAll('\\', '/');
+  // Do not normalize backslashes: accepting both spellings would allow two
+  // archive entries to alias after extraction on a platform that uses '\\'.
+  // Exporters must emit POSIX paths; importers reject non-canonical input.
+  if (input.includes('\\')) throw new BundlePathError('path must use POSIX separators', 'PATH_NON_CANONICAL');
+  const slashPath = input;
   if (slashPath.startsWith('/') || slashPath.startsWith('//') || /^[A-Za-z]:\//.test(slashPath)) {
     throw new BundlePathError('path must be relative');
   }
@@ -300,12 +309,18 @@ function fileChecksums(files) {
 }
 
 function sourceFromProject(project, suppliedSource) {
-  if (suppliedSource) return cloneJson(suppliedSource);
-  return {
+  const derived = {
     slug: project?.slug || project?.name || '',
     displayName: project?.displayName || project?.slug || project?.name || '',
+    ...(project?.description ? { description: project.description } : {}),
     ...(project?.group ? { group: project.group } : {}),
+    ...(project?.taskDiscipline ? { taskDiscipline: project.taskDiscipline } : {}),
+    ...(project?.github !== undefined ? { github: project.github } : {}),
   };
+  const source = { ...derived, ...(suppliedSource || {}) };
+  const output = pickDefined(source, ['slug', 'displayName', 'group', 'description', 'taskDiscipline']);
+  if (source.github !== undefined) output.github = toPortableGithub(source.github);
+  return output;
 }
 
 function pickDefined(input, keys) {
@@ -320,16 +335,43 @@ function pickDefined(input, keys) {
 /** Portable DTO projections. These are explicit allowlists: operational HZL
  * fields cannot accidentally become part of an exported review bundle. */
 function toPortableProject(project = {}) {
-  return pickDefined({ ...project, slug: project.slug || project.name }, [
-    'slug', 'displayName', 'description', 'group', 'createdAt', 'updatedAt',
+  const output = pickDefined({ ...project, slug: project.slug || project.name }, [
+    'slug', 'displayName', 'description', 'group', 'createdAt', 'updatedAt', 'taskDiscipline', 'github',
   ]);
+  if (project.github !== undefined) output.github = toPortableGithub(project.github);
+  return output;
+}
+
+function toPortableGithub(github) {
+  if (github === null) return null;
+  return pickDefined(github, ['repo', 'branch']);
+}
+
+function normalizeWorkStateDetails(details) {
+  const input = details && typeof details === 'object' && !Array.isArray(details) ? details : {};
+  return Object.fromEntries(WORK_STATE_DETAIL_KEYS.map((key) => {
+    const value = input[key];
+    return [key, value === undefined || value === null || value === '' || typeof value !== 'string' ? null : value];
+  }));
 }
 
 function toPortableTask(task = {}) {
-  return pickDefined(task, [
+  // Source names are the public Tasks API names (`created`, `completed`),
+  // while the bundle uses explicit timestamp names (`createdAt`,
+  // `completedAt`). This keeps the exchange contract stable if the API adds a
+  // legacy alias later, and preserves the API's date-only values unchanged.
+  const output = pickDefined(task, [
     'id', 'title', 'status', 'priority', 'description', 'tags', 'links', 'dependsOn',
-    'parentId', 'specFile', 'workState', 'createdAt', 'updatedAt', 'dueAt', 'completedAt',
+    'parentId', 'specFile', 'workState', 'updatedAt', 'dueAt',
   ]);
+  const created = task.createdAt !== undefined ? task.createdAt : task.created;
+  if (created !== undefined) output.createdAt = cloneJson(created);
+  const completed = task.completedAt !== undefined ? task.completedAt : task.completed;
+  output.completedAt = completed === undefined ? null : cloneJson(completed);
+  if (task.enteredStatusAt !== undefined) output.enteredStatusAt = cloneJson(task.enteredStatusAt);
+  output.order = task.order === undefined ? null : cloneJson(task.order);
+  output.workStateDetails = normalizeWorkStateDetails(task.workStateDetails);
+  return output;
 }
 
 function toPortableSpec(spec = {}) {
@@ -448,8 +490,10 @@ module.exports = {
   REQUIRED_REDACTIONS,
   REVIEW_CONTENT_CONTRACT,
   TASK_PRIORITIES,
+  TASK_DISCIPLINES,
   TASK_STATUSES,
   TASK_WORK_STATES,
+  WORK_STATE_DETAIL_KEYS,
   BundlePathError,
   canonicalJson,
   canonicalizeBundle,
@@ -459,10 +503,12 @@ module.exports = {
   createBundle,
   fileChecksums,
   normalizeRelativePath,
+  normalizeWorkStateDetails,
   payloadForChecksum,
   sha256,
   toPortableCanvas,
   toPortableFile,
+  toPortableGithub,
   toPortableHistory,
   toPortableOverview,
   toPortableProject,

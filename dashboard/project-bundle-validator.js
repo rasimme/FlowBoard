@@ -14,9 +14,11 @@ const {
   IMPORTER_VERSION,
   LIMITS,
   REQUIRED_REDACTIONS,
+  TASK_DISCIPLINES,
   TASK_PRIORITIES,
   TASK_STATUSES,
   TASK_WORK_STATES,
+  WORK_STATE_DETAIL_KEYS,
   canonicalizeBundle,
   normalizeRelativePath,
   payloadForChecksum,
@@ -111,14 +113,21 @@ function isoDateOrDateTime(value) {
   return isoDateTime(value);
 }
 
-function timestampField(object, key, path, errors, { required = false, dateOnly = false } = {}) {
+function isoDateOnly(value) {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
+}
+
+function timestampField(object, key, path, errors, { required = false, dateOnly = false, dateOnlyStrict = false, nullable = false } = {}) {
   const present = Object.prototype.hasOwnProperty.call(object, key);
   if (!present) {
     if (required) requiredField(object, key, path, errors);
     return;
   }
   const value = object[key];
-  if (!(dateOnly ? isoDateOrDateTime(value) : isoDateTime(value))) {
+  if (nullable && value === null) return;
+  const valid = dateOnlyStrict ? isoDateOnly(value) : (dateOnly ? isoDateOrDateTime(value) : isoDateTime(value));
+  if (!valid) {
     addIssue(errors, 'TIMESTAMP_INVALID', `${path}.${key}`, 'must be an ISO-8601 timestamp with timezone');
   }
 }
@@ -200,11 +209,13 @@ function validateManifest(manifest, errors, warnings) {
 
   if (!requireObject(manifest.source, `${path}.source`, errors)) return;
   stringField(manifest.source, 'slug', `${path}.source`, errors, {
-    required: true, max: LIMITS.projectSlug, min: 1, pattern: /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/,
+    required: true, max: LIMITS.projectSlug, min: 1, pattern: /^[a-z0-9][a-z0-9-]{0,62}$/,
   });
   stringField(manifest.source, 'displayName', `${path}.source`, errors, { required: true, max: LIMITS.projectDisplayName, min: 1 });
   stringField(manifest.source, 'group', `${path}.source`, errors, { max: LIMITS.projectDisplayName });
   stringField(manifest.source, 'description', `${path}.source`, errors, { max: LIMITS.projectDescription });
+  enumField(manifest.source, 'taskDiscipline', `${path}.source`, errors, TASK_DISCIPLINES, { required: true });
+  validateGithub(manifest.source.github, `${path}.source.github`, errors);
 
   if (!requireObject(manifest.counts, `${path}.counts`, errors)) return;
   for (const key of ['tasks', 'specs', 'canvasNotes', 'canvasConnections', 'overviewWidgets', 'files', 'historyComments', 'historyCheckpoints']) {
@@ -261,12 +272,31 @@ function compareVersions(a, b) {
 function validateProject(project, errors) {
   const path = 'project';
   if (!requireObject(project, path, errors)) return;
-  stringField(project, 'slug', path, errors, { required: true, max: LIMITS.projectSlug, min: 1, pattern: /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/ });
+  stringField(project, 'slug', path, errors, { required: true, max: LIMITS.projectSlug, min: 1, pattern: /^[a-z0-9][a-z0-9-]{0,62}$/ });
   stringField(project, 'displayName', path, errors, { required: true, max: LIMITS.projectDisplayName, min: 1 });
   stringField(project, 'description', path, errors, { max: LIMITS.projectDescription });
   stringField(project, 'group', path, errors, { max: LIMITS.projectDisplayName });
+  enumField(project, 'taskDiscipline', path, errors, TASK_DISCIPLINES, { required: true });
+  validateGithub(project.github, `${path}.github`, errors);
   timestampField(project, 'createdAt', path, errors);
   timestampField(project, 'updatedAt', path, errors);
+}
+
+function validateGithub(github, path, errors) {
+  if (github === undefined || github === null) return;
+  if (!requireObject(github, path, errors)) return;
+  stringField(github, 'repo', path, errors, {
+    required: true, max: 256, min: 3,
+    pattern: /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/,
+  });
+  if (github.branch !== undefined) {
+    stringField(github, 'branch', path, errors, {
+      max: 120, min: 1, pattern: /^[\w./-]{1,120}$/,
+    });
+    if (typeof github.branch === 'string' && (github.branch.includes('..') || github.branch.endsWith('/') || github.branch.startsWith('/'))) {
+      addIssue(errors, 'FORMAT_INVALID', `${path}.branch`, 'must be a valid Git branch name');
+    }
+  }
 }
 
 function validateTasks(tasks, errors) {
@@ -290,23 +320,30 @@ function validateTasks(tasks, errors) {
     if (task.links !== undefined) validateStringArray(task.links, `${path}.links`, errors, { maxItems: 100, maxItemBytes: LIMITS.link, unique: true });
     if (task.dependsOn !== undefined) validateStringArray(task.dependsOn, `${path}.dependsOn`, errors, { maxItems: 100, maxItemBytes: LIMITS.id, unique: true });
     if (task.parentId !== undefined && task.parentId !== null) idField(task, 'parentId', path, errors);
-    if (task.specFile !== undefined) stringField(task, 'specFile', path, errors, { max: LIMITS.path, min: 1 });
-    timestampField(task, 'createdAt', path, errors);
+    if (task.specFile !== undefined && task.specFile !== null) stringField(task, 'specFile', path, errors, { max: LIMITS.path, min: 1 });
+    timestampField(task, 'createdAt', path, errors, { required: true, dateOnlyStrict: true });
     timestampField(task, 'updatedAt', path, errors);
     timestampField(task, 'dueAt', path, errors);
-    timestampField(task, 'completedAt', path, errors);
+    timestampField(task, 'completedAt', path, errors, { required: true, dateOnlyStrict: true, nullable: true });
+    timestampField(task, 'enteredStatusAt', path, errors, { required: true });
+    if (!Object.prototype.hasOwnProperty.call(task, 'order')) requiredField(task, 'order', path, errors);
+    else if (task.order !== null) finiteNumberField(task, 'order', path, errors);
+    validateWorkStateDetails(task.workStateDetails, `${path}.workStateDetails`, errors);
   });
 
   const parentOf = new Map();
+  const dependencyOf = new Map();
   for (const [id, task] of byId) {
     const parent = task.parentId;
-    if (parent === undefined || parent === null) continue;
-    if (!byId.has(parent)) addIssue(errors, 'REFERENCE_MISSING', `tasks.${id}.parentId`, `parent task ${parent} does not exist`);
-    if (parent === id) addIssue(errors, 'HIERARCHY_CYCLE', `tasks.${id}.parentId`, 'a task cannot be its own parent');
-    parentOf.set(id, parent);
-    const grandparent = byId.get(parent)?.parentId;
-    if (grandparent !== undefined && grandparent !== null) addIssue(errors, 'HIERARCHY_DEPTH', `tasks.${id}.parentId`, 'task hierarchy may contain at most one subtask level');
+    if (parent !== undefined && parent !== null) {
+      if (!byId.has(parent)) addIssue(errors, 'REFERENCE_MISSING', `tasks.${id}.parentId`, `parent task ${parent} does not exist`);
+      if (parent === id) addIssue(errors, 'HIERARCHY_CYCLE', `tasks.${id}.parentId`, 'a task cannot be its own parent');
+      parentOf.set(id, parent);
+      const grandparent = byId.get(parent)?.parentId;
+      if (grandparent !== undefined && grandparent !== null) addIssue(errors, 'HIERARCHY_DEPTH', `tasks.${id}.parentId`, 'task hierarchy may contain at most one subtask level');
+    }
     if (Array.isArray(task.dependsOn)) {
+      dependencyOf.set(id, task.dependsOn);
       for (const dependency of task.dependsOn) {
         if (!byId.has(dependency)) addIssue(errors, 'REFERENCE_MISSING', `tasks.${id}.dependsOn`, `dependency task ${dependency} does not exist`);
         if (dependency === id) addIssue(errors, 'HIERARCHY_CYCLE', `tasks.${id}.dependsOn`, 'a task cannot depend on itself');
@@ -322,7 +359,37 @@ function validateTasks(tasks, errors) {
     visiting.delete(id); visited.add(id);
   }
   for (const id of byId.keys()) visit(id);
+  const dependencyVisiting = new Set(); const dependencyVisited = new Set();
+  function visitDependencies(id) {
+    if (dependencyVisiting.has(id)) {
+      addIssue(errors, 'DEPENDENCY_CYCLE', `tasks.${id}.dependsOn`, 'dependency references contain a cycle');
+      return;
+    }
+    if (dependencyVisited.has(id)) return;
+    dependencyVisiting.add(id);
+    for (const dependency of dependencyOf.get(id) || []) {
+      if (byId.has(dependency)) visitDependencies(dependency);
+    }
+    dependencyVisiting.delete(id); dependencyVisited.add(id);
+  }
+  for (const id of byId.keys()) visitDependencies(id);
   return byId;
+}
+
+function validateWorkStateDetails(details, path, errors) {
+  if (!requireObject(details, path, errors)) return;
+  for (const key of WORK_STATE_DETAIL_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(details, key)) {
+      addIssue(errors, 'FIELD_REQUIRED', `${path}.${key}`, 'is required in normalized workStateDetails');
+      continue;
+    }
+    const value = details[key];
+    if (value !== null && typeof value !== 'string') addIssue(errors, 'TYPE_INVALID', `${path}.${key}`, 'must be a string or null');
+    if (typeof value === 'string' && byteLength(value) > 512) addIssue(errors, 'LIMIT_EXCEEDED', `${path}.${key}`, 'must not exceed 512 UTF-8 bytes');
+    if ((key === 'checkAgainAt' || key === 'setAt') && value !== null && !isoDateTime(value) && !(key === 'setAt' && isoDateOrDateTime(value))) {
+      addIssue(errors, 'TIMESTAMP_INVALID', `${path}.${key}`, 'must be an ISO-8601 timestamp with timezone');
+    }
+  }
 }
 
 function validateSpecs(specs, tasks, errors) {
@@ -472,7 +539,7 @@ function validateHistory(history, tasks, errors) {
     requiredField(comment, 'id', path, errors); validateHistoryId(comment.id, `${path}.id`);
     if (ids.comments.has(String(comment.id))) addIssue(errors, 'DUPLICATE_ID', `${path}.id`, 'comment id is duplicated');
     ids.comments.add(String(comment.id));
-    idField(comment, 'taskId', path, errors);
+    idField(comment, 'taskId', path, errors, { required: true });
     stringField(comment, 'body', path, errors, { required: true, max: LIMITS.description });
     enumField(comment, 'kind', path, errors, HISTORY_COMMENT_KINDS);
     stringField(comment, 'authorLabel', path, errors, { max: 128 });
@@ -485,7 +552,7 @@ function validateHistory(history, tasks, errors) {
     requiredField(checkpoint, 'id', path, errors); validateHistoryId(checkpoint.id, `${path}.id`);
     if (ids.checkpoints.has(String(checkpoint.id))) addIssue(errors, 'DUPLICATE_ID', `${path}.id`, 'checkpoint id is duplicated');
     ids.checkpoints.add(String(checkpoint.id));
-    idField(checkpoint, 'taskId', path, errors);
+    idField(checkpoint, 'taskId', path, errors, { required: true });
     stringField(checkpoint, 'message', path, errors, { required: true, max: LIMITS.description });
     finiteNumberField(checkpoint, 'progress', path, errors, { min: 0, max: 100 });
     timestampField(checkpoint, 'createdAt', path, errors, { required: true });

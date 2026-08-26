@@ -7,6 +7,7 @@ const {
   createBundle,
   payloadForChecksum,
   sha256,
+  toPortableTask,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
 
@@ -24,6 +25,8 @@ function fixture(options = {}) {
       displayName: 'Portable Review Fixture',
       description: 'A deterministic fixture used by the bundle contract tests.',
       group: 'review',
+      taskDiscipline: 'development',
+      github: { repo: 'example/portable-review', branch: 'main' },
       createdAt: '2026-08-01T10:00:00.000Z',
       updatedAt: '2026-08-26T08:00:00.000Z',
     },
@@ -38,7 +41,11 @@ function fixture(options = {}) {
         specFile: 'specs/T-2.md',
         tags: ['review'],
         links: ['https://example.test/review'],
-        createdAt: '2026-08-02T10:00:00.000Z',
+        created: '2026-08-02',
+        completed: null,
+        enteredStatusAt: '2026-08-02T10:00:00.000Z',
+        order: 2,
+        workStateDetails: { reason: null, waitingFor: null, responsible: null, checkAgainAt: null, setAt: '2026-08-02T10:00:00.000Z' },
       },
       {
         id: 'T-1',
@@ -47,7 +54,11 @@ function fixture(options = {}) {
         priority: 'medium',
         description: 'The parent task.',
         tags: ['bundle'],
-        createdAt: '2026-08-01T10:00:00.000Z',
+        created: '2026-08-01',
+        completed: null,
+        enteredStatusAt: '2026-08-01T10:00:00.000Z',
+        order: null,
+        workStateDetails: {},
       },
     ],
     specs: [
@@ -96,6 +107,14 @@ function hasCode(result, code) {
   assert.equal(canonicalJson(first), canonicalJson(second), 'canonical JSON is deterministic');
   assert.deepEqual(first.manifest.redactions, [...REQUIRED_REDACTIONS]);
   assert.equal(validateBundle(first).ok, true);
+  assert.equal(first.project.taskDiscipline, 'development');
+  assert.deepEqual(first.project.github, { repo: 'example/portable-review', branch: 'main' });
+  const child = first.tasks.find((task) => task.id === 'T-2');
+  assert.equal(child.createdAt, '2026-08-02');
+  assert.equal(child.completedAt, null);
+  assert.equal(child.enteredStatusAt, '2026-08-02T10:00:00.000Z');
+  assert.equal(child.order, 2);
+  assert.deepEqual(Object.keys(child.workStateDetails).sort(), ['checkAgainAt', 'reason', 'responsible', 'setAt', 'waitingFor']);
   assert.deepEqual(first.manifest.counts, {
     tasks: 2,
     specs: 1,
@@ -106,6 +125,14 @@ function hasCode(result, code) {
     historyComments: 0,
     historyCheckpoints: 0,
   });
+}
+
+// All colors present in current/legacy Canvas persistence remain importable.
+for (const color of ['grey', 'yellow', 'blue', 'green', 'red', 'teal', 'orange', 'purple']) {
+  const colored = fixture();
+  colored.canvas.notes[0].color = color;
+  colored.manifest.checksums.payload = sha256(payloadForChecksum(colored));
+  assert.equal(validateBundle(colored).ok, true, `canvas color ${color} is accepted`);
 }
 
 // Unknown future optional fields survive validation when the payload checksum
@@ -124,9 +151,25 @@ function hasCode(result, code) {
 // dropped while semantic task fields remain portable.
 {
   const projected = fixture();
+  const actualPublicTask = toPortableTask({
+    id: 'T-900', title: 'Public API task', status: 'open', priority: 'low',
+    created: '2026-08-03', completed: null, enteredStatusAt: '2026-08-03T10:00:00.000Z',
+    order: null, specFile: null,
+    workStateDetails: { reason: 'review', agent: 'must-drop' },
+    agent: 'must-drop', leaseUntil: 'must-drop', metadata: { raw: true },
+  });
+  assert.equal(actualPublicTask.createdAt, '2026-08-03');
+  assert.equal(actualPublicTask.completedAt, null);
+  assert.equal(actualPublicTask.enteredStatusAt, '2026-08-03T10:00:00.000Z');
+  assert.equal(actualPublicTask.order, null);
+  assert.equal(actualPublicTask.specFile, null);
+  assert.equal(actualPublicTask.agent, undefined);
+  assert.equal(actualPublicTask.leaseUntil, undefined);
+  assert.equal(actualPublicTask.workStateDetails.responsible, null);
   const raw = { ...projected.tasks[0], metadata: { internal: true }, agent: 'worker', leaseUntil: 'never' };
+  const rawProject = { ...projected.project, github: { repo: 'example/portable-review', branch: 'main', token: 'must-not-export' } };
   const safe = createBundle({
-    project: projected.project,
+    project: rawProject,
     tasks: [raw, projected.tasks[1]],
     specs: projected.specs,
     canvas: projected.canvas,
@@ -135,6 +178,7 @@ function hasCode(result, code) {
   }, FIXED);
   assert.equal(safe.tasks[0].metadata, undefined);
   assert.equal(safe.tasks[0].agent, undefined);
+  assert.equal(safe.project.github.token, undefined);
   assert.equal(validateBundle(safe).ok, true);
 }
 
@@ -174,6 +218,15 @@ function hasCode(result, code) {
   badCanvas.canvas.connections.push({ from: 'N-002', to: 'N-001', fromPort: 'diagonal' });
   assert.equal(hasCode(validateBundle(badCanvas), 'DUPLICATE_CONNECTION'), true);
   assert.equal(hasCode(validateBundle(badCanvas), 'ENUM_INVALID'), true);
+
+  const rootDependencyCycle = fixture();
+  rootDependencyCycle.tasks[0].dependsOn = ['T-1'];
+  rootDependencyCycle.tasks[1].dependsOn = ['T-2'];
+  assert.equal(hasCode(validateBundle(rootDependencyCycle), 'DEPENDENCY_CYCLE'), true);
+
+  const rootMissingDependency = fixture();
+  rootMissingDependency.tasks[1].dependsOn = ['T-999'];
+  assert.equal(hasCode(validateBundle(rootMissingDependency), 'REFERENCE_MISSING'), true);
 }
 
 // File inventory and checksum drift fail before an importer can write.
@@ -189,6 +242,34 @@ function hasCode(result, code) {
   const traversal = fixture();
   traversal.files[0].path = '../outside.txt';
   assert.equal(hasCode(validateBundle(traversal), 'PATH_UNSAFE'), true);
+
+  const windowsPath = fixture();
+  windowsPath.files[0].path = 'context\\NOTES.md';
+  assert.equal(hasCode(validateBundle(windowsPath), 'PATH_NON_CANONICAL'), true);
+}
+
+// Project lifecycle slugs are lowercase kebab-case and at most 63 characters.
+for (const slug of ['Portable-review', 'portable_review', `a${'b'.repeat(63)}`]) {
+  const invalidSlug = fixture();
+  invalidSlug.project.slug = slug;
+  invalidSlug.manifest.source.slug = slug;
+  invalidSlug.manifest.checksums.payload = sha256(payloadForChecksum(invalidSlug));
+  assert.equal(hasCode(validateBundle(invalidSlug), 'FORMAT_INVALID'), true, `rejects project slug ${slug}`);
+}
+
+// History is review context, but every item must remain attached to a task.
+{
+  const missingHistoryTarget = fixture({ includeHistory: true });
+  delete missingHistoryTarget.history.comments[0].taskId;
+  assert.equal(hasCode(validateBundle(missingHistoryTarget), 'FIELD_REQUIRED'), true);
+}
+
+// Runtime task completion is a YYYY-MM-DD value; the full timestamp belongs
+// to enteredStatusAt and is validated separately.
+{
+  const timestampCompletion = fixture();
+  timestampCompletion.tasks[0].completedAt = '2026-08-26T12:00:00.000Z';
+  assert.equal(hasCode(validateBundle(timestampCompletion), 'TIMESTAMP_INVALID'), true);
 }
 
 // Unsupported format versions are not guessed or downgraded.
