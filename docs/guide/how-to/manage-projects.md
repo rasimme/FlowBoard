@@ -9,6 +9,24 @@ Each project is an isolated workspace with its own goal, tasks, specs, and conte
 - **Rename:** from the project's actions menu in the sidebar.
 - **Organize:** group projects into folders, and reorder them by dragging — or with the keyboard (focus a project, then move it; the dashboard announces the new position for screen readers).
 
+## Choose a project type
+
+Open the project's **Overview** page and use **Project type** to choose how much
+structure FlowBoard expects from new tasks:
+
+- **List** — a lightweight to-do list. Tasks can be short and need no added
+  structure. Use this for personal lists, recurring chores, or simple tracking.
+- **Standard** — general project work. FlowBoard highlights tasks with a missing
+  description or an overly vague title so you can review their structure.
+- **Development** — software and other implementation-heavy work. It uses the
+  same task review and gives agents development-specific guidance, such as when
+  to add a spec or create related subtasks together.
+
+Changing the project type does not block task creation and does not rewrite
+existing tasks. It changes the guidance agents receive and the structure checks
+applied when new tasks are created. The API and internal documentation call
+this setting `taskDiscipline`.
+
 ## Archive vs. delete — know the difference
 
 Deletion is a deliberate **two-step** flow, and both steps are reversible — by design, so a project can't be destroyed by reflex.
@@ -27,4 +45,5 @@ Open **Deleted projects**, find the project, and **Restore** it — this brings 
 ## See also
 
 - [Getting started](../getting-started.md)
+- [Roll out task governance](roll-out-task-governance.md)
 - [README — architecture](../../../README.md#architecture) — where `PROJECT.md`, `specs/`, and `context/` live

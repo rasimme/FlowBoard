@@ -11,7 +11,9 @@ recorded in [ADR-0035](../adr/0035-task-form-not-authorization.md).
 ## Task discipline
 
 Project metadata stores `taskDiscipline` as `list`, `standard`, or
-`development`. New-project creation and existing-project migration both fall
+`development`. The dashboard exposes this same setting as **Project type** on
+the Overview page; the user-facing name is deliberately broader than the API
+field name. New-project creation and existing-project migration both fall
 back to the same signal-derived suggestion (`dashboard/task-discipline.js`
 `suggest()`: GitHub-repo binding or coding-shaped keywords suggest
 `development`, docs/coordination-shaped keywords suggest `standard`) when no

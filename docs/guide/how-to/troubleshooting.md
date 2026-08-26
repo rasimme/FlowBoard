@@ -21,6 +21,13 @@ An agent should wait for `contextReady === true` before fetching context, pollin
 
 The running service serves the last build. Apply the update (rebuild + restart) — see [Update FlowBoard](update-flowboard.md).
 
+FlowBoard also checks whether the served dashboard bundle is older than the
+installed source. If the page shows a warning that the UI bundle is behind,
+the source update succeeded but the running build did not: rebuild the
+dashboard and restart the service. Reload the page after the service is back.
+If the warning remains, verify that you updated and rebuilt the same FlowBoard
+installation that the running service uses.
+
 ## Setup says `--update` requires an existing standard service
 
 `--update` is deliberately separate from first install so a typo cannot create
