@@ -36,6 +36,17 @@ ok(isDirectLoopbackRequest({ socket: { remoteAddress: '198.51.100.10' }, headers
   'routable socket peer is rejected');
 ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'cf-ray': 'tunnel' } }) === false,
   'tunnel-marked request is rejected even when proxy socket is loopback');
+for (const header of [
+  'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded',
+  'via', 'x-real-ip', 'cf-connecting-ip', 'cf-visitor', 'cf-ray', 'x-tunnel-id',
+]) {
+  ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { [header]: 'synthetic' } }) === false,
+    `forwarded/proxy/tunnel header is rejected: ${header}`);
+}
+ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'X-Forwarded-For': 'synthetic' } }) === false,
+  'header-name casing cannot bypass forwarded-header rejection');
+ok(isDirectLoopbackRequest({ socket: { remoteAddress: '192.0.2.10' }, headers: { 'x-forwarded-for': '127.0.0.1' } }) === false,
+  'forwarded loopback value cannot bypass non-loopback socket rejection');
 
 console.log(`\n# results: ${pass} passed, ${fail} failed`);
 if (fail > 0) { console.log('# failures:'); failures.forEach(f => console.log(`#   - ${f}`)); process.exitCode = 1; }

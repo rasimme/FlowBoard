@@ -51,6 +51,12 @@ const WARNING_CODES = Object.freeze({
 // an accident-prevention acknowledgement, not an authentication credential.
 const SENSITIVE_EXPORT_CONFIRMATION = 'export-sensitive-project';
 
+const SPEC_DIAGNOSTIC_CODES = new Set([
+  'SPEC_READ_FAILED',
+  'SPEC_SYMLINK_UNSUPPORTED',
+  'SPEC_TOO_LARGE',
+]);
+
 const EXCLUDED_PATH_SEGMENTS = new Set([
   '.git', '.env', 'credentials', 'hooks', 'secrets', 'sessions', 'settings',
   'backup', 'backups',
@@ -228,23 +234,19 @@ function collectKnowledgeFiles({ projectDir, fsModule = fs, warnings = [], polic
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function linkedSpecDiagnostic(taskId, specPath, code = 'SPEC_READ_FAILED') {
+function linkedSpecDiagnostic(taskId, code = 'SPEC_READ_FAILED') {
   return {
-    code,
+    code: SPEC_DIAGNOSTIC_CODES.has(code) ? code : 'SPEC_READ_FAILED',
     taskId: typeof taskId === 'string' ? taskId : null,
-    path: specPath,
-    message: 'The task links to a spec that is missing or unreadable.',
-    action: 'Restore the file or clear the task spec link, then try the export again.',
   };
 }
 
-function linkedSpecError(task, target, code, cause) {
+function linkedSpecError(task, code) {
   return new ProjectBundleExportError(
-    `Linked spec ${target.normalized} is not readable`,
+    'A linked task spec is missing or unreadable.',
     code,
     {
-      ...(cause ? { cause } : {}),
-      diagnostics: [linkedSpecDiagnostic(task?.id, target.normalized, code)],
+      diagnostics: [linkedSpecDiagnostic(task?.id, code)],
     },
   );
 }
@@ -257,8 +259,8 @@ function readLinkedSpecs({ projectDir, tasks, fsModule = fs, allowSensitiveCanon
     let target;
     try {
       target = projectPath(projectDir, task.specFile);
-    } catch (error) {
-      throw new ProjectBundleExportError(`Task ${task.id} has an unsafe spec path`, 'SPEC_PATH_UNSAFE', { cause: error });
+    } catch {
+      throw new ProjectBundleExportError(`Task ${task.id} has an unsafe spec path`, 'SPEC_PATH_UNSAFE');
     }
     if (!target.normalized.startsWith('specs/') && !target.normalized.startsWith('context/')) {
       throw new ProjectBundleExportError(`Task ${task.id} spec must live below specs/ or context/`, 'SPEC_PATH_INVALID');
@@ -266,17 +268,17 @@ function readLinkedSpecs({ projectDir, tasks, fsModule = fs, allowSensitiveCanon
     if (seen.has(target.normalized)) continue;
     seen.add(target.normalized);
     if (isSymlink(fsModule, target.resolved)) {
-      throw linkedSpecError(task, target, 'SPEC_SYMLINK_UNSUPPORTED');
+      throw linkedSpecError(task, 'SPEC_SYMLINK_UNSUPPORTED');
     }
     let stat;
-    try { stat = fsModule.lstatSync(target.resolved); } catch (error) {
-      throw linkedSpecError(task, target, 'SPEC_READ_FAILED', error);
+    try { stat = fsModule.lstatSync(target.resolved); } catch {
+      throw linkedSpecError(task, 'SPEC_READ_FAILED');
     }
-    if (!stat.isFile()) throw linkedSpecError(task, target, 'SPEC_READ_FAILED');
-    if (stat.size > LIMITS.fileBytes) throw linkedSpecError(task, target, 'SPEC_TOO_LARGE');
+    if (!stat.isFile()) throw linkedSpecError(task, 'SPEC_READ_FAILED');
+    if (stat.size > LIMITS.fileBytes) throw linkedSpecError(task, 'SPEC_TOO_LARGE');
     let content;
-    try { content = fsModule.readFileSync(target.resolved, 'utf8'); } catch (error) {
-      throw linkedSpecError(task, target, 'SPEC_READ_FAILED', error);
+    try { content = fsModule.readFileSync(target.resolved, 'utf8'); } catch {
+      throw linkedSpecError(task, 'SPEC_READ_FAILED');
     }
     if (!allowSensitiveCanonicalData && scanSensitiveContent(content).length > 0) {
       throw new ProjectBundleExportError('Credential-like content detected in a linked canonical spec', 'SENSITIVE_CONTENT_DETECTED');

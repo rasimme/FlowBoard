@@ -44,6 +44,20 @@ const COUNT_LABELS = {
   historyCheckpoints: 'Checkpoints',
 };
 
+const SPEC_DIAGNOSTIC_REASON_LABELS = Object.freeze({
+  SPEC_READ_FAILED: 'The linked spec is missing or unreadable.',
+  SPEC_SYMLINK_UNSUPPORTED: 'The linked spec is a symlink and cannot be exported.',
+  SPEC_TOO_LARGE: 'The linked spec exceeds the supported size limit.',
+});
+
+function exportErrorMessage(data, status) {
+  const code = data?.code;
+  if (SPEC_DIAGNOSTIC_REASON_LABELS[code]) return SPEC_DIAGNOSTIC_REASON_LABELS[code];
+  if (code === 'SENSITIVE_CONTENT_DETECTED') return 'The project contains credential-like canonical data.';
+  if (code === 'LOOPBACK_REQUIRED') return 'Sensitive export recovery is available only from a direct local connection.';
+  return `Export failed (HTTP ${status}).`;
+}
+
 function responseFilename(response, fallback) {
   const header = response.headers?.get?.('Content-Disposition') || '';
   const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
@@ -74,7 +88,7 @@ function countValue(counts, key) {
   return Number.isFinite(Number(counts?.[key])) ? Number(counts[key]) : 0;
 }
 
-function WarningList({ title, items = [], variant = 'warn' }) {
+function WarningList({ title, items = [], variant = 'warn', safeSpecDiagnostics = false }) {
   const [expanded, setExpanded] = useState(false);
   if (!items.length) return null;
   const shown = expanded ? items : items.slice(0, MAX_WARNING_ITEMS);
@@ -84,9 +98,11 @@ function WarningList({ title, items = [], variant = 'warn' }) {
       <ul className="m-0 flex list-none flex-col gap-1 rounded-lg border border-solid border-border bg-bg-elevated p-2 text-[11px]">
         {shown.map((item, index) => {
           const code = typeof item === 'string' ? item : item.code || 'Warning';
-          const path = typeof item === 'string' ? '' : item.path || '';
+          const path = safeSpecDiagnostics || typeof item === 'string' ? '' : item.path || '';
           const taskId = typeof item === 'string' ? '' : item.taskId || '';
-          const guidance = typeof item === 'string' ? '' : item.guidance || item.action || item.message || '';
+          const guidance = safeSpecDiagnostics
+            ? SPEC_DIAGNOSTIC_REASON_LABELS[code] || 'The linked spec is unavailable.'
+            : typeof item === 'string' ? '' : item.guidance || item.action || item.message || '';
           return (
             <li key={`${code}-${path}-${index}`} className="flex min-w-0 items-start gap-1.5 text-muted">
               {variant === 'error' ? <ShieldAlert size={12} className="mt-0.5 shrink-0 text-danger" /> : <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warn" />}
@@ -194,9 +210,7 @@ function ExportProjectModal({ open, onClose, project }) {
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch { /* handled below */ }
       if (!response.ok) {
-        const reason = data?.error || `Export failed (HTTP ${response.status}).`;
-        const code = data?.code ? ` (${data.code})` : '';
-        const failure = new Error(`${reason}${code}`);
+        const failure = new Error(exportErrorMessage(data, response.status));
         failure.code = data?.code || null;
         failure.diagnostics = Array.isArray(data?.diagnostics) ? data.diagnostics : [];
         throw failure;
@@ -327,7 +341,7 @@ function ExportProjectModal({ open, onClose, project }) {
             <Alert variant="error" title="Export blocked"><span data-testid="export-error">{error?.message || 'The project could not be exported.'}</span></Alert>
             {error?.diagnostics?.length > 0 && (
               <div data-testid="export-diagnostics">
-                <WarningList title="Linked spec recovery" items={error.diagnostics} variant="error" />
+                <WarningList title="Linked spec recovery" items={error.diagnostics} variant="error" safeSpecDiagnostics />
               </div>
             )}
             {error?.code === 'SENSITIVE_CONTENT_DETECTED' && (

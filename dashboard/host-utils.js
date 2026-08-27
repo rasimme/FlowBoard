@@ -24,12 +24,38 @@ function isLoopbackHost(host) {
   return false;
 }
 
+// A loopback socket is not enough to establish that a request reached the
+// dashboard directly. Reverse proxies and tunnels commonly connect to the
+// local listener and preserve their routing metadata in headers. Sensitive
+// local-only actions must reject the presence of those markers altogether;
+// their values are not useful for proving provenance and are easy to forge.
+function hasForwardedOrTunnelHeaders(headers) {
+  return Object.keys(headers || {}).some((header) => {
+    const name = String(header).trim().toLowerCase();
+    return name === 'forwarded'
+      || name === 'via'
+      || name === 'cdn-loop'
+      || name === 'x-forwarded'
+      || name.startsWith('x-forwarded-')
+      || name.startsWith('cf-')
+      || name.startsWith('cloudflare-')
+      || name.startsWith('x-proxy-')
+      || name.startsWith('proxy-')
+      || name.startsWith('x-tunnel-')
+      || name.startsWith('tunnel-')
+      || name === 'x-real-ip'
+      || name === 'true-client-ip'
+      || name === 'x-client-ip'
+      || name === 'fly-client-ip';
+  });
+}
+
 function isDirectLoopbackRequest(req) {
   // Use the socket peer, never req.ip or forwarding headers. A proxy can make
   // a remote client appear local at the Express layer; sensitive export
   // recovery must be reachable only from a direct loopback connection.
   const socketAddress = req?.socket?.remoteAddress || req?.connection?.remoteAddress || '';
-  return isLoopbackHost(socketAddress) && !req?.headers?.['cf-ray'];
+  return isLoopbackHost(socketAddress) && !hasForwardedOrTunnelHeaders(req?.headers);
 }
 
-module.exports = { isDirectLoopbackRequest, isLoopbackHost };
+module.exports = { hasForwardedOrTunnelHeaders, isDirectLoopbackRequest, isLoopbackHost };

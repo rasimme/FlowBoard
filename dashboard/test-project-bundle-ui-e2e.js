@@ -94,6 +94,47 @@ async function dragBundle(page, body, filename) {
     await page.setRequestInterception(false);
     await page.click('button[aria-label="Close"]');
 
+    // A stale linked spec gets an actionable recovery surface without
+    // exposing the raw filesystem path from the server diagnostic.
+    let staleSpecFirst = true;
+    await page.setRequestInterception(true);
+    const staleSpecIntercept = async (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname.endsWith('/export') && staleSpecFirst) {
+        staleSpecFirst = false;
+        await request.respond({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'Linked spec /Users/private/project/specs/T-999-secret.md is not readable',
+            code: 'SPEC_READ_FAILED',
+            diagnostics: [{
+              code: 'SPEC_READ_FAILED',
+              taskId: 'T-999',
+              path: '/Users/private/project/specs/T-999-secret.md',
+              message: 'Raw path must never be rendered in the recovery UI.',
+              action: 'Raw path must never be rendered in the recovery UI.',
+            }],
+          }),
+        });
+        return;
+      }
+      await request.continue();
+    };
+    page.on('request', staleSpecIntercept);
+    await page.click('.row-kebab');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Export project'))?.click());
+    await page.waitForSelector('[data-testid="export-diagnostics"]');
+    const staleSpecText = await text(page);
+    r.ok(staleSpecText.includes('Task T-999') && staleSpecText.includes('missing or unreadable'), 'SPEC_READ_FAILED renders task and categorical recovery reason');
+    r.ok(!staleSpecText.includes('/Users/private/project/specs/T-999-secret.md') && !staleSpecText.includes('Raw path must never be rendered'), 'SPEC_READ_FAILED recovery UI hides raw diagnostic paths and messages');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Try again'))?.click());
+    await page.waitForSelector('#include-task-history');
+    r.ok(!staleSpecFirst, 'SPEC_READ_FAILED recovery Try again refetches the export');
+    page.off('request', staleSpecIntercept);
+    await page.setRequestInterception(false);
+    await page.click('button[aria-label="Close"]');
+
     await page.click('.sidebar-new');
     r.ok((await text(page)).includes('Import project'), 'New menu exposes Import project');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project'))?.click());

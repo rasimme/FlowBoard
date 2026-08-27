@@ -121,7 +121,13 @@ async function main() {
     assert.throws(() => exportProjectReviewBundle({
       ...input(root),
       tasks: [task('T-1', { specFile: 'specs/missing.md' })],
-    }), (error) => error instanceof ProjectBundleExportError && error.code === 'SPEC_READ_FAILED');
+    }), (error) => error instanceof ProjectBundleExportError
+      && error.code === 'SPEC_READ_FAILED'
+      && error.message === 'A linked task spec is missing or unreadable.'
+      && !error.message.includes('specs/missing.md')
+      && !JSON.stringify(error.diagnostics).includes('specs/missing.md')
+      && error.diagnostics[0].taskId === 'T-1'
+      && error.diagnostics[0].code === 'SPEC_READ_FAILED');
 
     const before = fs.readFileSync(path.join(root, 'PROJECT.md'), 'utf8');
     exportProjectReviewBundle(input(root));

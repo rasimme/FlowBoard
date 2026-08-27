@@ -112,8 +112,8 @@ async function main() {
     assert.equal(redactedResponse.body.files.some((file) => file.path === 'context/REVIEW.md'), false);
     assert.ok(redactedResponse.body.manifest.warnings.some((item) => item.code === 'SENSITIVE_CONTENT_EXCLUDED'));
 
-    // A missing linked context spec is reported with only the task/path and
-    // safe recovery guidance; neither the response nor logs reflect content.
+    // A missing linked context spec is reported with only the safe task id and
+    // categorical reason; neither the response nor logs reflect paths/content.
     const contextSpecPath = path.join(ctx.projectsDir, 'portable-review-fixture', 'context', 'CONTEXT-SPEC.md');
     fs.unlinkSync(contextSpecPath);
     const staleSpec = await ctx.api('GET', '/projects/portable-review-fixture/export');
@@ -122,10 +122,8 @@ async function main() {
     assert.deepEqual(staleSpec.body.diagnostics, [{
       code: 'SPEC_READ_FAILED',
       taskId: childId,
-      path: 'context/CONTEXT-SPEC.md',
-      message: 'The task links to a spec that is missing or unreadable.',
-      action: 'Restore the file or clear the task spec link, then try the export again.',
     }]);
+    assert.equal(JSON.stringify(staleSpec.body).includes('CONTEXT-SPEC.md'), false);
     assert.equal(JSON.stringify(staleSpec.body).includes('canonical spec content'), false);
     assert.equal(ctx.readLogs().includes('canonical spec content'), false);
 
@@ -138,21 +136,27 @@ async function main() {
     assert.equal(unlinkedTasks.body.tasks.find((task) => task.id === childId).specFile, null);
     assert.equal(unlinkedTasks.body.tasks.find((task) => task.id === childId).specExists, false);
 
-    // The override is always separately confirmed, rejects tunnel-marked
+    // The override is always separately confirmed, rejects tunnel/proxy-marked
     // requests, and returns the intentionally reviewed canonical content.
     const confirmationRequired = await ctx.api('POST', '/projects/portable-review-fixture/export', {});
     assert.equal(confirmationRequired.status, 400, JSON.stringify(confirmationRequired.body));
     assert.equal(confirmationRequired.body.code, 'CONFIRMATION_REQUIRED');
     assert.equal(JSON.stringify(confirmationRequired.body).includes('canonical spec content'), false);
 
-    const tunnelRequest = await fetch(`${ctx.base}/api/projects/portable-review-fixture/export`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'cf-ray': 'synthetic-tunnel' },
-      body: JSON.stringify({ confirmation: SENSITIVE_EXPORT_CONFIRMATION }),
-    });
-    const tunnelBody = await tunnelRequest.json();
-    assert.equal(tunnelRequest.status, 403, JSON.stringify(tunnelBody));
-    assert.equal(JSON.stringify(tunnelBody).includes('canonical spec content'), false);
+    for (const header of [
+      'X-Forwarded-For', 'X-Forwarded-Host', 'X-Forwarded-Proto', 'Forwarded',
+      'Via', 'X-Real-IP', 'CF-Ray', 'CF-Connecting-IP', 'CF-Visitor', 'X-Tunnel-ID',
+    ]) {
+      const markedRequest = await fetch(`${ctx.base}/api/projects/portable-review-fixture/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', [header]: 'synthetic-tunnel' },
+        body: JSON.stringify({ confirmation: SENSITIVE_EXPORT_CONFIRMATION }),
+      });
+      const markedBody = await markedRequest.json();
+      assert.equal(markedRequest.status, 403, `${header}: ${JSON.stringify(markedBody)}`);
+      assert.equal(JSON.stringify(markedBody).includes('canonical spec content'), false);
+      assert.equal(JSON.stringify(markedBody).includes('CONTEXT-SPEC.md'), false);
+    }
 
     const fakeCanonicalSecret = 'ghp_review_api_fake_value_1234567890';
     const canonicalSecretWrite = await ctx.api('PUT', `/projects/portable-review-fixture/tasks/${parentId}`, {

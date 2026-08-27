@@ -2021,11 +2021,15 @@ function safeExportDiagnostics(error) {
   const diagnostics = error.diagnostics
     .filter(item => item && typeof item === 'object')
     .map(item => ({
-      code: typeof item.code === 'string' ? item.code : 'SPEC_READ_FAILED',
-      taskId: typeof item.taskId === 'string' ? item.taskId : null,
-      path: typeof item.path === 'string' ? item.path : null,
-      message: 'The task links to a spec that is missing or unreadable.',
-      action: 'Restore the file or clear the task spec link, then try the export again.',
+      // Diagnostics deliberately carry only a bounded task identifier and a
+      // categorical code. Never copy a linked spec path or an fs error into a
+      // response: both can disclose private filesystem layout.
+      code: ['SPEC_READ_FAILED', 'SPEC_SYMLINK_UNSUPPORTED', 'SPEC_TOO_LARGE'].includes(item.code)
+        ? item.code
+        : 'SPEC_READ_FAILED',
+      taskId: typeof item.taskId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(item.taskId)
+        ? item.taskId
+        : null,
     }));
   return diagnostics.length > 0 ? diagnostics : undefined;
 }
