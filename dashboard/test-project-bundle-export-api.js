@@ -146,6 +146,8 @@ async function main() {
     for (const header of [
       'X-Forwarded-For', 'X-Forwarded-Host', 'X-Forwarded-Proto', 'Forwarded',
       'Via', 'X-Real-IP', 'CF-Ray', 'CF-Connecting-IP', 'CF-Visitor', 'X-Tunnel-ID',
+      'X-Envoy-External-Address', 'X-Envoy-Original-Path', 'X-Proxy-Client-IP',
+      'X-Original-URL', 'X-Forwarding-Chain', 'X-Request-ID',
     ]) {
       const markedRequest = await fetch(`${ctx.base}/api/projects/portable-review-fixture/export`, {
         method: 'POST',
@@ -157,6 +159,34 @@ async function main() {
       assert.equal(JSON.stringify(markedBody).includes('canonical spec content'), false);
       assert.equal(JSON.stringify(markedBody).includes('CONTEXT-SPEC.md'), false);
     }
+
+    // A browser-shaped direct request still reaches the confirmation guard.
+    // This proves the positive allowlist preserves normal dashboard POSTs
+    // while the proxy/unknown-header cases above are rejected first.
+    const browserRequest = await fetch(`${ctx.base}/api/projects/portable-review-fixture/export`, {
+      method: 'POST',
+      headers: {
+        Accept: '*/*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Content-Type': 'application/json',
+        Origin: ctx.base,
+        Priority: 'u=1, i',
+        Referer: `${ctx.base}/`,
+        'Sec-CH-UA': '"Chromium";v="1"',
+        'Sec-CH-UA-Mobile': '?0',
+        'Sec-CH-UA-Platform': '"macOS"',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-origin',
+        'X-FlowBoard-Client': 'dashboard',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({}),
+    });
+    const browserBody = await browserRequest.json();
+    assert.equal(browserRequest.status, 400, JSON.stringify(browserBody));
+    assert.equal(browserBody.code, 'CONFIRMATION_REQUIRED');
 
     const fakeCanonicalSecret = 'ghp_review_api_fake_value_1234567890';
     const canonicalSecretWrite = await ctx.api('PUT', `/projects/portable-review-fixture/tasks/${parentId}`, {

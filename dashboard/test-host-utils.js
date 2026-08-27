@@ -39,14 +39,45 @@ ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { 
 for (const header of [
   'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded',
   'via', 'x-real-ip', 'cf-connecting-ip', 'cf-visitor', 'cf-ray', 'x-tunnel-id',
+  'x-envoy-external-address', 'x-envoy-original-path', 'x-proxy-client-ip',
+  'x-original-url', 'x-forwarding-chain', 'x-request-id',
 ]) {
   ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { [header]: 'synthetic' } }) === false,
-    `forwarded/proxy/tunnel header is rejected: ${header}`);
+    `forwarded/proxy/tunnel/unknown header is rejected: ${header}`);
 }
 ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'X-Forwarded-For': 'synthetic' } }) === false,
   'header-name casing cannot bypass forwarded-header rejection');
 ok(isDirectLoopbackRequest({ socket: { remoteAddress: '192.0.2.10' }, headers: { 'x-forwarded-for': '127.0.0.1' } }) === false,
   'forwarded loopback value cannot bypass non-loopback socket rejection');
+ok(isDirectLoopbackRequest({
+  socket: { remoteAddress: '127.0.0.1' },
+  headers: {
+    accept: '*/*',
+    'accept-encoding': 'gzip, deflate, br',
+    'accept-language': 'en-US,en;q=0.9',
+    connection: 'keep-alive',
+    'content-length': '2',
+    'content-type': 'application/json',
+    host: '127.0.0.1:18790',
+    origin: 'http://127.0.0.1:18790',
+    priority: 'u=1, i',
+    referer: 'http://127.0.0.1:18790/',
+    'sec-ch-ua': '"Chromium";v="1"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'user-agent': 'Mozilla/5.0',
+    'x-flowboard-client': 'dashboard',
+    'x-requested-with': 'XMLHttpRequest',
+    'x-telegram-init-data': 'query_id=synthetic',
+  },
+}) === true, 'normal browser and FlowBoard client headers are allowed');
+ok(isDirectLoopbackRequest({
+  socket: { remoteAddress: '127.0.0.1' },
+  headers: new Headers({ 'Content-Type': 'application/json', 'X-Envoy-External-Address': '198.51.100.10' }),
+}) === false, 'Headers objects cannot bypass the strict proxy-header policy');
 
 console.log(`\n# results: ${pass} passed, ${fail} failed`);
 if (fail > 0) { console.log('# failures:'); failures.forEach(f => console.log(`#   - ${f}`)); process.exitCode = 1; }

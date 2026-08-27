@@ -26,28 +26,73 @@ function isLoopbackHost(host) {
 
 // A loopback socket is not enough to establish that a request reached the
 // dashboard directly. Reverse proxies and tunnels commonly connect to the
-// local listener and preserve their routing metadata in headers. Sensitive
-// local-only actions must reject the presence of those markers altogether;
-// their values are not useful for proving provenance and are easy to forge.
-function hasForwardedOrTunnelHeaders(headers) {
-  return Object.keys(headers || {}).some((header) => {
+// local listener and preserve their routing metadata in headers. There is no
+// reliable finite denylist for that metadata: for example, Envoy can use
+// X-Envoy-External-Address, while another proxy can choose an entirely new
+// X-* name. Sensitive local-only actions therefore use a positive allowlist of
+// headers a browser (and FlowBoard's browser client) may normally send.
+//
+// This is intentionally an allowlist of names, not values. A header that is
+// absent is harmless; an unknown header is enough to make provenance
+// ambiguous, even when its value is empty or otherwise looks benign.
+const DIRECT_SENSITIVE_EXPORT_ALLOWED_HEADERS = new Set([
+  // HTTP/browser request headers.
+  'accept',
+  'accept-charset',
+  'accept-encoding',
+  'accept-language',
+  'authorization',
+  'cache-control',
+  'connection',
+  'content-length',
+  'content-type',
+  'cookie',
+  'dnt',
+  'host',
+  'if-match',
+  'if-modified-since',
+  'if-none-match',
+  'if-unmodified-since',
+  'origin',
+  'pragma',
+  'priority',
+  'range',
+  'referer',
+  'sec-ch-ua',
+  'sec-ch-ua-mobile',
+  'sec-ch-ua-platform',
+  'sec-fetch-dest',
+  'sec-fetch-mode',
+  'sec-fetch-site',
+  'sec-gpc',
+  'upgrade-insecure-requests',
+  'user-agent',
+  // FlowBoard browser-client headers. These are client metadata, not trust
+  // signals; allowing them does not make either header proof of provenance.
+  'x-flowboard-client',
+  'x-requested-with',
+  'x-telegram-init-data',
+]);
+
+function headerNames(headers) {
+  if (!headers) return [];
+  if (typeof headers.keys === 'function') return [...headers.keys()];
+  return Object.keys(headers);
+}
+
+function hasDisallowedSensitiveRequestHeaders(headers) {
+  return headerNames(headers).some((header) => {
     const name = String(header).trim().toLowerCase();
-    return name === 'forwarded'
-      || name === 'via'
-      || name === 'cdn-loop'
-      || name === 'x-forwarded'
-      || name.startsWith('x-forwarded-')
-      || name.startsWith('cf-')
-      || name.startsWith('cloudflare-')
-      || name.startsWith('x-proxy-')
-      || name.startsWith('proxy-')
-      || name.startsWith('x-tunnel-')
-      || name.startsWith('tunnel-')
-      || name === 'x-real-ip'
-      || name === 'true-client-ip'
-      || name === 'x-client-ip'
-      || name === 'fly-client-ip';
+    return !DIRECT_SENSITIVE_EXPORT_ALLOWED_HEADERS.has(name);
   });
+}
+
+// Keep the old helper name for callers/tests that used the original
+// denylist-era predicate. Its semantics are deliberately broader now: every
+// header outside the strict direct-request allowlist is treated as possible
+// forwarding/proxy metadata.
+function hasForwardedOrTunnelHeaders(headers) {
+  return hasDisallowedSensitiveRequestHeaders(headers);
 }
 
 function isDirectLoopbackRequest(req) {
@@ -58,4 +103,10 @@ function isDirectLoopbackRequest(req) {
   return isLoopbackHost(socketAddress) && !hasForwardedOrTunnelHeaders(req?.headers);
 }
 
-module.exports = { hasForwardedOrTunnelHeaders, isDirectLoopbackRequest, isLoopbackHost };
+module.exports = {
+  DIRECT_SENSITIVE_EXPORT_ALLOWED_HEADERS,
+  hasDisallowedSensitiveRequestHeaders,
+  hasForwardedOrTunnelHeaders,
+  isDirectLoopbackRequest,
+  isLoopbackHost,
+};
