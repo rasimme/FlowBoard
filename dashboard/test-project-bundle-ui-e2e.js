@@ -187,6 +187,42 @@ async function dragBundle(page, body, filename) {
     page.off('request', intercept);
     await page.setRequestInterception(false);
 
+    // Sensitive canonical content has a separate, typed recovery action. The
+    // intercepted GET keeps this browser test independent of fixture secrets;
+    // the POST must carry the exact acknowledgement and return to ready state.
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Done')?.click());
+    let sensitivePost = false;
+    await page.setRequestInterception(true);
+    const sensitiveIntercept = async (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname.endsWith('/export')) {
+        await request.respond({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Project export failed', code: 'SENSITIVE_CONTENT_DETECTED' }),
+        });
+        return;
+      }
+      if (request.method() === 'POST' && url.pathname.endsWith('/export')) {
+        sensitivePost = request.postData() === JSON.stringify({ confirmation: 'export-sensitive-project' });
+        await request.respond({ status: 200, contentType: 'application/json', body: JSON.stringify(exported) });
+        return;
+      }
+      await request.continue();
+    };
+    page.on('request', sensitiveIntercept);
+    await page.click('.row-kebab');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Export project'))?.click());
+    await page.waitForSelector('[data-testid="sensitive-export-recovery"]');
+    r.ok((await text(page)).includes('export-sensitive-project'), 'sensitive export recovery displays typed confirmation guidance');
+    await page.type('#sensitive-export-confirmation', 'export-sensitive-project');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Confirm and export sensitive content'))?.click());
+    await page.waitForSelector('#include-task-history');
+    r.ok(sensitivePost, 'sensitive export recovery sends the typed confirmation via POST');
+    page.off('request', sensitiveIntercept);
+    await page.setRequestInterception(false);
+    await page.click('button[aria-label="Close"]');
+
     // Mobile dialog is almost fullscreen and keeps a large action target.
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.trim() === 'Done')?.click());
     await page.setViewport({ width: 390, height: 844 });

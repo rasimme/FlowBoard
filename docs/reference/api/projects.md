@@ -199,6 +199,18 @@ row IDs, ULIDs, sessions, claims and leases are never exported. History is
 scanned with the same value-blind secret scanner as canonical task content and
 the export fails closed if credential-like content is found.
 
+### POST /api/projects/:name/export
+
+Explicitly retries a reviewed export when canonical project content contains
+credential-like text. This recovery action is accepted only over a direct
+loopback socket (tunnel-marked requests are rejected) and requires the exact
+typed body confirmation `{ "confirmation": "export-sensitive-project" }`.
+The same optional `includeHistory=true` query is supported. The action is
+audited as a separate `project.export.sensitive-override` event; optional files
+remain subject to the normal exclusion policy. Missing or unreadable linked
+specs are never bypassed: the response includes a value-blind `diagnostics`
+array with the task ID, relative path and repair action.
+
 ### POST /api/projects/import/preview
 
 Previews a portable project review bundle without creating a project or

@@ -122,6 +122,10 @@ accepted. A bundle is a review DTO, not a database/disaster-recovery backup.
 - `GET /api/projects/:name/export[?includeHistory=true]` returns a sanitized
   deterministic JSON attachment. History is opt-in and adds comments and
   checkpoints only; the default is history-free.
+- `POST /api/projects/:name/export[?includeHistory=true]` is a separate,
+  audited recovery action for reviewed canonical sensitive content. It is
+  direct-loopback-only and requires the typed confirmation
+  `{ "confirmation": "export-sensitive-project" }`.
 - `POST /api/projects/import/preview?targetName=<slug>` validates without
   writes and reports compatibility, counts, redactions, warnings, security
   findings and target availability. It does not activate a project.

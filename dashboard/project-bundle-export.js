@@ -46,6 +46,11 @@ const WARNING_CODES = Object.freeze({
   SENSITIVE_CONTENT_EXCLUDED: 'SENSITIVE_CONTENT_EXCLUDED',
 });
 
+// This token is intentionally a stable, human-readable phrase rather than a
+// generated value. The endpoint remains loopback-only and the phrase is only
+// an accident-prevention acknowledgement, not an authentication credential.
+const SENSITIVE_EXPORT_CONFIRMATION = 'export-sensitive-project';
+
 const EXCLUDED_PATH_SEGMENTS = new Set([
   '.git', '.env', 'credentials', 'hooks', 'secrets', 'sessions', 'settings',
   'backup', 'backups',
@@ -223,7 +228,28 @@ function collectKnowledgeFiles({ projectDir, fsModule = fs, warnings = [], polic
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function readLinkedSpecs({ projectDir, tasks, fsModule = fs }) {
+function linkedSpecDiagnostic(taskId, specPath, code = 'SPEC_READ_FAILED') {
+  return {
+    code,
+    taskId: typeof taskId === 'string' ? taskId : null,
+    path: specPath,
+    message: 'The task links to a spec that is missing or unreadable.',
+    action: 'Restore the file or clear the task spec link, then try the export again.',
+  };
+}
+
+function linkedSpecError(task, target, code, cause) {
+  return new ProjectBundleExportError(
+    `Linked spec ${target.normalized} is not readable`,
+    code,
+    {
+      ...(cause ? { cause } : {}),
+      diagnostics: [linkedSpecDiagnostic(task?.id, target.normalized, code)],
+    },
+  );
+}
+
+function readLinkedSpecs({ projectDir, tasks, fsModule = fs, allowSensitiveCanonicalData = false }) {
   const specs = [];
   const seen = new Set();
   for (const task of tasks) {
@@ -240,19 +266,19 @@ function readLinkedSpecs({ projectDir, tasks, fsModule = fs }) {
     if (seen.has(target.normalized)) continue;
     seen.add(target.normalized);
     if (isSymlink(fsModule, target.resolved)) {
-      throw new ProjectBundleExportError(`Linked spec ${target.normalized} is a symlink`, 'SPEC_SYMLINK_UNSUPPORTED');
+      throw linkedSpecError(task, target, 'SPEC_SYMLINK_UNSUPPORTED');
     }
     let stat;
     try { stat = fsModule.lstatSync(target.resolved); } catch (error) {
-      throw new ProjectBundleExportError(`Linked spec ${target.normalized} is not readable`, 'SPEC_READ_FAILED', { cause: error });
+      throw linkedSpecError(task, target, 'SPEC_READ_FAILED', error);
     }
-    if (!stat.isFile()) throw new ProjectBundleExportError(`Linked spec ${target.normalized} is not a regular file`, 'SPEC_READ_FAILED');
-    if (stat.size > LIMITS.fileBytes) throw new ProjectBundleExportError(`Linked spec ${target.normalized} is too large`, 'SPEC_TOO_LARGE');
+    if (!stat.isFile()) throw linkedSpecError(task, target, 'SPEC_READ_FAILED');
+    if (stat.size > LIMITS.fileBytes) throw linkedSpecError(task, target, 'SPEC_TOO_LARGE');
     let content;
     try { content = fsModule.readFileSync(target.resolved, 'utf8'); } catch (error) {
-      throw new ProjectBundleExportError(`Linked spec ${target.normalized} is not readable`, 'SPEC_READ_FAILED', { cause: error });
+      throw linkedSpecError(task, target, 'SPEC_READ_FAILED', error);
     }
-    if (scanSensitiveContent(content).length > 0) {
+    if (!allowSensitiveCanonicalData && scanSensitiveContent(content).length > 0) {
       throw new ProjectBundleExportError('Credential-like content detected in a linked canonical spec', 'SENSITIVE_CONTENT_DETECTED');
     }
     specs.push({ path: target.normalized, taskId: task.id, content });
@@ -367,7 +393,13 @@ function exportProjectReviewBundle({
   const publicTasks = tasks.map(toPortableTask);
   const includeHistory = options.includeHistory === true;
   const portableHistory = includeHistory ? toPortableHistoryFromEvents(history || []) : undefined;
-  const specs = readLinkedSpecs({ projectDir, tasks: publicTasks, fsModule });
+  const allowSensitiveCanonicalData = options.allowSensitiveCanonicalData === true;
+  const specs = readLinkedSpecs({
+    projectDir,
+    tasks: publicTasks,
+    fsModule,
+    allowSensitiveCanonicalData,
+  });
   const files = collectKnowledgeFiles({
     projectDir,
     fsModule,
@@ -399,7 +431,7 @@ function exportProjectReviewBundle({
     ...(bundle.history ? [['history', bundle.history]] : []),
   ];
   for (const [, section] of canonicalSections) {
-    if (scanSensitiveContent(section).length > 0) {
+    if (!allowSensitiveCanonicalData && scanSensitiveContent(section).length > 0) {
       throw new ProjectBundleExportError('Credential-like content detected in canonical project data', 'SENSITIVE_CONTENT_DETECTED');
     }
   }
@@ -418,6 +450,7 @@ function safeDownloadFilename(slug) {
 module.exports = {
   DEFAULT_FILE_POLICY,
   ProjectBundleExportError,
+  SENSITIVE_EXPORT_CONFIRMATION,
   WARNING_CODES,
   collectKnowledgeFiles,
   exportProjectReviewBundle,

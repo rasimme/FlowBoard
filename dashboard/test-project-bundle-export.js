@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   ProjectBundleExportError,
+  SENSITIVE_EXPORT_CONFIRMATION,
   WARNING_CODES,
   exportProjectReviewBundle,
   safeDownloadFilename,
@@ -137,6 +138,18 @@ async function main() {
     assert.throws(() => exportProjectReviewBundle(input(root, {
       tasks: [task('T-1', { description: `token: ${canonicalHit}` })],
     })), (error) => error.code === 'SENSITIVE_CONTENT_DETECTED' && !error.message.includes(canonicalHit));
+
+    const recovered = exportProjectReviewBundle(input(root, {
+      tasks: [task('T-1', { description: `token: ${canonicalHit}` })],
+      options: {
+        bundleId: 'bundle-export-override-test',
+        createdAt: '2026-08-26T10:00:00.000Z',
+        producerVersion: 'test',
+        allowSensitiveCanonicalData: true,
+      },
+    }));
+    assert.equal(recovered.bundle.tasks[0].description.includes(canonicalHit), true);
+    assert.equal(SENSITIVE_EXPORT_CONFIRMATION, 'export-sensitive-project');
 
     const safeProse = 'This review explains token handling and HMAC verification without embedding credentials.';
     assert.equal(containsSensitiveContent(safeProse), false);

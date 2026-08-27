@@ -22,6 +22,7 @@ import Spinner from './Spinner.jsx';
 import { apiFetch } from '../utils/apiFetch.js';
 
 const BUNDLE_MEDIA_TYPE = 'application/vnd.flowboard.project+json';
+const SENSITIVE_EXPORT_CONFIRMATION = 'export-sensitive-project';
 const MAX_WARNING_ITEMS = 5;
 const IMPORT_PHASES = [
   'Validating bundle',
@@ -84,12 +85,14 @@ function WarningList({ title, items = [], variant = 'warn' }) {
         {shown.map((item, index) => {
           const code = typeof item === 'string' ? item : item.code || 'Warning';
           const path = typeof item === 'string' ? '' : item.path || '';
-          const guidance = typeof item === 'string' ? '' : item.guidance || '';
+          const taskId = typeof item === 'string' ? '' : item.taskId || '';
+          const guidance = typeof item === 'string' ? '' : item.guidance || item.action || item.message || '';
           return (
             <li key={`${code}-${path}-${index}`} className="flex min-w-0 items-start gap-1.5 text-muted">
               {variant === 'error' ? <ShieldAlert size={12} className="mt-0.5 shrink-0 text-danger" /> : <AlertTriangle size={12} className="mt-0.5 shrink-0 text-warn" />}
               <span className="min-w-0 break-words">
                 <span className="font-mono text-[10px] text-text">{code}</span>
+                {taskId && <span className="ml-1 font-mono text-[10px]">Task {taskId}</span>}
                 {path && <span className="ml-1 font-mono text-[10px]">{path}</span>}
                 {guidance && <span className="block">{guidance}</span>}
               </span>
@@ -171,24 +174,32 @@ function ExportProjectModal({ open, onClose, project }) {
   const [bodyText, setBodyText] = useState('');
   const [filename, setFilename] = useState('project-review-bundle.flowboard.json');
   const [error, setError] = useState(null);
+  const [confirmation, setConfirmation] = useState('');
   const abortRef = useRef(null);
 
   const fallbackName = `${slugify(project?.name) || 'project'}-review-bundle.flowboard.json`;
 
-  const loadBundle = useCallback(async (history, signal) => {
+  const loadBundle = useCallback(async (history, signal, sensitiveOverride = false) => {
     setState('loading');
     setError(null);
     setBundle(null);
     try {
       const query = history ? '?includeHistory=true' : '';
-      const response = await apiFetch(`/api/projects/${encodeURIComponent(project?.name || '')}/export${query}`, { signal });
+      const response = await apiFetch(`/api/projects/${encodeURIComponent(project?.name || '')}/export${query}`, {
+        method: sensitiveOverride ? 'POST' : 'GET',
+        ...(sensitiveOverride ? { body: { confirmation: SENSITIVE_EXPORT_CONFIRMATION } } : {}),
+        signal,
+      });
       const text = await response.text();
       let data = null;
       try { data = text ? JSON.parse(text) : null; } catch { /* handled below */ }
       if (!response.ok) {
         const reason = data?.error || `Export failed (HTTP ${response.status}).`;
         const code = data?.code ? ` (${data.code})` : '';
-        throw new Error(`${reason}${code}`);
+        const failure = new Error(`${reason}${code}`);
+        failure.code = data?.code || null;
+        failure.diagnostics = Array.isArray(data?.diagnostics) ? data.diagnostics : [];
+        throw failure;
       }
       if (!data || typeof data !== 'object' || !data.manifest) throw new Error('The server returned an invalid project bundle.');
       setBundle(data);
@@ -197,7 +208,11 @@ function ExportProjectModal({ open, onClose, project }) {
       setState(Array.isArray(data.manifest?.warnings) && data.manifest.warnings.length > 0 ? 'warnings' : 'ready');
     } catch (err) {
       if (err?.name === 'AbortError') return;
-      setError(err?.message || 'Project export failed.');
+      setError({
+        message: err?.message || 'Project export failed.',
+        code: err?.code || null,
+        diagnostics: Array.isArray(err?.diagnostics) ? err.diagnostics : [],
+      });
       setState('blocked');
     }
   }, [fallbackName, project?.name]);
@@ -220,6 +235,7 @@ function ExportProjectModal({ open, onClose, project }) {
       setBundle(null);
       setBodyText('');
       setError(null);
+      setConfirmation('');
     }
   }, [open]);
 
@@ -250,7 +266,7 @@ function ExportProjectModal({ open, onClose, project }) {
         window.setTimeout(() => URL.revokeObjectURL(url), 0);
         setState('ready');
       } catch (err) {
-        setError(err?.message || 'The bundle could not be downloaded.');
+        setError({ message: err?.message || 'The bundle could not be downloaded.', code: null, diagnostics: [] });
         setState('blocked');
       }
     }, 0);
@@ -262,6 +278,14 @@ function ExportProjectModal({ open, onClose, project }) {
     const controller = new AbortController();
     abortRef.current = controller;
     await loadBundle(false, controller.signal);
+  }
+
+  async function confirmSensitiveExport() {
+    if (confirmation !== SENSITIVE_EXPORT_CONFIRMATION) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    await loadBundle(includeHistory, controller.signal, true);
   }
 
   const counts = bundle?.manifest?.counts || {};
@@ -299,7 +323,36 @@ function ExportProjectModal({ open, onClose, project }) {
           </div>
         )}
         {state === 'blocked' && (
-          <Alert variant="error" title="Export blocked"><span data-testid="export-error">{error || 'The project could not be exported.'}</span></Alert>
+          <div className="flex flex-col gap-3">
+            <Alert variant="error" title="Export blocked"><span data-testid="export-error">{error?.message || 'The project could not be exported.'}</span></Alert>
+            {error?.diagnostics?.length > 0 && (
+              <div data-testid="export-diagnostics">
+                <WarningList title="Linked spec recovery" items={error.diagnostics} variant="error" />
+              </div>
+            )}
+            {error?.code === 'SENSITIVE_CONTENT_DETECTED' && (
+              <div className="flex flex-col gap-3 rounded-lg border border-solid border-warn bg-warn-subtle p-3" data-testid="sensitive-export-recovery">
+                <div className="text-xs leading-5 text-text">The canonical project data contains credential-like text. Review the project locally before intentionally downloading it.</div>
+                <FormGroup label={`Type ${SENSITIVE_EXPORT_CONFIRMATION} to confirm`} htmlFor="sensitive-export-confirmation" hint="This recovery action is available only from a direct loopback connection and is audited.">
+                  <Input
+                    id="sensitive-export-confirmation"
+                    value={confirmation}
+                    onChange={(event) => setConfirmation(event.target.value)}
+                    autoComplete="off"
+                    spellCheck="false"
+                  />
+                </FormGroup>
+                <Button
+                  variant="danger-outline"
+                  size="sm"
+                  onClick={confirmSensitiveExport}
+                  disabled={confirmation !== SENSITIVE_EXPORT_CONFIRMATION}
+                >
+                  <ShieldAlert size={13} /> Confirm and export sensitive content
+                </Button>
+              </div>
+            )}
+          </div>
         )}
         {state !== 'blocked' && state !== 'loading' && bundle && (
           <>

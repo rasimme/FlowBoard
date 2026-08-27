@@ -24,4 +24,12 @@ function isLoopbackHost(host) {
   return false;
 }
 
-module.exports = { isLoopbackHost };
+function isDirectLoopbackRequest(req) {
+  // Use the socket peer, never req.ip or forwarding headers. A proxy can make
+  // a remote client appear local at the Express layer; sensitive export
+  // recovery must be reachable only from a direct loopback connection.
+  const socketAddress = req?.socket?.remoteAddress || req?.connection?.remoteAddress || '';
+  return isLoopbackHost(socketAddress) && !req?.headers?.['cf-ray'];
+}
+
+module.exports = { isDirectLoopbackRequest, isLoopbackHost };

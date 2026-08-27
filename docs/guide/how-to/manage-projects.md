@@ -18,6 +18,13 @@ data, and manifest warnings before the download. **Include task history** is
 optional and adds comments and checkpoints; review their potentially sensitive
 attribution and context before sharing.
 
+If the default export is blocked because canonical task, spec or history
+content looks credential-like, the dialog shows a value-blind recovery prompt.
+After reviewing the project locally, type `export-sensitive-project` and use
+the explicit recovery action. It works only from a direct loopback connection
+and is audited separately; stale linked specs show the affected task and path
+with instructions to restore the file or clear the link.
+
 On the destination FlowBoard instance, use **New → Import project**. Choose the
 JSON file, review the source, counts, compatibility, warnings and destination
 slug, then explicitly choose **Import as new project**. This is a cross-instance

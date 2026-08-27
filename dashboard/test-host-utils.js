@@ -9,7 +9,7 @@
  * covered without spawning a server.
  */
 
-const { isLoopbackHost } = require('./host-utils.js');
+const { isDirectLoopbackRequest, isLoopbackHost } = require('./host-utils.js');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -26,6 +26,16 @@ for (const h of ['127.0.0.1', 'localhost', '::1', '::ffff:127.0.0.1', '127.0.0.5
 for (const h of ['0.0.0.0', '::', '', '   ', '192.168.1.5', '10.0.0.1', '172.16.0.9', 'example.com', '::ffff:192.168.1.1', '127.foo', '0', '1.2.3.4', null, undefined, 123]) {
   ok(isLoopbackHost(h) === false, `non-loopback -> false: ${JSON.stringify(h)}`);
 }
+
+console.log('\n# host-utils isDirectLoopbackRequest');
+ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: {} }) === true,
+  'direct IPv4 loopback request is accepted');
+ok(isDirectLoopbackRequest({ socket: { remoteAddress: '::1' }, headers: {} }) === true,
+  'direct IPv6 loopback request is accepted');
+ok(isDirectLoopbackRequest({ socket: { remoteAddress: '198.51.100.10' }, headers: {} }) === false,
+  'routable socket peer is rejected');
+ok(isDirectLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'cf-ray': 'tunnel' } }) === false,
+  'tunnel-marked request is rejected even when proxy socket is loopback');
 
 console.log(`\n# results: ${pass} passed, ${fail} failed`);
 if (fail > 0) { console.log('# failures:'); failures.forEach(f => console.log(`#   - ${f}`)); process.exitCode = 1; }

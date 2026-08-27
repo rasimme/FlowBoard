@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { withIsolatedDashboard } = require('./test-support/server-harness.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+const { SENSITIVE_EXPORT_CONFIRMATION } = require('./project-bundle-export.js');
 
 async function main() {
   await withIsolatedDashboard(async (ctx) => {
@@ -111,6 +112,48 @@ async function main() {
     assert.equal(redactedResponse.body.files.some((file) => file.path === 'context/REVIEW.md'), false);
     assert.ok(redactedResponse.body.manifest.warnings.some((item) => item.code === 'SENSITIVE_CONTENT_EXCLUDED'));
 
+    // A missing linked context spec is reported with only the task/path and
+    // safe recovery guidance; neither the response nor logs reflect content.
+    const contextSpecPath = path.join(ctx.projectsDir, 'portable-review-fixture', 'context', 'CONTEXT-SPEC.md');
+    fs.unlinkSync(contextSpecPath);
+    const staleSpec = await ctx.api('GET', '/projects/portable-review-fixture/export');
+    assert.equal(staleSpec.status, 500, JSON.stringify(staleSpec.body));
+    assert.equal(staleSpec.body.code, 'SPEC_READ_FAILED');
+    assert.deepEqual(staleSpec.body.diagnostics, [{
+      code: 'SPEC_READ_FAILED',
+      taskId: childId,
+      path: 'context/CONTEXT-SPEC.md',
+      message: 'The task links to a spec that is missing or unreadable.',
+      action: 'Restore the file or clear the task spec link, then try the export again.',
+    }]);
+    assert.equal(JSON.stringify(staleSpec.body).includes('canonical spec content'), false);
+    assert.equal(ctx.readLogs().includes('canonical spec content'), false);
+
+    // Controlled file deletion also clears a context-linked spec reference so
+    // future exports cannot retain the stale link.
+    fs.writeFileSync(contextSpecPath, '# Context-linked fixture spec\n\nThis is canonical spec content.\n');
+    const deleteContextSpec = await ctx.api('DELETE', '/projects/portable-review-fixture/files/context/CONTEXT-SPEC.md');
+    assert.equal(deleteContextSpec.status, 200, JSON.stringify(deleteContextSpec.body));
+    const unlinkedTasks = await ctx.api('GET', '/projects/portable-review-fixture/tasks?includeArchived=true');
+    assert.equal(unlinkedTasks.body.tasks.find((task) => task.id === childId).specFile, null);
+    assert.equal(unlinkedTasks.body.tasks.find((task) => task.id === childId).specExists, false);
+
+    // The override is always separately confirmed, rejects tunnel-marked
+    // requests, and returns the intentionally reviewed canonical content.
+    const confirmationRequired = await ctx.api('POST', '/projects/portable-review-fixture/export', {});
+    assert.equal(confirmationRequired.status, 400, JSON.stringify(confirmationRequired.body));
+    assert.equal(confirmationRequired.body.code, 'CONFIRMATION_REQUIRED');
+    assert.equal(JSON.stringify(confirmationRequired.body).includes('canonical spec content'), false);
+
+    const tunnelRequest = await fetch(`${ctx.base}/api/projects/portable-review-fixture/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-ray': 'synthetic-tunnel' },
+      body: JSON.stringify({ confirmation: SENSITIVE_EXPORT_CONFIRMATION }),
+    });
+    const tunnelBody = await tunnelRequest.json();
+    assert.equal(tunnelRequest.status, 403, JSON.stringify(tunnelBody));
+    assert.equal(JSON.stringify(tunnelBody).includes('canonical spec content'), false);
+
     const fakeCanonicalSecret = 'ghp_review_api_fake_value_1234567890';
     const canonicalSecretWrite = await ctx.api('PUT', `/projects/portable-review-fixture/tasks/${parentId}`, {
       description: `token: ${fakeCanonicalSecret}`,
@@ -120,6 +163,14 @@ async function main() {
     assert.equal(blocked.status, 500, JSON.stringify(blocked.body));
     assert.deepEqual(blocked.body, { error: 'Project export failed', code: 'SENSITIVE_CONTENT_DETECTED' });
     assert.equal(JSON.stringify(blocked.body).includes(fakeCanonicalSecret), false);
+
+    const recovered = await ctx.api('POST', '/projects/portable-review-fixture/export', {
+      confirmation: SENSITIVE_EXPORT_CONFIRMATION,
+    });
+    assert.equal(recovered.status, 200, JSON.stringify(recovered.body));
+    assert.equal(recovered.body.tasks.find((task) => task.id === parentId).description.includes(fakeCanonicalSecret), true);
+    assert.equal(ctx.readLogs().includes(fakeCanonicalSecret), false);
+    assert.match(fs.readFileSync(auditFile, 'utf8'), /"action":"project\.export\.sensitive-override"/);
 
     const missing = await ctx.api('GET', '/projects/does-not-exist/export');
     assert.equal(missing.status, 404);

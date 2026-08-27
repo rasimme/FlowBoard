@@ -101,10 +101,11 @@ const { updateSpawnEnv } = require('./update-env.js');
 const overview = require('./overview.js');
 const github = require('./github.js');
 const { isEditorVisible } = require('./file-visibility.js');
-const { isLoopbackHost } = require('./host-utils.js');
+const { isDirectLoopbackRequest, isLoopbackHost } = require('./host-utils.js');
 const { buildStuckNotifications } = require('./stuck-notify.js');
 const {
   ProjectBundleExportError,
+  SENSITIVE_EXPORT_CONFIRMATION,
   exportProjectReviewBundle,
   safeDownloadFilename,
 } = require('./project-bundle-export.js');
@@ -1990,6 +1991,69 @@ app.get('/api/projects', (req, res) => {
   }
 });
 
+function buildProjectReviewBundle(projectName, { includeHistory = false, allowSensitiveCanonicalData = false } = {}) {
+  const project = fbMeta.listProjects(hzlService.listHzlProjects())
+    .find(candidate => candidate.name === projectName);
+  const tasks = enrichTasks(projectName, hzlService.listTasks(projectName, { includeArchived: true }));
+  const canvas = canvasBackend(projectName).canvasGet(projectName);
+  const projectOverview = overview.readOverview(PROJECTS_DIR, projectName);
+  const history = includeHistory
+    ? hzlService.getProjectHistory(projectName, tasks.map(task => task.id))
+    : undefined;
+  return exportProjectReviewBundle({
+    projectName,
+    project,
+    tasks,
+    canvas,
+    overview: projectOverview,
+    history,
+    projectDir: path.join(PROJECTS_DIR, projectName),
+    options: {
+      producerVersion: _packageVersion,
+      includeHistory,
+      allowSensitiveCanonicalData,
+    },
+  });
+}
+
+function safeExportDiagnostics(error) {
+  if (!Array.isArray(error?.diagnostics)) return undefined;
+  const diagnostics = error.diagnostics
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({
+      code: typeof item.code === 'string' ? item.code : 'SPEC_READ_FAILED',
+      taskId: typeof item.taskId === 'string' ? item.taskId : null,
+      path: typeof item.path === 'string' ? item.path : null,
+      message: 'The task links to a spec that is missing or unreadable.',
+      action: 'Restore the file or clear the task spec link, then try the export again.',
+    }));
+  return diagnostics.length > 0 ? diagnostics : undefined;
+}
+
+function sendProjectExportResponse(req, res, result, auditAction) {
+  const filename = safeDownloadFilename(result.bundle.project.slug);
+  audit({ action: auditAction, project: req.params.name, target: filename }, req);
+  res.set({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Cache-Control': 'no-store',
+  });
+  return res.send(`${JSON.stringify(result.bundle)}\n`);
+}
+
+function sendProjectExportError(req, res, error) {
+  const code = error instanceof ProjectBundleExportError
+    ? error.code
+    : 'PROJECT_EXPORT_FAILED';
+  // Do not log error messages or causes: canonical content and filesystem
+  // errors can contain snippets. Stable codes are sufficient for diagnostics.
+  console.error(`[project-export] ${code}`);
+  const body = { error: 'Project export failed', code };
+  const diagnostics = safeExportDiagnostics(error);
+  if (diagnostics) body.diagnostics = diagnostics;
+  return res.status(500).json(body);
+}
+
 // GET /api/projects/:name/export — deterministic, sanitized review bundle.
 // This route is intentionally read-only: all task/canvas/overview data comes
 // from the canonical server-owned read functions, while the exporter applies
@@ -1997,43 +2061,45 @@ app.get('/api/projects', (req, res) => {
 app.get('/api/projects/:name/export', (req, res) => {
   if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
   try {
-    const project = fbMeta.listProjects(hzlService.listHzlProjects())
-      .find(candidate => candidate.name === req.params.name);
-    const tasks = enrichTasks(req.params.name, hzlService.listTasks(req.params.name, { includeArchived: true }));
-    const canvas = canvasBackend(req.params.name).canvasGet(req.params.name);
-    const projectOverview = overview.readOverview(PROJECTS_DIR, req.params.name);
     const includeHistory = String(req.query.includeHistory || '').toLowerCase() === 'true';
-    const history = includeHistory
-      ? hzlService.getProjectHistory(req.params.name, tasks.map(task => task.id))
-      : undefined;
-    const result = exportProjectReviewBundle({
-      projectName: req.params.name,
-      project,
-      tasks,
-      canvas,
-      overview: projectOverview,
-      history,
-      projectDir: path.join(PROJECTS_DIR, req.params.name),
-      options: {
-        producerVersion: _packageVersion,
-        includeHistory,
-      },
-    });
-    const filename = safeDownloadFilename(result.bundle.project.slug);
-    audit({ action: 'project.export', project: req.params.name, target: filename }, req);
-    res.set({
-      'Content-Type': 'application/json; charset=utf-8',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-      'Cache-Control': 'no-store',
-    });
-    return res.send(`${JSON.stringify(result.bundle)}\n`);
+    return sendProjectExportResponse(
+      req,
+      res,
+      buildProjectReviewBundle(req.params.name, { includeHistory }),
+      'project.export',
+    );
   } catch (error) {
-    if (error instanceof ProjectBundleExportError) {
-      console.error(`[project-export] ${req.params.name}: ${error.code}: ${error.message}`);
-      return res.status(500).json({ error: 'Project export failed', code: error.code });
-    }
-    console.error(`[project-export] ${req.params.name}:`, error);
-    return res.status(500).json({ error: 'Project export failed', code: 'PROJECT_EXPORT_FAILED' });
+    return sendProjectExportError(req, res, error);
+  }
+});
+
+// POST /api/projects/:name/export — explicit recovery for a reviewed bundle
+// whose canonical data contains credential-like text. This is a separate,
+// direct-loopback action with a typed acknowledgement and audit label. It is
+// not an authenticated remote export and never broadens file inclusion: the
+// ordinary optional-file exclusions still apply.
+app.post('/api/projects/:name/export', (req, res) => {
+  if (!isDirectLoopbackRequest(req)) {
+    return res.status(403).json({
+      error: 'Sensitive project export is only available from a direct loopback connection.',
+      code: 'LOOPBACK_REQUIRED',
+    });
+  }
+  if (!requireConfirmation(req, res, SENSITIVE_EXPORT_CONFIRMATION)) return;
+  if (!projectExists(req.params.name)) return res.status(404).json({ error: 'Project not found' });
+  try {
+    const includeHistory = String(req.query.includeHistory || '').toLowerCase() === 'true';
+    return sendProjectExportResponse(
+      req,
+      res,
+      buildProjectReviewBundle(req.params.name, {
+        includeHistory,
+        allowSensitiveCanonicalData: true,
+      }),
+      'project.export.sensitive-override',
+    );
+  } catch (error) {
+    return sendProjectExportError(req, res, error);
   }
 });
 
@@ -3457,8 +3523,11 @@ app.delete('/api/projects/:name/files/{*filePath}', (req, res) => {
   try {
     fs.unlinkSync(resolved);
 
-    // If it was a spec file, clean up the specFile link
-    if (filePath.startsWith('specs/') && filePath !== 'specs/_index.json') {
+    // Clean up any linked spec, including context-linked specs. Otherwise a
+    // controlled file deletion leaves a stale task reference that later
+    // blocks review-bundle export. The index itself is bookkeeping, not a
+    // spec target.
+    if (filePath !== 'specs/_index.json') {
       const index = hzlService.getSpecsIndex(req.params.name);
       const taskId = Object.keys(index).find(id => index[id] === filePath);
       if (taskId) hzlService.setSpecLink(req.params.name, taskId, null);
