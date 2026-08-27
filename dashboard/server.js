@@ -107,6 +107,7 @@ const {
   ProjectBundleExportError,
   SENSITIVE_EXPORT_CONFIRMATION,
   exportProjectReviewBundle,
+  bundleValidationDiagnostics,
   safeDownloadFilename,
 } = require('./project-bundle-export.js');
 const {
@@ -2017,6 +2018,12 @@ function buildProjectReviewBundle(projectName, { includeHistory = false, allowSe
 }
 
 function safeExportDiagnostics(error) {
+  if (error?.code === 'BUNDLE_INVALID') {
+    // Validator paths/messages can contain project-authored filenames and
+    // content. Rebuild the response from the allowlisted typed projection;
+    // never serialize error.errors directly.
+    return bundleValidationDiagnostics(error.errors || error.diagnostics);
+  }
   if (!Array.isArray(error?.diagnostics)) return undefined;
   const diagnostics = error.diagnostics
     .filter(item => item && typeof item === 'object')

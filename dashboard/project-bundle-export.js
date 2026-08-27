@@ -57,6 +57,61 @@ const SPEC_DIAGNOSTIC_CODES = new Set([
   'SPEC_TOO_LARGE',
 ]);
 
+const BUNDLE_DIAGNOSTIC_CODES = new Set([
+  'TYPE_INVALID',
+  'FIELD_REQUIRED',
+  'LENGTH_INVALID',
+  'PATTERN_INVALID',
+  'FORMAT_INVALID',
+  'TIMESTAMP_INVALID',
+  'ENUM_INVALID',
+  'RANGE_INVALID',
+  'LIMIT_EXCEEDED',
+  'COUNT_MISMATCH',
+  'FORBIDDEN_FIELD',
+  'IDENTITY_UNSUPPORTED',
+  'FORMAT_UNSUPPORTED',
+  'VERSION_INVALID',
+  'COMPATIBILITY_UNSUPPORTED',
+  'EXECUTABLE_UNSUPPORTED',
+  'REDACTION_MISSING',
+  'PATH_UNSAFE',
+  'PATH_INVALID',
+  'PATH_NON_CANONICAL',
+  'DUPLICATE_ID',
+  'HIERARCHY_CYCLE',
+  'HIERARCHY_DEPTH',
+  'DEPENDENCY_CYCLE',
+  'GRID_OVERFLOW',
+  'HISTORY_NOT_PRESENT',
+  'REFERENCE_MISSING',
+  'REFERENCE_INVALID',
+  'CANVAS_SELF_CONNECTION',
+  'DUPLICATE_CONNECTION',
+  'DUPLICATE_CONTENT_PATH',
+  'FILE_SIZE_MISMATCH',
+  'CHECKSUM_INVALID',
+  'CHECKSUM_MISMATCH',
+  'CHECKSUM_INVENTORY_MISMATCH',
+  'OPTION_CONFLICT',
+  'CYCLE_IN_JSON',
+]);
+
+const BUNDLE_DIAGNOSTIC_FIELDS = new Set(['parentId', 'specFile', 'dependsOn']);
+const BUNDLE_DIAGNOSTIC_SECTIONS = new Set(['manifest', 'project', 'task', 'spec', 'canvas', 'overview', 'file', 'history', 'bundle']);
+const BUNDLE_DIAGNOSTIC_ACTIONS = Object.freeze({
+  PARENT_MISSING: 'REPAIR_OR_CLEAR_PARENT_REFERENCE',
+  DEPENDENCY_MISSING: 'REPAIR_OR_CLEAR_DEPENDENCY_REFERENCE',
+  SPEC_REFERENCE: 'RELINK_OR_CLEAR_SPEC_REFERENCE',
+  REFERENCE_MISSING: 'REPAIR_MISSING_REFERENCE',
+  REFERENCE_INVALID: 'REPAIR_INVALID_REFERENCE',
+  REVIEW_TASK: 'REVIEW_TASK_DATA',
+  REVIEW_BUNDLE: 'REVIEW_BUNDLE_DATA',
+});
+const BUNDLE_DIAGNOSTIC_ACTION_VALUES = new Set(Object.values(BUNDLE_DIAGNOSTIC_ACTIONS));
+const SAFE_TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const MAX_BUNDLE_DIAGNOSTICS = 25;
+
 const EXCLUDED_PATH_SEGMENTS = new Set([
   '.git', '.env', 'credentials', 'hooks', 'secrets', 'sessions', 'settings',
   'backup', 'backups',
@@ -251,6 +306,58 @@ function linkedSpecError(task, code) {
   );
 }
 
+function diagnosticSection(pathValue) {
+  const root = String(pathValue || '').split('.')[0].split('[')[0];
+  return {
+    tasks: 'task',
+    specs: 'spec',
+    files: 'file',
+    manifest: 'manifest',
+    project: 'project',
+    canvas: 'canvas',
+    overview: 'overview',
+    history: 'history',
+  }[root] || 'bundle';
+}
+
+function diagnosticAction(code, field, section) {
+  if (field === 'parentId' && code === 'REFERENCE_MISSING') return BUNDLE_DIAGNOSTIC_ACTIONS.PARENT_MISSING;
+  if (field === 'dependsOn' && code === 'REFERENCE_MISSING') return BUNDLE_DIAGNOSTIC_ACTIONS.DEPENDENCY_MISSING;
+  if (field === 'specFile' && (code === 'REFERENCE_MISSING' || code === 'REFERENCE_INVALID')) return BUNDLE_DIAGNOSTIC_ACTIONS.SPEC_REFERENCE;
+  if (code === 'REFERENCE_MISSING') return BUNDLE_DIAGNOSTIC_ACTIONS.REFERENCE_MISSING;
+  if (code === 'REFERENCE_INVALID') return BUNDLE_DIAGNOSTIC_ACTIONS.REFERENCE_INVALID;
+  return section === 'task' ? BUNDLE_DIAGNOSTIC_ACTIONS.REVIEW_TASK : BUNDLE_DIAGNOSTIC_ACTIONS.REVIEW_BUNDLE;
+}
+
+/**
+ * Project bundle validation errors can contain paths and messages derived from
+ * project content. Convert them to a bounded, typed projection before they
+ * can cross the API boundary. In particular, never expose spec filenames,
+ * validator messages or arbitrary paths in an export error response.
+ */
+function bundleValidationDiagnostics(errors = []) {
+  if (!Array.isArray(errors)) return [];
+  return errors.slice(0, MAX_BUNDLE_DIAGNOSTICS).map((issue) => {
+    const code = BUNDLE_DIAGNOSTIC_CODES.has(issue?.code) ? issue.code : 'TYPE_INVALID';
+    const pathValue = typeof issue?.path === 'string' ? issue.path : '';
+    const pathTaskMatch = pathValue.match(/^tasks\.([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\.([A-Za-z][A-Za-z0-9]*)/);
+    const safeSection = BUNDLE_DIAGNOSTIC_SECTIONS.has(issue?.section) ? issue.section : null;
+    const section = pathValue ? diagnosticSection(pathValue) : (safeSection || 'bundle');
+    const safeTaskId = typeof issue?.taskId === 'string' && SAFE_TASK_ID.test(issue.taskId) ? issue.taskId : null;
+    const safeField = BUNDLE_DIAGNOSTIC_FIELDS.has(issue?.field) ? issue.field : null;
+    const field = pathTaskMatch && BUNDLE_DIAGNOSTIC_FIELDS.has(pathTaskMatch[2]) ? pathTaskMatch[2] : safeField;
+    const taskId = pathTaskMatch && SAFE_TASK_ID.test(pathTaskMatch[1]) ? pathTaskMatch[1] : safeTaskId;
+    const safeAction = BUNDLE_DIAGNOSTIC_ACTION_VALUES.has(issue?.action) ? issue.action : null;
+    return {
+      code,
+      section: BUNDLE_DIAGNOSTIC_SECTIONS.has(section) ? section : 'bundle',
+      action: safeAction || diagnosticAction(code, field, section),
+      ...(taskId ? { taskId } : {}),
+      ...(field ? { field } : {}),
+    };
+  });
+}
+
 function readLinkedSpecs({ projectDir, tasks, fsModule = fs, allowSensitiveCanonicalData = false }) {
   const specs = [];
   const seen = new Set();
@@ -439,7 +546,12 @@ function exportProjectReviewBundle({
   }
   const validation = validateBundle(bundle);
   if (!validation.ok) {
-    throw new ProjectBundleExportError('Generated project bundle failed schema validation', 'BUNDLE_INVALID', { errors: validation.errors });
+    throw new ProjectBundleExportError('Generated project bundle failed schema validation', 'BUNDLE_INVALID', {
+      // Keep the full validator output available to the in-process caller for
+      // debugging, while diagnostics is the only safe API-facing projection.
+      errors: validation.errors,
+      diagnostics: bundleValidationDiagnostics(validation.errors),
+    });
   }
   return { bundle: validation.bundle, warnings: validation.warnings.concat(warnings) };
 }
@@ -454,6 +566,9 @@ module.exports = {
   ProjectBundleExportError,
   SENSITIVE_EXPORT_CONFIRMATION,
   WARNING_CODES,
+  BUNDLE_DIAGNOSTIC_ACTIONS,
+  BUNDLE_DIAGNOSTIC_CODES,
+  bundleValidationDiagnostics,
   collectKnowledgeFiles,
   exportProjectReviewBundle,
   normalizeProject,

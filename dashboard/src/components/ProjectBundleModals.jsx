@@ -50,9 +50,20 @@ const SPEC_DIAGNOSTIC_REASON_LABELS = Object.freeze({
   SPEC_TOO_LARGE: 'The linked spec exceeds the supported size limit.',
 });
 
+const BUNDLE_DIAGNOSTIC_ACTION_LABELS = Object.freeze({
+  REPAIR_OR_CLEAR_PARENT_REFERENCE: 'Repair or clear this task parent reference, then try the export again.',
+  REPAIR_OR_CLEAR_DEPENDENCY_REFERENCE: 'Repair or clear this task dependency reference, then try the export again.',
+  RELINK_OR_CLEAR_SPEC_REFERENCE: 'Relink this task to its own spec or clear the spec link, then try the export again.',
+  REPAIR_MISSING_REFERENCE: 'Repair or clear the missing task reference, then try the export again.',
+  REPAIR_INVALID_REFERENCE: 'Repair the invalid task reference, then try the export again.',
+  REVIEW_TASK_DATA: 'Review this task data, then try the export again.',
+  REVIEW_BUNDLE_DATA: 'Review the bundle data, then try the export again.',
+});
+
 function exportErrorMessage(data, status) {
   const code = data?.code;
   if (SPEC_DIAGNOSTIC_REASON_LABELS[code]) return SPEC_DIAGNOSTIC_REASON_LABELS[code];
+  if (code === 'BUNDLE_INVALID') return 'The project contains inconsistent task or spec references.';
   if (code === 'SENSITIVE_CONTENT_DETECTED') return 'The project contains credential-like canonical data.';
   if (code === 'LOOPBACK_REQUIRED') return 'Sensitive export recovery is available only from a direct local connection.';
   return `Export failed (HTTP ${status}).`;
@@ -88,7 +99,7 @@ function countValue(counts, key) {
   return Number.isFinite(Number(counts?.[key])) ? Number(counts[key]) : 0;
 }
 
-function WarningList({ title, items = [], variant = 'warn', safeSpecDiagnostics = false }) {
+function WarningList({ title, items = [], variant = 'warn', safeSpecDiagnostics = false, safeBundleDiagnostics = false }) {
   const [expanded, setExpanded] = useState(false);
   if (!items.length) return null;
   const shown = expanded ? items : items.slice(0, MAX_WARNING_ITEMS);
@@ -98,9 +109,12 @@ function WarningList({ title, items = [], variant = 'warn', safeSpecDiagnostics 
       <ul className="m-0 flex list-none flex-col gap-1 rounded-lg border border-solid border-border bg-bg-elevated p-2 text-[11px]">
         {shown.map((item, index) => {
           const code = typeof item === 'string' ? item : item.code || 'Warning';
-          const path = safeSpecDiagnostics || typeof item === 'string' ? '' : item.path || '';
+          const path = safeSpecDiagnostics || safeBundleDiagnostics || typeof item === 'string' ? '' : item.path || '';
           const taskId = typeof item === 'string' ? '' : item.taskId || '';
-          const guidance = safeSpecDiagnostics
+          const field = safeBundleDiagnostics && typeof item !== 'string' ? item.field || '' : '';
+          const guidance = safeBundleDiagnostics
+            ? BUNDLE_DIAGNOSTIC_ACTION_LABELS[item.action] || 'Review the listed bundle data, then try the export again.'
+            : safeSpecDiagnostics
             ? SPEC_DIAGNOSTIC_REASON_LABELS[code] || 'The linked spec is unavailable.'
             : typeof item === 'string' ? '' : item.guidance || item.action || item.message || '';
           return (
@@ -109,6 +123,7 @@ function WarningList({ title, items = [], variant = 'warn', safeSpecDiagnostics 
               <span className="min-w-0 break-words">
                 <span className="font-mono text-[10px] text-text">{code}</span>
                 {taskId && <span className="ml-1 font-mono text-[10px]">Task {taskId}</span>}
+                {field && <span className="ml-1 font-mono text-[10px]">Field {field}</span>}
                 {path && <span className="ml-1 font-mono text-[10px]">{path}</span>}
                 {guidance && <span className="block">{guidance}</span>}
               </span>
@@ -338,10 +353,21 @@ function ExportProjectModal({ open, onClose, project }) {
         )}
         {state === 'blocked' && (
           <div className="flex flex-col gap-3">
-            <Alert variant="error" title="Export blocked"><span data-testid="export-error">{error?.message || 'The project could not be exported.'}</span></Alert>
+            <Alert variant="error" title={error?.code === 'BUNDLE_INVALID' ? 'Export blocked — repair required' : 'Export blocked'}><span data-testid="export-error">{error?.message || 'The project could not be exported.'}</span></Alert>
+            {error?.code === 'BUNDLE_INVALID' && (
+              <Alert variant="info" title="How to recover">
+                <span data-testid="export-recovery-guidance">Repair or clear the listed task references in FlowBoard, then try the export again.</span>
+              </Alert>
+            )}
             {error?.diagnostics?.length > 0 && (
               <div data-testid="export-diagnostics">
-                <WarningList title="Linked spec recovery" items={error.diagnostics} variant="error" safeSpecDiagnostics />
+                <WarningList
+                  title={error?.code === 'BUNDLE_INVALID' ? 'Bundle integrity recovery' : 'Linked spec recovery'}
+                  items={error.diagnostics}
+                  variant="error"
+                  safeSpecDiagnostics={error?.code !== 'BUNDLE_INVALID'}
+                  safeBundleDiagnostics={error?.code === 'BUNDLE_INVALID'}
+                />
               </div>
             )}
             {error?.code === 'SENSITIVE_CONTENT_DETECTED' && (

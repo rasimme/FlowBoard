@@ -101,6 +101,47 @@ async function main() {
     assert.equal(fs.existsSync(auditFile), true);
     assert.match(fs.readFileSync(auditFile, 'utf8'), /"action":"project\.export"/);
 
+    // Legacy imports could attach one shared spec to several tasks. The
+    // exporter must report the invalid task/spec reference in typed form,
+    // without returning the source filename or validator message.
+    const legacyProject = await ctx.api('POST', '/projects', {
+      name: 'legacy-reference-fixture',
+      displayName: 'Legacy Reference Fixture',
+    });
+    assert.equal(legacyProject.status, 201, JSON.stringify(legacyProject.body));
+    const legacyFirst = await ctx.api('POST', '/projects/legacy-reference-fixture/tasks', {
+      title: 'Legacy parent task', status: 'backlog', description: 'Fixture task.',
+    });
+    const legacySecond = await ctx.api('POST', '/projects/legacy-reference-fixture/tasks', {
+      title: 'Legacy child task', status: 'backlog', description: 'Fixture task.',
+    });
+    assert.equal(legacyFirst.status, 200, JSON.stringify(legacyFirst.body));
+    assert.equal(legacySecond.status, 200, JSON.stringify(legacySecond.body));
+    const legacyFirstId = legacyFirst.body.task.id;
+    const legacySecondId = legacySecond.body.task.id;
+    const legacySpec = await ctx.api('PUT', '/projects/legacy-reference-fixture/files/context/SHARED.md', {
+      content: '# Shared legacy spec\n\nThis source file must not be disclosed by diagnostics.\n',
+    });
+    assert.equal(legacySpec.status, 200, JSON.stringify(legacySpec.body));
+    for (const taskId of [legacyFirstId, legacySecondId]) {
+      const link = await ctx.api('PUT', `/projects/legacy-reference-fixture/tasks/${taskId}`, {
+        specFile: 'context/SHARED.md',
+      });
+      assert.equal(link.status, 200, JSON.stringify(link.body));
+    }
+    const invalidLegacyExport = await ctx.api('GET', '/projects/legacy-reference-fixture/export');
+    assert.equal(invalidLegacyExport.status, 500, JSON.stringify(invalidLegacyExport.body));
+    assert.equal(invalidLegacyExport.body.code, 'BUNDLE_INVALID');
+    assert.ok(invalidLegacyExport.body.diagnostics.some((item) => (
+      item.code === 'REFERENCE_INVALID'
+      && item.section === 'task'
+      && item.taskId === legacySecondId
+      && item.field === 'specFile'
+      && item.action === 'RELINK_OR_CLEAR_SPEC_REFERENCE'
+    )));
+    assert.equal(JSON.stringify(invalidLegacyExport.body).includes('context/SHARED.md'), false);
+    assert.equal(JSON.stringify(invalidLegacyExport.body).includes('different task'), false);
+
     const fakeOptionalSecret = 'sk-review-api-fake-value-1234567890';
     const secretFileWrite = await ctx.api('PUT', '/projects/portable-review-fixture/files/context/REVIEW.md', {
       content: `Review-only note with apiKey: ${fakeOptionalSecret}\n`,

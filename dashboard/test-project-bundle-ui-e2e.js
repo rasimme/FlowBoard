@@ -135,6 +135,51 @@ async function dragBundle(page, body, filename) {
     await page.setRequestInterception(false);
     await page.click('button[aria-label="Close"]');
 
+    // Legacy parent/spec references produce a typed recovery surface rather
+    // than the generic HTTP 500 fallback. Raw validator paths remain hidden.
+    let invalidBundleFirst = true;
+    await page.setRequestInterception(true);
+    const invalidBundleIntercept = async (request) => {
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && url.pathname.endsWith('/export') && invalidBundleFirst) {
+        invalidBundleFirst = false;
+        await request.respond({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'Generated project bundle failed schema validation',
+            code: 'BUNDLE_INVALID',
+            diagnostics: [{
+              code: 'REFERENCE_MISSING',
+              section: 'task',
+              action: 'REPAIR_OR_CLEAR_PARENT_REFERENCE',
+              taskId: 'T-152-1',
+              field: 'parentId',
+              path: 'tasks.T-152-1.parentId',
+              message: 'Raw validator details must never be rendered.',
+            }],
+          }),
+        });
+        return;
+      }
+      await request.continue();
+    };
+    page.on('request', invalidBundleIntercept);
+    await page.click('.row-kebab');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Export project'))?.click());
+    await page.waitForSelector('[data-testid="export-recovery-guidance"]');
+    const invalidBundleText = await text(page);
+    r.ok(invalidBundleText.includes('inconsistent task or spec references'), 'BUNDLE_INVALID has a typed export error message');
+    r.ok(invalidBundleText.includes('Task T-152-1') && invalidBundleText.includes('Field parentId'), 'BUNDLE_INVALID renders safe task reference context');
+    r.ok(invalidBundleText.includes('Repair or clear this task parent reference'), 'BUNDLE_INVALID renders actionable recovery guidance');
+    r.ok(!invalidBundleText.includes('HTTP 500') && !invalidBundleText.includes('tasks.T-152-1.parentId') && !invalidBundleText.includes('Raw validator details'), 'BUNDLE_INVALID recovery UI hides generic/raw diagnostics');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Try again'))?.click());
+    await page.waitForSelector('#include-task-history');
+    r.ok(!invalidBundleFirst, 'BUNDLE_INVALID recovery Try again refetches the export');
+    page.off('request', invalidBundleIntercept);
+    await page.setRequestInterception(false);
+    await page.click('button[aria-label="Close"]');
+
     await page.click('.sidebar-new');
     r.ok((await text(page)).includes('Import project'), 'New menu exposes Import project');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project'))?.click());

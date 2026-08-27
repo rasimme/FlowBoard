@@ -10,6 +10,7 @@ const {
   WARNING_CODES,
   exportProjectReviewBundle,
   safeDownloadFilename,
+  bundleValidationDiagnostics,
 } = require('./project-bundle-export.js');
 const { canonicalJson } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
@@ -128,6 +129,43 @@ async function main() {
       && !JSON.stringify(error.diagnostics).includes('specs/missing.md')
       && error.diagnostics[0].taskId === 'T-1'
       && error.diagnostics[0].code === 'SPEC_READ_FAILED');
+
+    // Legacy task references fail closed as BUNDLE_INVALID, but the
+    // recovery projection contains only typed, safe fields. Validator paths
+    // and their spec filenames remain available only to the in-process error.
+    assert.throws(() => exportProjectReviewBundle(input(root, {
+      tasks: [
+        task('T-1'),
+        task('T-2', { specFile: 'specs/T-2-review.md' }),
+        task('T-3', { specFile: 'specs/T-2-review.md' }),
+        task('T-4', { parentId: 'T-404' }),
+      ],
+    })), (error) => {
+      assert.equal(error.code, 'BUNDLE_INVALID');
+      assert.ok(error.diagnostics.some((item) => (
+        item.code === 'REFERENCE_INVALID'
+        && item.taskId === 'T-3'
+        && item.field === 'specFile'
+        && item.action === 'RELINK_OR_CLEAR_SPEC_REFERENCE'
+      )));
+      assert.ok(error.diagnostics.some((item) => (
+        item.code === 'REFERENCE_MISSING'
+        && item.taskId === 'T-4'
+        && item.field === 'parentId'
+        && item.action === 'REPAIR_OR_CLEAR_PARENT_REFERENCE'
+      )));
+      assert.equal(JSON.stringify(error.diagnostics).includes('specs/T-2-review.md'), false);
+      return true;
+    });
+    assert.deepEqual(bundleValidationDiagnostics([{
+      code: 'REFERENCE_MISSING',
+      path: 'tasks./secretPath',
+      message: 'must not cross the API boundary',
+    }]), [{
+      code: 'REFERENCE_MISSING',
+      section: 'task',
+      action: 'REPAIR_MISSING_REFERENCE',
+    }]);
 
     const before = fs.readFileSync(path.join(root, 'PROJECT.md'), 'utf8');
     exportProjectReviewBundle(input(root));
