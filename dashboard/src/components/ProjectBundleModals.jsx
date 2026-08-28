@@ -443,7 +443,7 @@ function ImportSteps({ stage }) {
 
 const UNCHANGED_IMPORT_CONFIRMATION = 'I UNDERSTAND AND WANT TO IMPORT UNCHANGED';
 
-function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSuggested, targetInputRef, sensitiveMode, setSensitiveMode, confirmation, setConfirmation }) {
+function ImportPreviewSummary({ preview, targetName, onTargetChange, onTargetBlur, onUseSuggested, targetInputRef, sensitiveMode, setSensitiveMode, confirmation, setConfirmation }) {
   const counts = preview?.counts || {};
   const conflict = preview?.target?.availability === 'conflict';
   const targetValid = /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName);
@@ -468,7 +468,7 @@ function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSugges
       <CountGrid counts={counts} includeHistory={preview?.options?.includeHistory === true} />
       <ScopeLists includeHistory={preview?.options?.includeHistory === true} />
       <FormGroup label="New project name" htmlFor="import-target" error={!targetValid ? 'Use a lowercase project slug (letters, numbers and hyphens).' : null} hint="Import always creates a new project.">
-        <Input ref={targetInputRef} id="import-target" value={targetName} onChange={(event) => onTargetChange(event.target.value)} aria-invalid={!targetValid} />
+        <Input ref={targetInputRef} id="import-target" value={targetName} onChange={(event) => onTargetChange(event.target.value)} onBlur={onTargetBlur} aria-invalid={!targetValid} />
       </FormGroup>
       {conflict && (
         <Alert variant="warn" title="Project name is already in use" action={<Button variant="secondary" size="xs" onClick={onUseSuggested}>Use {suggestedCopyName(targetName)}</Button>}>
@@ -484,10 +484,9 @@ function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSugges
       </div>}
             {errors.length > 0 && <WarningList title="Bundle validation" items={errors} variant="error" />}
             {securityWarnings.length > 0 && <Alert variant="warn" title="Sensitive content requires a choice"><WarningList title="Security findings" items={securityWarnings} variant="warn" /></Alert>}
-            <WarningList title="Manifest warnings" items={manifestWarnings} />
-            {preview?.redactions?.length > 0 && <div className="text-[11px] text-muted">Redactions recorded: {preview.redactions.join(', ')}</div>}
-            {preview?.options?.includeHistory && <Alert variant="warn" title="Task history included">Comments and checkpoints may contain sensitive historical context.</Alert>}
-            <Alert variant="info" title="Imported Markdown is content only">Imported Markdown is never executed. Review it as content before using any instructions from it.</Alert>
+            {manifestWarnings.length > 0 && <details className="text-[11px] text-muted"><summary>Additional bundle notes ({manifestWarnings.length})</summary><WarningList title="Bundle notes" items={manifestWarnings} /></details>}
+            {preview?.redactions?.length > 0 && <div className="text-[11px] text-muted">Export redactions: {preview.redactions.join(', ')}</div>}
+            <div className="text-[11px] text-muted">Imported Markdown is content only; it is never executed.</div>
     </div>
   );
 }
@@ -640,16 +639,14 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
 
   function updateTarget(value) {
     setTargetName(value);
-    if (!rawBody) return;
-    window.clearTimeout(previewTimer.current);
-    // Keep intermediate edits (including an empty field) local. Sending an
-    // empty target omits the query parameter, so the server legitimately
-    // falls back to the source slug and used to overwrite the user's input.
-    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(value)) {
-      previewRequest.current += 1;
-      return;
-    }
-    previewTimer.current = window.setTimeout(() => requestPreview(rawBody, value), 250);
+    // Editing stays entirely local. Previewing on each valid keystroke races
+    // the input and can overwrite characters while a name is being replaced.
+    previewRequest.current += 1;
+  }
+
+  function refreshTargetOnBlur() {
+    if (!rawBody || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName)) return;
+    requestPreview(rawBody, targetName);
   }
 
   function useSuggestedTarget() {
@@ -771,7 +768,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
               title="Bundle cannot be imported"
               action={rawBody ? <Button variant="secondary" size="xs" onClick={() => requestPreview(rawBody, targetName)}><RefreshCw size={12} /> Try again</Button> : null}
             ><span data-testid="import-preview-error">{fileError}</span></Alert>}
-            <ImportPreviewSummary preview={preview} targetName={targetName} onTargetChange={updateTarget} onUseSuggested={useSuggestedTarget} targetInputRef={targetInputRef} sensitiveMode={sensitiveMode} setSensitiveMode={setSensitiveMode} confirmation={confirmation} setConfirmation={setConfirmation} />
+            <ImportPreviewSummary preview={preview} targetName={targetName} onTargetChange={updateTarget} onTargetBlur={refreshTargetOnBlur} onUseSuggested={useSuggestedTarget} targetInputRef={targetInputRef} sensitiveMode={sensitiveMode} setSensitiveMode={setSensitiveMode} confirmation={confirmation} setConfirmation={setConfirmation} />
           </>
         )}
         {stage === 'progress' && (

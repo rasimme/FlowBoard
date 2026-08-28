@@ -81,7 +81,10 @@ export default function Modal({
     };
   }, [open]);
 
-  const handleOverlayClick = (e) => {
+  // Close only when the pointer starts on the backdrop. A text-selection drag
+  // may end outside the panel; handling the trailing click used to dismiss the
+  // dialog while editing an input.
+  const handleOverlayPointerDown = (e) => {
     if (e.target === overlayRef.current && dismissible) onClose?.();
   };
 
@@ -90,7 +93,7 @@ export default function Modal({
   return createPortal(
     <div
       ref={overlayRef}
-      onClick={handleOverlayClick}
+      onPointerDown={handleOverlayPointerDown}
       className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60"
     >
       <div
