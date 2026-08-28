@@ -628,6 +628,13 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     setTargetName(value);
     if (!rawBody) return;
     window.clearTimeout(previewTimer.current);
+    // Keep intermediate edits (including an empty field) local. Sending an
+    // empty target omits the query parameter, so the server legitimately
+    // falls back to the source slug and used to overwrite the user's input.
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(value)) {
+      previewRequest.current += 1;
+      return;
+    }
     previewTimer.current = window.setTimeout(() => requestPreview(rawBody, value), 250);
   }
 
