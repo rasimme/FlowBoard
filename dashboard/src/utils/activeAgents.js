@@ -274,6 +274,12 @@ export function activeAgentLeaseHealthLabel(health) {
 export function activeAgentTaskProgress(task) {
   if (!task) return 0;
   if (task.status === 'review' || task.status === 'done') return 100;
+  // Checkpoint progress is a scalar on task projections. `progress` is also
+  // used for the parent's {done,inProgress,total} summary, so accept both
+  // canonical shapes without treating the summary object as a percentage.
+  const scalar = [task.progress, task.progressPercent, task.checkpointProgress]
+    .find((value) => typeof value === 'number' && Number.isFinite(value));
+  if (scalar != null) return Math.max(0, Math.min(100, Math.round(scalar)));
   const progress = task.progress;
   if (progress && typeof progress === 'object' && Number.isFinite(progress.total) && progress.total > 0) {
     const done = Number.isFinite(progress.done) ? progress.done : 0;

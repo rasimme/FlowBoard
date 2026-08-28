@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   aggregateLeaseHealth,
   activeAgentLeaseHealthLabel,
+  activeAgentTaskProgress,
   buildActiveAgentRows,
   buildActiveAgentWidgetRows,
   buildRoutableAgentRows,
@@ -24,6 +25,10 @@ const claim = (id, agent, extra = {}) => ({
   leaseUntil: '2026-08-24T13:00:00.000Z',
   ...extra,
 });
+
+assert.equal(activeAgentTaskProgress({ status: 'in-progress', progress: 42 }), 42, 'scalar checkpoint progress drives the mini bar');
+assert.equal(activeAgentTaskProgress({ status: 'in-progress', progress: { done: 1, total: 4 } }), 25, 'parent subtask summary remains supported');
+assert.equal(activeAgentTaskProgress({ status: 'review', progress: 42 }), 100, 'completed lifecycle state wins over an old checkpoint');
 
 const claims = [
   claim('T-2', 'alpha'),

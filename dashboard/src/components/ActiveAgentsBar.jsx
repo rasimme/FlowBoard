@@ -135,6 +135,23 @@ function AgentAvatar({ agentId }) {
   );
 }
 
+function ActiveAgentMeasurePill({ agentId, claims, leaseHealth }) {
+  const task = claims[0] || null;
+  const multi = claims.length > 1;
+  return (
+    <span className={`active-agents-pill${multi ? ' active-agents-pill--multi' : ''}`} aria-hidden="true">
+      <AgentAvatar agentId={agentId} />
+      <span className="active-agents-pill__meta">
+        <span className="active-agents-pill__name">{formatHandle(agentId)}</span>
+        {!multi && task && <span className="active-agents-pill__task">{taskTitle(task)}</span>}
+        {!claims.length && <span className="active-agents-pill__task active-agents-pill__task--idle">No active task</span>}
+      </span>
+      <LeaseHealthIndicator health={leaseHealth} />
+      {multi && <span className="active-agents-pill__count">{claims.length} tasks</span>}
+    </span>
+  );
+}
+
 function ActiveAgentPill({
   agentId,
   claims,
@@ -279,6 +296,8 @@ export default function ActiveAgentsBar() {
   const focusFirstRef = useRef(null);
   const pendingFocusRef = useRef(null);
   const barRef = useRef(null);
+  const listRef = useRef(null);
+  const measureRef = useRef(null);
 
   // A lease can expire between dashboard snapshots. Re-evaluate cheaply so an
   // expired claim cannot stay visible until an unrelated state change.
@@ -294,6 +313,27 @@ export default function ActiveAgentsBar() {
     now,
     staleThresholdMinutes,
   }), [agents, tasks, viewedProject, now, staleThresholdMinutes]);
+  const [visibleCount, setVisibleCount] = useState(rows.length);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const measureList = measureRef.current;
+    if (!list || !measureList) return undefined;
+    const measure = () => {
+      const items = [...measureList.querySelectorAll(':scope > .active-agents-pill-wrap')];
+      if (!items.length) return;
+      const tops = [...new Set(items.map((item) => item.offsetTop))].sort((a, b) => a - b);
+      // Preserve two visual rows; a hidden full copy prevents feedback from
+      // the overflow cutoff changing the dimensions being measured.
+      const cutoff = tops[2] == null ? Infinity : tops[2];
+      const count = items.filter((item) => item.offsetTop < cutoff).length;
+      setVisibleCount((previous) => previous === count ? previous : count);
+    };
+    measure();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    observer?.observe(list);
+    return () => observer?.disconnect();
+  }, [rows]);
   const openRow = rows.find((row) => row.agentId === openAgentId);
 
   const focusSurvivingControl = useCallback((closingAgentId) => {
@@ -468,29 +508,55 @@ export default function ActiveAgentsBar() {
       tabIndex={-1}
     >
       <div className="active-agents-bar__label">Active on this project</div>
-      <div className="active-agents-bar__list">
-        {rows.map(({ agentId, claims, leaseHealth }) => (
-          <ActiveAgentPill
-            key={agentId}
-            agentId={agentId}
-            claims={claims}
-            leaseHealth={leaseHealth}
-            open={openAgentId === agentId}
-            onToggle={togglePopover}
-            onOpenTask={openTask}
-            popoverPosition={openAgentId === agentId ? popoverPosition : null}
-            now={now}
-            staleThresholdMinutes={staleThresholdMinutes}
-            triggerRef={(element) => {
-              if (element) triggerRefs.current.set(agentId, element);
-              else triggerRefs.current.delete(agentId);
-            }}
-            popoverRef={(element) => {
-              if (element) popoverRefs.current.set(agentId, element);
-              else popoverRefs.current.delete(agentId);
-            }}
-          />
-        ))}
+      <div ref={listRef} className="active-agents-bar__list">
+        <div ref={measureRef} className="active-agents-bar__measure" aria-hidden="true">
+          {rows.map(({ agentId, claims, leaseHealth }) => (
+            <div key={agentId} className="active-agents-pill-wrap">
+              <ActiveAgentMeasurePill agentId={agentId} claims={claims} leaseHealth={leaseHealth} />
+            </div>
+          ))}
+        </div>
+        <div className="active-agents-bar__visible">
+          {rows.map(({ agentId, claims, leaseHealth }, index) => (
+            <div key={agentId} className="active-agents-pill-wrap" hidden={index >= visibleCount}>
+              <ActiveAgentPill
+                agentId={agentId}
+                claims={claims}
+                leaseHealth={leaseHealth}
+                open={openAgentId === agentId}
+                onToggle={togglePopover}
+                onOpenTask={openTask}
+                popoverPosition={openAgentId === agentId ? popoverPosition : null}
+                now={now}
+                staleThresholdMinutes={staleThresholdMinutes}
+                triggerRef={(element) => {
+                  if (element) triggerRefs.current.set(agentId, element);
+                  else triggerRefs.current.delete(agentId);
+                }}
+                popoverRef={(element) => {
+                  if (element) popoverRefs.current.set(agentId, element);
+                  else popoverRefs.current.delete(agentId);
+                }}
+              />
+            </div>
+          ))}
+          {visibleCount < rows.length && (
+            <div className="active-agents-overflow-wrap">
+              <button type="button" className="active-agents-overflow" aria-expanded={overflowOpen} aria-haspopup="dialog" onClick={() => setOverflowOpen((open) => !open)} aria-label={`Show ${rows.length - visibleCount} more active agents`} title="Show all active agents">
+                +{rows.length - visibleCount} more
+              </button>
+              {overflowOpen && (
+                <div className="active-agents-overflow-popover" role="dialog" aria-label="All active agents">
+                  {rows.map(({ agentId, claims, leaseHealth }) => (
+                    <div key={agentId} className="active-agents-overflow-popover__row" title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`}>
+                      <span>{formatHandle(agentId)}</span><span>{claims.length ? `${claims.length} active task${claims.length === 1 ? '' : 's'}` : 'No active task'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

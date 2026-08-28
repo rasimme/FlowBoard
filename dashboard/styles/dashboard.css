@@ -432,15 +432,59 @@
       outline-offset: -2px;
     }
     .active-agents-bar__list {
+      position: relative;
+    }
+    .active-agents-bar__measure,
+    .active-agents-bar__visible {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+    }
+    .active-agents-bar__measure {
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 100%;
+      visibility: hidden;
+      pointer-events: none;
     }
     .active-agents-pill-wrap {
       position: relative;
       display: inline-flex;
       min-width: 0;
     }
+    .active-agents-overflow-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .active-agents-overflow {
+      align-self: center;
+      min-height: 32px;
+      padding: 4px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      background: var(--card);
+      color: var(--text-strong);
+      font: inherit;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .active-agents-overflow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .active-agents-overflow-popover {
+      position: absolute;
+      z-index: 1001;
+      top: calc(100% + 8px);
+      left: 0;
+      max-width: min(360px, calc(100vw - 24px));
+      max-height: 280px;
+      overflow: auto;
+      padding: 6px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: var(--bg-elevated);
+      box-shadow: var(--shadow-lg);
+    }
+    .active-agents-overflow-popover__row { display: flex; gap: 18px; justify-content: space-between; padding: 6px 8px; font-size: 11px; white-space: nowrap; }
+    .active-agents-overflow-popover__row span:last-child { color: var(--muted); }
     .active-agents-pill {
       display: inline-flex;
       align-items: center;
@@ -451,6 +495,8 @@
       border-radius: var(--radius-full);
       max-width: min(360px, 100%);
       min-height: 32px;
+      height: 32px;
+      box-sizing: border-box;
       color: var(--text);
       font: inherit;
       text-align: left;
@@ -494,6 +540,10 @@
       color: var(--text-strong);
       font-family: "JetBrains Mono", monospace;
       font-weight: 500;
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .active-agents-pill__task {
       font-size: 11px;
@@ -3032,4 +3082,3 @@
     padding: 1px 10px;
   }
 }
-
