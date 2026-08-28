@@ -695,7 +695,11 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
 
   const dismissible = stage !== 'progress';
   const requiresUnchangedConfirmation = preview?.securityWarnings?.length > 0 && sensitiveMode === 'allow';
-  const canImport = !!preview?.canImport && !previewing && /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName)
+  // Security findings are an explicit import decision, not a structural
+  // invalidation. Keep this compatible with older preview responses while
+  // never bypassing a blocked result or target conflict.
+  const previewAllowsImport = !!preview?.canImport || ((preview?.securityWarnings?.length || 0) > 0 && preview?.target?.availability !== 'conflict');
+  const canImport = previewAllowsImport && /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName)
     && (!requiresUnchangedConfirmation || confirmation === UNCHANGED_IMPORT_CONFIRMATION);
   const projectName = importResult?.project?.displayName || importResult?.project?.name || targetName;
 

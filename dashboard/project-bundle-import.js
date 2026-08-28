@@ -854,7 +854,8 @@ class ProjectBundleImporter {
     }
     const importBundle = sensitiveMode === 'redact' ? refreshRedactedChecksums(redactBundle(bundle)) : bundle;
     const admission = this._canonicalAdmission(importBundle, targetName);
-    const provenance = { ...safeImportProvenance(admission.bundle), sensitive: { mode: sensitiveMode, findings: findings.length } };
+    const provenance = safeImportProvenance(admission.bundle);
+    if (findings.length > 0) provenance.sensitive = { mode: sensitiveMode, findings: findings.length };
     const lock = importLockKey(admission.target);
     if (ProjectBundleImporter.locks.has(lock)) {
       throw errorWithCode('Another import is already running for this target', 'IMPORT_IN_PROGRESS', 409);

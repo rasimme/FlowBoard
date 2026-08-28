@@ -229,14 +229,29 @@ async function dragBundle(page, body, filename) {
     r.ok((await text(page)).includes('not valid JSON'), 'invalid JSON file has an actionable error');
     await page.click('button[aria-label="Close"]');
 
-    // Security findings come from the real preview response and block the CTA.
+    // Security findings keep a structurally valid bundle in review and offer
+    // redaction by default, with unchanged import gated by a typed phrase.
     await page.click('.sidebar-new');
     await page.evaluate(() => [...document.querySelectorAll('button')].find((button) => button.textContent.includes('Import project'))?.click());
     await page.waitForSelector('#project-bundle-file');
     const unsafeFile = jsonFile('unsafe.flowboard.json', securityFixture());
     await (await page.$('#project-bundle-file')).uploadFile(unsafeFile);
-    await page.waitForSelector('[data-testid="import-preview-error"]');
-    r.ok((await text(page)).includes('Import blocked'), 'security findings block import in review');
+    await page.waitForSelector('[data-testid="import-sensitive-choice"]');
+    r.ok((await text(page)).includes('Import redacted copy'), 'security findings offer safe redaction instead of a generic preview failure');
+    const unchangedRadio = await page.$('input[name="sensitive-mode"][value="allow"]');
+    if (unchangedRadio) await unchangedRadio.click();
+    else await page.evaluate(() => [...document.querySelectorAll('input[name="sensitive-mode"]')].find((input) => !input.checked)?.click());
+    await page.waitForSelector('input[aria-label="Unchanged import confirmation"]');
+    r.ok(await page.$eval('[data-testid="import-submit"]', (button) => button.disabled), 'unchanged import stays disabled without the typed confirmation');
+    await page.type('input[aria-label="Unchanged import confirmation"]', 'I UNDERSTAND AND WANT TO IMPORT UNCHANGED');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const unchangedState = await page.evaluate(() => ({
+      modes: [...document.querySelectorAll('input[name="sensitive-mode"]')].map((input) => input.checked),
+      confirmation: document.querySelector('input[aria-label="Unchanged import confirmation"]')?.value,
+      target: document.querySelector('#import-target')?.value,
+      disabled: document.querySelector('[data-testid="import-submit"]')?.disabled,
+    }));
+    r.ok(!unchangedState.disabled, `typed confirmation enables unchanged import (${JSON.stringify(unchangedState)})`);
     await page.click('button[aria-label="Close"]');
 
     // Recoverable failure exposes an import ID and the retry returns to the

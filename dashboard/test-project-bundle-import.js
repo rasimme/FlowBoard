@@ -80,11 +80,12 @@ function fixture(bundleId = 'import-fixture') {
   });
 }
 
-async function postImport(ctx, bundle, targetName, failure, lock = false, corrupt = null) {
-  const response = await fetch(`${ctx.base}/api/projects/import?targetName=${encodeURIComponent(targetName)}`, {
+async function postImport(ctx, bundle, targetName, failure, lock = false, corrupt = null, { sensitiveMode = 'redact', confirmation } = {}) {
+  const response = await fetch(`${ctx.base}/api/projects/import?targetName=${encodeURIComponent(targetName)}&sensitiveMode=${encodeURIComponent(sensitiveMode)}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/vnd.flowboard.project+json',
+      ...(confirmation ? { 'X-FlowBoard-Sensitive-Confirmation': confirmation } : {}),
       ...(failure ? { 'X-FlowBoard-Test-Import-Failure': failure } : {}),
       ...(lock ? { 'X-FlowBoard-Test-Import-Lock': 'true' } : {}),
       ...(corrupt ? { 'X-FlowBoard-Test-Import-Corrupt': corrupt } : {}),
@@ -143,6 +144,29 @@ async function main() {
     assert.equal(child.stuckIndicator, null);
     assert.deepEqual(tasks.body.tasks[0].workStateDetails, DETAILS);
 
+    const sensitiveValue = 'Bearer abcdefghijklmnopqrstuvwxyz1234567890';
+    const sensitiveBundle = fixture('sensitive-import-fixture');
+    sensitiveBundle.tasks[0].description = `Keep this context, but redact ${sensitiveValue}.`;
+    sensitiveBundle.manifest.checksums.payload = sha256(payloadForChecksum(sensitiveBundle));
+    const rejectedUnchanged = await postImport(ctx, sensitiveBundle, 'sensitive-unchanged', undefined, false, null, { sensitiveMode: 'allow' });
+    assert.equal(rejectedUnchanged.status, 422);
+    assert.equal(rejectedUnchanged.body.code, 'SENSITIVE_CONFIRMATION_REQUIRED');
+    const redacted = await postImport(ctx, sensitiveBundle, 'sensitive-redacted');
+    assert.equal(redacted.status, 201, JSON.stringify(redacted.body));
+    const redactedTasks = await ctx.api('GET', '/projects/sensitive-redacted/tasks?includeArchived=true');
+    assert.equal(redactedTasks.body.tasks[0].description.includes(sensitiveValue), false);
+    assert.equal(redactedTasks.body.tasks[0].description.includes('[REDACTED: BEARER_TOKEN]'), true);
+    assert.equal(redactedTasks.body.tasks[0].description.includes('Keep this context'), true);
+    const redactedJournal = await ctx.api('GET', `/projects/import/${redacted.body.importId}`);
+    assert.deepEqual(redactedJournal.body.journal.progress.provenance.sensitive, { mode: 'redact', findings: 1 });
+    assert.equal(JSON.stringify(redactedJournal.body).includes(sensitiveValue), false);
+    const unchanged = await postImport(ctx, sensitiveBundle, 'sensitive-unchanged', undefined, false, null, {
+      sensitiveMode: 'allow', confirmation: 'I UNDERSTAND AND WANT TO IMPORT UNCHANGED',
+    });
+    assert.equal(unchanged.status, 201, JSON.stringify(unchanged.body));
+    const unchangedTasks = await ctx.api('GET', '/projects/sensitive-unchanged/tasks?includeArchived=true');
+    assert.equal(unchangedTasks.body.tasks[0].description.includes(sensitiveValue), true);
+
     const cacheDb = new Database(ctx.cacheDbPath, { readonly: true });
     try {
       const rows = cacheDb.prepare('SELECT task_id FROM tasks_current WHERE project = ? ORDER BY task_id').all('review-copy');
@@ -179,18 +203,20 @@ async function main() {
     assert.equal(second.body.code, 'IMPORT_TARGET_CONFLICT');
     assert.deepEqual(eventWatermark(ctx.dbPath), beforeSecond);
 
-    // Invalid/sensitive input is rejected before a journal, HZL event or
-    // target directory exists.
+    // Sensitive but structurally valid input uses the default precise
+    // redaction path instead of being misreported as BUNDLE_PREVIEW_INVALID.
     const secret = fixture('secret-fixture');
-    secret.tasks[0].description = 'apiKey: ghp_fake_review_value_1234567890';
+    const secretValue = 'ghp_fake_review_value_1234567890';
+    secret.tasks[0].description = `apiKey: ${secretValue}`;
     secret.manifest.checksums.payload = sha256(payloadForChecksum(secret));
-    const beforeInvalid = eventWatermark(ctx.dbPath);
-    const invalid = await postImport(ctx, secret, 'secret-copy');
-    assert.equal(invalid.status, 422, JSON.stringify(invalid.body));
-    assert.equal(invalid.body.code, 'BUNDLE_PREVIEW_INVALID');
-    assert.equal((await ctx.api('GET', '/projects/import/status?targetName=secret-copy')).body.journals.length, 0);
-    assert.equal(fs.existsSync(path.join(ctx.projectsDir, 'secret-copy')), false);
-    assert.deepEqual(eventWatermark(ctx.dbPath), beforeInvalid);
+    const redactedSecret = await postImport(ctx, secret, 'secret-copy');
+    assert.equal(redactedSecret.status, 201, JSON.stringify(redactedSecret.body));
+    const redactedSecretTasks = await ctx.api('GET', '/projects/secret-copy/tasks?includeArchived=true');
+    assert.equal(redactedSecretTasks.body.tasks[0].description.includes(secretValue), false);
+    assert.equal(redactedSecretTasks.body.tasks[0].description.includes('[REDACTED: CREDENTIAL_ASSIGNMENT]'), true);
+    const redactedSecretJournal = await ctx.api('GET', `/projects/import/${redactedSecret.body.importId}`);
+    assert.deepEqual(redactedSecretJournal.body.journal.progress.provenance.sensitive, { mode: 'redact', findings: 1 });
+    assert.equal(JSON.stringify(redactedSecretJournal.body).includes(secretValue), false);
 
     const reserved = fixture('reserved-fixture');
     const reservedResult = await postImport(ctx, reserved, '.trash');

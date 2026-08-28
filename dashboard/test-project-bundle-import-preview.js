@@ -96,14 +96,16 @@ for (const mutate of [
 }
 
 // Secret findings expose only a logical location and code, never values or
-// snippets. Secret-bearing valid content blocks import admission.
+// snippets. Structurally valid bundles stay importable through the explicit
+// redaction/unchanged-import decision surface.
 {
   const bundle = fixture();
   bundle.tasks[0].description = 'apiKey: ghp_fake_review_value_1234567890';
   refreshPayloadChecksum(bundle);
   const result = previewBundle(bundle, { targetName: 'review-copy' });
   assert.equal(result.ok, true);
-  assert.equal(result.preview.canImport, false);
+  assert.equal(result.preview.canImport, true);
+  assert.deepEqual(result.preview.sensitiveContent, { count: 1, modes: ['redact', 'allow'] });
   assert.equal(result.preview.securityWarnings[0].path, 'tasks[0].description');
   assert.equal(JSON.stringify(result).includes('ghp_fake_review_value_1234567890'), false);
   assert.deepEqual(collectSensitiveFindings({ file: 'token: ghp_fake_review_value_1234567890' }), [{
@@ -133,7 +135,7 @@ for (const mutate of [
   refreshPayloadChecksum(unknownCountSecret);
   const unknownCountResult = previewBundle(unknownCountSecret, { targetName: 'review-copy' });
   assert.equal(unknownCountResult.ok, true);
-  assert.equal(unknownCountResult.preview.canImport, false);
+  assert.equal(unknownCountResult.preview.canImport, true);
   assert.deepEqual(unknownCountResult.preview.counts, {
     tasks: 1, specs: 0, canvasNotes: 0, canvasConnections: 0,
     overviewWidgets: 0, files: 1, historyComments: 0, historyCheckpoints: 0,
@@ -227,7 +229,8 @@ async function main() {
     refreshPayloadChecksum(secret);
     const secretResponse = await rawRequest(ctx, JSON.stringify(secret));
     assert.equal(secretResponse.status, 200);
-    assert.equal(secretResponse.body.canImport, false);
+    assert.equal(secretResponse.body.canImport, true);
+    assert.deepEqual(secretResponse.body.sensitiveContent, { count: 1, modes: ['redact', 'allow'] });
     assert.equal(JSON.stringify(secretResponse.body).includes('ghp_fake_review_value_1234567890'), false);
 
     const afterProjects = await ctx.api('GET', '/projects');
