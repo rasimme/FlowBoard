@@ -20,6 +20,7 @@ const {
   sha256,
   toPortableCanvas,
   toPortableOverview,
+  payloadForChecksum,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
 const { previewBundle, TARGET_NAME_RE } = require('./project-bundle-import-preview.js');
@@ -29,6 +30,35 @@ const {
   importLockKey,
 } = require('./project-bundle-safety.js');
 const { toPortableHistoryFromEvents } = require('./project-bundle-export.js');
+const { RULES, scanSensitiveContent } = require('./project-bundle-secrets.js');
+const { SAFE_REDACTION_MARKER, collectSensitiveFindings } = require('./project-bundle-import-preview.js');
+
+const UNCHANGED_CONFIRMATION = 'I UNDERSTAND AND WANT TO IMPORT UNCHANGED';
+function redactSensitive(value) {
+  if (typeof value !== 'string') return value;
+  let output = value;
+  for (const rule of RULES) {
+    const pattern = new RegExp(rule.pattern.source, `${rule.pattern.flags.replace('g', '')}g`);
+    output = output.replace(pattern, SAFE_REDACTION_MARKER(rule.code));
+  }
+  return output;
+}
+function redactBundle(value, seen = new WeakMap()) {
+  if (typeof value === 'string') return redactSensitive(value);
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return seen.get(value);
+  const copy = Array.isArray(value) ? [] : {};
+  seen.set(value, copy);
+  for (const [key, child] of Object.entries(value)) copy[key] = redactBundle(child, seen);
+  return copy;
+}
+function refreshRedactedChecksums(bundle) {
+  for (const file of bundle.files || []) {
+    if (bundle.manifest?.checksums?.files) bundle.manifest.checksums.files[file.path] = sha256(String(file.content), { canonical: false });
+  }
+  if (bundle.manifest?.checksums) bundle.manifest.checksums.payload = sha256(payloadForChecksum(bundle));
+  return bundle;
+}
 
 const RESERVED_TARGET_NAMES = new Set([
   '.audit', '.trash', '_index', 'projects', 'workspace',
@@ -816,9 +846,15 @@ class ProjectBundleImporter {
     return { historyComments: expected.comments.length, historyCheckpoints: expected.checkpoints.length };
   }
 
-  async importBundle(bundle, { targetName } = {}) {
-    const admission = this._canonicalAdmission(bundle, targetName);
-    const provenance = safeImportProvenance(admission.bundle);
+  async importBundle(bundle, { targetName, sensitiveMode = 'redact', confirmation } = {}) {
+    if (!['redact', 'allow'].includes(sensitiveMode)) throw errorWithCode('Invalid sensitive content mode', 'SENSITIVE_MODE_INVALID', 422);
+    const findings = collectSensitiveFindings(bundle);
+    if (sensitiveMode === 'allow' && findings.length > 0 && confirmation !== UNCHANGED_CONFIRMATION) {
+      throw errorWithCode('Unchanged import requires the exact confirmation phrase', 'SENSITIVE_CONFIRMATION_REQUIRED', 422);
+    }
+    const importBundle = sensitiveMode === 'redact' ? refreshRedactedChecksums(redactBundle(bundle)) : bundle;
+    const admission = this._canonicalAdmission(importBundle, targetName);
+    const provenance = { ...safeImportProvenance(admission.bundle), sensitive: { mode: sensitiveMode, findings: findings.length } };
     const lock = importLockKey(admission.target);
     if (ProjectBundleImporter.locks.has(lock)) {
       throw errorWithCode('Another import is already running for this target', 'IMPORT_IN_PROGRESS', 409);

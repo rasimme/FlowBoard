@@ -420,7 +420,8 @@ function suggestedCopyName(name) {
 }
 
 function errorSummary(data, status) {
-  if (data?.error) return `${data.error}${data.code ? ` (${data.code})` : ''}`;
+  if (data?.code === 'TARGET_INVALID') return 'The destination must be a lowercase project slug (letters, numbers and hyphens).';
+  if (data?.error) return data.error;
   if (status === 415) return 'This file format is not supported. Select a FlowBoard project bundle JSON file.';
   if (status === 422) return 'The bundle did not pass the safety and compatibility checks.';
   return `Import failed (HTTP ${status}).`;
@@ -440,7 +441,7 @@ function ImportSteps({ stage }) {
   );
 }
 
-function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSuggested, targetInputRef }) {
+function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSuggested, targetInputRef, sensitiveMode, setSensitiveMode, confirmation, setConfirmation }) {
   const counts = preview?.counts || {};
   const conflict = preview?.target?.availability === 'conflict';
   const targetValid = /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName);
@@ -472,6 +473,13 @@ function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSugges
           Choose another destination name. Merge, replace and overwrite are not available.
         </Alert>
       )}
+      {securityWarnings.length > 0 && <div className="rounded-lg border border-solid border-border bg-bg-elevated p-3 text-xs" data-testid="import-sensitive-choice">
+        <div className="font-semibold text-text-strong">Sensitive content found ({securityWarnings.length})</div>
+        <div className="mt-1 text-muted">Safe redaction is selected by default. Findings show only paths and codes.</div>
+        <label className="mt-3 flex items-center gap-2"><input type="radio" name="sensitive-mode" checked={sensitiveMode === 'redact'} onChange={() => setSensitiveMode('redact')} /> Import redacted copy (recommended)</label>
+        <label className="mt-2 flex items-center gap-2"><input type="radio" name="sensitive-mode" checked={sensitiveMode === 'allow'} onChange={() => setSensitiveMode('allow')} /> Advanced: import unchanged (confirmation required)</label>
+        {sensitiveMode === 'allow' && <Input aria-label="Unchanged import confirmation" placeholder="I UNDERSTAND AND WANT TO IMPORT UNCHANGED" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />}
+      </div>}
             {errors.length > 0 && <WarningList title="Bundle validation" items={errors} variant="error" />}
             {securityWarnings.length > 0 && <Alert variant="error" title="Import blocked"><WarningList title="Security findings" items={securityWarnings} variant="error" /></Alert>}
             <WarningList title="Manifest warnings" items={manifestWarnings} />
@@ -493,6 +501,8 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
   const [importId, setImportId] = useState(null);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState(null);
+  const [sensitiveMode, setSensitiveMode] = useState('redact');
+  const [confirmation, setConfirmation] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
   const targetInputRef = useRef(null);
@@ -511,6 +521,8 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     setImportId(null);
     setImportResult(null);
     setImportError(null);
+    setSensitiveMode('redact');
+    setConfirmation('');
     setDragActive(false);
     targetFocusNeeded.current = false;
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -539,7 +551,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
       const query = target ? `?targetName=${encodeURIComponent(target)}` : '';
       const response = await apiFetch(`/api/projects/import/preview${query}`, {
         method: 'POST',
-        headers: { 'Content-Type': BUNDLE_MEDIA_TYPE },
+        headers: { 'Content-Type': BUNDLE_MEDIA_TYPE, ...(sensitiveMode === 'allow' ? { 'X-FlowBoard-Sensitive-Confirmation': confirmation } : {}) },
         body,
       });
       const data = await response.json().catch(() => ({}));
@@ -649,7 +661,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     setStage('progress');
     setImportError(null);
     try {
-      const response = await apiFetch(`/api/projects/import?targetName=${encodeURIComponent(targetName)}`, {
+      const response = await apiFetch(`/api/projects/import?targetName=${encodeURIComponent(targetName)}&sensitiveMode=${sensitiveMode}`, {
         method: 'POST',
         headers: { 'Content-Type': BUNDLE_MEDIA_TYPE },
         body: rawBody,
@@ -697,7 +709,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
         <>
           <Button variant="ghost" size="sm" onClick={() => { setStage('select'); setFileError(null); }}>Choose another file</Button>
           <Button size="sm" onClick={submitImport} disabled={!canImport} data-testid="import-submit">{previewing ? <><Spinner size="sm" /> Checking…</> : <><Upload size={13} /> Import as new project</>}</Button>
-        </>
+      </>
       ) : stage === 'progress' ? null : stage === 'failure' ? (
         <>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
@@ -751,7 +763,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
               title="Bundle cannot be imported"
               action={rawBody ? <Button variant="secondary" size="xs" onClick={() => requestPreview(rawBody, targetName)}><RefreshCw size={12} /> Try again</Button> : null}
             ><span data-testid="import-preview-error">{fileError}</span></Alert>}
-            <ImportPreviewSummary preview={preview} targetName={targetName} onTargetChange={updateTarget} onUseSuggested={useSuggestedTarget} targetInputRef={targetInputRef} />
+            <ImportPreviewSummary preview={preview} targetName={targetName} onTargetChange={updateTarget} onUseSuggested={useSuggestedTarget} targetInputRef={targetInputRef} sensitiveMode={sensitiveMode} setSensitiveMode={setSensitiveMode} confirmation={confirmation} setConfirmation={setConfirmation} />
           </>
         )}
         {stage === 'progress' && (

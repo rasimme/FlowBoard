@@ -2293,6 +2293,8 @@ app.post('/api/projects/import', (req, res, next) => {
     }
     const result = await importer.importBundle(parsed.bundle, {
       targetName: req.query.targetName,
+      sensitiveMode: req.query.sensitiveMode || 'redact',
+      confirmation: req.headers['x-flowboard-sensitive-confirmation'],
     });
     // The audit record is emitted only after COMMITTED made the project
     // visible.  It contains an import id, never bundle content or a secret.

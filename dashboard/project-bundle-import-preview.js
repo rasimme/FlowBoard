@@ -37,6 +37,7 @@ const ARCHIVE_METADATA_KEYS = Object.freeze([
 const archiveMetadataToken = (key) => String(key).toLowerCase().replaceAll('_', '').replaceAll('-', '');
 const ARCHIVE_METADATA_KEY_SET = new Set(ARCHIVE_METADATA_KEYS.map(archiveMetadataToken));
 const REDACTED_VALUE = '[redacted]';
+const SAFE_REDACTION_MARKER = (code) => `[REDACTED: ${code}]`;
 
 // Secret warning paths are a user-facing API surface. Only fields from the
 // portable contract may be reflected; an arbitrary object key must collapse
@@ -453,7 +454,7 @@ function previewBundle(bundle, { targetName: requestedTarget, existingProjects, 
 
   const normalized = validation.bundle;
   const manifest = normalized.manifest;
-  const canImport = securityWarnings.length === 0 && availability.valid && availability.conflicts.length === 0;
+  const canImport = availability.valid && availability.conflicts.length === 0;
   return {
     ok: true,
     preview: {
@@ -472,6 +473,7 @@ function previewBundle(bundle, { targetName: requestedTarget, existingProjects, 
       ...contentSummary(normalized),
       manifestWarnings: (manifest.warnings || []).map(safeManifestWarning),
       securityWarnings,
+      sensitiveContent: securityWarnings.length > 0 ? { count: securityWarnings.length, modes: ['redact', 'allow'] } : null,
       target: availability,
       canImport,
     },
@@ -482,6 +484,7 @@ module.exports = {
   ARCHIVE_METADATA_KEYS,
   RAW_BODY_LIMIT,
   REDACTED_VALUE,
+  SAFE_REDACTION_MARKER,
   SUPPORTED_MEDIA_TYPES,
   TARGET_NAME_RE,
   buildTargetAvailability,
