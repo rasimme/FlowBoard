@@ -179,7 +179,7 @@ function ActiveAgentPill({
 
   if (!claims.length) {
     return (
-      <span className="active-agents-pill active-agents-pill--idle" title={handle}>
+      <span className="active-agents-pill active-agents-pill--idle" title={handle} data-agent-id={agentId} data-claim-count="0">
         <AgentAvatar agentId={agentId} />
         <span className="active-agents-pill__meta">
           <span className="active-agents-pill__name">{handle}</span>
@@ -315,7 +315,10 @@ export default function ActiveAgentsBar() {
   }), [agents, tasks, viewedProject, now, staleThresholdMinutes]);
   const [visibleCount, setVisibleCount] = useState(rows.length);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [overflowAgentId, setOverflowAgentId] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileAgentId, setMobileAgentId] = useState(null);
+  const overflowTriggerRef = useRef(null);
   useLayoutEffect(() => {
     const list = listRef.current;
     const measureList = measureRef.current;
@@ -377,6 +380,14 @@ export default function ActiveAgentsBar() {
     if (restoreFocus && closing) pendingFocusRef.current = closing;
   }, [openAgentId]);
 
+  const closeOverflow = useCallback((restoreFocus = true) => {
+    setOverflowOpen(false);
+    setOverflowAgentId(null);
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => overflowTriggerRef.current?.focus?.());
+    }
+  }, []);
+
   const togglePopover = useCallback((agentId, focusFirst = false) => {
     if (openAgentId === agentId) {
       closePopover(true);
@@ -389,6 +400,10 @@ export default function ActiveAgentsBar() {
 
   const openTask = useCallback((task) => {
     closePopover(false);
+    setOverflowOpen(false);
+    setOverflowAgentId(null);
+    setMobileOpen(false);
+    setMobileAgentId(null);
     const id = taskId(task);
     if (id && window.openTaskDetail) window.openTaskDetail(id);
   }, [closePopover]);
@@ -480,17 +495,28 @@ export default function ActiveAgentsBar() {
   }, [closePopover, openAgentId, openRow]);
 
   useEffect(() => {
-    if (!openAgentId) return undefined;
+    if (!openAgentId && !overflowOpen && !mobileOpen) return undefined;
     const onEscape = (event) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      closePopover(true);
+      if (mobileOpen) {
+        setMobileOpen(false);
+        setMobileAgentId(null);
+      } else if (overflowOpen) closeOverflow(true);
+      else closePopover(true);
     };
     const onPointerDown = (event) => {
       const target = event.target;
       const trigger = triggerRefs.current.get(openAgentId);
       const popover = popoverRefs.current.get(openAgentId);
-      if (!trigger?.contains(target) && !popover?.contains(target)) closePopover(false);
+      const overflowTrigger = overflowTriggerRef.current;
+      const overflowPopover = document.querySelector('.active-agents-overflow-popover');
+      const mobileSheet = document.querySelector('.active-agents-mobile-sheet');
+      if (mobileOpen) {
+        if (!mobileSheet?.contains(target)) setMobileOpen(false);
+      } else if (overflowOpen) {
+        if (!overflowTrigger?.contains(target) && !overflowPopover?.contains(target)) closeOverflow(true);
+      } else if (openAgentId && !trigger?.contains(target) && !popover?.contains(target)) closePopover(false);
     };
     document.addEventListener('keydown', onEscape);
     document.addEventListener('pointerdown', onPointerDown);
@@ -498,7 +524,7 @@ export default function ActiveAgentsBar() {
       document.removeEventListener('keydown', onEscape);
       document.removeEventListener('pointerdown', onPointerDown);
     };
-  }, [closePopover, openAgentId]);
+  }, [closeOverflow, closePopover, mobileOpen, openAgentId, overflowOpen]);
 
   if (!viewedProject || rows.length === 0) return null;
 
@@ -515,7 +541,7 @@ export default function ActiveAgentsBar() {
     >
       <div className="active-agents-bar__label">Active on this project</div>
       <div ref={listRef} className="active-agents-bar__list">
-        <button type="button" className="active-agents-mobile-summary" onClick={() => setMobileOpen(true)} aria-label={`Show ${rows.length} active agents and ${totalTasks} active tasks`}>
+        <button type="button" className="active-agents-mobile-summary" onClick={() => { closePopover(false); closeOverflow(false); setMobileOpen(true); }} aria-label={`Show ${rows.length} active agents and ${totalTasks} active tasks`}>
           <span className="active-agents-mobile-summary__avatars">{rows.slice(0, 3).map(({ agentId }) => <AgentAvatar key={agentId} agentId={agentId} />)}</span>
           <span>{rows.length} agents · {totalTasks} active tasks</span>
         </button>
@@ -552,15 +578,22 @@ export default function ActiveAgentsBar() {
           ))}
           {visibleCount < rows.length && (
             <div className="active-agents-overflow-wrap">
-              <button type="button" className="active-agents-overflow" aria-expanded={overflowOpen} aria-haspopup="dialog" onClick={() => setOverflowOpen((open) => !open)} aria-label={`Show ${rows.length - visibleCount} more active agents`} title="Show all active agents">
+              <button ref={overflowTriggerRef} type="button" className="active-agents-overflow" aria-expanded={overflowOpen} aria-haspopup="dialog" onClick={() => { setOverflowOpen((open) => !open); setOverflowAgentId(null); }} aria-label={`Show ${rows.length - visibleCount} more active agents`} title="Show all active agents">
                 +{rows.length - visibleCount} more
               </button>
               {overflowOpen && (
                 <div className="active-agents-overflow-popover" role="dialog" aria-label="All active agents">
                   {hiddenRows.map(({ agentId, claims, leaseHealth }) => (
-                    <button key={agentId} type="button" className="active-agents-overflow-popover__row" title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { setOverflowOpen(false); if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) togglePopover(agentId); }}>
-                      <span>{formatHandle(agentId)}</span><span>{claims.length ? `${claims.length} active task${claims.length === 1 ? '' : 's'}` : 'No active task'}</span>
-                    </button>
+                    <div key={agentId} className="active-agents-overflow-popover__agent">
+                      <button type="button" className="active-agents-overflow-popover__row" disabled={!claims.length} aria-expanded={claims.length > 1 ? overflowAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setOverflowAgentId((current) => current === agentId ? null : agentId); }}>
+                        <span>{formatHandle(agentId)}</span><span>{claims.length ? `${claims.length} active task${claims.length === 1 ? '' : 's'}` : 'No active task'}</span>
+                      </button>
+                      {claims.length > 1 && overflowAgentId === agentId && (
+                        <div className="active-agents-overflow-popover__tasks" aria-label={`${formatHandle(agentId)} active tasks`}>
+                          {claims.map((claim, index) => <ActiveTaskRow key={taskId(claim) || `${agentId}-${index}`} task={claim} onOpen={openTask} now={now} staleThresholdMinutes={staleThresholdMinutes} />)}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
@@ -570,7 +603,7 @@ export default function ActiveAgentsBar() {
         {mobileOpen && <div className="active-agents-mobile-sheet" role="dialog" aria-modal="true" aria-label="All active agents">
           <button type="button" className="active-agents-mobile-sheet__close" onClick={() => setMobileOpen(false)}>Close</button>
           <h2>Active agents · {rows.length}</h2>
-          {rows.map(({ agentId, claims, leaseHealth }) => <button key={agentId} type="button" className="active-agents-mobile-sheet__row" title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) { setMobileOpen(false); openTask(claims[0]); } else if (claims.length > 1) { setMobileOpen(false); togglePopover(agentId); } }}><strong>{formatHandle(agentId)}</strong><span>{activeAgentLeaseHealthLabel(leaseHealth)} · {claims.length} task{claims.length === 1 ? '' : 's'}</span></button>)}
+          {rows.map(({ agentId, claims, leaseHealth }) => <div key={agentId} className="active-agents-mobile-sheet__agent"><button type="button" className="active-agents-mobile-sheet__row" disabled={!claims.length} aria-expanded={claims.length > 1 ? mobileAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setMobileAgentId((current) => current === agentId ? null : agentId); }}><strong>{formatHandle(agentId)}</strong><span>{activeAgentLeaseHealthLabel(leaseHealth)} · {claims.length} task{claims.length === 1 ? '' : 's'}</span></button>{claims.length > 1 && mobileAgentId === agentId && <div className="active-agents-mobile-sheet__tasks" aria-label={`${formatHandle(agentId)} active tasks`}>{claims.map((claim, index) => <ActiveTaskRow key={taskId(claim) || `${agentId}-${index}`} task={claim} onOpen={openTask} now={now} staleThresholdMinutes={staleThresholdMinutes} />)}</div>}</div>)}
         </div>}
       </div>
     </div>

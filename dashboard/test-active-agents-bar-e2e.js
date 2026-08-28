@@ -20,6 +20,9 @@ async function waitFor(page, predicate, label, timeout = 8000) {
   const result = await withDashboard(async ({ api, page, base }) => {
     await api('POST', '/projects', { name: PROJECT });
     await api('PUT', '/status', { agentId: 'agent-a', project: PROJECT });
+    await Promise.all('defghijklmnopqrstuvwxyz'.split('').map((letter) => `agent-${letter}`).map((agentId) => (
+      api('PUT', '/status', { agentId, project: PROJECT })
+    )));
 
     const first = (await api('POST', `/projects/${PROJECT}/tasks`, {
       title: 'First active task with a complete accessible title',
@@ -87,6 +90,7 @@ async function waitFor(page, predicate, label, timeout = 8000) {
       agent: 'agent-a', message: 'Checkpoint reached',
     });
 
+    await page.setViewport({ width: 1280, height: 844 });
     await page.goto(`${base}/?agentId=agent-a`, { waitUntil: 'networkidle2' });
     await page.waitForSelector('.app', { timeout: 8000 });
     // At a 390px viewport the legacy mobile sidebar overlays the tab bar's
@@ -95,6 +99,48 @@ async function waitFor(page, predicate, label, timeout = 8000) {
     await page.evaluate(() => document.querySelector('#tabBar .tab[data-tab="tasks"]')?.click());
     await waitFor(page, () => page.$('.active-agents-pill[data-agent-id="agent-a"]'), 'multi-claim trigger');
     await waitFor(page, () => page.$('.active-agents-pill[data-agent-id="agent-c"]'), 'single-claim trigger');
+    await waitFor(page, () => page.$('.active-agents-overflow'), 'desktop hidden-agent overflow');
+    const overflowTrigger = await page.$('.active-agents-overflow');
+    await overflowTrigger.click();
+    await waitFor(page, () => page.$('.active-agents-overflow-popover'), 'overflow list opens');
+    const overflowInfo = await page.$eval('.active-agents-overflow-popover', (popover) => ({
+      visibleIds: [...document.querySelectorAll('.active-agents-bar__visible > .active-agents-pill-wrap:not([hidden]) .active-agents-pill[data-agent-id]')].map((el) => el.dataset.agentId),
+      listedIds: [...popover.querySelectorAll('.active-agents-overflow-popover__row strong, .active-agents-overflow-popover__row > span:first-child')].map((el) => el.textContent.trim().replace(/^@/, '')),
+    }));
+    r.ok(overflowInfo.listedIds.length > 0, 'desktop overflow has hidden agents');
+    r.ok(new Set(overflowInfo.listedIds).size === overflowInfo.listedIds.length
+      && overflowInfo.listedIds.every((id) => !overflowInfo.visibleIds.includes(id)), `overflow lists only hidden agent ids (${JSON.stringify(overflowInfo)})`);
+    await page.keyboard.press('Escape');
+    await waitFor(page, () => page.evaluate(() => !document.querySelector('.active-agents-overflow-popover')), 'Escape closes overflow');
+    r.ok(await page.evaluate(() => document.activeElement?.classList.contains('active-agents-overflow')), 'Escape restores focus to +N more');
+    await overflowTrigger.click();
+    await page.evaluate(() => document.querySelector('.active-agents-bar__label')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
+    await waitFor(page, () => page.evaluate(() => !document.querySelector('.active-agents-overflow-popover')), 'outside click closes overflow');
+    r.ok(await page.evaluate(() => document.activeElement?.classList.contains('active-agents-overflow')), 'outside click restores focus to +N more');
+
+    await page.setViewport({ width: 390, height: 844 });
+    await page.reload({ waitUntil: 'networkidle2' });
+    await page.evaluate(() => document.querySelector('#tabBar .tab[data-tab="tasks"]')?.click());
+    await waitFor(page, () => page.$('.active-agents-mobile-summary'), 'mobile summary');
+    const summaryHeight = await page.$eval('.active-agents-mobile-summary', (el) => el.getBoundingClientRect().height);
+    r.ok(summaryHeight >= 44 && summaryHeight <= 48, 'mobile summary is 44–48px tall');
+    await page.evaluate(() => document.querySelector('.active-agents-mobile-summary')?.click());
+    await waitFor(page, () => page.$('.active-agents-mobile-sheet'), 'mobile bottom sheet opens');
+    await page.evaluate(() => [...document.querySelectorAll('.active-agents-mobile-sheet__row[aria-expanded]')]
+      .find((row) => row.querySelector('strong')?.textContent.trim() === '@agent-a')?.click());
+    await waitFor(page, () => page.$('.active-agents-mobile-sheet__tasks'), 'mobile multi-task agent expands inline');
+    const mobileTaskInfo = await page.$eval('.active-agents-mobile-sheet__tasks', (el) => ({
+      rowCount: el.querySelectorAll('.active-agents-task-row').length,
+      actionable: [...el.querySelectorAll('.active-agents-task-row')].every((row) => row.tagName === 'BUTTON' && row.dataset.taskId && row.querySelector('[data-lease-health]')),
+      portaledPopover: !!document.querySelector('.active-agents-popover'),
+    }));
+    r.ok(mobileTaskInfo.rowCount >= 2, 'mobile sheet shows two or more task rows');
+    r.ok(mobileTaskInfo.actionable, 'mobile task rows are individually actionable and retain health display');
+    r.ok(!mobileTaskInfo.portaledPopover, 'mobile does not reuse desktop portaled popover');
+
+    await page.setViewport({ width: 1280, height: 844 });
+    await page.reload({ waitUntil: 'networkidle2' });
+    await page.evaluate(() => document.querySelector('#tabBar .tab[data-tab="tasks"]')?.click());
 
     // The API intentionally clamps leases to a future minute boundary, so
     // render-only edge fixtures are injected through the app-state proxy. The
@@ -200,8 +246,7 @@ async function waitFor(page, predicate, label, timeout = 8000) {
     r.ok(popupInfo.firstRowTitleAttr?.includes('In progress') && popupInfo.checkpoint, 'popover row still carries lifecycle status and checkpoint metadata (now in title/aria-label)');
     r.ok(popupInfo.lifecycleDots === 0, 'popover keeps lifecycle status textual without lifecycle-colored dots');
     r.ok(popupInfo.parent === 'BODY' && popupInfo.contentOverflow === 'hidden', 'popover is portalled outside the overflowing content surface');
-    r.ok(popupInfo.viewport.width === 390
-      && popupInfo.rect.left >= 0
+    r.ok(popupInfo.rect.left >= 0
       && popupInfo.rect.top >= 0
       && popupInfo.rect.right <= popupInfo.viewport.width
       && popupInfo.rect.bottom <= popupInfo.viewport.height,
