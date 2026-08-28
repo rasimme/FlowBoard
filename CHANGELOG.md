@@ -1,5 +1,11 @@
 # Changelog
 
+### v5.2.1 (2026-08-28) — Import Safety & Agent UX Polish
+
+- **Import sensitive bundles safely.** Structurally valid bundles with credential-like content now offer precise server-side redaction by default; importing unchanged content requires an explicit confirmation.
+- **Make bundle import calmer and clearer.** Import names no longer overwrite active edits, validation waits until the field loses focus, and review feedback is consolidated without hiding security-relevant information.
+- **Keep active-agent work visible on every screen.** Desktop overflow exposes only hidden agents and their tasks; mobile uses a compact summary with an actionable, viewport-bound sheet.
+
 ### v5.2.0 (2026-08-26) — Project Export & Import
 
 - **Move or copy whole projects with confidence.** Export a project and import it
