@@ -441,6 +441,8 @@ function ImportSteps({ stage }) {
   );
 }
 
+const UNCHANGED_IMPORT_CONFIRMATION = 'I UNDERSTAND AND WANT TO IMPORT UNCHANGED';
+
 function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSuggested, targetInputRef, sensitiveMode, setSensitiveMode, confirmation, setConfirmation }) {
   const counts = preview?.counts || {};
   const conflict = preview?.target?.availability === 'conflict';
@@ -478,10 +480,10 @@ function ImportPreviewSummary({ preview, targetName, onTargetChange, onUseSugges
         <div className="mt-1 text-muted">Safe redaction is selected by default. Findings show only paths and codes.</div>
         <label className="mt-3 flex items-center gap-2"><input type="radio" name="sensitive-mode" checked={sensitiveMode === 'redact'} onChange={() => setSensitiveMode('redact')} /> Import redacted copy (recommended)</label>
         <label className="mt-2 flex items-center gap-2"><input type="radio" name="sensitive-mode" checked={sensitiveMode === 'allow'} onChange={() => setSensitiveMode('allow')} /> Advanced: import unchanged (confirmation required)</label>
-        {sensitiveMode === 'allow' && <Input aria-label="Unchanged import confirmation" placeholder="I UNDERSTAND AND WANT TO IMPORT UNCHANGED" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />}
+        {sensitiveMode === 'allow' && <Input aria-label="Unchanged import confirmation" placeholder={UNCHANGED_IMPORT_CONFIRMATION} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} />}
       </div>}
             {errors.length > 0 && <WarningList title="Bundle validation" items={errors} variant="error" />}
-            {securityWarnings.length > 0 && <Alert variant="error" title="Import blocked"><WarningList title="Security findings" items={securityWarnings} variant="error" /></Alert>}
+            {securityWarnings.length > 0 && <Alert variant="warn" title="Sensitive content requires a choice"><WarningList title="Security findings" items={securityWarnings} variant="warn" /></Alert>}
             <WarningList title="Manifest warnings" items={manifestWarnings} />
             {preview?.redactions?.length > 0 && <div className="text-[11px] text-muted">Redactions recorded: {preview.redactions.join(', ')}</div>}
             {preview?.options?.includeHistory && <Alert variant="warn" title="Task history included">Comments and checkpoints may contain sensitive historical context.</Alert>}
@@ -663,7 +665,7 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     try {
       const response = await apiFetch(`/api/projects/import?targetName=${encodeURIComponent(targetName)}&sensitiveMode=${sensitiveMode}`, {
         method: 'POST',
-        headers: { 'Content-Type': BUNDLE_MEDIA_TYPE },
+        headers: { 'Content-Type': BUNDLE_MEDIA_TYPE, ...(sensitiveMode === 'allow' ? { 'X-FlowBoard-Sensitive-Confirmation': confirmation } : {}) },
         body: rawBody,
       });
       const data = await response.json().catch(() => ({}));
@@ -692,7 +694,9 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
   }
 
   const dismissible = stage !== 'progress';
-  const canImport = !!preview?.canImport && !previewing && /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName);
+  const requiresUnchangedConfirmation = preview?.securityWarnings?.length > 0 && sensitiveMode === 'allow';
+  const canImport = !!preview?.canImport && !previewing && /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName)
+    && (!requiresUnchangedConfirmation || confirmation === UNCHANGED_IMPORT_CONFIRMATION);
   const projectName = importResult?.project?.displayName || importResult?.project?.name || targetName;
 
   return (
