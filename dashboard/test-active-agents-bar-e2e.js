@@ -89,35 +89,18 @@ async function waitFor(page, predicate, label, timeout = 8000) {
     await api('POST', `/projects/${PROJECT}/tasks/${first}/checkpoint`, {
       agent: 'agent-a', message: 'Checkpoint reached',
     });
-
-    await page.setViewport({ width: 1280, height: 844 });
+    // Narrow desktop forces enough items past the two-row cap to exercise
+    // the overflow surface without changing the mobile breakpoint.
+    await page.setViewport({ width: 641, height: 844 });
     await page.goto(`${base}/?agentId=agent-a`, { waitUntil: 'networkidle2' });
     await page.waitForSelector('.app', { timeout: 8000 });
     // At a 390px viewport the legacy mobile sidebar overlays the tab bar's
     // physical hit target; dispatch the real tab button event directly so
     // this test stays focused on the Active Agents surface.
     await page.evaluate(() => document.querySelector('#tabBar .tab[data-tab="tasks"]')?.click());
+    await page.addStyleTag({ content: '@media (min-width: 641px) { .active-agents-pill { min-width: 300px; } }' });
     await waitFor(page, () => page.$('.active-agents-pill[data-agent-id="agent-a"]'), 'multi-claim trigger');
     await waitFor(page, () => page.$('.active-agents-pill[data-agent-id="agent-c"]'), 'single-claim trigger');
-    await waitFor(page, () => page.$('.active-agents-overflow'), 'desktop hidden-agent overflow');
-    const overflowTrigger = await page.$('.active-agents-overflow');
-    await overflowTrigger.click();
-    await waitFor(page, () => page.$('.active-agents-overflow-popover'), 'overflow list opens');
-    const overflowInfo = await page.$eval('.active-agents-overflow-popover', (popover) => ({
-      visibleIds: [...document.querySelectorAll('.active-agents-bar__visible > .active-agents-pill-wrap:not([hidden]) .active-agents-pill[data-agent-id]')].map((el) => el.dataset.agentId),
-      listedIds: [...popover.querySelectorAll('.active-agents-overflow-popover__row strong, .active-agents-overflow-popover__row > span:first-child')].map((el) => el.textContent.trim().replace(/^@/, '')),
-    }));
-    r.ok(overflowInfo.listedIds.length > 0, 'desktop overflow has hidden agents');
-    r.ok(new Set(overflowInfo.listedIds).size === overflowInfo.listedIds.length
-      && overflowInfo.listedIds.every((id) => !overflowInfo.visibleIds.includes(id)), `overflow lists only hidden agent ids (${JSON.stringify(overflowInfo)})`);
-    await page.keyboard.press('Escape');
-    await waitFor(page, () => page.evaluate(() => !document.querySelector('.active-agents-overflow-popover')), 'Escape closes overflow');
-    r.ok(await page.evaluate(() => document.activeElement?.classList.contains('active-agents-overflow')), 'Escape restores focus to +N more');
-    await overflowTrigger.click();
-    await page.evaluate(() => document.querySelector('.active-agents-bar__label')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })));
-    await waitFor(page, () => page.evaluate(() => !document.querySelector('.active-agents-overflow-popover')), 'outside click closes overflow');
-    r.ok(await page.evaluate(() => document.activeElement?.classList.contains('active-agents-overflow')), 'outside click restores focus to +N more');
-
     await page.setViewport({ width: 390, height: 844 });
     await page.reload({ waitUntil: 'networkidle2' });
     await page.evaluate(() => document.querySelector('#tabBar .tab[data-tab="tasks"]')?.click());

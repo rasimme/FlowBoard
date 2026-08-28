@@ -315,6 +315,7 @@ export default function ActiveAgentsBar() {
   }), [agents, tasks, viewedProject, now, staleThresholdMinutes]);
   const [visibleCount, setVisibleCount] = useState(rows.length);
   const [overflowOpen, setOverflowOpen] = useState(false);
+  const [overflowRows, setOverflowRows] = useState([]);
   const [overflowAgentId, setOverflowAgentId] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileAgentId, setMobileAgentId] = useState(null);
@@ -335,9 +336,9 @@ export default function ActiveAgentsBar() {
     };
     measure();
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    // Observe the bar, not the visible list: changing the cutoff must never
-    // feed back into the measurement itself.
-    observer?.observe(barRef.current || measureList);
+    // The full, hidden measurement copy is independent from the visible
+    // cutoff and popovers, so only its width changes can trigger a remeasure.
+    observer?.observe(measureList);
     return () => observer?.disconnect();
   }, [rows]);
   const openRow = rows.find((row) => row.agentId === openAgentId);
@@ -382,6 +383,7 @@ export default function ActiveAgentsBar() {
 
   const closeOverflow = useCallback((restoreFocus = true) => {
     setOverflowOpen(false);
+    setOverflowRows([]);
     setOverflowAgentId(null);
     if (restoreFocus) {
       window.requestAnimationFrame(() => overflowTriggerRef.current?.focus?.());
@@ -401,6 +403,7 @@ export default function ActiveAgentsBar() {
   const openTask = useCallback((task) => {
     closePopover(false);
     setOverflowOpen(false);
+    setOverflowRows([]);
     setOverflowAgentId(null);
     setMobileOpen(false);
     setMobileAgentId(null);
@@ -578,14 +581,14 @@ export default function ActiveAgentsBar() {
           ))}
           {visibleCount < rows.length && (
             <div className="active-agents-overflow-wrap">
-              <button ref={overflowTriggerRef} type="button" className="active-agents-overflow" aria-expanded={overflowOpen} aria-haspopup="dialog" onClick={() => { setOverflowOpen((open) => !open); setOverflowAgentId(null); }} aria-label={`Show ${rows.length - visibleCount} more active agents`} title="Show all active agents">
+              <button ref={overflowTriggerRef} type="button" className="active-agents-overflow" aria-expanded={overflowOpen} aria-haspopup="dialog" onClick={() => { if (overflowOpen) closeOverflow(false); else { setOverflowRows(hiddenRows); setOverflowAgentId(null); setOverflowOpen(true); } }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeOverflow(true); } }} aria-label={`Show ${rows.length - visibleCount} more active agents`} title="Show all active agents">
                 +{rows.length - visibleCount} more
               </button>
               {overflowOpen && (
                 <div className="active-agents-overflow-popover" role="dialog" aria-label="All active agents">
-                  {hiddenRows.map(({ agentId, claims, leaseHealth }) => (
+                  {overflowRows.map(({ agentId, claims, leaseHealth }) => (
                     <div key={agentId} className="active-agents-overflow-popover__agent">
-                      <button type="button" className="active-agents-overflow-popover__row" disabled={!claims.length} aria-expanded={claims.length > 1 ? overflowAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setOverflowAgentId((current) => current === agentId ? null : agentId); }}>
+                      <button type="button" className="active-agents-overflow-popover__row" data-agent-id={agentId} disabled={!claims.length} aria-expanded={claims.length > 1 ? overflowAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setOverflowAgentId((current) => current === agentId ? null : agentId); }}>
                         <span>{formatHandle(agentId)}</span><span>{claims.length ? `${claims.length} active task${claims.length === 1 ? '' : 's'}` : 'No active task'}</span>
                       </button>
                       {claims.length > 1 && overflowAgentId === agentId && (
@@ -603,7 +606,7 @@ export default function ActiveAgentsBar() {
         {mobileOpen && <div className="active-agents-mobile-sheet" role="dialog" aria-modal="true" aria-label="All active agents">
           <button type="button" className="active-agents-mobile-sheet__close" onClick={() => setMobileOpen(false)}>Close</button>
           <h2>Active agents · {rows.length}</h2>
-          {rows.map(({ agentId, claims, leaseHealth }) => <div key={agentId} className="active-agents-mobile-sheet__agent"><button type="button" className="active-agents-mobile-sheet__row" disabled={!claims.length} aria-expanded={claims.length > 1 ? mobileAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setMobileAgentId((current) => current === agentId ? null : agentId); }}><strong>{formatHandle(agentId)}</strong><span>{activeAgentLeaseHealthLabel(leaseHealth)} · {claims.length} task{claims.length === 1 ? '' : 's'}</span></button>{claims.length > 1 && mobileAgentId === agentId && <div className="active-agents-mobile-sheet__tasks" aria-label={`${formatHandle(agentId)} active tasks`}>{claims.map((claim, index) => <ActiveTaskRow key={taskId(claim) || `${agentId}-${index}`} task={claim} onOpen={openTask} now={now} staleThresholdMinutes={staleThresholdMinutes} />)}</div>}</div>)}
+          {rows.map(({ agentId, claims, leaseHealth }) => <div key={agentId} className="active-agents-mobile-sheet__agent"><button type="button" className="active-agents-mobile-sheet__row" data-agent-id={agentId} disabled={!claims.length} aria-expanded={claims.length > 1 ? mobileAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setMobileAgentId((current) => current === agentId ? null : agentId); }}><strong>{formatHandle(agentId)}</strong><span>{activeAgentLeaseHealthLabel(leaseHealth)} · {claims.length} task{claims.length === 1 ? '' : 's'}</span></button>{claims.length > 1 && mobileAgentId === agentId && <div className="active-agents-mobile-sheet__tasks" aria-label={`${formatHandle(agentId)} active tasks`}>{claims.map((claim, index) => <ActiveTaskRow key={taskId(claim) || `${agentId}-${index}`} task={claim} onOpen={openTask} now={now} staleThresholdMinutes={staleThresholdMinutes} />)}</div>}</div>)}
         </div>}
       </div>
     </div>
