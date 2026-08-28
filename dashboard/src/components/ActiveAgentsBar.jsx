@@ -603,10 +603,16 @@ export default function ActiveAgentsBar() {
             </div>
           )}
         </div>
-        {mobileOpen && <div className="active-agents-mobile-sheet" role="dialog" aria-modal="true" aria-label="All active agents">
-          <button type="button" className="active-agents-mobile-sheet__close" onClick={() => setMobileOpen(false)}>Close</button>
-          <h2>Active agents · {rows.length}</h2>
-          {rows.map(({ agentId, claims, leaseHealth }) => <div key={agentId} className="active-agents-mobile-sheet__agent"><button type="button" className="active-agents-mobile-sheet__row" data-agent-id={agentId} disabled={!claims.length} aria-expanded={claims.length > 1 ? mobileAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setMobileAgentId((current) => current === agentId ? null : agentId); }}><strong>{formatHandle(agentId)}</strong><span>{activeAgentLeaseHealthLabel(leaseHealth)} · {claims.length} task{claims.length === 1 ? '' : 's'}</span></button>{claims.length > 1 && mobileAgentId === agentId && <div className="active-agents-mobile-sheet__tasks" aria-label={`${formatHandle(agentId)} active tasks`}>{claims.map((claim, index) => <ActiveTaskRow key={taskId(claim) || `${agentId}-${index}`} task={claim} onOpen={openTask} now={now} staleThresholdMinutes={staleThresholdMinutes} />)}</div>}</div>)}
+        {mobileOpen && <div className="active-agents-mobile-overlay" onPointerDown={(event) => { if (event.target === event.currentTarget) { setMobileOpen(false); setMobileAgentId(null); } }}>
+          <div className="active-agents-mobile-sheet" role="dialog" aria-modal="true" aria-label="All active agents">
+            <div className="active-agents-mobile-sheet__header">
+              <h2>Active agents · {rows.length}</h2>
+              <button type="button" className="active-agents-mobile-sheet__close" onClick={() => { setMobileOpen(false); setMobileAgentId(null); }}>Close</button>
+            </div>
+            <div className="active-agents-mobile-sheet__content">
+              {rows.map(({ agentId, claims, leaseHealth }) => <div key={agentId} className="active-agents-mobile-sheet__agent"><button type="button" className="active-agents-mobile-sheet__row" data-agent-id={agentId} disabled={!claims.length} aria-expanded={claims.length > 1 ? mobileAgentId === agentId : undefined} title={`${formatHandle(agentId)} · ${activeAgentLeaseHealthLabel(leaseHealth)}`} onClick={() => { if (claims.length === 1) openTask(claims[0]); else if (claims.length > 1) setMobileAgentId((current) => current === agentId ? null : agentId); }}><strong>{formatHandle(agentId)}</strong><span>{activeAgentLeaseHealthLabel(leaseHealth)} · {claims.length} task{claims.length === 1 ? '' : 's'}</span></button>{claims.length > 1 && mobileAgentId === agentId && <div className="active-agents-mobile-sheet__tasks" aria-label={`${formatHandle(agentId)} active tasks`}>{claims.map((claim, index) => <ActiveTaskRow key={taskId(claim) || `${agentId}-${index}`} task={claim} onOpen={openTask} now={now} staleThresholdMinutes={staleThresholdMinutes} />)}</div>}</div>)}
+            </div>
+          </div>
         </div>}
       </div>
     </div>
