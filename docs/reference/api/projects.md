@@ -228,7 +228,9 @@ An existing, tombstoned, or already-present destination returns a successful
 preview with `target.availability: "conflict"` and `canImport: false`. A
 malformed body returns **400**, unsupported media **415**, and invalid or
 unsafe bundle content **422**. Sensitive-content warnings never contain a
-secret value or content snippet and set `canImport: false`.
+secret value or content snippet. A structurally valid bundle with findings
+remains importable: the preview exposes the safe default `redact` mode and the
+confirmation-gated `allow` mode instead of misclassifying it as invalid.
 
 **200** returns a structured preview containing the stable `bundleDigest`,
 source/provenance, format compatibility, counts, options, redactions,
@@ -264,6 +266,13 @@ version, bundle id, producer metadata, and redaction labels/count). It never
 stores bundle content. While an import journal is non-committed, the same
 destination is reserved against ordinary `POST /api/projects` creation; a
 matching failed import can resume when its lifecycle-start marker permits it.
+
+When sensitive findings exist, `sensitiveMode=redact` is the default and
+replaces only detected values with a stable redaction marker while preserving
+the surrounding portable text. `sensitiveMode=allow` imports unchanged content
+only with the exact `X-FlowBoard-Sensitive-Confirmation` header value
+`I UNDERSTAND AND WANT TO IMPORT UNCHANGED`. Journal provenance records the
+chosen mode and a finding count only — never secret values or snippets.
 
 The raw JSON upload ceiling is 72 MB. v1 has no ZIP/archive transport,
 signature verification or bidirectional sync; `bundleDigest` supports
