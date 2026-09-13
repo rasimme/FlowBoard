@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
   chmodSync,
@@ -46,6 +47,21 @@ function readLines(path) {
     return [];
   }
 }
+
+function createInstallerFixtures() {
+  const next = () => randomBytes(32).toString('hex');
+  return Object.freeze({
+    persistedJwt: next(),
+    persistedBot: next(),
+    shellJwt: next(),
+    launchctlStdout: next(),
+    launchctlStderr: next(),
+    failedLaunchctlStdout: next(),
+    failedLaunchctlStderr: next(),
+  });
+}
+
+const INSTALLER_FIXTURES = createInstallerFixtures();
 
 function makeHarness(initialPlist) {
   const dir = mkdtempSync(join(tmpdir(), 'fb-setup-launchd-'));
@@ -210,8 +226,8 @@ const existingPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
   <key>Label</key><string>${LABEL}</string>
   <key>EnvironmentVariables</key><dict>
-    <key>JWT_SECRET</key><string>test-launchd-secret</string>
-    <key>TELEGRAM_BOT_TOKEN</key><string>test-launchd-bot</string>
+    <key>JWT_SECRET</key><string>${INSTALLER_FIXTURES.persistedJwt}</string>
+    <key>TELEGRAM_BOT_TOKEN</key><string>${INSTALLER_FIXTURES.persistedBot}</string>
     <key>ALLOWED_USER_IDS</key><string>100</string>
     <key>DASHBOARD_ORIGIN</key><string>https://flowboard.example.invalid</string>
     <key>FLOWBOARD_ENABLE_SELF_UPDATE</key><string>true</string>
@@ -228,11 +244,11 @@ console.log('# setup.mjs macOS launchd configuration');
 let generatedLaunchdPlist = '';
 
 {
-  const launchctlStdoutSecret = 'adversarial-launchctl-stdout-secret';
-  const launchctlStderrSecret = 'adversarial-launchctl-stderr-secret';
+  const launchctlStdoutSecret = INSTALLER_FIXTURES.launchctlStdout;
+  const launchctlStderrSecret = INSTALLER_FIXTURES.launchctlStderr;
   const result = await runSetup(['--update'], existingPlist, {
     DASHBOARD_ORIGIN: 'https://shell-override.example.invalid',
-    JWT_SECRET: 'test-shell-secret-must-not-win',
+    JWT_SECRET: INSTALLER_FIXTURES.shellJwt,
     FAKE_LAUNCHCTL_PRINT_STDOUT: launchctlStdoutSecret,
     FAKE_LAUNCHCTL_PRINT_STDERR: launchctlStderrSecret,
   });
@@ -248,8 +264,8 @@ let generatedLaunchdPlist = '';
     `launchctl print gui/UID/${LABEL}`,
   ]);
   for (const expected of [
-    '<key>JWT_SECRET</key><string>test-launchd-secret</string>',
-    '<key>TELEGRAM_BOT_TOKEN</key><string>test-launchd-bot</string>',
+    `<key>JWT_SECRET</key><string>${INSTALLER_FIXTURES.persistedJwt}</string>`,
+    `<key>TELEGRAM_BOT_TOKEN</key><string>${INSTALLER_FIXTURES.persistedBot}</string>`,
     '<key>ALLOWED_USER_IDS</key><string>100</string>',
     '<key>DASHBOARD_ORIGIN</key><string>https://flowboard.example.invalid</string>',
     '<key>FLOWBOARD_ENABLE_SELF_UPDATE</key><string>true</string>',
@@ -260,10 +276,10 @@ let generatedLaunchdPlist = '';
   ok(result.plist.includes('<key>RunAtLoad</key><true/>'), 'launchd service remains RunAtLoad');
   ok(result.plist.includes('<key>KeepAlive</key><true/>'), 'launchd service remains KeepAlive');
   ok(result.mode === 0o600, 'launchd plist is tightened to owner-only permissions');
-  ok(!result.stdout.includes('test-launchd-secret'), 'launchd JWT secret is not printed');
-  ok(!result.stdout.includes('test-launchd-bot'), 'launchd bot token is not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.persistedJwt), 'launchd JWT secret is not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.persistedBot), 'launchd bot token is not printed');
   ok(!result.plist.includes('shell-override.example.invalid'), 'update ignores an implicit shell override of persistent config');
-  ok(!result.plist.includes('test-shell-secret-must-not-win'), 'update ignores an implicit shell JWT replacement');
+  ok(!result.plist.includes(INSTALLER_FIXTURES.shellJwt), 'update ignores an implicit shell JWT replacement');
   ok(!result.stdout.includes(launchctlStdoutSecret) && !result.stderr.includes(launchctlStdoutSecret), 'launchctl print stdout is never relayed');
   ok(!result.stdout.includes(launchctlStderrSecret) && !result.stderr.includes(launchctlStderrSecret), 'launchctl print stderr is never relayed');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'launchd remote configuration is diagnosed');
@@ -295,8 +311,8 @@ let generatedLaunchdPlist = '';
 }
 
 {
-  const leakedStdout = 'failed-launchctl-stdout-secret';
-  const leakedStderr = 'failed-launchctl-stderr-secret';
+  const leakedStdout = INSTALLER_FIXTURES.failedLaunchctlStdout;
+  const leakedStderr = INSTALLER_FIXTURES.failedLaunchctlStderr;
   const result = await runSetup(['--update'], existingPlist, {
     FAKE_LAUNCHCTL_PRINT_STDOUT: leakedStdout,
     FAKE_LAUNCHCTL_PRINT_STDERR: leakedStderr,
@@ -313,7 +329,7 @@ let generatedLaunchdPlist = '';
   ok(!result.commands.some(line => line.startsWith('launchctl ')), 'launchd dry-run executes no launchctl commands');
   ok(result.stdout.includes('launchctl bootstrap'), 'launchd dry-run shows service bootstrap');
   ok(result.stdout.includes('launchctl print'), 'launchd dry-run shows loaded-service verification');
-  ok(!result.stdout.includes('test-launchd-secret'), 'launchd dry-run never prints preserved secrets');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.persistedJwt), 'launchd dry-run never prints preserved secrets');
 }
 
 {

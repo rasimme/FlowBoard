@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
   existsSync,
@@ -47,6 +48,61 @@ function readLines(path) {
 function quoteScript(script) {
   return `#!/usr/bin/env node\n${script}\n`;
 }
+
+function createInstallerFixtures() {
+  const next = () => randomBytes(32).toString('hex');
+  return Object.freeze({
+    preservedJwt: next(),
+    preservedBotA: next(),
+    preservedBotB: next(),
+    implicitShellJwt: next(),
+    forbiddenExplicitJwt: next(),
+    environmentFileRotationJwt: next(),
+    firstFileJwt: next(),
+    secondFileJwt: next(),
+    fileBot: next(),
+    dropInJwt: next(),
+    dropInBot: next(),
+    caseSensitiveJwt: next(),
+    mustNotBeRewritten: next(),
+    bomJwt: next(),
+    mustBePreserved: next(),
+    firstBomJwt: next(),
+    fullPathJwt: next(),
+    globalDropInJwt: next(),
+    globalDropInToken: next(),
+    globalCustomCredential: next(),
+    typeSecret: next(),
+    prefixSecret: next(),
+    exactToken: next(),
+    exactSecret: next(),
+    globalUnitSecret: next(),
+    unsetJwt: next(),
+    exactRotationJwt: next(),
+    resetJwt: next(),
+    resetBot: next(),
+    exactUnsetJwt: next(),
+    analyzerJwt: next(),
+    analyzerShortSecret: next().slice(0, 8),
+    mainUnitCredential: next(),
+    dropInCredential: next(),
+    overriddenCredential: next(),
+    partialBot: next(),
+    diagnosticValues: Object.freeze({
+      bellEscape: `prefix\\a${next()}`,
+      backspaceEscape: `prefix\\b${next()}`,
+      formfeedEscape: `prefix\\f${next()}`,
+      verticalEscape: `prefix\\v${next()}`,
+      newlineEscape: `prefix\\n${next()}`,
+      octalEscape: `prefix\\001${next()}`,
+      bell: `prefix${String.fromCharCode(0x07)}${next()}`,
+      tab: `prefix\t${next()}`,
+      carriageReturn: `prefix\r${next()}`,
+    }),
+  });
+}
+
+const INSTALLER_FIXTURES = createInstallerFixtures();
 
 function makeHarness({
   initialUnit = '',
@@ -269,8 +325,8 @@ let generatedFreshUnit = '';
 
 const preservedUnit = port => existingUnit([
   `Environment="FLOWBOARD_PORT=${port}"`,
-  'Environment="JWT_SECRET=test-secret-v1"',
-  'Environment="TELEGRAM_BOT_TOKENS=test-bot-a,test-bot-b"',
+  `Environment="JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}"`,
+  `Environment="TELEGRAM_BOT_TOKENS=${INSTALLER_FIXTURES.preservedBotA},${INSTALLER_FIXTURES.preservedBotB}"`,
   'Environment="ALLOWED_USER_IDS=100,200"',
   'Environment="DASHBOARD_ORIGIN=https://flowboard.example.invalid"',
   'Environment="FLOWBOARD_ENABLE_SELF_UPDATE=true"',
@@ -292,8 +348,8 @@ const preservedUnit = port => existingUnit([
     'systemctl --user is-enabled --quiet flowboard-dashboard',
   ]);
   for (const expected of [
-    'JWT_SECRET=test-secret-v1',
-    'TELEGRAM_BOT_TOKENS=test-bot-a,test-bot-b',
+    `JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}`,
+    `TELEGRAM_BOT_TOKENS=${INSTALLER_FIXTURES.preservedBotA},${INSTALLER_FIXTURES.preservedBotB}`,
     'ALLOWED_USER_IDS=100,200',
     'DASHBOARD_ORIGIN=https://flowboard.example.invalid',
     'FLOWBOARD_ENABLE_SELF_UPDATE=true',
@@ -302,8 +358,8 @@ const preservedUnit = port => existingUnit([
   ]) {
     ok(result.unit.includes(expected), `update preserves ${expected.split('=')[0]}`);
   }
-  ok(!result.stdout.includes('test-secret-v1'), 'preserved JWT secret is not printed');
-  ok(!result.stdout.includes('test-bot-a'), 'preserved bot tokens are not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.preservedJwt), 'preserved JWT secret is not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.preservedBotA), 'preserved bot tokens are not printed');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'complete remote auth configuration is diagnosed');
 }
 
@@ -355,7 +411,7 @@ const preservedUnit = port => existingUnit([
 {
   const result = await runSetup(['--force'], { initialUnit: preservedUnit });
   ok(result.code === 0, 'forced re-registration succeeds with an existing service');
-  ok(result.unit.includes('JWT_SECRET=test-secret-v1'), 'forced re-registration preserves the existing JWT secret');
+  ok(result.unit.includes(`JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}`), 'forced re-registration preserves the existing JWT secret');
   ok(result.unit.includes('CUSTOM_TUNNEL_MODE=enabled'), 'forced re-registration preserves custom variables');
   ok(result.commands.includes('systemctl --user enable flowboard-dashboard'), 'forced re-registration keeps systemd autostart enabled');
   ok(result.commands.includes('systemctl --user restart flowboard-dashboard'), '--force restarts an already-running Linux service');
@@ -365,12 +421,12 @@ const preservedUnit = port => existingUnit([
 {
   const result = await runSetup(['--update'], { initialUnit: preservedUnit }, {
     DASHBOARD_ORIGIN: 'https://implicit-shell.example.invalid',
-    JWT_SECRET: 'implicit-shell-jwt-must-not-win',
+    JWT_SECRET: INSTALLER_FIXTURES.implicitShellJwt,
   });
   ok(result.code === 0, 'update with conflicting shell configuration still succeeds safely');
   ok(result.unit.includes('DASHBOARD_ORIGIN=https://flowboard.example.invalid'), 'persistent allowlist configuration wins over implicit shell input');
   ok(!result.unit.includes('implicit-shell.example.invalid'), 'implicit shell value is not persisted');
-  ok(result.unit.includes('JWT_SECRET=test-secret-v1') && !result.unit.includes('implicit-shell-jwt-must-not-win'), 'JWT replacement requires explicit rotation');
+  ok(result.unit.includes(`JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}`) && !result.unit.includes(INSTALLER_FIXTURES.implicitShellJwt), 'JWT replacement requires explicit rotation');
 }
 
 {
@@ -379,17 +435,17 @@ const preservedUnit = port => existingUnit([
   });
   ok(result.code === 0, 'named Linux service environment override succeeds');
   ok(result.unit.includes('DASHBOARD_ORIGIN=https://explicit-shell.example.invalid'), '--override-env persists only the named operator value');
-  ok(result.unit.includes('JWT_SECRET=test-secret-v1'), 'explicit non-secret override preserves JWT_SECRET');
+  ok(result.unit.includes(`JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}`), 'explicit non-secret override preserves JWT_SECRET');
 }
 
 {
   const result = await runSetup(['--update', '--override-env=JWT_SECRET'], { initialUnit: preservedUnit }, {
-    JWT_SECRET: 'forbidden-explicit-jwt',
+    JWT_SECRET: INSTALLER_FIXTURES.forbiddenExplicitJwt,
   });
   ok(result.code === 1, 'JWT_SECRET is rejected by generic environment override');
   ok(result.stdout.includes('use --rotate-secret'), 'JWT override error names the dedicated rotation operation');
   ok(result.commands.length === 0, 'invalid JWT override fails before build or service commands');
-  ok(!result.stdout.includes('forbidden-explicit-jwt'), 'rejected JWT override value is not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.forbiddenExplicitJwt), 'rejected JWT override value is not printed');
 }
 
 {
@@ -404,19 +460,19 @@ const preservedUnit = port => existingUnit([
     }
   });
   ok(result.first.code === 0 && result.second.code === 0, 'two consecutive updates both succeed');
-  ok(result.second.unit.includes('JWT_SECRET=test-secret-v1'), 'second update preserves the original JWT secret');
+  ok(result.second.unit.includes(`JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}`), 'second update preserves the original JWT secret');
   ok(result.second.unit.includes('CUSTOM_TUNNEL_MODE=enabled'), 'second update preserves custom service variables');
 }
 
 {
   const rotationUnit = port => existingUnit([
     `Environment="FLOWBOARD_PORT=${port}"`,
-    'Environment="JWT_SECRET=test-secret-v1"',
+    `Environment="JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}"`,
     'Environment="CUSTOM_TUNNEL_MODE=enabled"',
   ]);
   const result = await runSetup(['--rotate-secret'], { initialUnit: rotationUnit });
   ok(result.code === 0, 'standalone explicit secret rotation succeeds');
-  ok(!result.unit.includes('JWT_SECRET=test-secret-v1'), '--rotate-secret replaces the prior JWT secret');
+  ok(!result.unit.includes(`JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}`), '--rotate-secret replaces the prior JWT secret');
   ok(/Environment="JWT_SECRET=[a-f0-9]{64}"/i.test(result.unit), 'rotation writes a new generated JWT secret');
   ok(!/[a-f0-9]{64}/i.test(result.stdout), 'rotated secret is not printed');
   ok(result.commands.includes('systemctl --user restart flowboard-dashboard'), '--rotate-secret restarts the service to activate the new secret');
@@ -429,14 +485,14 @@ const preservedUnit = port => existingUnit([
       'EnvironmentFile=%h/.config/flowboard/secret.env',
     ]),
     environmentFiles: {
-      '.config/flowboard/secret.env': 'JWT_SECRET=test-environment-file-secret\n',
+      '.config/flowboard/secret.env': `JWT_SECRET=${INSTALLER_FIXTURES.environmentFileRotationJwt}\n`,
     },
     injectPort: false,
   });
   ok(result.code === 1, 'rotation refuses to override an external EnvironmentFile source');
   ok(result.stdout.includes('Rotate it in that owner-only source'), 'rotation error points to the owning secret source');
   ok(result.commands.length === 0, 'unsafe external-source rotation fails before build/service commands');
-  ok(!result.stdout.includes('test-environment-file-secret'), 'rotation refusal does not print the existing secret');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.environmentFileRotationJwt), 'rotation refusal does not print the existing secret');
 }
 
 {
@@ -448,8 +504,8 @@ const preservedUnit = port => existingUnit([
       'EnvironmentFile=-%h/.config/flowboard/second.env',
     ]),
     environmentFiles: {
-      '.config/flowboard/first.env': 'FLOWBOARD_PORT=8\nJWT_SECRET=test-first-file-secret\nDASHBOARD_ORIGIN=https://first.example.invalid\n',
-      '.config/flowboard/second.env': port => `FLOWBOARD_PORT=${port}\nJWT_SECRET=test-second-file-secret\nTELEGRAM_BOT_TOKEN=test-file-bot\nALLOWED_USER_IDS=400\nDASHBOARD_ORIGIN=https://second.example.invalid\n`,
+      '.config/flowboard/first.env': `FLOWBOARD_PORT=8\nJWT_SECRET=${INSTALLER_FIXTURES.firstFileJwt}\nDASHBOARD_ORIGIN=https://first.example.invalid\n`,
+      '.config/flowboard/second.env': port => `FLOWBOARD_PORT=${port}\nJWT_SECRET=${INSTALLER_FIXTURES.secondFileJwt}\nTELEGRAM_BOT_TOKEN=${INSTALLER_FIXTURES.fileBot}\nALLOWED_USER_IDS=400\nDASHBOARD_ORIGIN=https://second.example.invalid\n`,
     },
     injectPort: false,
   });
@@ -458,30 +514,30 @@ const preservedUnit = port => existingUnit([
   const secondIndex = result.unit.indexOf('EnvironmentFile=-%h/.config/flowboard/second.env');
   ok(firstIndex >= 0 && secondIndex > firstIndex, 'EnvironmentFile order is preserved in the generated unit');
   ok(result.unit.includes('Environment="FLOWBOARD_PORT=9"'), 'inline port remains intact while EnvironmentFile keeps runtime precedence');
-  ok(!result.unit.includes('test-first-file-secret') && !result.unit.includes('test-second-file-secret'), 'EnvironmentFile secrets remain in their owner-only files');
-  ok(!result.stdout.includes('test-first-file-secret') && !result.stdout.includes('test-second-file-secret') && !result.stdout.includes('test-file-bot'), 'EnvironmentFile values are never printed');
+  ok(!result.unit.includes(INSTALLER_FIXTURES.firstFileJwt) && !result.unit.includes(INSTALLER_FIXTURES.secondFileJwt), 'EnvironmentFile secrets remain in their owner-only files');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.firstFileJwt) && !result.stdout.includes(INSTALLER_FIXTURES.secondFileJwt) && !result.stdout.includes(INSTALLER_FIXTURES.fileBot), 'EnvironmentFile values are never printed');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'later EnvironmentFile values drive effective diagnostics');
 }
 
 {
-  const dropIn = `[Service]\nEnvironment="JWT_SECRET=test-dropin-secret"\nEnvironment="TELEGRAM_BOT_TOKEN=test-dropin-bot"\nEnvironment="ALLOWED_USER_IDS=300"\nEnvironment="DASHBOARD_ORIGIN=https://dropin.example.invalid"\nEnvironment="CUSTOM_DROPIN_MODE=enabled"\n`;
+  const dropIn = `[Service]\nEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.dropInJwt}"\nEnvironment="TELEGRAM_BOT_TOKEN=${INSTALLER_FIXTURES.dropInBot}"\nEnvironment="ALLOWED_USER_IDS=300"\nEnvironment="DASHBOARD_ORIGIN=https://dropin.example.invalid"\nEnvironment="CUSTOM_DROPIN_MODE=enabled"\n`;
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
     dropIns: { 'auth.conf': dropIn },
   });
   ok(result.code === 0, 'update preserves systemd drop-in configuration');
-  ok(!result.unit.includes('test-dropin-secret'), 'drop-in JWT stays in its source instead of becoming sticky in the main unit');
-  ok(!result.unit.includes('test-dropin-bot'), 'drop-in bot token is not copied into the main unit');
+  ok(!result.unit.includes(INSTALLER_FIXTURES.dropInJwt), 'drop-in JWT stays in its source instead of becoming sticky in the main unit');
+  ok(!result.unit.includes(INSTALLER_FIXTURES.dropInBot), 'drop-in bot token is not copied into the main unit');
   ok(!result.unit.includes('CUSTOM_DROPIN_MODE'), 'custom drop-in variables are not copied into the main unit');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'drop-in variables participate in safe remote diagnostics');
-  ok(!result.stdout.includes('test-dropin-secret') && !result.stdout.includes('test-dropin-bot'), 'drop-in secret values are not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.dropInJwt) && !result.stdout.includes(INSTALLER_FIXTURES.dropInBot), 'drop-in secret values are not printed');
 }
 
 {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
-      'Environment="JWT_SECRET=case-sensitive-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.caseSensitiveJwt}"`,
       '[service]',
       'Environment="CUSTOM_IGNORED=must-not-be-rewritten"',
     ]),
@@ -489,21 +545,21 @@ const preservedUnit = port => existingUnit([
   ok(result.code === 1, 'lowercase [service] is not treated as the systemd [Service] section');
   ok(result.stdout.includes('case-variant [Service] section'), 'ignored case-variant service sections fail closed');
   ok(result.commands.length === 0, 'case-variant service sections abort before build or service commands');
-  ok(!result.stdout.includes('case-sensitive-secret') && !result.stdout.includes('must-not-be-rewritten'), 'case-variant section failures never print preserved secrets');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.caseSensitiveJwt) && !result.stdout.includes(INSTALLER_FIXTURES.mustNotBeRewritten), 'case-variant section failures never print preserved secrets');
 }
 
 {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
-      'Environment="JWT_SECRET=bom-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.bomJwt}"`,
       '\uFEFFEnvironment="CUSTOM_AFTER_BOM=must-be-preserved"',
     ]),
   });
   ok(result.code === 1, 'a BOM on a later systemd unit line fails closed');
   ok(result.stdout.includes('contains a UTF-8 byte-order mark'), 'BOM diagnostics explain why the unit is unsafe to rewrite');
   ok(result.commands.length === 0, 'BOM failures abort before build or service commands');
-  ok(!result.stdout.includes('bom-secret') && !result.stdout.includes('must-be-preserved'), 'BOM failures never print service secrets');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.bomJwt) && !result.stdout.includes(INSTALLER_FIXTURES.mustBePreserved), 'BOM failures never print service secrets');
 }
 
 {
@@ -511,13 +567,13 @@ const preservedUnit = port => existingUnit([
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
       '\uFEFF[Service]',
-      'Environment="JWT_SECRET=first-bom-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.firstBomJwt}"`,
     ]),
   });
   ok(result.code === 1, 'a BOM at the beginning of a systemd unit section fails closed');
   ok(result.stdout.includes('contains a UTF-8 byte-order mark'), 'leading BOM diagnostics explain why the unit is unsafe to rewrite');
   ok(result.commands.length === 0, 'leading BOM failures abort before build or service commands');
-  ok(!result.stdout.includes('first-bom-secret'), 'leading BOM failures never print service secrets');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.firstBomJwt), 'leading BOM failures never print service secrets');
 }
 
 {
@@ -526,59 +582,59 @@ const preservedUnit = port => existingUnit([
       'EnvironmentFile=%h/.config/flow board/runtime\\file.env',
     ]),
     environmentFiles: {
-      '.config/flow board/runtime\\file.env': port => `FLOWBOARD_PORT=${port}\nJWT_SECRET=full-path-secret\n`,
+      '.config/flow board/runtime\\file.env': port => `FLOWBOARD_PORT=${port}\nJWT_SECRET=${INSTALLER_FIXTURES.fullPathJwt}\n`,
     },
     injectPort: false,
   });
   ok(result.code === 0, 'EnvironmentFile parses a complete path with spaces and literal backslashes');
   ok(result.unit.includes('EnvironmentFile=%h/.config/flow board/runtime\\file.env'), 'complete EnvironmentFile RHS is preserved without Environment-word C-unescaping');
   ok(result.stdout.includes('JWT_SECRET: existing value preserved in its EnvironmentFile'), 'full-path EnvironmentFile values participate in effective diagnostics');
-  ok(!result.stdout.includes('full-path-secret'), 'full-path EnvironmentFile secrets are never printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.fullPathJwt), 'full-path EnvironmentFile secrets are never printed');
 }
 
 {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
     globalDropIns: {
-      '20-global-auth.conf': '[Service]\nEnvironment="JWT_SECRET=global-dropin-secret"\nEnvironment="TELEGRAM_BOT_TOKEN=global-dropin-token"\nEnvironment="ALLOWED_USER_IDS=700"\nEnvironment="DASHBOARD_ORIGIN=https://global.example.invalid"\nEnvironment="CUSTOM_GLOBAL_CREDENTIAL=global-custom-credential"\n',
+      '20-global-auth.conf': `[Service]\nEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.globalDropInJwt}"\nEnvironment="TELEGRAM_BOT_TOKEN=${INSTALLER_FIXTURES.globalDropInToken}"\nEnvironment="ALLOWED_USER_IDS=700"\nEnvironment="DASHBOARD_ORIGIN=https://global.example.invalid"\nEnvironment="CUSTOM_GLOBAL_CREDENTIAL=${INSTALLER_FIXTURES.globalCustomCredential}"\n`,
     },
   });
   ok(result.code === 0, 'global XDG_CONFIG_DIRS drop-ins participate in effective user-service configuration');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'global drop-in auth values drive diagnostics');
-  ok(!result.unit.includes('global-dropin-secret') && !result.unit.includes('global-custom-credential'), 'global drop-in values remain in their owner path');
-  ok(!result.stdout.includes('global-dropin-secret') && !result.stdout.includes('global-dropin-token') && !result.stdout.includes('global-custom-credential'), 'global drop-in credentials are never printed');
+  ok(!result.unit.includes(INSTALLER_FIXTURES.globalDropInJwt) && !result.unit.includes(INSTALLER_FIXTURES.globalCustomCredential), 'global drop-in values remain in their owner path');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.globalDropInJwt) && !result.stdout.includes(INSTALLER_FIXTURES.globalDropInToken) && !result.stdout.includes(INSTALLER_FIXTURES.globalCustomCredential), 'global drop-in credentials are never printed');
 }
 
 {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([`Environment="FLOWBOARD_PORT=${port}"`]),
     globalTypeDropIns: {
-      '10-all-services.conf': '[Service]\nEnvironment="ALLOWED_USER_IDS=701"\nEnvironment="JWT_SECRET=type-secret"\n',
-      '20-overlap.conf': '[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=type-secret"\n',
+      '10-all-services.conf': `[Service]\nEnvironment="ALLOWED_USER_IDS=701"\nEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.typeSecret}"\n`,
+      '20-overlap.conf': `[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=${INSTALLER_FIXTURES.typeSecret}"\n`,
     },
     globalPrefixDropIns: {
-      '15-shared-flowboard.conf': '[Service]\nEnvironment="DASHBOARD_ORIGIN=https://prefix.example.invalid"\nEnvironment="JWT_SECRET=prefix-secret"\n',
-      '20-overlap.conf': '[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=prefix-secret"\n',
+      '15-shared-flowboard.conf': `[Service]\nEnvironment="DASHBOARD_ORIGIN=https://prefix.example.invalid"\nEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.prefixSecret}"\n`,
+      '20-overlap.conf': `[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=${INSTALLER_FIXTURES.prefixSecret}"\n`,
     },
     globalDropIns: {
-      '20-exact-auth.conf': '[Service]\nEnvironment="TELEGRAM_BOT_TOKEN=exact-token"\n',
-      '20-overlap.conf': '[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=exact-secret"\nEnvironment="JWT_SECRET=exact-secret"\n',
+      '20-exact-auth.conf': `[Service]\nEnvironment="TELEGRAM_BOT_TOKEN=${INSTALLER_FIXTURES.exactToken}"\n`,
+      '20-overlap.conf': `[Service]\nEnvironment="CUSTOM_DROPIN_ORDER=${INSTALLER_FIXTURES.exactSecret}"\nEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.exactSecret}"\n`,
     },
   });
   ok(result.code === 0, 'unit-specific, dash-prefix, and service-wide drop-in paths are merged');
   ok(result.stdout.includes('remote auth configuration has all required variables'), 'all relevant drop-in search paths contribute to effective diagnostics');
-  ok(!result.stdout.includes('type-secret') && !result.stdout.includes('prefix-secret')
-    && !result.stdout.includes('exact-secret') && !result.stdout.includes('exact-token'), 'all relevant drop-in paths remain secret-redacted');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.typeSecret) && !result.stdout.includes(INSTALLER_FIXTURES.prefixSecret)
+    && !result.stdout.includes(INSTALLER_FIXTURES.exactSecret) && !result.stdout.includes(INSTALLER_FIXTURES.exactToken), 'all relevant drop-in paths remain secret-redacted');
 }
 
 {
   const result = await runSetup(['--update'], {
-    globalUnit: existingUnit(['Environment="JWT_SECRET=global-unit-secret"']),
+    globalUnit: existingUnit([`Environment="JWT_SECRET=${INSTALLER_FIXTURES.globalUnitSecret}"`]),
   });
   ok(result.code === 1, 'a global main unit that outranks the managed path fails closed');
   ok(result.stdout.includes('higher-priority or global unit path'), 'global main-unit ambiguity is diagnosed');
   ok(result.commands.length === 0, 'global main-unit ambiguity aborts before build or service commands');
-  ok(!result.stdout.includes('global-unit-secret'), 'global main-unit ambiguity never prints its secret');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.globalUnitSecret), 'global main-unit ambiguity never prints its secret');
 }
 
 {
@@ -596,7 +652,7 @@ const preservedUnit = port => existingUnit([
   const result = await runSetup(['--dry-run', '--update'], {
     initialUnit: existingUnit([
       'Environment="FLOWBOARD_PORT=9"',
-      'Environment="JWT_SECRET=test-unset-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.unsetJwt}"`,
       'UnsetEnvironment=FLOWBOARD_PORT JWT_SECRET',
     ]),
     injectPort: false,
@@ -610,36 +666,36 @@ const preservedUnit = port => existingUnit([
   const result = await runSetup(['--rotate-secret'], {
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
-      'Environment="JWT_SECRET=test-unset-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.unsetJwt}"`,
       'UnsetEnvironment=JWT_SECRET',
     ]),
   });
   ok(result.code === 1, 'rotation fails safe when an unconditional UnsetEnvironment removes JWT_SECRET');
   ok(result.stdout.includes('JWT_SECRET is removed by systemd UnsetEnvironment'), 'rotation failure identifies the effective systemd owner');
   ok(result.commands.length === 0, 'ineffective JWT rotation aborts before build or service commands');
-  ok(!result.stdout.includes('test-unset-secret'), 'UnsetEnvironment rotation refusal does not print the old secret');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.unsetJwt), 'UnsetEnvironment rotation refusal does not print the old secret');
 }
 
 {
   const result = await runSetup(['--rotate-secret'], {
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
-      'Environment="JWT_SECRET=test-exact-rotation-secret"',
-      'UnsetEnvironment="JWT_SECRET=test-exact-rotation-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.exactRotationJwt}"`,
+      `UnsetEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.exactRotationJwt}"`,
     ]),
   });
   ok(result.code === 0, 'rotation succeeds when exact-assignment UnsetEnvironment matches only the old JWT value');
-  ok(!result.unit.split('\n').includes('Environment="JWT_SECRET=test-exact-rotation-secret"'), 'exact-assignment rotation removes the old inline JWT value');
+  ok(!result.unit.split('\n').includes(`Environment="JWT_SECRET=${INSTALLER_FIXTURES.exactRotationJwt}"`), 'exact-assignment rotation removes the old inline JWT value');
   ok(/Environment="JWT_SECRET=[a-f0-9]{64}"/i.test(result.unit), 'exact-assignment rotation installs a new active JWT value');
-  ok(result.unit.includes('UnsetEnvironment="JWT_SECRET=test-exact-rotation-secret"'), 'exact-assignment JWT removal remains narrow after rotation');
+  ok(result.unit.includes(`UnsetEnvironment="JWT_SECRET=${INSTALLER_FIXTURES.exactRotationJwt}"`), 'exact-assignment JWT removal remains narrow after rotation');
 }
 
 {
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
-      'Environment="JWT_SECRET=test-reset-secret"',
-      'Environment="TELEGRAM_BOT_TOKEN=test-reset-bot"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.resetJwt}"`,
+      `Environment="TELEGRAM_BOT_TOKEN=${INSTALLER_FIXTURES.resetBot}"`,
       'Environment="ALLOWED_USER_IDS=500"',
       'Environment="DASHBOARD_ORIGIN=https://reset.example.invalid"',
       'UnsetEnvironment=FLOWBOARD_PORT JWT_SECRET',
@@ -657,7 +713,7 @@ const preservedUnit = port => existingUnit([
   const result = await runSetup(['--update'], {
     initialUnit: existingUnit([
       'Environment="FLOWBOARD_PORT=9"',
-      'Environment="JWT_SECRET=test-exact-unset-secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.exactUnsetJwt}"`,
       'EnvironmentFile=%h/.config/flowboard/runtime.env',
       'UnsetEnvironment="FLOWBOARD_PORT=9"',
     ]),
@@ -802,31 +858,31 @@ for (const [label, assignment] of [
   const result = await runSetup(['--update'], {
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
-      'Environment="JWT_SECRET=test-analyzer-secret"',
-      'Environment="CUSTOM_SHORT_SECRET=abc"',
-      'Environment="CUSTOM_CREDENTIAL=main-unit-credential"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.analyzerJwt}"`,
+      `Environment="CUSTOM_SHORT_SECRET=${INSTALLER_FIXTURES.analyzerShortSecret}"`,
+      `Environment="CUSTOM_CREDENTIAL=${INSTALLER_FIXTURES.mainUnitCredential}"`,
     ]),
     dropIns: {
-      '20-credentials.conf': '[Service]\nEnvironment="CUSTOM_CREDENTIAL=drop-in-credential"\nEnvironment="CUSTOM_OVERRIDDEN=overridden-credential"\n',
+      '20-credentials.conf': `[Service]\nEnvironment="CUSTOM_CREDENTIAL=${INSTALLER_FIXTURES.dropInCredential}"\nEnvironment="CUSTOM_OVERRIDDEN=${INSTALLER_FIXTURES.overriddenCredential}"\n`,
     },
   }, {
     FAKE_SYSTEMD_ANALYZE_STATUS: '1',
     FAKE_SYSTEMD_ANALYZE_STDOUT: [
-      'Environment="JWT_SECRET=test-analyzer-secret"',
-      'Environment="CUSTOM_CREDENTIAL=main-unit-credential"',
-      'Environment="CUSTOM_MODE=prefix\\asecret"',
-      'Environment="CUSTOM_BACKSPACE=prefix\\bsecret"',
-      'Environment="CUSTOM_FORMFEED=prefix\\fsecret"',
-      'Environment="CUSTOM_VERTICAL=prefix\\vsecret"',
-      'Environment="CUSTOM_NEWLINE=prefix\\nsecret"',
-      'Environment="CUSTOM_OCTAL=prefix\\001secret"',
+      `Environment="JWT_SECRET=${INSTALLER_FIXTURES.analyzerJwt}"`,
+      `Environment="CUSTOM_CREDENTIAL=${INSTALLER_FIXTURES.mainUnitCredential}"`,
+      `Environment="CUSTOM_MODE=${INSTALLER_FIXTURES.diagnosticValues.bellEscape}"`,
+      `Environment="CUSTOM_BACKSPACE=${INSTALLER_FIXTURES.diagnosticValues.backspaceEscape}"`,
+      `Environment="CUSTOM_FORMFEED=${INSTALLER_FIXTURES.diagnosticValues.formfeedEscape}"`,
+      `Environment="CUSTOM_VERTICAL=${INSTALLER_FIXTURES.diagnosticValues.verticalEscape}"`,
+      `Environment="CUSTOM_NEWLINE=${INSTALLER_FIXTURES.diagnosticValues.newlineEscape}"`,
+      `Environment="CUSTOM_OCTAL=${INSTALLER_FIXTURES.diagnosticValues.octalEscape}"`,
     ].join(' '),
     FAKE_SYSTEMD_ANALYZE_STDERR: [
       'systemd-analyze: warning: malformed generated unit abc',
-      'CUSTOM_CREDENTIAL=drop-in-credential CUSTOM_OVERRIDDEN=overridden-credential',
-      `CUSTOM_LITERAL_BELL=prefix${String.fromCharCode(0x07)}secret`,
-      `CUSTOM_LITERAL_TAB=prefix\tsecret`,
-      `CUSTOM_LITERAL_CR=prefix\rsecret`,
+      `CUSTOM_CREDENTIAL=${INSTALLER_FIXTURES.dropInCredential} CUSTOM_OVERRIDDEN=${INSTALLER_FIXTURES.overriddenCredential}`,
+      `CUSTOM_LITERAL_BELL=${INSTALLER_FIXTURES.diagnosticValues.bell}`,
+      `CUSTOM_LITERAL_TAB=${INSTALLER_FIXTURES.diagnosticValues.tab}`,
+      `CUSTOM_LITERAL_CR=${INSTALLER_FIXTURES.diagnosticValues.carriageReturn}`,
     ].join(' '),
   });
   const output = `${result.stdout}\n${result.stderr}`;
@@ -834,20 +890,20 @@ for (const [label, assignment] of [
   ok(output.includes('systemd-analyze verification failed (exit status 1'), 'systemd-analyze failure emits a structural summary');
   ok(output.includes('diagnostic output suppressed for secret safety'), 'systemd-analyze failure explains why raw diagnostics are suppressed');
   for (const secret of [
-    'test-analyzer-secret',
-    'abc',
-    'main-unit-credential',
-    'drop-in-credential',
-    'overridden-credential',
-    'prefix\\asecret',
-    'prefix\\bsecret',
-    'prefix\\fsecret',
-    'prefix\\vsecret',
-    'prefix\\nsecret',
-    'prefix\\001secret',
-    `prefix${String.fromCharCode(0x07)}secret`,
-    `prefix\tsecret`,
-    `prefix\rsecret`,
+    INSTALLER_FIXTURES.analyzerJwt,
+    INSTALLER_FIXTURES.analyzerShortSecret,
+    INSTALLER_FIXTURES.mainUnitCredential,
+    INSTALLER_FIXTURES.dropInCredential,
+    INSTALLER_FIXTURES.overriddenCredential,
+    INSTALLER_FIXTURES.diagnosticValues.bellEscape,
+    INSTALLER_FIXTURES.diagnosticValues.backspaceEscape,
+    INSTALLER_FIXTURES.diagnosticValues.formfeedEscape,
+    INSTALLER_FIXTURES.diagnosticValues.verticalEscape,
+    INSTALLER_FIXTURES.diagnosticValues.newlineEscape,
+    INSTALLER_FIXTURES.diagnosticValues.octalEscape,
+    INSTALLER_FIXTURES.diagnosticValues.bell,
+    INSTALLER_FIXTURES.diagnosticValues.tab,
+    INSTALLER_FIXTURES.diagnosticValues.carriageReturn,
   ]) {
     ok(!output.includes(secret), `systemd-analyze failure never exposes ${JSON.stringify(secret)}`);
   }
@@ -858,12 +914,12 @@ for (const [label, assignment] of [
   const result = await runSetup(['--update'], {
     initialUnit: preservedUnit,
   }, {
-    FAKE_SYSTEMD_ANALYZE_STDOUT: 'Environment="CUSTOM_MODE=prefix\\asecret"',
-    FAKE_SYSTEMD_ANALYZE_STDERR: 'CUSTOM_ANY_KEY=prefix\\bsecret',
+    FAKE_SYSTEMD_ANALYZE_STDOUT: `Environment="CUSTOM_MODE=${INSTALLER_FIXTURES.diagnosticValues.bellEscape}"`,
+    FAKE_SYSTEMD_ANALYZE_STDERR: `CUSTOM_ANY_KEY=${INSTALLER_FIXTURES.diagnosticValues.backspaceEscape}`,
   });
   const output = `${result.stdout}\n${result.stderr}`;
   ok(result.code === 0, 'successful systemd-analyze output does not fail setup');
-  ok(!output.includes('prefix\\asecret') && !output.includes('prefix\\bsecret'), 'successful systemd-analyze stdout/stderr are fully suppressed');
+  ok(!output.includes(INSTALLER_FIXTURES.diagnosticValues.bellEscape) && !output.includes(INSTALLER_FIXTURES.diagnosticValues.backspaceEscape), 'successful systemd-analyze stdout/stderr are fully suppressed');
 }
 
 {
@@ -907,14 +963,14 @@ for (const [label, assignment] of [
 {
   const partialUnit = port => existingUnit([
     `Environment="FLOWBOARD_PORT=${port}"`,
-    'Environment="JWT_SECRET=test-secret-v1"',
-    'Environment="TELEGRAM_BOT_TOKEN=test-bot-only"',
+    `Environment="JWT_SECRET=${INSTALLER_FIXTURES.preservedJwt}"`,
+    `Environment="TELEGRAM_BOT_TOKEN=${INSTALLER_FIXTURES.partialBot}"`,
   ]);
   const result = await runSetup(['--update'], { initialUnit: partialUnit });
   ok(result.code === 0, 'update with partial remote configuration still completes');
   ok(result.stdout.includes('remote access configuration is incomplete'), 'partial remote configuration emits a clear warning');
   ok(result.stdout.includes('ALLOWED_USER_IDS') && result.stdout.includes('DASHBOARD_ORIGIN'), 'warning names missing remote settings without values');
-  ok(!result.stdout.includes('test-bot-only'), 'partial bot token is not printed');
+  ok(!result.stdout.includes(INSTALLER_FIXTURES.partialBot), 'partial bot token is not printed');
 }
 
 {
