@@ -13,12 +13,14 @@ const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const os = require('os');
 const path = require('path');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const PORT = 18855;
-const SECRET = 'test-only-jwt-secret-at-least-thirty-two-characters';
-const BOT_TOKEN = '100001:test-token';
-const SECONDARY_BOT_TOKEN = '100002:test-secondary-token';
+const CREDENTIALS = createCredentialFixtures('t441-security-review-findings');
+const SECRET = CREDENTIALS.jwtSecret;
+const BOT_TOKEN = CREDENTIALS.botToken;
+const SECONDARY_BOT_TOKEN = CREDENTIALS.secondaryBotToken;
 const AGENT_ID = 'test-agent';
 
 let pass = 0;
@@ -139,7 +141,7 @@ async function run() {
     const validCookie = sessionCookie(validResult.setCookie);
 
     // Test that legacy/malformed cookies are rejected
-    const legacyCookie = 'flowboard_session=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature';
+    const legacyCookie = CREDENTIALS.legacyCookie;
     const legacyResult = await auth(base, null, legacyCookie, '203.0.113.11');
     ok(legacyResult.response.status === 403, 'legacy malformed cookie is rejected');
 

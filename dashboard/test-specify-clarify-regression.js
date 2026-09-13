@@ -12,6 +12,7 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 let pass = 0, fail = 0, failures = [];
 
@@ -26,7 +27,8 @@ const PORT = 18797;
 const WORKSPACE = path.join(__dirname, 'test-workspace');
 const HZL_DB_PATH = path.join(WORKSPACE, '.hzl', 'flowboard-clarify-regression.db');
 const TEST_PROJECT = 'clarify-regression-proj';
-const JWT_SECRET = 't447-clarify-test-jwt-secret-long-enough';
+const CREDENTIALS = createCredentialFixtures('specify-clarify-regression');
+const JWT_SECRET = CREDENTIALS.jwtSecret;
 const dashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 if (fs.existsSync(HZL_DB_PATH)) {
@@ -103,7 +105,7 @@ async function runTests() {
       FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
       SPECIFY_WORKER_MOCK: path.join(__dirname, 'test-fixtures', 'specify-mock-worker.js'),
-      TELEGRAM_BOT_TOKEN: '123456:t447-clarify-test-bot',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       JWT_SECRET,
       ALLOWED_USER_IDS: '42',

@@ -15,12 +15,14 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const PORT = 18850;
-const SECRET = 'test-jwt-secret-please-be-at-least-32-chars-long';
-const BOT_TOKEN = '123456:bot-secret-test';
-const SECONDARY_BOT_TOKEN = '654321:secondary-bot-secret-test';
+const CREDENTIALS = createCredentialFixtures('security-hardening-428');
+const SECRET = CREDENTIALS.jwtSecret;
+const BOT_TOKEN = CREDENTIALS.botToken;
+const SECONDARY_BOT_TOKEN = CREDENTIALS.secondaryBotToken;
 
 let pass = 0, fail = 0;
 const failures = [];

@@ -6,6 +6,9 @@ const path = require('node:path');
 const { withIsolatedDashboard } = require('./test-support/server-harness.js');
 const { validateBundle } = require('./project-bundle-validator.js');
 const { SENSITIVE_EXPORT_CONFIRMATION } = require('./project-bundle-export.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
+
+const CREDENTIALS = createCredentialFixtures('project-bundle-export-api');
 
 async function main() {
   await withIsolatedDashboard(async (ctx) => {
@@ -142,7 +145,7 @@ async function main() {
     assert.equal(JSON.stringify(invalidLegacyExport.body).includes('context/SHARED.md'), false);
     assert.equal(JSON.stringify(invalidLegacyExport.body).includes('different task'), false);
 
-    const fakeOptionalSecret = 'sk-review-api-fake-value-1234567890';
+    const fakeOptionalSecret = CREDENTIALS.optionalApiToken;
     const secretFileWrite = await ctx.api('PUT', '/projects/portable-review-fixture/files/context/REVIEW.md', {
       content: `Review-only note with apiKey: ${fakeOptionalSecret}\n`,
     });
@@ -229,7 +232,7 @@ async function main() {
     assert.equal(browserRequest.status, 400, JSON.stringify(browserBody));
     assert.equal(browserBody.code, 'CONFIRMATION_REQUIRED');
 
-    const fakeCanonicalSecret = 'ghp_review_api_fake_value_1234567890';
+    const fakeCanonicalSecret = CREDENTIALS.githubToken;
     const canonicalSecretWrite = await ctx.api('PUT', `/projects/portable-review-fixture/tasks/${parentId}`, {
       description: `token: ${fakeCanonicalSecret}`,
     });

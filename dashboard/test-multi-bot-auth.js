@@ -10,15 +10,13 @@ const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const os = require('os');
 const path = require('path');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const PORT = 18854;
-const SECRET = 'test-only-jwt-secret-at-least-thirty-two-characters';
-const BOT_TOKENS = [
-  '100001:test-only-primary-token',
-  '100002:test-only-secondary-token',
-  '100003:test-only-tertiary-token',
-];
+const CREDENTIALS = createCredentialFixtures('multi-bot-auth');
+const SECRET = CREDENTIALS.jwtSecret;
+const BOT_TOKENS = CREDENTIALS.botTokens;
 const AGENT_IDS = ['botti', 'dev-botti', 'design-botti'];
 
 let pass = 0;
@@ -164,7 +162,7 @@ async function run() {
     ok(sessionPayload(rebound.setCookie).agentId === AGENT_IDS[1],
       'cross-bot authentication reissues the session for bot 2');
 
-    const unsupportedToken = '100004:test-only-unconfigured-token';
+    const unsupportedToken = CREDENTIALS.unsupportedBotToken;
     const unsupported = await auth(base, buildTelegramInitData(unsupportedToken), sessions[0]);
     ok(unsupported.response.status === 403 && unsupported.body.code === 'TELEGRAM_BOT_NOT_SUPPORTED',
       'a cookie cannot mask fresh initData signed by an unsupported bot');

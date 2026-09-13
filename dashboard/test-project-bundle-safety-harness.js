@@ -12,6 +12,9 @@ const {
   recoveryDisposition,
 } = require('./project-bundle-safety.js');
 const { isolatedEnvironment, withIsolatedDashboard } = require('./test-support/server-harness.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
+
+const CREDENTIALS = createCredentialFixtures('project-bundle-safety-harness');
 
 async function main() {
   const liveWorkspace = process.env.OPENCLAW_WORKSPACE || '';
@@ -19,8 +22,8 @@ async function main() {
 
   const environment = isolatedEnvironment({
     ...process.env,
-    TEST_PARENT_SECRET: 'must-not-cross-the-boundary',
-    TELEGRAM_BOT_TOKEN: 'must-not-cross-the-boundary',
+    TEST_PARENT_SECRET: CREDENTIALS.parentSecret,
+    TELEGRAM_BOT_TOKEN: CREDENTIALS.parentSecret,
   }, {
     workspace: '/tmp/test-workspace',
     projectsDir: '/tmp/test-projects',
@@ -70,12 +73,12 @@ async function main() {
     assert.equal(fs.existsSync(ctx.cacheDbPath), true);
 
     const logs = ctx.readLogs();
-    assert.equal(logs.includes('test-parent-secret-must-not-leak'), false);
+    assert.equal(logs.includes(CREDENTIALS.parentSecret), false);
   }, {
     prefix: 'flowboard-t468-safety-',
     parentEnv: {
       ...process.env,
-      TELEGRAM_BOT_TOKEN: 'test-parent-secret-must-not-leak',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.parentSecret,
     },
   });
 

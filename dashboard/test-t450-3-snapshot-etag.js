@@ -9,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const jwt = require('jsonwebtoken');
 const { spawn } = require('node:child_process');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const root = __dirname;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-t450-3-'));
@@ -19,7 +20,8 @@ fs.mkdirSync(path.join(workspace, 'projects'), { recursive: true });
 fs.mkdirSync(projects, { recursive: true });
 const port = 18890 + Math.floor(Math.random() * 500);
 const base = `http://127.0.0.1:${port}`;
-const secret = 't450-3-test-secret-must-be-at-least-32-characters';
+const CREDENTIALS = createCredentialFixtures('t450-3-snapshot-etag');
+const secret = CREDENTIALS.jwtSecret;
 const cookie = `flowboard_session=${jwt.sign({ id: 42, username: 't450-3' }, secret)}`;
 const changedCookie = `flowboard_session=${jwt.sign({ id: 43, username: 't450-3-changed' }, secret)}`;
 const proxy = { 'cf-ray': 't450-3-ray', 'cf-connecting-ip': '203.0.113.9', Cookie: cookie };
@@ -63,7 +65,7 @@ async function main() {
       FLOWBOARD_PROJECTS_DIR: projects,
       HZL_DB_PATH: db,
       SPECIFY_WORKER_DISABLED: 'true',
-      TELEGRAM_BOT_TOKEN: '123456:t450-3-dummy',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       JWT_SECRET: secret,
       ALLOWED_USER_IDS: '42,43',
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',

@@ -18,12 +18,14 @@ const jwt = require('jsonwebtoken');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const DASHBOARD_PORT = 18815;
 const DB_PROJECT = 'canvas-db-endpoints-mig';
 const FILE_PROJECT = 'canvas-db-endpoints-file';
-const JWT_SECRET = 't447-canvas-db-test-jwt-secret-long';
+const CREDENTIALS = createCredentialFixtures('canvas-db-endpoints');
+const JWT_SECRET = CREDENTIALS.jwtSecret;
 const localDashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 let pass = 0;
@@ -256,7 +258,7 @@ async function run() {
       HZL_DB_PATH: dbPath,
       NODE_ENV: 'test',
       TELEGRAM_BOT_TOKENS: '',
-      TELEGRAM_BOT_TOKEN: '123456:t447-canvas-db-test-bot',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       JWT_SECRET,
       ALLOWED_USER_IDS: '42',

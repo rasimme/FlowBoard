@@ -5,8 +5,10 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { createCredentialFixtures } = require('./credential-fixtures.js');
 
 const ROOT = path.resolve(__dirname, '..');
+const CREDENTIALS = createCredentialFixtures('server-harness');
 const STOP_TIMEOUT_MS = 2000;
 
 function reservePort(host = '127.0.0.1') {
@@ -83,7 +85,7 @@ function isolatedEnvironment(parentEnv, paths, port) {
     DASHBOARD_ORIGIN: '',
     FLOWBOARD_BASE_URL: '',
     FLOWBOARD_API: '',
-    JWT_SECRET: 'isolated-flowboard-test-secret',
+    JWT_SECRET: CREDENTIALS.jwtSecret,
     GITHUB_TOKEN: '',
     GH_TOKEN: '',
     OPENAI_API_KEY: '',

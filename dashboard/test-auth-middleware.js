@@ -14,10 +14,12 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const PORT = 18834;
-const SECRET = 'test-jwt-secret-please-be-at-least-32-chars-long';
+const CREDENTIALS = createCredentialFixtures('auth-middleware');
+const SECRET = CREDENTIALS.jwtSecret;
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -50,7 +52,7 @@ async function run() {
       OPENCLAW_WORKSPACE: path.join(tmp, 'workspace'), FLOWBOARD_PROJECTS_DIR: path.join(tmp, 'projects'),
       HZL_DB_PATH: path.join(tmp, 'fb.db'), NODE_ENV: 'test',
       // Turn AUTH_ENABLED on.
-      TELEGRAM_BOT_TOKEN: '123456:dummy', JWT_SECRET: SECRET, ALLOWED_USER_IDS: '42',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken, JWT_SECRET: SECRET, ALLOWED_USER_IDS: '42',
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       FLOWBOARD_TRUSTED_PROXY_IPS: '127.0.0.1,::1',
     },
@@ -60,7 +62,7 @@ async function run() {
     await waitForServer(base, child);
 
     const goodCookie = 'flowboard_session=' + jwt.sign({ id: 42, username: 't' }, SECRET, { algorithm: 'HS256' });
-    const wrongSecret = 'flowboard_session=' + jwt.sign({ id: 42 }, 'a-totally-different-secret-32-characters', { algorithm: 'HS256' });
+    const wrongSecret = 'flowboard_session=' + jwt.sign({ id: 42 }, CREDENTIALS.wrongJwtSecret, { algorithm: 'HS256' });
     const noneAlg = 'flowboard_session=' + jwt.sign({ id: 42 }, null, { algorithm: 'none' });
     const CF = { 'cf-ray': 'test-ray-1', 'cf-connecting-ip': '203.0.113.9' };
 

@@ -6,12 +6,14 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const port = 18797;
 const workspace = path.join(__dirname, 'test-workspace');
 const db = path.join(workspace, '.hzl', 'flowboard-t447-endpoints.db');
 const project = 'test-t447-endpoints';
-const botToken = '123456:t447-test-bot';
+const CREDENTIALS = createCredentialFixtures('t447-1-governance-endpoints');
+const botToken = CREDENTIALS.botToken;
 fs.rmSync(path.join(workspace, 'projects', project), { recursive: true, force: true });
 for (const file of [db, `${db}-wal`, `${db}-shm`, db.replace(/\.db$/, '-cache.db'),
   db.replace(/\.db$/, '-cache.db-wal'), db.replace(/\.db$/, '-cache.db-shm')]) {
@@ -73,7 +75,7 @@ async function main() {
     ...process.env, NODE_ENV: 'test', FLOWBOARD_PORT: String(port), HZL_DB_PATH: db,
     OPENCLAW_WORKSPACE: workspace, FLOWBOARD_PROJECTS_DIR: path.join(workspace, 'projects'),
     TELEGRAM_BOT_TOKEN: botToken, FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
-    JWT_SECRET: 't447-test-jwt-secret-long-enough-for-hs256', ALLOWED_USER_IDS: '42',
+    JWT_SECRET: CREDENTIALS.jwtSecret, ALLOWED_USER_IDS: '42',
     AUTH_ALWAYS: 'false',
   } });
   try {

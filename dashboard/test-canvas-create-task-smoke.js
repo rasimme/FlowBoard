@@ -11,12 +11,14 @@ const jwt = require('jsonwebtoken');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const DASHBOARD_PORT = 18803;
 const PROJECT = 'canvas-create-task-smoke';
 const NOTE_TEXT = 'Smoke-Test: Canvas Create Task happy path';
-const JWT_SECRET = 't447-canvas-create-test-jwt-secret';
+const CREDENTIALS = createCredentialFixtures('canvas-create-task-smoke');
+const JWT_SECRET = CREDENTIALS.jwtSecret;
 const localDashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 let pass = 0;
@@ -82,7 +84,7 @@ async function run() {
       HZL_DB_PATH: path.join(tempRoot, 'flowboard.db'),
       NODE_ENV: 'test',
       TELEGRAM_BOT_TOKENS: '',
-      TELEGRAM_BOT_TOKEN: '123456:t447-canvas-create-test-bot',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       JWT_SECRET,
       ALLOWED_USER_IDS: '42',

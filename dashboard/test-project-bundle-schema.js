@@ -10,6 +10,9 @@ const {
   toPortableTask,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
+
+const CREDENTIALS = createCredentialFixtures('project-bundle-schema');
 
 const FIXED = Object.freeze({
   bundleId: 'bundle-0001',
@@ -167,7 +170,7 @@ for (const color of ['grey', 'yellow', 'blue', 'green', 'red', 'teal', 'orange',
   assert.equal(actualPublicTask.leaseUntil, undefined);
   assert.equal(actualPublicTask.workStateDetails.responsible, null);
   const raw = { ...projected.tasks[0], metadata: { internal: true }, agent: 'worker', leaseUntil: 'never' };
-  const rawProject = { ...projected.project, github: { repo: 'example/portable-review', branch: 'main', token: 'must-not-export' } };
+  const rawProject = { ...projected.project, github: { repo: 'example/portable-review', branch: 'main', token: CREDENTIALS.discardedCredential } };
   const safe = createBundle({
     project: rawProject,
     tasks: [raw, projected.tasks[1]],

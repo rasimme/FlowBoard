@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 let pass = 0, fail = 0, failures = [];
 
@@ -19,7 +20,8 @@ const PORT = 18797;
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-e2e-complex.db');
 const TEST_PROJECT = 'e2e-complex-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
-const JWT_SECRET = 't447-complex-test-jwt-secret-long-enough';
+const CREDENTIALS = createCredentialFixtures('specify-e2e-complex');
+const JWT_SECRET = CREDENTIALS.jwtSecret;
 const dashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 if (fs.existsSync(HZL_DB_PATH)) {
@@ -90,7 +92,7 @@ async function runTests() {
       // leak into the spawned server and confuse the m004 migration.
       FLOWBOARD_PROJECTS_DIR: path.join(WORKSPACE, 'projects'),
       NODE_ENV: 'test',
-      TELEGRAM_BOT_TOKEN: '123456:t447-complex-test-bot',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       JWT_SECRET,
       ALLOWED_USER_IDS: '42',

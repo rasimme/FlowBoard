@@ -17,12 +17,14 @@ const {
   toPortableTask,
 } = require('./project-bundle-schema.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
+const CREDENTIALS = createCredentialFixtures('project-bundle-roundtrip-http');
 const SOURCE = 'portable-http-source';
 const UNRELATED = 'portable-http-unrelated';
 const TARGET = 'portable-http-copy';
 const SOURCE_AGENT = 'bundle-roundtrip-fast';
-const FAKE_SECRET = 'ghp_fake_source_global_secret_1234567890';
+const FAKE_SECRET = CREDENTIALS.githubToken;
 const FAKE_RUNTIME = 'source-runtime-agent-field';
 const UNICODE_TAGS = ['prüfung', '🚀'];
 

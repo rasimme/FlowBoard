@@ -7,12 +7,14 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const DASHBOARD_PORT = 18791;
-const TOKEN = 'test-hooks-token';
+const CREDENTIALS = createCredentialFixtures('canvas-promote-integration');
+const TOKEN = CREDENTIALS.hooksToken;
 const PROJECT = 'canvas-promote-test';
-const JWT_SECRET = 't447-canvas-promote-test-jwt-secret';
+const JWT_SECRET = CREDENTIALS.jwtSecret;
 const localDashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 let pass = 0;
@@ -128,7 +130,7 @@ async function run() {
       OPENCLAW_GATEWAY_URL: `http://127.0.0.1:${gatewayPort}`,
       OPENCLAW_HOOKS_TOKEN: TOKEN,
       TELEGRAM_BOT_TOKENS: '',
-      TELEGRAM_BOT_TOKEN: '123456:t447-canvas-promote-test-bot',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       JWT_SECRET,
       ALLOWED_USER_IDS: '42',

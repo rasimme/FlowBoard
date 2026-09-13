@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const port = 18805;
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'flowboard-t447-5-api-'));
@@ -17,7 +18,8 @@ const projects = path.join(root, 'projects');
 const db = path.join(root, 'flowboard.db');
 const ledgerDir = path.join(root, 'audit');
 const project = 'discipline-contract';
-const jwtSecret = 't447-5-test-jwt-secret-long-enough';
+const CREDENTIALS = createCredentialFixtures('t447-5-governance-api');
+const jwtSecret = CREDENTIALS.jwtSecret;
 const humanCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'reviewer', agentId: 'main' }, jwtSecret, { algorithm: 'HS256' })}`;
 
 function request(method, pathname, body = null, cookie = null) {
@@ -59,7 +61,7 @@ async function main() {
       OPENCLAW_WORKSPACE: workspace, FLOWBOARD_PROJECTS_DIR: projects,
       HZL_DB_PATH: db, FLOWBOARD_POLICY_LEDGER_DIR: ledgerDir,
       JWT_SECRET: jwtSecret, ALLOWED_USER_IDS: '42', AUTH_ALWAYS: 'false',
-      TELEGRAM_BOT_TOKEN: '123456:t447-5-test-bot', FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken, FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
     },
   });
   try {

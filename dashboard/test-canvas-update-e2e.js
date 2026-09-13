@@ -33,6 +33,7 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { closeBrowser, stopProcessTree } = require('./test-support/browser-harness.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
 const ROOT = __dirname;
 const DASHBOARD_PORT = 18818;
@@ -41,7 +42,8 @@ const EDGE = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
 const P_NORMAL = 'cdm-e2e-normal';
 const P_EMPTY = 'cdm-e2e-empty';
 const P_CORRUPT = 'cdm-e2e-corrupt';
-const JWT_SECRET = 't447-canvas-update-test-jwt-secret';
+const CREDENTIALS = createCredentialFixtures('canvas-update-e2e');
+const JWT_SECRET = CREDENTIALS.jwtSecret;
 const localDashboardCookie = `flowboard_session=${jwt.sign({ id: 42, username: 'dashboard-human', agentId: 'main' }, JWT_SECRET, { algorithm: 'HS256' })}`;
 
 let pass = 0;
@@ -196,7 +198,7 @@ async function run() {
       HZL_DB_PATH: path.join(tempRoot, 'flowboard.db'),
       NODE_ENV: 'test', // Specify worker fallback for the promote happy path
       TELEGRAM_BOT_TOKENS: '',
-      TELEGRAM_BOT_TOKEN: '123456:t447-canvas-update-test-bot',
+      TELEGRAM_BOT_TOKEN: CREDENTIALS.botToken,
       FLOWBOARD_TELEGRAM_AGENT_IDS: 'main',
       JWT_SECRET,
       ALLOWED_USER_IDS: '42',

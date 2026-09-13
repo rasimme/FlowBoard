@@ -4,6 +4,9 @@ const assert = require('node:assert/strict');
 const Database = require('libsql');
 const { withIsolatedDashboard } = require('./test-support/server-harness.js');
 const { validateBundle } = require('./project-bundle-validator.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
+
+const CREDENTIALS = createCredentialFixtures('project-bundle-history');
 
 function historyEventIds(ctx, project) {
   const cache = new Database(ctx.cacheDbPath, { readonly: true });
@@ -85,7 +88,7 @@ async function main() {
       title: 'History secret fixture', description: 'Safe task metadata.', status: 'open',
     });
     assert.equal(secretTask.status, 200, JSON.stringify(secretTask.body));
-    const fakeHistoryToken = 'sk-proj-history-secret-value-1234567890';
+    const fakeHistoryToken = CREDENTIALS.historyApiToken;
     const secretComment = await source.api('POST', `/projects/history-source/tasks/${secretTask.body.task.id}/comment`, {
       message: `Do not export this token: ${fakeHistoryToken}`, author: 'reviewer',
     });
