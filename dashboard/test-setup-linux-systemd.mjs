@@ -539,7 +539,7 @@ const preservedUnit = port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
       `Environment="JWT_SECRET=${INSTALLER_FIXTURES.caseSensitiveJwt}"`,
       '[service]',
-      'Environment="CUSTOM_IGNORED=must-not-be-rewritten"',
+      `Environment="CUSTOM_IGNORED=${INSTALLER_FIXTURES.mustNotBeRewritten}"`,
     ]),
   });
   ok(result.code === 1, 'lowercase [service] is not treated as the systemd [Service] section');
@@ -553,7 +553,7 @@ const preservedUnit = port => existingUnit([
     initialUnit: port => existingUnit([
       `Environment="FLOWBOARD_PORT=${port}"`,
       `Environment="JWT_SECRET=${INSTALLER_FIXTURES.bomJwt}"`,
-      '\uFEFFEnvironment="CUSTOM_AFTER_BOM=must-be-preserved"',
+      `\uFEFFEnvironment="CUSTOM_AFTER_BOM=${INSTALLER_FIXTURES.mustBePreserved}"`,
     ]),
   });
   ok(result.code === 1, 'a BOM on a later systemd unit line fails closed');
@@ -878,7 +878,7 @@ for (const [label, assignment] of [
       `Environment="CUSTOM_OCTAL=${INSTALLER_FIXTURES.diagnosticValues.octalEscape}"`,
     ].join(' '),
     FAKE_SYSTEMD_ANALYZE_STDERR: [
-      'systemd-analyze: warning: malformed generated unit abc',
+      `systemd-analyze: warning: malformed generated unit ${INSTALLER_FIXTURES.analyzerShortSecret}`,
       `CUSTOM_CREDENTIAL=${INSTALLER_FIXTURES.dropInCredential} CUSTOM_OVERRIDDEN=${INSTALLER_FIXTURES.overriddenCredential}`,
       `CUSTOM_LITERAL_BELL=${INSTALLER_FIXTURES.diagnosticValues.bell}`,
       `CUSTOM_LITERAL_TAB=${INSTALLER_FIXTURES.diagnosticValues.tab}`,
