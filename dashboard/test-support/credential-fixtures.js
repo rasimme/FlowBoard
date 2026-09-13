@@ -19,7 +19,16 @@ function createTelegramBotToken(scope, label) {
   return `${botId}:${digest(scope, `${label}:value`)}`;
 }
 
-function createCredentialFixtures(scope = 'flowboard-test') {
+function createPrivateKeyExample() {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
+  return privateKey;
+}
+
+function createCredentialFixtures(scope = 'flowboard-test', { includeHighConfidenceExamples = false } = {}) {
   const name = String(scope);
   const jwtSecret = digest(name, 'jwt-secret');
   const jwtLike = [
@@ -40,9 +49,8 @@ function createCredentialFixtures(scope = 'flowboard-test') {
   const assignmentValue = digest(name, 'assignment');
   const urlUsername = `review-${digest(name, 'url-user').slice(0, 16)}`;
   const urlPassword = `review-${digest(name, 'url-password').slice(0, 24)}`;
-  const privateKeyBody = Buffer.from(digest(name, 'private-key'), 'utf8').toString('base64');
 
-  return Object.freeze({
+  const fixtures = {
     jwtSecret,
     wrongJwtSecret: digest(name, 'wrong-jwt-secret'),
     botToken,
@@ -61,8 +69,11 @@ function createCredentialFixtures(scope = 'flowboard-test') {
     legacyCookie: `flowboard_session=${jwtLike}`,
     parentSecret: digest(name, 'parent-secret'),
     discardedCredential: digest(name, 'discarded-credential'),
-    highConfidenceExamples: Object.freeze([
-      `-----BEGIN RSA PRIVATE KEY-----\n${privateKeyBody}\n-----END RSA PRIVATE KEY-----`,
+  };
+
+  if (includeHighConfidenceExamples) {
+    fixtures.highConfidenceExamples = Object.freeze([
+      createPrivateKeyExample(),
       `Bearer ${bearerToken}`,
       jwtLike,
       optionalApiToken,
@@ -73,8 +84,10 @@ function createCredentialFixtures(scope = 'flowboard-test') {
       createTelegramBotToken(name, 'telegram-example'),
       `https://${urlUsername}:${urlPassword}@example.test/path`,
       `password: ${assignmentValue}`,
-    ]),
-  });
+    ]);
+  }
+
+  return Object.freeze(fixtures);
 }
 
 module.exports = {

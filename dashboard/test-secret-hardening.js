@@ -13,7 +13,9 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const hzl = require('./hzl-service.js');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
+const CREDENTIALS = createCredentialFixtures('secret-hardening');
 const ROOT = __dirname;
 const PORT = 18838;
 
@@ -74,7 +76,7 @@ async function run() {
     await waitForServer(base, child);
     const res = await fetch(base + '/api/settings/github-token', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: 'ghp_' + 'a'.repeat(36) }),
+      body: JSON.stringify({ token: CREDENTIALS.githubToken }),
     });
     const body = await res.json();
     ok(res.status === 200 && body.ok === true, 'PUT github-token succeeds');

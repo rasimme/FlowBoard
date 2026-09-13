@@ -6,7 +6,9 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
+const CREDENTIALS = createCredentialFixtures('overview-api');
 const ROOT = __dirname;
 const PORT = 18811;
 
@@ -115,7 +117,7 @@ async function run() {
     ok(r.status === 200 && r.body?.set === false, 'token store starts empty');
     r = await api('PUT', '/settings/github-token', { token: 'short' });
     ok(r.status === 400, 'token store rejects a malformed token');
-    const secret = 'ghp_' + 'x'.repeat(36);
+    const secret = CREDENTIALS.githubToken;
     r = await api('PUT', '/settings/github-token', { token: secret });
     ok(r.status === 200, 'token store accepts a valid PAT');
     r = await api('GET', '/settings/github-token');

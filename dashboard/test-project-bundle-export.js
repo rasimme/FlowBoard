@@ -17,7 +17,7 @@ const { validateBundle } = require('./project-bundle-validator.js');
 const { containsSensitiveContent, scanSensitiveContent } = require('./project-bundle-secrets.js');
 const { createCredentialFixtures } = require('./test-support/credential-fixtures.js');
 
-const CREDENTIALS = createCredentialFixtures('project-bundle-export');
+const CREDENTIALS = createCredentialFixtures('project-bundle-export', { includeHighConfidenceExamples: true });
 
 function task(id, extra = {}) {
   return {

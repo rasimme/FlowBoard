@@ -62,7 +62,7 @@ async function run() {
     await waitForServer(base, child);
 
     const goodCookie = 'flowboard_session=' + jwt.sign({ id: 42, username: 't' }, SECRET, { algorithm: 'HS256' });
-    const wrongSecret = 'flowboard_session=' + jwt.sign({ id: 42 }, CREDENTIALS.wrongJwtSecret, { algorithm: 'HS256' });
+    const wrongCookie = 'flowboard_session=' + jwt.sign({ id: 42 }, CREDENTIALS.wrongJwtSecret, { algorithm: 'HS256' });
     const noneAlg = 'flowboard_session=' + jwt.sign({ id: 42 }, null, { algorithm: 'none' });
     const CF = { 'cf-ray': 'test-ray-1', 'cf-connecting-ip': '203.0.113.9' };
 
@@ -71,7 +71,7 @@ async function run() {
 
     // Protected route over the tunnel: needs a valid session.
     ok((await req(base, '/api/projects', CF)).status === 403, 'cf-ray + no cookie → 403');
-    ok((await req(base, '/api/projects', { ...CF, Cookie: wrongSecret })).status === 403, 'cf-ray + wrong-secret token → 403');
+    ok((await req(base, '/api/projects', { ...CF, Cookie: wrongCookie })).status === 403, 'cf-ray + wrong-secret token → 403');
     ok((await req(base, '/api/projects', { ...CF, Cookie: noneAlg })).status === 403, 'cf-ray + alg=none token → 403 (algorithm pinned)');
     ok((await req(base, '/api/projects', { ...CF, Cookie: goodCookie })).status === 200, 'cf-ray + valid HS256 cookie → 200');
 
