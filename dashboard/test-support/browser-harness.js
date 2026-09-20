@@ -178,7 +178,7 @@ async function closeBrowser(browser, timeoutMs = CLEANUP_TIMEOUT_MS) {
  * running fn (the caller should reporter.skip()).
  *
  * @param {(ctx: {api, page, base, ROOT}) => Promise<void>} fn
- * @param {{ port?: number, viewport?: {width,height} }} [opts]
+ * @param {{ port?: number, viewport?: {width,height}, env?: Record<string,string> }} [opts]
  */
 async function withDashboard(fn, opts = {}) {
   if (!browserAvailable()) return { skipped: true, reason: 'Edge or dist/ missing' };
@@ -192,7 +192,8 @@ async function withDashboard(fn, opts = {}) {
     cwd: ROOT,
     env: { ...process.env, FLOWBOARD_PORT: String(port), FLOWBOARD_HOST: '127.0.0.1',
       OPENCLAW_WORKSPACE: path.join(tmp, 'ws'), FLOWBOARD_PROJECTS_DIR: path.join(tmp, 'projects'),
-      HZL_DB_PATH: path.join(tmp, 'fb.db'), NODE_ENV: 'test', TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_TOKENS: '' },
+      HZL_DB_PATH: path.join(tmp, 'fb.db'), NODE_ENV: 'test', TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_TOKENS: '',
+      ...opts.env },
     stdio: 'ignore',
   });
 

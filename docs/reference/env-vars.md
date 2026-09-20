@@ -82,6 +82,12 @@ returns a typed error and clears the old cookie rather than inheriting another
 bot's session. Steady-state non-auth API calls may keep using an established
 cookie after their originally valid WebApp init-data ages beyond five minutes.
 
+## Embedding
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FLOWBOARD_FRAME_ANCESTORS` | empty | Comma-separated list of additional origins allowed to embed the dashboard in an iframe (e.g. `http://127.0.0.1:18860,https://gateway.example.ts.net` for the OpenClaw Control UI). Each entry must be an absolute `http:`/`https:` origin — no path, query, or credentials; invalid entries are ignored with a startup warning that names them, never a crash. When at least one valid origin is configured, it is appended to the CSP `frame-ancestors` directive and `X-Frame-Options` is omitted (it cannot express more than one allowed ancestor; CSP `frame-ancestors` takes precedence in modern browsers). Unset or all-invalid: both headers are unchanged from the `'self' https://web.telegram.org` default. Only add origins you control. |
+
 ## Telemetry
 
 | Variable | Default | Purpose |

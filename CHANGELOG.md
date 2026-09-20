@@ -1,5 +1,9 @@
 # Changelog
 
+### Unreleased
+
+- **Configurable frame-ancestors for Control UI embedding (T-487-10).** `FLOWBOARD_FRAME_ANCESTORS` lets operators allow-list additional origins (e.g. the OpenClaw Control UI) to embed the dashboard in an iframe. When set to one or more valid origins, CSP `frame-ancestors` grows to include them and `X-Frame-Options` is omitted (it cannot express more than one allowed ancestor); invalid entries are dropped with a named startup warning instead of crashing the server, and leaving the variable unset keeps both headers byte-identical to today.
+
 ### v5.2.1 (2026-08-28) — Import Safety & Agent UX Polish
 
 - **Import sensitive bundles safely.** Structurally valid bundles with credential-like content now offer precise server-side redaction by default; importing unchanged content requires an explicit confirmation.
