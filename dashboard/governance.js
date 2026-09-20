@@ -52,6 +52,20 @@ function isLoopbackRequest(req) {
   return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
 }
 
+/**
+ * T-487-7 (ADR-0040): the OpenClaw Gateway service caller, or null.
+ *
+ * `req.serviceCaller` is set by the server's serviceCallerMiddleware only
+ * after the shared service token matched and the peer was accepted. It is
+ * middleware-owned state in exactly the same sense as `req.user`, so reading
+ * it here does not widen the ADR-0033 trust contract.
+ */
+function serviceCallerOf(req) {
+  const caller = req?.serviceCaller;
+  if (!caller || typeof caller !== 'object') return null;
+  return caller.source === 'openclaw-gateway' ? caller : null;
+}
+
 /** Resolve a principal from middleware-owned state, never caller claims. */
 function resolvePrincipal(req) {
   const descriptive = descriptiveClaims(req);
@@ -65,6 +79,38 @@ function resolvePrincipal(req) {
       // This is the verified bot/session mapping available in the current
       // auth contract.  It is audit context, not an authorization input.
       authSessionId: user.agentId == null ? null : String(user.agentId),
+      descriptive,
+    };
+  }
+
+  // A FlowBoard Telegram/JWT session still wins above: it is FlowBoard's own
+  // verification of this exact request. The Gateway credential comes second
+  // and delegates the *Gateway's* verification of its signed-in operator.
+  const service = serviceCallerOf(req);
+  if (service) {
+    if (service.profileId) {
+      return {
+        kind: 'human',
+        verified: true,
+        source: 'openclaw-gateway',
+        actor: `gateway:${String(service.profileId)}`,
+        humanId: String(service.profileId),
+        displayName: service.displayName || null,
+        // Descriptive routing context the Gateway forwarded; never authority.
+        authSessionId: service.sessionKey || null,
+        agentId: service.agentId || null,
+        scopes: Array.isArray(service.scopes) ? [...service.scopes] : [],
+        descriptive,
+      };
+    }
+    // A Gateway call without a profile (CLI, agent tool, unauthenticated
+    // connection) is the trusted local operator, not a verified human — it is
+    // the same authority a loopback caller already has.
+    return {
+      kind: 'agent', verified: false, source: 'openclaw-gateway',
+      actor: 'local:operator', humanId: null, authSessionId: null,
+      agentId: service.agentId || null,
+      scopes: Array.isArray(service.scopes) ? [...service.scopes] : [],
       descriptive,
     };
   }
@@ -222,7 +268,7 @@ function setGovernanceMode({ store, project = null, principal, nextMode, now = D
 
 module.exports = {
   CONFIRMATION_MAX_AGE_MS, GOVERNANCE_MODES, DEFAULT_GOVERNANCE_MODE, CONFIRM_REJECT,
-  resolvePrincipal, isVerifiedHuman, proposalIdentityOf, verifyHumanConfirmation,
+  resolvePrincipal, serviceCallerOf, isVerifiedHuman, proposalIdentityOf, verifyHumanConfirmation,
   getGovernanceMode, getGovernanceModeAudit, setGovernanceMode,
   projectSettingKey, scopedProjectSettingKey,
 };

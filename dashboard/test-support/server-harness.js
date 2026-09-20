@@ -60,7 +60,14 @@ async function stopChild(child) {
   }
 }
 
-function isolatedEnvironment(parentEnv, paths, port) {
+/**
+ * Build the isolated child environment.
+ *
+ * `extraEnv` is merged last so a suite can add or override one variable (e.g.
+ * FLOWBOARD_SERVICE_TOKEN, AUTH_ALWAYS) without copying the whole isolation
+ * list and accidentally dropping a guard from it.
+ */
+function isolatedEnvironment(parentEnv, paths, port, extraEnv = {}) {
   const safeParent = {};
   for (const key of ['PATH', 'TMPDIR', 'TEMP', 'TMP', 'LANG', 'LC_ALL', 'TZ', 'CI', 'NO_COLOR', 'FORCE_COLOR']) {
     if (typeof parentEnv?.[key] === 'string') safeParent[key] = parentEnv[key];
@@ -91,6 +98,7 @@ function isolatedEnvironment(parentEnv, paths, port) {
     OPENAI_API_KEY: '',
     ANTHROPIC_API_KEY: '',
     OPENROUTER_API_KEY: '',
+    ...extraEnv,
   };
 }
 
@@ -132,7 +140,7 @@ async function withIsolatedDashboard(fn, options = {}) {
     if (typeof options.prepare === 'function') await options.prepare(paths);
     const port = options.port || await reservePort();
     const base = `http://127.0.0.1:${port}`;
-    const env = isolatedEnvironment(options.parentEnv || process.env, paths, port);
+    const env = isolatedEnvironment(options.parentEnv || process.env, paths, port, options.env || {});
 
     child = spawn(process.execPath, ['server.js'], {
       cwd: ROOT,

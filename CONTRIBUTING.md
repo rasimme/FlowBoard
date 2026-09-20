@@ -91,6 +91,58 @@ git commit -m "feat: my change"
 git push origin feat/my-change
 ```
 
+### Plugin host compatibility
+
+`openclaw/` supports two host generations at once, and the split is not
+optional:
+
+| Layer | Hosts | Entry point |
+|---|---|---|
+| Baseline — `agent:bootstrap` hook + standalone dashboard | **≥ 2026.6.6** (`openclaw.install.minHostVersion`) | `openclaw/flowboard-plugin.js` |
+| Feature contract + native Control UI page | **≥ 2026.9.2** plus the *Custom plugin UI* lab | `openclaw/feature-entry.js` |
+
+`openclaw/plugin-sdk/feature-plugin` and `feature-contract` do not exist before
+2026.9.2. A top-level import of them in the entry does not merely disable the
+new UI on an older host — the whole entry fails to load, so the hook every
+agent run depends on is never registered. The entry therefore loads the feature
+layer through one guarded, synchronous `require('./feature-entry.js')` and
+falls back to the hook-only definition, recording the reason and reporting it
+once at debug level.
+
+Rules when touching these files:
+
+- **Never** add a static `openclaw/...` import to `openclaw/flowboard-plugin.js`.
+  `contract.js`, `adapter.js` and `feature-entry.js` are feature-only and must
+  stay unreachable from the baseline path.
+- **Never** use top-level `await` in the entry — the host loads plugin entries
+  through jiti (CJS), and the runtime treats a function default export as
+  `register`, so the entry must resolve synchronously.
+- `dashboard/test-plugin-entry-compat.js` enforces both rules; run it after any
+  change to the entry.
+- Keep `openclaw.install.minHostVersion` at `>=2026.6.6` and
+  `openclaw.compat.pluginApi` at `>=2026.5.20`. `openclaw.build.openclawVersion`
+  tracks the SDK the Control UI bundle was built with and is a separate thing.
+
+### Plugin build
+
+`openclaw/` is an OpenClaw feature plugin. After changing anything under
+`openclaw/control-ui/`, `openclaw/contract.js`, or the plugin config schema,
+regenerate `openclaw.plugin.json` and the browser bundle:
+
+```bash
+npm install          # repo root — installs the pinned openclaw + esbuild dev deps
+npm run build:plugin # openclaw plugins build → dist/control-ui/<hash>/ + manifest
+npm run validate:plugin
+```
+
+Needs **Node ≥ 24.16** (the OpenClaw CLI refuses older runtimes); the dashboard
+itself still runs on the repo's normal Node version. The build regenerates
+`id`, `name`, `description`, `version`, `configSchema`, `activation`,
+`contracts` and `controlUi` from the plugin entry, while `enabledByDefault`,
+`uiHints` and `configContracts` are hand-authored and survive regeneration.
+Never hand-edit a generated field — `validate:plugin` fails on a stale
+manifest. `dist/` is gitignored and is built before packing a release.
+
 ## Branch strategy
 
 - **`main`** — stable releases only

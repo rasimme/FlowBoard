@@ -5,7 +5,7 @@
   "description": "Project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "enabledByDefault": false,
   "activation": {
-    "onStartup": false
+    "onStartup": true
   },
   "configSchema": {
     "type": "object",
@@ -26,6 +26,11 @@
         "type": "string",
         "minLength": 1,
         "description": "Optional dashboard API base URL for the project-context hook, for example http://localhost:18843."
+      },
+      "serviceToken": {
+        "type": "string",
+        "minLength": 32,
+        "description": "Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator; store it as a SecretRef, never inline."
       }
     }
   },
@@ -44,12 +49,32 @@
       "label": "Dashboard Base URL",
       "help": "Optional full base URL for the project-context hook. Prefer this for proxy, tunnel, or non-localhost setups.",
       "advanced": true
+    },
+    "serviceToken": {
+      "label": "Service Token",
+      "help": "Shared credential the Gateway sends to the dashboard (FLOWBOARD_SERVICE_TOKEN, at least 32 characters). Store it as a SecretRef; it lets the Gateway act for the signed-in operator on loopback.",
+      "advanced": true,
+      "secret": true
     }
   },
   "configContracts": {
     "secretInputs": {
       "bundledDefaultEnabled": false,
-      "paths": []
+      "paths": [
+        {
+          "path": "serviceToken",
+          "expected": "string"
+        }
+      ]
     }
+  },
+  "controlUi": {
+    "entry": "dist/control-ui/5ca047bf0c637bd50b6545967e0b0ce6b948735b8097a75e9cb86f4e01dd7487/index.js",
+    "styles": [
+      "dist/control-ui/5ca047bf0c637bd50b6545967e0b0ce6b948735b8097a75e9cb86f4e01dd7487/index.css"
+    ]
+  },
+  "contracts": {
+    "tools": []
   }
 }

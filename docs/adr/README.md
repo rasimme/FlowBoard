@@ -80,6 +80,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0037](0037-trusted-collaborators-and-native-control-ui.md) — Trusted collaborators and a native Control UI that runs with operator authority (2026-09-20; amends the premise of ADR-0029, extends ADR-0033)
 - [ADR-0038](0038-workboard-coexistence-flowboard-canonical.md) — Workboard coexistence — FlowBoard stays the canonical task store; link, never mirror (2026-09-20)
 - [ADR-0039](0039-session-scoped-project-binding.md) — Session-scoped project binding with agent-level fallback; `sessionKey` is context, never authorization (2026-09-20)
+- [ADR-0040](0040-gateway-verified-principal-via-service-credential.md) — Gateway-verified principal via a loopback service credential; `X-FlowBoard-Gateway-*` headers are attribution only after the token matched (2026-09-20; extends ADR-0033)
 
 ## See also
 

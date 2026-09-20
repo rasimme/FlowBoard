@@ -21,7 +21,14 @@ const FORBIDDEN_PACK_PATTERNS = [
   /^dashboard\/dashboard-data\.json$/,
   /^dashboard\/\.cloudflared\//,
   /(^|\/)node_modules\//,
-  /(^|\/)dist\//,
+  // T-487-7: `dist/` stays forbidden everywhere except the one artifact the
+  // host itself generates and then loads by manifest path — the Control UI
+  // bundle from `openclaw plugins build`. A published install has no build
+  // step, so without these bytes the plugin's native UI cannot load at all.
+  // Everything else under any dist/ (notably dashboard/dist/) is still a
+  // build output that must never ship.
+  /(^|\/)dist\/(?!control-ui\/)/,
+  /^dashboard\/dist\//,
   /\.(db|sqlite|log)$/i
 ];
 
@@ -109,7 +116,11 @@ if (!Array.isArray(pkg.files) || pkg.files.length === 0) {
 }
 
 const packageScripts = Object.keys(pkg.scripts || {});
-const allowedPublishedScripts = new Set(['setup']);
+// `setup` is the one script an installed copy runs. T-487-7 adds the two
+// plugin-authoring scripts the OpenClaw SDK expects by name
+// (`openclaw plugins build` / `validate`): they touch nothing at install time
+// and exist so contributors do not have to remember the CLI invocation.
+const allowedPublishedScripts = new Set(['setup', 'build:plugin', 'validate:plugin']);
 for (const scriptName of packageScripts) {
   if (!allowedPublishedScripts.has(scriptName)) {
     fail(`package.json script ${scriptName} is dev/release-only; run scripts directly so package metadata stays install-focused`);

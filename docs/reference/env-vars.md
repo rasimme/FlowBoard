@@ -88,6 +88,17 @@ cookie after their originally valid WebApp init-data ages beyond five minutes.
 |---|---|---|
 | `FLOWBOARD_FRAME_ANCESTORS` | empty | Comma-separated list of additional origins allowed to embed the dashboard in an iframe (e.g. `http://127.0.0.1:18860,https://gateway.example.ts.net` for the OpenClaw Control UI). Each entry must be an absolute `http:`/`https:` origin — no path, query, or credentials; invalid entries are ignored with a startup warning that names them, never a crash. When at least one valid origin is configured, it is appended to the CSP `frame-ancestors` directive and `X-Frame-Options` is omitted (it cannot express more than one allowed ancestor; CSP `frame-ancestors` takes precedence in modern browsers). Unset or all-invalid: both headers are unchanged from the `'self' https://web.telegram.org` default. Only add origins you control. |
 
+## OpenClaw Gateway facade
+
+The OpenClaw plugin runs in the Gateway process and calls this dashboard over
+loopback HTTP on the operator's behalf. See
+[ADR-0040](../adr/0040-gateway-verified-principal-via-service-credential.md).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FLOWBOARD_SERVICE_TOKEN` | empty | Shared service credential between this dashboard and the OpenClaw FlowBoard plugin (`plugins.entries.flowboard.config.serviceToken`, ideally a SecretRef). At least 32 characters — generate with `openssl rand -hex 32`. A request presenting it as `Authorization: Bearer <token>` from a loopback peer is admitted even under `AUTH_ALWAYS=true`, and **only then** are the `X-FlowBoard-Gateway-Profile-Id` / `-Profile-Name` / `-Scopes` / `-Agent-Id` / `-Session-Key` headers read, so a task created from the Control UI is attributed to the Gateway-verified operator instead of the anonymous local operator. A token that is set but shorter than 32 characters is **ignored** with a named startup warning; unset leaves the facade attributing everything to `local:operator`. Treat it like a password: it lets its holder act as that operator. |
+| `FLOWBOARD_SERVICE_TOKEN_ALLOW_REMOTE` | `false` | `true` accepts `FLOWBOARD_SERVICE_TOKEN` from non-loopback peers and through a Cloudflare tunnel, and logs a startup warning. Only for a Gateway behind a trusted TLS front-end; a leaked token then acts as the operator from anywhere. Leave unset for the normal same-host install. |
+
 ## Telemetry
 
 | Variable | Default | Purpose |

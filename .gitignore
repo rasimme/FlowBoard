@@ -23,6 +23,9 @@ CLAUDE.md
 
 # Vite build output
 dashboard/dist/
+
+# Plugin Control UI build output (openclaw plugins build)
+/dist/
 .flowboard-v5-demo.json
 .tmp/
 

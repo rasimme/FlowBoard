@@ -68,6 +68,7 @@ const specifyWorkerBridge = require('./specify-worker-bridge');
 const specifyWorkerOpenclaw = require('./specify-worker-openclaw');
 const specifyPolicy = require('./specify-policy');
 const governance = require('./governance');
+const servicePrincipal = require('./service-principal.js');
 
 // Production Specify worker: OpenClaw CLI one-shot adapter (T-262-11).
 // Tests configure their own (fake) adapter; SPECIFY_WORKER_DISABLED opts out.
@@ -235,6 +236,22 @@ if (FRAME_ANCESTORS_CONFIG.invalid.length > 0) {
     `⚠️  FLOWBOARD_FRAME_ANCESTORS: ignoring invalid origin(s) ` +
     `${FRAME_ANCESTORS_CONFIG.invalid.map((v) => JSON.stringify(v)).join(', ')} — each entry must be an ` +
     `absolute http(s) origin with no path, query, or credentials (e.g. http://127.0.0.1:18860).`
+  );
+}
+
+// T-487-7 (ADR-0040): shared service credential for the OpenClaw Gateway
+// facade. A matching `Authorization: Bearer <token>` from the loopback peer
+// lets the Gateway act for the operator it verified, stated in
+// X-FlowBoard-Gateway-* headers. Without a valid token those headers are
+// ignored completely — they never carry authority on their own.
+const SERVICE_TOKEN_CONFIG = servicePrincipal.parseServiceToken(process.env.FLOWBOARD_SERVICE_TOKEN);
+const SERVICE_TOKEN = SERVICE_TOKEN_CONFIG.token;
+const SERVICE_TOKEN_ALLOW_REMOTE = process.env.FLOWBOARD_SERVICE_TOKEN_ALLOW_REMOTE === 'true';
+if (SERVICE_TOKEN_CONFIG.warning) console.warn(SERVICE_TOKEN_CONFIG.warning);
+if (SERVICE_TOKEN && SERVICE_TOKEN_ALLOW_REMOTE) {
+  console.warn(
+    '⚠️  FLOWBOARD_SERVICE_TOKEN_ALLOW_REMOTE=true — the service credential is accepted from non-loopback ' +
+    'peers. Only do this behind a trusted TLS front-end; a leaked token then acts as the operator from anywhere.'
   );
 }
 
@@ -431,7 +448,37 @@ function authenticateOrChallenge(req, res, next) {
   return rejectTelegramAuth(req, res, validateTelegramWebApp(null));
 }
 
+// T-487-7 (ADR-0040): resolve the OpenClaw Gateway service caller before any
+// auth decision, and only from server-verified request state (bearer token +
+// transport peer). A request without a valid token never reaches the
+// X-FlowBoard-Gateway-* headers at all, so an untrusted client cannot claim a
+// profile by sending them. Runs on every /api/ request, including /health and
+// /info, so a later route sees the same resolved state.
+function serviceCallerMiddleware(req, res, next) {
+  const resolution = servicePrincipal.resolveServiceCaller(req, {
+    token: SERVICE_TOKEN,
+    allowRemote: SERVICE_TOKEN_ALLOW_REMOTE,
+  });
+  if (resolution.ok) {
+    req.serviceCaller = resolution.caller;
+  } else if (resolution.reason === 'token_mismatch' || resolution.reason === 'remote_not_allowed') {
+    // Loud enough to notice a misconfigured or hostile Gateway, quiet enough
+    // not to log the presented credential.
+    console.warn(
+      `[service-auth] rejected Gateway service call (${resolution.reason}) from ` +
+      `${getClientIp(req, TRUSTED_PROXY_IPS)} — ${new Date().toISOString()}`
+    );
+  }
+  return next();
+}
+
 function telegramAuthMiddleware(req, res, next) {
+  // T-487-7: a verified service credential is its own transport admission. It
+  // satisfies auth even under AUTH_ALWAYS=true, because unlike the loopback
+  // bypass it is a credential the operator installed on both sides. Which
+  // principal it produces is decided in governance.resolvePrincipal(), not
+  // here — admission is not attribution (ADR-0033).
+  if (req.serviceCaller) return next();
   // A cf-ray marker raises the auth requirement because cloudflared connects
   // from loopback. The marker is fail-closed routing only; it is not trusted
   // as proof of the client IP (the rate limiter verifies the socket peer).
@@ -526,6 +573,9 @@ app.use('/api/auth', (req, res, next) => {
   next();
 });
 
+// T-487-7: service-credential resolution runs before the auth decision.
+app.use('/api/', serviceCallerMiddleware);
+
 // Global auth on all /api/ routes (except /health, /info and CORS preflight)
 app.use('/api/', (req, res, next) => {
   if (req.path === '/health') return next();
@@ -540,6 +590,16 @@ app.use('/api/', (req, res, next) => {
 
 // S-06: CSRF mitigation — verify Origin header on mutating requests
 // Browsers send Origin on cross-origin requests; HTML forms cannot set Content-Type: application/json
+//
+// T-487-7: the check is deliberately conditional on an Origin header being
+// present, and that is exactly what keeps it correct for bearer callers. CSRF
+// is an ambient-credential attack: it needs the browser to attach a cookie the
+// victim already holds. The OpenClaw Gateway adapter is a Node client — it
+// sends no Origin and no cookie, and its credential is a token the operator
+// installed, which a hostile page cannot obtain or replay. Requiring an Origin
+// here would block every non-browser client without removing any attack. A
+// browser request that *does* carry an Origin is still checked, service
+// credential or not.
 app.use('/api/', (req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
     const origin = req.headers['origin'];

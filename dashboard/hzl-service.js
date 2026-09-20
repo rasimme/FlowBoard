@@ -1217,6 +1217,15 @@ function buildCreationAudit(origin, context) {
       kind: principal.kind === 'human' && principal.verified === true ? 'human' : 'agent',
       actor: typeof principal.actor === 'string' && principal.actor ? principal.actor : 'agent:unverified',
       verified: principal.kind === 'human' && principal.verified === true,
+      // T-487-7: where the verification came from, and the human-readable name
+      // that goes with the opaque actor id. Both are set by the server-side
+      // principal resolver (governance.js) and are audit context only.
+      ...(typeof principal.source === 'string' && principal.source
+        ? { source: principal.source.slice(0, 64) }
+        : {}),
+      ...(typeof principal.displayName === 'string' && principal.displayName
+        ? { displayName: principal.displayName.slice(0, 128) }
+        : {}),
     },
     createdAt: new Date().toISOString(),
   };
