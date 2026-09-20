@@ -7,6 +7,7 @@ Pick your path — the docs are organized by who you are:
 You run the dashboard and want to get things done.
 
 - [User guide](guide/) — getting started, searching, mobile use, managing projects.
+- [FlowBoard inside OpenClaw](guide/openclaw-control-ui.md) — the native Control UI page and its rail.
 - [README](../README.md) — install and quick start.
 
 ## 🤖 Connect an agent

@@ -37,33 +37,145 @@ import { contract } from './contract.js';
 /** Bounded per-connection identity cache; oldest entry is evicted first. */
 const MAX_TRACKED_CONNECTIONS = 64;
 
+/** How often the background service looks for board changes, while watched. */
+export const POLL_INTERVAL_MS = 10_000;
+
 /**
- * Per-connection map of Gateway-verified operator identities.
+ * Per-connection registry of Control UI clients and their Gateway-verified
+ * operator identities.
  *
- * Only `flowboard.ui.identity` writes to it, and only from the host-supplied
- * `client` object, so a browser cannot inject a profile it does not own.
+ * Two facts live here, and only one of them comes from the browser's request:
+ *
+ *  - **Presence.** A connection that called `flowboard.ui.identity` has a
+ *    FlowBoard UI open. That is what gates the background poll below, so an
+ *    idle Gateway does nothing at all.
+ *  - **Profile.** The host-attested `authenticatedUserProfile` of that same
+ *    connection, or null when there is none (a CLI or token-only client).
+ *    Only `flowboard.ui.identity` writes it, and only from the host-supplied
+ *    `client` object, so a browser cannot inject a profile it does not own.
  */
-function createPrincipalRegistry() {
+function createPrincipalRegistry(onPresenceChange) {
   const byConnection = new Map();
+  const notify = () => {
+    try {
+      onPresenceChange?.(byConnection.size);
+    } catch {
+      /* presence is a hint for the poller; never fail a request over it */
+    }
+  };
   return {
     remember(connId, principal) {
       if (!connId) return;
       byConnection.delete(connId);
-      byConnection.set(connId, principal);
+      byConnection.set(connId, principal || null);
       while (byConnection.size > MAX_TRACKED_CONNECTIONS) {
         const oldest = byConnection.keys().next();
         if (oldest.done) break;
         byConnection.delete(oldest.value);
       }
+      notify();
     },
     forget(connId) {
-      if (connId) byConnection.delete(connId);
+      if (connId && byConnection.delete(connId)) notify();
+    },
+    has(connId) {
+      return Boolean(connId && byConnection.has(connId));
     },
     get(connId) {
       return (connId && byConnection.get(connId)) || null;
     },
     get size() {
       return byConnection.size;
+    },
+  };
+}
+
+/**
+ * Background change detection for `feature.watch` (T-487-8).
+ *
+ * `feature.watch` refreshes on contract events and never polls, so an agent
+ * moving a task to review has to reach the browser as an event. FlowBoard's
+ * dashboard has no push channel into the Gateway, so the plugin polls it — but
+ * cheaply and only when it can matter:
+ *
+ *  - one `GET /api/projects` per tick, which the dashboard answers from its
+ *    in-memory projection (`taskCounts`), and only while a Control UI client
+ *    is registered;
+ *  - an event is emitted only when a fingerprint actually moved, so a quiet
+ *    board produces no traffic in the browser at all.
+ *
+ * Known gap: the fingerprint is per-project lifecycle status plus the review
+ * and blocked counts. A change that moves neither — a retitled task, or a
+ * stuck indicator appearing on work that was already in progress — is picked
+ * up on the next refresh triggered by anything else, not by this poll.
+ * Documented in docs/guide/openclaw-control-ui.md.
+ */
+export function createChangePoller({ adapter, events, hasClients, logger, intervalMs = POLL_INTERVAL_MS }) {
+  let timer = null;
+  let enabled = false;
+  let busy = false;
+  let previous = null;
+  let failures = 0;
+
+  const fingerprint = (projects) =>
+    new Map(projects.map((project) => [project.name, `${project.status}|${project.counts.review}|${project.counts.blocked}`]));
+
+  async function tick() {
+    if (!enabled || busy) return;
+    if (!hasClients()) {
+      // Nobody is watching: forget the baseline so the next client starts from
+      // its own fresh fetch instead of a replayed diff.
+      previous = null;
+      return;
+    }
+    busy = true;
+    try {
+      // No principal: this read belongs to the Gateway's own bookkeeping, not
+      // to any signed-in operator, so it carries no profile headers.
+      const next = fingerprint(await adapter.listProjects(null));
+      if (previous) {
+        let membershipChanged = false;
+        for (const [name, print] of next) {
+          if (!previous.has(name)) membershipChanged = true;
+          else if (previous.get(name) !== print) events.emit('tasks-changed', { project: name });
+        }
+        for (const name of previous.keys()) if (!next.has(name)) membershipChanged = true;
+        if (membershipChanged) events.emit('projects-changed', {});
+      }
+      previous = next;
+      failures = 0;
+    } catch (error) {
+      previous = null;
+      failures += 1;
+      // One line per outage, not one per tick.
+      if (failures === 1) {
+        logger?.debug?.(`[flowboard] change poll paused: ${String(error?.message || error).slice(0, 200)}`);
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  return {
+    start() {
+      if (timer) return;
+      enabled = true;
+      timer = setInterval(() => void tick(), intervalMs);
+      timer.unref?.();
+      logger?.debug?.(`[flowboard] change poll armed (${intervalMs} ms, only while a Control UI client is connected)`);
+    },
+    stop() {
+      enabled = false;
+      previous = null;
+      if (timer) clearInterval(timer);
+      timer = null;
+    },
+    /** Prime immediately when the first client arrives. */
+    wake() {
+      if (enabled) void tick();
+    },
+    get running() {
+      return Boolean(timer);
     },
   };
 }
@@ -138,7 +250,16 @@ export function createFeatureEntry(baseline) {
     setup(api, events) {
       const pluginConfig = api.pluginConfig || {};
       const adapter = createFlowBoardAdapter(pluginConfig);
-      const registry = createPrincipalRegistry();
+      // Declared before the registry so the presence callback can never read
+      // it in its temporal dead zone, even if a host calls in during setup.
+      let poller = null;
+      const registry = createPrincipalRegistry(() => poller?.wake());
+      poller = createChangePoller({
+        adapter,
+        events,
+        logger: api.logger,
+        hasClients: () => registry.size > 0,
+      });
 
       // Exactly what an old host registers, and nothing else: the
       // project-context hook stays the baseline contract (ADR-0001).
@@ -160,11 +281,17 @@ export function createFeatureEntry(baseline) {
           const client = opts?.client;
           const connId = optionalString(client?.connId);
           const profile = readConnectionProfile(client);
-          if (profile) {
-            registry.remember(connId, { ...profile, scopes: readConnectionScopes(client?.connect?.scopes) });
+          // Presence is recorded whether or not this connection has a profile:
+          // a token-only client still has a FlowBoard page open, and that is
+          // what the background poll is gated on. Only the *profile* half is
+          // conditional, and it comes from the host, never from the caller.
+          const known = registry.has(connId);
+          registry.remember(
+            connId,
+            profile ? { ...profile, scopes: readConnectionScopes(client?.connect?.scopes) } : null,
+          );
+          if (!known) {
             client?.connectionSignal?.addEventListener?.('abort', () => registry.forget(connId), { once: true });
-          } else {
-            registry.forget(connId);
           }
           opts.respond(true, {
             dashboardUrl: adapter.dashboardUrl(),
@@ -174,6 +301,22 @@ export function createFeatureEntry(baseline) {
         },
         { scope: 'operator.read', profileAccess: 'required' },
       );
+
+      // The poll is a long-lived side effect, so it belongs to a service and
+      // not to `setup` (the SDK is explicit about that).
+      //
+      // The id must NOT be `<pluginId>:feature-events`: `defineFeaturePlugin`
+      // registers a service under exactly that id for the event emitter, and
+      // a second registration with the same id is silently dropped — the
+      // handler never starts and nothing says so (measured on 2026.9.5,
+      // `dist/plugin-sdk/feature-plugin.js`). Because that emitter service is
+      // declared before `setup` runs, it is also started first, so
+      // `events.emit` is already live by the time this poller ticks.
+      api.registerService?.({
+        id: 'flowboard:change-poll',
+        start: () => poller.start(),
+        stop: () => poller.stop(),
+      });
 
       const principal = (context, input) => resolveCallerPrincipal(registry, context, input);
 
@@ -187,6 +330,8 @@ export function createFeatureEntry(baseline) {
 
         'tasks.list': (input, context) =>
           guarded(async () => ({ tasks: await adapter.listTasks(principal(context, input), input) })),
+
+        'tasks.needing-me': (input, context) => guarded(() => adapter.listNeedingMe(principal(context, input), input)),
 
         'status.set': (input, context) =>
           guarded(async () => {

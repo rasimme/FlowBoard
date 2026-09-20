@@ -76,6 +76,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Trust Model (collaborators & native UI) | Two supported deployment modes; four separated identities; Gateway scopes as ceiling vs server-side FlowBoard policy; unsandboxed native bundle obligations | ✅ [openclaw-integration.md](openclaw-integration.md) + [SECURITY.md](../../SECURITY.md) | ✅ ADR-0037 (amends ADR-0029, extends ADR-0033) | T-487-3 |
 | Workboard Coexistence | FlowBoard canonical vs OpenClaw Workboard; link-not-mirror; one owner per task; task link contract | ✅ [openclaw-integration.md](openclaw-integration.md) | ✅ ADR-0038 | T-487-6, T-487-8 |
 | OpenClaw Gateway Facade | Feature-contract operations in the Gateway; loopback service credential; Gateway-verified principal forwarded as attribution | ✅ [openclaw-integration.md](openclaw-integration.md) | ✅ ADR-0040 | T-487 |
+| Native Control UI rail | Project switcher, "tasks needing me" (review + blocked/stuck), status line and the framed board inside the OpenClaw Control UI; host-theme integration and the stage-1 deep-link degradation | ✅ [openclaw-integration.md](openclaw-integration.md) + [user guide](../guide/openclaw-control-ui.md) | ✅ ADR-0037, ADR-0040 | T-487-8 |
 
 **Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
 

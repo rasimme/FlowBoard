@@ -1,6 +1,23 @@
-/* FlowBoard native Control UI page (T-487-4 spike). All selectors are
-   namespaced with fb- / flowboard- so independently bundled plugin UIs and the
-   host application cannot collide with them. */
+/*
+ * FlowBoard native Control UI page — stage 1 (T-487-8).
+ *
+ * Two rules hold this file together:
+ *
+ *  1. **Namespacing.** Every selector is under `fb-` / `flowboard-`. The
+ *     Control UI is one document shared by the host and by every installed
+ *     plugin bundle; a bare element or utility selector here would leak into
+ *     all of them (the T-487-4 spike measured exactly that risk in FlowBoard's
+ *     own global resets).
+ *
+ *  2. **No palette.** The page inherits the host's colours instead of
+ *     declaring its own, so it follows the operator's theme — light, dark, or
+ *     a custom one — without knowing which is active. Host tokens
+ *     (`--text`, `--bg`, `--border`, `--accent`, `--radius-*`, `--danger`) are
+ *     used where they exist; every one has a fallback derived from the
+ *     inherited `color`, so the page stays legible if the host renames a token
+ *     or a future theme drops it. Nothing here hardcodes a dark colour.
+ */
+
 .flowboard-page {
   display: flex;
   flex-direction: column;
@@ -10,100 +27,290 @@
   min-height: 0;
   padding: 12px;
   box-sizing: border-box;
-  color: var(--text);
+  color: inherit;
+  background: transparent;
+  font: inherit;
 }
 
-.fb-native-projects {
+/* ------------------------------------------------------------------ rail */
+
+.fb-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, var(--card, transparent));
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.fb-rail[data-fb-collapsed='true'] {
+  gap: 6px;
+}
+
+.fb-rail__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  gap: 10px;
+}
+
+.fb-rail__toggle {
+  padding: 2px 8px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-sm, 6px);
   font: inherit;
-  font-size: 13px;
-}
-
-.fb-native-projects__label {
   font-weight: 600;
-  opacity: 0.7;
+  cursor: pointer;
 }
 
-.fb-native-projects__list {
+.fb-rail__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.fb-rail__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.fb-rail__heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-rail__count:empty {
+  display: none;
+}
+
+.fb-rail__count {
+  padding: 0 6px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* ------------------------------------------------------- agent + status */
+
+.fb-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fb-agent__label {
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-agent__input {
+  width: 10em;
+  padding: 2px 6px;
+  color: inherit;
+  background: var(--bg, transparent);
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+}
+
+.fb-conn {
+  margin-inline-start: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-full, 999px);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fb-conn[data-fb-connected='false'] {
+  color: var(--danger, inherit);
+  border-color: var(--danger, currentColor);
+}
+
+.fb-statusline {
+  margin: 0;
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+  font-size: 12px;
+}
+
+.fb-statusline[data-fb-error] {
+  color: var(--danger, inherit);
+}
+
+.fb-hint {
+  margin: 0;
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+}
+
+.fb-hint--error {
+  color: var(--danger, inherit);
+}
+
+/* -------------------------------------------------------------- projects */
+
+.fb-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.fb-native-projects__chip {
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+.fb-chips[data-fb-pending] {
+  opacity: 0.6;
+}
+
+.fb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 10px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-full, 999px);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fb-chip:hover:not(:disabled) {
+  background: var(--bg-hover, color-mix(in srgb, currentColor 8%, transparent));
+}
+
+.fb-chip:focus-visible,
+.fb-needs__row:focus-visible,
+.fb-rail__toggle:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.fb-chip[data-fb-active='true'] {
+  border-color: var(--accent, currentColor);
+  background: var(--accent-subtle, color-mix(in srgb, currentColor 10%, transparent));
+  font-weight: 600;
+}
+
+.fb-chip[data-fb-status='archived'] {
+  opacity: 0.55;
+}
+
+.fb-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.fb-status {
-  flex: 0 0 auto;
-  margin: 0;
-  font-size: 13px;
-  opacity: 0.8;
+.fb-chip__badge {
+  padding: 0 6px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
+
+/* ------------------------------------------------------------ needs me */
+
+.fb-needs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.fb-needs__group-label {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-needs__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fb-needs__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 4px 8px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fb-needs__row:hover {
+  background: var(--bg-hover, color-mix(in srgb, currentColor 8%, transparent));
+}
+
+.fb-needs__row[data-fb-selected='true'] {
+  border-color: var(--accent, currentColor);
+}
+
+.fb-needs__id {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.fb-needs__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fb-needs__reason {
+  padding: 0 6px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 11px;
+}
+
+.fb-needs__row[data-fb-reason='blocked'] .fb-needs__reason,
+.fb-needs__row[data-fb-reason='stuck'] .fb-needs__reason {
+  color: var(--danger, inherit);
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.fb-needs__meta {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+  font-size: 11px;
+}
+
+/* ----------------------------------------------------------- framed SPA */
 
 .fb-frame-host {
   flex: 1 1 auto;
   min-height: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-md, 8px);
   overflow: hidden;
-}
-
-/* T-487-7: minimal "Quick task" form — the smallest native write path that
-   proves Gateway-verified attribution end to end. T-487-8 replaces it. */
-.fb-quick-task {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font: inherit;
-  font-size: 13px;
-}
-
-.fb-quick-task__title {
-  flex: 1 1 200px;
-  min-width: 140px;
-}
-
-.fb-quick-task__project,
-.fb-quick-task__priority,
-.fb-quick-task__title {
-  padding: 4px 8px;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font: inherit;
-}
-
-.fb-quick-task__submit {
-  padding: 4px 12px;
-  color: var(--accent-foreground, var(--text));
-  background: var(--accent);
-  border: 0;
-  border-radius: 6px;
-  font: inherit;
-}
-
-.fb-quick-task__submit:disabled {
-  opacity: 0.6;
-}
-
-.fb-quick-task__status {
-  flex: 1 1 100%;
-  opacity: 0.8;
 }

@@ -19,6 +19,10 @@
  *                                the hook, reason recorded, nothing thrown
  *   2. feature import resolves → composed entry that still registers the hook
  *   3. no SDK symbol is reachable from the baseline module graph
+ *   4. the browser bundle (T-487-8) imports only the two browser-safe SDK
+ *      subpaths, and the pure logic it was split into imports none at all —
+ *      so that logic stays testable in Node and can never drag the backend
+ *      SDK into a browser build
  *
  * Run: node test-plugin-entry-compat.js
  */
@@ -32,6 +36,9 @@ const ENTRY_PATH = path.join(REPO_ROOT, 'openclaw', 'flowboard-plugin.js');
 const FEATURE_PATH = path.join(REPO_ROOT, 'openclaw', 'feature-entry.js');
 const CONTRACT_PATH = path.join(REPO_ROOT, 'openclaw', 'contract.js');
 const ADAPTER_PATH = path.join(REPO_ROOT, 'openclaw', 'adapter.js');
+const CONTROL_UI_DIR = path.join(REPO_ROOT, 'openclaw', 'control-ui');
+const CONTROL_UI_ENTRY = path.join(CONTROL_UI_DIR, 'index.js');
+const CONTROL_UI_LIB_DIR = path.join(CONTROL_UI_DIR, 'lib');
 
 let passed = 0;
 let failed = 0;
@@ -114,6 +121,27 @@ function staticGuards() {
     // The adapter must stay SDK-free so the contract is the only other importer.
     assert.equal(featureSdk.test(fs.readFileSync(ADAPTER_PATH, 'utf8')), false);
     assert.equal(/feature-contract/u.test(fs.readFileSync(CONTRACT_PATH, 'utf8')), true);
+  });
+
+  section('browser bundle boundary');
+
+  check('the Control UI entry imports only browser-safe SDK subpaths', () => {
+    const source = fs.readFileSync(CONTROL_UI_ENTRY, 'utf8');
+    const sdk = [...source.matchAll(/^\s*import\s[^;]*?from\s+['"]([^'"]+)['"]/gmu)]
+      .map((match) => match[1])
+      .filter((specifier) => specifier === 'openclaw' || specifier.startsWith('openclaw/'));
+    assert.deepEqual(sdk.sort(), ['openclaw/plugin-sdk/control-ui', 'openclaw/plugin-sdk/feature-contract']);
+  });
+
+  check('the extracted rail logic imports no SDK and no plugin backend', () => {
+    const files = fs.readdirSync(CONTROL_UI_LIB_DIR).filter((file) => file.endsWith('.js'));
+    assert.ok(files.length > 0, 'openclaw/control-ui/lib has modules to check');
+    for (const file of files) {
+      const source = fs.readFileSync(path.join(CONTROL_UI_LIB_DIR, file), 'utf8');
+      const imports = [...source.matchAll(/^\s*import\s[^;]*?from\s+['"]([^'"]+)['"]/gmu)].map((match) => match[1]);
+      assert.deepEqual(imports, [], `${file} imports ${imports.join(', ')}`);
+      assert.equal(/\brequire\s*\(/u.test(source), false, `${file} uses require()`);
+    }
   });
 
   check('the entry never logs or interpolates the service token', () => {

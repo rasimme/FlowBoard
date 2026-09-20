@@ -69,9 +69,9 @@
     }
   },
   "controlUi": {
-    "entry": "dist/control-ui/5ca047bf0c637bd50b6545967e0b0ce6b948735b8097a75e9cb86f4e01dd7487/index.js",
+    "entry": "dist/control-ui/8defc89712f950fe7c4c51ec74f8fd8f4c4165f222a6f699d26ba8a06a3231a4/index.js",
     "styles": [
-      "dist/control-ui/5ca047bf0c637bd50b6545967e0b0ce6b948735b8097a75e9cb86f4e01dd7487/index.css"
+      "dist/control-ui/8defc89712f950fe7c4c51ec74f8fd8f4c4165f222a6f699d26ba8a06a3231a4/index.css"
     ]
   },
   "contracts": {

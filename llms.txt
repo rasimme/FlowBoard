@@ -96,6 +96,7 @@ Human-facing how-to guides live under the user guide:
 - [Troubleshooting](docs/guide/how-to/troubleshooting.md) — visible auth/API failures and remote access recovery
 - [Use FlowBoard on a phone or in Telegram](docs/guide/how-to/work-on-mobile.md) — Mini App and multi-bot sessions
 - [Manage projects](docs/guide/how-to/manage-projects.md) — export, preview, import, recovery, and archive/delete flows
+- [FlowBoard inside OpenClaw](docs/guide/openclaw-control-ui.md) — the native Control UI page: rail, project switcher, tasks needing me, deep-link limits
 
 ## Operational rules (NOT for human reading)
 
