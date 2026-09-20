@@ -1,5 +1,5 @@
 /*
- * FlowBoard native Control UI page — stage 1 (T-487-8).
+ * FlowBoard native Control UI page — stage 1 (T-487-8), stage 2 (T-498).
  *
  * Two rules hold this file together:
  *
@@ -19,6 +19,7 @@
  */
 
 .flowboard-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -305,12 +306,675 @@
   font-size: 11px;
 }
 
+/* -------------------------------------------------- main area + tab strip */
+
+.fb-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.fb-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.fb-tabs__tab {
+  padding: 4px 12px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full, 999px);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fb-tabs__tab:hover:not(:disabled) {
+  background: var(--bg-hover, color-mix(in srgb, currentColor 8%, transparent));
+}
+
+.fb-tabs__tab[data-fb-active='true'] {
+  border-color: var(--accent, currentColor);
+  background: var(--accent-subtle, color-mix(in srgb, currentColor 10%, transparent));
+  font-weight: 600;
+}
+
+.fb-tabs__tab:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fb-tabs__external {
+  margin-inline-start: auto;
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.fb-tabs__external:hover {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.fb-main__body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-height: 0;
+}
+
 /* ----------------------------------------------------------- framed SPA */
 
 .fb-frame-host {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
   border-radius: var(--radius-md, 8px);
   overflow: hidden;
+}
+
+/* --------------------------------------------------------------- board */
+
+.fb-board {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.fb-board__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fb-board__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.fb-board__filter-label {
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fb-board__select {
+  padding: 2px 6px;
+  color: inherit;
+  background: var(--bg, transparent);
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-size: 12px;
+}
+
+.fb-board__select:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.fb-board__notice {
+  flex: 1 1 200px;
+  margin: 0;
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+  font-size: 12px;
+}
+
+.fb-board__notice:empty {
+  display: none;
+}
+
+.fb-board__notice[data-fb-kind='error'] {
+  color: var(--danger, inherit);
+}
+
+/*
+ * All five columns stay on screen, including next to an open detail panel:
+ * a board that scrolls a lane out of sight stops being a board. The columns
+ * shrink to 140px before the strip scrolls at all.
+ */
+.fb-board__columns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+}
+
+.fb-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, var(--card, transparent));
+}
+
+.fb-col[data-fb-dropping='true'] {
+  border-color: var(--accent, currentColor);
+  background: var(--accent-subtle, color-mix(in srgb, currentColor 8%, transparent));
+}
+
+.fb-col__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fb-col__label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-col__count {
+  padding: 0 6px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fb-col__cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.fb-col__empty {
+  margin: 0;
+  color: var(--muted, color-mix(in srgb, currentColor 55%, transparent));
+  font-size: 11px;
+}
+
+.fb-col__empty:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------------- cards */
+
+.fb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 18%, transparent));
+  border-inline-start-width: 3px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg, transparent);
+  font-size: 12px;
+}
+
+.fb-card[data-fb-priority='high'] {
+  border-inline-start-color: var(--danger, currentColor);
+}
+
+.fb-card[data-fb-priority='medium'] {
+  border-inline-start-color: var(--warn, color-mix(in srgb, currentColor 45%, transparent));
+}
+
+.fb-card[data-fb-selected='true'] {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+}
+
+.fb-card[data-fb-saving='true'] {
+  opacity: 0.7;
+}
+
+.fb-card[data-fb-dragging='true'] {
+  opacity: 0.4;
+}
+
+.fb-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.fb-card__open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fb-card__id {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.fb-card__title {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.fb-card__menu {
+  flex: 0 0 auto;
+  width: 22px;
+  padding: 0;
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.fb-card__menu:hover {
+  border-color: var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  color: inherit;
+}
+
+.fb-card__saving,
+.fb-card__error {
+  margin: 0;
+  font-size: 11px;
+}
+
+.fb-card__saving {
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-card__error {
+  color: var(--danger, inherit);
+}
+
+.fb-chipline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fb-chipline__item {
+  padding: 0 6px;
+  border-radius: var(--radius-full, 999px);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.fb-chipline__priority {
+  text-transform: lowercase;
+}
+
+.fb-card[data-fb-priority='high'] .fb-chipline__priority {
+  color: var(--danger, inherit);
+}
+
+.fb-chipline__state,
+.fb-chipline__lease,
+.fb-chipline__stuck {
+  color: var(--danger, inherit);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.fb-chipline__spec,
+.fb-chipline__relation,
+.fb-chipline__tag {
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+}
+
+/* --------------------------------------------------------- action menu */
+
+.fb-menu {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 190px;
+  max-width: 280px;
+  padding: 6px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 22%, transparent));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, var(--card, Canvas));
+  box-shadow: 0 6px 24px color-mix(in srgb, currentColor 18%, transparent);
+  font-size: 12px;
+}
+
+.fb-menu[hidden] {
+  display: none;
+}
+
+.fb-menu__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fb-menu__group-label {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.fb-menu__item {
+  padding: 4px 8px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.fb-menu__item:hover:not(:disabled) {
+  background: var(--bg-hover, color-mix(in srgb, currentColor 10%, transparent));
+}
+
+.fb-menu__item:disabled {
+  color: var(--muted, color-mix(in srgb, currentColor 55%, transparent));
+  cursor: default;
+}
+
+.fb-menu__item[aria-checked='true']::after {
+  content: ' ✓';
+}
+
+.fb-menu__item[data-fb-danger='true'] {
+  color: var(--danger, inherit);
+}
+
+.fb-menu__form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fb-menu__label {
+  font-size: 11px;
+  color: var(--muted, color-mix(in srgb, currentColor 70%, transparent));
+}
+
+.fb-menu__input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  color: inherit;
+  background: var(--bg, transparent);
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 22%, transparent));
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-size: 12px;
+}
+
+.fb-menu__error {
+  margin: 0;
+  color: var(--danger, inherit);
+  font-size: 11px;
+}
+
+.fb-menu__error:empty {
+  display: none;
+}
+
+.fb-menu__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.fb-menu__submit,
+.fb-menu__cancel {
+  padding: 3px 10px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 22%, transparent));
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fb-menu__submit {
+  border-color: var(--accent, currentColor);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------- detail panel */
+
+.fb-panel {
+  display: flex;
+  flex: 0 1 320px;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 40%;
+  min-height: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated, var(--card, transparent));
+  font-size: 12px;
+}
+
+.fb-panel[hidden] {
+  display: none;
+}
+
+.fb-panel__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fb-panel__title {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fb-panel__title:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.fb-panel__menu,
+.fb-panel__close {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fb-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.fb-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fb-panel__heading {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-panel__description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fb-panel__error {
+  margin: 0;
+  color: var(--danger, inherit);
+}
+
+.fb-panel__saving {
+  margin: 0;
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-panel__link {
+  color: var(--accent, inherit);
+  font-size: 12px;
+}
+
+.fb-meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  margin: 0;
+}
+
+.fb-meta__row {
+  display: contents;
+}
+
+.fb-meta__key {
+  color: var(--muted, color-mix(in srgb, currentColor 65%, transparent));
+}
+
+.fb-meta__value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.fb-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fb-thread__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 8px;
+  padding-inline-start: 6px;
+  border-inline-start: 2px solid var(--border, color-mix(in srgb, currentColor 20%, transparent));
+}
+
+.fb-thread__row[data-fb-kind='rejection'],
+.fb-thread__row[data-fb-kind='reject'] {
+  border-inline-start-color: var(--danger, currentColor);
+}
+
+.fb-thread__who {
+  font-weight: 600;
+}
+
+.fb-thread__when {
+  color: var(--muted, color-mix(in srgb, currentColor 60%, transparent));
+  font-size: 11px;
+  text-align: end;
+}
+
+.fb-thread__text {
+  grid-column: 1 / -1;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------- focus */
+
+.fb-card__open:focus-visible,
+.fb-card__menu:focus-visible,
+.fb-tabs__tab:focus-visible,
+.fb-tabs__external:focus-visible,
+.fb-menu__item:focus-visible,
+.fb-menu__submit:focus-visible,
+.fb-menu__cancel:focus-visible,
+.fb-menu__input:focus-visible,
+.fb-panel__menu:focus-visible,
+.fb-panel__close:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+/*
+ * Nothing here animates, so reduced motion has nothing to switch off — but a
+ * host stylesheet may animate our elements through a descendant selector, so
+ * the page states its own preference rather than inheriting one.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .flowboard-page *,
+  .flowboard-page *::before,
+  .flowboard-page *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * Narrow Control UI windows: the five columns become a scrolling strip and
+ * the panel drops under the board instead of squeezing it.
+ */
+@media (max-width: 900px) {
+  .fb-main__body {
+    flex-direction: column;
+  }
+
+  .fb-panel {
+    flex: 0 0 auto;
+    max-width: 100%;
+    max-height: 45%;
+  }
+
+  .fb-board__columns {
+    grid-template-columns: repeat(5, minmax(170px, 1fr));
+  }
 }
