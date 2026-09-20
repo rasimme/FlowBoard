@@ -133,6 +133,48 @@ The contract, decided in [ADR-0038](../adr/0038-workboard-coexistence-flowboard-
 Gateway restart. OpenClaw's plugin APIs are experimental, so FlowBoard pins and tests a host version
 rather than assuming forward compatibility.
 
+### The supported host matrix
+
+"Supported" means a release has installed the packed artifact on that host and watched the hook come
+back. `scripts/release-host-matrix.mjs` runs `scripts/release-install-canary.mjs` against each CLI
+and prints the table; CI runs the two ends of it on every push (Node 22 + 2026.6.6, Node 24 +
+2026.9.5). What differs between hosts is the *install lifecycle*, not FlowBoard's behaviour:
+
+| | 2026.6.6 | 2026.7.1-2 | ≥ 2026.9.2 (verified on 2026.9.5) |
+|---|---|---|---|
+| `agent:bootstrap` hook + standalone dashboard | yes | yes | yes |
+| Plugin shape reported by the host | `hook-only`, info-level note | `hook-only`, info-level note | `non-capability`, with feature services |
+| Feature contract, `flowboard.ui.identity`, native page | no — SDK subpaths do not exist | no | yes |
+| Capability consent (`--accept-capabilities`) | no such concept | no such concept (`--acknowledge-clawhub-risk` is *source* trust, not consent) | required; re-asked when the plugin changes |
+| `plugins doctor --json`, `plugins reload`, `plugins pack` | no | no | yes |
+| Node the CLI accepts | 22+ | 22+ | ≥ 24.16 |
+
+Two consequences cost real debugging time, so they are encoded in the tooling rather than in a
+maintainer's memory:
+
+- **Capabilities are detected, never inferred from a version string.** Passing
+  `--accept-capabilities` to 2026.6.6 aborts with "unknown option", so a canary that hard-codes it
+  reports a healthy old host as broken. `scripts/lib/openclaw-host.mjs` reads the CLI's own `--help`
+  instead. `plugins build --check` is the trap: all three hosts have that flag, but the old ones only
+  understand tool plugins with it, so the feature-plugin marker is `plugins validate --json` plus the
+  `plugins pack` subcommand.
+- **The native bundle is generated, and `dist/` is gitignored.** On a feature-plugin host a packed
+  artifact without `dist/control-ui/<hash>/` cannot render the page; on an older host the same
+  artifact is fine, because `controlUi` is ignored there. The canary therefore asserts the bundle
+  only on hosts that would load it.
+
+On hosts ≥ 2026.9.x the install is hot: installing over a running Gateway applies in the next runtime
+generation, and `plugins reload flowboard` picks up changed plugin code — including newly added
+feature-contract operations and newly registered Gateway methods — with `restartRequired: false`
+(measured 2026-09-20 against an isolated 2026.9.5 Gateway; supersedes the T-487-4 note that new
+Gateway methods needed a restart). FlowBoard does not depend on that: the hook and the dashboard
+behave the same whether the Gateway was reloaded or restarted.
+
+FlowBoard is distributed as **source** — ClawHub package, npm tarball, or `--link`. `openclaw plugins
+pack` is never used: bundling the backend hoists the `openclaw/plugin-sdk/feature-*` imports into the
+entry, which would make the entry fail to load on every host below 2026.9.2 and unregister the hook
+(ADR-0040).
+
 ## Where this is decided
 
 - [ADR-0037](../adr/0037-trusted-collaborators-and-native-control-ui.md) — trusted collaborators,

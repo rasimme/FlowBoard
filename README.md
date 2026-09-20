@@ -134,6 +134,70 @@ then issue an explicit FlowBoard command in your live agent chat, for example
 
 > **Prerequisites:** Node.js ≥ 18 and `npm` on your `PATH`. The `openclaw plugins install` path also needs **OpenClaw ≥ 2026.6.6** — the dashboard runs standalone, but the project-context hook requires OpenClaw.
 
+### Which OpenClaw you have decides how much you get
+
+FlowBoard adds surfaces as the host supports them and never requires the newest
+one:
+
+| Your OpenClaw | What you get | What you need to turn on |
+|---|---|---|
+| **2026.6.6 – 2026.7.x** | Baseline: the `project-context` hook that tells every agent run which project it is on, plus the standalone dashboard | Nothing |
+| **2026.8.x** | Baseline, and the install asks you to approve FlowBoard's capabilities | Nothing |
+| **≥ 2026.9.2** | Baseline plus the feature layer: typed Gateway operations and a native **FlowBoard** page in the OpenClaw sidebar | The *Custom plugin UI* lab (`gateway.controlUi.experimental.customPlugins`), which is off by default and needs a Gateway restart |
+| **No OpenClaw at all** | The standalone dashboard and the REST API for external agents | Nothing |
+
+Nothing above is a fork in the road: one install works on all of them. On an
+older host FlowBoard notices the newer SDK is absent and runs hook-only; with
+the lab off there is simply no sidebar entry.
+
+Every release installs the same packed artifact on real hosts and checks that
+the hook comes back — currently 2026.6.6, 2026.7.1-2 and 2026.9.5
+(`node scripts/release-host-matrix.mjs`, see [CONTRIBUTING](CONTRIBUTING.md)).
+Details in [OpenClaw Integration](docs/concepts/openclaw-integration.md).
+
+### What the install asks you to approve
+
+On **OpenClaw 2026.8 and newer**, installing a plugin is a consent decision,
+and FlowBoard treats it as one:
+
+```bash
+openclaw plugins install flowboard          # shows what FlowBoard asks for, then asks you
+```
+
+Read the capability surface it prints before you accept. FlowBoard asks for a
+hook on `agent:bootstrap`, a background service, and — on ≥ 2026.9.2 — a
+Control UI page and Gateway operations scoped to `operator.read` / `operator.write`.
+The native page is **not sandboxed**: it runs in the Control UI origin with your
+Gateway authority, which is a trust decision and is written up in
+[SECURITY.md](SECURITY.md) and [ADR-0037](docs/adr/0037-trusted-collaborators-and-native-control-ui.md).
+
+A few things that are easy to get wrong:
+
+- **`--accept-capabilities` is for non-interactive installs** (scripts, CI, a
+  provisioning run). It records the same consent you would give at the prompt,
+  so give it only after you have read the surface once. On 2026.9.x the install
+  is *refused* without it when there is no one to prompt.
+- **`--yes` and `--force` are not consent.** `--force` overwrites an existing
+  install and confirms a non-ClawHub source; neither approves a capability. An
+  install that only passes those still stops and asks.
+- **Consent is re-asked when the plugin changes**, and for a local archive it is
+  re-asked on every re-install — an update cannot quietly widen what FlowBoard
+  may do.
+- **On 2026.6.6 – 2026.7.x there is no consent prompt at all**, because those
+  hosts have no capability model. The plugin installs hook-only there. If that
+  matters to you, review the source before installing — which is possible
+  precisely because of the next point.
+
+### Source installs only
+
+FlowBoard ships as source: the ClawHub package, an npm tarball, or
+`openclaw plugins install <path> --link` against a checkout. It is deliberately
+**not** published as a bundle produced by `openclaw plugins pack` — bundling
+would inline the 2026.9 plugin SDK into the entry point, which stops the plugin
+from loading at all on every host below 2026.9.2 and takes the
+`agent:bootstrap` hook down with it. The upside for you is that what runs is
+what you can read.
+
 ### Already installed as an OpenClaw plugin?
 
 `openclaw plugins install flowboard` wires the project-context hook. To bring

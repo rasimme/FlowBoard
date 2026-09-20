@@ -143,6 +143,97 @@ itself still runs on the repo's normal Node version. The build regenerates
 Never hand-edit a generated field — `validate:plugin` fails on a stale
 manifest. `dist/` is gitignored and is built before packing a release.
 
+`validate:plugin` and `build:plugin -- --check` both **refuse outright when
+`dist/control-ui/` is missing** ("Control UI build is missing or stale"), so run
+the plain build first. That is also why CI and `release-check.mjs` build and
+then diff the two generated files instead of running `--check` on a clean
+checkout.
+
+**Never run `openclaw plugins pack`.** It bundles the backend, which hoists the
+`openclaw/plugin-sdk/feature-*` imports out of `openclaw/feature-entry.js` into
+the entry itself. Those subpaths do not exist before 2026.9.2, so a packed
+artifact fails to load on every older host — taking the `agent:bootstrap` hook
+with it. FlowBoard ships **source installs only** (ClawHub package, `--link`,
+or the npm tarball). See
+[ADR-0040](docs/adr/0040-gateway-verified-principal-via-service-credential.md).
+
+### Host compatibility canaries
+
+Two scripts prove the supported host range instead of asserting it. Both are
+version-*aware* without being version-*branched*: they read what the host CLI
+accepts out of its own `--help` (`scripts/lib/openclaw-host.mjs`) and adapt.
+Hard-coding a flag is the bug they exist to prevent — `--accept-capabilities`
+is mandatory on 2026.9.x and makes 2026.6.6 abort with "unknown option".
+
+```bash
+# One host: pack, install, enable, inspect, doctor, re-install, uninstall
+node scripts/release-install-canary.mjs
+node scripts/release-install-canary.mjs --json         # machine-readable report
+
+# Several hosts, one packed artifact, one table
+FLOWBOARD_HOST_MATRIX="\
+2026.6.6: node=/opt/node24/bin/node /opt/oc66/node_modules/.bin/openclaw,\
+2026.9.5: node=/opt/node2421/bin/node /opt/oc95/node_modules/.bin/openclaw" \
+  node scripts/release-host-matrix.mjs
+```
+
+A matrix entry is `[<label>: ][node=<node-path> ]<cli-path>`. The `node=` part
+is usually required: the OpenClaw bin is a `#!/usr/bin/env node` script, so it
+runs on whatever `node` comes first on `PATH`, and 2026.9.x demands ≥ 24.16
+while 2026.6.6 predates that. `FLOWBOARD_HOST_MATRIX_NODE` sets a default for
+entries without a prefix.
+
+Canary and matrix environment variables — tooling only. The server reads none
+of them, which is why they are documented here rather than in
+[env-vars.md](docs/reference/env-vars.md):
+
+| Variable | Effect |
+|---|---|
+| `FLOWBOARD_OPENCLAW_CLI` | Pin the host CLI. Default: the pinned devDependency, then `PATH`. |
+| `FLOWBOARD_OPENCLAW_NODE` | Node runtime for that CLI (binary or directory), prepended to `PATH`. |
+| `FLOWBOARD_CANARY_ARTIFACT` | Reuse a packed tarball instead of running `npm pack`. The matrix runner sets it so every host sees identical bytes. |
+| `FLOWBOARD_CANARY_KEEP_HOME=1` | Keep the disposable OpenClaw home for debugging (alias: `FLOWBOARD_KEEP_CANARY_TEMP=1`). |
+| `FLOWBOARD_CLAWHUB_SPEC` | Default spec for `--clawhub`. |
+| `FLOWBOARD_HOST_MATRIX` / `FLOWBOARD_HOST_MATRIX_NODE` | Matrix entries and their default Node. |
+
+**Why the canary writes an `exec-approvals.json` stub.** Every run gets a
+throwaway `OPENCLAW_STATE_DIR`, but on 2026.6.x / 2026.7.x that is not enough:
+the first CLI call against a fresh state dir runs a one-shot legacy-state
+migration whose *source* path comes from the home directory rather than the
+state dir. If the isolated target file does not exist yet, the migration adopts
+the machine's real `~/.openclaw/exec-approvals.json` and renames the live file
+to `exec-approvals.json.migrated-<ts>` — silently breaking the Gateway of
+whoever ran the canary. Pre-creating a stub makes the migration a no-op. Do not
+remove it: it is the reason this is safe to run on a workstation with a live
+OpenClaw.
+
+### Reload and hot install (hosts ≥ 2026.9.x)
+
+The canary deliberately does **not** start a Gateway — that would bind a port
+and load the machine's channels and secrets — so its `reload` step reports
+`skip` ("no Gateway in the disposable home"). That is a documented limitation,
+not a failure. The behaviour was verified separately against an isolated
+2026.9.5 Gateway (2026-09-20; disposable home, loopback, token auth, Telegram /
+cron / heartbeat / mDNS off):
+
+- `plugins install <artifact> --accept-capabilities --force` **while the Gateway
+  runs** applies immediately ("Applied in Gateway generation 3") — no restart,
+  no separate reload.
+- `plugins reload flowboard` returns `restartRequired: false` with a new
+  generation and source digest. Afterwards `hooks list` still shows
+  `project-context ✓ Ready`, and `plugins inspect --runtime` still lists the
+  `flowboard:feature-events` service and the `flowboard.ui.identity` method.
+- Code changed on disk **is** picked up by reload: a changed feature-contract
+  handler, a newly added contract operation, *and* a newly added
+  `api.registerGatewayMethod` were all reachable after `plugins reload`, with
+  the Gateway PID unchanged. This supersedes the T-487-4 spike note that new
+  Gateway methods need a restart — that was measured before the plugin moved to
+  `defineFeaturePlugin` with `activation.onStartup: true`.
+- Capability acceptance is **not** sticky for an archive source: re-installing
+  the same unchanged tarball is refused again without `--accept-capabilities`.
+- `plugins update flowboard` reports `Skipping "flowboard" (source: archive)` —
+  a locally installed artifact has no upstream to update from. Expected.
+
 ## Branch strategy
 
 - **`main`** — stable releases only
@@ -164,9 +255,23 @@ Before publishing a release, run:
 node scripts/release-check.mjs
 ```
 
-That gate includes privacy scanning, plugin packaging lint, ClawPack
-pack/source-validate/tarball-dry-run checks, OpenClaw install canary, dashboard
-tests, and the dashboard build.
+That gate includes privacy scanning, plugin packaging lint, the plugin
+metadata build + drift check + `plugins validate`, ClawPack
+pack/source-validate/tarball-dry-run checks, the OpenClaw install canary,
+dashboard tests, and the dashboard build.
+
+The gate needs an OpenClaw CLI that understands feature plugins — the pinned
+devDependency, so run `npm install` at the repo root first (**Node ≥ 24.16**)
+or point `FLOWBOARD_OPENCLAW_CLI` at an OpenClaw ≥ 2026.9 binary. It refuses to
+run otherwise rather than silently skipping the manifest checks; a
+pre-2026.9 CLI is detected by capability (no `plugins validate --json` /
+`plugins pack`), not by parsing its version. Every OpenClaw call in the gate
+runs against a throwaway home, so it does not touch the machine's
+`~/.openclaw`.
+
+Before a release, also run the supported-host matrix (see *Host compatibility
+canaries* above) across at least the oldest supported host and the newest one
+FlowBoard claims the native UI on.
 
 Publish the ClawPack tarball produced by `clawhub package pack`, not the local
 folder or GitHub source directly. The release gate validates the source package,
