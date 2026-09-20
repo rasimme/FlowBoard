@@ -4,6 +4,16 @@
 
 How agents interact with FlowBoard tasks at runtime - the workflow-first execution protocol, claim/lease semantics, and handoff behavior for multi-agent and ACP-spawned work.
 
+## Task state of record: FlowBoard
+
+FlowBoard is the state of record for FlowBoard tasks. Do not mirror FlowBoard tasks into the
+OpenClaw Workboard — link instead. Never auto-create a Workboard card for a FlowBoard task, and
+never treat a card's column as evidence about a task's status: the task's status is whatever
+FlowBoard says it is. A Workboard card may carry a link to a FlowBoard task
+(`/plugin?plugin=flowboard&id=flowboard&p.project=<name>&p.task=<id>`, or the dashboard URL) and
+defers to FlowBoard for everything else. See
+[ADR-0038](../adr/0038-workboard-coexistence-flowboard-canonical.md).
+
 ## Asking the human (T-307)
 
 When you need a decision or information only the human has, post a typed

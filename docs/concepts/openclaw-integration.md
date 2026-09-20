@@ -87,6 +87,39 @@ server-side. Second, a Gateway-verified human profile is a genuinely new and str
 signal than anything FlowBoard had — but it reaches FlowBoard's server only through the plugin
 adapter over loopback under a service credential, never from the browser.
 
+## Workboard coexistence
+
+OpenClaw bundles its own Kanban-style board, **Workboard** — disabled by default, enabled per
+Gateway, reached at `/workboard`, with its own plugin-owned store. Once FlowBoard has a native page,
+the two boards sit one sidebar entry apart, and the tempting move is to mirror FlowBoard tasks into
+Workboard cards so that everything shows up in one place.
+
+FlowBoard does not do that, and the reason is a gap rather than a preference. As of OpenClaw 2026.9.5
+there is no external card source, provider interface, importer, webhook or synchronisation contract
+for Workboard; a card's only outward hook is its optional Workboard-owned *linked refs* (task, run,
+session, or source URL). Nothing defines who wins a concurrent edit, what a deleted source means, or
+how a drifted card is reconciled — so mirroring would mean inventing a private protocol on a surface
+whose owner has not specified one, and re-inventing it on every Workboard release. Two stores with
+no conflict rule is how a task ends up with two different statuses and no way to tell which is true.
+
+The contract, decided in [ADR-0038](../adr/0038-workboard-coexistence-flowboard-canonical.md):
+
+- **FlowBoard is the state of record** for FlowBoard projects and tasks — identity, status, claims,
+  history.
+- **Workboard keeps two honest roles:** stable *links* to FlowBoard tasks, and a bounded
+  OpenClaw-native execution view for Gateway-local operating work that is not FlowBoard work.
+- **No status mirroring, no bidirectional sync**, until OpenClaw ships a stable external
+  source/provider contract *with* conflict semantics.
+- **One canonical owner per task**, and **agents never auto-create Workboard cards** for FlowBoard
+  tasks. A human may create a card and paste a link; automation may not manufacture a second copy.
+- A card that references a FlowBoard task **carries the link and defers**: its column is a local
+  note, never evidence about the task, and FlowBoard never reads it back.
+- **Link shape** (intent, T-487-8): the Control UI deep link
+  `/plugin?plugin=flowboard&id=flowboard&p.project=<name>&p.task=<id>`, or the standalone dashboard
+  URL where the native page is unavailable. FlowBoard's SPA has no URL routing today, so those
+  `p.*` parameters are not consumed yet — a deep link opens FlowBoard without preselecting the task.
+  The names are fixed now so links created today keep working later.
+
 ## Compatibility
 
 | Situation | What happens |
@@ -104,6 +137,8 @@ rather than assuming forward compatibility.
 
 - [ADR-0037](../adr/0037-trusted-collaborators-and-native-control-ui.md) — trusted collaborators,
   the four identities, the scope mapping, and the obligations that come with unsandboxed native code.
+- [ADR-0038](../adr/0038-workboard-coexistence-flowboard-canonical.md) — Workboard coexistence:
+  FlowBoard stays canonical, links instead of mirroring, and the task link contract.
 - **ADR-0039** — session-scoped project binding (`sessionKey` as context, never authorization).
 - **ADR-0040** — the Gateway-verified principal relayed under a service credential, in full.
 - `SECURITY.md` § *OpenClaw Control UI integration (native plugin UI)* — the operator-facing threat

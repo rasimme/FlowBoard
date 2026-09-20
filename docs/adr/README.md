@@ -78,6 +78,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0035](0035-task-form-not-authorization.md) — Task discipline and structure review are form checks, not task-creation authorization (2026-08-25)
 - [ADR-0036](0036-portable-project-review-bundles.md) — Portable project review bundles are create-only application documents (2026-08-26)
 - [ADR-0037](0037-trusted-collaborators-and-native-control-ui.md) — Trusted collaborators and a native Control UI that runs with operator authority (2026-09-20; amends the premise of ADR-0029, extends ADR-0033)
+- [ADR-0038](0038-workboard-coexistence-flowboard-canonical.md) — Workboard coexistence — FlowBoard stays the canonical task store; link, never mirror (2026-09-20)
 
 ## See also
 
