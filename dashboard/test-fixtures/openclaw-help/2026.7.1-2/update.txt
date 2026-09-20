@@ -1,0 +1,20 @@
+
+OpenClaw 2026.7.1-2 (0790d9f) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins update [options] [id]
+
+Update installed plugins and tracked hook packs
+
+Arguments:
+  id                                  Plugin or hook-pack id (omit with --all)
+
+Options:
+  --acknowledge-clawhub-risk          Acknowledge ClawHub release trust warnings
+                                      without prompting (default: false)
+  --all                               Update all tracked plugins and hook packs
+                                      (default: false)
+  --dangerously-force-unsafe-install  Deprecated no-op; security.installPolicy
+                                      may still block (default: false)
+  --dry-run                           Show what would change without writing
+                                      (default: false)
+  -h, --help                          Display help for command

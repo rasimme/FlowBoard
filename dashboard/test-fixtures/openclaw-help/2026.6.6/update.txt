@@ -1,0 +1,19 @@
+
+OpenClaw 2026.6.6 (8c802aa) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins update [options] [id]
+
+Update installed plugins and tracked hook packs
+
+Arguments:
+  id                                  Plugin or hook-pack id (omit with --all)
+
+Options:
+  --all                               Update all tracked plugins and hook packs
+                                      (default: false)
+  --dangerously-force-unsafe-install  Deprecated no-op; install policy and
+                                      plugin hooks may still block (default:
+                                      false)
+  --dry-run                           Show what would change without writing
+                                      (default: false)
+  -h, --help                          Display help for command

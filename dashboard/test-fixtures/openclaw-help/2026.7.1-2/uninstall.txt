@@ -1,0 +1,17 @@
+
+OpenClaw 2026.7.1-2 (0790d9f) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins uninstall [options] <id>
+
+Uninstall a plugin
+
+Arguments:
+  id             Plugin id
+
+Options:
+  --dry-run      Show what would be removed without making changes (default:
+                 false)
+  --force        Skip confirmation prompt (default: false)
+  -h, --help     Display help for command
+  --keep-config  Deprecated alias for --keep-files (default: false)
+  --keep-files   Keep installed files on disk (default: false)

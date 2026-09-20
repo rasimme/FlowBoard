@@ -1,0 +1,12 @@
+
+OpenClaw 2026.9.5 (ec9c1a1) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins build [options]
+
+Build plugin metadata and native Control UI assets
+
+Options:
+  --check         Fail if generated metadata is out of date (default: false)
+  --entry <path>  Plugin entry module relative to --root
+  -h, --help      Display help for command
+  --root <path>   Plugin package root

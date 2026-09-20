@@ -1,0 +1,15 @@
+
+OpenClaw 2026.7.1-2 (0790d9f) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins inspect|info [options] [id]
+
+Inspect plugin details
+
+Arguments:
+  id          Plugin id
+
+Options:
+  --all       Inspect all plugins
+  -h, --help  Display help for command
+  --json      Print JSON
+  --runtime   Load plugin runtime for hooks/tools/diagnostics

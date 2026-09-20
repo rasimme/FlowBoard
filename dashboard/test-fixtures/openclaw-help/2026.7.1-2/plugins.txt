@@ -1,0 +1,28 @@
+
+OpenClaw 2026.7.1-2 (0790d9f) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins [options] [command]
+
+Manage OpenClaw plugins and extensions
+
+Options:
+  -h, --help   Display help for command
+
+Commands:
+  build        Generate simple tool plugin metadata
+  disable      Disable a plugin in config
+  doctor       Report plugin load issues
+  enable       Enable a plugin in config
+  init         Create a plugin project
+  inspect      Inspect plugin details
+  install      Install a plugin or hook pack (path, archive, npm spec, git repo,
+               clawhub:package, or marketplace entry)
+  list         List discovered plugins
+  marketplace  Inspect Claude-compatible plugin marketplaces
+  registry     Inspect or rebuild the persisted plugin registry
+  search       Search ClawHub plugin packages
+  uninstall    Uninstall a plugin
+  update       Update installed plugins and tracked hook packs
+  validate     Validate simple tool plugin metadata
+
+Docs: https://docs.openclaw.ai/cli/plugins

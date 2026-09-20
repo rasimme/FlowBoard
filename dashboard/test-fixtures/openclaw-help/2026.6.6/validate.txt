@@ -1,0 +1,11 @@
+
+OpenClaw 2026.6.6 (8c802aa) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins validate [options]
+
+Validate simple tool plugin metadata
+
+Options:
+  --entry <path>  Plugin entry module relative to --root
+  -h, --help      Display help for command
+  --root <path>   Plugin package root

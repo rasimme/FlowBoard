@@ -1,0 +1,9 @@
+
+OpenClaw 2026.6.6 (8c802aa) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins doctor [options]
+
+Report plugin load issues
+
+Options:
+  -h, --help  Display help for command

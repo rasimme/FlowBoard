@@ -1,0 +1,25 @@
+
+OpenClaw 2026.9.5 (ec9c1a1) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins update [options] [ids...]
+
+Update installed plugins and tracked hook packs
+
+Arguments:
+  ids                                   Plugin or hook-pack ids or npm specs
+                                        (omit with --all)
+
+Options:
+  --accept-capabilities                 Accept widened plugin capabilities
+                                        (default: false)
+  --acknowledge-install-policy-warning  Acknowledge security.installPolicy
+                                        warnings without prompting; blocks and
+                                        failures remain terminal (default:
+                                        false)
+  --all                                 Update all tracked plugins and hook
+                                        packs (default: false)
+  --dangerously-force-unsafe-install    Deprecated no-op; security.installPolicy
+                                        may still block (default: false)
+  --dry-run                             Show what would change without writing
+                                        (default: false)
+  -h, --help                            Display help for command

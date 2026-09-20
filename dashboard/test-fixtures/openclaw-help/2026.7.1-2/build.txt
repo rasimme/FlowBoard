@@ -1,0 +1,12 @@
+
+OpenClaw 2026.7.1-2 (0790d9f) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins build [options]
+
+Generate simple tool plugin metadata
+
+Options:
+  --check         Fail if generated metadata is out of date (default: false)
+  --entry <path>  Plugin entry module relative to --root
+  -h, --help      Display help for command
+  --root <path>   Plugin package root

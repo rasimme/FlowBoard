@@ -8,6 +8,11 @@ on:
       - main
 
 jobs:
+  # Baseline host. FlowBoard's oldest supported OpenClaw (2026.6.6) runs on
+  # Node 22 and knows nothing about feature plugins: the plugin installs
+  # hook-only there and the `controlUi` manifest field is ignored. This job is
+  # the one that proves `openclaw.install.minHostVersion` is still true, so its
+  # steps must not be weakened or folded into the Node 24 job.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -69,3 +74,48 @@ jobs:
           FLOWBOARD_PROJECTS_DIR: /tmp/flowboard-ci-projects
           FLOWBOARD_API: http://localhost:18790
           FLOWBOARD_REPO: ${{ github.workspace }}
+
+  # Feature-plugin host. `openclaw plugins build` / `validate` and the native
+  # Control UI bundle only exist from 2026.9.2, and that CLI refuses Node
+  # < 24.16 — which is why this cannot live in the job above. It regenerates
+  # the manifest and the browser bundle, fails on drift from what is committed,
+  # and then runs the same install canary against 2026.9.5, where the feature
+  # layer (Gateway method + feature-events service + controlUi entry) must
+  # actually load.
+  #
+  # `openclaw plugins pack` is deliberately absent: bundling the backend would
+  # hoist the feature-SDK imports into the entry and break every host below
+  # 2026.9.2 (ADR-0040). FlowBoard ships source installs.
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install plugin toolchain (pinned openclaw + esbuild)
+        run: npm ci
+      - name: Assert the toolchain Node satisfies the OpenClaw CLI
+        run: node -e "const [a,b]=process.versions.node.split('.').map(Number); if (a<24 || (a===24 && b<16)) { console.error('OpenClaw >= 2026.9.3 needs Node >= 24.16, got ' + process.versions.node); process.exit(1) } console.log('node ' + process.versions.node)"
+      # `dist/control-ui/` is gitignored, and both `validate` and
+      # `build --check` refuse when it is missing, so the bundle is built first
+      # and the generated metadata is then diffed against what is committed.
+      - name: Build plugin metadata and Control UI bundle
+        run: npm run build:plugin
+      - name: Fail on generated-metadata drift
+        run: git diff --exit-code -- openclaw.plugin.json package.json
+      - name: Plugin metadata is up to date
+        run: npm run build:plugin -- --check
+      - name: Validate plugin
+        run: npm run validate:plugin
+      - name: Plugin lint
+        run: node scripts/plugin-lint.mjs
+      - name: Host capability unit tests
+        run: node test-openclaw-host-capabilities.mjs
+        working-directory: dashboard
+      - name: Release install canary (openclaw 2026.9.5)
+        run: node scripts/release-install-canary.mjs
+        env:
+          FLOWBOARD_OPENCLAW_CLI: node_modules/.bin/openclaw

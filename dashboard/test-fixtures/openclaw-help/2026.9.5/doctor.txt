@@ -1,0 +1,10 @@
+
+OpenClaw 2026.9.5 (ec9c1a1) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins doctor [options]
+
+Report plugin load issues
+
+Options:
+  -h, --help  Display help for command
+  --json      Print JSON
