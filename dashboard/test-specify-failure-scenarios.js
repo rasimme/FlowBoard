@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const specifySession = require('./specify-sessions');
+const { reservePort } = require('./test-support/server-harness.js');
 
 let pass = 0, fail = 0, failures = [];
 
@@ -15,12 +16,14 @@ function ok(cond, msg) {
 
 function section(title) { console.log(`\n## ${title}\n`); }
 
-// Not 18799: that is the OpenClaw extension relay, and FlowBoard is built to
-// run next to OpenClaw. The failure does not look like a port conflict — the
-// spawned server still logs "running on http://127.0.0.1:18799" while requests
-// to that address are answered by the relay (401, realm openclaw-extension-relay),
-// so the readiness probe times out and quotes our own boot output as the reason.
-const PORT = 18860;
+// A hardcoded port here has bitten us before (T-496): whatever else happens to
+// be listening on it locally still answers the readiness probe, so the
+// failure doesn't look like a port conflict at all (e.g. port 18799 is the
+// OpenClaw extension relay — the spawned server logs "running on
+// http://127.0.0.1:18799" while requests to that address are actually
+// answered by the relay with 401s, and the probe times out quoting our own
+// boot output as the reason). Reserve a free port instead of hardcoding one.
+let PORT;
 const HZL_DB_PATH = path.join(__dirname, 'test-workspace', '.hzl', 'flowboard-failure.db');
 const TEST_PROJECT = 'failure-test-proj';
 const WORKSPACE = path.join(__dirname, 'test-workspace');
@@ -81,12 +84,13 @@ async function createSession(agentId) {
 }
 
 async function runTests() {
+  PORT = await reservePort();
   const server = spawn('node', ['server.js'], {
     cwd: __dirname,
     env: {
       ...process.env,
       HZL_DB_PATH,
-      FLOWBOARD_PORT: PORT,
+      FLOWBOARD_PORT: String(PORT),
       OPENCLAW_WORKSPACE: WORKSPACE,
       // Isolate from host/CI env — a global FLOWBOARD_PROJECTS_DIR would
       // leak into the spawned server and confuse the m004 migration.

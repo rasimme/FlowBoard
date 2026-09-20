@@ -27,6 +27,7 @@ const { spawn, execFileSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { reservePort } = require('./server-harness.js');
 
 const ROOT = path.resolve(__dirname, '..'); // the dashboard/ dir (server.js, dist/)
 const EDGE = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
@@ -182,7 +183,10 @@ async function closeBrowser(browser, timeoutMs = CLEANUP_TIMEOUT_MS) {
  */
 async function withDashboard(fn, opts = {}) {
   if (!browserAvailable()) return { skipped: true, reason: 'Edge or dist/ missing' };
-  const port = opts.port || 18860;
+  // A fixed default port here (T-496) broke ~10 tests whenever something else
+  // locally happened to be listening on it — reserve a free one instead, but
+  // still honor an explicit opts.port for callers that need a stable address.
+  const port = opts.port || await reservePort();
   const base = `http://127.0.0.1:${port}`;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-e2e-'));
   fs.mkdirSync(path.join(tmp, 'ws', 'projects'), { recursive: true });
