@@ -1,6 +1,7 @@
 /**
  * FlowBoard HTTP adapter for the OpenClaw Gateway facade (T-487-7, ADR-0040;
- * "needing me" and session-scoped status added in T-487-8).
+ * "needing me" and session-scoped status added in T-487-8; the board
+ * projection and the three write actions in T-498).
  *
  * The Gateway process talks to the FlowBoard dashboard over loopback HTTP. It
  * authenticates with a shared service credential (`serviceToken` plugin config
@@ -42,6 +43,18 @@ const NOTE_MAX = 120;
 export const MAX_REVIEW_PROJECTS = 8;
 export const MAX_NEEDS_ME_ITEMS = 100;
 export const DEFAULT_NEEDS_ME_LIMIT = 40;
+
+/** Board bounds — the mirror of openclaw/contract.js, enforced before the wire. */
+export const MAX_TASK_LIST_LIMIT = 500;
+export const DEFAULT_TASK_LIST_LIMIT = 300;
+export const MAX_COMMENTS = 20;
+export const MAX_CHECKPOINTS = 10;
+export const MAX_DESCRIPTION = 4000;
+export const MAX_TAGS = 20;
+export const MAX_TAG_LENGTH = 40;
+export const MAX_DETAIL_LENGTH = 200;
+export const MAX_ACTOR_LENGTH = 128;
+export const MAX_REASON = 500;
 
 /** Errors the host turns into a feature-operation failure, message only. */
 export class FlowBoardAdapterError extends Error {
@@ -182,6 +195,171 @@ export function sortNeedsMe(items) {
     const byProject = a.project.localeCompare(b.project);
     return byProject !== 0 ? byProject : a.id.localeCompare(b.id);
   });
+}
+
+/* ------------------------------------------------------------------ board */
+
+function boundedText(value, max) {
+  return typeof value === 'string' ? value.slice(0, max) : '';
+}
+
+function boundedOrNull(value, max) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : null;
+}
+
+function enumOr(value, allowed, fallback) {
+  return typeof value === 'string' && allowed.includes(value) ? value : fallback;
+}
+
+const WORK_STATES = ['working', 'waiting', 'blocked', 'paused'];
+const PRIORITIES = ['low', 'medium', 'high'];
+
+/**
+ * Bound the canonical work-state details without reinterpreting them.
+ *
+ * FlowBoard owns what these mean and always answers with all four fields
+ * (null where unset), so this only truncates free text and drops anything the
+ * contract does not declare. `setAt` is deliberately not forwarded: it is
+ * server-owned bookkeeping, and `enteredStatusAt` already tells a card how
+ * long the task has been where it is.
+ */
+export function projectWorkStateDetails(details) {
+  const source = details && typeof details === 'object' && !Array.isArray(details) ? details : {};
+  return {
+    reason: boundedOrNull(source.reason, MAX_DETAIL_LENGTH),
+    waitingFor: boundedOrNull(source.waitingFor, MAX_DETAIL_LENGTH),
+    responsible: boundedOrNull(source.responsible, MAX_DETAIL_LENGTH),
+    checkAgainAt: boundedOrNull(source.checkAgainAt, 64),
+  };
+}
+
+/**
+ * Five fields of FlowBoard's stall indicator, or null.
+ *
+ * The stored object also routes notifications (owner kind, delivery channel,
+ * wake agent, available actions). None of that is a board's business, and
+ * every field forwarded here is one more thing an unsandboxed bundle could
+ * leak, so the chip gets what a chip draws and nothing else.
+ */
+export function projectStuckIndicator(indicator) {
+  if (!indicator || typeof indicator !== 'object' || Array.isArray(indicator)) return null;
+  if (indicator.active !== true) return null;
+  return {
+    active: true,
+    reason: boundedOrNull(indicator.reason, 32),
+    message: boundedOrNull(indicator.message, MAX_DETAIL_LENGTH),
+    since: boundedOrNull(indicator.since, 64),
+    detectedAt: boundedOrNull(indicator.detectedAt, 64),
+  };
+}
+
+/**
+ * One FlowBoard task as the contract's board card.
+ *
+ * Pure and total: it never throws on a partial task, because the same
+ * function projects a list row, a single-task read, and the task a write
+ * action answered with — and those three FlowBoard shapes differ slightly
+ * (the write endpoints answer with less enrichment than the list does).
+ */
+export function projectTask(task) {
+  const source = task && typeof task === 'object' ? task : {};
+  const tags = Array.isArray(source.tags)
+    ? source.tags.filter((tag) => typeof tag === 'string').slice(0, MAX_TAGS).map((tag) => tag.slice(0, MAX_TAG_LENGTH))
+    : [];
+  const subtaskCount = Array.isArray(source.subtaskIds)
+    ? Math.min(source.subtaskIds.length, MAX_TASK_LIST_LIMIT)
+    : 0;
+  return {
+    id: boundedText(source.id, 64),
+    title: boundedText(source.title, 256),
+    // Not defaulted: an unknown status is a real contract drift between
+    // FlowBoard and the Gateway, and the host's output validation is the
+    // only place that would ever notice it.
+    status: boundedText(source.status, 32),
+    workState: enumOr(source.workState, WORK_STATES, 'working'),
+    workStateDetails: projectWorkStateDetails(source.workStateDetails),
+    stuckIndicator: projectStuckIndicator(source.stuckIndicator),
+    priority: enumOr(source.priority, PRIORITIES, 'medium'),
+    agent: optionalAgent(source.agent),
+    parentId: boundedOrNull(source.parentId, 64),
+    subtaskCount,
+    tags,
+    order: Number.isFinite(source.order) ? source.order : null,
+    enteredStatusAt: boundedOrNull(source.enteredStatusAt, 64),
+    created: boundedOrNull(source.created, 64),
+    leaseUntil: boundedOrNull(source.leaseUntil, 64),
+    specExists: source.specExists === true,
+  };
+}
+
+/**
+ * Board order: FlowBoard's manual per-column rank first, then the task id.
+ *
+ * Unranked tasks sort after ranked ones rather than before: a column where
+ * someone has dragged two cards to the top should show those two first, not
+ * bury them under everything that was never touched. Ids compare
+ * numeric-aware so T-9 precedes T-10.
+ */
+export function compareTasks(a, b) {
+  const left = Number.isFinite(a?.order) ? a.order : null;
+  const right = Number.isFinite(b?.order) ? b.order : null;
+  if (left !== right) {
+    if (left === null) return 1;
+    if (right === null) return -1;
+    return left - right;
+  }
+  return String(a?.id ?? '').localeCompare(String(b?.id ?? ''), 'en', { numeric: true });
+}
+
+/** Newest first, by FlowBoard's timestamp; entries without one sort last. */
+function byTimestampDesc(a, b) {
+  return String(b?.timestamp ?? '').localeCompare(String(a?.timestamp ?? ''));
+}
+
+export function projectComment(row) {
+  const id = Number.isInteger(row?.id) && row.id >= 0 ? row.id : null;
+  return {
+    id,
+    author: boundedOrNull(row?.author, 128),
+    message: boundedText(row?.message, 500),
+    kind: boundedOrNull(row?.kind, 16),
+    timestamp: boundedOrNull(row?.timestamp, 64),
+  };
+}
+
+export function projectCheckpoint(row) {
+  return {
+    message: boundedText(row?.message, 256),
+    agent: optionalAgent(row?.agent),
+    progress: Number.isFinite(row?.progress) ? row.progress : null,
+    timestamp: boundedOrNull(row?.timestamp, 64),
+  };
+}
+
+/**
+ * Who FlowBoard should record as the actor of a review decision.
+ *
+ * Approve and reject take the actor from their request *body* — they do not
+ * read the Gateway principal headers (dashboard/server.js) — so the actor has
+ * to be composed here, in the Gateway process, from the connection's
+ * host-attested profile. It is never taken from operation input: the browser
+ * cannot name who approved something.
+ *
+ * The form carries both halves on purpose: the display name is what a human
+ * reads in the activity feed, and `gateway:<profileId>` is the same actor
+ * string `governance.resolvePrincipal` derives from the headers, so a comment
+ * and a governance record can still be tied together. Without a profile (a
+ * CLI or token-only connection) the caller is the trusted local operator, and
+ * FlowBoard's own vocabulary for that is `local:operator`.
+ */
+export function principalActor(principal) {
+  const profileId = boundedHeaderValue(principal?.profileId);
+  if (!profileId) return 'local:operator';
+  const displayName = boundedHeaderValue(principal?.displayName);
+  const actor = displayName ? `${displayName} (gateway:${profileId})` : `gateway:${profileId}`;
+  return actor.slice(0, MAX_ACTOR_LENGTH);
 }
 
 /**
@@ -358,17 +536,170 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
       };
     },
 
-    async listTasks(principal, { project, status }) {
-      const query = status ? `?${new URLSearchParams({ status }).toString()}` : '';
-      const payload = await call('GET', `/api/projects/${encodeURIComponent(project)}/tasks${query}`, { principal });
+    /**
+     * One project's board.
+     *
+     * Archived tasks are excluded by default because a board draws the work
+     * that is still live. Asking for `status: "archived"` is the one case
+     * where that default is wrong — the query would be empty by construction
+     * — so it implies `includeArchived`, and the caller gets the column it
+     * asked for instead of a silently empty one (the same failure mode T-463
+     * fixed for the inert `status` filter).
+     */
+    async listTasks(principal, { project, status, includeArchived, limit } = {}) {
+      const max = Math.min(
+        Math.max(Number.isFinite(limit) ? Math.floor(limit) : DEFAULT_TASK_LIST_LIMIT, 1),
+        MAX_TASK_LIST_LIMIT,
+      );
+      const query = new URLSearchParams();
+      if (status) query.set('status', status);
+      if (includeArchived === true || status === 'archived') query.set('includeArchived', 'true');
+      const search = query.toString();
+      const suffix = search ? `?${search}` : '';
+      const payload = await call('GET', `/api/projects/${encodeURIComponent(project)}/tasks${suffix}`, { principal });
       const rows = Array.isArray(payload.tasks) ? payload.tasks : [];
-      return rows.slice(0, 500).map((task) => ({
-        id: String(task?.id ?? ''),
-        title: String(task?.title ?? '').slice(0, 256),
-        status: String(task?.status ?? 'unknown'),
-        agent: typeof task?.agent === 'string' && task.agent ? task.agent.slice(0, 64) : null,
-        priority: String(task?.priority ?? 'medium'),
-      }));
+      const tasks = rows.map(projectTask).sort(compareTasks);
+      return { tasks: tasks.slice(0, max), truncated: tasks.length > max };
+    },
+
+    /**
+     * One task with the context a detail panel shows.
+     *
+     * Three reads, in parallel: the canonical task, its comments and its
+     * checkpoints. Comments and checkpoints are best-effort — FlowBoard
+     * answers them from the event store, and a task whose history cannot be
+     * read is still a task worth opening.
+     */
+    async getTask(principal, { project, id } = {}) {
+      const base = `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`;
+      const [payload, comments, checkpoints] = await Promise.all([
+        call('GET', base, { principal }),
+        call('GET', `${base}/comments`, { principal }).catch(() => ({})),
+        call('GET', `${base}/checkpoints`, { principal }).catch(() => ({})),
+      ]);
+      const raw = payload?.task;
+      if (!raw || typeof raw !== 'object') {
+        throw new FlowBoardAdapterError(`Task not found: ${id}`, 'flowboard_not_found');
+      }
+      const description = typeof raw.description === 'string' ? raw.description : '';
+      const commentRows = Array.isArray(comments?.comments) ? comments.comments : [];
+      const checkpointRows = Array.isArray(checkpoints?.checkpoints) ? checkpoints.checkpoints : [];
+      return {
+        task: {
+          ...projectTask(raw),
+          description: description.slice(0, MAX_DESCRIPTION),
+          descriptionTruncated: description.length > MAX_DESCRIPTION,
+          specFile: boundedOrNull(raw.specFile, 512),
+        },
+        comments: [...commentRows].sort(byTimestampDesc).slice(0, MAX_COMMENTS).map(projectComment),
+        checkpoints: [...checkpointRows].sort(byTimestampDesc).slice(0, MAX_CHECKPOINTS).map(projectCheckpoint),
+      };
+    },
+
+    /**
+     * Resolve the task a write action answered with.
+     *
+     * `PUT /tasks/:id` answers with FlowBoard's fully enriched projection, but
+     * `/approve` and `/reject` answer with the raw service task — no
+     * `specExists`, because those endpoints never pass through
+     * `taskWithSpecStatus`. Rather than let a card lose its spec chip the
+     * moment it is approved, re-read the canonical task whenever the answer
+     * is not already enriched. If that read fails the write still happened,
+     * so the unenriched answer is returned rather than an error.
+     */
+    async taskAfterWrite(principal, project, payload) {
+      const raw = payload?.task;
+      if (raw && typeof raw.specExists === 'boolean') return { task: projectTask(raw) };
+      const id = typeof raw?.id === 'string' ? raw.id : null;
+      if (id) {
+        try {
+          const fresh = await call(
+            'GET',
+            `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`,
+            { principal },
+          );
+          if (fresh?.task) return { task: projectTask(fresh.task) };
+        } catch {
+          /* the write succeeded; a failed re-read must not undo that */
+        }
+      }
+      return { task: projectTask(raw) };
+    },
+
+    /**
+     * Change status and/or work state.
+     *
+     * Deliberately no `actor` in the body. On the generic update path that
+     * field is a lease-ownership *assertion* (server.js T-422-1): naming an
+     * actor different from the agent holding a live claim is refused with
+     * NOT_OWNER. An actor-less call is FlowBoard's trusted local operator and
+     * behaves exactly like the dashboard's own status picker, including its
+     * auto-release. The Gateway principal still travels in the headers.
+     */
+    async updateTask(principal, { project, id, status, workState, workStateDetails } = {}) {
+      const body = {};
+      if (status !== undefined) body.status = status;
+      if (workState !== undefined) body.workState = workState;
+      if (workStateDetails !== undefined) body.workStateDetails = projectWorkStateDetails(workStateDetails);
+      if (Object.keys(body).length === 0) {
+        throw new FlowBoardAdapterError(
+          'task.update needs at least one of status, workState or workStateDetails',
+          'flowboard_empty_update',
+        );
+      }
+      const payload = await call('PUT', `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`, {
+        principal,
+        body,
+        timeoutMs: WRITE_TIMEOUT_MS,
+      });
+      return this.taskAfterWrite(principal, project, payload);
+    },
+
+    /**
+     * Accept work in review: review -> done plus an audit comment.
+     *
+     * `actor` is composed from the Gateway-verified profile here and never
+     * from operation input, because FlowBoard's approve endpoint reads it from
+     * the body and not from the principal headers.
+     */
+    async approveTask(principal, { project, id, reason } = {}) {
+      const note = boundedOrNull(reason, MAX_REASON);
+      const payload = await call(
+        'POST',
+        `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}/approve`,
+        {
+          principal,
+          body: { actor: principalActor(principal), ...(note ? { reason: note } : {}) },
+          timeoutMs: WRITE_TIMEOUT_MS,
+        },
+      );
+      return this.taskAfterWrite(principal, project, payload);
+    },
+
+    /**
+     * Send work back: review -> in-progress plus an audit comment.
+     *
+     * `target` is not exposed. FlowBoard's default sends the task back to
+     * in-progress and leaves its work state alone; `target: "blocked"` would
+     * additionally set workState=blocked, which the board can already do
+     * explicitly through `task.update` — and rejecting is a statement about
+     * the review, not about whether the assignee is blocked.
+     */
+    async rejectTask(principal, { project, id, reason } = {}) {
+      const note = boundedOrNull(reason, MAX_REASON);
+      if (!note) {
+        throw new FlowBoardAdapterError('A reason is required to reject a task in review', 'flowboard_reason_required');
+      }
+      const payload = await call(
+        'POST',
+        `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}/reject`,
+        {
+          principal,
+          body: { actor: principalActor(principal), reason: note },
+          timeoutMs: WRITE_TIMEOUT_MS,
+        },
+      );
+      return this.taskAfterWrite(principal, project, payload);
     },
 
     async createTask(principal, { project, title, description, priority }) {

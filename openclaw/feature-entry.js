@@ -32,13 +32,18 @@ import { buildJsonPluginConfigSchema, definePluginEntry } from 'openclaw/plugin-
 import { getToolPluginMetadata, toolPluginMetadataSymbol } from 'openclaw/plugin-sdk/tool-plugin';
 
 import { createFlowBoardAdapter, FlowBoardAdapterError } from './adapter.js';
+import {
+  createChangePoller,
+  createFocusRegistry,
+  MAX_TRACKED_CONNECTIONS,
+  POLL_INTERVAL_MS,
+  TASK_POLL_INTERVAL_MS,
+} from './change-poll.js';
 import { contract } from './contract.js';
 
-/** Bounded per-connection identity cache; oldest entry is evicted first. */
-const MAX_TRACKED_CONNECTIONS = 64;
-
-/** How often the background service looks for board changes, while watched. */
-export const POLL_INTERVAL_MS = 10_000;
+// Re-exported so the poll keeps one documented import path even though its
+// rules live in a module the feature SDK never touches (see change-poll.js).
+export { createChangePoller, createFocusRegistry, POLL_INTERVAL_MS, TASK_POLL_INTERVAL_MS };
 
 /**
  * Per-connection registry of Control UI clients and their Gateway-verified
@@ -86,96 +91,6 @@ function createPrincipalRegistry(onPresenceChange) {
     },
     get size() {
       return byConnection.size;
-    },
-  };
-}
-
-/**
- * Background change detection for `feature.watch` (T-487-8).
- *
- * `feature.watch` refreshes on contract events and never polls, so an agent
- * moving a task to review has to reach the browser as an event. FlowBoard's
- * dashboard has no push channel into the Gateway, so the plugin polls it — but
- * cheaply and only when it can matter:
- *
- *  - one `GET /api/projects` per tick, which the dashboard answers from its
- *    in-memory projection (`taskCounts`), and only while a Control UI client
- *    is registered;
- *  - an event is emitted only when a fingerprint actually moved, so a quiet
- *    board produces no traffic in the browser at all.
- *
- * Known gap: the fingerprint is per-project lifecycle status plus the review
- * and blocked counts. A change that moves neither — a retitled task, or a
- * stuck indicator appearing on work that was already in progress — is picked
- * up on the next refresh triggered by anything else, not by this poll.
- * Documented in docs/guide/openclaw-control-ui.md.
- */
-export function createChangePoller({ adapter, events, hasClients, logger, intervalMs = POLL_INTERVAL_MS }) {
-  let timer = null;
-  let enabled = false;
-  let busy = false;
-  let previous = null;
-  let failures = 0;
-
-  const fingerprint = (projects) =>
-    new Map(projects.map((project) => [project.name, `${project.status}|${project.counts.review}|${project.counts.blocked}`]));
-
-  async function tick() {
-    if (!enabled || busy) return;
-    if (!hasClients()) {
-      // Nobody is watching: forget the baseline so the next client starts from
-      // its own fresh fetch instead of a replayed diff.
-      previous = null;
-      return;
-    }
-    busy = true;
-    try {
-      // No principal: this read belongs to the Gateway's own bookkeeping, not
-      // to any signed-in operator, so it carries no profile headers.
-      const next = fingerprint(await adapter.listProjects(null));
-      if (previous) {
-        let membershipChanged = false;
-        for (const [name, print] of next) {
-          if (!previous.has(name)) membershipChanged = true;
-          else if (previous.get(name) !== print) events.emit('tasks-changed', { project: name });
-        }
-        for (const name of previous.keys()) if (!next.has(name)) membershipChanged = true;
-        if (membershipChanged) events.emit('projects-changed', {});
-      }
-      previous = next;
-      failures = 0;
-    } catch (error) {
-      previous = null;
-      failures += 1;
-      // One line per outage, not one per tick.
-      if (failures === 1) {
-        logger?.debug?.(`[flowboard] change poll paused: ${String(error?.message || error).slice(0, 200)}`);
-      }
-    } finally {
-      busy = false;
-    }
-  }
-
-  return {
-    start() {
-      if (timer) return;
-      enabled = true;
-      timer = setInterval(() => void tick(), intervalMs);
-      timer.unref?.();
-      logger?.debug?.(`[flowboard] change poll armed (${intervalMs} ms, only while a Control UI client is connected)`);
-    },
-    stop() {
-      enabled = false;
-      previous = null;
-      if (timer) clearInterval(timer);
-      timer = null;
-    },
-    /** Prime immediately when the first client arrives. */
-    wake() {
-      if (enabled) void tick();
-    },
-    get running() {
-      return Boolean(timer);
     },
   };
 }
@@ -254,11 +169,13 @@ export function createFeatureEntry(baseline) {
       // it in its temporal dead zone, even if a host calls in during setup.
       let poller = null;
       const registry = createPrincipalRegistry(() => poller?.wake());
+      const focus = createFocusRegistry(() => poller?.wake());
       poller = createChangePoller({
         adapter,
         events,
         logger: api.logger,
         hasClients: () => registry.size > 0,
+        watchedProjects: () => focus.projects(),
       });
 
       // Exactly what an old host registers, and nothing else: the
@@ -291,7 +208,14 @@ export function createFeatureEntry(baseline) {
             profile ? { ...profile, scopes: readConnectionScopes(client?.connect?.scopes) } : null,
           );
           if (!known) {
-            client?.connectionSignal?.addEventListener?.('abort', () => registry.forget(connId), { once: true });
+            client?.connectionSignal?.addEventListener?.(
+              'abort',
+              () => {
+                registry.forget(connId);
+                focus.forget(connId);
+              },
+              { once: true },
+            );
           }
           opts.respond(true, {
             dashboardUrl: adapter.dashboardUrl(),
@@ -319,6 +243,19 @@ export function createFeatureEntry(baseline) {
       });
 
       const principal = (context, input) => resolveCallerPrincipal(registry, context, input);
+      /**
+       * A write names the one task it touched, so a board refreshes that card
+       * instead of the column it lives in. The poll fills the same field for
+       * changes nobody here made.
+       *
+       * The poll's baseline for that board is deliberately *not* invalidated
+       * here, so a write is usually followed by a second `tasks-changed` on
+       * the next tick. One redundant refetch is the cheaper mistake: dropping
+       * the baseline would also swallow anything an agent changed on the same
+       * board in the same window, and a silently stale card is the bug this
+       * whole poll exists to prevent.
+       */
+      const changed = (project, id) => events.emit('tasks-changed', { project, ids: [id] });
 
       return {
         'ui.config': () => ({ dashboardUrl: adapter.dashboardUrl() }),
@@ -328,8 +265,9 @@ export function createFeatureEntry(baseline) {
 
         'status.get': (input, context) => guarded(() => adapter.getStatus(principal(context, input), input)),
 
-        'tasks.list': (input, context) =>
-          guarded(async () => ({ tasks: await adapter.listTasks(principal(context, input), input) })),
+        'tasks.list': (input, context) => guarded(() => adapter.listTasks(principal(context, input), input)),
+
+        'task.get': (input, context) => guarded(() => adapter.getTask(principal(context, input), input)),
 
         'tasks.needing-me': (input, context) => guarded(() => adapter.listNeedingMe(principal(context, input), input)),
 
@@ -343,9 +281,45 @@ export function createFeatureEntry(baseline) {
         'task.create': (input, context) =>
           guarded(async () => {
             const result = await adapter.createTask(principal(context, input), input);
-            events.emit('tasks-changed', { project: input.project });
+            changed(input.project, result.id);
             return result;
           }),
+
+        // The three write actions below are `operator.write` at the Gateway
+        // and *authorized* by FlowBoard: the review gate (ADR-0022), the
+        // lease-ownership rule and the work-state contract all live on the
+        // server, and their refusals reach the caller as FlowBoard's own
+        // message. Nothing here decides whether a move is allowed.
+        'task.update': (input, context) =>
+          guarded(async () => {
+            const result = await adapter.updateTask(principal(context, input), input);
+            changed(input.project, input.id);
+            return result;
+          }),
+
+        'task.approve': (input, context) =>
+          guarded(async () => {
+            const result = await adapter.approveTask(principal(context, input), input);
+            changed(input.project, input.id);
+            return result;
+          }),
+
+        'task.reject': (input, context) =>
+          guarded(async () => {
+            const result = await adapter.rejectTask(principal(context, input), input);
+            changed(input.project, input.id);
+            return result;
+          }),
+
+        // Not a FlowBoard call at all: it records what this connection is
+        // looking at so the poll above watches that board. A caller without a
+        // connection (CLI, agent tool) has no page to keep fresh, so it is
+        // accepted and ignored rather than refused.
+        'ui.focus': (input, context) => {
+          const action = context?.source === 'session-action' ? context.action : null;
+          focus.remember(optionalString(action?.client?.connId), input?.project ?? null);
+          return { ok: true };
+        },
       };
     },
   });

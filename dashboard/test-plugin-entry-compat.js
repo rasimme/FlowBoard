@@ -23,6 +23,10 @@
  *      subpaths, and the pure logic it was split into imports none at all —
  *      so that logic stays testable in Node and can never drag the backend
  *      SDK into a browser build
+ *   5. the change-poll rules (T-498) import nothing either, for the same
+ *      reason in the other direction: they are exercised by FlowBoard's own
+ *      suite on every supported Node, including the baseline host where the
+ *      feature SDK does not exist at all
  *
  * Run: node test-plugin-entry-compat.js
  */
@@ -36,6 +40,7 @@ const ENTRY_PATH = path.join(REPO_ROOT, 'openclaw', 'flowboard-plugin.js');
 const FEATURE_PATH = path.join(REPO_ROOT, 'openclaw', 'feature-entry.js');
 const CONTRACT_PATH = path.join(REPO_ROOT, 'openclaw', 'contract.js');
 const ADAPTER_PATH = path.join(REPO_ROOT, 'openclaw', 'adapter.js');
+const CHANGE_POLL_PATH = path.join(REPO_ROOT, 'openclaw', 'change-poll.js');
 const CONTROL_UI_DIR = path.join(REPO_ROOT, 'openclaw', 'control-ui');
 const CONTROL_UI_ENTRY = path.join(CONTROL_UI_DIR, 'index.js');
 const CONTROL_UI_LIB_DIR = path.join(CONTROL_UI_DIR, 'lib');
@@ -120,7 +125,19 @@ function staticGuards() {
     assert.equal(featureSdk.test(fs.readFileSync(FEATURE_PATH, 'utf8')), true);
     // The adapter must stay SDK-free so the contract is the only other importer.
     assert.equal(featureSdk.test(fs.readFileSync(ADAPTER_PATH, 'utf8')), false);
+    assert.equal(featureSdk.test(fs.readFileSync(CHANGE_POLL_PATH, 'utf8')), false);
     assert.equal(/feature-contract/u.test(fs.readFileSync(CONTRACT_PATH, 'utf8')), true);
+  });
+
+  check('the change-poll rules import nothing at all', () => {
+    // T-498 moved the focus registry, the board digest and the poller out of
+    // feature-entry.js precisely so they can be unit-tested without the SDK.
+    // An import added here would quietly take that away again: the suite
+    // would still pass on a 2026.9.x host and stop loading on the baseline.
+    const source = fs.readFileSync(CHANGE_POLL_PATH, 'utf8');
+    const imports = [...source.matchAll(/^\s*import\s[^;]*?from\s+['"]([^'"]+)['"]/gmu)].map((match) => match[1]);
+    assert.deepEqual(imports, [], `change-poll.js imports ${imports.join(', ')}`);
+    assert.equal(/\brequire\s*\(/u.test(source), false, 'change-poll.js uses require()');
   });
 
   section('browser bundle boundary');
@@ -145,7 +162,7 @@ function staticGuards() {
   });
 
   check('the entry never logs or interpolates the service token', () => {
-    for (const file of [ENTRY_PATH, FEATURE_PATH, ADAPTER_PATH]) {
+    for (const file of [ENTRY_PATH, FEATURE_PATH, ADAPTER_PATH, CHANGE_POLL_PATH]) {
       const source = fs.readFileSync(file, 'utf8');
       for (const line of source.split('\n')) {
         const logs = /(console\.(log|warn|error|info|debug)|logger\?\.\w+\?\.|logger\.\w+)\(/u.test(line);

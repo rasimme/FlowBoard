@@ -71,6 +71,82 @@ stages so that each one is independently useful and independently revertible:
 
 The iframe disappears when nothing depends on it, not before.
 
+Stage 1 (T-487-8) shipped the read-only rail. **Stage 2 (T-498) is the board itself**: `tasks.list`
+carries a whole card instead of five fields, `task.get` adds the detail read, and three write
+actions — `task.update`, `task.approve`, `task.reject` — move work from the Control UI. Ideas,
+files, canvas and Specify stay framed until stage 3.
+
+## The contract surface
+
+Everything FlowBoard exposes through the Gateway, and the FlowBoard endpoint behind it. Queries
+require `operator.read`, actions `operator.write`; every one of them relays the Gateway-verified
+principal under the service credential (ADR-0040), and FlowBoard authorizes the write itself.
+
+| Operation | Kind | Scope | FlowBoard endpoint |
+|---|---|---|---|
+| `ui.config` | query | `operator.read` | — (resolves the configured dashboard URL) |
+| `projects.list` | query | `operator.read` | `GET /api/projects` |
+| `status.get` | query | `operator.read` | `GET /api/status` |
+| `tasks.list` | query | `operator.read` | `GET /api/projects/:project/tasks` |
+| `task.get` | query | `operator.read` | `GET …/tasks/:id` + `…/comments` + `…/checkpoints` |
+| `tasks.needing-me` | query | `operator.read` | `GET /api/tasks/stuck` + `GET …/tasks?status=review` |
+| `status.set` | action | `operator.write` | `PUT /api/status` |
+| `task.create` | action | `operator.write` | `POST /api/projects/:project/tasks` |
+| `task.update` | action | `operator.write` | `PUT …/tasks/:id` |
+| `task.approve` | action | `operator.write` | `POST …/tasks/:id/approve` |
+| `task.reject` | action | `operator.write` | `POST …/tasks/:id/reject` |
+| `ui.focus` | action | `operator.write` | — (per-connection state in the Gateway) |
+
+Three things about that table are decisions rather than mechanics:
+
+- **The write actions are thin on purpose.** `task.update` is the generic update path and is
+  refused by FlowBoard for exactly the transitions that have their own endpoints — review → done
+  goes through `task.approve` (ADR-0022), and a task another agent actively holds cannot be moved
+  from outside. The Gateway does not pre-judge any of that; it relays FlowBoard's refusal, message
+  and error code unchanged.
+- **Approve and reject name the operator, and the browser cannot.** Those two endpoints read the
+  actor from their request *body*, not from the principal headers, so the plugin composes it in the
+  Gateway process from the connection's host-attested profile (`<display name> (gateway:<profile
+  id>)`, or `local:operator` for a CLI or token-only caller) and ignores anything the caller sent.
+  A status move through `task.update` carries no actor field at all: on that path `actor` is a
+  lease-ownership assertion, so sending one would refuse moves the dashboard itself allows.
+- **`ui.focus` writes nothing to FlowBoard.** It records, per Gateway connection, which project a
+  page is looking at, so the background poll watches that board and only that board. It is an
+  action rather than a query because it mutates server-side state, and it is bounded: 64
+  connections, at most 8 distinct boards watched, most recently focused first.
+
+### No `tool:` declarations in T-498
+
+The contract operations are **not** exposed as agent tools, and `contracts.tools` in the generated
+manifest stays empty. Agents keep using FlowBoard's REST API, which is the project rule and already
+carries their identity. Declaring tools would change what the operator consents to when installing
+or updating the plugin — the capability consent prompt and the release canary matrix (T-487-1) —
+and that is a decision about the plugin's trust surface, not about the Kanban board. It is worth
+revisiting as its own task if agent-facing tools are ever wanted.
+
+### How a native view stays fresh
+
+`feature.watch` refreshes on contract events and never polls, and FlowBoard's dashboard cannot push
+into the Gateway, so the plugin polls FlowBoard — server-side, and only while a Control UI client
+is registered. The `flowboard:change-poll` service (its id must differ from the
+`<pluginId>:feature-events` service the feature SDK registers for the event emitter) runs two lanes
+on one timer:
+
+- every 10 s, one `GET /api/projects` fingerprinted per project as lifecycle status plus the review
+  and blocked counts — what keeps the switcher badges live everywhere;
+- every 5 s, `GET /api/projects/:project/tasks` for each focused project, digested per task over
+  status, work state, blocking reason, assignee, `enteredStatusAt`, title and manual rank. A change
+  emits `tasks-changed { project, ids }` naming the cards that moved; a diff larger than 50 ids is
+  emitted without `ids`, which means "refetch the list".
+
+The first read of a board is a baseline and never an event, focus moving off a board drops its
+baseline, and an idle Gateway makes no request at all. Worst case is 8 boards at 12 reads a minute
+plus 6 for the project lane; FlowBoard exempts loopback from its rate-limit lanes, so that budget is
+politeness rather than a cap, and it still sits well inside the 300/min read lane a non-loopback
+caller would get. Deliberately *not* digested: the stuck indicator, which FlowBoard re-stamps on
+every evaluation, and the lease, which expires on a clock — either would wake every open page on a
+timer instead of on a change.
+
 ## What the operator is trusting
 
 A native plugin bundle runs unsandboxed in the Control UI origin with the signed-in operator's
@@ -114,11 +190,12 @@ The contract, decided in [ADR-0038](../adr/0038-workboard-coexistence-flowboard-
   tasks. A human may create a card and paste a link; automation may not manufacture a second copy.
 - A card that references a FlowBoard task **carries the link and defers**: its column is a local
   note, never evidence about the task, and FlowBoard never reads it back.
-- **Link shape** (intent, T-487-8): the Control UI deep link
+- **Link shape** (T-487-8): the Control UI deep link
   `/plugin?plugin=flowboard&id=flowboard&p.project=<name>&p.task=<id>`, or the standalone dashboard
-  URL where the native page is unavailable. FlowBoard's SPA has no URL routing today, so those
-  `p.*` parameters are not consumed yet — a deep link opens FlowBoard without preselecting the task.
-  The names are fixed now so links created today keep working later.
+  URL where the native page is unavailable. The `p.*` names were fixed in stage 1 so links created
+  then keep working; the native board reads them (stage 2). FlowBoard's own SPA still has no URL
+  routing, so a link followed into the framed dashboard opens FlowBoard without preselecting the
+  task.
 
 ## Compatibility
 
