@@ -37,6 +37,7 @@ Each concept doc answers five questions:
 - [Snippet Doctor](snippet-doctor.md) — structural-fingerprint drift detection + safe upgrade/migrate of installed trigger snippets
 - [Project File Structure](project-file-structure.md) — `PROJECT.md`/`SESSIONS.md`/`DECISIONS.md`/`context/`/`specs/` roles; files vs. DB-canonical
 - [Telegram Mini App](telegram-mini-app.md) — phone access via Telegram, HMAC init-data identity, tunnel options
+- [OpenClaw Integration](openclaw-integration.md) — hook, standalone dashboard, native Control UI page in stages; host compatibility; the trust decision behind unsandboxed native code
 
 ## Coverage Matrix
 
@@ -71,6 +72,8 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Docs-Drift Enforcement | Drift-test family ties docs to code | ✅ [docs-drift-enforcement.md](docs-drift-enforcement.md) | ⬜ none yet | — |
 | Governance Trust Contract | Server-authoritative attribution; authenticated Specify confirmation; task discipline and non-blocking structure review | ✅ [governance-trust-contract.md](governance-trust-contract.md) | ✅ ADR-0033, ADR-0035 (ADR-0034 superseded) | T-449 |
 | Portable Project Review Bundles | Export/preview/import DTO; create-only semantics; ID remapping; untrusted content; privacy and journaled recovery | ✅ [project-review-bundles.md](project-review-bundles.md) | ✅ ADR-0036 | T-468 |
+| OpenClaw Integration | `agent:bootstrap` hook, standalone dashboard, staged native Control UI page; host/lab compatibility and fallbacks | ✅ [openclaw-integration.md](openclaw-integration.md) | ✅ ADR-0037 | T-487 |
+| Trust Model (collaborators & native UI) | Two supported deployment modes; four separated identities; Gateway scopes as ceiling vs server-side FlowBoard policy; unsandboxed native bundle obligations | ✅ [openclaw-integration.md](openclaw-integration.md) + [SECURITY.md](../../SECURITY.md) | ✅ ADR-0037 (amends ADR-0029, extends ADR-0033) | T-487-3 |
 
 **Adding a row:** when you identify a new major surface (anything that has its own subsystem, its own user-facing concept, or its own architectural footprint), add a row here even if both columns are ⬜. That makes the gap visible.
 

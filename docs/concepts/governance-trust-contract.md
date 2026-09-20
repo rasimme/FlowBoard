@@ -77,6 +77,20 @@ not define current task-creation behavior and must not be documented as a
 Specify release gate. [ADR-0034](../adr/0034-project-scoped-governance-rollout.md)
 is retained as a historical record and explicitly superseded by ADR-0035.
 
+## Gateway scopes are a ceiling, not FlowBoard policy
+
+When FlowBoard is reached through an OpenClaw Gateway, the caller's operator scopes
+(`operator.read` for reads, `operator.write` for FlowBoard mutations including review decisions,
+`operator.admin` for administration) decide only whether that connection may reach FlowBoard's
+operation at all. They are a ceiling imposed by the host, and they are not a FlowBoard authorization
+decision: a scope declared on a plugin operation is a *requirement on the caller*, not a narrowing
+of the handler, so a handler still sees the caller's full connection — administrative scopes
+included, for an administrator. FlowBoard therefore evaluates its own rules for every mutation,
+server-side, exactly as it does for a loopback or Telegram request, and `operator.approvals` is
+never treated as a FlowBoard review decision: an OpenClaw approval is a different subsystem's
+authority and borrowing it would make a FlowBoard state transition look authorized by something that
+never saw it. See [ADR-0037](../adr/0037-trusted-collaborators-and-native-control-ui.md).
+
 ## Where the code lives
 
 - `dashboard/task-discipline.js` — discipline values and review reasons.

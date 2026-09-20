@@ -7,6 +7,11 @@
 | 5.x     | ✅ Active  |
 | < 5.0   | ❌ No patches |
 
+**OpenClaw host compatibility.** The `agent:bootstrap` hook and the standalone dashboard support
+OpenClaw hosts from 2026.6.6 upward and run without OpenClaw at all. The optional native Control UI
+page additionally requires host **2026.9.2 or newer** and an operator-enabled Gateway lab flag — see
+*OpenClaw Control UI integration* below for what that surface is and how to turn it off.
+
 ## Reporting a Vulnerability
 
 If you discover a security issue, please **do not** open a public issue.
@@ -120,6 +125,96 @@ owner-gated. So "assert any agent-id" lets a local caller *attribute new work* t
 a name; it does not let it override another agent's active claim. Hard,
 authenticated identity is on the roadmap (see *Roadmap*).
 
+## OpenClaw Control UI integration (native plugin UI)
+
+FlowBoard can optionally install as an OpenClaw **feature plugin** and render a native page inside
+the OpenClaw Control UI. This surface is **off by default** and has a different trust boundary from
+everything above. Read this before enabling it.
+
+### What runs where
+
+| Part | Where it runs | Authority it has |
+|------|---------------|------------------|
+| FlowBoard browser bundle | In the Control UI origin, in the operator's browser, **not sandboxed** | The signed-in operator's full Gateway authority (`host.request` can call any method that connection's scopes allow — administrative methods for administrators) |
+| FlowBoard plugin backend | In the Gateway process, as plugin-registered operations | Whatever the Gateway grants that call, plus whatever FlowBoard's own server then allows |
+| FlowBoard REST API | The usual local FlowBoard service, behind loopback | Unchanged: the [auth middleware](docs/concepts/auth-model.md) and the trust boundary described above |
+
+OpenClaw states the property plainly: *"Native UI runs trusted JavaScript in the Control UI origin.
+Install it only from authors you trust."* There is no iframe and no sandbox around a feature
+plugin's page. The Gateway lab flag gates *installation of the surface*, not what the code may do
+once it is running.
+
+### The trust boundary, and what a compromised bundle could do
+
+Enabling the native page means trusting FlowBoard's published browser bundle the way you trust the
+Control UI itself. A malicious or compromised FlowBoard release could, from that position, issue any
+Gateway call the signed-in operator is allowed to make — read sessions, invoke tools, and on an
+administrator's connection mutate configuration — and it could read anything the Control UI page can
+read. No FlowBoard-side setting would contain it, because a same-origin script is not a thing the
+browser confines. This is a supply-chain trust decision, not a sandbox.
+
+If you are not willing to extend that trust, **run FlowBoard standalone**. The hook and the
+standalone dashboard give you the whole product and never load code into the Control UI.
+
+### What we commit to in exchange
+
+- **No third-party scripts and no remote code loading.** The bundle fetches no script, stylesheet or
+  font from a CDN or any third-party origin at runtime. Fonts and images are inlined.
+- **Pinned, lock-filed dependencies.** Everything that reaches the bundle is pinned and covered by
+  the committed lockfile.
+- **Reproducible bundle, addressed by content hash.** The Gateway serves each build under an
+  immutable content-hash revision, so a given revision is a fixed, checkable artefact.
+- **Built from the reviewed repository only.** Bundles are produced from tagged FlowBoard source by
+  the documented build — never assembled from unreviewed inputs.
+- **Progressive enhancement.** Hosts older than 2026.9.2, or with the lab flag off, lose the page
+  and nothing else. The hook and the standalone dashboard remain the baseline.
+- **Server-side authorization stays server-side.** Gateway operator scopes are a ceiling on what a
+  connection can reach; FlowBoard still authorizes every mutation itself, in its own server. A scope
+  declared on a plugin operation is a *requirement on the caller*, not a narrowing of the handler's
+  powers, so it is never treated as an authorization decision.
+
+The reasoning, the four identities FlowBoard keeps apart, the scope mapping and the full threat
+table are in [ADR-0037](docs/adr/0037-trusted-collaborators-and-native-control-ui.md); the surfaces
+themselves are described in [docs/concepts/openclaw-integration.md](docs/concepts/openclaw-integration.md).
+
+### How to turn it off
+
+Either switch is sufficient, and both belong to the operator, not to FlowBoard:
+
+1. **Gateway lab flag** — set `gateway.controlUi.experimental.customPlugins` to `false`
+   (Settings → Labs → *Custom plugin UI*), restart the Gateway, reload the browser tab. Custom
+   plugin UI is off by default and this is enforced server-side.
+2. **Disable the plugin** — `openclaw plugins disable flowboard`, or the Plugins page in the
+   Control UI.
+
+Either one removes the native page. Neither affects the standalone dashboard, the REST API, or
+agents already using FlowBoard.
+
+### The service credential
+
+Native views do not reach FlowBoard by `fetch()` from the browser — the Control UI's `connect-src`
+policy does not allow it, and we would not want the browser to hold FlowBoard's credentials anyway.
+Instead the plugin adapter calls FlowBoard's REST API over loopback and authenticates itself with a
+service token:
+
+- `Authorization: Bearer <FLOWBOARD_SERVICE_TOKEN>`, minimum 32 characters, compared in constant time.
+- **Loopback only.** A non-loopback caller is rejected even with a valid token unless the operator
+  explicitly sets `FLOWBOARD_SERVICE_TOKEN_ALLOW_REMOTE=true`.
+- **Never in the browser.** The token is not in the bundle, not in page HTML, not in a URL, not in
+  the DOM, and not in any client-visible response.
+- **Never logged.** It is a secret like every other entry in *Secrets* below; the log privacy filter
+  covers bearer tokens.
+- The token authenticates the **adapter**, not a human. The Gateway-verified human profile it relays
+  (`X-FlowBoard-Gateway-Profile-Id` and companions) is honoured **only** behind a valid service
+  token; without one those headers are ignored exactly like any other caller-supplied identity
+  claim. Rotating the token is a restart.
+
+### Reporting
+
+Problems with this surface — a bundle that loads something it should not, a header that is honoured
+without a service token, a credential that turns up in a log — are security issues. Report them
+through the private advisory process at the top of this file, not as a public issue.
+
 ## Capabilities & destructive actions
 
 FlowBoard is a coordination substrate, not an autonomous actor: it performs only
@@ -226,7 +321,9 @@ designed rather than rushed: a per-endpoint **capability model**, an
 **auth-always** default (authenticate even on loopback), **hard agent identity**
 (authenticated principals instead of self-asserted ids), a **dedicated secret
 store / keychain** for the GitHub token, and a package split that ships a minimal
-hook + installer separately from the runtime service.
+hook + installer separately from the runtime service. The Gateway-verified human
+profile described above is the first concrete step towards hard identity: it is a
+principal FlowBoard's server verifies rather than one a caller asserts.
 
 ## Recent hardening (T-441)
 

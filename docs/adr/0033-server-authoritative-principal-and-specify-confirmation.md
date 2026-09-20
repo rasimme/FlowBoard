@@ -1,7 +1,12 @@
 # ADR-0033: Server-authoritative principal resolution and verified-human Specify confirmation
 
+> Extended by [ADR-0037](0037-trusted-collaborators-and-native-control-ui.md): a Gateway-verified
+> human profile, relayed over loopback under a service credential, becomes a third server-verified
+> principal source alongside Telegram init-data and the JWT session. The rule below is unchanged —
+> the server still decides who is acting, and caller-supplied fields still never authorize.
+
 ## Status
-Accepted (2026-08-24, T-447-1)
+Accepted (2026-08-24, T-447-1); extended by [ADR-0037](0037-trusted-collaborators-and-native-control-ui.md) (2026-09-20)
 
 ## Date
 2026-08-24

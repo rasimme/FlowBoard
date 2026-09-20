@@ -80,6 +80,25 @@ confirmation and governance policy mutations require `req.user` from verified
 Telegram init-data or a server-issued session cookie; an anonymous loopback
 request remains an agent for those decisions.
 
+**Principal sources, ranked.** Admission (above) decides whether a request is answered at all.
+*Which principal* it is answered as is a second, stricter question, and the server resolves it from
+the strongest signal it verified **itself** for this request:
+
+| Source | What the server verifies | Resulting principal |
+|---|---|---|
+| OpenClaw Gateway profile | A valid `FLOWBOARD_SERVICE_TOKEN` bearer on a loopback request from the FlowBoard plugin adapter, carrying `X-FlowBoard-Gateway-Profile-Id` (plus optional name, scopes, agent-id and session-key headers) | `human`, source `openclaw-gateway` |
+| Telegram init-data / JWT session | HMAC against a configured bot token, or FlowBoard's own cookie signature (`req.user`) | `human` |
+| Loopback admission | Transport only — the request arrived on `127.0.0.1`/`::1` | trusted `operator`; *not* a verified human |
+| `agentId` / body or header claims | Nothing | `agent` — descriptive attribution only |
+
+The Gateway row is the only new one, and it is deliberately narrow: those headers mean nothing
+without a valid service token, are never read from a browser request, and the token authenticates
+the *adapter*, not the person. A service token alone (a CLI or agent call, which carries no profile)
+resolves to the trusted operator, not to a human. The contract is fixed in
+[ADR-0037](../adr/0037-trusted-collaborators-and-native-control-ui.md) and specified in full in
+ADR-0040; the surfaces that use it are described in
+[OpenClaw Integration](openclaw-integration.md).
+
 **`AUTH_ALWAYS` overrides the loopback bypass.** Default false: loopback always passes. Setting `AUTH_ALWAYS=true` removes the loopback shortcut so even local requests must authenticate. Use case: exposing the dashboard via a non-Cloudflare tunnel where the operator wants every request authenticated.
 
 **`LOCAL_HOSTNAME` enables LAN bypass only by explicit opt-in.** Setting
@@ -130,3 +149,5 @@ Prefer `AUTH_ALWAYS=true` when exposing the dashboard beyond loopback.
 - [ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md) — the dashboard's no-identity decision is what makes trust-on-write of `agentId` acceptable here
 - [Environment Variables](../reference/env-vars.md#authentication) — the auth-related env vars in one table
 - [ADR-0030](../adr/0030-multi-bot-identity-and-session-rebinding.md) — ordered bot identities and fresh-initData session rebinding
+- [ADR-0037](../adr/0037-trusted-collaborators-and-native-control-ui.md) — trusted collaborators, the four identities, and the Gateway-verified profile as a third principal source
+- [OpenClaw Integration](openclaw-integration.md) — where that profile comes from and what the native Control UI page is trusted with

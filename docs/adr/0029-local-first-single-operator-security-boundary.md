@@ -1,7 +1,12 @@
 # ADR-0029: Local-first single-operator security boundary
 
+> Amended in part by [ADR-0037](0037-trusted-collaborators-and-native-control-ui.md): the factual
+> premise below — that OpenClaw offers no second human principal — no longer holds on a Gateway with
+> durable human profiles. The decision (no RBAC, no tenants, no capability tiers; accidental-damage
+> invariants plus audit instead) stands, and the local single-operator mode is unchanged.
+
 ## Status
-Accepted (2026-06-25, T-422-4)
+Accepted (2026-06-25, T-422-4); factual premise amended in part by [ADR-0037](0037-trusted-collaborators-and-native-control-ui.md) (2026-09-20)
 
 ## Date
 2026-06-25
