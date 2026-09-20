@@ -2,6 +2,7 @@
 
 ### Unreleased
 
+- **Session-scoped project context (T-487-2).** A project can now be activated for a single OpenClaw session instead of the whole agent, so two sessions of the same agent no longer overwrite each other's context. `GET`/`PUT /api/status` accept an optional `sessionKey`; resolution is session binding → agent binding → none, and every status response reports which layer answered in `binding`. `PUT { project: null, agentId, sessionKey }` releases just that session back to the agent-level project. Session bindings expire on the existing idle TTL and are then dropped, so context falls back instead of disappearing. `GET /api/agents` gains an additive `sessions` array. Callers that send no `sessionKey` — including all external agents — are unaffected. `sessionKey` is context, never authorization (ADR-0039).
 - **Configurable frame-ancestors for Control UI embedding (T-487-10).** `FLOWBOARD_FRAME_ANCESTORS` lets operators allow-list additional origins (e.g. the OpenClaw Control UI) to embed the dashboard in an iframe. When set to one or more valid origins, CSP `frame-ancestors` grows to include them and `X-Frame-Options` is omitted (it cannot express more than one allowed ancestor); invalid entries are dropped with a named startup warning instead of crashing the server, and leaving the variable unset keeps both headers byte-identical to today.
 
 ### v5.2.1 (2026-08-28) — Import Safety & Agent UX Polish

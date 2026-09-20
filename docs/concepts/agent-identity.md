@@ -35,6 +35,26 @@ If an OpenClaw-managed agent run does not receive the bootstrap identity block, 
 
 **Lazy registration.** A row in `flowboard_agents` is created on the first `PUT /api/status {agentId, project}` for an unknown agent. Task mutations alone (claim, release, complete) do not create an agent row — they store the agent-id in `tasks_current.agent` and that's it. The table answers "which agents have an active project", not "which agents exist". An agent that only claims tasks but never activates a project shows up as `tasks_current.agent` but is invisible to `GET /api/agents`.
 
+### Session-scoped project binding
+
+One agent-id can serve several concurrent OpenClaw sessions — `agent:<id>:main`, `agent:<id>:telegram:<chat>`, a cron wake, a delegated run. With only the per-agent row above, a Telegram session that activates project *B* silently repoints the main session's context away from project *A*. `flowboard_session_projects` adds an optional, more specific binding layered on `flowboard_agents` (ADR-0039):
+
+| Column | Meaning |
+|---|---|
+| `agent_id` | The agent string, as in `flowboard_agents` |
+| `session_key` | The OpenClaw session key, e.g. `agent:main:telegram:4711` |
+| `active_project` | Project name for this session |
+| `activated_at` | ISO timestamp of the last session-scoped switch |
+| `last_seen` | ISO heartbeat for idle expiry |
+
+**Resolution is session → agent → null.** `GET /api/status?agentId=<id>&sessionKey=<key>` answers from the session row when one exists (`binding: "session"`), otherwise from the agent row (`binding: "agent"`), otherwise with `activeProject: null` and `binding: null`. The response always carries `binding` and echoes `sessionKey` when it was supplied. A request without `sessionKey` resolves exactly as it always did — external agents (Codex, Cursor, scripts, `curl`) have no session concept and are unaffected.
+
+**Activation and deactivation.** `PUT /api/status { project, agentId, sessionKey }` writes only the session row; the agent-level `active_project` is untouched. `PUT /api/status { project: null, agentId, sessionKey }` **deletes** the session row, so the agent-level binding becomes visible again — that is the documented way to hand a session back to the agent-wide context. Deleting rather than nulling matters: a retained row holding `NULL` would shadow the fallback instead of releasing it.
+
+**`sessionKey` is context, never authorization.** It selects which binding answers a status read. It is not a credential, grants nothing, and protects nothing — anyone who can reach the dashboard port can assert any session key exactly as they can assert any agent-id. Validation only bounds the storage shape: a non-empty string of at most 256 characters with no control characters, `400` otherwise.
+
+**Expiry and visibility.** Session bindings expire on the same idle TTL as agent rows (`FLOWBOARD_AGENT_IDLE_TTL_HOURS`, ADR-0020) with the same live-claim protection, and an expired row is deleted so the agent-level binding takes over again. `GET /api/status` heartbeats whichever row answered it. `GET /api/agents` lists each agent's bindings in an additive `sessions` array (`sessionKey`, `activeProject`, `activatedAt`, `lastSeen`). The `project-context` hook forwards `context.sessionKey` when OpenClaw provides one and renders `Binding: session` / `Binding: agent` under the active-project header — the raw key never reaches model context.
+
 **Managed ids.** FlowBoard's public defaults only include portable ids such as `main`, `human`, `claude-code`, `codex`, `cursor`, and `cron-nightly`. Installations with named OpenClaw agents should declare those local names through `FLOWBOARD_MANAGED_AGENT_IDS`, for example `FLOWBOARD_MANAGED_AGENT_IDS=alpha-agent,beta-agent`. Exact managed ids are accepted and classified as `managed`. Near-collision variants such as `alpha-agent-main` or `prod-alpha-agent` are rejected so a managed agent cannot accidentally fork itself into a phantom identity after a session reset.
 
 **External agents** are first-class citizens under the same rules. They:
@@ -61,12 +81,13 @@ The `GET /api/info` endpoint documents the convention and serves the external-tr
 - `hooks/project-context/handler.js` — `deriveAgentIdFromWorkspace()`, `buildIdentitySection()`.
 - `dashboard/agent-identity.js` — API-ingress validation and classification for known, test, and external agent ids.
 - `dashboard/server.js` — `/api/status` (per-agent), `/api/agents` (list), `DELETE /api/agents/:id` (with `?force=`), `/api/info` (external onboarding).
-- `dashboard/flowboard-metadata.js` — `flowboard_agents` table CRUD (`getAgentRow`, `setAgentActiveProject`, `listAgents`, `deleteAgentRow`).
+- `dashboard/flowboard-metadata.js` — `flowboard_agents` table CRUD (`getAgentRow`, `setAgentActiveProject`, `listAgents`, `deleteAgentRow`) and the session layer (`resolveActiveProject`, `setSessionActiveProject`, `deleteSessionProjectRow`, `validateSessionKey`, `isSessionBindingExpired`).
 - `dashboard/hzl-service.js` — `listTasksClaimedBy(agentId)`, the conflict check for `DELETE /api/agents/:id`.
 
 ## See also
 
 - [ADR-0002](../adr/0002-api-status-requires-agent-id.md) — `/api/status` requires explicit agentId
 - [ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md) — Dashboard has no agent identity
+- [ADR-0039](../adr/0039-session-scoped-project-binding.md) — Session-scoped project binding with agent-level fallback
 - [Hook Architecture](hook-architecture.md) — how OpenClaw agents learn their own id
 - [Multi-Agent Model](multi-agent-model.md) — what `flowboard_agents` tracks vs. what task rows track

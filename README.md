@@ -600,7 +600,7 @@ network as a trusted proxy.
 
 ~/.openclaw/workspace/.hzl/       # Coordination backend by default (or HZL_DB_PATH)
 ├── flowboard.db                  # HZL event store — tasks, claims, checkpoints, comments
-└── flowboard-cache.db            # Projections + flowboard_projects, flowboard_agents
+└── flowboard-cache.db            # Projections + flowboard_projects, flowboard_agents, flowboard_session_projects
 
 ~/repos/FlowBoard/                # SSoT — pulled from dev branch on GitHub
 ├── dashboard/
@@ -621,7 +621,7 @@ network as a trusted proxy.
 ```
 
 **Key principles:**
-- 📡 **DB-canonical** — project + per-agent state live in `flowboard_agents` / `flowboard_projects`
+- 📡 **DB-canonical** — project + per-agent state live in `flowboard_agents` / `flowboard_projects`; optional per-session bindings in `flowboard_session_projects`
 - 🧩 **Lazy-load rules** — agent checks `/api/status`, then fetches bootstrap/rules on demand
 - 🔒 **Local-first** — everything runs on your machine; public remote access is opt-in
 - 🧪 **API-driven** — dashboard and agents share the same REST surface

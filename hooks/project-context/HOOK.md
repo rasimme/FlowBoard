@@ -19,14 +19,17 @@ the local API.
    via `PUT /api/status`).
 2. Derives the canonical `agentId` from the workspace directory name
    (`workspace-<id>` → `<id>`, plain `workspace` → `main`).
-3. Resolves the active project from the FlowBoard API (`GET /api/status`).
+3. Resolves the active project from the FlowBoard API (`GET /api/status`),
+   passing `&sessionKey=` when the event context supplies one.
    If the API is unreachable, the hook emits projectless context by default.
    Legacy `ACTIVE-PROJECT.md` fallback is opt-in only via
    `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` for explicit migration
    recovery windows. An authoritative `null` from the API means "no project
    active" and never triggers the file fallback.
 4. Builds the bootstrap document in memory:
-   - `# Active Project: <name>` header
+   - `# Active Project: <name>` header, followed by a `Binding: session|agent`
+     line when the server reports which binding layer answered (ADR-0039).
+     The raw session key is never written into the document.
    - `## Identity` section with the agent's canonical id
    - Rules manifest (lazy-load index — see `dashboard/rules-api.js`)
    - Live operational task state from `/api/projects/<name>/tasks`
@@ -36,6 +39,20 @@ the local API.
 6. Agent fetches individual rule sections on demand via
    `GET /api/projects/:name/rules/:section` — rule bodies live in
    `docs/project-mode/*.md`.
+
+## Consumed context fields
+
+From `event.context` (all optional unless noted):
+
+| Field | Use |
+|---|---|
+| `bootstrapFiles` | **Required.** The mutable array the hook replaces `BOOTSTRAP.md` in; the hook returns early if it is absent. |
+| `workspaceDir` | Canonical `agentId` source (`workspace-<id>` → `<id>`), and the path of the injected entry. |
+| `agentId` | Fallback identity when no id can be derived from the workspace; `main` if neither is available (T-168 precedence, unchanged). |
+| `sessionKey` | Forwarded to `GET /api/status` as `&sessionKey=` so a session-scoped binding answers this run (ADR-0039). Dropped when empty, non-string, over 256 characters, or containing control characters. It is context, never authorization, and is never rendered into the bootstrap text. |
+| `pluginConfig` | Merged over the plugin defaults (`dashboardBaseUrl`, `projectsDir`). |
+
+`sessionId` is not consumed.
 
 ## Why agent:bootstrap (and not command:new / command:reset)
 
@@ -76,5 +93,6 @@ and eliminates the cache↔projection drift class of bugs.
 ## References
 
 - Spec: `specs/T-168-hook-lifecycle-coverage.md` (T-168-3)
+- ADR: `docs/adr/0039-session-scoped-project-binding.md` (session-scoped binding)
 - Bundled reference pattern: `src/hooks/bundled/bootstrap-extra-files/handler.ts`
 - Type: `WorkspaceBootstrapFile` in `src/agents/workspace.ts`

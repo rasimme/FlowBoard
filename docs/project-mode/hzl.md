@@ -60,6 +60,7 @@ FlowBoard layers two metadata tables on top of HZL:
 |-------|---------|
 | `flowboard_projects` | Canonical project registry (name, display_name, status, assigned_agents, config) |
 | `flowboard_agents`   | Per-agent active-project state (`agent_id`, `active_project`, `activated_at`) |
+| `flowboard_session_projects` | Optional session-scoped project binding (`agent_id`, `session_key`, `active_project`, `activated_at`, `last_seen`); falls back to `flowboard_agents` (ADR-0039) |
 
 The `flowboard_agents` table is what makes per-agent project activation work. Two agents activating different projects simultaneously each get their own row and their own per-run live-injected `BOOTSTRAP.md` content (the `project-context` hook keys off `agentId` derived from the workspace directory) — without collision on a shared file.
 
@@ -76,7 +77,7 @@ If you find code treating any of these as derivable from HZL events, that is a b
 
 ## Operational pointers
 
-- **Migrations**: `dashboard/migrations.js` holds idempotent migrations m001–m008 (tasks.json → HZL, `_index.md` → `flowboard_projects`, `ACTIVE-PROJECT.md` → `flowboard_agents`, project-path move, session-log consolidation, …, m008 canvas schema). Run via `node dashboard/migrate-tasks.js` or auto-run on server startup. The canvas *data* import is separate and user-gated — see `GET/POST /api/migrations/canvas/status|run`.
+- **Migrations**: `dashboard/migrations.js` holds idempotent migrations m001–m012 (tasks.json → HZL, `_index.md` → `flowboard_projects`, `ACTIVE-PROJECT.md` → `flowboard_agents`, project-path move, session-log consolidation, …, m008 canvas schema, m012 session-scoped project binding). Run via `node dashboard/migrate-tasks.js` or auto-run on server startup. The canvas *data* import is separate and user-gated — see `GET/POST /api/migrations/canvas/status|run`.
 - **Env flags**: HZL is always enabled (the `HZL_ENABLED` flag was removed in T-129-1); `HZL_DB_PATH` overrides the default database path.
 - **Cache rebuild**: deleting `flowboard-cache.db*` forces the server to rebuild projections from the event store on next start.
 

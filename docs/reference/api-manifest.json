@@ -15,7 +15,11 @@
       "path": "/api/agents",
       "auth": "user",
       "group": "agents",
-      "doc": "api/agents.md"
+      "doc": "api/agents.md",
+      "response": {
+        "ok": "true",
+        "agents": "One entry per flowboard_agents row: agent_id, active_project, activated_at, last_seen, plus the additive sessions array (sessionKey, activeProject, activatedAt, lastSeen) from ADR-0039; may be empty."
+      }
     },
     {
       "method": "DELETE",
@@ -29,14 +33,43 @@
       "path": "/api/status",
       "auth": "user",
       "group": "agents",
-      "doc": "api/agents.md"
+      "doc": "api/agents.md",
+      "query": {
+        "agentId": "Required unless the x-openclaw-agent-id header is set. Stable agent id.",
+        "sessionKey": "Optional OpenClaw session key (e.g. agent:main:telegram:4711). Selects the session-scoped binding before the agent-level one (ADR-0039). Context, never authorization. Non-empty string, <= 256 chars, no control characters — 400 otherwise."
+      },
+      "response": {
+        "activeProject": "Resolved project name or null.",
+        "agentId": "Echoed agent id.",
+        "binding": "\"session\", \"agent\", or null — which binding layer answered.",
+        "sessionKey": "Echoed only when a sessionKey was supplied.",
+        "contextReady": "Whether the project's rule sections are loadable.",
+        "agentIdentity": "Identity classification metadata.",
+        "rules": "Lazy-load rules pointer; present when a project is active.",
+        "attention": "Stuck-work pull channel; present when the agent has stuck tasks."
+      }
     },
     {
       "method": "PUT",
       "path": "/api/status",
       "auth": "user",
       "group": "agents",
-      "doc": "api/agents.md"
+      "doc": "api/agents.md",
+      "body": {
+        "agentId": "Required. Stable agent id.",
+        "project": "Project name, display name, null, or \"none\" to clear.",
+        "sessionKey": "Optional OpenClaw session key. With a project it upserts that session's binding and leaves the agent-level binding untouched; with project null it deletes the session binding so the agent-level binding applies again (ADR-0039). Context, never authorization. Same validation as the GET query parameter."
+      },
+      "response": {
+        "ok": "true",
+        "activeProject": "Effective project after the write (for a session deactivation this is the agent-level fallback).",
+        "agentId": "Echoed agent id.",
+        "binding": "\"session\", \"agent\", or null.",
+        "sessionKey": "Echoed only when a sessionKey was supplied.",
+        "contextReady": "Whether the project's rule sections are loadable.",
+        "agentIdentity": "Identity classification metadata.",
+        "rules": "Lazy-load rules pointer; present when a project is active."
+      }
     },
     {
       "method": "POST",

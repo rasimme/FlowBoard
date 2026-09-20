@@ -243,11 +243,20 @@ and update, and reads expose the server timestamp or `null`.
 |--------|------|-------------|
 | `POST` | `/projects` | Canonical project creation path. Creates HZL project + FlowBoard metadata + post-m005 filesystem scaffold |
 | `GET` | `/projects` | List all projects with task counts |
-| `GET` | `/status` | Active project for agent. Query: `?agentId=` |
-| `PUT` | `/status` | Set active project. Body: `{ project, agentId }` |
-| `GET` | `/agents` | List all agents and their active projects |
+| `GET` | `/status` | Active project for agent. Query: `?agentId=` plus optional `&sessionKey=` |
+| `PUT` | `/status` | Set active project. Body: `{ project, agentId }` plus optional `sessionKey` |
+| `GET` | `/agents` | List all agents, their active projects, and their session bindings |
 
 Canonical project registry and per-agent active-project state are DB-backed (`flowboard_projects`, `flowboard_agents`). Active project = context loading, not access control.
+
+Project binding has two layers (ADR-0039). The agent-level row in `flowboard_agents` is the default. An optional `sessionKey` — the OpenClaw session key of the current run, e.g. `agent:main:telegram:4711` — binds a project to one session of that agent, so two concurrent sessions cannot overwrite each other's context:
+
+- `GET /status?agentId=<id>&sessionKey=<key>` resolves **session → agent → null** and always returns `binding` (`"session"`, `"agent"`, or `null`), echoing `sessionKey` when supplied.
+- `PUT /status { project, agentId, sessionKey }` writes only that session's binding; the agent-level project stays as it is.
+- `PUT /status { project: null, agentId, sessionKey }` deletes the session binding, after which the agent-level project applies again.
+- Omitting `sessionKey` everywhere is fully supported and behaves exactly as before — external agents without a session concept need no change.
+- `sessionKey` must be a non-empty string of at most 256 characters with no control characters (`400` otherwise). It is **context, never authorization**: it names a binding, it does not authenticate or authorize the caller.
+- Session bindings expire on the same idle TTL as agent activations and are deleted on expiry, so context falls back to the agent-level binding rather than to "no project".
 
 Agent ids are validated at API ingress. Known OpenClaw ids and stable external ids are allowed; placeholders or generated workspace/replay ids are rejected. Use the bootstrap-provided id for OpenClaw agents and one stable configured id for external agents.
 

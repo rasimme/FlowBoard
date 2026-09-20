@@ -48,7 +48,7 @@ Legend: ✅ done · 🔲 planned (tracked task) · ⬜ not yet considered · `�
 | Surface | Scope | Concept doc | Foundation ADR | Tracked tasks |
 |---|---|:---:|:---:|---|
 | Lazy Loading | Rule sections served on demand; manifest/section split | ✅ [lazy-loading.md](lazy-loading.md) | ✅ ADR-0005, ADR-0006 | — |
-| Agent Identity | agent-id string contract; OpenClaw vs FlowBoard layers | ✅ [agent-identity.md](agent-identity.md) | ✅ ADR-0002, ADR-0003 | — |
+| Agent Identity | agent-id string contract; OpenClaw vs FlowBoard layers; session-scoped project binding with agent-level fallback | ✅ [agent-identity.md](agent-identity.md) | ✅ ADR-0002, ADR-0003, ADR-0039 | T-487-2 |
 | Hook Architecture | `agent:bootstrap` subscription; live-inject; no on-disk writes | ✅ [hook-architecture.md](hook-architecture.md) | ✅ ADR-0001, ADR-0004 | — |
 | Multi-Agent Model | `flowboard_agents` + task ownership; collaboration; handoff | ✅ [multi-agent-model.md](multi-agent-model.md) | ✅ ADR-0007 | — |
 | Kanban | Status workflow; subtask model; lease semantics; canonical work state from user POV | ✅ [kanban.md](kanban.md) | ✅ ADR-0007, ADR-0031 (supersedes ADR-0009 execution context) | T-443 |
