@@ -193,6 +193,51 @@ if (TRUSTED_PROXY_CONFIG.invalid.length > 0) {
   );
 }
 
+// T-487-10: additional origins allowed to embed the dashboard in an iframe
+// (e.g. the OpenClaw Control UI). Each entry must be an absolute http(s)
+// origin — no path, query, or credentials — so it drops in directly to CSP
+// frame-ancestors. Invalid entries are ignored with a named startup warning
+// rather than crashing the server.
+function parseFrameAncestorOrigin(rawValue) {
+  const candidate = typeof rawValue === 'string' ? rawValue.trim() : '';
+  if (!candidate) return null;
+  let url;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (url.username || url.password) return null;
+  if (url.search || url.hash) return null;
+  if (url.pathname !== '' && url.pathname !== '/') return null;
+  return url.origin;
+}
+
+function parseFrameAncestorsConfig(value) {
+  const raw = typeof value === 'string' ? value : '';
+  if (!raw.trim()) return { entries: [], invalid: [] };
+  const entries = [];
+  const invalid = [];
+  for (const part of raw.split(',')) {
+    const candidate = part.trim();
+    const origin = parseFrameAncestorOrigin(candidate);
+    if (origin) entries.push(origin);
+    else invalid.push(candidate);
+  }
+  return { entries: [...new Set(entries)], invalid };
+}
+
+const FRAME_ANCESTORS_CONFIG = parseFrameAncestorsConfig(process.env.FLOWBOARD_FRAME_ANCESTORS);
+const EXTRA_FRAME_ANCESTORS = FRAME_ANCESTORS_CONFIG.entries;
+if (FRAME_ANCESTORS_CONFIG.invalid.length > 0) {
+  console.warn(
+    `⚠️  FLOWBOARD_FRAME_ANCESTORS: ignoring invalid origin(s) ` +
+    `${FRAME_ANCESTORS_CONFIG.invalid.map((v) => JSON.stringify(v)).join(', ')} — each entry must be an ` +
+    `absolute http(s) origin with no path, query, or credentials (e.g. http://127.0.0.1:18860).`
+  );
+}
+
 function flowboardNotificationDelivery() {
   return {
     channel: FLOWBOARD_NOTIFICATION_CHANNEL,
@@ -569,8 +614,15 @@ app.use((req, res, next) => {
   res.locals.cspNonce = nonce;
   // Security Headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // T-487-10: X-Frame-Options cannot express more than one allowed ancestor,
+  // so it is only sent while there are no configured extra origins. CSP
+  // frame-ancestors (below) takes precedence over X-Frame-Options in modern
+  // browsers and covers both cases.
+  if (EXTRA_FRAME_ANCESTORS.length === 0) {
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  }
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  const frameAncestors = ["'self'", TELEGRAM_WEB_ORIGIN, ...EXTRA_FRAME_ANCESTORS].join(' ');
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' https://telegram.org`,
@@ -578,7 +630,7 @@ app.use((req, res, next) => {
     "img-src 'self' data: https://t.me",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
-    "frame-ancestors 'self' https://web.telegram.org"
+    `frame-ancestors ${frameAncestors}`
   ].join('; '));
   next();
 });
