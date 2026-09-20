@@ -58,6 +58,36 @@ function deriveAgentIdFromWorkspace(workspaceDir) {
   return null;
 }
 
+// T-487-2 (ADR-0039): OpenClaw's `agent:bootstrap` context carries an optional
+// `sessionKey` (`agent:<agentId>:main`, `agent:<agentId>:telegram:<chat>`, …).
+// Forwarding it lets FlowBoard answer with this session's binding instead of
+// the agent-wide one. This mirrors `fbMeta.validateSessionKey` in shape only —
+// the server is authoritative and rejects anything invalid with a 400; the
+// hook just refuses to put junk (or control characters) on the wire.
+// The session key is CONTEXT, never authorization.
+const SESSION_KEY_MAX_LENGTH = 256;
+
+function normalizeSessionKey(value) {
+  if (typeof value !== "string") return null;
+  const key = value.trim();
+  if (!key || key.length > SESSION_KEY_MAX_LENGTH) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F-\u009F]/.test(key)) return null;
+  return key;
+}
+
+// T-487-2: tell the agent which layer its context came from, WITHOUT printing
+// the raw session key — the key is routing context, not model-facing content.
+function buildBindingLine(binding) {
+  if (binding === "session") {
+    return "Binding: session — this project is active for the current OpenClaw session only; other sessions of this agent keep their own context.";
+  }
+  if (binding === "agent") {
+    return "Binding: agent — this project is active for every session of this agent that has no session-scoped binding.";
+  }
+  return "";
+}
+
 function buildIdentitySection(agentId) {
   if (!agentId) return "";
   return [
@@ -167,13 +197,19 @@ export async function fetchWithRetry(url, { fetchImpl = fetch, sleep = (ms) => n
 
 // Discriminated result so callers can distinguish authoritative null
 // (no project active) from a network failure.
-async function resolveActiveProjectFromApi(agentId, dashboardBaseUrl) {
+// T-487-2: `sessionKey` is optional; when present the server resolves the
+// session binding first and falls back to the agent binding, and reports which
+// one answered in `binding`. A FlowBoard older than T-487-2 simply omits
+// `binding` — then no binding line is rendered.
+async function resolveActiveProjectFromApi(agentId, dashboardBaseUrl, sessionKey = null) {
   try {
-    const url = joinApiPath(dashboardBaseUrl, `/api/status?agentId=${encodeURIComponent(agentId)}`);
+    let path = `/api/status?agentId=${encodeURIComponent(agentId)}`;
+    if (sessionKey) path += `&sessionKey=${encodeURIComponent(sessionKey)}`;
+    const url = joinApiPath(dashboardBaseUrl, path);
     const res = await fetchWithRetry(url);
     if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
     const data = await res.json();
-    return { ok: true, project: data.activeProject || null };
+    return { ok: true, project: data.activeProject || null, binding: data.binding || null };
   } catch (err) {
     return { ok: false, reason: err?.message || "fetch failed" };
   }
@@ -236,13 +272,13 @@ async function getTaskStatusSummary(projectName, dashboardBaseUrl) {
   };
 }
 
-async function buildBootstrapContent(workspaceDir, agentId, pluginConfig = {}) {
+async function buildBootstrapContent(workspaceDir, agentId, pluginConfig = {}, sessionKey = null) {
   const identitySection = buildIdentitySection(agentId);
   const dashboardBaseUrl = resolveDashboardBaseUrl(pluginConfig);
 
   // Resolve active project: DB canonical via API. Legacy file fallback is
   // opt-in only and never runs after an authoritative API null.
-  const apiResult = await resolveActiveProjectFromApi(agentId, dashboardBaseUrl);
+  const apiResult = await resolveActiveProjectFromApi(agentId, dashboardBaseUrl, sessionKey);
   let projectName = null;
   // T-230: distinguish an authoritative null (API said no project) from a
   // transient API failure (status unknown). They must produce different
@@ -276,8 +312,12 @@ async function buildBootstrapContent(workspaceDir, agentId, pluginConfig = {}) {
     try { projectContent = readFileSync(projectMdPath, "utf8"); } catch {}
   }
 
+  // T-487-2: the binding line sits directly under the header so the agent sees
+  // in one place *which* project is active and *how far* that activation
+  // reaches. Only rendered when the server reported a binding.
+  const bindingLine = buildBindingLine(apiResult.binding);
   const sections = [
-    `# Active Project: ${projectName}\n`,
+    bindingLine ? `# Active Project: ${projectName}\n\n${bindingLine}\n` : `# Active Project: ${projectName}\n`,
     `${identitySection}`,
     `${rulesManifest}\n`,
   ];
@@ -321,10 +361,13 @@ async function handleProjectContextEvent(event, defaultPluginConfig = {}) {
   // produced wrong-content injection for valid OpenClaw runs whose context
   // agentId disagreed with the workspace path.
   const agentId = deriveAgentIdFromWorkspace(workspaceDir) || context.agentId || "main";
+  // T-487-2: optional and purely additive — a context without `sessionKey`
+  // (or with an unusable one) produces exactly the pre-T-487-2 request.
+  const sessionKey = normalizeSessionKey(context.sessionKey);
 
   let content;
   try {
-    content = await buildBootstrapContent(workspaceDir, agentId, pluginConfig);
+    content = await buildBootstrapContent(workspaceDir, agentId, pluginConfig, sessionKey);
   } catch (err) {
     console.warn(`[project-context] build failed for ${agentId}: ${err?.message ?? err}`);
     // Fail safe: do not strip the existing BOOTSTRAP.md; let whatever the

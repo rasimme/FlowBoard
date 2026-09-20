@@ -405,6 +405,19 @@ const migrations = [
       return result;
     },
   },
+  {
+    id: 'm012-session-scoped-project-binding',
+    name: 'flowboard_session_projects table for session-scoped project binding (T-487-2)',
+    run: (_db, { fbMeta }) => {
+      // Idempotent CREATE TABLE IF NOT EXISTS against the cache DB — the same
+      // handle fbMeta.init() uses. On a fresh install init() has already
+      // created the table and this is a no-op registry row; on a database
+      // created before T-487-2 this is what adds it. `flowboard_agents` is
+      // deliberately left untouched (ADR-0039).
+      if (!fbMeta || typeof fbMeta.ensureSessionProjectsSchema !== 'function') return;
+      fbMeta.ensureSessionProjectsSchema();
+    },
+  },
 ];
 
 /**

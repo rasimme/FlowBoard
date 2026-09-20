@@ -29,9 +29,36 @@ const CREATE_AGENTS_TABLE_SQL = `
   )
 `;
 
+// T-487-2 (ADR-0039): session-scoped project binding. One OpenClaw agent can
+// run several concurrent sessions (`agent:<id>:main`, `agent:<id>:telegram:<chat>`,
+// …) against the same `flowboard_agents` row, so a per-agent binding alone lets
+// two sessions overwrite each other's context. This table adds an optional,
+// more specific binding keyed by (agent_id, session_key); `flowboard_agents`
+// stays exactly as it is and remains the fallback.
+//
+// `session_key` is CONTEXT, never authorization. Anyone who can reach the
+// dashboard port can assert any session key, exactly as they can assert any
+// agent id (ADR-0003, ADR-0029). It only selects which row answers a status
+// read — it grants nothing and protects nothing.
+const CREATE_SESSION_PROJECTS_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_session_projects (
+    agent_id       TEXT NOT NULL,
+    session_key    TEXT NOT NULL,
+    active_project TEXT,
+    activated_at   TEXT NOT NULL,
+    last_seen      TEXT NOT NULL,
+    PRIMARY KEY (agent_id, session_key)
+  )
+`;
+
+// T-487-2: bounded so a session key cannot be used as a payload channel. Long
+// enough for OpenClaw's `agent:<agentId>:telegram:<chat>` shape with headroom.
+const SESSION_KEY_MAX_LENGTH = 256;
+
 // T-231: default idle threshold before an agent's active_project is auto-cleared
 // (generous on purpose — a live session heartbeats via GET /api/status on every
 // bootstrap, and a held task claim protects regardless of idle time).
+// T-487-2: session bindings expire on the same TTL — one knob, not two.
 const AGENT_IDLE_TTL_HOURS = Number(process.env.FLOWBOARD_AGENT_IDLE_TTL_HOURS) || 48;
 
 const CREATE_MIGRATIONS_TABLE_SQL = `
@@ -94,7 +121,18 @@ function init(db) {
   _db.prepare(CREATE_DELETED_PROJECTS_TABLE_SQL).run();
   _db.prepare(CREATE_SETTINGS_TABLE_SQL).run();
   _db.exec(CREATE_PROJECT_IMPORTS_TABLE_SQL);
-  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_migrations, flowboard_deleted_projects, flowboard_settings');
+  ensureSessionProjectsSchema();
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_session_projects, flowboard_migrations, flowboard_deleted_projects, flowboard_settings');
+}
+
+/**
+ * T-487-2: idempotent DDL for `flowboard_session_projects`. Called from init()
+ * for fresh installs and from migration m012 for databases created before the
+ * session layer existed.
+ */
+function ensureSessionProjectsSchema() {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  _db.prepare(CREATE_SESSION_PROJECTS_TABLE_SQL).run();
 }
 
 function getSetting(key) {
@@ -630,6 +668,152 @@ function resolveProjectName(input, hzlProjects) {
   return null;
 }
 
+// --- Session-scoped project binding (T-487-2, ADR-0039) ---
+
+/**
+ * T-487-2: validate an OpenClaw session key.
+ *
+ * A session key is CONTEXT, never authorization: it selects which binding row
+ * answers, it does not grant access to anything. Validation therefore only
+ * guards the storage shape — non-empty, bounded, no control characters — so a
+ * caller cannot smuggle newlines or NUL bytes into logs, keys, or rendered
+ * bootstrap text.
+ *
+ * Returns { ok: true, key } with the trimmed key, or { ok: false, error }.
+ */
+function validateSessionKey(value) {
+  if (typeof value !== 'string') return { ok: false, error: 'sessionKey must be a string' };
+  const key = value.trim();
+  if (!key) return { ok: false, error: 'sessionKey must be a non-empty string' };
+  if (key.length > SESSION_KEY_MAX_LENGTH) {
+    return { ok: false, error: `sessionKey must be <= ${SESSION_KEY_MAX_LENGTH} characters` };
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001F\u007F-\u009F]/.test(key)) {
+    return { ok: false, error: 'sessionKey must not contain control characters' };
+  }
+  return { ok: true, key };
+}
+
+/**
+ * Return the session binding row for (agentId, sessionKey), or null.
+ */
+function getSessionProjectRow(agentId, sessionKey) {
+  if (!_db || !agentId || !sessionKey) return null;
+  return _db.prepare(
+    'SELECT agent_id, session_key, active_project, activated_at, last_seen FROM flowboard_session_projects WHERE agent_id = ? AND session_key = ?'
+  ).get(agentId, sessionKey) || null;
+}
+
+/**
+ * Upsert the active project for one session of one agent. The agent-level
+ * `flowboard_agents.active_project` is deliberately NOT touched — the session
+ * row is a more specific binding layered on top of it.
+ */
+function setSessionActiveProject(agentId, sessionKey, projectName) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const now = new Date().toISOString();
+  _db.prepare(`
+    INSERT INTO flowboard_session_projects (agent_id, session_key, active_project, activated_at, last_seen)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, session_key) DO UPDATE SET
+      active_project = excluded.active_project,
+      activated_at   = excluded.activated_at,
+      last_seen      = excluded.last_seen
+  `).run(agentId, sessionKey, projectName || null, now, now);
+}
+
+/**
+ * Delete one session binding. Deleting (rather than nulling) is what makes the
+ * agent-level binding visible again — a row with `active_project = NULL` would
+ * shadow the fallback instead of releasing it.
+ * Returns true if a row was removed.
+ */
+function deleteSessionProjectRow(agentId, sessionKey) {
+  if (!_db || !agentId || !sessionKey) return false;
+  const res = _db.prepare('DELETE FROM flowboard_session_projects WHERE agent_id = ? AND session_key = ?')
+    .run(agentId, sessionKey);
+  return res.changes > 0;
+}
+
+/**
+ * Refresh a session binding's heartbeat. Update-only on purpose: a status read
+ * must never lazily create a session row, otherwise every session that ever
+ * called GET /api/status would pin an empty binding.
+ * Returns true if an existing row was refreshed.
+ */
+function touchSessionLastSeen(agentId, sessionKey) {
+  if (!_db || !agentId || !sessionKey) return false;
+  const res = _db.prepare('UPDATE flowboard_session_projects SET last_seen = ? WHERE agent_id = ? AND session_key = ?')
+    .run(new Date().toISOString(), agentId, sessionKey);
+  return res.changes > 0;
+}
+
+/**
+ * List one agent's session bindings, ordered by session key.
+ */
+function listSessionBindings(agentId) {
+  if (!_db || !agentId) return [];
+  return _db.prepare(
+    'SELECT agent_id, session_key, active_project, activated_at, last_seen FROM flowboard_session_projects WHERE agent_id = ? ORDER BY session_key'
+  ).all(agentId);
+}
+
+/**
+ * List every session binding, ordered by agent then session key.
+ */
+function listAllSessionBindings() {
+  if (!_db) return [];
+  return _db.prepare(
+    'SELECT agent_id, session_key, active_project, activated_at, last_seen FROM flowboard_session_projects ORDER BY agent_id, session_key'
+  ).all();
+}
+
+/**
+ * Remove every session binding pointing at a project (used when a project is
+ * hard-deleted, mirroring the agent-row cleanup).
+ * Returns the number of rows removed.
+ */
+function deleteSessionBindingsForProject(projectName) {
+  if (!_db || !projectName) return 0;
+  return _db.prepare('DELETE FROM flowboard_session_projects WHERE active_project = ?').run(projectName).changes;
+}
+
+/**
+ * T-487-2: pure idle-expiry decision for a session binding — the session-level
+ * twin of isAgentIdleExpired (ADR-0020), on the same TTL and with the same
+ * lease protection. An expired session row is DELETED, so the agent-level
+ * binding takes over again.
+ */
+function isSessionBindingExpired(row, { nowMs, ttlHours, claimCount } = {}) {
+  if (!row || !row.last_seen) return false;
+  if (claimCount > 0) return false;
+  const seenMs = Date.parse(row.last_seen);
+  if (Number.isNaN(seenMs)) return false;
+  return (nowMs - seenMs) > ttlHours * 3600 * 1000;
+}
+
+/**
+ * T-487-2: resolve the effective active project for a caller.
+ *
+ * Order: session row (agentId + sessionKey) → agent row → null.
+ * Returns { activeProject, binding } where binding is 'session', 'agent', or
+ * null. Without a sessionKey this is exactly the pre-T-487-2 lookup.
+ */
+function resolveActiveProject(agentId, sessionKey) {
+  if (sessionKey) {
+    const sessionRow = getSessionProjectRow(agentId, sessionKey);
+    if (sessionRow) {
+      return { activeProject: sessionRow.active_project || null, binding: 'session', row: sessionRow };
+    }
+  }
+  const agentRow = getAgentRow(agentId);
+  if (agentRow && agentRow.active_project) {
+    return { activeProject: agentRow.active_project, binding: 'agent', row: agentRow };
+  }
+  return { activeProject: null, binding: null, row: agentRow || null };
+}
+
 /**
  * List all agent rows ordered by agent_id.
  */
@@ -646,6 +830,9 @@ function listAgents() {
  */
 function deleteAgentRow(agentId) {
   if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  // T-487-2: the agent's session bindings are bookkeeping for the same agent
+  // row — they must not outlive it as orphans.
+  _db.prepare('DELETE FROM flowboard_session_projects WHERE agent_id = ?').run(agentId);
   const result = _db.prepare('DELETE FROM flowboard_agents WHERE agent_id = ?').run(agentId);
   return result.changes;
 }
@@ -682,7 +869,20 @@ module.exports = {
   countLiveClaims,
   touchAgentLastSeen,
   clearAgentActiveProject,
+  // Session-scoped project binding (T-487-2, ADR-0039)
+  ensureSessionProjectsSchema,
+  validateSessionKey,
+  getSessionProjectRow,
+  setSessionActiveProject,
+  deleteSessionProjectRow,
+  deleteSessionBindingsForProject,
+  touchSessionLastSeen,
+  listSessionBindings,
+  listAllSessionBindings,
+  isSessionBindingExpired,
+  resolveActiveProject,
   getSetting,
   setSetting,
   AGENT_IDLE_TTL_HOURS,
+  SESSION_KEY_MAX_LENGTH,
 };

@@ -1273,6 +1273,11 @@ async function sendWakeEvent(text) {
 // telemetry). No silent fallback to a service-default agent (which routes
 // the caller's status request into a foreign agent's state — see T-177
 // trace from 2026-04-29).
+//
+// T-487-2 (ADR-0039): an optional `?sessionKey=<key>` selects the more specific
+// session-scoped binding. Resolution is session → agent → null and the answer
+// always carries `binding`. `sessionKey` is CONTEXT, never authorization: it
+// picks which row answers, it grants nothing (ADR-0003, ADR-0029).
 app.get('/api/status', (req, res) => {
   const identity = agentIdentity.validateAgentId(req.query.agentId || req.headers['x-openclaw-agent-id']);
   if (!identity.ok) {
@@ -1281,20 +1286,30 @@ app.get('/api/status', (req, res) => {
     });
   }
   const agentId = identity.id;
-  // T-231: this read is the per-run heartbeat — the bootstrap hook calls it
-  // before every agent run. Refresh last_seen so a live agent is never
-  // auto-deactivated as idle. (Upsert keeps any existing active_project.)
-  fbMeta.touchAgentLastSeen(agentId);
+  let sessionKey = null;
+  if (req.query.sessionKey !== undefined) {
+    const session = fbMeta.validateSessionKey(req.query.sessionKey);
+    if (!session.ok) return res.status(400).json({ error: session.error + ' (?sessionKey=<key> query parameter)' });
+    sessionKey = session.key;
+  }
   // T-131-3: DB is canonical. Unknown agents → null, no file fallback.
   // (The pre-backfill `agentId === AGENT_ID` branch is removed in T-177-3 —
   // there is no service-default agent anymore. The m003 migration handles
   // file→DB backfill for the legacy ACTIVE-PROJECT.md case.)
-  const row = fbMeta.getAgentRow(agentId);
-  const activeProject = row?.active_project || null;
+  const resolved = fbMeta.resolveActiveProject(agentId, sessionKey);
+  // T-231: this read is the per-run heartbeat — the bootstrap hook calls it
+  // before every agent run. Refresh last_seen so a live binding is never
+  // auto-deactivated as idle. T-487-2: heartbeat the row that answered, so a
+  // session binding stays alive on its own traffic and an agent-level binding
+  // that nothing uses any more still ages out (ADR-0020).
+  if (resolved.binding === 'session') fbMeta.touchSessionLastSeen(agentId, sessionKey);
+  else fbMeta.touchAgentLastSeen(agentId); // upsert keeps any existing active_project
+  const activeProject = resolved.activeProject;
   const readiness = activeProject
     ? rulesApi.getBootstrapReadiness(activeProject)
     : { contextReady: false, missingSections: [] };
-  const statusBody = { activeProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
+  const statusBody = { activeProject, agentId, binding: resolved.binding, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
+  if (sessionKey) statusBody.sessionKey = sessionKey;
   // T-296: surface the rules pointer on activation so external agents learn
   // the /rules endpoint and the action→section mapping.
   if (activeProject) statusBody.rules = rulesApi.buildRulesPointer(activeProject);
@@ -1315,6 +1330,15 @@ app.get('/api/status', (req, res) => {
 // Requires an explicit agentId in the request body. No silent fallback to a
 // service-default agent — that would route the activation into the wrong
 // flowboard_agents row (see T-177 trace from 2026-04-29).
+//
+// T-487-2 (ADR-0039): an optional `sessionKey` scopes the activation to one
+// OpenClaw session instead of the whole agent:
+//   { project, agentId, sessionKey }        → upsert that session's binding
+//   { project: null, agentId, sessionKey }  → drop that session's binding; the
+//                                             agent-level binding takes over
+//   { project, agentId }                    → unchanged agent-level behaviour
+// `sessionKey` is CONTEXT, never authorization — it names a binding, it does
+// not authenticate the caller (ADR-0003, ADR-0029).
 app.put('/api/status', async (req, res) => {
   const { project } = req.body;
   const identity = agentIdentity.validateAgentId(req.body.agentId);
@@ -1322,6 +1346,12 @@ app.put('/api/status', async (req, res) => {
     return res.status(400).json({ error: identity.error + ' in request body' });
   }
   const agentId = identity.id;
+  let sessionKey = null;
+  if (req.body.sessionKey !== undefined && req.body.sessionKey !== null) {
+    const session = fbMeta.validateSessionKey(req.body.sessionKey);
+    if (!session.ok) return res.status(400).json({ error: session.error + ' in request body' });
+    sessionKey = session.key;
+  }
   let effectiveProject = (project && project !== 'none') ? project : null;
 
   // Resolve to canonical project name. Clients sometimes send displayName
@@ -1335,38 +1365,65 @@ app.put('/api/status', async (req, res) => {
     effectiveProject = canonical;
   }
 
-  // Read previous state from canonical source
-  const previousProject = getCanonicalActiveProject(agentId);
+  // Read previous state from the canonical source, in the same scope the write
+  // will target — so a session-scoped switch compares against what that session
+  // actually saw, not against the agent-level row.
+  const previousProject = getCanonicalActiveProject(agentId, sessionKey);
 
   try {
     // T-131-3: write DB state (canonical). The dashboard no longer writes
     // ACTIVE-PROJECT.md or any other agent-workspace file — flowboard_agents
     // is the source of truth, and agents fetch state via /api/agents and
     // /api/projects/:name/bootstrap.
-    fbMeta.setAgentActiveProject(agentId, effectiveProject);
+    if (sessionKey) {
+      // T-487-2: session scope. The agent-level binding is never changed here —
+      // a session row is layered on top of it and deleting the row (rather than
+      // nulling it) is what lets the agent-level binding show through again.
+      if (effectiveProject) {
+        fbMeta.setSessionActiveProject(agentId, sessionKey, effectiveProject);
+        // Lazy-register the agent itself (ADR-0011) without touching its
+        // active_project, so the agent and its sessions stay visible in
+        // GET /api/agents even if it never activated anything agent-wide.
+        fbMeta.touchAgentLastSeen(agentId);
+      } else {
+        fbMeta.deleteSessionProjectRow(agentId, sessionKey);
+      }
+    } else {
+      fbMeta.setAgentActiveProject(agentId, effectiveProject);
+    }
+
+    // The state the caller now resolves to. For a session deactivation this is
+    // the agent-level fallback, not necessarily null.
+    const resolved = fbMeta.resolveActiveProject(agentId, sessionKey);
+    const nextProject = resolved.activeProject;
 
     // Send wake event to notify agent of project switch (English — this
-    // ships to third-party installs; T-288-8)
-    if (effectiveProject) {
+    // ships to third-party installs; T-288-8). The raw session key is never
+    // put into wake text — it is routing context, not operator-facing copy.
+    if (nextProject) {
       const apiHints =
         `Check your status: GET /api/status?agentId=${agentId}. ` +
-        `If activeProject=${effectiveProject}: load context via GET /api/projects/${effectiveProject}/bootstrap ` +
-        `and rules on demand via GET /api/projects/${effectiveProject}/rules/<section>. ` +
-        `Manage tasks through the API — see GET /api/projects/${effectiveProject}/rules/api-access.`;
-      const wakeText = previousProject && previousProject !== effectiveProject
-        ? `Project switched from ${previousProject} to ${effectiveProject}. ${apiHints}`
-        : `Project ${effectiveProject} activated. ${apiHints}`;
-      sendWakeEvent(wakeText);
+        `If activeProject=${nextProject}: load context via GET /api/projects/${nextProject}/bootstrap ` +
+        `and rules on demand via GET /api/projects/${nextProject}/rules/<section>. ` +
+        `Manage tasks through the API — see GET /api/projects/${nextProject}/rules/api-access.`;
+      if (previousProject !== nextProject) {
+        sendWakeEvent(previousProject
+          ? `Project switched from ${previousProject} to ${nextProject}. ${apiHints}`
+          : `Project ${nextProject} activated. ${apiHints}`);
+      } else if (!sessionKey) {
+        sendWakeEvent(`Project ${nextProject} activated. ${apiHints}`);
+      }
     } else if (previousProject) {
       sendWakeEvent(`Project ${previousProject} deactivated. No active project.`);
     }
 
-    const readiness = effectiveProject
-      ? rulesApi.getBootstrapReadiness(effectiveProject)
+    const readiness = nextProject
+      ? rulesApi.getBootstrapReadiness(nextProject)
       : { contextReady: false };
-    const body = { ok: true, activeProject: effectiveProject, agentId, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
+    const body = { ok: true, activeProject: nextProject, agentId, binding: resolved.binding, contextReady: readiness.contextReady, agentIdentity: agentIdentity.responseMeta(identity) };
+    if (sessionKey) body.sessionKey = sessionKey;
     // T-296: same rules pointer on the activation (PUT) path.
-    if (effectiveProject) body.rules = rulesApi.buildRulesPointer(effectiveProject);
+    if (nextProject) body.rules = rulesApi.buildRulesPointer(nextProject);
     res.json(body);
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -1576,10 +1633,11 @@ app.post('/api/auth', (req, res) => {
 // --- Helpers ---
 
 // T-177-3: agentId is required; no default. Pass the explicit caller agent.
-function getCanonicalActiveProject(agentId) {
+// T-487-2: an optional sessionKey selects the session-scoped binding first and
+// falls back to the agent-level row (ADR-0039).
+function getCanonicalActiveProject(agentId, sessionKey = null) {
   if (!agentId) return null;
-  const row = fbMeta.getAgentRow(agentId);
-  return row?.active_project || null;
+  return fbMeta.resolveActiveProject(agentId, sessionKey).activeProject;
 }
 
 function taskWithSpecStatus(projectName, task) {
@@ -1664,6 +1722,28 @@ function listDashboardAgents() {
       }
       a.active_project = null;
     }
+    // T-487-2: session bindings expire on the same ADR-0020 TTL, with the same
+    // lease protection. An expired session row is DELETED (not nulled) so the
+    // agent-level binding takes over again instead of being shadowed.
+    const sessions = [];
+    for (const s of fbMeta.listSessionBindings(a.agent_id)) {
+      if (fbMeta.isSessionBindingExpired(s, { nowMs, ttlHours, claimCount })) {
+        if (fbMeta.deleteSessionProjectRow(s.agent_id, s.session_key)) {
+          const idleH = Math.round((nowMs - Date.parse(s.last_seen)) / 3600000);
+          console.log(`[flowboard-meta] expired idle session binding for agent "${s.agent_id}" (idle ${idleH}h, no active claims)`);
+        }
+        continue;
+      }
+      sessions.push({
+        sessionKey: s.session_key,
+        activeProject: s.active_project || null,
+        activatedAt: s.activated_at,
+        lastSeen: s.last_seen,
+      });
+    }
+    // Additive field — existing consumers (ActiveAgentsBar, overview widgets,
+    // dashboard snapshot) read agent_id/active_project and ignore this.
+    a.sessions = sessions;
   }
   return agents;
 }
@@ -1975,13 +2055,17 @@ app.delete('/api/projects/:name', (req, res) => {
       projectsDir: PROJECTS_DIR,
     });
     // Clear agent active-project rows pointing at the deleted project so no
-    // agent stays "activated" on a tombstoned name.
+    // agent stays "activated" on a tombstoned name. T-487-2: session-scoped
+    // bindings are removed for the same reason — an orphaned session row would
+    // keep a session pinned to a project that no longer exists instead of
+    // falling back to the agent-level binding.
     try {
       for (const row of fbMeta.listAgents()) {
         if (row.active_project === req.params.name) {
           fbMeta.setAgentActiveProject(row.agent_id, null);
         }
       }
+      fbMeta.deleteSessionBindingsForProject(req.params.name);
     } catch (e) { console.warn('[projects] clear-agent-refs:', e.message); }
     const response = { ok: true, archivedTaskCount: result.archivedTaskCount };
     if (result.warnings && result.warnings.length > 0) response.warnings = result.warnings;
