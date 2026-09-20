@@ -43,6 +43,34 @@ async function waitFor(fn, label, timeout = 8000) {
   throw new Error(`timeout: ${label}`);
 }
 
+// puppeteer-core's page.setViewport() silently does a full page.reload() when
+// isMobile/hasTouch change (EmulationManager#emulateViewport: reloadNeeded =
+// emulatingMobile !== mobile || hasTouch !== hasTouch) — undocumented in this
+// codebase, but real upstream behavior. Both mobile<->desktop switches in this
+// file hit that. `page.click(selector)` resolves an ElementHandle then does
+// separate scrollIntoViewIfNeeded/clickablePoint/mouse.click round-trips
+// against it, so a click issued right after such a reload can straddle the
+// fresh SPA's boot (bootstrap.js fetches, first render) and throw "Node is
+// detached from document" — or, per this window, land as a real DOM click
+// that still gets dropped because the freshly re-mounted TabBar hasn't
+// finished wiring up. Query-and-click in a single in-page call so query+click
+// can't straddle a re-render, and re-issue it until appState actually reflects
+// the switch (not just until the click was delivered).
+async function switchTab(page, tabId, timeout = 8000) {
+  const deadline = Date.now() + timeout;
+  let lastSeen = null;
+  while (Date.now() < deadline) {
+    lastSeen = await page.evaluate((id) => {
+      const el = document.querySelector(`#tabBar .tab[data-tab="${id}"]`);
+      if (el) el.click();
+      return window.appState?.currentTab ?? null;
+    }, tabId);
+    if (lastSeen === tabId) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`timeout: switching to tab "${tabId}" (last seen currentTab=${lastSeen})`);
+}
+
 async function run() {
   console.log('# Dashboard shell E2E (T-356-1)');
   if (!fs.existsSync(EDGE)) { console.log('  skip - Edge not found'); return; }
@@ -525,10 +553,14 @@ async function run() {
     ok(sbReordered, `dragging a project's grip reorders it in the sidebar (T-367-5, was ${sbBefore.join(',')})`);
 
     // --- Flow 21 (T-368-1): drag disables scroll-snap + edge auto-scrolls the board ---
+    // setViewport() below flips isMobile/hasTouch on, which puppeteer-core
+    // resolves by silently reloading the page (see switchTab() comment) —
+    // wait the reload out, then (re)switch to the tasks tab on the fresh boot.
     await page.setViewport({ width: 390, height: 760, isMobile: true, hasTouch: true });
     await page.evaluate(() => document.querySelector('.app')?.classList.add('sidebar-collapsed'));
-    await page.click('#tabBar .tab[data-tab="tasks"]');
-    await waitFor(() => page.$('.kanban [data-task-id] .card-drag-handle'), 'mobile handles present', 5000).catch(() => {});
+    await switchTab(page, 'tasks');
+    await waitFor(() => page.$('.kanban'), 'kanban ready for mobile drag (T-368-1)', 8000);
+    await waitFor(() => page.$('.kanban [data-task-id] .card-drag-handle'), 'mobile handles present', 8000);
     const asStart = await page.evaluate(() => {
       const card = document.querySelector('.column[data-status="backlog"] [data-task-id]');
       const handle = card?.querySelector('.card-drag-handle');
@@ -549,10 +581,12 @@ async function run() {
     ok(snapBack, 'scroll-snap restored after drop (.is-dragging removed)');
 
     // --- Flow 22 (T-370): keyboard reorder (Space pick up, arrows move, Space drop) ---
+    // Same story going back to desktop: isMobile/hasTouch flip off → another
+    // implicit reload, so re-confirm the tab switch rather than assume it held.
     await page.setViewport({ width: 1400, height: 900 });
     await page.evaluate(() => document.querySelector('.app')?.classList.remove('sidebar-collapsed'));
-    await page.click('#tabBar .tab[data-tab="tasks"]');
-    await waitFor(() => page.$('.kanban'), 'kanban for keyboard reorder', 5000);
+    await switchTab(page, 'tasks');
+    await waitFor(() => page.$('.kanban'), 'kanban for keyboard reorder', 8000);
     const kb = [];
     for (const title of ['KB A', 'KB B', 'KB C']) {
       const id = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title })).body?.task?.id;
