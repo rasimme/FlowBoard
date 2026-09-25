@@ -101,7 +101,7 @@ for (const f of status.files) {
 
 // Compare with live dashboard — user can eyeball these numbers match
 console.log(`\n## Cross-check with live dashboard`);
-console.log(`   Run:  curl -s http://localhost:18790/api/snippets/status | python3 -m json.tool`);
+console.log(`   Run:  curl -s http://localhost:18700/api/snippets/status | python3 -m json.tool`);
 console.log(`   Expect the same counts + chip text as above.`);
 
 console.log(`\n## OK — no real files were modified`);

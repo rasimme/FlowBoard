@@ -81,18 +81,18 @@ async function run() {
       'external trigger snippet advertises the runtime port'
     );
     ok(
-      !info.trigger_snippet.includes('http://localhost:18790'),
+      !info.trigger_snippet.includes('http://localhost:18700'),
       'external trigger snippet does not leak the default port on custom-port installs'
     );
     ok(
-      !info.trigger_snippet.includes('http://127.0.0.1:18790'),
+      !info.trigger_snippet.includes('http://127.0.0.1:18700'),
       'external trigger snippet does not leak the default 127.0.0.1 URL on custom-port installs'
     );
 
     const current = doctor.readCurrent('AGENTS-trigger.md');
     fs.writeFileSync(
       path.join(workspace, 'AGENTS.md'),
-      current.replace('http://127.0.0.1:18790', `http://127.0.0.1:${PORT}`)
+      current.replace('http://127.0.0.1:18700', `http://127.0.0.1:${PORT}`)
     );
     const status = doctor.collectStatus(tempRoot, { env });
     ok(status.counts.current === 1, 'snippets-doctor treats port-customized current snippet as current');
@@ -112,10 +112,10 @@ async function run() {
     const claudeContent = fs.readFileSync(path.join(installRepo, 'CLAUDE.md'), 'utf8');
     ok(agentsContent.includes(`http://localhost:${PORT}`), 'install-trigger writes the runtime port into AGENTS.md');
     ok(claudeContent.includes(`http://localhost:${PORT}`), 'install-trigger writes the runtime port into CLAUDE.md copy mode');
-    ok(!agentsContent.includes('http://localhost:18790'), 'install-trigger AGENTS.md does not leak the default port');
-    ok(!claudeContent.includes('http://localhost:18790'), 'install-trigger CLAUDE.md does not leak the default port');
-    ok(!agentsContent.includes('http://127.0.0.1:18790'), 'install-trigger AGENTS.md does not leak the default 127.0.0.1 URL');
-    ok(!claudeContent.includes('http://127.0.0.1:18790'), 'install-trigger CLAUDE.md does not leak the default 127.0.0.1 URL');
+    ok(!agentsContent.includes('http://localhost:18700'), 'install-trigger AGENTS.md does not leak the default port');
+    ok(!claudeContent.includes('http://localhost:18700'), 'install-trigger CLAUDE.md does not leak the default port');
+    ok(!agentsContent.includes('http://127.0.0.1:18700'), 'install-trigger AGENTS.md does not leak the default 127.0.0.1 URL');
+    ok(!claudeContent.includes('http://127.0.0.1:18700'), 'install-trigger CLAUDE.md does not leak the default 127.0.0.1 URL');
 
     const apiBaseRepo = path.join(tempRoot, 'api-base-repo');
     fs.mkdirSync(apiBaseRepo, { recursive: true });

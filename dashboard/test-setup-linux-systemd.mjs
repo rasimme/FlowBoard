@@ -648,6 +648,28 @@ const preservedUnit = port => existingUnit([
   ok(result.commands.length === 0, 'an unloadable custom unit path aborts before build or service commands');
 }
 
+// T-495: an existing service that never set FLOWBOARD_PORT ran on the previous
+// default. An update pins that port instead of moving the dashboard.
+{
+  const result = await runSetup(['--dry-run', '--update'], {
+    initialUnit: existingUnit([`Environment="JWT_SECRET=${INSTALLER_FIXTURES.unsetJwt}"`]),
+    injectPort: false,
+  });
+  ok(result.code === 0, 'update of a service without FLOWBOARD_PORT succeeds (T-495)');
+  ok(result.stdout.includes('FLOWBOARD_PORT: pinned to the previous default 18790'), 'update pins the previous default port (T-495)');
+  ok(result.stdout.includes('would poll http://127.0.0.1:18790/api/health'), 'pinned port drives the health check (T-495)');
+  ok(result.stdout.includes('openclaw config set plugins.entries.flowboard.config.dashboardPort 18790'), 'update prints the hook command for a non-default port (T-495)');
+  ok(result.stdout.includes('MCP Apps sandbox'), 'update warns that 18790 is the MCP Apps sandbox port (T-495)');
+}
+
+{
+  const result = await runSetup(['--dry-run'], {}, { FLOWBOARD_PORT: '' });
+  ok(result.code === 0, 'fresh dry-run install without FLOWBOARD_PORT succeeds (T-495)');
+  ok(result.stdout.includes('would poll http://127.0.0.1:18700/api/health'), 'fresh install seeds the new default port 18700 (T-495)');
+  ok(!result.stdout.includes('plugins.entries.flowboard.config.dashboardPort'), 'fresh default install needs no hook port command (T-495)');
+  ok(!result.stdout.includes('MCP Apps sandbox'), 'fresh default install does not warn about the MCP Apps sandbox (T-495)');
+}
+
 {
   const result = await runSetup(['--dry-run', '--update'], {
     initialUnit: existingUnit([
@@ -658,7 +680,8 @@ const preservedUnit = port => existingUnit([
     injectPort: false,
   });
   ok(result.code === 0, 'UnsetEnvironment names are accepted during a dry-run update');
-  ok(result.stdout.includes('would poll http://127.0.0.1:18790/api/health'), 'UnsetEnvironment removes FLOWBOARD_PORT from effective health-check configuration');
+  ok(result.stdout.includes('would poll http://127.0.0.1:18700/api/health'), 'UnsetEnvironment removes FLOWBOARD_PORT from effective health-check configuration');
+  ok(result.stdout.includes('FLOWBOARD_PORT is removed by systemd UnsetEnvironment; the dashboard moves to the new default 18700'), 'an unset port that cannot be pinned is announced, not silent (T-495)');
   ok(result.stdout.includes('JWT_SECRET: not active in the existing systemd service; left unset'), 'UnsetEnvironment removes JWT_SECRET from effective rotation diagnostics');
 }
 

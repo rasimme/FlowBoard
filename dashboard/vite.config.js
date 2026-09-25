@@ -9,7 +9,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: `http://localhost:${process.env.FLOWBOARD_PORT || 18790}`,
+        target: `http://localhost:${process.env.FLOWBOARD_PORT || 18700}`,
         changeOrigin: true,
       },
     },

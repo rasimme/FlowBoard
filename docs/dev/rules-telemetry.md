@@ -48,7 +48,7 @@ launchctl kickstart -k "gui/$(id -u)/ai.openclaw.flowboard-dashboard"
 Verify the flag is picked up:
 
 ```bash
-curl -s http://localhost:18790/api/projects/flowboard/rules >/dev/null
+curl -s http://localhost:18700/api/projects/flowboard/rules >/dev/null
 grep "rules-telemetry" ~/Library/Logs/FlowBoard/flowboard-dashboard.log | tail -5
 # Expect: one new line with section=_manifest
 ```

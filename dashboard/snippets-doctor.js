@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const childProcess = require('child_process');
-const { renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
+const { DEFAULT_DASHBOARD_PORT, renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -411,8 +411,8 @@ function replaceLegacyBlock(content, legacyBlock, newBlock) {
 
 function normalizeSnippetPortsForComparison(content) {
   return String(content || '')
-    .replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://127.0.0.1:18790')
-    .replace(/http:\/\/localhost:\d+/g, 'http://localhost:18790');
+    .replace(/http:\/\/127\.0\.0\.1:\d+/g, `http://127.0.0.1:${DEFAULT_DASHBOARD_PORT}`)
+    .replace(/http:\/\/localhost:\d+/g, `http://localhost:${DEFAULT_DASHBOARD_PORT}`);
 }
 
 function containsCurrentSnippetBlock(content, newBlock) {

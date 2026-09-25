@@ -103,6 +103,17 @@ immediate, exclusively trusted proxy peer (for local `cloudflared`, usually
 address. It never grants authentication, and a routable client network must
 never be listed.
 
+## The dashboard does not start: port already in use
+
+The service log shows `Failed to listen on http://127.0.0.1:<port>: port <port> is already in use`.
+If the port is the OpenClaw Gateway port + 1 (`18790` for the default Gateway),
+the OpenClaw MCP Apps sandbox listener (`mcp.apps.enabled`) owns it. Fix one of:
+
+- Move FlowBoard: `FLOWBOARD_PORT=18700 node scripts/setup.mjs --update --override-env FLOWBOARD_PORT`, then point the hook at it (`openclaw config set plugins.entries.flowboard.config.dashboardPort 18700`, or unset it to use the default).
+- Move the sandbox: `openclaw config set mcp.apps.sandboxPort <free port>` and restart the Gateway.
+
+Any other port: another process (often a second FlowBoard) holds it; stop it or choose a different `FLOWBOARD_PORT`.
+
 ## The dashboard is offline or reports a server error
 
 An unreachable service shows **FlowBoard is offline**; an HTTP 5xx or invalid API response shows **Dashboard service error**. A request that does not finish within 10 seconds is aborted and shows **FlowBoard took too long to respond**. Use **Retry** after restoring the connection or service; Retry is also available during the initial loading screen.

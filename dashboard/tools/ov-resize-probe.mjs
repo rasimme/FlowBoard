@@ -10,7 +10,7 @@ await page.setViewport({ width: 1400, height: 900 });
 const logs = [];
 page.on('console', m => { if (m.text().includes('[ov-resize]')) logs.push(m.text()); });
 
-await page.goto('http://localhost:18790', { waitUntil: 'networkidle2', timeout: 30000 });
+await page.goto('http://localhost:18700', { waitUntil: 'networkidle2', timeout: 30000 });
 await new Promise(r => setTimeout(r, 2500));
 
 // Edit-Modus öffnen

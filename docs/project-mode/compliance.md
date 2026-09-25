@@ -22,7 +22,7 @@ blind global replacements. Review the findings before editing content.
 
 ```bash
 node dashboard/content-hygiene-doctor.js --root ~/.openclaw/projects/<project>
-curl -s http://127.0.0.1:18790/api/projects/<project>/tasks > /tmp/tasks.json
+curl -s http://127.0.0.1:18700/api/projects/<project>/tasks > /tmp/tasks.json
 node dashboard/content-hygiene-doctor.js --root ~/.openclaw/projects/<project> --tasks-json /tmp/tasks.json
 ```
 
@@ -114,7 +114,7 @@ Tasks with infrequent checkpoints indicate potential stalling or agent disconnec
 
 **Monitoring:**
 ```bash
-curl -s http://127.0.0.1:18790/api/tasks/stuck | jq '.stuck'
+curl -s http://127.0.0.1:18700/api/tasks/stuck | jq '.stuck'
 ```
 
 ### Stuck Notification Routing (T-434)

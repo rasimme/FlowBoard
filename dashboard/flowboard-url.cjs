@@ -1,6 +1,10 @@
 'use strict';
 
-const DEFAULT_DASHBOARD_PORT = 18790;
+// T-495 / ADR-0041: 18700 sits below the OpenClaw Gateway's whole derived
+// port block (Gateway 18789 .. CDP range end 18899). The previous default 18790
+// is the Gateway port + 1, which OpenClaw's MCP Apps sandbox listener claims.
+const DEFAULT_DASHBOARD_PORT = 18700;
+const LEGACY_DEFAULT_DASHBOARD_PORT = 18790;
 const DEFAULT_DASHBOARD_BASE_URL = `http://localhost:${DEFAULT_DASHBOARD_PORT}`;
 
 function readPort(value) {
@@ -56,13 +60,14 @@ function renderSnippetBaseUrl(content, baseUrl) {
     resolvedLoopbackIp = resolved;
   }
   return String(content || '')
-    .replace(/http:\/\/localhost:18790/g, () => resolved)
-    .replace(/http:\/\/127\.0\.0\.1:18790/g, () => resolvedLoopbackIp);
+    .replace(/http:\/\/localhost:(?:18700|18790)\b/g, () => resolved)
+    .replace(/http:\/\/127\.0\.0\.1:(?:18700|18790)\b/g, () => resolvedLoopbackIp);
 }
 
 module.exports = {
   DEFAULT_DASHBOARD_PORT,
   DEFAULT_DASHBOARD_BASE_URL,
+  LEGACY_DEFAULT_DASHBOARD_PORT,
   joinApiPath,
   normalizeBaseUrl,
   readPort,

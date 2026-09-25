@@ -20,7 +20,7 @@
         "type": "number",
         "minimum": 1,
         "maximum": 65535,
-        "description": "Optional dashboard port the project-context hook uses when dashboardBaseUrl is not set."
+        "description": "Optional dashboard port the project-context hook uses when dashboardBaseUrl is not set (default 18700)."
       },
       "dashboardBaseUrl": {
         "type": "string",
@@ -42,7 +42,7 @@
     },
     "dashboardPort": {
       "label": "Dashboard Port",
-      "help": "Optional local dashboard port for the project-context hook when the service does not run on 18790.",
+      "help": "Optional local dashboard port for the project-context hook when the service does not run on the default 18700 (for example an install that kept the previous default 18790).",
       "advanced": true
     },
     "dashboardBaseUrl": {

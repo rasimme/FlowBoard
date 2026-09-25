@@ -7,7 +7,7 @@ import fs from 'node:fs';
 const W = Number(process.argv[2] || 4);
 const H = Number(process.argv[3] || 2);
 const LABEL = process.argv[4] || `${W}x${H}`;
-const API = 'http://localhost:18790/api';
+const API = 'http://localhost:18700/api';
 
 const manifest = await fetch(`${API}/overview/widgets`).then(r => r.json());
 const types = manifest.widgets.map(w => w.type);
@@ -45,7 +45,7 @@ const browser = await puppeteer.launch({
 });
 const page = await browser.newPage();
 await page.setViewport({ width: 1600, height: 1100 });
-await page.goto('http://localhost:18790', { waitUntil: 'networkidle2', timeout: 30000 });
+await page.goto('http://localhost:18700', { waitUntil: 'networkidle2', timeout: 30000 });
 await new Promise(r => setTimeout(r, 4500));
 
 const findings = await page.evaluate(() => {

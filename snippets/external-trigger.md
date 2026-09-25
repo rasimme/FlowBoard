@@ -1,7 +1,7 @@
 ## FlowBoard Project Workspace (external agent)
 <!-- flowboard-snippet-contract: v3-command-startup-response -->
 
-This repository uses [FlowBoard](https://github.com/rasimme/FlowBoard) for project / task coordination. The dashboard runs at `http://localhost:18790`.
+This repository uses [FlowBoard](https://github.com/rasimme/FlowBoard) for project / task coordination. The dashboard runs at `http://localhost:18700`.
 Use a local-capable tool for this localhost API (exec/curl/node or an internal API tool), never external web-fetch/browser. If an API call fails, do not infer state; report the blocker.
 
 ### Minimal trigger

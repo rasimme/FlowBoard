@@ -34,7 +34,7 @@ WebView/cookie reset: it must authenticate on its own and `/api/auth` must retur
 that bot's server-confirmed agent ID. A valid cookie from another bot is not a
 fallback for invalid fresh init-data.
 
-Opened outside Telegram, the Mini App URL shows an "open via Telegram" notice — that's expected; use the normal `http://localhost:18790` (or your tunnel URL in a browser) instead.
+Opened outside Telegram, the Mini App URL shows an "open via Telegram" notice — that's expected; use the normal `http://localhost:18700` (or your tunnel URL in a browser) instead.
 
 If Telegram authentication expires, the dashboard shows a full-screen **Sign-in required** message rather than an empty board. Reopen the Mini App from the bot and tap the touch-sized **Retry** button. Temporary connection or server failures keep the last valid board on screen with a retry banner.
 

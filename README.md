@@ -128,7 +128,7 @@ openclaw plugins install flowboard   # wires the project-context hook
 node scripts/setup.mjs               # build the UI + run the dashboard as a per-user service
 ```
 
-Open **http://localhost:18790**, click the **Finish setup** chip in the header,
+Open **http://localhost:18700**, click the **Finish setup** chip in the header,
 then issue an explicit FlowBoard command in your live agent chat, for example
 `FlowBoard: create project my-app`. Done — the rest of this section is detail.
 
@@ -250,6 +250,8 @@ requires no additional configuration and remains available as the direct operato
 
 > **Custom service or supervisor?** Setup and in-UI update manage only the standard per-user service — `ai.openclaw.flowboard-dashboard` (launchd) / `flowboard-dashboard` (systemd `--user`). If you use a different supervisor or label, update dependencies/build manually and restart that supervisor, or migrate to the standard label. Do not run `setup.mjs --update`; it intentionally refuses when the standard service is absent.
 
+> **Dashboard port (T-495):** the default port is now `18700`. The previous default `18790` is the OpenClaw Gateway port + 1, which OpenClaw's MCP Apps sandbox listener claims. `setup.mjs --update` keeps an existing install on its current port (it pins `FLOWBOARD_PORT=18790` into a service that never set one) and prints the `openclaw config set plugins.entries.flowboard.config.dashboardPort …` command the hook then needs. A manually supervised install without `FLOWBOARD_PORT` must set `FLOWBOARD_PORT=18790` before restarting to stay where it is. See [Update FlowBoard](docs/guide/how-to/update-flowboard.md#dashboard-port-t-495).
+
 > **Upgrading to 5.0.0:** the canvas DB schema is created automatically, but importing existing `canvas.json` data is operator-triggered — via the in-app banner, `POST /api/migrations/canvas/run`, or `node dashboard/scripts/migrate-canvas-to-db.mjs --run`. Non-blocking; see the [migrations reference](docs/reference/api/migrations.md).
 
 <details>
@@ -348,7 +350,7 @@ for the preservation and verification behavior.
 
 ### 4. Finish setup in the dashboard
 
-Open **http://localhost:18790**. If any workspace needs setup, a
+Open **http://localhost:18700**. If any workspace needs setup, a
 **Finish setup** (fresh install) or **Migration required** (upgrade from
 an older FlowBoard) chip appears in the header. Click it to open the
 setup modal and choose per workspace:
@@ -478,7 +480,7 @@ The same content is served by the dashboard for tooling or quick
 inspection:
 
 ```bash
-curl http://localhost:18790/api/info
+curl http://localhost:18700/api/info
 ```
 
 Returns service metadata, the API endpoint list, and the trigger

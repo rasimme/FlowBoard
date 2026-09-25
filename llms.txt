@@ -73,6 +73,7 @@
 - [ADR-0038](docs/adr/0038-workboard-coexistence-flowboard-canonical.md) — Workboard coexistence: FlowBoard is the canonical task store; link instead of mirroring; no bidirectional sync without a provider contract
 - [ADR-0039](docs/adr/0039-session-scoped-project-binding.md) — Session-scoped project binding with agent-level fallback; `sessionKey` is context, never authorization
 - [ADR-0040](docs/adr/0040-gateway-verified-principal-via-service-credential.md) — Gateway-verified principal via a loopback service credential; header-stated profile is attribution only after the shared token matched
+- [ADR-0041](docs/adr/0041-default-dashboard-port-18700.md) — Default dashboard port 18700, below OpenClaw's Gateway-derived port block; `setup.mjs --update` keeps an existing install's port
 
 ## Reference
 

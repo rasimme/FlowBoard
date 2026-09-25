@@ -56,7 +56,7 @@ export const CONFIG_SCHEMA = {
       type: 'number',
       minimum: 1,
       maximum: 65535,
-      description: 'Optional dashboard port the project-context hook uses when dashboardBaseUrl is not set.',
+      description: 'Optional dashboard port the project-context hook uses when dashboardBaseUrl is not set (default 18700).',
     },
     dashboardBaseUrl: {
       type: 'string',

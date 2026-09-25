@@ -2,6 +2,8 @@
 
 const {
   DEFAULT_DASHBOARD_BASE_URL,
+  DEFAULT_DASHBOARD_PORT,
+  LEGACY_DEFAULT_DASHBOARD_PORT,
   joinApiPath,
   normalizeBaseUrl,
   readPort,
@@ -40,7 +42,11 @@ ok(normalizeBaseUrl('not a url') === null, 'normalizeBaseUrl rejects invalid URL
 
 ok(resolveDashboardPort({ dashboardPort: 18845 }, { FLOWBOARD_PORT: '18846' }) === 18845, 'dashboardPort config beats FLOWBOARD_PORT');
 ok(resolveDashboardPort({}, { FLOWBOARD_PORT: '18846' }) === 18846, 'FLOWBOARD_PORT is used when config is absent');
-ok(resolveDashboardPort({}, { FLOWBOARD_PORT: 'bad' }) === 18790, 'invalid FLOWBOARD_PORT falls back to default');
+ok(resolveDashboardPort({}, { FLOWBOARD_PORT: 'bad' }) === 18700, 'invalid FLOWBOARD_PORT falls back to default');
+ok(DEFAULT_DASHBOARD_PORT === 18700, 'default dashboard port is 18700 (T-495)');
+ok(DEFAULT_DASHBOARD_BASE_URL === 'http://localhost:18700', 'default base URL uses 18700');
+ok(LEGACY_DEFAULT_DASHBOARD_PORT === 18790, 'previous default is exported for upgrade pinning');
+ok(resolveDashboardPort({}, {}) === 18700, 'no config and no env resolve to the default port');
 
 ok(
   resolveDashboardBaseUrl({ dashboardBaseUrl: 'https://flowboard.example/base/' }, { FLOWBOARD_BASE_URL: 'http://localhost:18847' }) === 'https://flowboard.example/base',
@@ -89,6 +95,12 @@ const renderedCustom = renderSnippetBaseUrl(
   'a http://localhost:18790 b http://127.0.0.1:18790',
   'https://flowboard.example/custom/'
 );
+const renderedNew = renderSnippetBaseUrl(
+  'a http://localhost:18700 b http://127.0.0.1:18700 c http://localhost:187000',
+  'http://localhost:18843/'
+);
+ok(!/http:\/\/(localhost|127\.0\.0\.1):18700\b/.test(renderedNew), 'renderSnippetBaseUrl replaces the new default URLs');
+ok(renderedNew.includes('http://localhost:187000'), 'renderSnippetBaseUrl leaves a longer port that only starts with the default alone');
 ok((renderedCustom.match(/https:\/\/flowboard\.example\/custom/g) || []).length === 2, 'custom base URL replaces both default loopback host forms');
 
 if (fail === 0) console.log(`\n✅ All ${pass} checks passed`);

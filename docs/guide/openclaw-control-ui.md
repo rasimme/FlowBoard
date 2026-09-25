@@ -45,7 +45,7 @@ dashboard, and the plugin's backend operations stay available.
    example:
 
    ```bash
-   openclaw config set plugins.entries.flowboard.config.dashboardBaseUrl http://127.0.0.1:18790
+   openclaw config set plugins.entries.flowboard.config.dashboardBaseUrl http://127.0.0.1:18700
    ```
 
    Store `serviceToken` as a secret reference, never inline — it is the same

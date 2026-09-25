@@ -53,8 +53,8 @@ jobs:
         run: |
           nohup npm start > /tmp/flowboard-dashboard.log 2>&1 &
           for i in {1..40}; do
-            if curl -fsS http://localhost:18790/api/health >/dev/null; then
-              curl -fsS -X POST http://localhost:18790/api/projects/flowboard/heal \
+            if curl -fsS http://localhost:18700/api/health >/dev/null; then
+              curl -fsS -X POST http://localhost:18700/api/projects/flowboard/heal \
                 -H 'Content-Type: application/json' \
                 -d '{"displayName":"FlowBoard","description":"CI fixture project."}' >/dev/null
               exit 0
@@ -72,7 +72,7 @@ jobs:
         working-directory: dashboard
         env:
           FLOWBOARD_PROJECTS_DIR: /tmp/flowboard-ci-projects
-          FLOWBOARD_API: http://localhost:18790
+          FLOWBOARD_API: http://localhost:18700
           FLOWBOARD_REPO: ${{ github.workspace }}
 
   # Feature-plugin host. `openclaw plugins build` / `validate` and the native

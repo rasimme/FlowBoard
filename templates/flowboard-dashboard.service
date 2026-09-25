@@ -13,6 +13,8 @@ ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=5
 Environment="OPENCLAW_WORKSPACE=/path/to/.openclaw/workspace"
+# Keep the port explicit so a code update never moves the dashboard.
+Environment="FLOWBOARD_PORT=18700"
 Environment="OPENCLAW_GATEWAY_PORT=18789"
 # For auth, create a drop-in: see templates/systemd-auth.conf.example
 

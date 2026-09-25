@@ -1,7 +1,8 @@
 # FlowBoard — agent entry point
 
 FlowBoard coordinates work through the dashboard API at
-`http://127.0.0.1:18790`. Use a local-capable tool (exec / curl / node) for
+`http://127.0.0.1:18700` (the install's `FLOWBOARD_PORT`; installs set up before
+T-495 may still run on `18790`). Use a local-capable tool (exec / curl / node) for
 this localhost API — never an external web-fetch/browser. If an API call
 fails, report the blocker; do not infer state.
 

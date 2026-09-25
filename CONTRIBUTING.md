@@ -82,7 +82,7 @@ git checkout -b feat/my-change
 cd dashboard
 npm install
 node server.js
-# → http://localhost:18790
+# → http://localhost:18700
 
 # 4. Make changes, test, commit
 git commit -m "feat: my change"

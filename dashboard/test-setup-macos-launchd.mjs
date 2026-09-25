@@ -323,6 +323,17 @@ let generatedLaunchdPlist = '';
   ok(!result.stdout.includes(leakedStderr) && !result.stderr.includes(leakedStderr), 'failed launchctl print stderr remains suppressed');
 }
 
+// T-495: a plist that never set FLOWBOARD_PORT ran on the previous default;
+// an update pins it instead of moving the dashboard to 18700.
+{
+  const unpinnedPlist = existingPlist.replace('    <key>FLOWBOARD_PORT</key><string>__FLOWBOARD_PORT__</string>\n', '');
+  const result = await runSetup(['--dry-run', '--update'], unpinnedPlist);
+  ok(result.code === 0, 'launchd update of a plist without FLOWBOARD_PORT succeeds (T-495)');
+  ok(result.stdout.includes('FLOWBOARD_PORT: pinned to the previous default 18790'), 'launchd update pins the previous default port (T-495)');
+  ok(result.stdout.includes('would poll http://127.0.0.1:18790/api/health'), 'launchd pinned port drives the health check (T-495)');
+  ok(result.stdout.includes('plugins.entries.flowboard.config.dashboardPort 18790'), 'launchd update prints the hook command (T-495)');
+}
+
 {
   const result = await runSetup(['--dry-run', '--update'], existingPlist);
   ok(result.code === 0, 'launchd dry-run update exits successfully');

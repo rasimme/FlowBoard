@@ -7,7 +7,7 @@ Reference for FlowBoard's task management API. All task mutations go through thi
 ## Architecture
 
 - **HZL (event-sourced SQLite)** is the canonical store for all task and runtime state
-- **FlowBoard API** (Express, port 18790) owns all mutations and exposes a REST interface
+- **FlowBoard API** (Express, port 18700) owns all mutations and exposes a REST interface
 - Tasks live in HZL projects, not in per-project JSON files (legacy `tasks.json` is deprecated)
 - The `flowboard_projects` DB table is the canonical project registry (replaces `_index.md`)
 
@@ -53,7 +53,7 @@ blind mass rewrite.
 
 ## Endpoints
 
-Base: `http://localhost:18790/api`
+Base: `http://localhost:18700/api`
 
 ### Project-Scoped Task CRUD
 

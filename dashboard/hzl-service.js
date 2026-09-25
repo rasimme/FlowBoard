@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { parseQuery, rankTasks } = require('./smart-search');
+const { DEFAULT_DASHBOARD_PORT } = require('./flowboard-url.cjs');
 const {
   DEFAULT_WORK_STATE,
   normalizeStoredWorkState,
@@ -570,7 +571,7 @@ async function init(dbPath) {
   // Configure on_done hook — posts to FlowBoard's own receiver endpoint.
   // Read FLOWBOARD_PORT first (project convention); fall back to PORT for
   // legacy compat with environments that pre-date the rename.
-  const hookPort = process.env.FLOWBOARD_PORT || process.env.PORT || 18790;
+  const hookPort = process.env.FLOWBOARD_PORT || process.env.PORT || DEFAULT_DASHBOARD_PORT;
   const onDoneHook = {
     url: `http://127.0.0.1:${hookPort}/api/hooks/task-complete`,
     headers: {},
@@ -4038,7 +4039,7 @@ function _buildGitPolicy(projectMd, options = {}) {
  * Must include marker `flowboard-handoff-contract: v1` for audit/validation.
  *
  * Options:
- * - apiBase: API base URL (default: http://127.0.0.1:18790)
+ * - apiBase: API base URL (default: http://127.0.0.1:18700)
  * - targetAgentId: concrete agent id expected to own the handoff
  * - maxSpecSize: Max spec content size in bytes (default: 10000, 0 = unlimited)
  * - gitPolicy: Optional project-specific Git policy override (string or object)
@@ -4072,7 +4073,7 @@ function buildHandoffMarkdown(project, flowboardId, options = {}) {
     comments = getComments(project, flowboardId) || [];
   } catch { /* graceful */ }
 
-  const apiBase = options.apiBase || 'http://127.0.0.1:18790';
+  const apiBase = options.apiBase || `http://127.0.0.1:${DEFAULT_DASHBOARD_PORT}`;
   const targetAgentId = options.targetAgentId || '<YOUR_AGENT_ID>';
   const maxSpecSize = options.maxSpecSize !== undefined ? options.maxSpecSize : 10000;
   const gitPolicy = _buildGitPolicy(projectMd, options);

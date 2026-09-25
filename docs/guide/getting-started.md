@@ -4,7 +4,7 @@ This walks you from a running dashboard to your first project and first task. If
 
 ## 1. Open the dashboard
 
-Go to **http://localhost:18790**. The board opens on the project overview (or an empty state if you have no projects yet).
+Go to **http://localhost:18700**. The board opens on the project overview (or an empty state if you have no projects yet).
 
 If a **Finish setup** or **Migration required** chip appears in the header, click it and follow the modal — it wires FlowBoard into your agent workspaces. Every change writes a `.bak-<timestamp>` backup first, so it's safe to apply. The chip disappears once setup is done.
 

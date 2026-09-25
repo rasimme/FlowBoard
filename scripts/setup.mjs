@@ -35,6 +35,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, delimiter } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -55,6 +56,11 @@ import {
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const DASH = join(ROOT, 'dashboard');
+// Dependency-free CommonJS helpers shared with the dashboard and the hook, so
+// setup, server, and plugin agree on one default port (T-495).
+const requireDashboard = createRequire(join(DASH, 'server.js'));
+const { DEFAULT_DASHBOARD_PORT, LEGACY_DEFAULT_DASHBOARD_PORT } = requireDashboard('./flowboard-url.cjs');
+const { describeSandboxOverlap } = requireDashboard('./port-collision.js');
 const PLATFORM = process.env.NODE_ENV === 'test' && process.env.FLOWBOARD_SETUP_TEST_PLATFORM
   ? process.env.FLOWBOARD_SETUP_TEST_PLATFORM
   : platform();
@@ -786,11 +792,18 @@ for (const key of CONFIGURABLE_ENV_KEYS) {
 // Defaults are seeded only on a fresh install. An update keeps the persistent
 // service definition byte-for-value at the environment layer unless the
 // operator names an explicit --override-env key.
+let pinnedLegacyPort = false;
 if (!existingConfig.found) {
-  if (!serviceEnv.FLOWBOARD_PORT) serviceEnv.FLOWBOARD_PORT = '18790';
+  if (!serviceEnv.FLOWBOARD_PORT) serviceEnv.FLOWBOARD_PORT = String(DEFAULT_DASHBOARD_PORT);
   if (!serviceEnv.FLOWBOARD_HOST) serviceEnv.FLOWBOARD_HOST = '127.0.0.1';
   if (!serviceEnv.OPENCLAW_WORKSPACE) serviceEnv.OPENCLAW_WORKSPACE = join(homedir(), '.openclaw', 'workspace');
   serviceEnv.PATH = mergePath(dirname(process.execPath), serviceEnv.PATH, process.env.PATH);
+} else if (!existingConfig.effectiveEnv.FLOWBOARD_PORT && !OVERRIDE_ENV_KEYS.has('FLOWBOARD_PORT')) {
+  // T-495: an existing service without an effective FLOWBOARD_PORT ran on the
+  // previous code default. Pin it so an update never silently moves a running
+  // dashboard away from the URL its hook and bookmarks point at.
+  if (!serviceEnv.FLOWBOARD_PORT) serviceEnv.FLOWBOARD_PORT = String(LEGACY_DEFAULT_DASHBOARD_PORT);
+  pinnedLegacyPort = true;
 }
 
 let secretStatus;
@@ -858,7 +871,7 @@ if (!ROTATE_SECRET && existingConfig.found && !effectiveServiceEnv.JWT_SECRET) {
 }
 if (!effectiveServiceEnv.FLOWBOARD_HOST) effectiveServiceEnv.FLOWBOARD_HOST = '127.0.0.1';
 if (!effectiveServiceEnv.OPENCLAW_WORKSPACE) effectiveServiceEnv.OPENCLAW_WORKSPACE = join(homedir(), '.openclaw', 'workspace');
-const PORT = Number(effectiveServiceEnv.FLOWBOARD_PORT || 18790);
+const PORT = Number(effectiveServiceEnv.FLOWBOARD_PORT || DEFAULT_DASHBOARD_PORT);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   die(`FLOWBOARD_PORT must be an integer between 1 and 65535 (received ${JSON.stringify(effectiveServiceEnv.FLOWBOARD_PORT)})`);
 }
@@ -964,6 +977,20 @@ if (ignoredShellEnvKeys.length > 0) {
   log(c.dim(`  Ignored non-persistent shell values for: ${ignoredShellEnvKeys.join(', ')}. Use --override-env to persist an intentional change.`));
 }
 log(`${c.ok} JWT_SECRET: ${secretStatus}`);
+if (pinnedLegacyPort && Number(effectiveServiceEnv.FLOWBOARD_PORT) === LEGACY_DEFAULT_DASHBOARD_PORT) {
+  log(`${c.ok} FLOWBOARD_PORT: pinned to the previous default ${LEGACY_DEFAULT_DASHBOARD_PORT} so this update keeps the dashboard on its current port`);
+} else if (pinnedLegacyPort) {
+  log(`${c.warn} FLOWBOARD_PORT is removed by systemd UnsetEnvironment; the dashboard moves to the new default ${DEFAULT_DASHBOARD_PORT}`);
+}
+if (PORT !== DEFAULT_DASHBOARD_PORT) {
+  log(c.dim(`  Dashboard port ${PORT} is not the default ${DEFAULT_DASHBOARD_PORT}. Unless the Gateway sets FLOWBOARD_PORT or FLOWBOARD_BASE_URL, point the project-context hook at it:`));
+  log(c.dim(`    openclaw config set plugins.entries.flowboard.config.dashboardPort ${PORT}`));
+}
+const sandboxOverlap = describeSandboxOverlap(PORT, effectiveServiceEnv);
+if (sandboxOverlap) {
+  log(`${c.warn} ${sandboxOverlap.replace(/^\[startup\] Warning: /, '')}`);
+  log(c.dim(`  To move this install: FLOWBOARD_PORT=${DEFAULT_DASHBOARD_PORT} node scripts/setup.mjs --update --override-env FLOWBOARD_PORT`));
+}
 const remoteGaps = remoteConfigurationGaps();
 if (remoteGaps === null) {
   log(c.dim('  Remote access is not configured; the loopback dashboard needs no auth.'));

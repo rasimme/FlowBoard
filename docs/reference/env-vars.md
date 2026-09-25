@@ -6,11 +6,11 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 
 | Variable | Default | Component | Purpose |
 |---|---|---|---|
-| `FLOWBOARD_PORT` | `18790` | server, hook | TCP port the dashboard binds to. Hook reads it to call the local API. |
-| `PORT` | `18790` | hzl-service | **Legacy fallback** in `hzl-service.js` for the on-complete hook callback URL. `FLOWBOARD_PORT` takes precedence. Kept for backwards compatibility with environments that pre-date the rename; new deployments should set `FLOWBOARD_PORT` only. |
+| `FLOWBOARD_PORT` | `18700` | server, hook | TCP port the dashboard binds to. Hook reads it to call the local API. The default was `18790` before T-495 ([ADR-0041](../adr/0041-default-dashboard-port-18700.md)); that port is the OpenClaw Gateway port + 1, which the MCP Apps sandbox listener claims. `setup.mjs --update` pins `18790` into an existing service that never set this variable, so an update does not move a running install. |
+| `PORT` | `18700` | hzl-service | **Legacy fallback** in `hzl-service.js` for the on-complete hook callback URL. `FLOWBOARD_PORT` takes precedence. Kept for backwards compatibility with environments that pre-date the rename; new deployments should set `FLOWBOARD_PORT` only. |
 | `FLOWBOARD_HOST` | `127.0.0.1` | server | Bind address. Loopback-only by default. |
 | `FLOWBOARD_BASE_URL` | `http://localhost:<FLOWBOARD_PORT>` | server, hook, install-trigger | Full dashboard API base URL. Takes precedence over `FLOWBOARD_API` and port-only defaults for discovery snippets and the project-context hook. |
-| `FLOWBOARD_API` | `http://localhost:18790` | hook, install-trigger, tests | Legacy/full base URL consumers use to reach the dashboard. `FLOWBOARD_BASE_URL` takes precedence for new deployments; `/api/info` ignores this legacy variable and only advertises `FLOWBOARD_BASE_URL` or the runtime port. |
+| `FLOWBOARD_API` | `http://localhost:18700` | hook, install-trigger, tests | Legacy/full base URL consumers use to reach the dashboard. `FLOWBOARD_BASE_URL` takes precedence for new deployments; `/api/info` ignores this legacy variable and only advertises `FLOWBOARD_BASE_URL` or the runtime port. |
 | `FLOWBOARD_GITHUB_TOKEN` | empty | github | GitHub token for the gh-* overview widgets (private repos, higher rate limit). Takes precedence over `GITHUB_TOKEN` and over a token stored via `PUT /api/settings/github-token`. |
 | `GITHUB_TOKEN` | empty | github | Fallback GitHub token (same purpose, conventional name). |
 | `OPENCLAW_GATEWAY_PORT` (alias `GATEWAY_PORT`) | `18789` | server | Port of the OpenClaw gateway used for outbound wake events. |
@@ -135,7 +135,7 @@ loopback HTTP on the operator's behalf. See
 |---|---|---|
 | `FLOWBOARD_HOOK_TELEMETRY` | unset | See Telemetry. |
 | `FLOWBOARD_REPO` | `~/repos/FlowBoard` | See Storage paths. |
-| `FLOWBOARD_PORT` | `18790` | Hook reads this to construct the local API URL. |
+| `FLOWBOARD_PORT` | `18700` | Hook reads this to construct the local API URL. |
 | `FLOWBOARD_PROJECTS_DIR` | `~/.openclaw/projects` | See Storage paths. |
 | `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset | See Feature flags. |
 | `FLOWBOARD_HOOK_FETCH_TIMEOUT_MS` | `2000` | Per-attempt timeout (ms) for the hook's calls to the local FlowBoard API. |

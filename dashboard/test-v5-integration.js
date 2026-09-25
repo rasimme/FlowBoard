@@ -10,13 +10,13 @@
  * - File tree navigation (nested files, expand/collapse)
  *
  * Prerequisites:
- *   - Dashboard running on http://localhost:18790 (or FLOWBOARD_API env)
+ *   - Dashboard running on http://localhost:18700 (or FLOWBOARD_API env)
  *   - Active HZL database
  *
  * Run: node test-v5-integration.js
  */
 
-const API_BASE = process.env.FLOWBOARD_API || 'http://localhost:18790';
+const API_BASE = process.env.FLOWBOARD_API || 'http://localhost:18700';
 const TEST_AGENT = 'test-v5-smoke';
 const PROJECT_FOR_TESTS = 'flowboard';
 

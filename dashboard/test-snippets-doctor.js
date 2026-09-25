@@ -619,8 +619,8 @@ section('custom dashboard URL — apply/preview uses rendered AGENTS trigger');
   function assertRenderedCurrent(filePath, dir, expectedUrl, msg) {
     const content = fs.readFileSync(filePath, 'utf8');
     assert(content.includes(expectedUrl), `${msg}: writes rendered dashboard URL`);
-    assert(!content.includes('http://127.0.0.1:18790'), `${msg}: does not write default 127 URL`);
-    assert(!content.includes('http://localhost:18790'), `${msg}: does not write default localhost URL`);
+    assert(!content.includes('http://127.0.0.1:18700'), `${msg}: does not write default 127 URL`);
+    assert(!content.includes('http://localhost:18700'), `${msg}: does not write default localhost URL`);
     const status = doctor.collectStatus(dir, { env });
     assertEqual(status.counts.current, 1, `${msg}: post-apply status is current`);
     assertEqual(status.chip, null, `${msg}: post-apply chip hidden`);
@@ -636,7 +636,7 @@ section('custom dashboard URL — apply/preview uses rendered AGENTS trigger');
     assertEqual(status.files.length, 1, 'custom port upgrade: one row surfaced');
     const adds = status.files[0].diff.filter(row => row.t === 'add').map(row => row.text).join('\n');
     assert(adds.includes('http://127.0.0.1:18843'), 'custom port upgrade: preview shows rendered port');
-    assert(!adds.includes('http://127.0.0.1:18790'), 'custom port upgrade: preview omits default port');
+    assert(!adds.includes('http://127.0.0.1:18700'), 'custom port upgrade: preview omits default port');
 
     const result = doctor.applyActions(dir, [{ id: status.files[0].id, action: 'upgrade' }], { env });
     assertEqual(result.applied.length, 1, 'custom port upgrade: action applied');

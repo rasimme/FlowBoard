@@ -71,7 +71,7 @@ node dashboard/scripts/migrate-canvas-to-db.mjs --run     # migrate all pending
 node dashboard/scripts/migrate-canvas-to-db.mjs --run --project foo --project bar
 ```
 
-Talks to a running server (`--base` / `FLOWBOARD_BASE_URL` / `FLOWBOARD_PORT`, default `http://127.0.0.1:18790`). Exit codes: `0` ok, `1` at least one project failed, `2` usage or connection error.
+Talks to a running server (`--base` / `FLOWBOARD_BASE_URL` / `FLOWBOARD_PORT`, default `http://127.0.0.1:18700`). Exit codes: `0` ok, `1` at least one project failed, `2` usage or connection error.
 
 ## Task-discipline note
 

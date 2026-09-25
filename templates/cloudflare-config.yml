@@ -13,5 +13,5 @@ credentials-file: /home/<USER>/.cloudflared/<TUNNEL_ID>.json
 
 ingress:
   - hostname: <YOUR_DOMAIN>
-    service: http://localhost:18790
+    service: http://localhost:18700
   - service: http_status:404

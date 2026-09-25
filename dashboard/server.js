@@ -6,12 +6,14 @@ const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
-const { renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
+const { DEFAULT_DASHBOARD_PORT, renderSnippetBaseUrl, resolveDashboardBaseUrl } = require('./flowboard-url.cjs');
+const { describeListenError, describeSandboxOverlap } = require('./port-collision.js');
 
 const app = express();
 // Benign service config (not a security finding): the loopback listen port,
 // operator-supplied via env with a safe default. Bound via app.listen below.
-const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || 18790;
+// T-495: the default (18700) stays clear of OpenClaw's Gateway-derived ports.
+const PORT = parseInt(process.env.FLOWBOARD_PORT, 10) || DEFAULT_DASHBOARD_PORT;
 // S-17: Default to localhost — Cloudflare Tunnel connects via 127.0.0.1 anyway
 const HOST = process.env.FLOWBOARD_HOST || '127.0.0.1';
 // T-445 rollback switch. The UI receives this value in its boot config and
@@ -5560,11 +5562,13 @@ async function startServer() {
     if (aborted > 0) console.log(`[specify] Cleaned up ${aborted} expired sessions`);
   }, 30 * 60 * 1000);
 
+  const sandboxOverlap = describeSandboxOverlap(PORT, process.env);
+  if (sandboxOverlap) console.warn(sandboxOverlap);
   const server = app.listen(PORT, HOST, () => {
     console.log(`Dashboard API running on http://${HOST}:${PORT}`);
   });
   server.on('error', (error) => {
-    console.error(`[startup] Failed to listen on http://${HOST}:${PORT}:`, error.message);
+    console.error(describeListenError(error, { port: PORT, host: HOST, env: process.env }));
     process.exitCode = 1;
   });
 startServer().catch(err => {

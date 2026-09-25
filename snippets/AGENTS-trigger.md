@@ -1,7 +1,7 @@
 ## FlowBoard (API-First)
 <!-- flowboard-snippet-contract: v3-command-startup-response -->
 
-Project coordination via FlowBoard dashboard at `http://127.0.0.1:18790`.
+Project coordination via FlowBoard dashboard at `http://127.0.0.1:18700`.
 Use a local-capable tool for this localhost API (exec/curl/node or an internal API tool), never external web-fetch/browser. If an API call fails, do not infer state; report the blocker.
 
 ### Minimal trigger

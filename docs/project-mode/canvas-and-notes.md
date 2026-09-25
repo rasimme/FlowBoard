@@ -48,7 +48,7 @@ Legacy projects that still have a `~/.openclaw/projects/<project>/canvas.json` k
 
 ## API Endpoints
 
-Base: `http://localhost:18790/api`
+Base: `http://localhost:18700/api`
 
 | Method | Path | Description |
 |--------|------|-------------|

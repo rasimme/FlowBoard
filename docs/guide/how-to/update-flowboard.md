@@ -41,6 +41,30 @@ DASHBOARD_ORIGIN=https://flowboard.example.com \
   node scripts/setup.mjs --update --override-env DASHBOARD_ORIGIN
 ```
 
+### Dashboard port (T-495)
+
+The default dashboard port is now `18700`; it used to be `18790`, which is the
+OpenClaw Gateway port + 1 that OpenClaw's MCP Apps sandbox listener claims when
+`mcp.apps.enabled` is on. An update never moves a running install:
+
+- A service that already stores `FLOWBOARD_PORT` keeps that value.
+- A service without `FLOWBOARD_PORT` ran on the old code default, so
+  `--update` writes `FLOWBOARD_PORT=18790` into it and says so.
+- Setup prints the matching hook command whenever the port is not `18700`,
+  because the project-context hook's own default moved too:
+
+  ```bash
+  openclaw config set plugins.entries.flowboard.config.dashboardPort 18790
+  ```
+
+To move an existing install to the new default instead, update the service and
+the hook together:
+
+```bash
+FLOWBOARD_PORT=18700 node scripts/setup.mjs --update --override-env FLOWBOARD_PORT
+openclaw config unset plugins.entries.flowboard.config.dashboardPort
+```
+
 Settings owned by a systemd drop-in or `EnvironmentFile=` must be changed in
 that owner-only source instead; setup refuses a competing main-unit override.
 

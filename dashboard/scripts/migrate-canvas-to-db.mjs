@@ -9,9 +9,9 @@
 //   node scripts/migrate-canvas-to-db.mjs                 # show migration status
 //   node scripts/migrate-canvas-to-db.mjs --run           # migrate all pending projects
 //   node scripts/migrate-canvas-to-db.mjs --run --project foo --project bar
-//   node scripts/migrate-canvas-to-db.mjs --base http://127.0.0.1:18790
+//   node scripts/migrate-canvas-to-db.mjs --base http://127.0.0.1:18700
 //
-// Base URL resolution: --base > FLOWBOARD_BASE_URL > http://127.0.0.1:$FLOWBOARD_PORT (default 18790).
+// Base URL resolution: --base > FLOWBOARD_BASE_URL > http://127.0.0.1:$FLOWBOARD_PORT (default 18700).
 // Exit codes: 0 = ok, 1 = at least one project failed to migrate, 2 = usage or connection error.
 
 const args = process.argv.slice(2);
@@ -21,11 +21,11 @@ function usage() {
   console.log('  (no flags)        show canvas migration status');
   console.log('  --run             migrate pending projects (all, or only the given --project names)');
   console.log('  --project <name>  restrict --run to specific projects (repeatable)');
-  console.log('  --base <url>      dashboard base URL (default http://127.0.0.1:18790)');
+  console.log('  --base <url>      dashboard base URL (default http://127.0.0.1:18700)');
 }
 
 let doRun = false;
-let base = process.env.FLOWBOARD_BASE_URL || `http://127.0.0.1:${process.env.FLOWBOARD_PORT || 18790}`;
+let base = process.env.FLOWBOARD_BASE_URL || `http://127.0.0.1:${process.env.FLOWBOARD_PORT || 18700}`;
 const projects = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];

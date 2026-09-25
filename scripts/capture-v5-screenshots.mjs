@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const demoMetaPath = resolve(repoRoot, '.flowboard-v5-demo.json');
-const API = process.env.FLOWBOARD_API || 'http://127.0.0.1:18790';
+const API = process.env.FLOWBOARD_API || 'http://127.0.0.1:18700';
 const CDP = process.env.FLOWBOARD_CDP || 'http://127.0.0.1:18800';
 const DASHBOARD_URL = process.env.FLOWBOARD_DASHBOARD_URL || API;
 const VIEWPORT = { width: 1600, height: 1080, deviceScaleFactor: 1 };

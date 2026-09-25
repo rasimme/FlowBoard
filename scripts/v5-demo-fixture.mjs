@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
-const API = process.env.FLOWBOARD_API || 'http://127.0.0.1:18790';
+const API = process.env.FLOWBOARD_API || 'http://127.0.0.1:18700';
 const PROJECT = 'flowboard-v5-demo';
 const PROJECTS_DIR = process.env.FLOWBOARD_PROJECTS_DIR
   || join(process.env.OPENCLAW_HOME || join(homedir(), '.openclaw'), 'projects');
