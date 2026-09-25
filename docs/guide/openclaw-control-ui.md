@@ -38,8 +38,9 @@ dashboard, and the plugin's backend operations stay available.
    { gateway: { controlUi: { experimental: { customPlugins: true } } } }
    ```
 
-2. Restart the Gateway and reload the browser tab. (New plugin Gateway methods
-   need the restart; a plugin reload is not enough.)
+2. Reload the browser tab. From 2026.9.6 the Gateway applies the lab flag
+   through live config reload and open pages refresh their plugin views; on
+   2026.9.2–2026.9.5, restart the Gateway first.
 3. Point FlowBoard at your dashboard and give it the service credential, for
    example:
 

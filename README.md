@@ -143,7 +143,7 @@ one:
 |---|---|---|
 | **2026.6.6 – 2026.7.x** | Baseline: the `project-context` hook that tells every agent run which project it is on, plus the standalone dashboard | Nothing |
 | **2026.8.x** | Baseline, and the install asks you to approve FlowBoard's capabilities | Nothing |
-| **≥ 2026.9.2** | Baseline plus the feature layer: typed Gateway operations and a native **FlowBoard** page in the OpenClaw sidebar | The *Custom plugin UI* lab (`gateway.controlUi.experimental.customPlugins`), which is off by default and needs a Gateway restart |
+| **≥ 2026.9.2** | Baseline plus the feature layer: typed Gateway operations and a native **FlowBoard** page in the OpenClaw sidebar | The *Custom plugin UI* lab (`gateway.controlUi.experimental.customPlugins`), which is off by default (hosts before 2026.9.6 need a Gateway restart after enabling it) |
 | **No OpenClaw at all** | The standalone dashboard and the REST API for external agents | Nothing |
 
 Nothing above is a fork in the road: one install works on all of them. On an
@@ -151,7 +151,7 @@ older host FlowBoard notices the newer SDK is absent and runs hook-only; with
 the lab off there is simply no sidebar entry.
 
 Every release installs the same packed artifact on real hosts and checks that
-the hook comes back — currently 2026.6.6, 2026.7.1-2 and 2026.9.5
+the hook comes back — currently 2026.6.6, 2026.7.1-2, 2026.9.5 and 2026.9.6
 (`node scripts/release-host-matrix.mjs`, see [CONTRIBUTING](CONTRIBUTING.md)).
 Details in [OpenClaw Integration](docs/concepts/openclaw-integration.md).
 

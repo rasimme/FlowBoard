@@ -26,7 +26,7 @@
  *
  *     FLOWBOARD_HOST_MATRIX="\
  *       2026.6.6: node=/opt/node24/bin/node /opt/oc66/node_modules/.bin/openclaw,\
- *       2026.9.5: node=/opt/node2421/bin/node /opt/oc95/node_modules/.bin/openclaw" \
+ *       2026.9.6: node=/opt/node2421/bin/node /opt/oc96/node_modules/.bin/openclaw" \
  *       node scripts/release-host-matrix.mjs
  *
  * Entries may also be passed as positional arguments, which override the env.

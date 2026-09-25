@@ -26,6 +26,9 @@
 - **A task detail panel in the Gateway (T-498).** Clicking a card opens status, work state, priority, agent, tags, dates, the claim, the linked spec, the description, the newest comments and the newest checkpoints beside the board, with the same actions and Escape to close. The description is shown as plain text with its line breaks — never as rendered markup, because this page runs with your Control UI authority.
 - **Deep links now land on the task (T-498).** `?p.project=…&p.task=…` on the Control UI page selects the project, opens the board and opens that task's panel, so a shared link, a reload and the back button all arrive in the same place. This closes the stage-1 limitation above. *Ideas* and *Files* remain the framed dashboard on their own tabs; the frame is loaded once and is not reloaded when you switch tabs.
 
+- **OpenClaw 2026.9.6 is verified (T-487-11).** The host matrix now covers 2026.6.6, 2026.7.1-2, 2026.9.5 and 2026.9.6, with captured CLI help for the new version; the plugin builds, validates and runs unchanged on it, including the native board. On 2026.9.6 the *Custom plugin UI* lab applies without a Gateway restart; the docs now say which versions still need one.
+- **The canary no longer probes an old OpenClaw against your real home (T-487-11).** The `--version` and help probes that pick the host CLI now also run in a throwaway home with the exec-approvals stub, like every install step already did, so an older CLI cannot run its legacy migrations against the operator's `~/.openclaw` before the canary has isolated it.
+
 ### v5.2.1 (2026-08-28) — Import Safety & Agent UX Polish
 
 - **Import sensitive bundles safely.** Structurally valid bundles with credential-like content now offer precise server-side redaction by default; importing unchanged content requires an explicit confirmation.

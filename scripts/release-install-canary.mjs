@@ -131,6 +131,15 @@ function baseEnv() {
   return { ...process.env, PATH: `${extraPath}${path.delimiter}${process.env.PATH || ''}` };
 }
 
+// Even `--version` and the help probes run in a disposable home: an older CLI
+// started against the operator's real home may run its legacy migrations there
+// (2026.6.x/2026.7.x move `exec-approvals.json` into the state dir it resolves).
+let probeHome = null;
+function probeEnv() {
+  if (!probeHome) probeHome = createIsolatedHome(path.join(tmp, 'probe'), baseEnv(), extraPath);
+  return probeHome.env;
+}
+
 function candidateClis() {
   if (process.env.FLOWBOARD_OPENCLAW_CLI) return [process.env.FLOWBOARD_OPENCLAW_CLI];
   const candidates = [];
@@ -157,7 +166,7 @@ function resolveOpenClawCli() {
   const tried = [];
   for (const candidate of candidateClis()) {
     if (candidate.includes(path.sep) && !existsSync(candidate)) continue;
-    const probe = runCli(candidate, ['--version'], { env: baseEnv() });
+    const probe = runCli(candidate, ['--version'], { env: probeEnv() });
     if (probe.ok) return candidate;
     tried.push(`${candidate}: ${stripAnsi(probe.output).trim().split('\n')[0] || probe.error}`);
   }
@@ -601,7 +610,7 @@ try {
   const pkg = readJson(path.join(root, 'package.json'));
 
   const cli = resolveOpenClawCli();
-  const { capabilities } = probeHostCapabilities(cli, { env: baseEnv() });
+  const { capabilities } = probeHostCapabilities(cli, { env: probeEnv() });
   hostInfo = { cli, version: capabilities.version, commit: capabilities.commit, capabilities };
 
   if (!asJson) {

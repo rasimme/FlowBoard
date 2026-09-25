@@ -1,0 +1,15 @@
+
+OpenClaw 2026.9.6 (eb377ac) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins inspect|info [options] [id]
+
+Inspect plugin details
+
+Arguments:
+  id          Plugin id
+
+Options:
+  --all       Inspect all plugins
+  -h, --help  Display help for command
+  --json      Print JSON
+  --runtime   Load plugin runtime for hooks/tools/diagnostics

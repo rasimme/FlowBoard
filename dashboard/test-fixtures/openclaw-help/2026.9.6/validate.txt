@@ -1,0 +1,12 @@
+
+OpenClaw 2026.9.6 (eb377ac) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins validate [options]
+
+Validate plugin metadata and native Control UI assets
+
+Options:
+  --entry <path>  Plugin entry module relative to --root
+  -h, --help      Display help for command
+  --json          Print JSON
+  --root <path>   Plugin package root

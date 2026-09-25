@@ -87,16 +87,16 @@ export function parseVersion(versionText) {
  * Every field answers "may I pass this?" or "may I call this?", never "which
  * release is this?". Verified against real hosts (fixtures carry the output):
  *
- * | capability                   | 2026.6.6 | 2026.7.1-2 | 2026.9.5 |
- * |------------------------------|----------|------------|----------|
- * | acceptCapabilities           | no       | no         | yes      |
- * | acknowledgeClawhubRisk       | no       | yes        | no       |
- * | acknowledgeInstallPolicy     | no       | no         | yes      |
- * | inspectRuntime / inspectJson | yes      | yes        | yes      |
- * | doctorJson                   | no       | no         | yes      |
- * | reload / pack                | no       | no         | yes      |
- * | validateJson                 | no       | no         | yes      |
- * | build / buildCheck           | yes      | yes        | yes      |
+ * | capability                   | 2026.6.6 | 2026.7.1-2 | 2026.9.5 | 2026.9.6 |
+ * |------------------------------|----------|------------|----------|----------|
+ * | acceptCapabilities           | no       | no         | yes      | yes      |
+ * | acknowledgeClawhubRisk       | no       | yes        | no       | no       |
+ * | acknowledgeInstallPolicy     | no       | no         | yes      | yes      |
+ * | inspectRuntime / inspectJson | yes      | yes        | yes      | yes      |
+ * | doctorJson                   | no       | no         | yes      | yes      |
+ * | reload / pack                | no       | no         | yes      | yes      |
+ * | validateJson                 | no       | no         | yes      | yes      |
+ * | build / buildCheck           | yes      | yes        | yes      | yes      |
  *
  * `build` and `--check` are the trap: both old CLIs have them, but there they
  * only generate *tool*-plugin metadata and reject FlowBoard's entry. The

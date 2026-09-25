@@ -75,7 +75,7 @@ function loadFixture(host) {
   return help;
 }
 
-const HOSTS = ['2026.6.6', '2026.7.1-2', '2026.9.5'];
+const HOSTS = ['2026.6.6', '2026.7.1-2', '2026.9.5', '2026.9.6'];
 
 // ---------------------------------------------------------------------------
 // Fixtures exist and are real captures
@@ -218,6 +218,24 @@ const EXPECTED = {
     build: true,
     validate: true,
   },
+  '2026.9.6': {
+    version: '2026.9.6',
+    acceptCapabilities: true,
+    acknowledgeClawhubRisk: false,
+    acknowledgeInstallPolicy: true,
+    installForce: true,
+    inspectRuntime: true,
+    inspectJson: true,
+    doctorJson: true,
+    uninstallForce: true,
+    updateAcceptCapabilities: true,
+    buildCheck: true,
+    validateJson: true,
+    reload: true,
+    pack: true,
+    build: true,
+    validate: true,
+  },
 };
 
 for (const host of HOSTS) {
@@ -231,12 +249,12 @@ for (const host of HOSTS) {
 
 check('only 2026.9.x offers capability consent', () => {
   const consenting = HOSTS.filter((host) => detectCapabilities(loadFixture(host)).acceptCapabilities);
-  assert.deepEqual(consenting, ['2026.9.5']);
+  assert.deepEqual(consenting, ['2026.9.5', '2026.9.6']);
 });
 
 check('build --check is not a feature-plugin marker', () => {
   // The release gate must not use `buildCheck` to decide whether a CLI can
-  // validate a feature plugin: all three hosts have that flag, and the old
+  // validate a feature plugin: every captured host has that flag, and the old
   // ones only understand tool plugins with it.
   for (const host of HOSTS) {
     assert.equal(detectCapabilities(loadFixture(host)).buildCheck, true, `${host} unexpectedly lacks build --check`);
@@ -245,7 +263,7 @@ check('build --check is not a feature-plugin marker', () => {
     const caps = detectCapabilities(loadFixture(host));
     return caps.validateJson && caps.pack;
   });
-  assert.deepEqual(featureAware, ['2026.9.5']);
+  assert.deepEqual(featureAware, ['2026.9.5', '2026.9.6']);
 });
 
 check('an unknown CLI degrades to the safest capability set', () => {

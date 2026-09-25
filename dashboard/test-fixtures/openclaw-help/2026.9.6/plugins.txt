@@ -1,0 +1,31 @@
+
+OpenClaw 2026.9.6 (eb377ac) — All your chats, one OpenClaw.
+
+Usage: openclaw plugins [options] [command]
+
+Manage OpenClaw plugins and extensions
+
+Options:
+  -h, --help   Display help for command
+
+Commands:
+  build        Build plugin metadata and native Control UI assets
+  disable      Disable one or more plugins in config
+  doctor       Report plugin load issues
+  enable       Enable one or more plugins in config
+  init         Create a plugin project
+  inspect      Inspect plugin details
+  install      Install a plugin or hook pack (path, archive, npm spec, git repo,
+               clawhub:package, or marketplace entry)
+  list         List discovered plugins
+  marketplace  Inspect Claude-compatible plugin marketplaces
+  pack         Bundle a built plugin into an exact artifact for activation
+               approval
+  registry     Inspect or rebuild the persisted plugin registry
+  reload       Reload one or more plugins in the running Gateway
+  search       Search ClawHub plugin packages
+  uninstall    Uninstall one or more plugin packages
+  update       Update installed plugins and tracked hook packs
+  validate     Validate plugin metadata and native Control UI assets
+
+Docs: https://docs.openclaw.ai/cli/plugins

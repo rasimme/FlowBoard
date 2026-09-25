@@ -206,8 +206,8 @@ The contract, decided in [ADR-0038](../adr/0038-workboard-coexistence-flowboard-
 | Host ≥ 2026.9.2, lab flag on | Native page appears; stage-0 framing additionally needs `FLOWBOARD_FRAME_ANCESTORS` |
 | Plugin disabled, or FlowBoard run without OpenClaw | Standalone dashboard only; external agents keep using REST |
 
-`gateway.controlUi.experimental.customPlugins` is server-enforced, defaults to off, and needs a
-Gateway restart. OpenClaw's plugin APIs are experimental, so FlowBoard pins and tests a host version
+`gateway.controlUi.experimental.customPlugins` is server-enforced and defaults to off. Hosts from
+2026.9.6 apply it through live config reload; 2026.9.2–2026.9.5 need a Gateway restart. OpenClaw's plugin APIs are experimental, so FlowBoard pins and tests a host version
 rather than assuming forward compatibility.
 
 ### The supported host matrix
@@ -217,7 +217,7 @@ back. `scripts/release-host-matrix.mjs` runs `scripts/release-install-canary.mjs
 and prints the table; CI runs the two ends of it on every push (Node 22 + 2026.6.6, Node 24 +
 2026.9.5). What differs between hosts is the *install lifecycle*, not FlowBoard's behaviour:
 
-| | 2026.6.6 | 2026.7.1-2 | ≥ 2026.9.2 (verified on 2026.9.5) |
+| | 2026.6.6 | 2026.7.1-2 | ≥ 2026.9.2 (verified on 2026.9.5 and 2026.9.6) |
 |---|---|---|---|
 | `agent:bootstrap` hook + standalone dashboard | yes | yes | yes |
 | Plugin shape reported by the host | `hook-only`, info-level note | `hook-only`, info-level note | `non-capability`, with feature services |
