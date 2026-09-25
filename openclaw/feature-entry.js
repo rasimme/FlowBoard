@@ -31,7 +31,7 @@ import { defineFeaturePlugin } from 'openclaw/plugin-sdk/feature-plugin';
 import { buildJsonPluginConfigSchema, definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import { getToolPluginMetadata, toolPluginMetadataSymbol } from 'openclaw/plugin-sdk/tool-plugin';
 
-import { createFlowBoardAdapter, FlowBoardAdapterError } from './adapter.js';
+import { createFlowBoardAdapter, toFeatureError } from './adapter.js';
 import {
   createChangePoller,
   createFocusRegistry,
@@ -138,15 +138,16 @@ function resolveCallerPrincipal(registry, context, input) {
   };
 }
 
-/** Feature handlers report FlowBoard's own message, never a stack or a body. */
+/**
+ * Feature handlers report FlowBoard's own message and code (for example
+ * SPECIFY_REQUIRED or NOT_OWNER), never a stack or a body. The mapping lives
+ * in the SDK-free adapter so FlowBoard's suite can pin it on every Node.
+ */
 async function guarded(run) {
   try {
     return await run();
   } catch (error) {
-    if (error instanceof FlowBoardAdapterError) {
-      throw Object.assign(new Error(error.message), { code: error.code });
-    }
-    throw error;
+    throw toFeatureError(error);
   }
 }
 
@@ -285,7 +286,7 @@ export function createFeatureEntry(baseline) {
             return result;
           }),
 
-        // The three write actions below are `operator.write` at the Gateway
+        // The write actions below are `operator.write` at the Gateway
         // and *authorized* by FlowBoard: the review gate (ADR-0022), the
         // lease-ownership rule and the work-state contract all live on the
         // server, and their refusals reach the caller as FlowBoard's own
@@ -307,6 +308,24 @@ export function createFeatureEntry(baseline) {
         'task.reject': (input, context) =>
           guarded(async () => {
             const result = await adapter.rejectTask(principal(context, input), input);
+            changed(input.project, input.id);
+            return result;
+          }),
+
+        // T-499: the author is composed from the connection's verified
+        // profile inside the adapter; operation input cannot name it.
+        'task.comment': (input, context) =>
+          guarded(async () => {
+            const result = await adapter.commentTask(principal(context, input), input);
+            changed(input.project, input.id);
+            return result;
+          }),
+
+        // Soft delete only. The timestamp is made in the adapter, here in the
+        // Gateway process, and a trashed task leaves `tasks.list`.
+        'task.trash': (input, context) =>
+          guarded(async () => {
+            const result = await adapter.trashTask(principal(context, input), input);
             changed(input.project, input.id);
             return result;
           }),

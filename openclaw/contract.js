@@ -1,5 +1,6 @@
 /**
- * FlowBoard feature contract (T-487-7; stage 1 T-487-8, stage 2 T-498).
+ * FlowBoard feature contract (T-487-7; stage 1 T-487-8, stage 2 T-498,
+ * native editing T-499).
  *
  * One declaration of the operations FlowBoard exposes inside an OpenClaw
  * Gateway. The host validates every input and output against these schemas,
@@ -45,7 +46,16 @@ export const MAX_TAG_LENGTH = 40;
 /** The detail panel reads the newest slice, never the whole history. */
 export const MAX_COMMENTS = 20;
 export const MAX_CHECKPOINTS = 10;
-export const MAX_DESCRIPTION = 4000;
+/**
+ * FlowBoard's own description limit (16 KB, server.js T-396), so an edit made
+ * in the native panel round-trips losslessly. Larger legacy descriptions are
+ * still cut on read and flagged, and a client must not save a cut one back.
+ */
+export const MAX_DESCRIPTION = 16384;
+/** One comment, in both directions: `task.comment` input and `task.get` output. */
+export const MAX_COMMENT = 2000;
+/** An edited title. Creation keeps FlowBoard's stricter 128 (`task.create`). */
+export const MAX_TITLE = 200;
 /** An approve/reject note is one paragraph of evidence, not a document. */
 export const MAX_REASON = 500;
 /** `tasks-changed.ids` is a hint; a bigger diff is sent without ids at all. */
@@ -90,7 +100,7 @@ const binding = object(
  * The card the native board renders (T-498).
  *
  * One Task shape for every operation that returns a task — the list, the
- * detail read, and each of the three write actions — so a client can replace a
+ * detail read, and each write action that answers with a task — so a client can replace a
  * card with the result of an action without a second fetch or a second parser.
  *
  * It is FlowBoard's own projection, bounded and narrowed: every field below
@@ -168,6 +178,23 @@ const taskResult = object({ task }, ['task']);
 const taskId = { type: 'string', minLength: 1, maxLength: 64 };
 const reason = { type: 'string', minLength: 1, maxLength: MAX_REASON };
 
+/**
+ * One comment as `task.get` lists it and `task.comment` answers it (T-499),
+ * so a panel can append the answer of a write to the list it already shows.
+ */
+const comment = object(
+  {
+    /** FlowBoard's event row id — an integer, null for a few legacy rows. */
+    id: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+    author: nullableString(128),
+    message: { type: 'string', maxLength: MAX_COMMENT },
+    /** 'question' | 'answer' for typed comments (T-307), else null. */
+    kind: nullableString(16),
+    timestamp: nullableString(64),
+  },
+  ['id', 'author', 'message', 'kind', 'timestamp'],
+);
+
 export const contract = defineFeatureContract({
   pluginId: 'flowboard',
   operations: {
@@ -218,7 +245,7 @@ export const contract = defineFeatureContract({
       description:
         'List the tasks of one FlowBoard project as board cards, ordered by the manual column rank and then by id. ' +
         'Archived tasks are excluded unless includeArchived is set; asking for status "archived" includes them implicitly, ' +
-        'because the query would otherwise be empty by definition.',
+        'because the query would otherwise be empty by definition. Tasks in the Trash are never listed.',
       input: object(
         {
           project: projectName,
@@ -256,22 +283,7 @@ export const contract = defineFeatureContract({
             },
             [...TASK_REQUIRED, 'description', 'descriptionTruncated', 'specFile'],
           ),
-          comments: {
-            type: 'array',
-            maxItems: MAX_COMMENTS,
-            items: object(
-              {
-                /** FlowBoard's event row id — an integer, null for a few legacy rows. */
-                id: { anyOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
-                author: nullableString(128),
-                message: { type: 'string', maxLength: 500 },
-                /** 'question' | 'answer' for typed comments (T-307), else null. */
-                kind: nullableString(16),
-                timestamp: nullableString(64),
-              },
-              ['id', 'author', 'message', 'kind', 'timestamp'],
-            ),
-          },
+          comments: { type: 'array', maxItems: MAX_COMMENTS, items: comment },
           checkpoints: {
             type: 'array',
             maxItems: MAX_CHECKPOINTS,
@@ -357,11 +369,13 @@ export const contract = defineFeatureContract({
     'task.update': {
       kind: 'action',
       description:
-        'Change a task\'s lifecycle status and/or its canonical work state (PUT /api/projects/:project/tasks/:id). ' +
-        'At least one field is required. FlowBoard authorizes the transition itself: review -> done and reopening a ' +
-        'done task are refused here and belong to task.approve / an explicit reopen, and a task another agent is ' +
-        'actively holding may not be moved from outside. workStateDetails is passed through unchanged; clearing a ' +
-        'field means sending it as null.',
+        'Change a task (PUT /api/projects/:project/tasks/:id): its lifecycle status, its canonical work state, and ' +
+        'its editable card fields — title, description, priority, tags and the manual column rank (order, null ' +
+        'clears it). At least one field besides project and id is required; only the fields sent are changed. ' +
+        'Archiving is status "archived" (from done) and unarchiving is status "done". FlowBoard authorizes the ' +
+        'transition itself: review -> done and reopening a done task are refused here and belong to task.approve / ' +
+        'an explicit reopen, and a task another agent is actively holding may not be moved from outside. ' +
+        'workStateDetails is passed through unchanged; clearing a field means sending it as null.',
       input: object(
         {
           project: projectName,
@@ -369,6 +383,15 @@ export const contract = defineFeatureContract({
           status: { type: 'string', enum: TASK_STATUSES },
           workState: { type: 'string', enum: TASK_WORK_STATES },
           workStateDetails,
+          title: { type: 'string', minLength: 1, maxLength: MAX_TITLE },
+          description: { type: 'string', maxLength: MAX_DESCRIPTION },
+          priority: { type: 'string', enum: TASK_PRIORITIES },
+          tags: {
+            type: 'array',
+            maxItems: MAX_TAGS,
+            items: { type: 'string', minLength: 1, maxLength: MAX_TAG_LENGTH },
+          },
+          order: { anyOf: [{ type: 'number' }, { type: 'null' }] },
         },
         ['project', 'id'],
       ),
@@ -395,6 +418,26 @@ export const contract = defineFeatureContract({
         'NOT_IN_REVIEW when the task is in any other status.',
       input: object({ project: projectName, id: taskId, reason }, ['project', 'id', 'reason']),
       output: taskResult,
+    },
+    'task.comment': {
+      kind: 'action',
+      description:
+        'Add a comment to a task (POST /api/projects/:project/tasks/:id/comment) and return it as task.get lists ' +
+        'comments. The author is the Gateway-verified operator behind the call, never a value the client supplies.',
+      input: object(
+        { project: projectName, id: taskId, message: { type: 'string', minLength: 1, maxLength: MAX_COMMENT } },
+        ['project', 'id', 'message'],
+      ),
+      output: object({ comment }, ['comment']),
+    },
+    'task.trash': {
+      kind: 'action',
+      description:
+        'Move a task to the FlowBoard Trash, or restore it with restore: true (PUT trashedAt on the task; the ' +
+        'timestamp is made by the Gateway). A trashed task leaves tasks.list. Soft delete only: permanent deletion ' +
+        'and emptying the Trash need FlowBoard\'s typed confirmation and are not part of this contract.',
+      input: object({ project: projectName, id: taskId, restore: { type: 'boolean' } }, ['project', 'id']),
+      output: object({ id: { type: 'string', maxLength: 64 }, trashed: { type: 'boolean' } }, ['id', 'trashed']),
     },
     'ui.focus': {
       kind: 'action',

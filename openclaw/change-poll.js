@@ -92,10 +92,11 @@ const DIGEST_SEPARATOR = '␟';
 /**
  * Fingerprint one board: what has to move for a card to look different.
  *
- * Eight fields, and no more, because every extra field is a false positive
+ * Ten fields, and no more, because every extra field is a false positive
  * that wakes every open page: the lifecycle status and the work state (the
  * column and the chip), the blocking reason, the assignee, when the task
- * entered its status, the title, and the manual rank. Deliberately excluded
+ * entered its status, the title, the manual rank, and — since the native
+ * panel edits them (T-499) — the priority and the tags. Deliberately excluded
  * are the stuck indicator (FlowBoard re-stamps `updatedAt` on every
  * evaluation, so it would fire on a timer) and the lease, which expires on a
  * clock rather than on a change.
@@ -114,6 +115,9 @@ export function taskDigest(tasks) {
         task.enteredStatusAt ?? '',
         task.title ?? '',
         task.order ?? '',
+        task.priority ?? '',
+        // JSON keeps ['a,b'] and ['a', 'b'] apart; a plain join would not.
+        JSON.stringify(Array.isArray(task.tags) ? task.tags : []),
       ].join(DIGEST_SEPARATOR),
     );
   }

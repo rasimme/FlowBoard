@@ -1,7 +1,8 @@
 /**
  * FlowBoard HTTP adapter for the OpenClaw Gateway facade (T-487-7, ADR-0040;
  * "needing me" and session-scoped status added in T-487-8; the board
- * projection and the three write actions in T-498).
+ * projection and the three write actions in T-498; edit fields, comments and
+ * trash in T-499).
  *
  * The Gateway process talks to the FlowBoard dashboard over loopback HTTP. It
  * authenticates with a shared service credential (`serviceToken` plugin config
@@ -49,7 +50,15 @@ export const MAX_TASK_LIST_LIMIT = 500;
 export const DEFAULT_TASK_LIST_LIMIT = 300;
 export const MAX_COMMENTS = 20;
 export const MAX_CHECKPOINTS = 10;
-export const MAX_DESCRIPTION = 4000;
+/**
+ * FlowBoard's own description limit (server.js T-396, 16 KB), so the detail
+ * read round-trips every description the dashboard can store. Larger legacy
+ * content is still cut and flagged with `descriptionTruncated`.
+ */
+export const MAX_DESCRIPTION = 16384;
+/** One comment on the wire, in both directions (task.comment, task.get). */
+export const MAX_COMMENT = 2000;
+export const MAX_TITLE = 200;
 export const MAX_TAGS = 20;
 export const MAX_TAG_LENGTH = 40;
 export const MAX_DETAIL_LENGTH = 200;
@@ -63,6 +72,22 @@ export class FlowBoardAdapterError extends Error {
     this.name = 'FlowBoardAdapterError';
     this.code = code;
   }
+}
+
+/**
+ * The error a feature handler rethrows for an adapter failure.
+ *
+ * A fresh Error carrying FlowBoard's message and its `code` unchanged — so a
+ * client can branch on `SPECIFY_REQUIRED`, `NOT_OWNER` or `NOT_IN_REVIEW`
+ * exactly as the dashboard does — and nothing else: no stack from this module,
+ * no cause chain, no response body. Anything that is not an adapter error is
+ * returned as it is; the host already reports those without their internals.
+ */
+export function toFeatureError(error) {
+  if (error instanceof FlowBoardAdapterError) {
+    return Object.assign(new Error(error.message), { code: error.code });
+  }
+  return error;
 }
 
 function boundedHeaderValue(value) {
@@ -323,7 +348,7 @@ export function projectComment(row) {
   return {
     id,
     author: boundedOrNull(row?.author, 128),
-    message: boundedText(row?.message, 500),
+    message: boundedText(row?.message, MAX_COMMENT),
     kind: boundedOrNull(row?.kind, 16),
     timestamp: boundedOrNull(row?.timestamp, 64),
   };
@@ -391,6 +416,10 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
   const baseUrl = () => resolveDashboardBaseUrl(pluginConfig || {});
   const serviceToken = typeof pluginConfig?.serviceToken === 'string' ? pluginConfig.serviceToken.trim() : '';
   const fetchImpl = options.fetch || globalThis.fetch;
+  // The trash timestamp is made here, in the Gateway process, never taken
+  // from the caller. Injectable only so a test can pin it.
+  const now = typeof options.now === 'function' ? options.now : () => new Date();
+  const taskPath = (project, id) => `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`;
 
   async function call(method, apiPath, { principal, body, timeoutMs } = {}) {
     const url = joinApiPath(baseUrl(), apiPath);
@@ -523,7 +552,8 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
           const payload = await call('GET', `/api/projects/${encodeURIComponent(entry.name)}/tasks?status=review`, {
             principal,
           });
-          const rows = Array.isArray(payload.tasks) ? payload.tasks : [];
+          // A trashed task keeps its status; it is still not waiting on anyone.
+          const rows = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => !task?.trashedAt) : [];
           return rows.map((task) => reviewTaskToItem(entry.name, task)).filter(Boolean);
         }),
       );
@@ -545,6 +575,11 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
      * — so it implies `includeArchived`, and the caller gets the column it
      * asked for instead of a silently empty one (the same failure mode T-463
      * fixed for the inert `status` filter).
+     *
+     * Trashed tasks are never cards (T-499). FlowBoard's task list still
+     * returns them — its own board filters `trashedAt` client-side and shows
+     * them only in the Trash view — so the filter has to live here, before
+     * the limit, or a board of trashed work would also eat the page.
      */
     async listTasks(principal, { project, status, includeArchived, limit } = {}) {
       const max = Math.min(
@@ -557,7 +592,7 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
       const search = query.toString();
       const suffix = search ? `?${search}` : '';
       const payload = await call('GET', `/api/projects/${encodeURIComponent(project)}/tasks${suffix}`, { principal });
-      const rows = Array.isArray(payload.tasks) ? payload.tasks : [];
+      const rows = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => !task?.trashedAt) : [];
       const tasks = rows.map(projectTask).sort(compareTasks);
       return { tasks: tasks.slice(0, max), truncated: tasks.length > max };
     },
@@ -627,7 +662,7 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
     },
 
     /**
-     * Change status and/or work state.
+     * Change status, work state and/or the editable card fields.
      *
      * Deliberately no `actor` in the body. On the generic update path that
      * field is a lease-ownership *assertion* (server.js T-422-1): naming an
@@ -635,19 +670,33 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
      * NOT_OWNER. An actor-less call is FlowBoard's trusted local operator and
      * behaves exactly like the dashboard's own status picker, including its
      * auto-release. The Gateway principal still travels in the headers.
+     *
+     * The edit fields (T-499) are forwarded as given — the Gateway has already
+     * validated them against the contract — and only when present: an empty
+     * description, an empty tag list and a null rank are values that clear
+     * something, not "leave it alone". FlowBoard validates them again.
      */
-    async updateTask(principal, { project, id, status, workState, workStateDetails } = {}) {
+    async updateTask(
+      principal,
+      { project, id, status, workState, workStateDetails, title, description, priority, tags, order } = {},
+    ) {
       const body = {};
+      if (title !== undefined) body.title = title;
+      if (description !== undefined) body.description = description;
+      if (priority !== undefined) body.priority = priority;
+      if (tags !== undefined) body.tags = tags;
+      if (order !== undefined) body.order = order;
       if (status !== undefined) body.status = status;
       if (workState !== undefined) body.workState = workState;
       if (workStateDetails !== undefined) body.workStateDetails = projectWorkStateDetails(workStateDetails);
       if (Object.keys(body).length === 0) {
         throw new FlowBoardAdapterError(
-          'task.update needs at least one of status, workState or workStateDetails',
+          'task.update needs at least one field to change: status, workState, workStateDetails, title, ' +
+            'description, priority, tags or order',
           'flowboard_empty_update',
         );
       }
-      const payload = await call('PUT', `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`, {
+      const payload = await call('PUT', taskPath(project, id), {
         principal,
         body,
         timeoutMs: WRITE_TIMEOUT_MS,
@@ -700,6 +749,47 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
         },
       );
       return this.taskAfterWrite(principal, project, payload);
+    },
+
+    /**
+     * Add a comment signed by the operator behind the call.
+     *
+     * FlowBoard's comment endpoint takes its author from the request body (it
+     * does not read the principal headers), so the author is composed here
+     * from the Gateway-verified profile — the same actor string approve and
+     * reject sign with — and never from operation input.
+     */
+    async commentTask(principal, { project, id, message } = {}) {
+      if (typeof message !== 'string' || !message.trim()) {
+        throw new FlowBoardAdapterError('A comment needs a message', 'flowboard_message_required');
+      }
+      const payload = await call('POST', `${taskPath(project, id)}/comment`, {
+        principal,
+        body: { message: message.slice(0, MAX_COMMENT), author: principalActor(principal) },
+        timeoutMs: WRITE_TIMEOUT_MS,
+      });
+      return { comment: projectComment(payload?.comment) };
+    },
+
+    /**
+     * Move a task to FlowBoard's Trash, or restore it.
+     *
+     * Soft delete only: `trashedAt` is set to an ISO timestamp made in this
+     * process, or cleared. Hard delete and "empty trash" need FlowBoard's
+     * typed confirmations and are deliberately not reachable from here.
+     */
+    async trashTask(principal, { project, id, restore } = {}) {
+      const trashedAt = restore === true ? null : now().toISOString();
+      const payload = await call('PUT', taskPath(project, id), {
+        principal,
+        body: { trashedAt },
+        timeoutMs: WRITE_TIMEOUT_MS,
+      });
+      const raw = payload?.task;
+      const trashed = raw && Object.prototype.hasOwnProperty.call(raw, 'trashedAt')
+        ? Boolean(raw.trashedAt)
+        : trashedAt !== null;
+      return { id: typeof raw?.id === 'string' && raw.id ? raw.id.slice(0, 64) : id, trashed };
     },
 
     async createTask(principal, { project, title, description, priority }) {

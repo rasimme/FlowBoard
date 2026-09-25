@@ -273,7 +273,9 @@ async function httpTests() {
 
     section('HTTP — invalid or absent credential');
     const forged = await call(base, 'POST', `/api/projects/${PROJECT}/tasks`, {
-      token: `${SERVICE_TOKEN.slice(0, -1)}0`,
+      // Flip the last hex digit so the token always differs (a fixed '0' collided
+      // with the real token whenever it already ended in '0' — 1 run in 16).
+      token: `${SERVICE_TOKEN.slice(0, -1)}${SERVICE_TOKEN.endsWith('0') ? '1' : '0'}`,
       headers: gatewayHeaders(),
       body: { title: 'Forged attribution', priority: 'low' },
     });
