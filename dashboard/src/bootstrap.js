@@ -8,6 +8,8 @@
 
 import { resolveDashboardAgentIdentity } from './utils/projectSelection.mjs';
 import { installAppStateProxy } from './state/appStore.mjs';
+import { initEmbedMode } from './embed/embedRuntime.js';
+import { surfaceTab } from './embed/embedMode.mjs';
 import { connectionFailure } from './state/connectionState.mjs';
 import { authenticateTelegram } from './utils/dashboardApi.js';
 import {
@@ -19,6 +21,24 @@ import {
 // window.appState is now a Proxy over the React-owned store (appStore.mjs). The
 // auth/agentId writes below go through it and notify React automatically.
 installAppStateProxy();
+
+// T-499: embed mode (framed single surface) is resolved once, before React and
+// before the first snapshot fetch, so the presets below decide what the first
+// render shows. Without a verified framing host this is null and nothing here
+// runs — the standalone path is unchanged.
+const embed = initEmbedMode();
+if (embed) {
+  const { surface, project, file, task } = embed.config;
+  const tab = surfaceTab(surface);
+  if (tab) window.appState.currentTab = tab;
+  // A known project name wins over the stored/active one in the first
+  // snapshot (selectViewedProject ignores unknown names).
+  if (project) window.appState.viewedProject = project;
+  if (surface === 'files' && file) {
+    window.appState.pendingSpecFile = file;
+    window.appState.pendingSpecTaskId = task || null;
+  }
+}
 
 let resolveBootstrap;
 window.__flowboardBootstrap = new Promise((r) => { resolveBootstrap = r; });
@@ -47,7 +67,9 @@ function applyDashboardIdentity(authAgentId = null) {
   window.appState.agentId = identity.agentId;
   window.appState.agentIdSource = identity.source;
   window.appState.agentIdChatBound = identity.chatBound;
-  if (identity.agentId) {
+  // T-499: a framed embed shares localStorage with the standalone dashboard;
+  // it may read the stored agent but never writes one.
+  if (identity.agentId && !embed) {
     try { localStorage.setItem('flowboard_agent_id', identity.agentId); } catch { /* ignore */ }
   }
   return identity;

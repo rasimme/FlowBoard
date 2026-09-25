@@ -1,4 +1,5 @@
 import { createContext, useContext, useCallback, useMemo, useState } from 'react';
+import { getEmbed } from '../embed/embedRuntime.js';
 
 const NavigationContext = createContext(null);
 
@@ -35,7 +36,12 @@ export function NavigationProvider({ children }) {
   const value = useMemo(() => ({
     intent,
     // setters (cross-view requests)
-    goToTask: (id) => set({ scrollToTask: id }),
+    // T-499: in a framed surface the task opens in the host's native board.
+    goToTask: (id) => {
+      const embed = getEmbed();
+      if (embed) { embed.openTask(id); return; }
+      set({ scrollToTask: id });
+    },
     goToNote: (id) => set({ scrollToNote: id }),
     goToColumn: (col) => set({ scrollToColumn: col }),
     requestNewTask: () => set({ pendingNewTask: true }),

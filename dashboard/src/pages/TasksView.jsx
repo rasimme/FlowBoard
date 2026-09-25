@@ -17,6 +17,7 @@ import { normalizeTaskWorkState } from '../utils/workState.js';
 import { getActiveSubtaskClaims, getSyncedPulseDelayMs } from '../parentActivity.mjs';
 import { Plus, Trash2, FileText, FilePlus, Archive, ListTree, RotateCcw, ArrowUpDown, ChevronDown, Check, GripVertical, ListChecks } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
+import { createBacklogTask } from '../utils/taskCreation.js';
 import { getTasks, replaceTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
 import { pendingReviewTasks, boardTopLevelTasks, describeStructureReasons } from '../utils/exceptionReview.mjs';
@@ -952,40 +953,17 @@ function AddTaskForm({ project, onCreated }) {
     if (!trimmed || submitting) return;
     setSubmitting(true);
     try {
-      const res = await apiFetch(`/api/projects/${project}/tasks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: trimmed, priority, status: 'backlog' }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Enforce-mode direct creation returns a reusable request. Starting
-        // Specify here is the explicit Dashboard recovery action; the API
-        // rejection itself never creates a session or task.
-        if (res.status === 409 && data.code === 'SPECIFY_REQUIRED' && data.specifyRequest) {
-          const sessionRes = await apiFetch('/api/specify/sessions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              project,
-              origin: 'tasks-api',
-              agentId: 'human',
-              transport: 'dashboard',
-              specifyRequest: data.specifyRequest,
-            }),
-          });
-          const sessionData = await sessionRes.json().catch(() => ({}));
-          if (!sessionRes.ok || !sessionData.session?.id) {
-            throw new Error(sessionData.error || 'Failed to start Specify recovery');
-          }
-          specify.show(sessionData.session.id);
-          setOpen(false);
-          if (window.showToast) window.showToast('Specify is required before creating this task', 'info');
-          setSubmitting(false);
-          return;
-        }
-        throw new Error(data.error || 'Failed to create task');
+      // Shared with the framed Specify surface (T-499): creation + the
+      // explicit SPECIFY_REQUIRED recovery live in createBacklogTask.
+      const result = await createBacklogTask({ project, title: trimmed, priority });
+      if (result.kind === 'specify') {
+        specify.show(result.sessionId);
+        setOpen(false);
+        if (window.showToast) window.showToast('Specify is required before creating this task', 'info');
+        setSubmitting(false);
+        return;
       }
+      const { data } = result;
       haptic.medium();
       if (data.task) {
         replaceTasks(applyTaskResponse(getTasks(), data));

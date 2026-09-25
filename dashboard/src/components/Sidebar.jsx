@@ -15,6 +15,7 @@ import DeletedProjectsTrash from './DeletedProjectsTrash.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';
 import ImportProjectModal, { ExportProjectModal } from './ProjectBundleModals.jsx';
 import Popover from './Popover.jsx';
+import { getEmbed } from '../embed/embedRuntime.js';
 
 const COLLAPSE_KEY = 'flowboard_sidebar_collapsed';
 const FOLDERS_LS_KEY = 'flowboard_user_folders';
@@ -201,6 +202,12 @@ function ProjectItem({
 export default function Sidebar() {
   const { state } = useAppState();
   const { viewProject, refreshProjectsOnly, switchTab } = useDashboard();
+  // A click/Enter on a project row. T-499: the framed Projects surface also
+  // tells the host, which switches its native board to that project.
+  const openProjectFromList = useCallback((name) => {
+    getEmbed()?.openProject(name);
+    return viewProject(name);
+  }, [viewProject]);
   const [container, setContainer] = useState(null);
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [userFolders, setUserFolders] = useState(loadUserFolders);
@@ -480,7 +487,7 @@ export default function Sidebar() {
     };
     const st = kbProjRef.current;
     if (!st) {
-      if (e.key === 'Enter') { e.preventDefault(); viewProject(name); return; }
+      if (e.key === 'Enter') { e.preventDefault(); openProjectFromList(name); return; }
       if (e.key === ' ') {
         e.preventDefault();
         const index = Math.max(0, sectionItems(section).findIndex((p) => p.name === name));
@@ -726,7 +733,7 @@ export default function Sidebar() {
       allProjects={projects}
       folders={folders}
       renaming={renamingName === p.name}
-      onView={(name) => viewProject(name)}
+      onView={openProjectFromList}
       onStartRename={() => setRenamingName(p.name)}
       onCommitRename={(v) => commitRename(p.name, v)}
       onCancelRename={() => setRenamingName(null)}

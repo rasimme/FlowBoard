@@ -25,6 +25,27 @@
 </head>
 <body>
 <script>
+  // T-499: embed-mode marker before first paint. A verified framing host
+  // (?embed=<surface>&host=<origin>, origin in the server-injected
+  // FLOWBOARD_FRAME_ANCESTORS allow-list and equal to the direct parent)
+  // gets the chrome-less single surface. src/embed/embedRuntime.js re-checks
+  // with the full rules and is authoritative; top-level pages never match.
+  (function () {
+    try {
+      if (window.top === window.self) return;
+      var params = new URLSearchParams(window.location.search);
+      var surface = params.get('embed');
+      if (['ideas', 'files', 'projects', 'specify'].indexOf(surface) < 0) return;
+      var host = new URL(params.get('host') || '').origin;
+      var allow = window.__FLOWBOARD_FRAME_ANCESTORS__;
+      if (!Array.isArray(allow) || allow.indexOf(host) < 0) return;
+      var ancestors = window.location.ancestorOrigins;
+      if (ancestors && ancestors.length && ancestors[0] !== host) return;
+      document.documentElement.setAttribute('data-fb-embed', surface);
+    } catch (e) { /* not embeddable: standalone */ }
+  })();
+</script>
+<script>
   // Graceful Degradation — client-side check before app loads
   // If opened outside Telegram AND no session cookie → show info page
   const _tg = window.Telegram?.WebApp;

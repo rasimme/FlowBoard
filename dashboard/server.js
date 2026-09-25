@@ -719,6 +719,35 @@ if (BUNDLE_FRESHNESS.stale) {
   console.error(bundleFreshness.describeStaleBundle(BUNDLE_FRESHNESS));
 }
 
+// JSON for an inline <script>: escape "<" so no injected value can close the
+// tag early (U+2028/2029 are valid in JSON and in modern JS string literals).
+function scriptJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+// Both HTML entry points (`/` and the SPA fallback) serve dist/index.html with
+// the per-request CSP nonce on every inline <script> and the runtime config
+// the client reads before React boots. T-499: __FLOWBOARD_FRAME_ANCESTORS__ is
+// the embed-mode host allow-list — the same validated origins that CSP
+// frame-ancestors admits (FLOWBOARD_FRAME_ANCESTORS); empty means embed mode
+// can never activate.
+function renderIndexHtml(nonce) {
+  const html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
+  const config = {
+    __LOCAL_HOSTNAME__: process.env.LOCAL_HOSTNAME || '',
+    __AUTH_ENABLED__: AUTH_ENABLED,
+    __FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__: DASHBOARD_SNAPSHOT_ENABLED,
+    __FLOWBOARD_STALE_THRESHOLD_MINUTES__: hzlService.getSchedulerStaleThreshold(),
+    __FLOWBOARD_FRAME_ANCESTORS__: EXTRA_FRAME_ANCESTORS,
+  };
+  const assignments = Object.entries(config)
+    .map(([key, value]) => `window.${key} = ${scriptJson(value)};`)
+    .join('');
+  return html
+    .replace(/<script>/g, `<script nonce="${nonce}">`)
+    .replace('</head>', `<script nonce="${nonce}">${assignments}</script></head>`);
+}
+
 // Serve index.html with injected config (from dist/ — never serve raw source)
 app.get('/', (req, res) => {
   if (!DIST_BUILT && !fs.existsSync(path.join(__dirname, 'dist', 'index.html'))) {
@@ -731,12 +760,7 @@ app.get('/', (req, res) => {
     );
     return;
   }
-  let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
-  const localHostname = process.env.LOCAL_HOSTNAME || '';
-  const nonce = res.locals.cspNonce;
-  // Inject nonce into existing inline scripts and add config script
-  html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};window.__FLOWBOARD_STALE_THRESHOLD_MINUTES__ = ${JSON.stringify(hzlService.getSchedulerStaleThreshold())};</script></head>`);
+  const html = renderIndexHtml(res.locals.cspNonce);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });
@@ -762,11 +786,7 @@ app.get('/*path', (req, res, next) => {
   }
 
   // Fallback to dist/index.html with injected config + CSP nonce
-  let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
-  const localHostname = process.env.LOCAL_HOSTNAME || '';
-  const nonce = res.locals.cspNonce;
-  html = html.replace(/<script>/g, `<script nonce="${nonce}">`);
-  html = html.replace('</head>', `<script nonce="${nonce}">window.__LOCAL_HOSTNAME__ = ${JSON.stringify(localHostname)};window.__AUTH_ENABLED__ = ${JSON.stringify(AUTH_ENABLED)};window.__FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__ = ${JSON.stringify(DASHBOARD_SNAPSHOT_ENABLED)};window.__FLOWBOARD_STALE_THRESHOLD_MINUTES__ = ${JSON.stringify(hzlService.getSchedulerStaleThreshold())};</script></head>`);
+  const html = renderIndexHtml(res.locals.cspNonce);
   res.setHeader('Cache-Control', 'no-store');
   res.send(html);
 });

@@ -273,3 +273,58 @@
     flex: 1;
   }
 }
+
+/*
+ * T-499 F1 — embed mode (framed single surface). html[data-fb-embed] is set
+ * only when a verified host frames ?embed=<surface> (index.html marker +
+ * src/embed/embedRuntime.js), so none of this applies to the standalone
+ * dashboard. The chrome is hidden and the one surface fills the frame.
+ */
+html[data-fb-embed] #app {
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+html[data-fb-embed] #app > .header,
+html[data-fb-embed] #app > .tab-bar,
+html[data-fb-embed] #app > .sidebar-backdrop {
+  display: none;
+}
+html[data-fb-embed] #app > .content {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+html[data-fb-embed]:not([data-fb-embed="projects"]) #app > .sidebar {
+  display: none;
+}
+/* Projects: the project list is the surface — full width, never an overlay
+   (overrides the collapsed state and the <=900px slide-in sidebar). */
+html[data-fb-embed="projects"] #app > .content {
+  display: none;
+}
+html[data-fb-embed="projects"] #app > .sidebar {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  position: static;
+  width: auto;
+  min-width: 0;
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  box-shadow: none;
+  border-right: 0;
+  z-index: auto;
+}
+html[data-fb-embed="projects"] #app > .sidebar .sidebar-head {
+  padding-top: 12px;
+}
+
+.embed-specify {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
