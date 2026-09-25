@@ -448,7 +448,7 @@ they self-register on the first `PUT /api/status`, appear in the dashboard
 agent list, and use the same task workflow as OpenClaw agents.
 
 What's different for external agents: there is no live-injected
-`BOOTSTRAP.md` in your run context (that mechanism is OpenClaw-runtime
+`FLOWBOARD.md` in your run context (that mechanism is OpenClaw-runtime
 specific). Instead, fetch the project context on demand via
 `GET /api/projects/<project>/bootstrap`.
 

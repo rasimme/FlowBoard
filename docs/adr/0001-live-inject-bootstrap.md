@@ -1,7 +1,7 @@
 # ADR-0001: Project context delivered via live-inject, not file-write
 
 ## Status
-Accepted
+Accepted — amended by T-501 (2026-09-25): the injected entry is named `FLOWBOARD.md`, not `BOOTSTRAP.md`.
 
 ## Date
 2026-05-01
@@ -26,5 +26,6 @@ The four previously-subscribed events (`command:new`, `command:reset`, `gateway:
 
 - **Positive:** Run always sees fresh DB state. No race between DB update and file update. Coverage of every session-boundary use-case (cold start, daily reset, idle-expiry, project-switch) is automatic. No file-IO in the hot path.
 - **Positive:** The basename `BOOTSTRAP.md` continues to work — it's the loader's recognized entry, only the source changed.
+  - **Amendment (T-501):** this assumption was wrong. OpenClaw reserves `BOOTSTRAP.md` for its one-shot onboarding file; on a set-up workspace core drops that entry again after the `agent:bootstrap` hooks run and strips any context file with that basename unless bootstrap mode is `full`. The injected context never reached the prompt. The hook now injects `FLOWBOARD.md` and never touches a real `BOOTSTRAP.md`; see [Hook Architecture](../concepts/hook-architecture.md).
 - **Negative:** A DB read is added to every agent turn. SQLite local + prepared statements keep this under a millisecond; telemetry can opt-in via `FLOWBOARD_HOOK_TELEMETRY=1`.
 - **Follow-on:** On-disk `BOOTSTRAP.md` files left over from the old hook are now non-authoritative. ADR-0004 covers their removal and the matching snippet wording.

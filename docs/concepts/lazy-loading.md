@@ -28,7 +28,7 @@ The lazy-loading machinery is a small registry plus three endpoints.
 - `GET /api/projects/:name/rules/:section` — returns one section's markdown.
 - `GET /api/projects/:name/bootstrap` — returns the *full* bundled document (manifest + every section embedded). Used by external agents that prefer eager loading over per-call fetches.
 
-**The injection path** (OpenClaw-managed agents): the `project-context` hook fires on `agent:bootstrap`, builds a document containing the active-project header, identity section, the rules **manifest** (not full content), the project's `PROJECT.md`, and a live task-status summary. The hook injects this as `BOOTSTRAP.md` into `event.context.bootstrapFiles`. See ADR-0001 for the live-inject decision; ADR-0004 for why on-disk copies are not authoritative.
+**The injection path** (OpenClaw-managed agents): the `project-context` hook fires on `agent:bootstrap`, builds a document containing the active-project header, identity section, the rules **manifest** (not full content), the project's `PROJECT.md`, and a live task-status summary. The hook injects this as `FLOWBOARD.md` into `event.context.bootstrapFiles` (not `BOOTSTRAP.md`, which OpenClaw reserves for onboarding and filters out; see [Hook Architecture](hook-architecture.md)). See ADR-0001 for the live-inject decision; ADR-0004 for why on-disk copies are not authoritative.
 
 **The fetch path** (external agents): external agents have no live-inject. The minimal trigger snippet (per ADR-0005) instructs them to call `GET /api/projects/<name>/bootstrap` once at session start to get the full document, or `GET /api/projects/<name>/rules/<section>` per-section as needed.
 

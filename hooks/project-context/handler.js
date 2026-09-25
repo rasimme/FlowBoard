@@ -4,11 +4,18 @@
  * On every agent run, OpenClaw fires `agent:bootstrap` to assemble the
  * bootstrap-files array that gets injected into the model context. This
  * hook reads the canonical active-project state from the FlowBoard DB
- * (via the local API) and replaces the BOOTSTRAP.md entry in
+ * (via the local API) and injects a `FLOWBOARD.md` entry into
  * `event.context.bootstrapFiles` with a live-built document containing
  * the active-project header, the agent's identity, the rules manifest,
  * live task state from the FlowBoard API, and task-neutral PROJECT.md
  * content.
+ *
+ * T-501: the entry must NOT be called `BOOTSTRAP.md`. OpenClaw core owns that
+ * name for its one-shot onboarding file: once a workspace is setup-completed
+ * it drops a `BOOTSTRAP.md` entry again *after* the agent:bootstrap hooks ran,
+ * and it strips any context file whose basename is `BOOTSTRAP.md` unless
+ * bootstrap mode is "full". A user's real `BOOTSTRAP.md` entry is never
+ * touched by this hook.
  *
  * No on-disk writes. Single source of truth: flowboard_agents DB row.
  * Documented in specs/T-168-hook-lifecycle-coverage.md (T-168-3).
@@ -24,7 +31,8 @@ const OPENCLAW_HOME = join(homedir(), ".openclaw");
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FLOWBOARD_REPO = process.env.FLOWBOARD_REPO || PACKAGE_ROOT;
 const ALLOW_LEGACY_FILE_FALLBACK = process.env.FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK === "true";
-const BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
+// T-501: never "BOOTSTRAP.md" — see the header comment.
+export const FLOWBOARD_CONTEXT_FILENAME = "FLOWBOARD.md";
 
 // T-230: transient-failure resilience. The FlowBoard server is a launchd
 // KeepAlive service, so unavailability is almost always a brief restart
@@ -370,8 +378,7 @@ async function handleProjectContextEvent(event, defaultPluginConfig = {}) {
     content = await buildBootstrapContent(workspaceDir, agentId, pluginConfig, sessionKey);
   } catch (err) {
     console.warn(`[project-context] build failed for ${agentId}: ${err?.message ?? err}`);
-    // Fail safe: do not strip the existing BOOTSTRAP.md; let whatever the
-    // workspace loader found stand.
+    // Fail safe: leave bootstrapFiles exactly as the workspace loader built it.
     return;
   }
   // T-181-4: success-path observability line is opt-in via env-gate so it
@@ -384,14 +391,20 @@ async function handleProjectContextEvent(event, defaultPluginConfig = {}) {
 
   if (!content) return;
 
+  const entryPath = workspaceDir ? join(workspaceDir, FLOWBOARD_CONTEXT_FILENAME) : FLOWBOARD_CONTEXT_FILENAME;
   const newEntry = {
-    name: BOOTSTRAP_FILENAME,
-    path: workspaceDir ? join(workspaceDir, BOOTSTRAP_FILENAME) : BOOTSTRAP_FILENAME,
+    name: FLOWBOARD_CONTEXT_FILENAME,
+    path: entryPath,
     content,
     missing: false,
   };
 
-  const idx = context.bootstrapFiles.findIndex(f => f && f.name === BOOTSTRAP_FILENAME);
+  // Replace only an entry that already carries the FlowBoard name or path
+  // (e.g. a real FLOWBOARD.md on disk; OpenClaw dedupes entries by path).
+  // Every other entry — including a user's own BOOTSTRAP.md — stays as is.
+  const idx = context.bootstrapFiles.findIndex(
+    f => f && (f.name === FLOWBOARD_CONTEXT_FILENAME || f.path === entryPath),
+  );
   if (idx >= 0) {
     context.bootstrapFiles[idx] = newEntry;
   } else {

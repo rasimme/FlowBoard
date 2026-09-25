@@ -312,7 +312,7 @@ const migrations = [
       console.warn(`[m006] Found ${findings.length} file(s) with legacy snippet markers:`);
       for (const f of findings) console.warn(`  - ${f}`);
       console.warn('[m006] These reference ACTIVE-PROJECT.md / projects/PROJECT-RULES.md directly.');
-      console.warn('[m006] The lazy-load model uses BOOTSTRAP.md + GET /api/projects/:name/rules/:section instead.');
+      console.warn('[m006] The lazy-load model uses the hook-injected FLOWBOARD.md + GET /api/projects/:name/rules/:section instead.');
       console.warn('[m006] Run `node dashboard/snippets-doctor.js` to preview a safe, byte-match-only replacement.');
       console.warn('[m006] Manual merge remains the intended path — AGENTS.md is user-owned.');
     },

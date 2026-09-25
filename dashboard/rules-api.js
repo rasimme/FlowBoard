@@ -5,7 +5,7 @@
  *
  * Each endpoint name maps to a markdown file under docs/project-mode/.
  * Some endpoint names alias existing docs (e.g. "api-access" → "tasks-api.md") to
- * avoid duplication. BOOTSTRAP.md embeds only the manifest; agents request detail
+ * avoid duplication. The hook-injected FLOWBOARD.md embeds only the manifest; agents request detail
  * sections on demand via GET /api/projects/:name/rules/:section.
  */
 

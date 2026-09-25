@@ -120,5 +120,5 @@ The Idea Canvas is a visual brainstorming space. Notes can be promoted to tasks.
 - **flowboard_agents.active_project** = single source of truth for per-agent active project state
 - **API-first** for all mutations (never edit JSON/state files directly)
 - **HZL/Tasks API** = single source of truth for task state, claims, priorities, and next work
-- **Bootstrap endpoint** = current project context; on-disk `BOOTSTRAP.md` is legacy/stale unless injected by runtime
+- **Bootstrap endpoint** = current project context; project context is injected by the runtime as `FLOWBOARD.md`; an on-disk `BOOTSTRAP.md` is OpenClaw's onboarding file, not FlowBoard context
 - **DECISIONS.md** loaded on demand only

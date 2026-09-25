@@ -78,8 +78,8 @@ grep "rules-telemetry" "$LOG" | awk '{print $1}' | cut -d'T' -f1 | sort | uniq -
 
 | Observation over several days | Interpretation | Action |
 |---|---|---|
-| Zero hits at all | Agents ignore the manifest entirely. BOOTSTRAP.md may not even be read, or the snippet isn't directive enough. | Tighten the snippet language ("on first message MUST GET /rules/api-access"), or consider API-response hints (gap #3). |
-| Only `_manifest`, no section hits | Agents read BOOTSTRAP.md but never drill into details. | Consider whether the manifest is too dense or whether sections need different framing. |
+| Zero hits at all | Agents ignore the manifest entirely. The injected `FLOWBOARD.md` may not even be read, or the snippet isn't directive enough. | Tighten the snippet language ("on first message MUST GET /rules/api-access"), or consider API-response hints (gap #3). |
+| Only `_manifest`, no section hits | Agents read `FLOWBOARD.md` but never drill into details. | Consider whether the manifest is too dense or whether sections need different framing. |
 | Manifest + some sections, skewed | Lazy-load works; a few sections do the heavy lifting. | No change. Maybe prune unused sections eventually. |
 | All sections, balanced | Ideal case — lazy-load is genuinely load-bearing. | Leave it alone. |
 

@@ -1,7 +1,7 @@
 # ADR-0004: On-disk BOOTSTRAP.md is non-authoritative; only the run-context copy is
 
 ## Status
-Accepted
+Accepted — amended by T-501 (2026-09-25): the injected context name is now `FLOWBOARD.md` (see ADR-0001).
 
 ## Date
 2026-05-01

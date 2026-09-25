@@ -28,7 +28,7 @@ const SESSION_KEY = 'agent:dev-botti:telegram:4711';
 
 /**
  * Run the hook against a stubbed FlowBoard API.
- * Returns { content, urls } — the injected BOOTSTRAP.md body and every URL the
+ * Returns { content, urls } — the injected FLOWBOARD.md body and every URL the
  * hook requested.
  */
 async function runHook({ context, status }) {
@@ -52,7 +52,7 @@ async function runHook({ context, status }) {
       context: { bootstrapFiles: [], ...context },
     };
     await handler(event);
-    const entry = event.context.bootstrapFiles.find(f => f?.name === 'BOOTSTRAP.md');
+    const entry = event.context.bootstrapFiles.find(f => f?.name === 'FLOWBOARD.md');
     return { content: entry?.content || '', urls };
   } finally {
     globalThis.fetch = realFetch;

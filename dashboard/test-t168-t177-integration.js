@@ -253,7 +253,7 @@ function makeBootstrapEvent({ agentId, workspaceDir, existingFiles = [] }) {
 }
 
 function getBootstrapEntry(event) {
-  return event.context.bootstrapFiles.find(f => f && f.name === 'BOOTSTRAP.md') || null;
+  return event.context.bootstrapFiles.find(f => f && f.name === 'FLOWBOARD.md') || null;
 }
 
 async function testHookActiveProject() {
@@ -268,7 +268,7 @@ async function testHookActiveProject() {
     agentId: TEST_AGENT,
     workspaceDir: fakeWorkspace,
     existingFiles: [
-      { name: 'BOOTSTRAP.md', path: `${fakeWorkspace}/BOOTSTRAP.md`, content: 'STALE', missing: false },
+      { name: 'FLOWBOARD.md', path: `${fakeWorkspace}/FLOWBOARD.md`, content: 'STALE', missing: false },
       { name: 'AGENTS.md', path: `${fakeWorkspace}/AGENTS.md`, content: 'unrelated', missing: false },
     ],
   });
@@ -276,7 +276,7 @@ async function testHookActiveProject() {
   await handler(event);
   const bs = getBootstrapEntry(event);
 
-  ok(bs, `BOOTSTRAP.md entry exists in bootstrapFiles`);
+  ok(bs, `FLOWBOARD.md entry exists in bootstrapFiles`);
   ok(bs && bs.content && bs.content.length > 1000, `Content is substantial (>1000 B), got ${bs?.content?.length}`);
   ok(bs && bs.content.startsWith(`# Active Project: ${PROJECT_FOR_TESTS}`),
     `Content starts with "# Active Project: ${PROJECT_FOR_TESTS}"`);
@@ -303,14 +303,14 @@ async function testHookNoActiveProject() {
     agentId: freshAgent,
     workspaceDir: fakeWorkspace,
     existingFiles: [
-      { name: 'BOOTSTRAP.md', path: `${fakeWorkspace}/BOOTSTRAP.md`, content: 'STALE', missing: false },
+      { name: 'FLOWBOARD.md', path: `${fakeWorkspace}/FLOWBOARD.md`, content: 'STALE', missing: false },
     ],
   });
 
   await handler(event);
   const bs = getBootstrapEntry(event);
 
-  ok(bs, `BOOTSTRAP.md entry exists`);
+  ok(bs, `FLOWBOARD.md entry exists`);
   ok(bs && bs.content.startsWith('# No Active Project'),
     `Content starts with "# No Active Project" header (T-168-5 anti-inference)`);
   ok(bs && bs.content.includes('Do **not** infer'),
@@ -404,7 +404,7 @@ async function testHookIgnoresOtherEvents() {
 }
 
 async function testHookDoesNotWriteToDisk() {
-  section('T-181-3: hook never creates BOOTSTRAP.md (or any other file) on disk');
+  section('T-181-3: hook never creates FLOWBOARD.md (or any other file) on disk');
 
   const handler = await loadHandler();
   const tmpRoot = fs.mkdtempSync(path.join(require('os').tmpdir(), 'fb-hook-test-'));
@@ -420,7 +420,7 @@ async function testHookDoesNotWriteToDisk() {
     agentId: undefined,
     workspaceDir: tmpWorkspace,
     existingFiles: [
-      { name: 'BOOTSTRAP.md', path: path.join(tmpWorkspace, 'BOOTSTRAP.md'), content: 'STALE', missing: false },
+      { name: 'FLOWBOARD.md', path: path.join(tmpWorkspace, 'FLOWBOARD.md'), content: 'STALE', missing: false },
     ],
   });
 

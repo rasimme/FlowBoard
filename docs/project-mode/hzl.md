@@ -62,7 +62,7 @@ FlowBoard layers two metadata tables on top of HZL:
 | `flowboard_agents`   | Per-agent active-project state (`agent_id`, `active_project`, `activated_at`) |
 | `flowboard_session_projects` | Optional session-scoped project binding (`agent_id`, `session_key`, `active_project`, `activated_at`, `last_seen`); falls back to `flowboard_agents` (ADR-0039) |
 
-The `flowboard_agents` table is what makes per-agent project activation work. Two agents activating different projects simultaneously each get their own row and their own per-run live-injected `BOOTSTRAP.md` content (the `project-context` hook keys off `agentId` derived from the workspace directory) — without collision on a shared file.
+The `flowboard_agents` table is what makes per-agent project activation work. Two agents activating different projects simultaneously each get their own row and their own per-run live-injected `FLOWBOARD.md` content (the `project-context` hook keys off `agentId` derived from the workspace directory) — without collision on a shared file.
 
 ## What does NOT live in HZL
 
