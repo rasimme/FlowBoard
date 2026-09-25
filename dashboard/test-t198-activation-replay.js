@@ -1,9 +1,23 @@
 #!/usr/bin/env node
 'use strict';
 
-const http = require('http');
+/**
+ * T-198 activation replay: deactivate → activate → poll contextReady → fetch
+ * the project bootstrap, all for one synthetic agent.
+ *
+ * By default this starts its own isolated FlowBoard dashboard (temporary
+ * workspace, projects dir, DBs and a free port — see
+ * test-support/server-harness.js) and seeds the fixture project there, so it
+ * never writes status activations into whatever dashboard runs on the default
+ * port. Opt-in override: FLOWBOARD_TEST_BASE=<base url> replays against a
+ * chosen, already-running server (which must already have PROJECT_FOR_TESTS).
+ */
 
-const BASE = process.env.FLOWBOARD_TEST_BASE || 'http://127.0.0.1:18700';
+const http = require('http');
+const { withIsolatedDashboard } = require('./test-support/server-harness.js');
+
+const EXPLICIT_BASE = (process.env.FLOWBOARD_TEST_BASE || '').trim();
+let BASE = EXPLICIT_BASE;
 const AGENT_ID = process.env.TEST_AGENT || `test-t198-replay-${Date.now()}`;
 const PROJECT = process.env.PROJECT_FOR_TESTS || 'flowboard';
 
@@ -66,8 +80,9 @@ async function pollReady() {
   return last;
 }
 
-(async () => {
+async function replay() {
   console.log('## T-198 activation replay');
+  console.log(`API base: ${BASE}`);
   try {
     // Start from inactive for this synthetic agent. This must not affect other agents.
     let res = await request('PUT', '/api/status', { agentId: AGENT_ID, project: null });
@@ -109,7 +124,29 @@ async function pollReady() {
     console.error('  ❌ replay threw:', err && err.stack || err);
   } finally {
     try { await request('PUT', '/api/status', { agentId: AGENT_ID, project: null }); } catch {}
-    console.log(`\n=== ${passed} passed, ${failed} failed ===`);
-    process.exit(failed === 0 ? 0 : 1);
   }
-})();
+}
+
+async function main() {
+  if (EXPLICIT_BASE) return replay();
+  return withIsolatedDashboard(async ({ base, api }) => {
+    const created = await api('POST', '/projects', {
+      name: PROJECT,
+      displayName: 'Replay fixture',
+      description: 'T-198 activation replay fixture.',
+    });
+    if (created.status < 200 || created.status >= 300) {
+      throw new Error(`fixture project create failed (${created.status}): ${JSON.stringify(created.body)}`);
+    }
+    BASE = base;
+    return replay();
+  }, { prefix: 'flowboard-t198-' });
+}
+
+main().catch((err) => {
+  failed++;
+  console.error('  ❌ replay setup failed:', err && err.stack || err);
+}).finally(() => {
+  console.log(`\n=== ${passed} passed, ${failed} failed ===`);
+  process.exit(failed === 0 ? 0 : 1);
+});

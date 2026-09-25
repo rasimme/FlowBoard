@@ -4,15 +4,18 @@
  * Integration tests for T-168 (project-context hook live-inject)
  * and T-177 (per-agent API hardening).
  *
- * Runs against the live FlowBoard dashboard on the configured port.
- * Uses a dedicated synthetic agent identity ("test-agent-suite") so it
- * does not pollute production state. Cleans up by setting that agent's
- * active_project back to null at the end (the row remains for visibility
- * but is "no active project").
+ * By default the suite starts its own isolated FlowBoard dashboard (temporary
+ * workspace, projects dir, DBs and a free port — see
+ * test-support/server-harness.js), seeds the `flowboard` fixture project there
+ * and points both its own requests and the project-context hook
+ * (FLOWBOARD_API / FLOWBOARD_PROJECTS_DIR) at that instance. It never talks to
+ * whatever dashboard happens to run on the default port, so `npm test` cannot
+ * write status activations or test data into a developer's live data.
  *
- * Prerequisites:
- *   - Dashboard running on http://localhost:18700 (or FLOWBOARD_API env)
- *   - HZL_ENABLED=true on the server
+ * Opt-in override: set FLOWBOARD_API=<base url> to run against a chosen,
+ * already-running server instead (that server must have a `flowboard`
+ * project). The suite then uses the synthetic agent identity
+ * "test-agent-suite" and deletes it again at the end.
  *
  * Run: node test-t168-t177-integration.js
  */
@@ -23,7 +26,11 @@ const os = require('os');
 const { spawnSync } = require('child_process');
 const { pathToFileURL } = require('url');
 
-const API_BASE = process.env.FLOWBOARD_API || 'http://localhost:18700';
+const { withIsolatedDashboard } = require('./test-support/server-harness.js');
+
+// Explicit opt-in target; empty means "spawn an isolated dashboard" (see main()).
+const EXPLICIT_API_BASE = (process.env.FLOWBOARD_API || '').trim();
+let API_BASE = EXPLICIT_API_BASE;
 const TEST_AGENT = 'test-agent-suite';
 const PROJECT_FOR_TESTS = 'flowboard';
 
@@ -840,6 +847,30 @@ function testInstallTriggerIdempotency() {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  if (EXPLICIT_API_BASE) return runSuite();
+
+  return withIsolatedDashboard(async ({ base, api, projectsDir }) => {
+    const created = await api('POST', '/projects', {
+      name: PROJECT_FOR_TESTS,
+      displayName: 'FlowBoard fixture',
+      description: 'T-168/T-177 integration fixture.',
+    });
+    if (created.status < 200 || created.status >= 300) {
+      throw new Error(`fixture project create failed (${created.status}): ${JSON.stringify(created.body)}`);
+    }
+    // Point this suite and the in-process hook handler at the isolated
+    // instance. The handler resolves FLOWBOARD_API and FLOWBOARD_PROJECTS_DIR
+    // per call, so it can never fall back to the default port or to the
+    // operator's real ~/.openclaw/projects.
+    API_BASE = base;
+    process.env.FLOWBOARD_API = base;
+    process.env.FLOWBOARD_BASE_URL = '';
+    process.env.FLOWBOARD_PROJECTS_DIR = projectsDir;
+    return runSuite();
+  }, { prefix: 'flowboard-t168-t177-' });
+}
+
+async function runSuite() {
   console.log(`# T-168 + T-177 Integration Tests`);
   console.log(`API base: ${API_BASE}`);
   console.log(`Handler:  ${HOOK_HANDLER_PATH}`);
@@ -847,8 +878,8 @@ async function main() {
   // Sanity-check: dashboard reachable
   const health = await fetchJson('GET', '/api/health');
   if (health.status !== 200) {
-    console.error(`\n❌ Dashboard not reachable at ${API_BASE} (got ${health.status})`);
-    process.exit(2);
+    // Throw instead of exiting so an isolated dashboard is still stopped.
+    throw new Error(`Dashboard not reachable at ${API_BASE} (got ${health.status})`);
   }
 
   try {
@@ -883,10 +914,11 @@ async function main() {
     console.log('\nFailures:');
     for (const f of failures) console.log(`  - ${f}`);
   }
-  process.exit(fail > 0 ? 1 : 0);
 }
 
-main().catch(err => {
+main().then(() => {
+  process.exit(fail > 0 ? 1 : 0);
+}).catch(err => {
   console.error('\n❌ FATAL:', err);
   process.exit(2);
 });

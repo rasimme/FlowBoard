@@ -9,14 +9,20 @@
  * - MarkdownEditor integration (file editing)
  * - File tree navigation (nested files, expand/collapse)
  *
- * Prerequisites:
- *   - Dashboard running on http://localhost:18700 (or FLOWBOARD_API env)
- *   - Active HZL database
+ * By default the suite starts its own isolated FlowBoard dashboard (temporary
+ * workspace, projects dir, DBs and a free port — see
+ * test-support/server-harness.js) and seeds the `flowboard` fixture project
+ * there, so it never writes status activations into whatever dashboard runs
+ * on the default port. Opt-in override: FLOWBOARD_API=<base url> runs against
+ * a chosen, already-running server (which must have a `flowboard` project).
  *
  * Run: node test-v5-integration.js
  */
 
-const API_BASE = process.env.FLOWBOARD_API || 'http://localhost:18700';
+const { withIsolatedDashboard } = require('./test-support/server-harness.js');
+
+const EXPLICIT_API_BASE = (process.env.FLOWBOARD_API || '').trim();
+let API_BASE = EXPLICIT_API_BASE;
 const TEST_AGENT = 'test-v5-smoke';
 const PROJECT_FOR_TESTS = 'flowboard';
 
@@ -52,6 +58,7 @@ async function fetchText(method, urlPath, options = {}) {
 }
 
 async function runTests() {
+  console.log(`API base: ${API_BASE}`);
   // --- Test 1: Activate test agent ---
   section('Test Agent Activation (v5)');
 
@@ -165,14 +172,32 @@ async function runTests() {
 
   if (fail > 0) {
     console.log(`\nFailed tests:\n${failures.map(f => `  • ${f}`).join('\n')}`);
-    process.exit(1);
+    return;
   }
 
   console.log('\n✅ All v5 integration tests passed!');
 }
 
-// Run tests
-runTests().catch(err => {
+async function main() {
+  if (EXPLICIT_API_BASE) return runTests();
+  return withIsolatedDashboard(async ({ base, api }) => {
+    const created = await api('POST', '/projects', {
+      name: PROJECT_FOR_TESTS,
+      displayName: 'FlowBoard fixture',
+      description: 'v5 integration fixture.',
+    });
+    if (created.status < 200 || created.status >= 300) {
+      throw new Error(`fixture project create failed (${created.status}): ${JSON.stringify(created.body)}`);
+    }
+    API_BASE = base;
+    return runTests();
+  }, { prefix: 'flowboard-v5-integration-' });
+}
+
+// Run tests (exit only after the isolated dashboard has been stopped)
+main().then(() => {
+  process.exit(fail > 0 ? 1 : 0);
+}).catch(err => {
   console.error('Test error:', err);
   process.exit(1);
 });
