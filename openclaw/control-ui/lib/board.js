@@ -122,6 +122,12 @@ export function groupTasksByStatus(tasks) {
   });
 }
 
+/** The column a task sits in, in board order — what in-column reordering (order.js) works on. */
+export function columnOf(tasks, task) {
+  const rows = Array.isArray(tasks) ? tasks.filter((row) => row && typeof row === 'object') : [];
+  return rows.filter((row) => row.status === task?.status).sort(compareTasks);
+}
+
 /** How many cards the board will actually render. */
 export function countBoardTasks(tasks) {
   return groupTasksByStatus(tasks).reduce((total, column) => total + column.count, 0);

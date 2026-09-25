@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * T-487-8 / T-498 — the pure logic behind the native Control UI page.
+ * T-487-8 / T-498 / T-499 — the pure logic behind the native Control UI page.
  *
  * `openclaw/control-ui/index.js` is DOM code that only runs inside the
  * Gateway's Control UI, so everything that can be decided without a DOM lives
@@ -23,6 +23,10 @@
  *      and a failed refresh never blanks a panel that has content.
  *   8. the view reducer — project, tab and open task, and the `ui.focus`
  *      project derived from them.
+ *   9. T-499: the embed protocol (URL, message acceptance, context, ready
+ *      timeout), framed tabs + transient Specify, position/archive/trash menu
+ *      items with their exact requests and undo, order ranks, the panel
+ *      editors' diff rules, and the comment bounds.
  *
  * Run: node test-control-ui-lib.js
  */
@@ -133,7 +137,7 @@ async function needsMeTests() {
 
 async function deepLinkTests() {
   section('deep links');
-  const { buildPageParams, readPageParams, buildFrameUrl } = await load('deep-link.js');
+  const { buildPageParams, readPageParams, buildDashboardUrl } = await load('deep-link.js');
 
   check('a selection becomes Control UI page params', () => {
     assert.deepEqual(buildPageParams({ project: 'alpha', task: 'T-001' }), { project: 'alpha', task: 'T-001' });
@@ -155,26 +159,20 @@ async function deepLinkTests() {
     assert.deepEqual(readPageParams(undefined), { project: null, task: null });
   });
 
-  check('without a selection the frame keeps the configured URL byte-identical', () => {
-    assert.equal(buildFrameUrl('http://127.0.0.1:18870', {}), 'http://127.0.0.1:18870');
-    assert.equal(buildFrameUrl('', { project: 'alpha' }), '');
+  check('without an agent the dashboard link is the configured URL byte-identical', () => {
+    assert.equal(buildDashboardUrl('http://127.0.0.1:18870', {}), 'http://127.0.0.1:18870');
+    assert.equal(buildDashboardUrl('', { agentId: 'main' }), '');
   });
 
-  check('a selection is appended to the frame URL', () => {
-    const url = new URL(buildFrameUrl('http://127.0.0.1:18870', { project: 'alpha', task: 'T-001', focus: '17' }));
-    assert.equal(url.searchParams.get('project'), 'alpha');
-    assert.equal(url.searchParams.get('task'), 'T-001');
-    assert.equal(url.searchParams.get('fbFocus'), '17');
-  });
-
-  check('an existing query on the configured URL survives', () => {
-    const url = new URL(buildFrameUrl('http://127.0.0.1:18870/?agentId=main', { project: 'alpha' }));
-    assert.equal(url.searchParams.get('agentId'), 'main');
-    assert.equal(url.searchParams.get('project'), 'alpha');
+  check('the dashboard link carries the agent the rail follows, and keeps an existing query', () => {
+    const url = new URL(buildDashboardUrl('http://127.0.0.1:18870/?x=1', { agentId: 'claude-code' }));
+    assert.equal(url.searchParams.get('agentId'), 'claude-code');
+    assert.equal(url.searchParams.get('x'), '1');
+    assert.equal(url.searchParams.get('embed'), null, 'the standalone link is never an embed URL');
   });
 
   check('a URL the browser cannot parse is returned untouched', () => {
-    assert.equal(buildFrameUrl('not a url', { project: 'alpha' }), 'not a url');
+    assert.equal(buildDashboardUrl('not a url', { agentId: 'main' }), 'not a url');
   });
 }
 
@@ -464,7 +462,7 @@ async function actionTests() {
     // Every way out of done is a reopen, and the server's transition guard
     // refuses all four, so a done card offers no move at all.
     assert.deepEqual(moveTargets(task({ status: 'done' })), []);
-    assert.deepEqual(menuModel(task({ status: 'done' })).map((group) => group.id), ['work-state']);
+    assert.deepEqual(menuModel(task({ status: 'done' })).map((group) => group.id), ['work-state', 'manage']);
   });
 
   check('dragging a review card onto Done is routed to the approve gate', () => {
@@ -478,9 +476,9 @@ async function actionTests() {
 
   check('approve and reject exist only in the review lane', () => {
     const review = menuModel(task({ status: 'review' })).map((group) => group.id);
-    assert.deepEqual(review, ['review', 'move', 'work-state']);
+    assert.deepEqual(review, ['review', 'move', 'work-state', 'manage']);
     const open = menuModel(task({ status: 'open' })).map((group) => group.id);
-    assert.deepEqual(open, ['move', 'work-state']);
+    assert.deepEqual(open, ['move', 'work-state', 'manage']);
     assert.equal(menuItems(task({ status: 'open' })).some((item) => item.kind === 'approve'), false);
   });
 
@@ -769,9 +767,12 @@ async function viewStateTests() {
   section('view state: project, tab and the open task');
   const { DEFAULT_TAB, TABS, focusProject, initialViewState, isFramedTab, selectionOf, showsBoard, viewReducer } =
     await load('view-state.js');
+  /** A view state with the T-499 fields at their defaults. */
+  const v = (fields) => ({ file: null, specify: null, ...fields });
 
-  check('the tab strip is Board, Ideas and Files, and Board is native', () => {
-    assert.deepEqual(TABS.map((tab) => tab.id), ['board', 'ideas', 'files']);
+  check('the tab strip is Board, Ideas, Files and Projects, and Board is native', () => {
+    assert.deepEqual(TABS.map((tab) => tab.id), ['board', 'ideas', 'files', 'projects']);
+    assert.equal(isFramedTab('projects'), true);
     assert.equal(DEFAULT_TAB, 'board');
     assert.equal(isFramedTab('board'), false);
     assert.equal(isFramedTab('ideas'), true);
@@ -780,70 +781,601 @@ async function viewStateTests() {
   });
 
   check('a deep link with a task selects its project and the board tab', () => {
-    const state = viewReducer({ project: null, task: null, tab: 'ideas' }, { type: 'params', project: 'alpha', task: 'T-1' });
-    assert.deepEqual(state, { project: 'alpha', task: 'T-1', tab: 'board' });
+    const state = viewReducer(v({ project: null, task: null, tab: 'ideas' }), { type: 'params', project: 'alpha', task: 'T-1' });
+    assert.deepEqual(state, v({ project: 'alpha', task: 'T-1', tab: 'board' }));
     assert.equal(showsBoard(state), true);
     assert.deepEqual(selectionOf(state), { project: 'alpha', task: 'T-1' });
   });
 
   check('a deep link with only a project keeps the tab it arrived on', () => {
-    const state = viewReducer({ project: null, task: null, tab: 'files' }, { type: 'params', project: 'alpha', task: null });
-    assert.deepEqual(state, { project: 'alpha', task: null, tab: 'files' });
+    const state = viewReducer(v({ project: null, task: null, tab: 'files' }), { type: 'params', project: 'alpha', task: null });
+    assert.deepEqual(state, v({ project: 'alpha', task: null, tab: 'files' }));
   });
 
   check('an empty or unchanged link leaves the view exactly as it was', () => {
-    const state = { project: 'alpha', task: 'T-1', tab: 'board' };
+    const state = v({ project: 'alpha', task: 'T-1', tab: 'board' });
     assert.equal(viewReducer(state, { type: 'params', project: null, task: null }), state);
     assert.equal(viewReducer(state, { type: 'params', project: 'alpha', task: 'T-1' }), state);
   });
 
   check('switching project clears the open task', () => {
-    const state = viewReducer({ project: 'alpha', task: 'T-1', tab: 'board' }, { type: 'project', project: 'beta' });
-    assert.deepEqual(state, { project: 'beta', task: null, tab: 'board' });
+    const state = viewReducer(v({ project: 'alpha', task: 'T-1', tab: 'board' }), { type: 'project', project: 'beta' });
+    assert.deepEqual(state, v({ project: 'beta', task: null, tab: 'board' }));
     // Re-selecting the same project is not a change, so the task survives.
-    const same = { project: 'alpha', task: 'T-1', tab: 'board' };
+    const same = v({ project: 'alpha', task: 'T-1', tab: 'board' });
     assert.equal(viewReducer(same, { type: 'project', project: 'alpha' }), same);
   });
 
   check('opening a task from a framed tab switches to the board', () => {
-    const state = viewReducer({ project: 'alpha', task: null, tab: 'ideas' }, { type: 'task', project: 'alpha', id: 'T-2' });
-    assert.deepEqual(state, { project: 'alpha', task: 'T-2', tab: 'board' });
+    const state = viewReducer(v({ project: 'alpha', task: null, tab: 'ideas' }), { type: 'task', project: 'alpha', id: 'T-2' });
+    assert.deepEqual(state, v({ project: 'alpha', task: 'T-2', tab: 'board' }));
     // A rail row from another project carries its project with it.
-    const cross = viewReducer({ project: 'alpha', task: null, tab: 'board' }, { type: 'task', project: 'beta', id: 'T-9' });
-    assert.deepEqual(cross, { project: 'beta', task: 'T-9', tab: 'board' });
+    const cross = viewReducer(v({ project: 'alpha', task: null, tab: 'board' }), { type: 'task', project: 'beta', id: 'T-9' });
+    assert.deepEqual(cross, v({ project: 'beta', task: 'T-9', tab: 'board' }));
   });
 
   check('a task without a project or an id is not a selection', () => {
-    const state = { project: null, task: null, tab: 'board' };
+    const state = v({ project: null, task: null, tab: 'board' });
     assert.equal(viewReducer(state, { type: 'task', id: 'T-1' }), state);
     assert.equal(viewReducer({ ...state, project: 'alpha' }, { type: 'task', project: 'alpha' }).task, null);
   });
 
   check('closing the task keeps the project and the tab', () => {
-    const state = viewReducer({ project: 'alpha', task: 'T-1', tab: 'board' }, { type: 'close-task' });
-    assert.deepEqual(state, { project: 'alpha', task: null, tab: 'board' });
+    const state = viewReducer(v({ project: 'alpha', task: 'T-1', tab: 'board' }), { type: 'close-task' });
+    assert.deepEqual(state, v({ project: 'alpha', task: null, tab: 'board' }));
     assert.equal(viewReducer(state, { type: 'close-task' }), state);
   });
 
   check('a tab change keeps the selection, and an unknown tab is refused', () => {
-    const state = { project: 'alpha', task: 'T-1', tab: 'board' };
-    assert.deepEqual(viewReducer(state, { type: 'tab', tab: 'ideas' }), { project: 'alpha', task: 'T-1', tab: 'ideas' });
+    const state = v({ project: 'alpha', task: 'T-1', tab: 'board' });
+    assert.deepEqual(viewReducer(state, { type: 'tab', tab: 'ideas' }), v({ project: 'alpha', task: 'T-1', tab: 'ideas' }));
     assert.equal(viewReducer(state, { type: 'tab', tab: 'nope' }), state);
     assert.equal(viewReducer(state, { type: 'tab', tab: 'board' }), state);
     assert.equal(viewReducer(state, { type: 'unknown' }), state);
   });
 
   check('ui.focus follows the project, including across a framed tab', () => {
-    assert.equal(focusProject({ project: 'alpha', task: null, tab: 'board' }), 'alpha');
-    assert.equal(focusProject({ project: 'alpha', task: null, tab: 'files' }), 'alpha');
-    assert.equal(focusProject({ project: null, task: null, tab: 'board' }), null);
+    assert.equal(focusProject(v({ project: 'alpha', task: null, tab: 'board' })), 'alpha');
+    assert.equal(focusProject(v({ project: 'alpha', task: null, tab: 'files' })), 'alpha');
+    assert.equal(focusProject(v({ project: null, task: null, tab: 'board' })), null);
     assert.equal(focusProject(null), null);
   });
 
   check('the initial state comes from the deep link the page was opened with', () => {
-    assert.deepEqual(initialViewState({ project: 'alpha', task: 'T-1' }), { project: 'alpha', task: 'T-1', tab: 'board' });
-    assert.deepEqual(initialViewState({ project: null, task: 'T-1' }), { project: null, task: null, tab: 'board' });
-    assert.deepEqual(initialViewState(), { project: null, task: null, tab: 'board' });
+    assert.deepEqual(initialViewState({ project: 'alpha', task: 'T-1' }), v({ project: 'alpha', task: 'T-1', tab: 'board' }));
+    assert.deepEqual(initialViewState({ project: null, task: 'T-1' }), v({ project: null, task: null, tab: 'board' }));
+    assert.deepEqual(initialViewState(), v({ project: null, task: null, tab: 'board' }));
+  });
+}
+
+/* ------------------------------------------------------------------ T-499 */
+
+const DASHBOARD = 'http://127.0.0.1:18870';
+const HOST = 'http://127.0.0.1:18875';
+
+async function embedTests() {
+  section('embed protocol: framed single surfaces (T-499)');
+  const {
+    buildEmbedUrl,
+    parseFrameMessage,
+    contextMessage,
+    initialFrameState,
+    frameReducer,
+    planFrame,
+    showsTimeoutNotice,
+    dashboardOrigin,
+    READY_TIMEOUT_MS,
+    EMBED_MESSAGE_TYPE,
+  } = await load('embed.js');
+
+  check('an embed URL names the surface, the project and the Control UI origin', () => {
+    const url = new URL(buildEmbedUrl(DASHBOARD, { surface: 'ideas', project: 'alpha', host: `${HOST}/control/flowboard?p.project=x` }));
+    assert.equal(url.origin, DASHBOARD);
+    assert.equal(url.searchParams.get('embed'), 'ideas');
+    assert.equal(url.searchParams.get('project'), 'alpha');
+    assert.equal(url.searchParams.get('host'), HOST, 'host is an origin, never a path or query');
+  });
+
+  check('file only on Files, title and priority only on Specify', () => {
+    const files = new URL(buildEmbedUrl(DASHBOARD, { surface: 'files', project: 'alpha', file: 'specs/T-1.md', host: HOST }));
+    assert.equal(files.searchParams.get('file'), 'specs/T-1.md');
+    const ideas = new URL(buildEmbedUrl(DASHBOARD, { surface: 'ideas', project: 'alpha', file: 'specs/T-1.md', title: 'x' }));
+    assert.equal(ideas.searchParams.get('file'), null);
+    assert.equal(ideas.searchParams.get('title'), null);
+    const specify = new URL(
+      buildEmbedUrl(DASHBOARD, { surface: 'specify', project: 'alpha', title: '  Ship\nit ', priority: 'high' }),
+    );
+    assert.equal(specify.searchParams.get('embed'), 'specify');
+    assert.equal(specify.searchParams.get('title'), 'Ship it');
+    assert.equal(specify.searchParams.get('priority'), 'high');
+    const bad = new URL(buildEmbedUrl(DASHBOARD, { surface: 'specify', project: 'alpha', priority: 'urgent' }));
+    assert.equal(bad.searchParams.get('priority'), null);
+  });
+
+  check('unknown surfaces, bad URLs and traversal paths frame nothing unsafe', () => {
+    assert.equal(buildEmbedUrl(DASHBOARD, { surface: 'overview' }), '');
+    assert.equal(buildEmbedUrl(DASHBOARD, { surface: 'board' }), '');
+    assert.equal(buildEmbedUrl('not a url', { surface: 'ideas' }), '');
+    assert.equal(buildEmbedUrl('', { surface: 'ideas' }), '');
+    for (const file of ['../secrets', '/etc/passwd', 'a/../../b', 'x\u0000y', 'x'.repeat(600)]) {
+      const url = new URL(buildEmbedUrl(DASHBOARD, { surface: 'files', project: 'alpha', file }));
+      assert.equal(url.searchParams.get('file'), null, `accepted ${JSON.stringify(file)}`);
+    }
+    const url = new URL(buildEmbedUrl(DASHBOARD, { surface: 'ideas', project: '../x', task: 'T-1' }));
+    assert.equal(url.searchParams.get('project'), null);
+    assert.equal(url.searchParams.get('task'), null, 'a task without a project is not context');
+  });
+
+  const frameWindow = { name: 'frame' };
+  const origin = dashboardOrigin(DASHBOARD);
+  const opts = { expectedSource: frameWindow, expectedOrigin: origin };
+  const msg = (data, overrides = {}) => ({ source: frameWindow, origin, data: { type: EMBED_MESSAGE_TYPE, v: 1, ...data }, ...overrides });
+
+  check('messages from the frame at the dashboard origin are accepted', () => {
+    assert.deepEqual(parseFrameMessage(msg({ kind: 'ready', surface: 'ideas' }), opts), { kind: 'ready', surface: 'ideas' });
+    assert.deepEqual(parseFrameMessage(msg({ kind: 'open-task', project: 'alpha', task: 'T-7' }), opts), {
+      kind: 'open-task',
+      project: 'alpha',
+      task: 'T-7',
+    });
+    assert.deepEqual(parseFrameMessage(msg({ kind: 'open-project', project: 'beta' }), opts), {
+      kind: 'open-project',
+      project: 'beta',
+    });
+    assert.deepEqual(parseFrameMessage(msg({ kind: 'open-surface', surface: 'files', file: 'specs/a.md' }), opts), {
+      kind: 'open-surface',
+      surface: 'files',
+      project: null,
+      file: 'specs/a.md',
+    });
+    assert.deepEqual(parseFrameMessage(msg({ kind: 'open-surface', surface: 'tasks' }), opts).surface, 'board');
+    assert.deepEqual(parseFrameMessage(msg({ kind: 'specify-closed', project: 'alpha', task: 'T-9' }), opts), {
+      kind: 'specify-closed',
+      project: 'alpha',
+      task: 'T-9',
+    });
+    // The dashboard's shape (T-499 F1): the first created task is opened.
+    assert.deepEqual(
+      parseFrameMessage(msg({ kind: 'specify-closed', project: 'alpha', completed: true, tasks: ['T-10', 'T-11'] }), opts),
+      { kind: 'specify-closed', project: 'alpha', task: 'T-10' },
+    );
+    assert.equal(parseFrameMessage(msg({ kind: 'specify-closed', project: 'alpha', completed: false, tasks: [] }), opts).task, null);
+    // Telegram's WebApp SDK posts JSON strings to any parent frame.
+    assert.equal(parseFrameMessage(msg('{"eventType":"iframe_ready"}'), opts), null);
+  });
+
+  check('a forged message is ignored: wrong source, wrong origin, wrong envelope', () => {
+    assert.equal(parseFrameMessage(msg({ kind: 'ready' }, { source: { name: 'other' } }), opts), null);
+    assert.equal(parseFrameMessage(msg({ kind: 'ready' }, { origin: 'https://evil.example' }), opts), null);
+    assert.equal(parseFrameMessage(msg({ kind: 'ready' }, { origin: HOST }), opts), null, 'not even the host itself');
+    assert.equal(parseFrameMessage({ source: frameWindow, origin, data: { type: 'other', v: 1, kind: 'ready' } }, opts), null);
+    assert.equal(parseFrameMessage({ source: frameWindow, origin, data: { type: EMBED_MESSAGE_TYPE, v: 2, kind: 'ready' } }, opts), null);
+    assert.equal(parseFrameMessage({ source: frameWindow, origin, data: 'flowboard:embed' }, opts), null);
+    assert.equal(parseFrameMessage(msg({ kind: 'context', surface: 'ideas' }), opts), null, 'host → frame kinds are not accepted back');
+    assert.equal(parseFrameMessage(msg({ kind: 'ready' }), {}), null, 'no expectations, no trust');
+  });
+
+  check('payloads are identifiers: bad ids and unknown surfaces drop the message', () => {
+    assert.equal(parseFrameMessage(msg({ kind: 'open-task', project: 'alpha', task: '<img src=x>' }), opts), null);
+    assert.equal(parseFrameMessage(msg({ kind: 'open-project', project: 'a b' }), opts), null);
+    assert.equal(parseFrameMessage(msg({ kind: 'open-surface', surface: 'overview' }), opts), null);
+    assert.equal(parseFrameMessage(msg({ kind: 'open-surface', surface: 'files', file: '../x' }), opts).file, null);
+    assert.equal(parseFrameMessage(msg({ kind: 'open-task', project: 'bad name', task: 'T-1' }), opts).project, null);
+  });
+
+  check('the context message is the frozen v1 shape', () => {
+    assert.deepEqual(contextMessage({ surface: 'files', project: 'alpha', file: 'specs/a.md' }), {
+      type: 'flowboard:embed',
+      v: 1,
+      kind: 'context',
+      surface: 'files',
+      project: 'alpha',
+      file: 'specs/a.md',
+    });
+    assert.equal('file' in contextMessage({ surface: 'ideas', project: 'alpha', file: 'specs/a.md' }), false);
+  });
+
+  const cfg = { dashboardUrl: DASHBOARD, host: HOST };
+  const ideas = { surface: 'ideas', project: 'alpha', file: null };
+
+  check('the first framed tab loads the frame; the same target does nothing', () => {
+    const plan = planFrame(initialFrameState(), ideas, cfg);
+    assert.equal(plan.kind, 'load');
+    assert.equal(new URL(plan.url).searchParams.get('embed'), 'ideas');
+    const loading = frameReducer(initialFrameState(), { type: 'load', url: plan.url, target: ideas });
+    assert.equal(loading.phase, 'loading');
+    assert.deepEqual(planFrame(loading, ideas, cfg), { kind: 'none' });
+    assert.deepEqual(planFrame(initialFrameState(), null, cfg), { kind: 'none' });
+  });
+
+  check('a ready frame is steered by context, never reloaded', () => {
+    let state = frameReducer(initialFrameState(), { type: 'load', url: 'u', target: ideas });
+    state = frameReducer(state, { type: 'ready' });
+    const files = { surface: 'files', project: 'alpha', file: 'specs/a.md' };
+    const plan = planFrame(state, files, cfg);
+    assert.equal(plan.kind, 'post');
+    assert.deepEqual(plan.message, contextMessage(files));
+    state = frameReducer(state, { type: 'posted', target: files });
+    assert.deepEqual(planFrame(state, files, cfg), { kind: 'none' });
+    assert.equal(planFrame(state, { ...files, project: 'beta', file: null }, cfg).kind, 'post', 'project switch = context');
+  });
+
+  check('a frame that never said ready is re-pointed instead (version skew fallback)', () => {
+    const state = frameReducer(initialFrameState(), { type: 'load', url: 'u', target: ideas });
+    const plan = planFrame(state, { ...ideas, project: 'beta' }, cfg);
+    assert.equal(plan.kind, 'load');
+    assert.equal(new URL(plan.url).searchParams.get('project'), 'beta');
+  });
+
+  check('Specify is always a fresh load, and leaving it reloads the surface', () => {
+    let state = frameReducer(frameReducer(initialFrameState(), { type: 'load', url: 'u', target: ideas }), { type: 'ready' });
+    const specify = { surface: 'specify', project: 'alpha', file: null, title: 'New', priority: null };
+    const plan = planFrame(state, specify, cfg);
+    assert.equal(plan.kind, 'load');
+    assert.equal(new URL(plan.url).searchParams.get('title'), 'New');
+    state = frameReducer(frameReducer(state, { type: 'load', url: plan.url, target: specify }), { type: 'ready' });
+    assert.equal(planFrame(state, ideas, cfg).kind, 'load');
+  });
+
+  check('8 s without ready shows the notice; a stale timer or a late ready is handled', () => {
+    assert.equal(READY_TIMEOUT_MS, 8000);
+    const first = frameReducer(initialFrameState(), { type: 'load', url: 'u', target: ideas });
+    const second = frameReducer(first, { type: 'load', url: 'v', target: { ...ideas, project: 'beta' } });
+    assert.equal(frameReducer(second, { type: 'timeout', token: first.token }), second, "an old load's timer is ignored");
+    const timedOut = frameReducer(second, { type: 'timeout', token: second.token });
+    assert.equal(showsTimeoutNotice(timedOut), true);
+    const late = frameReducer(timedOut, { type: 'ready' });
+    assert.equal(showsTimeoutNotice(late), false);
+    assert.equal(late.phase, 'ready');
+    assert.equal(frameReducer(late, { type: 'timeout', token: late.token }), late, 'a ready frame never times out');
+    assert.equal(frameReducer(initialFrameState(), { type: 'ready' }).phase, 'idle', 'ready before any load is noise');
+  });
+}
+
+async function viewStateT499Tests() {
+  section('view state: framed tabs, files and transient Specify (T-499)');
+  const { viewReducer, frameTarget, isFramedTab, SPECIFY_TAB } = await load('view-state.js');
+  const base = { project: 'alpha', task: null, tab: 'board', file: null, specify: null };
+
+  check('Specify is framed but has no tab of its own', () => {
+    assert.equal(isFramedTab(SPECIFY_TAB), true);
+    assert.equal(viewReducer(base, { type: 'tab', tab: SPECIFY_TAB }), base);
+  });
+
+  check('a spec link opens Files at that file, a Files click opens the browser', () => {
+    const state = viewReducer({ ...base, task: 'T-1' }, { type: 'open-file', file: 'specs/T-1.md' });
+    assert.deepEqual(state, { ...base, task: 'T-1', tab: 'files', file: 'specs/T-1.md' });
+    assert.deepEqual(frameTarget(state), { surface: 'files', project: 'alpha', file: 'specs/T-1.md' });
+    const clicked = viewReducer(viewReducer(state, { type: 'tab', tab: 'ideas' }), { type: 'tab', tab: 'files' });
+    assert.equal(clicked.file, null);
+    assert.equal(viewReducer(state, { type: 'open-file', file: 'specs/T-1.md' }), state);
+    assert.equal(viewReducer(base, { type: 'open-file' }), base);
+  });
+
+  check('a file from another project switches the project and drops the task', () => {
+    const state = viewReducer({ ...base, task: 'T-1' }, { type: 'open-file', project: 'beta', file: 'x.md' });
+    assert.deepEqual(state, { ...base, project: 'beta', tab: 'files', file: 'x.md' });
+  });
+
+  check('Specify remembers the tab it replaced and returns to it', () => {
+    const fromIdeas = viewReducer({ ...base, tab: 'ideas' }, { type: 'specify', title: ' New thing ', priority: 'high' });
+    assert.equal(fromIdeas.tab, SPECIFY_TAB);
+    assert.deepEqual(fromIdeas.specify, { title: 'New thing', priority: 'high', returnTab: 'ideas' });
+    assert.deepEqual(frameTarget(fromIdeas), {
+      surface: 'specify',
+      project: 'alpha',
+      file: null,
+      title: 'New thing',
+      priority: 'high',
+    });
+    const closed = viewReducer(fromIdeas, { type: 'specify-closed' });
+    assert.deepEqual(closed, { ...base, tab: 'ideas' });
+    assert.equal(viewReducer(base, { type: 'specify-closed' }), base, 'nothing to close');
+    assert.equal(viewReducer({ ...base, project: null }, { type: 'specify', title: 'x' }).tab, 'board', 'needs a project');
+  });
+
+  check('Specify that created a task opens it on the board', () => {
+    const state = viewReducer(viewReducer(base, { type: 'specify', title: 'x' }), { type: 'specify-closed', task: 'T-42' });
+    assert.deepEqual(state, { ...base, task: 'T-42' });
+  });
+
+  check('switching project leaves Specify and drops the file', () => {
+    const inSpecify = viewReducer({ ...base, tab: 'files', file: 'a.md' }, { type: 'specify', title: 'x' });
+    const switched = viewReducer(inSpecify, { type: 'project', project: 'beta' });
+    assert.deepEqual(switched, { ...base, project: 'beta', tab: 'files' });
+  });
+
+  check('open-task from a frame lands on the board with the panel, in the right project', () => {
+    const state = viewReducer({ ...base, tab: 'projects' }, { type: 'task', project: 'beta', id: 'T-3' });
+    assert.deepEqual(state, { ...base, project: 'beta', task: 'T-3' });
+    assert.equal(frameTarget(state), null, 'the board has no frame target');
+    assert.deepEqual(frameTarget({ ...base, tab: 'projects' }), { surface: 'projects', project: 'alpha', file: null });
+  });
+}
+
+async function menuT499Tests() {
+  section('card menu: position, archive, trash and undo (T-499)');
+  const { menuModel, menuItems, findMenuItem, actionRequest, undoRequest, describeActionError } = await load('actions.js');
+  const { orderMoves, orderUpdates } = await load('order.js');
+  const col = [
+    task({ id: 'T-1', order: 1000 }),
+    task({ id: 'T-2', order: 2000 }),
+    task({ id: 'T-3', order: 3000 }),
+  ];
+  const ids = (t, context) => menuItems(t, context).map((item) => item.id);
+  const at = (t) => ({ moves: orderMoves(col, t.id) });
+
+  check('archive only on done cards, trash on every card, both confirmed', () => {
+    for (const status of ['backlog', 'open', 'in-progress', 'review']) {
+      const items = ids(task({ status }));
+      assert.equal(items.includes('archive'), false, status);
+      assert.equal(items.includes('trash'), true, status);
+    }
+    const done = menuModel(task({ id: 'T-9', status: 'done' }));
+    const manage = done.find((group) => group.id === 'manage').items;
+    assert.deepEqual(manage.map((item) => item.id), ['archive', 'trash']);
+    assert.ok(manage.every((item) => typeof item.confirm === 'string' && item.confirm.includes('T-9')));
+    assert.equal(manage.find((item) => item.id === 'trash').danger, true);
+  });
+
+  check('position items need the column moves and follow the card position', () => {
+    assert.equal(ids(col[1]).some((id) => id.startsWith('order:')), false, 'no column, no position items');
+    assert.deepEqual(ids(col[0], at(col[0])).filter((id) => id.startsWith('order:')), ['order:down']);
+    assert.deepEqual(ids(col[1], at(col[1])).filter((id) => id.startsWith('order:')), ['order:up', 'order:down']);
+    assert.deepEqual(ids(col[2], at(col[2])).filter((id) => id.startsWith('order:')), ['order:top', 'order:up']);
+    assert.deepEqual(ids(col[0], { moves: orderMoves([col[0]], 'T-1') }).filter((id) => id.startsWith('order:')), []);
+    assert.deepEqual(ids(col[0], { moves: ['sideways'] }).filter((id) => id.startsWith('order:')), []);
+  });
+
+  check('archive, unarchive, trash and restore are the exact contract calls', () => {
+    const doneTask = task({ id: 'T-9', status: 'done' });
+    const archive = findMenuItem(doneTask, 'archive');
+    assert.deepEqual(actionRequest({ project: 'alpha', task: doneTask, item: archive }), {
+      operation: 'task.update',
+      input: { project: 'alpha', id: 'T-9', status: 'archived' },
+    });
+    assert.deepEqual(undoRequest({ project: 'alpha', task: doneTask, item: archive }), {
+      operation: 'task.update',
+      input: { project: 'alpha', id: 'T-9', status: 'done' },
+      label: 'Archived T-9.',
+    });
+    const trash = findMenuItem(doneTask, 'trash');
+    assert.deepEqual(actionRequest({ project: 'alpha', task: doneTask, item: trash }), {
+      operation: 'task.trash',
+      input: { project: 'alpha', id: 'T-9' },
+    });
+    assert.deepEqual(undoRequest({ project: 'alpha', task: doneTask, item: trash }), {
+      operation: 'task.trash',
+      input: { project: 'alpha', id: 'T-9', restore: true },
+      label: 'Moved T-9 to the trash.',
+    });
+  });
+
+  check('archive is refused before the call for a card that is not done', () => {
+    const item = { id: 'archive', kind: 'archive', label: 'Archive' };
+    assert.ok(actionRequest({ project: 'alpha', task: task({ status: 'review' }), item }).error);
+  });
+
+  check('moves, work states and the gate have no undo', () => {
+    const t = task({ status: 'review' });
+    for (const item of menuItems(t)) {
+      if (item.kind === 'trash') continue;
+      assert.equal(undoRequest({ project: 'alpha', task: t, item }), null, item.id);
+    }
+  });
+
+  check('a position item becomes minimal order updates', () => {
+    const item = findMenuItem(col[2], 'order:up', at(col[2]));
+    assert.deepEqual(actionRequest({ project: 'alpha', task: col[2], item, updates: orderUpdates(col, 'T-3', 'up') }), {
+      operation: 'task.update',
+      requests: [{ operation: 'task.update', input: { project: 'alpha', id: 'T-3', order: 1500 } }],
+    });
+    const top = findMenuItem(col[2], 'order:top', at(col[2]));
+    const topUpdates = orderUpdates(col, 'T-3', 'top');
+    assert.deepEqual(actionRequest({ project: 'alpha', task: col[2], item: top, updates: topUpdates }).requests, [
+      { operation: 'task.update', input: { project: 'alpha', id: 'T-3', order: 0 } },
+    ]);
+    const item0 = { kind: 'order', move: 'up' };
+    const nothing = actionRequest({ project: 'alpha', task: col[0], item: item0, updates: orderUpdates(col, 'T-1', 'up') });
+    assert.deepEqual(nothing, { error: null, noop: true });
+    assert.deepEqual(actionRequest({ project: 'alpha', task: col[0], item: item0 }), { error: null, noop: true });
+  });
+
+  check('SPECIFY_REQUIRED keeps FlowBoard\'s text and adds the hint once', () => {
+    const described = describeActionError(new Error('Specify is required for this project'), 'SPECIFY_REQUIRED');
+    assert.equal(described.code, 'SPECIFY_REQUIRED');
+    assert.ok(described.text.startsWith('Specify is required for this project'));
+    assert.ok(described.text.includes('This project requires Specify.'));
+  });
+}
+
+async function orderTests() {
+  section('order ranks (T-499)');
+  const { orderUpdates, orderMoves, ORDER_STEP } = await load('order.js');
+  const { columnOf, compareTasks } = await load('board.js');
+  /** Apply updates and re-sort the way the board does. */
+  const applyOrderUpdates = (column, updates) => {
+    const byId = new Map(updates.map((update) => [update.id, update.order]));
+    return column.map((row) => (byId.has(row.id) ? { ...row, order: byId.get(row.id) } : row)).sort(compareTasks);
+  };
+  const t = (id, order, status = 'open') => task({ id, order, status });
+  const idsOf = (column) => column.map((row) => row.id);
+
+  check('the column is the card status in board order', () => {
+    const rows = [t('T-3', null), t('T-1', 2000), t('T-2', 1000), t('T-9', 5, 'done')];
+    assert.deepEqual(idsOf(columnOf(rows, rows[0])), ['T-2', 'T-1', 'T-3']);
+  });
+
+  check('a midpoint between ranked neighbours is one write', () => {
+    const column = [t('A', 1000), t('B', 2000), t('C', 3000)];
+    assert.deepEqual(orderUpdates(column, 'C', 'up'), [{ id: 'C', order: 1500 }]);
+    assert.deepEqual(orderUpdates(column, 'A', 'down'), [{ id: 'A', order: 2500 }]);
+    assert.deepEqual(idsOf(applyOrderUpdates(column, orderUpdates(column, 'C', 'up'))), ['A', 'C', 'B']);
+  });
+
+  check('the edges step past the ranked neighbour', () => {
+    const column = [t('A', 1000), t('B', 2000), t('C', 3000)];
+    assert.deepEqual(orderUpdates(column, 'C', 'top'), [{ id: 'C', order: 1000 - ORDER_STEP }]);
+    assert.deepEqual(orderUpdates(column, 'B', 'down'), [{ id: 'B', order: 3000 + ORDER_STEP }]);
+  });
+
+  check('impossible or empty moves write nothing', () => {
+    const column = [t('A', 1000), t('B', 2000)];
+    assert.deepEqual(orderUpdates(column, 'A', 'up'), []);
+    assert.deepEqual(orderUpdates(column, 'A', 'top'), []);
+    assert.deepEqual(orderUpdates(column, 'B', 'down'), []);
+    assert.deepEqual(orderUpdates(column, 'Z', 'up'), []);
+    assert.deepEqual(orderUpdates(column, 'A', 'sideways'), []);
+    assert.deepEqual(orderUpdates(null, 'A', 'down'), []);
+  });
+
+  check('an unranked neighbour falls back to a sparse re-rank of the head only', () => {
+    const column = [t('A', 1000), t('B', null), t('C', null), t('D', null)];
+    // C up: between A and B, B is unranked → rank A (unchanged) and C only.
+    assert.deepEqual(orderUpdates(column, 'C', 'up'), [{ id: 'C', order: 2000 }]);
+    assert.deepEqual(idsOf(applyOrderUpdates(column, orderUpdates(column, 'C', 'up'))), ['A', 'C', 'B', 'D']);
+    // A down into the unranked tail: B gets a rank above A's new one; C, D stay unranked.
+    const down = orderUpdates(column, 'A', 'down');
+    assert.deepEqual(down, [
+      { id: 'B', order: 1000 },
+      { id: 'A', order: 2000 },
+    ]);
+    assert.deepEqual(idsOf(applyOrderUpdates(column, down)), ['B', 'A', 'C', 'D']);
+  });
+
+  check('a fully unranked column ranks only what it must', () => {
+    const column = [t('T-1', null), t('T-2', null), t('T-3', null)];
+    const up = orderUpdates(column, 'T-3', 'up');
+    assert.deepEqual(up, [
+      { id: 'T-1', order: 1000 },
+      { id: 'T-3', order: 2000 },
+    ]);
+    assert.deepEqual(idsOf(applyOrderUpdates(column, up)), ['T-1', 'T-3', 'T-2']);
+  });
+
+  check('an exhausted gap re-ranks, sending only changed values', () => {
+    const column = [t('A', 1000), t('B', 1000 + 1e-9), t('C', 3000)];
+    const updates = orderUpdates(column, 'C', 'up');
+    assert.deepEqual(updates, [
+      { id: 'C', order: 2000 },
+      { id: 'B', order: 3000 },
+    ]);
+    assert.deepEqual(idsOf(applyOrderUpdates(column, updates)), ['A', 'C', 'B']);
+    // Tied ranks are the same case.
+    const tied = [t('A', 5), t('B', 5), t('C', 5)];
+    assert.deepEqual(idsOf(applyOrderUpdates(tied, orderUpdates(tied, 'C', 'up'))), ['A', 'C', 'B']);
+  });
+
+  check('orderMoves hides top from second place and everything for a lone card', () => {
+    const column = [t('A', 1), t('B', 2), t('C', 3), t('D', 4)];
+    assert.deepEqual(orderMoves(column, 'A'), ['down']);
+    assert.deepEqual(orderMoves(column, 'B'), ['up', 'down']);
+    assert.deepEqual(orderMoves(column, 'C'), ['top', 'up', 'down']);
+    assert.deepEqual(orderMoves(column, 'D'), ['top', 'up']);
+    assert.deepEqual(orderMoves([t('A', 1)], 'A'), []);
+    assert.deepEqual(orderMoves(column, 'Z'), []);
+  });
+}
+
+async function editorTests() {
+  section('panel editors and the comment box (T-499)');
+  const editor = await load('editor.js');
+  const panelLib = await load('panel.js');
+  const t = task({ id: 'T-5', title: 'Old title', priority: 'medium', tags: ['ui', 'api'] });
+  const detail = (description, truncated = false) => ({ task: { ...t, description, descriptionTruncated: truncated } });
+
+  check('title: trimmed, required, bounded, unchanged is a no-op', () => {
+    assert.deepEqual(editor.titleEdit({ project: 'alpha', task: t, value: '  New   title ' }), {
+      operation: 'task.update',
+      input: { project: 'alpha', id: 'T-5', title: 'New title' },
+    });
+    assert.deepEqual(editor.titleEdit({ project: 'alpha', task: t, value: ' Old title ' }), { noop: true });
+    assert.ok(editor.titleEdit({ project: 'alpha', task: t, value: '   ' }).error);
+    assert.ok(editor.titleEdit({ project: 'alpha', task: t, value: 'x'.repeat(201) }).error);
+    assert.equal(editor.titleEdit({ project: 'alpha', task: t, value: 'x'.repeat(200) }).input.title.length, 200);
+    assert.ok(editor.titleEdit({ task: t, value: 'x' }).error, 'no project, no request');
+  });
+
+  check('description: lossless plain text, only when changed', () => {
+    const current = detail('line 1\nline 2\n');
+    assert.deepEqual(editor.descriptionEdit({ project: 'alpha', detail: current, value: 'line 1\r\nline 2\r\n' }), {
+      noop: true,
+    });
+    const long = 'x'.repeat(5000);
+    assert.deepEqual(editor.descriptionEdit({ project: 'alpha', detail: current, value: `  ${long}\n\n` }), {
+      operation: 'task.update',
+      input: { project: 'alpha', id: 'T-5', description: `  ${long}\n\n` },
+    });
+    assert.deepEqual(editor.descriptionEdit({ project: 'alpha', detail: current, value: '' }).input.description, '');
+    assert.ok(editor.descriptionEdit({ project: 'alpha', detail: current, value: 'x'.repeat(16385) }).error);
+  });
+
+  check("the editor's description rules agree with the panel's readers", () => {
+    // editor.js repeats panel.js' two readers (lib modules are import-free);
+    // this pins the copies together.
+    for (const sample of ['a\r\nb', 'a\rb', '', 'plain']) {
+      const d = detail(sample);
+      assert.equal(editor.descriptionEdit({ project: 'alpha', detail: d, value: panelLib.descriptionText(d) }).noop, true);
+    }
+    const cut = detail('x', true);
+    assert.equal(panelLib.descriptionTruncated(cut), true);
+    assert.equal(editor.canEditDescription(cut), !panelLib.descriptionTruncated(cut));
+  });
+
+  check('a truncated description is never written back', () => {
+    const cut = detail('head only', true);
+    assert.equal(editor.canEditDescription(cut), false);
+    assert.equal(editor.canEditDescription(detail('whole')), true);
+    const refused = editor.descriptionEdit({ project: 'alpha', detail: cut, value: 'head only, edited' });
+    assert.ok(refused.error);
+    assert.equal('operation' in refused, false);
+  });
+
+  check('priority: enum only, unchanged is a no-op', () => {
+    assert.deepEqual(editor.priorityEdit({ project: 'alpha', task: t, value: 'high' }), {
+      operation: 'task.update',
+      input: { project: 'alpha', id: 'T-5', priority: 'high' },
+    });
+    assert.deepEqual(editor.priorityEdit({ project: 'alpha', task: t, value: 'medium' }), { noop: true });
+    assert.deepEqual(editor.priorityEdit({ project: 'alpha', task: { ...t, priority: undefined }, value: 'medium' }), {
+      noop: true,
+    });
+    assert.ok(editor.priorityEdit({ project: 'alpha', task: t, value: 'urgent' }).error);
+  });
+
+  check('tags: parsed, deduplicated, bounded, order-sensitive diff', () => {
+    assert.deepEqual(editor.parseTags(' #ui, api,, ui , #docs '), ['ui', 'api', 'docs']);
+    assert.equal(editor.formatTags(['ui', 'api']), 'ui, api');
+    assert.deepEqual(editor.tagsEdit({ project: 'alpha', task: t, value: 'ui, api' }), { noop: true });
+    assert.deepEqual(editor.tagsEdit({ project: 'alpha', task: t, value: 'api, ui' }).input.tags, ['api', 'ui']);
+    assert.deepEqual(editor.tagsEdit({ project: 'alpha', task: t, value: '' }).input.tags, []);
+    const many = Array.from({ length: 21 }, (_, i) => `t${i}`).join(',');
+    assert.ok(editor.tagsEdit({ project: 'alpha', task: t, value: many }).error);
+    assert.ok(editor.tagsEdit({ project: 'alpha', task: t, value: 'x'.repeat(41) }).error);
+  });
+
+  check('comment: 1..2000 after trimming, blank sends nothing', () => {
+    assert.deepEqual(editor.commentRequest({ project: 'alpha', task: t, value: '  Looks good\r\n' }), {
+      operation: 'task.comment',
+      input: { project: 'alpha', id: 'T-5', message: 'Looks good' },
+    });
+    assert.deepEqual(editor.commentRequest({ project: 'alpha', task: t, value: '   \n ' }), { noop: true });
+    assert.equal(editor.commentRequest({ project: 'alpha', task: t, value: 'x'.repeat(2000) }).input.message.length, 2000);
+    assert.ok(editor.commentRequest({ project: 'alpha', task: t, value: 'x'.repeat(2001) }).error);
+    assert.equal(editor.commentRemaining('x'.repeat(1990)), 10);
+    assert.equal(editor.commentRemaining(null), 2000);
+    assert.equal(editor.MAX_COMMENT, 2000);
+  });
+
+  check('new task: a bounded title and the project, nothing else', () => {
+    assert.deepEqual(editor.createRequest({ project: 'alpha', title: '  Ship   it ' }), {
+      operation: 'task.create',
+      input: { project: 'alpha', title: 'Ship it' },
+    });
+    assert.ok(editor.createRequest({ project: 'alpha', title: ' ' }).error);
+    assert.ok(editor.createRequest({ title: 'x' }).error);
+    assert.ok(editor.createRequest({ project: 'alpha', title: 'x'.repeat(129) }).error);
+    assert.equal(editor.SPECIFY_REQUIRED, 'SPECIFY_REQUIRED');
   });
 }
 
@@ -856,6 +1388,11 @@ async function main() {
   await actionTests();
   await panelTests();
   await viewStateTests();
+  await embedTests();
+  await viewStateT499Tests();
+  await menuT499Tests();
+  await orderTests();
+  await editorTests();
   console.log(`\n${failed ? '❌' : '✅'} control UI lib: ${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
 }

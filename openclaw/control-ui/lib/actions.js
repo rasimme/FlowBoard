@@ -14,8 +14,9 @@
  *
  *  - **`archived` is not a move target.** The contract accepts it, but
  *    archiving hides a task from every column, and a one-click hide next to
- *    five ordinary moves is a mis-click waiting to happen. Archive stays in
- *    the dashboard until stage 3 gives it a confirmation of its own.
+ *    five ordinary moves is a mis-click waiting to happen. Since T-499 Archive
+ *    is its own item under "Manage", done cards only, behind a confirmation
+ *    and with Undo.
  *  - **Approve and reject exist only in `review`.** They are the gate
  *    (ADR-0022); offering them anywhere else would suggest the gate can be
  *    skipped. `review → done` is therefore not a move either: the server
@@ -100,25 +101,73 @@ export function reviewActions(task) {
 }
 
 /**
- * The whole menu for one card, as groups. Empty groups are dropped so a
- * non-review card has no dangling "Review gate" heading.
+ * In-column position (T-499). `moves` is order.js `orderMoves` for the card,
+ * which the page computes only when it holds the card's whole column: a
+ * truncated board does not know the neighbours, and a rank computed against
+ * half a column lands anywhere.
  */
-export function menuModel(task) {
+const ORDER_LABELS = { top: 'Move to top', up: 'Move up', down: 'Move down' };
+
+export function orderActions(moves) {
+  if (!Array.isArray(moves)) return [];
+  return moves.filter((move) => ORDER_LABELS[move]).map((move) => ({
+    id: `order:${move}`,
+    kind: 'order',
+    move,
+    label: ORDER_LABELS[move],
+  }));
+}
+
+/**
+ * Archive and trash (T-499). Both hide the card, so both ask first and both
+ * can be undone from the notice that follows. Archive is the end of a done
+ * task's life and exists only in Done; the trash takes any card and is
+ * restored, not recreated, by Undo. Hard delete is not a board gesture.
+ */
+export function manageActions(task) {
+  if (!task?.id) return [];
+  const items = [];
+  if (task.status === 'done') {
+    items.push({
+      id: 'archive',
+      kind: 'archive',
+      label: 'Archive',
+      confirm: `Archive ${task.id}? It leaves the board; Undo puts it back in Done.`,
+    });
+  }
+  items.push({
+    id: 'trash',
+    kind: 'trash',
+    label: 'Move to Trash',
+    danger: true,
+    confirm: `Move ${task.id} to the trash? Undo restores it; the dashboard can empty the trash later.`,
+  });
+  return items;
+}
+
+/**
+ * The whole menu for one card, as groups. Empty groups are dropped so a
+ * non-review card has no dangling "Review gate" heading. `moves` are the
+ * position moves the card's column allows (none when it is not known).
+ */
+export function menuModel(task, { moves } = {}) {
   const groups = [
     { id: 'review', label: 'Review gate', items: reviewActions(task) },
     { id: 'move', label: 'Move to', items: moveTargets(task) },
+    { id: 'order', label: 'Position', items: orderActions(moves) },
     { id: 'work-state', label: 'Work state', items: workStateChoices(task) },
+    { id: 'manage', label: 'Manage', items: manageActions(task) },
   ];
   return groups.filter((group) => group.items.length > 0);
 }
 
 /** Every item, flattened — what keyboard navigation walks. */
-export function menuItems(task) {
-  return menuModel(task).flatMap((group) => group.items);
+export function menuItems(task, context) {
+  return menuModel(task, context).flatMap((group) => group.items);
 }
 
-export function findMenuItem(task, id) {
-  return menuItems(task).find((item) => item.id === id) || null;
+export function findMenuItem(task, id, context) {
+  return menuItems(task, context).find((item) => item.id === id) || null;
 }
 
 function trimmed(value) {
@@ -153,9 +202,26 @@ export function validateOptionalReason(value) {
  * `{ error }` when the human still owes the form something, so the caller has
  * exactly one place to branch.
  */
-export function actionRequest({ project, task, item, reason } = {}) {
+export function actionRequest({ project, task, item, reason, updates } = {}) {
   if (!project || !task?.id || !item) return { error: 'Nothing to do.' };
   const id = task.id;
+  if (item.kind === 'archive') {
+    if (task.status !== 'done') return { error: 'Only a done task can be archived.' };
+    return { operation: 'task.update', input: { project, id, status: 'archived' } };
+  }
+  if (item.kind === 'trash') return { operation: 'task.trash', input: { project, id } };
+  if (item.kind === 'order') {
+    // `updates` is order.js `orderUpdates` for this move: several writes, sent
+    // one after another; an empty list is a no-op.
+    if (!Array.isArray(updates) || !updates.length) return { error: null, noop: true };
+    return {
+      operation: 'task.update',
+      requests: updates.map((update) => ({
+        operation: 'task.update',
+        input: { project, id: update.id, order: update.order },
+      })),
+    };
+  }
   if (item.kind === 'move') {
     // Leaving review for done *is* the approve gate. The menu does not offer
     // it, but a drag onto the Done column arrives here, and the server would
@@ -196,6 +262,26 @@ export function actionRequest({ project, task, item, reason } = {}) {
   return { error: `Unknown action ${item.kind}.` };
 }
 
+/**
+ * The inverse of a confirmed archive or trash, for the Undo button. Nothing
+ * else on the menu is undoable from the page: a move or a work state is one
+ * more menu click away, and the approve gate is deliberately not reversible.
+ */
+export function undoRequest({ project, task, item } = {}) {
+  if (!project || !task?.id || !item) return null;
+  if (item.kind === 'archive') {
+    return { operation: 'task.update', input: { project, id: task.id, status: 'done' }, label: `Archived ${task.id}.` };
+  }
+  if (item.kind === 'trash') {
+    return {
+      operation: 'task.trash',
+      input: { project, id: task.id, restore: true },
+      label: `Moved ${task.id} to the trash.`,
+    };
+  }
+  return null;
+}
+
 /** A drag between columns is the same move the menu makes. */
 export function dropRequest({ project, task, status } = {}) {
   if (!BOARD_STATUS_ORDER.includes(status)) return { error: 'Not a board column.' };
@@ -223,6 +309,7 @@ const ERROR_HINTS = {
   flowboard_reason_required: 'A reason is required.',
   flowboard_not_found: 'This task no longer exists.',
   flowboard_unavailable: 'FlowBoard is not reachable right now — nothing was changed.',
+  SPECIFY_REQUIRED: 'This project requires Specify.',
 };
 
 /**

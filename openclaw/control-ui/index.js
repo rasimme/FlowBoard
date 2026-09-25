@@ -1,22 +1,25 @@
 /**
- * FlowBoard native Control UI page — stage 2 (T-498).
+ * FlowBoard native Control UI page — stage 3 (T-499, on T-498's stage 2).
  *
- * The board is now FlowBoard's own, inside the Gateway. Stage 1 put a rail
- * above a framed dashboard; stage 2 replaces the board itself with native
- * views built on the feature contract (openclaw/contract.js), so the host
- * validates every payload and enforces `operator.read` on reads and
- * `operator.write` on writes before a FlowBoard handler runs, and every write
- * is attributed to the signed-in operator (ADR-0040).
+ * The board is FlowBoard's own, inside the Gateway: native views built on the
+ * feature contract (openclaw/contract.js), so the host validates every
+ * payload and enforces `operator.read` on reads and `operator.write` on writes
+ * before a FlowBoard handler runs, and every write is attributed to the
+ * signed-in operator (ADR-0040).
  *
  * The page is three things stacked:
  *
- *  - **The rail** (stage 1, unchanged in substance) — projects with what is
- *    waiting in them, the tasks needing the operator, and a status line.
- *  - **A tab strip** — *Board* (native), *Ideas* and *Files* (still the framed
- *    SPA, until stage 3), plus a link that opens the full dashboard.
- *  - **The board** — five columns, cards, a per-card action menu, and a detail
- *    panel. Moves, work-state changes and the approve gate are contract
- *    actions; nothing here talks to FlowBoard's HTTP API directly.
+ *  - **The rail** — projects with what is waiting in them, the tasks needing
+ *    the operator, and a status line.
+ *  - **A tab strip** — *Board* (native), *Ideas*, *Files* and *Projects*
+ *    (the dashboard's own views, framed one surface at a time without the
+ *    dashboard's chrome — lib/embed.js), plus a link that opens the full
+ *    dashboard. The stage-1 frame of the whole SPA is gone.
+ *  - **The board** — five columns, cards, a per-card action menu (moves, work
+ *    state, the approve gate, position, archive, trash), "New task", and a
+ *    detail panel that edits the title, description, priority and tags and
+ *    takes comments. All of it is contract actions; nothing here talks to
+ *    FlowBoard's HTTP API directly.
  *
  * Two rules decide how writes behave, and both are the opposite of the SPA's
  * optimistic rendering (docs/concepts/kanban.md, "Consequences"):
@@ -27,12 +30,13 @@
  *     before the write succeeded, so a failed write cannot leave a card
  *     sitting in a column it never reached.
  *  2. **A failure is shown where it happened, never swallowed.** The backend's
- *     own message lands on the card and in the panel.
+ *     own message lands on the card, in the panel, or in the notice.
  *
- * The iframe is mounted once and hidden — not unmounted — while the board is
- * up, so switching tabs never reloads the SPA. All ids and classes are `fb-` /
- * `flowboard-` namespaced, and the styling inherits the host's theme tokens
- * rather than shipping a palette (see index.css).
+ * The iframe is mounted once, loaded lazily on the first framed tab, hidden —
+ * not unmounted — while the board is up, and steered by `context` messages
+ * rather than reloads. All ids and classes are `fb-` / `flowboard-`
+ * namespaced, user content is only ever set as text, and the styling inherits
+ * the host's theme tokens rather than shipping a palette (see index.css).
  */
 import { defineControlUiPlugin } from 'openclaw/plugin-sdk/control-ui';
 import { createFeatureClient } from 'openclaw/plugin-sdk/feature-contract';
@@ -46,9 +50,11 @@ import {
   initialActionState,
   isSaving,
   menuModel,
+  undoRequest,
 } from './lib/actions.js';
 import {
   BOARD_COLUMNS,
+  columnOf,
   groupTasksByStatus,
   leaseState,
   relationLabel,
@@ -58,7 +64,34 @@ import {
   workStateDetail,
   workStateLabel,
 } from './lib/board.js';
-import { buildFrameUrl, buildPageParams, readPageParams } from './lib/deep-link.js';
+import { buildDashboardUrl, buildPageParams, readPageParams } from './lib/deep-link.js';
+import {
+  canEditDescription,
+  commentRemaining,
+  commentRequest,
+  createRequest,
+  descriptionEdit,
+  formatTags,
+  MAX_COMMENT,
+  MAX_CREATE_TITLE,
+  MAX_DESCRIPTION,
+  MAX_TITLE,
+  PRIORITIES,
+  priorityEdit,
+  SPECIFY_REQUIRED,
+  tagsEdit,
+  titleEdit,
+} from './lib/editor.js';
+import {
+  dashboardOrigin,
+  frameReducer,
+  initialFrameState,
+  parseFrameMessage,
+  planFrame,
+  READY_TIMEOUT_MS,
+  showsTimeoutNotice,
+} from './lib/embed.js';
+import { orderMoves, orderUpdates } from './lib/order.js';
 import { countNeedsMe, describeNeedsMe, groupNeedsMe, reasonLabel } from './lib/needs-me.js';
 import {
   descriptionText,
@@ -78,7 +111,15 @@ import {
   writeRailCollapsed,
 } from './lib/settings.js';
 import { initialWatchState, watchReducer } from './lib/watch-state.js';
-import { TABS, focusProject, initialViewState, isFramedTab, selectionOf, showsBoard, viewReducer } from './lib/view-state.js';
+import {
+  TABS,
+  focusProject,
+  frameTarget,
+  initialViewState,
+  isFramedTab,
+  selectionOf,
+  viewReducer,
+} from './lib/view-state.js';
 import './index.css';
 
 const PAGE_ID = 'flowboard';
@@ -329,9 +370,10 @@ function createNeedsMe({ onOpen }) {
  * It is the primary way to act on a task (drag and drop is the pointer
  * shortcut), so it is a real `role="menu"`: arrow keys walk it, Escape closes
  * it and gives focus back to the button that opened it, and an item that needs
- * prose swaps the list for a small form instead of opening a second layer.
+ * prose — or a confirmation (archive, trash) — swaps the list for a small form
+ * instead of opening a second layer.
  */
-function createMenuLayer({ onSubmit }) {
+function createMenuLayer({ onSubmit, contextFor }) {
   const root = element('div', 'fb-menu');
   root.id = 'flowboard-menu';
   root.hidden = true;
@@ -426,10 +468,43 @@ function createMenuLayer({ onSubmit }) {
     input.focus();
   }
 
+  /** Archive and trash hide the card, so they ask first. */
+  function renderConfirm(item) {
+    root.replaceChildren();
+    formOpen = true;
+    const form = element('form', 'fb-menu__form');
+    const question = element('p', 'fb-menu__label', item.confirm);
+    question.id = 'flowboard-menu-confirm';
+    form.setAttribute('aria-describedby', question.id);
+    const error = element('p', 'fb-menu__error');
+    error.setAttribute('role', 'alert');
+    const actions = element('div', 'fb-menu__actions');
+    const submit = element('button', 'fb-menu__submit', item.label);
+    submit.type = 'submit';
+    if (item.danger) submit.dataset.fbDanger = 'true';
+    const cancel = button('fb-menu__cancel', 'Cancel');
+    cancel.onclick = () => close();
+    actions.append(submit, cancel);
+    form.append(question, error, actions);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      const outcome = onSubmit({ ...current, item, reason: '' });
+      if (outcome?.error) {
+        error.textContent = outcome.error;
+        return;
+      }
+      close({ restoreFocus: true });
+      outcome?.run?.();
+    };
+    root.append(form);
+    // Cancel is the safe default for a keyboard user who pressed Enter twice.
+    cancel.focus();
+  }
+
   function renderItems(task) {
     root.replaceChildren();
     formOpen = false;
-    for (const group of menuModel(task)) {
+    for (const group of menuModel(task, contextFor?.(current?.project, task) ?? {})) {
       const section = element('div', 'fb-menu__group');
       section.setAttribute('role', 'group');
       section.setAttribute('aria-label', group.label);
@@ -443,8 +518,12 @@ function createMenuLayer({ onSubmit }) {
           entry.setAttribute('aria-checked', item.current ? 'true' : 'false');
           entry.disabled = item.current;
         }
-        if (item.kind === 'reject') entry.dataset.fbDanger = 'true';
+        if (item.kind === 'reject' || item.danger) entry.dataset.fbDanger = 'true';
         entry.onclick = () => {
+          if (item.confirm) {
+            renderConfirm(item);
+            return;
+          }
           // Anything that may carry prose opens the form; approve is the one
           // optional reason that is not worth a second step.
           if (item.reason === 'required' || (item.reason === 'optional' && item.kind !== 'approve')) {
@@ -457,7 +536,7 @@ function createMenuLayer({ onSubmit }) {
             return;
           }
           close({ restoreFocus: true });
-          outcome.run?.();
+          outcome?.run?.();
         };
         section.append(entry);
       }
@@ -523,8 +602,126 @@ function createMenuLayer({ onSubmit }) {
   };
 }
 
+/**
+ * "New task": a title, then the panel. `onCreate(title)` resolves to
+ * `{ ok }`, `{ error }` or `{ specify: true, message }` — the last when the
+ * project enforces Specify (FlowBoard answers `SPECIFY_REQUIRED`), which
+ * offers the transient framed Specify view with the typed title instead of a
+ * dead end.
+ */
+function createNewTask({ onCreate, onSpecify }) {
+  const root = element('div', 'fb-new');
+  const toggle = button('fb-new__toggle', '+ New task');
+  toggle.id = 'flowboard-new-task';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'flowboard-new-form');
+
+  const form = element('form', 'fb-new__form');
+  form.id = 'flowboard-new-form';
+  form.hidden = true;
+  const label = element('label', 'fb-sr-only', 'Title of the new task');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = 'flowboard-new-title';
+  input.className = 'fb-new__input';
+  input.maxLength = MAX_CREATE_TITLE;
+  input.autocomplete = 'off';
+  input.placeholder = 'Task title';
+  label.htmlFor = input.id;
+  const submit = element('button', 'fb-new__submit', 'Create');
+  submit.type = 'submit';
+  const cancel = button('fb-new__cancel', 'Cancel');
+  const message = element('p', 'fb-new__message');
+  message.setAttribute('role', 'alert');
+  const specify = button('fb-new__specify', 'Continue in Specify');
+  specify.hidden = true;
+  form.append(label, input, submit, cancel, message, specify);
+  root.append(toggle, form);
+
+  // `undefined` so the first `setProject(null)` still disables the toggle.
+  let project;
+  let busy = false;
+
+  function reset() {
+    message.textContent = '';
+    delete message.dataset.fbKind;
+    specify.hidden = true;
+  }
+
+  function setOpen(open) {
+    form.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      input.focus();
+    } else {
+      reset();
+      input.value = '';
+    }
+  }
+
+  toggle.onclick = () => setOpen(form.hidden);
+  cancel.onclick = () => {
+    setOpen(false);
+    toggle.focus();
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      toggle.focus();
+    }
+  });
+  specify.onclick = () => {
+    const title = input.value;
+    setOpen(false);
+    onSpecify(title);
+  };
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (busy) return;
+    reset();
+    const request = createRequest({ project, title: input.value });
+    if (request.error) {
+      message.textContent = request.error;
+      input.focus();
+      return;
+    }
+    busy = true;
+    submit.disabled = true;
+    submit.textContent = 'Creating…';
+    try {
+      const outcome = await onCreate(request);
+      if (outcome?.ok) {
+        setOpen(false);
+        return;
+      }
+      message.textContent = outcome?.message || 'The task was not created.';
+      message.dataset.fbKind = outcome?.specify ? 'specify' : 'error';
+      specify.hidden = !outcome?.specify;
+      (outcome?.specify ? specify : input).focus();
+    } finally {
+      busy = false;
+      submit.disabled = false;
+      submit.textContent = 'Create';
+    }
+  };
+
+  return {
+    element: root,
+    setProject(next) {
+      if (next === project) return;
+      project = next;
+      toggle.disabled = !project;
+      toggle.title = project ? `Create a task in ${project}` : 'Pick a project first';
+      if (!project) setOpen(false);
+      else reset();
+    },
+  };
+}
+
 /** The native Kanban board: five columns of cards. */
-function createBoard({ onOpenTask, onMenu, onMove, onRedrawn, onFilter }) {
+function createBoard({ onOpenTask, onMenu, onMove, onRedrawn, onFilter, onCreate, onSpecify }) {
   const root = element('div', 'fb-board');
   root.id = 'flowboard-board';
 
@@ -549,7 +746,8 @@ function createBoard({ onOpenTask, onMenu, onMove, onRedrawn, onFilter }) {
 
   const notice = element('p', 'fb-board__notice');
   notice.setAttribute('role', 'status');
-  bar.append(filterLabel, notice);
+  const newTask = createNewTask({ onCreate, onSpecify });
+  bar.append(newTask.element, filterLabel, notice);
   const columns = element('div', 'fb-board__columns');
   root.append(bar, columns);
 
@@ -698,6 +896,7 @@ function createBoard({ onOpenTask, onMenu, onMove, onRedrawn, onFilter }) {
           )
           .join(','),
       ].join('|');
+      newTask.setProject(project);
       if (next === signature) return;
       signature = next;
 
@@ -766,8 +965,21 @@ function createBoard({ onOpenTask, onMenu, onMove, onRedrawn, onFilter }) {
   };
 }
 
-/** The task detail panel: what `task.get` knows, and the same actions. */
-function createPanel({ onClose, onMenu }) {
+/**
+ * The task detail panel: what `task.get` knows, the same actions as the card,
+ * and the everyday edits (T-499) — title, description, priority, tags, and a
+ * comment box.
+ *
+ * Edits are drafts held here, not in the DOM: the panel is redrawn whenever
+ * `task.get` refreshes (every `tasks-changed`, including the re-announce a few
+ * seconds after one's own write), and a half-typed description must survive
+ * that. The draft, the caret and the focus are restored after each redraw. A
+ * draft is dropped only when its save succeeded, when it is cancelled, or
+ * when another task is opened. Nothing is shown as saved before FlowBoard
+ * answered; a refusal is FlowBoard's own sentence, and the draft stays for a
+ * retry.
+ */
+function createPanel({ onClose, onMenu, onEdit, onOpenSpec, onChange }) {
   const root = element('aside', 'fb-panel');
   root.id = 'flowboard-panel';
   root.hidden = true;
@@ -791,12 +1003,359 @@ function createPanel({ onClose, onMenu }) {
   root.append(head, body);
 
   let signature = '';
+  /** Drafts for the task in `draftFor`; null = that editor is closed. */
+  let draftFor = '';
+  let drafts = { title: null, description: null, tags: null, comment: '', priority: null };
+  let fieldErrors = {};
+  let saving = '';
+  /** A focus key to move to after the next redraw (an editor opening or closing). */
+  let pendingFocus = '';
+
+  function resetDrafts(key) {
+    draftFor = key;
+    drafts = { title: null, description: null, tags: null, comment: '', priority: null };
+    fieldErrors = {};
+    saving = '';
+  }
+
+  function redraw() {
+    signature = '';
+    onChange();
+  }
 
   function meta(label, value) {
     const row = element('div', 'fb-meta__row');
     row.append(element('dt', 'fb-meta__key', label));
-    row.append(element('dd', 'fb-meta__value', value));
+    const cell = element('dd', 'fb-meta__value');
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = value;
+    row.append(cell);
     return row;
+  }
+
+  function fieldError(field) {
+    const text = fieldErrors[field];
+    if (!text) return null;
+    const node = element('p', 'fb-field__error', text);
+    node.setAttribute('role', 'alert');
+    return node;
+  }
+
+  /**
+   * Validate, then send. `request` is an editor.js result. Closing the editor
+   * waits for FlowBoard's answer: a refused edit keeps the draft on screen.
+   */
+  function save(field, request) {
+    if (!request || saving) return;
+    if (request.noop) {
+      fieldErrors[field] = '';
+      drafts[field] = field === 'comment' ? drafts.comment : null;
+      redraw();
+      return;
+    }
+    if (request.error) {
+      fieldErrors[field] = request.error;
+      redraw();
+      return;
+    }
+    fieldErrors[field] = '';
+    saving = field;
+    const key = draftFor;
+    redraw();
+    Promise.resolve(onEdit(request)).then((ok) => {
+      if (draftFor !== key) return;
+      saving = '';
+      // Focus that was still in the editor follows to its Edit button
+      // (restoreFocus swaps edit: → open:); focus the operator moved elsewhere
+      // meanwhile stays where it is.
+      if (ok) drafts[field] = field === 'comment' ? '' : null;
+      redraw();
+    });
+  }
+
+  function smallButton(text, label, focusKey) {
+    const node = button('fb-field__button', text, label);
+    if (focusKey) node.dataset.fbFocusKey = focusKey;
+    return node;
+  }
+
+  /** A single-line editor: Enter saves, Escape cancels. */
+  function lineEditor({ field, value, maxLength, label, onSave }) {
+    const wrapper = element('div', 'fb-field');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'fb-field__input';
+    input.id = `flowboard-edit-${field}`;
+    input.dataset.fbFocusKey = `edit:${field}`;
+    input.maxLength = maxLength;
+    input.autocomplete = 'off';
+    input.value = value;
+    input.readOnly = saving === field;
+    input.setAttribute('aria-label', label);
+    input.oninput = () => {
+      drafts[field] = input.value;
+    };
+    input.addEventListener('keydown', (event) => {
+      if (event.isComposing) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        onSave(input.value);
+      } else if (event.key === 'Escape') {
+        // The page's Escape closes the panel; here it only closes the editor.
+        event.preventDefault();
+        event.stopPropagation();
+        drafts[field] = null;
+        fieldErrors[field] = '';
+        pendingFocus = `open:${field}`;
+        redraw();
+      }
+    });
+    const actions = element('div', 'fb-field__actions');
+    const ok = smallButton(saving === field ? 'Saving…' : 'Save', `Save the ${label.toLowerCase()}`);
+    ok.disabled = saving === field;
+    ok.onclick = () => onSave(input.value);
+    const cancel = smallButton('Cancel', `Cancel editing the ${label.toLowerCase()}`);
+    cancel.onclick = () => {
+      drafts[field] = null;
+      fieldErrors[field] = '';
+      pendingFocus = `open:${field}`;
+      redraw();
+    };
+    actions.append(ok, cancel);
+    wrapper.append(input, actions);
+    const error = fieldError(field);
+    if (error) wrapper.append(error);
+    return wrapper;
+  }
+
+  function renderTitle(project, task) {
+    const section = element('section', 'fb-panel__section');
+    const row = element('div', 'fb-panel__row');
+    row.append(element('h3', 'fb-panel__heading', 'Title'));
+    if (drafts.title === null) {
+      const edit = smallButton('Edit', 'Edit the title', 'open:title');
+      edit.onclick = () => {
+        drafts.title = task.title || '';
+        pendingFocus = 'edit:title';
+        redraw();
+      };
+      row.append(edit);
+      section.append(row, element('p', 'fb-panel__text', task.title || '(untitled)'));
+    } else {
+      section.append(
+        row,
+        lineEditor({
+          field: 'title',
+          value: drafts.title,
+          maxLength: MAX_TITLE,
+          label: 'Title',
+          onSave: (value) => save('title', titleEdit({ project, task, value })),
+        }),
+      );
+    }
+    return section;
+  }
+
+  function renderPriority(project, task) {
+    const select = document.createElement('select');
+    select.className = 'fb-field__select';
+    select.id = 'flowboard-edit-priority';
+    select.dataset.fbFocusKey = 'edit:priority';
+    select.setAttribute('aria-label', 'Priority');
+    for (const priority of PRIORITIES) {
+      const option = element('option', '', priority);
+      option.value = priority;
+      select.append(option);
+    }
+    // The stored value, except while a change is in flight: a refused change
+    // redraws back to what FlowBoard holds.
+    select.value = saving === 'priority' && drafts.priority ? drafts.priority : task.priority || 'medium';
+    select.disabled = saving === 'priority';
+    select.onchange = () => {
+      drafts.priority = select.value;
+      save('priority', priorityEdit({ project, task, value: select.value }));
+    };
+    const wrapper = element('div', 'fb-field fb-field--inline');
+    wrapper.append(select);
+    const error = fieldError('priority');
+    if (error) wrapper.append(error);
+    return wrapper;
+  }
+
+  function renderTags(project, task) {
+    if (drafts.tags === null) {
+      const wrapper = element('div', 'fb-field fb-field--inline');
+      const text = Array.isArray(task.tags) && task.tags.length ? task.tags.map((tag) => `#${tag}`).join(' ') : 'none';
+      wrapper.append(element('span', 'fb-panel__text', text));
+      const edit = smallButton('Edit', 'Edit the tags', 'open:tags');
+      edit.onclick = () => {
+        drafts.tags = formatTags(task.tags);
+        pendingFocus = 'edit:tags';
+        redraw();
+      };
+      wrapper.append(edit);
+      return wrapper;
+    }
+    return lineEditor({
+      field: 'tags',
+      value: drafts.tags,
+      maxLength: 900,
+      label: 'Tags, comma-separated',
+      onSave: (value) => save('tags', tagsEdit({ project, task, value })),
+    });
+  }
+
+  function renderDescription(project, detail) {
+    const section = element('section', 'fb-panel__section');
+    const row = element('div', 'fb-panel__row');
+    row.append(element('h3', 'fb-panel__heading', 'Description'));
+    section.append(row);
+    const text = descriptionText(detail);
+    if (drafts.description === null) {
+      if (canEditDescription(detail)) {
+        const edit = smallButton('Edit', 'Edit the description', 'open:description');
+        edit.onclick = () => {
+          drafts.description = text;
+          pendingFocus = 'edit:description';
+          redraw();
+        };
+        row.append(edit);
+      }
+      if (text) {
+        // Plain text, line breaks preserved by CSS. Never innerHTML: the
+        // description is agent-written and this page holds Gateway authority.
+        section.append(element('p', 'fb-panel__description', text));
+      } else {
+        section.append(element('p', 'fb-hint', 'No description.'));
+      }
+      if (descriptionTruncated(detail)) {
+        section.append(element('p', 'fb-hint', 'Shortened — open FlowBoard to read or edit the whole description.'));
+      }
+      return section;
+    }
+    const area = document.createElement('textarea');
+    area.className = 'fb-field__area';
+    area.id = 'flowboard-edit-description';
+    area.dataset.fbFocusKey = 'edit:description';
+    area.rows = 10;
+    area.maxLength = MAX_DESCRIPTION;
+    area.value = drafts.description;
+    area.readOnly = saving === 'description';
+    area.setAttribute('aria-label', 'Description (plain text)');
+    area.oninput = () => {
+      drafts.description = area.value;
+    };
+    const submit = () => save('description', descriptionEdit({ project, detail, value: area.value }));
+    area.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        drafts.description = null;
+        fieldErrors.description = '';
+        pendingFocus = 'open:description';
+        redraw();
+      } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        submit();
+      }
+    });
+    const actions = element('div', 'fb-field__actions');
+    const ok = smallButton(saving === 'description' ? 'Saving…' : 'Save', 'Save the description');
+    ok.disabled = saving === 'description';
+    ok.onclick = submit;
+    const cancel = smallButton('Cancel', 'Cancel editing the description');
+    cancel.onclick = () => {
+      drafts.description = null;
+      fieldErrors.description = '';
+      pendingFocus = 'open:description';
+      redraw();
+    };
+    actions.append(ok, cancel, element('span', 'fb-hint', 'Plain text · Ctrl/⌘+Enter saves'));
+    section.append(area, actions);
+    const error = fieldError('description');
+    if (error) section.append(error);
+    return section;
+  }
+
+  function renderCommentBox(project, task) {
+    const form = element('form', 'fb-field fb-comment');
+    const area = document.createElement('textarea');
+    area.className = 'fb-field__area';
+    area.id = 'flowboard-comment';
+    area.dataset.fbFocusKey = 'edit:comment';
+    area.rows = 2;
+    area.maxLength = MAX_COMMENT;
+    area.placeholder = 'Add a comment — Enter sends, Shift+Enter for a new line';
+    area.setAttribute('aria-label', 'Add a comment');
+    area.value = drafts.comment;
+    area.readOnly = saving === 'comment';
+    const counter = element('span', 'fb-hint fb-comment__count');
+    counter.setAttribute('aria-live', 'polite');
+    const count = () => {
+      const left = commentRemaining(area.value);
+      counter.textContent = left < 200 ? `${left} left` : '';
+    };
+    count();
+    area.oninput = () => {
+      drafts.comment = area.value;
+      count();
+    };
+    const send = () => save('comment', commentRequest({ project, task, value: area.value }));
+    area.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        send();
+      }
+    });
+    const actions = element('div', 'fb-field__actions');
+    const submit = element('button', 'fb-field__button', saving === 'comment' ? 'Sending…' : 'Comment');
+    submit.type = 'submit';
+    submit.disabled = saving === 'comment';
+    actions.append(submit, counter);
+    form.onsubmit = (event) => {
+      event.preventDefault();
+      send();
+    };
+    form.append(area, actions);
+    const error = fieldError('comment');
+    if (error) form.append(error);
+    return form;
+  }
+
+  /** Where focus and the caret were, so a redraw can put them back. */
+  function captureFocus() {
+    const active = document.activeElement;
+    if (!active || !root.contains(active)) return null;
+    const key = active.dataset?.fbFocusKey;
+    if (!key) return null;
+    let selection = null;
+    try {
+      if (typeof active.selectionStart === 'number') selection = [active.selectionStart, active.selectionEnd];
+    } catch {
+      /* not a text control */
+    }
+    return { key, selection };
+  }
+
+  function restoreFocus(saved) {
+    if (!saved) return;
+    let target = root.querySelector(`[data-fb-focus-key="${CSS.escape(saved.key)}"]`);
+    // An editor that just opened takes focus from its Edit button, and one
+    // that just closed hands it back.
+    if (!target) {
+      const [kind, field] = saved.key.split(':');
+      const swap = kind === 'edit' ? 'open' : kind === 'open' ? 'edit' : null;
+      if (swap) target = root.querySelector(`[data-fb-focus-key="${CSS.escape(`${swap}:${field}`)}"]`);
+    }
+    if (!target) return;
+    target.focus?.();
+    if (saved.selection && typeof target.setSelectionRange === 'function') {
+      try {
+        target.setSelectionRange(saved.selection[0], saved.selection[1]);
+      } catch {
+        /* not a text control */
+      }
+    }
   }
 
   return {
@@ -806,6 +1365,8 @@ function createPanel({ onClose, onMenu }) {
       signature = '';
     },
     render(state, { dashboardUrl, actions }) {
+      const key = state.open ? `${state.project}/${state.id}` : '';
+      if (key !== draftFor) resetDrafts(key);
       const next = [
         state.open ? '1' : '0',
         state.project ?? '',
@@ -818,6 +1379,7 @@ function createPanel({ onClose, onMenu }) {
         actions.error ?? '',
         panelTask(state)?.status ?? '',
         panelTask(state)?.workState ?? '',
+        dashboardUrl ? '1' : '0',
       ].join('|');
       if (next === signature) return;
       signature = next;
@@ -833,6 +1395,7 @@ function createPanel({ onClose, onMenu }) {
       heading.textContent = task ? `${task.id} · ${task.title}` : state.id;
       menuButton.hidden = !task;
 
+      const focus = captureFocus();
       body.replaceChildren();
       if (state.phase === 'loading' && !task) {
         body.append(element('p', 'fb-hint', 'Loading the task…'));
@@ -845,6 +1408,7 @@ function createPanel({ onClose, onMenu }) {
         return;
       }
       if (!task) return;
+      const project = state.project;
 
       if (state.phase === 'stale') {
         const message = element('p', 'fb-hint fb-hint--error', `Refreshing failed: ${state.error}`);
@@ -861,6 +1425,8 @@ function createPanel({ onClose, onMenu }) {
         body.append(element('p', 'fb-panel__saving', 'Saving…'));
       }
 
+      body.append(renderTitle(project, task));
+
       const list = element('dl', 'fb-meta');
       list.append(meta('Status', statusLabel(task.status)));
       list.append(
@@ -871,38 +1437,37 @@ function createPanel({ onClose, onMenu }) {
             : workStateLabel(task.workState),
         ),
       );
-      list.append(meta('Priority', task.priority || 'medium'));
+      list.append(meta('Priority', renderPriority(project, task)));
+      list.append(meta('Tags', renderTags(project, task)));
       list.append(meta('Agent', task.agent ? `@${task.agent}` : 'unclaimed'));
       if (task.parentId) list.append(meta('Parent', task.parentId));
       if (task.subtaskCount) list.append(meta('Subtasks', String(task.subtaskCount)));
-      if (Array.isArray(task.tags) && task.tags.length) list.append(meta('Tags', task.tags.map((tag) => `#${tag}`).join(' ')));
       if (task.created) list.append(meta('Created', dateText(task.created)));
       if (task.enteredStatusAt) list.append(meta(`In ${statusLabel(task.status)} since`, dateText(task.enteredStatusAt)));
       const lease = leaseState(task);
       if (lease.state !== 'none') list.append(meta('Claim', lease.label));
-      if (specFile(state.data)) list.append(meta('Spec', specFile(state.data)));
+      const spec = specFile(state.data);
+      if (spec) {
+        if (dashboardUrl) {
+          // The spec opens in the framed Files tab, at that file.
+          const link = button('fb-panel__spec', spec, `Open the spec ${spec} in Files`);
+          link.dataset.fbFocusKey = 'spec';
+          link.onclick = () => onOpenSpec(project, spec);
+          list.append(meta('Spec', link));
+        } else {
+          list.append(meta('Spec', spec));
+        }
+      }
       const stuck = stuckLabel(task);
       if (stuck) list.append(meta('Attention', stuck));
       body.append(list);
 
-      const descriptionBody = descriptionText(state.data);
-      const description = element('section', 'fb-panel__section');
-      description.append(element('h3', 'fb-panel__heading', 'Description'));
-      if (descriptionBody) {
-        // Plain text, line breaks preserved by CSS. Never innerHTML: the
-        // description is agent-written and this page holds Gateway authority.
-        description.append(element('p', 'fb-panel__description', descriptionBody));
-        if (descriptionTruncated(state.data)) {
-          description.append(element('p', 'fb-hint', 'Shortened — open FlowBoard for the whole description.'));
-        }
-      } else {
-        description.append(element('p', 'fb-hint', 'No description.'));
-      }
-      body.append(description);
+      body.append(renderDescription(project, state.data));
 
       const comments = visibleComments(state.data);
       const commentSection = element('section', 'fb-panel__section');
       commentSection.append(element('h3', 'fb-panel__heading', `Comments (${comments.length})`));
+      commentSection.append(renderCommentBox(project, task));
       if (comments.length) {
         const rows = element('ul', 'fb-thread');
         for (const entry of comments) {
@@ -929,9 +1494,9 @@ function createPanel({ onClose, onMenu }) {
           row.append(element('span', 'fb-thread__who', entry.agent || 'unknown'));
           row.append(element('span', 'fb-thread__when', dateText(entry.timestamp)));
           // `progress` is a number (or null), so 0 is a real value and must not
-        // be dropped the way a falsy check would drop it.
-        const hasProgress = typeof entry.progress === 'number' && Number.isFinite(entry.progress);
-        const text = hasProgress ? `${entry.message || ''} (${entry.progress}%)` : entry.message || '';
+          // be dropped the way a falsy check would drop it.
+          const hasProgress = typeof entry.progress === 'number' && Number.isFinite(entry.progress);
+          const text = hasProgress ? `${entry.message || ''} (${entry.progress}%)` : entry.message || '';
           row.append(element('p', 'fb-thread__text', text));
           rows.append(row);
         }
@@ -941,14 +1506,20 @@ function createPanel({ onClose, onMenu }) {
 
       if (dashboardUrl) {
         const link = element('a', 'fb-panel__link', 'Open in FlowBoard ↗');
-        link.href = buildFrameUrl(dashboardUrl, { project: state.project, task: state.id });
+        link.href = dashboardUrl;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        link.title = 'The full task in the FlowBoard dashboard, with rich text and every comment';
+        link.title = 'The full dashboard, with rich text and every comment';
         body.append(link);
       }
 
       menuButton.onclick = () => onMenu(menuButton, task);
+      if (pendingFocus) {
+        restoreFocus({ key: pendingFocus, selection: null });
+        pendingFocus = '';
+      } else {
+        restoreFocus(focus);
+      }
     },
   };
 }
@@ -1042,8 +1613,18 @@ function mountPage(container, context, identity) {
   let unwatchDetail = null;
   let watchedTask = '';
   let focusedProject = null;
-  let frameLoadedFor = '';
+  let frameState = initialFrameState();
+  let frameTimer = null;
+  let undoTimer = null;
   let panelOpener = null;
+  // The Control UI's own origin: the framed dashboard answers only this.
+  const hostOrigin = (() => {
+    try {
+      return globalThis.location?.origin || '';
+    } catch {
+      return '';
+    }
+  })();
 
   const state = {
     projects: initialWatchState(),
@@ -1126,6 +1707,7 @@ function mountPage(container, context, identity) {
     tabStrip.append(node);
   }
   const externalLink = element('a', 'fb-tabs__external', 'Open in FlowBoard ↗');
+  externalLink.id = 'flowboard-open-dashboard';
   externalLink.target = '_blank';
   externalLink.rel = 'noopener noreferrer';
   externalLink.title = 'Open the full FlowBoard dashboard in a new tab';
@@ -1136,7 +1718,21 @@ function mountPage(container, context, identity) {
   mainBody.id = 'flowboard-main-body';
   mainBody.setAttribute('role', 'tabpanel');
 
-  const menu = createMenuLayer({ onSubmit: (request) => submitAction(request) });
+  const menu = createMenuLayer({
+    onSubmit: (request) => submitAction(request),
+    contextFor: (project, task) => menuContext(project, task),
+  });
+
+  /* the notice after archive / trash, with Undo */
+  const undoBar = element('div', 'fb-undo');
+  undoBar.id = 'flowboard-undo';
+  undoBar.hidden = true;
+  undoBar.setAttribute('role', 'status');
+  const undoText = element('span', 'fb-undo__text');
+  const undoButton = button('fb-undo__button', 'Undo');
+  const undoClose = button('fb-undo__close', '✕', 'Dismiss');
+  const undoError = element('span', 'fb-undo__error');
+  undoBar.append(undoText, undoButton, undoClose, undoError);
 
   const board = createBoard({
     onOpenTask: (task) => openTask(view.project, task.id),
@@ -1148,25 +1744,36 @@ function mountPage(container, context, identity) {
       watchTasks();
       render();
     },
+    onCreate: (request) => createTask(request),
+    onSpecify: (title) => dispatchView({ type: 'specify', title }),
   });
   board.element.setAttribute('role', 'region');
   board.element.setAttribute('aria-label', 'Kanban board');
 
+  // One frame for every framed surface, created without a `src`: nothing is
+  // loaded until a framed tab is first shown.
   const frameHost = element('div', 'fb-frame-host');
+  const frameNotice = element('p', 'fb-frame-notice');
+  frameNotice.id = 'flowboard-frame-notice';
+  frameNotice.setAttribute('role', 'status');
+  frameNotice.hidden = true;
   const frame = document.createElement('iframe');
   frame.className = 'fb-frame';
   frame.id = 'flowboard-frame';
   frame.title = 'FlowBoard';
   frame.setAttribute('style', 'width:100%;height:100%;border:0');
-  frameHost.append(frame);
+  frameHost.append(frameNotice, frame);
 
   const panel = createPanel({
     onClose: () => closePanel(),
     onMenu: (anchor, task) => menu.open({ anchor, project: state.panel.project, task, bounds: root }),
+    onEdit: (request) => runEdit(request),
+    onOpenSpec: (project, file) => dispatchView({ type: 'open-file', project, file }),
+    onChange: () => render(),
   });
 
   mainBody.append(board.element, frameHost, panel.element);
-  main.append(tabStrip, mainBody);
+  main.append(tabStrip, undoBar, mainBody);
   root.append(rail, main, menu.element);
   container.append(root);
 
@@ -1234,8 +1841,12 @@ function mountPage(container, context, identity) {
       now: Date.now(),
       filter: boardFilter,
     });
-    panel.render(state.panel, { dashboardUrl, actions: state.actions });
+    panel.render(state.panel, { dashboardUrl: standaloneUrl(), actions: state.actions });
     renderStatusLine();
+  }
+
+  function standaloneUrl() {
+    return dashboardUrl ? buildDashboardUrl(dashboardUrl, { agentId }) : '';
   }
 
   function renderTabs() {
@@ -1250,14 +1861,19 @@ function mountPage(container, context, identity) {
         ? 'FlowBoard is not configured — set the plugin option "dashboardBaseUrl".'
         : `${tab.label} view`;
     }
-    mainBody.setAttribute('aria-labelledby', `flowboard-tab-${view.tab}`);
+    // The transient Specify view has no tab to be labelled by.
+    if (tabButtons.has(view.tab)) {
+      mainBody.removeAttribute('aria-label');
+      mainBody.setAttribute('aria-labelledby', `flowboard-tab-${view.tab}`);
+    } else {
+      mainBody.removeAttribute('aria-labelledby');
+      mainBody.setAttribute('aria-label', 'Specify');
+    }
     const framed = isFramedTab(view.tab);
     board.element.hidden = framed;
     frameHost.hidden = !framed;
     externalLink.hidden = !dashboardUrl;
-    if (dashboardUrl) {
-      externalLink.href = buildFrameUrl(dashboardUrl, { project: view.project, task: view.task });
-    }
+    if (dashboardUrl) externalLink.href = standaloneUrl();
     applyFrame();
   }
 
@@ -1284,23 +1900,118 @@ function mountPage(container, context, identity) {
   }
 
   /**
-   * The iframe is loaded lazily and only re-pointed when a framed tab is
-   * actually showing something else — switching to the native board and back
-   * must never reload the SPA.
+   * Point the one frame at the current surface (lib/embed.js `planFrame`):
+   * load it the first time, tell a frame that said `ready` where to go, and
+   * re-point only a frame that never answered. Switching to the native board
+   * and back does nothing to the frame at all.
    */
   function applyFrame() {
-    if (!dashboardUrl || !isFramedTab(view.tab)) return;
-    const next = buildFrameUrl(dashboardUrl, { project: view.project, agentId });
-    if (frameLoadedFor === next) return;
-    frameLoadedFor = next;
-    frame.src = next;
+    if (!dashboardUrl) return;
+    const target = frameTarget(view);
+    if (!target) return;
+    const plan = planFrame(frameState, target, { dashboardUrl, host: hostOrigin });
+    if (plan.kind === 'post') {
+      try {
+        frame.contentWindow?.postMessage(plan.message, dashboardOrigin(dashboardUrl));
+        frameState = frameReducer(frameState, { type: 'posted', target });
+      } catch {
+        // A frame that cannot be posted to is treated like one that never
+        // answered: the URL is the fallback.
+        loadFrame(planFrame({ ...frameState, phase: 'loading' }, target, { dashboardUrl, host: hostOrigin }), target);
+      }
+    } else if (plan.kind === 'load') {
+      loadFrame(plan, target);
+    }
+    renderFrameNotice();
   }
+
+  function loadFrame(plan, target) {
+    if (plan.kind !== 'load') return;
+    frameState = frameReducer(frameState, { type: 'load', url: plan.url, target });
+    frame.src = plan.url;
+    const token = frameState.token;
+    globalThis.clearTimeout(frameTimer);
+    // One timer per load, not a poll: it only decides whether to show the
+    // "did not answer" notice.
+    frameTimer = globalThis.setTimeout(() => {
+      frameState = frameReducer(frameState, { type: 'timeout', token });
+      renderFrameNotice();
+    }, READY_TIMEOUT_MS);
+  }
+
+  function renderFrameNotice() {
+    const show = showsTimeoutNotice(frameState);
+    frameNotice.hidden = !show;
+    if (!show) {
+      frameNotice.replaceChildren();
+      return;
+    }
+    if (frameNotice.childNodes.length) return;
+    frameNotice.append(
+      'FlowBoard did not answer inside the Control UI. The dashboard may be older than this plugin, or it cannot be ' +
+        'embedded here (for example a cross-site dashboard that signs in through Telegram). ',
+    );
+    const link = element('a', 'fb-frame-notice__link', 'Open in FlowBoard ↗');
+    link.href = standaloneUrl();
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    frameNotice.append(link);
+  }
+
+  /**
+   * Messages from the framed surface. `parseFrameMessage` drops anything that
+   * is not from this page's own frame at the dashboard's origin, so a forged
+   * message from another window never reaches the switch below.
+   */
+  const onMessage = (event) => {
+    if (!dashboardUrl) return;
+    const message = parseFrameMessage(event, {
+      expectedSource: frame.contentWindow,
+      expectedOrigin: dashboardOrigin(dashboardUrl),
+    });
+    if (!message) return;
+    switch (message.kind) {
+      case 'ready':
+        globalThis.clearTimeout(frameTimer);
+        frameState = frameReducer(frameState, { type: 'ready' });
+        renderFrameNotice();
+        // The view may have moved on while the frame was loading.
+        applyFrame();
+        break;
+      case 'open-task':
+        openTask(message.project || view.project, message.task);
+        break;
+      case 'open-surface':
+        if (message.surface === 'board') {
+          dispatchView({ type: 'tab', tab: 'board' });
+        } else if (message.file) {
+          dispatchView({ type: 'open-file', project: message.project, file: message.file });
+        } else {
+          if (message.project) dispatchView({ type: 'project', project: message.project });
+          dispatchView({ type: 'tab', tab: message.surface });
+        }
+        break;
+      case 'open-project':
+        // The framed project list switches the board this page shows. It does
+        // not rebind the agent: that stays a deliberate click in the rail.
+        dispatchView({ type: 'project', project: message.project });
+        dispatchView({ type: 'tab', tab: 'board' });
+        break;
+      case 'specify-closed':
+        dispatchView({ type: 'specify-closed', task: message.task });
+        break;
+      default:
+        break;
+    }
+  };
+  globalThis.addEventListener?.('message', onMessage);
 
   function dispatchView(action) {
     const next = viewReducer(view, action);
     if (next === view) return;
     const projectChanged = next.project !== view.project;
     const taskChanged = next.task !== view.task;
+    if (projectChanged) hideUndo();
     view = next;
     switcher.setViewing(view.project);
     needsMe.setSelected(view.project, view.task);
@@ -1364,6 +2075,25 @@ function mountPage(container, context, identity) {
   }
 
   /**
+   * The card's whole column in board order, for the position items — only
+   * when the board holds all of it (a truncated list does not know the
+   * neighbours) and only for the project on the board.
+   */
+  function columnFor(project, task) {
+    if (!task || (project && project !== view.project)) return null;
+    if (state.tasks.phase !== 'ready' || state.tasks.data?.truncated) return null;
+    const rows = state.tasks.data?.tasks;
+    if (!Array.isArray(rows) || !rows.some((row) => row.id === task.id)) return null;
+    return columnOf(rows, task);
+  }
+
+  /** What the menu needs beyond the task: which position moves it allows. */
+  function menuContext(project, task) {
+    const column = columnFor(project, task);
+    return column ? { moves: orderMoves(column, task.id) } : {};
+  }
+
+  /**
    * Fold the task an action returned back into the board and the panel. This
    * is the server's answer, not an optimistic guess: it is what the watch
    * refresh will confirm a moment later.
@@ -1388,14 +2118,69 @@ function mountPage(container, context, identity) {
     panel.invalidate();
   }
 
+  /** What each write answered, folded in after it succeeded — never before. */
+  function applyResult(operation, input, result) {
+    if (result?.task) reconcile(result.task);
+    if (operation === 'task.trash' && result?.trashed && !input.restore) {
+      const rows = state.tasks.data?.tasks;
+      if (Array.isArray(rows)) {
+        state.tasks = { ...state.tasks, data: { ...state.tasks.data, tasks: rows.filter((row) => row.id !== input.id) } };
+      }
+      // A trashed task is not shown natively any more, so neither is its panel.
+      if (state.panel.id === input.id) dispatchView({ type: 'close-task' });
+      board.invalidate();
+    }
+    // `task.update` answers with the card, which has no description; the
+    // write succeeded, so the text FlowBoard accepted is the one just sent.
+    if (
+      operation === 'task.update' &&
+      typeof input.description === 'string' &&
+      state.panel.id === input.id &&
+      state.panel.data?.task
+    ) {
+      state.panel = panelReducer(state.panel, {
+        type: 'data',
+        for: { project: state.panel.project, id: state.panel.id },
+        data: {
+          ...state.panel.data,
+          task: { ...state.panel.data.task, description: input.description, descriptionTruncated: false },
+        },
+        at: Date.now(),
+      });
+      panel.invalidate();
+    }
+    if (operation === 'task.comment' && result?.comment && state.panel.id === input.id && state.panel.data) {
+      const comments = Array.isArray(state.panel.data.comments) ? state.panel.data.comments : [];
+      state.panel = panelReducer(state.panel, {
+        type: 'data',
+        for: { project: state.panel.project, id: state.panel.id },
+        data: { ...state.panel.data, comments: [...comments, result.comment] },
+        at: Date.now(),
+      });
+      panel.invalidate();
+    }
+  }
+
   /**
    * Run one contract action. Returns `{ error }` synchronously when the form
    * still owes something, so the menu can keep itself open and say so.
    */
   function submitAction({ project, task, item, reason }) {
-    const request = actionRequest({ project: project || view.project, task, item, reason });
+    const target = project || view.project;
+    const column = item?.kind === 'order' ? columnFor(target, task) : null;
+    const updates = column ? orderUpdates(column, task.id, item.move) : undefined;
+    const request = actionRequest({ project: target, task, item, reason, updates });
     if (request.error) return { error: request.error };
-    return { ok: true, run: () => void runAction(request.operation, request.input, task.id) };
+    if (request.noop) return { ok: true };
+    const requests = request.requests ?? [{ operation: request.operation, input: request.input }];
+    const undo = undoRequest({ project: target, task, item });
+    return {
+      ok: true,
+      run: () =>
+        void runRequests(requests, task.id).then((outcome) => {
+          if (outcome.ok && undo) showUndo(undo, task.id);
+        }),
+    };
   }
 
   function moveTask(id, status) {
@@ -1403,36 +2188,119 @@ function mountPage(container, context, identity) {
     if (!task) return;
     const request = dropRequest({ project: view.project, task, status });
     if (request.noop || request.error) return;
-    void runAction(request.operation, request.input, id);
+    void runRequests([{ operation: request.operation, input: request.input }], id);
   }
 
-  async function runAction(operation, input, id) {
+  /**
+   * Send writes one after another (a re-rank may need several) and stop at
+   * the first refusal. The card shows "Saving…" until the last one answered;
+   * a refusal is FlowBoard's own text on the card and in the panel.
+   */
+  async function runRequests(requests, id) {
     state.actions = actionReducer(state.actions, { type: 'start', id });
     board.invalidate();
     panel.invalidate();
     render();
+    let outcome = { ok: true };
+    for (const { operation, input } of requests) {
+      try {
+        await identity.ensure();
+        const result = await feature.invoke(operation, input);
+        if (context.signal.aborted) return { ok: false };
+        applyResult(operation, input, result);
+      } catch (error) {
+        if (context.signal.aborted) return { ok: false };
+        // The backend's own message, verbatim: it is the only thing that can
+        // explain a FlowBoard policy refusal (a lease, the approve gate, a
+        // project rule) and guessing here would hide it.
+        state.actions = actionReducer(state.actions, { type: 'failed', id, error, code: takeCode(operation) });
+        // A task FlowBoard says is gone cannot be shown any more; leaving the
+        // panel open on it would keep offering actions against nothing.
+        if (state.actions.code === 'flowboard_not_found' && state.panel.id === id) {
+          dispatchView({ type: 'close-task' });
+        }
+        outcome = { ok: false, error: state.actions.error, code: state.actions.code };
+        break;
+      }
+    }
+    if (outcome.ok) state.actions = actionReducer(state.actions, { type: 'settled', id });
+    board.invalidate();
+    panel.invalidate();
+    render();
+    return outcome;
+  }
+
+  /** A panel edit: one request, resolved to whether it landed. */
+  async function runEdit(request) {
+    const id = request?.input?.id;
+    if (!id || !request.operation) return false;
+    const outcome = await runRequests([{ operation: request.operation, input: request.input }], id);
+    return outcome.ok;
+  }
+
+  /**
+   * "New task": create, then open the panel on it. The board is not touched
+   * here — the create emits `tasks-changed` and the watch draws the card.
+   */
+  async function createTask(request) {
     try {
       await identity.ensure();
-      const result = await feature.invoke(operation, input);
-      if (context.signal.aborted) return;
-      state.actions = actionReducer(state.actions, { type: 'settled', id });
-      reconcile(result?.task);
+      const result = await feature.invoke(request.operation, request.input);
+      if (context.signal.aborted) return { ok: false };
+      if (result?.id) openTask(request.input.project, result.id);
+      return { ok: true };
     } catch (error) {
-      if (context.signal.aborted) return;
-      // The backend's own message, verbatim: it is the only thing that can
-      // explain a FlowBoard policy refusal (a lease, the approve gate, a
-      // project rule) and guessing here would hide it.
-      state.actions = actionReducer(state.actions, { type: 'failed', id, error, code: takeCode(operation) });
-      // A task FlowBoard says is gone cannot be shown any more; leaving the
-      // panel open on it would keep offering actions against nothing.
-      if (state.actions.code === 'flowboard_not_found' && state.panel.id === id) {
-        dispatchView({ type: 'close-task' });
+      if (context.signal.aborted) return { ok: false };
+      // The SDK drops the refusal code; the tracing transport kept it.
+      const code = takeCode(request.operation);
+      if (code === SPECIFY_REQUIRED) {
+        return {
+          ok: false,
+          specify: true,
+          message: 'This project requires Specify: new tasks start from a specified idea.',
+        };
       }
-      board.invalidate();
-      panel.invalidate();
+      return { ok: false, message: errorText(error).slice(0, 300) };
     }
-    render();
   }
+
+  /* ------------------------------------------------------------- undo */
+
+  let undoPending = false;
+
+  function hideUndo() {
+    globalThis.clearTimeout(undoTimer);
+    undoTimer = null;
+    undoPending = false;
+    undoBar.hidden = true;
+    undoError.textContent = '';
+    undoButton.onclick = null;
+  }
+
+  /** "Archived T-1. Undo" — the inverse request, offered for a short while. */
+  function showUndo(request, id) {
+    hideUndo();
+    undoText.textContent = request.label;
+    undoButton.disabled = false;
+    undoBar.hidden = false;
+    undoButton.onclick = async () => {
+      if (undoPending) return;
+      undoPending = true;
+      undoButton.disabled = true;
+      globalThis.clearTimeout(undoTimer);
+      const outcome = await runRequests([{ operation: request.operation, input: request.input }], id);
+      undoPending = false;
+      if (outcome.ok) {
+        hideUndo();
+        return;
+      }
+      // The card may be gone from the board, so the refusal is shown here.
+      undoButton.disabled = false;
+      undoError.textContent = outcome.error || 'Undo failed.';
+    };
+    undoTimer = globalThis.setTimeout(hideUndo, 15000);
+  }
+  undoClose.onclick = () => hideUndo();
 
   /* ------------------------------------------------------------ watches */
 
@@ -1673,6 +2541,9 @@ function mountPage(container, context, identity) {
         void feature.invoke('ui.focus', { project: null }).catch(() => {});
       }
       document.removeEventListener('pointerdown', onPointerDown, true);
+      globalThis.removeEventListener?.('message', onMessage);
+      globalThis.clearTimeout(frameTimer);
+      hideUndo();
       menu.close({ restoreFocus: false });
       unwatchProjects();
       unwatchNeeds();
