@@ -297,7 +297,7 @@ rather than assuming forward compatibility.
 "Supported" means a release has installed the packed artifact on that host and watched the hook come
 back. `scripts/release-host-matrix.mjs` runs `scripts/release-install-canary.mjs` against each CLI
 and prints the table; CI runs the two ends of it on every push (Node 22 + 2026.6.6, Node 24 +
-2026.9.5). What differs between hosts is the *install lifecycle*, not FlowBoard's behaviour:
+2026.9.6). What differs between hosts is the *install lifecycle*, not FlowBoard's behaviour:
 
 | | 2026.6.6 | 2026.7.1-2 | ≥ 2026.9.2 (verified on 2026.9.5 and 2026.9.6) |
 |---|---|---|---|

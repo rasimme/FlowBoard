@@ -23,7 +23,7 @@
   },
   "openclaw": {
     "build": {
-      "openclawVersion": "2026.9.5"
+      "openclawVersion": "2026.9.6"
     },
     "install": {
       "defaultChoice": "clawhub",
@@ -89,6 +89,6 @@
   ],
   "devDependencies": {
     "esbuild": "0.28.2",
-    "openclaw": "2026.9.5"
+    "openclaw": "2026.9.6"
   }
 }

@@ -79,7 +79,7 @@ jobs:
   # Control UI bundle only exist from 2026.9.2, and that CLI refuses Node
   # < 24.16 — which is why this cannot live in the job above. It regenerates
   # the manifest and the browser bundle, fails on drift from what is committed,
-  # and then runs the same install canary against 2026.9.5, where the feature
+  # and then runs the same install canary against 2026.9.6, where the feature
   # layer (Gateway method + feature-events service + controlUi entry) must
   # actually load.
   #
@@ -115,7 +115,7 @@ jobs:
       - name: Host capability unit tests
         run: node test-openclaw-host-capabilities.mjs
         working-directory: dashboard
-      - name: Release install canary (openclaw 2026.9.5)
+      - name: Release install canary (openclaw 2026.9.6)
         run: node scripts/release-install-canary.mjs
         env:
           FLOWBOARD_OPENCLAW_CLI: node_modules/.bin/openclaw
