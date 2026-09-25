@@ -1539,13 +1539,15 @@ async function httpTests() {
     });
 
     await check('only work in review can be approved or rejected', async () => {
+      // The real server must send the service code, not only the sentence,
+      // or the native board falls back to a generic refusal (T-499 live proof).
       await assert.rejects(
         () => adapter.approveTask(OPERATOR, { project: BOARD_PROJECT, id: created.first }),
-        /is not in review/,
+        (error) => /is not in review/.test(error.message) && error.code === 'NOT_IN_REVIEW',
       );
       await assert.rejects(
         () => adapter.rejectTask(OPERATOR, { project: BOARD_PROJECT, id: created.first, reason: 'no' }),
-        /is not in review/,
+        (error) => /is not in review/.test(error.message) && error.code === 'NOT_IN_REVIEW',
       );
     });
 

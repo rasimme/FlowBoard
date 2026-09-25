@@ -4722,7 +4722,9 @@ app.post('/api/projects/:name/tasks/:id/approve', (req, res) => {
     res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
-    res.status(status).json({ error: err.message });
+    // The service code (NOT_IN_REVIEW, …) lets API clients — the Gateway
+    // feature adapter among them — branch on the refusal, not its wording.
+    res.status(status).json({ error: err.message, ...(typeof err.code === 'string' ? { code: err.code } : {}) });
   }
 });
 
@@ -4769,7 +4771,9 @@ app.post('/api/projects/:name/tasks/:id/reject', (req, res) => {
     res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
-    res.status(status).json({ error: err.message });
+    // The service code (NOT_IN_REVIEW, …) lets API clients — the Gateway
+    // feature adapter among them — branch on the refusal, not its wording.
+    res.status(status).json({ error: err.message, ...(typeof err.code === 'string' ? { code: err.code } : {}) });
   }
 });
 
