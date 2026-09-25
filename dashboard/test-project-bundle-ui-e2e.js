@@ -199,6 +199,11 @@ async function dragBundle(page, body, filename) {
       return button && !button.disabled;
     });
     r.ok((await page.$eval('[data-testid="import-submit"]', (button) => button.textContent)).includes('Import as new project'), 'primary import CTA uses the explicit create-only wording');
+    // T-497 regression: the destination input still has focus here, so the
+    // real mouse click below blurs it first and its blur refresh starts a new
+    // preview before the click lands. The submit must wait for that preview
+    // instead of silently dropping the click.
+    r.ok(await page.evaluate(() => document.activeElement?.id === 'import-target'), 'submit is clicked while the destination input is focused (blur-refresh race)');
     await page.click('[data-testid="import-submit"]');
     await page.waitForSelector('[data-testid="import-success"]');
     r.ok((await text(page)).includes('No agents were activated'), 'success explicitly says agents were not activated');
@@ -262,8 +267,10 @@ async function dragBundle(page, body, filename) {
     await (await page.$('#project-bundle-file')).uploadFile(validFile);
     await page.waitForSelector('#import-target');
     await page.click('#import-target', { clickCount: 3 });
+    // No wait here on purpose (T-497): the edited name is only re-checked
+    // when the input blurs, i.e. on the submit click's own mousedown. The
+    // click must still import instead of landing on a disabled button.
     await page.type('#import-target', 'retry-copy');
-    await new Promise((resolve) => setTimeout(resolve, 350));
     let failOnce = true;
     await page.setRequestInterception(true);
     const intercept = async (request) => {
@@ -332,7 +339,7 @@ async function dragBundle(page, body, filename) {
     const modalHeight = await page.$eval('#modalRoot [role="dialog"]', (dialog) => dialog.getBoundingClientRect().height);
     r.ok(modalHeight >= 800, 'mobile bundle dialog uses near-fullscreen layout');
     await page.click('button[aria-label="Close"]');
-  }, { port: 18862, viewport: { width: 1400, height: 900 } });
+  }, { viewport: { width: 1400, height: 900 } });
 
   if (result?.skipped) r.skip(result.reason);
   r.done();

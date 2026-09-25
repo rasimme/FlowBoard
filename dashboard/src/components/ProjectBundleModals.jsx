@@ -442,6 +442,20 @@ function ImportSteps({ stage }) {
 }
 
 const UNCHANGED_IMPORT_CONFIRMATION = 'I UNDERSTAND AND WANT TO IMPORT UNCHANGED';
+const TARGET_SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+// Security findings are an explicit import decision, not a structural
+// invalidation. Keep this compatible with older preview responses while
+// never bypassing a blocked result or target conflict.
+function previewAllowsImportFor(preview) {
+  return !!preview?.canImport || ((preview?.securityWarnings?.length || 0) > 0 && preview?.target?.availability !== 'conflict');
+}
+
+// True when a structurally valid preview was computed for a different target
+// name than the one currently entered.
+function isTargetStale(preview, targetName) {
+  return !!preview && !preview.blocked && !!preview.target && preview.target.name !== targetName;
+}
 
 function ImportPreviewSummary({ preview, targetName, onTargetChange, onTargetBlur, onUseSuggested, targetInputRef, sensitiveMode, setSensitiveMode, confirmation, setConfirmation }) {
   const counts = preview?.counts || {};
@@ -509,6 +523,8 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
   const targetInputRef = useRef(null);
   const previewTimer = useRef(null);
   const previewRequest = useRef(0);
+  const pendingPreview = useRef(null);
+  const submitting = useRef(false);
   const targetFocusNeeded = useRef(false);
 
   const reset = useCallback(() => {
@@ -525,6 +541,8 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     setSensitiveMode('redact');
     setConfirmation('');
     setDragActive(false);
+    pendingPreview.current = null;
+    submitting.current = false;
     targetFocusNeeded.current = false;
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
@@ -543,9 +561,20 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
     if (needsFocus && !wasNeeded) window.setTimeout(() => targetInputRef.current?.focus(), 0);
   }, [preview?.target?.availability, stage, targetName]);
 
-  const requestPreview = useCallback(async (body, target) => {
-    if (!body) return;
+  // Resolves with the applied preview, or null when the request failed or was
+  // superseded. The promise is kept in a ref so a submit that races an
+  // in-flight preview (e.g. the target input's blur refresh fired by the very
+  // mousedown that clicks "Import") can wait for it instead of being dropped.
+  const requestPreview = useCallback((body, target) => {
+    if (!body) return Promise.resolve(null);
     const requestId = ++previewRequest.current;
+    const run = runPreview(body, target, requestId);
+    pendingPreview.current = run;
+    run.finally(() => { if (pendingPreview.current === run) pendingPreview.current = null; });
+    return run;
+  }, []);
+
+  const runPreview = async (body, target, requestId) => {
     setPreviewing(true);
     setFileError(null);
     try {
@@ -556,23 +585,26 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
         body,
       });
       const data = await response.json().catch(() => ({}));
-      if (requestId !== previewRequest.current) return;
+      if (requestId !== previewRequest.current) return null;
+      setStage('review');
       if (!response.ok) {
         setPreview({ ...data, canImport: false, blocked: true });
         setFileError(errorSummary(data, response.status));
-      } else {
-        setPreview(data);
-        setTargetName(data.target?.name && data.target.name !== '[invalid]' ? data.target.name : target);
+        return null;
       }
-      setStage('review');
+      const appliedTarget = data.target?.name && data.target.name !== '[invalid]' ? data.target.name : target;
+      setPreview(data);
+      setTargetName(appliedTarget);
+      return { preview: data, targetName: appliedTarget };
     } catch (error) {
-      if (requestId !== previewRequest.current) return;
+      if (requestId !== previewRequest.current) return null;
       setFileError(error?.message || 'The bundle preview could not be loaded.');
       setStage('review');
+      return null;
     } finally {
       if (requestId === previewRequest.current) setPreviewing(false);
     }
-  }, []);
+  };
 
   const processPickedFile = useCallback(async (picked) => {
     if (!picked) return;
@@ -656,11 +688,35 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
   }
 
   async function submitImport() {
-    if (!rawBody || !preview?.canImport || previewing) return;
+    if (!rawBody || submitting.current) return;
+    submitting.current = true;
+    let currentPreview = preview;
+    let currentTarget = targetName;
+    try {
+      // Never drop the click: wait for a preview that is still in flight and
+      // decide on its result, so a stale conflict/valid state is never used.
+      if (pendingPreview.current) {
+        const settled = await pendingPreview.current;
+        if (!settled) return;
+        currentPreview = settled.preview;
+        currentTarget = settled.targetName;
+      }
+      // Target edits stay local until blur; if the name still differs from
+      // the one the preview checked, check it now rather than trusting it.
+      if (isTargetStale(currentPreview, currentTarget) && TARGET_SLUG.test(currentTarget)) {
+        const settled = await requestPreview(rawBody, currentTarget);
+        if (!settled) return;
+        currentPreview = settled.preview;
+        currentTarget = settled.targetName;
+      }
+      if (!previewAllowsImportFor(currentPreview) || !TARGET_SLUG.test(currentTarget)) return;
+    } finally {
+      submitting.current = false;
+    }
     setStage('progress');
     setImportError(null);
     try {
-      const response = await apiFetch(`/api/projects/import?targetName=${encodeURIComponent(targetName)}&sensitiveMode=${sensitiveMode}`, {
+      const response = await apiFetch(`/api/projects/import?targetName=${encodeURIComponent(currentTarget)}&sensitiveMode=${sensitiveMode}`, {
         method: 'POST',
         headers: { 'Content-Type': BUNDLE_MEDIA_TYPE, ...(sensitiveMode === 'allow' ? { 'X-FlowBoard-Sensitive-Confirmation': confirmation } : {}) },
         body: rawBody,
@@ -692,11 +748,11 @@ export function ImportProjectModal({ open, onClose, onImported, onOpenProject })
 
   const dismissible = stage !== 'progress';
   const requiresUnchangedConfirmation = preview?.securityWarnings?.length > 0 && sensitiveMode === 'allow';
-  // Security findings are an explicit import decision, not a structural
-  // invalidation. Keep this compatible with older preview responses while
-  // never bypassing a blocked result or target conflict.
-  const previewAllowsImport = !!preview?.canImport || ((preview?.securityWarnings?.length || 0) > 0 && preview?.target?.availability !== 'conflict');
-  const canImport = previewAllowsImport && /^[a-z0-9][a-z0-9-]{0,62}$/.test(targetName)
+  // A locally edited name is re-checked on submit, so a conflict reported for
+  // the previous name must not keep the button disabled (that swallowed the
+  // first click: the blur refresh only starts on the click's own mousedown).
+  const previewAllowsImport = previewAllowsImportFor(preview) || isTargetStale(preview, targetName);
+  const canImport = previewAllowsImport && TARGET_SLUG.test(targetName)
     && (!requiresUnchangedConfirmation || confirmation === UNCHANGED_IMPORT_CONFIRMATION);
   const projectName = importResult?.project?.displayName || importResult?.project?.name || targetName;
 
