@@ -101,9 +101,12 @@ Three things about that table are decisions rather than mechanics:
 
 - **The write actions are thin on purpose.** `task.update` is the generic update path and is
   refused by FlowBoard for exactly the transitions that have their own endpoints — review → done
-  goes through `task.approve` (ADR-0022), and a task another agent actively holds cannot be moved
-  from outside. The Gateway does not pre-judge any of that; it relays FlowBoard's refusal, message
-  and error code unchanged.
+  goes through `task.approve` (ADR-0022). A status move carries no `actor`, so FlowBoard treats it
+  as the trusted operator, exactly like a drag on the standalone board: moving a task another agent
+  actively holds is allowed and, into review or done, releases that claim (ADR-0029). The Gateway
+  does not pre-judge any of that; it relays FlowBoard's refusal, message and error code unchanged
+  as a `{ ok: false, error, code }` result (T-504) — the feature SDK would otherwise report every
+  refusal as "plugin session action failed".
 - **Approve and reject name the operator, and the browser cannot.** Those two endpoints read the
   actor from their request *body*, not from the principal headers, so the plugin composes it in the
   Gateway process from the connection's host-attested profile (`<display name> (gateway:<profile

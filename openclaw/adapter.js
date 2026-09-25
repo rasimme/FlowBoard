@@ -77,17 +77,108 @@ export class FlowBoardAdapterError extends Error {
 /**
  * The error a feature handler rethrows for an adapter failure.
  *
- * A fresh Error carrying FlowBoard's message and its `code` unchanged — so a
- * client can branch on `SPECIFY_REQUIRED`, `NOT_OWNER` or `NOT_IN_REVIEW`
- * exactly as the dashboard does — and nothing else: no stack from this module,
- * no cause chain, no response body. Anything that is not an adapter error is
- * returned as it is; the host already reports those without their internals.
+ * It carries FlowBoard's message and its `code` unchanged — so a client can
+ * branch on `SPECIFY_REQUIRED`, `NOT_OWNER` or `NOT_IN_REVIEW` exactly as the
+ * dashboard does — and nothing else: no stack from this module, no cause
+ * chain, no response body.
+ *
+ * It is a class of its own, not a plain Error, because the feature SDK does
+ * not forward a thrown error's message: `defineFeaturePlugin` turns only its
+ * private validation error into a `{ ok: false, code }` result and rethrows
+ * everything else, which the Gateway reports as "plugin session action
+ * failed" (verified on 2026.9.6). The session-action wrapper in
+ * feature-entry.js recognises exactly this class and answers with the refusal
+ * envelope the Gateway does forward. Nothing else may be an instance of it.
+ */
+export class FlowBoardFeatureRefusal extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = 'FlowBoardFeatureRefusal';
+    this.code = code;
+  }
+}
+
+/** Longest refusal text the envelope carries (the Control UI shows 300). */
+export const MAX_REFUSAL_MESSAGE = 300;
+
+/**
+ * Map an adapter failure to the refusal the feature layer reports. Anything
+ * that is not an adapter error is returned as it is; the host already reports
+ * those without their internals.
  */
 export function toFeatureError(error) {
   if (error instanceof FlowBoardAdapterError) {
-    return Object.assign(new Error(error.message), { code: error.code });
+    return new FlowBoardFeatureRefusal(error.message, error.code);
   }
   return error;
+}
+
+/**
+ * The session-action result for a refusal, or null for anything else.
+ *
+ * `{ ok: false, error, code }` is the failure shape the Gateway forwards to
+ * the caller unchanged (PluginsSessionActionFailureResultSchema). The message
+ * is bounded and the code is only passed on when it is a short string.
+ */
+export function refusalEnvelope(error) {
+  if (!(error instanceof FlowBoardFeatureRefusal)) return null;
+  const message = typeof error.message === 'string' && error.message ? error.message : 'FlowBoard refused the request';
+  const envelope = { ok: false, error: message.slice(0, MAX_REFUSAL_MESSAGE) };
+  if (typeof error.code === 'string' && error.code) envelope.code = error.code.slice(0, 64);
+  return envelope;
+}
+
+/**
+ * Wrap one session-action handler so a FlowBoard refusal becomes the failure
+ * envelope instead of a thrown error. Every other error is rethrown untouched
+ * and keeps the host's own, detail-free "plugin session action failed".
+ */
+export function wrapSessionActionHandler(handler) {
+  if (typeof handler !== 'function') return handler;
+  return async function flowBoardSessionAction(...args) {
+    try {
+      return await handler.apply(this, args);
+    } catch (error) {
+      const envelope = refusalEnvelope(error);
+      if (envelope) return envelope;
+      throw error;
+    }
+  };
+}
+
+/**
+ * The plugin API as the feature SDK should see it: identical, except that
+ * every session action it registers answers a FlowBoard refusal with
+ * `{ ok: false, error, code }`.
+ *
+ * `defineFeaturePlugin` calls the flat `api.registerSessionAction` (9.6
+ * `feature-plugin.ts`), and its own handler wrapper rethrows our refusal after
+ * the output schema would have run — a refusal is thrown before any output
+ * exists, so no schema ever sees the envelope. The Gateway validates it only
+ * against the generic failure shape, which it matches.
+ *
+ * Everything else is the real API: other members are read from it and its
+ * methods are bound to it, so `api.id`, `api.pluginConfig`, `api.logger` and
+ * the host's own registration wrappers behave exactly as before. A host that
+ * hands out an API whose `registerSessionAction` cannot be shadowed gets it
+ * unchanged — refusals then read as before, nothing breaks.
+ */
+export function withRefusalEnvelopes(api) {
+  if (!api || typeof api.registerSessionAction !== 'function') return api;
+  const own = Object.getOwnPropertyDescriptor(api, 'registerSessionAction');
+  if (own && own.configurable === false && own.writable === false) return api;
+  const registerSessionAction = (action, ...rest) =>
+    api.registerSessionAction(
+      action && typeof action === 'object' ? { ...action, handler: wrapSessionActionHandler(action.handler) } : action,
+      ...rest,
+    );
+  return new Proxy(api, {
+    get(target, key) {
+      if (key === 'registerSessionAction') return registerSessionAction;
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }
 
 function boundedHeaderValue(value) {
@@ -452,7 +543,13 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
       if (response.status >= 400 && response.status < 500) {
         throw new FlowBoardAdapterError(
           shortMessage(payload?.error, `FlowBoard rejected the request (HTTP ${response.status})`),
-          typeof payload?.code === 'string' ? payload.code.slice(0, 64) : 'flowboard_rejected',
+          typeof payload?.code === 'string'
+            ? payload.code.slice(0, 64)
+            : // A 404 without a code of its own is FlowBoard saying the task
+              // (or its project) is gone; the native page closes on this code.
+              response.status === 404
+              ? 'flowboard_not_found'
+              : 'flowboard_rejected',
         );
       }
       throw new FlowBoardAdapterError(`FlowBoard dashboard returned HTTP ${response.status}`);

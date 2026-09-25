@@ -31,7 +31,7 @@ import { defineFeaturePlugin } from 'openclaw/plugin-sdk/feature-plugin';
 import { buildJsonPluginConfigSchema, definePluginEntry } from 'openclaw/plugin-sdk/plugin-entry';
 import { getToolPluginMetadata, toolPluginMetadataSymbol } from 'openclaw/plugin-sdk/tool-plugin';
 
-import { createFlowBoardAdapter, toFeatureError } from './adapter.js';
+import { createFlowBoardAdapter, toFeatureError, withRefusalEnvelopes } from './adapter.js';
 import {
   createChangePoller,
   createFocusRegistry,
@@ -142,6 +142,12 @@ function resolveCallerPrincipal(registry, context, input) {
  * Feature handlers report FlowBoard's own message and code (for example
  * SPECIFY_REQUIRED or NOT_OWNER), never a stack or a body. The mapping lives
  * in the SDK-free adapter so FlowBoard's suite can pin it on every Node.
+ *
+ * The thrown refusal only reaches the caller because `register` below hands
+ * the feature SDK an API whose session actions turn it into the
+ * `{ ok: false, error, code }` envelope (T-504, `withRefusalEnvelopes`):
+ * the SDK itself rethrows it and the Gateway would report nothing but
+ * "plugin session action failed".
  */
 async function guarded(run) {
   try {
@@ -353,7 +359,7 @@ export function createFeatureEntry(baseline) {
     description: baseline.description,
     configSchema,
     register(api) {
-      featureEntry.register(api);
+      featureEntry.register(withRefusalEnvelopes(api));
     },
   });
 

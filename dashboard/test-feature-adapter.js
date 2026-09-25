@@ -350,7 +350,8 @@ const CARD_FIELDS = [
 async function boardShapeTests() {
   const {
     createFlowBoardAdapter, compareTasks, principalActor, projectStuckIndicator, projectTask,
-    toFeatureError, FlowBoardAdapterError, MAX_COMMENT, MAX_DESCRIPTION,
+    toFeatureError, FlowBoardAdapterError, FlowBoardFeatureRefusal, MAX_COMMENT, MAX_DESCRIPTION,
+    MAX_REFUSAL_MESSAGE, refusalEnvelope, wrapSessionActionHandler, withRefusalEnvelopes,
   } = await import(ADAPTER_URL);
 
   const adapterFor = (routes) => {
@@ -773,9 +774,125 @@ async function boardShapeTests() {
       assert.equal(mapped.code, code);
       assert.equal(mapped.message, `refused ${code}`);
       assert.equal(mapped instanceof FlowBoardAdapterError, false, 'no adapter internals leak through');
+      assert.equal(mapped instanceof FlowBoardFeatureRefusal, true, 'the refusal is the one class the wrapper answers');
     }
     const foreign = new TypeError('boom');
     assert.equal(toFeatureError(foreign), foreign, 'a non-FlowBoard error is not rewritten');
+  });
+
+  section('refusals reach the native page as an envelope (T-504)');
+
+  await check('a refusal becomes { ok: false, error, code } with the code passed through', () => {
+    for (const [message, code] of [
+      ['Task T-001 is not in review (status: open); cannot approve', 'NOT_IN_REVIEW'],
+      ['Task not found', 'flowboard_not_found'],
+      ['Only the owning agent "worker-one" can change the status of a task it actively holds.', 'NOT_OWNER'],
+    ]) {
+      const envelope = refusalEnvelope(toFeatureError(new FlowBoardAdapterError(message, code)));
+      assert.deepEqual(envelope, { ok: false, error: message, code });
+    }
+  });
+
+  await check('the envelope carries a bounded message and nothing else', () => {
+    const long = new FlowBoardFeatureRefusal('x'.repeat(5000), 'NOT_OWNER');
+    long.body = { secret: 'never' };
+    const envelope = refusalEnvelope(long);
+    assert.equal(envelope.error.length, MAX_REFUSAL_MESSAGE);
+    assert.deepEqual(Object.keys(envelope).sort(), ['code', 'error', 'ok']);
+    assert.deepEqual(refusalEnvelope(new FlowBoardFeatureRefusal('no code')), { ok: false, error: 'no code' });
+  });
+
+  await check('anything that is not a FlowBoard refusal gets no envelope', () => {
+    assert.equal(refusalEnvelope(new Error('internal')), null);
+    assert.equal(refusalEnvelope(Object.assign(new Error('looks alike'), { code: 'NOT_OWNER' })), null);
+    assert.equal(refusalEnvelope(new FlowBoardAdapterError('raw adapter error', 'NOT_OWNER')), null);
+    assert.equal(refusalEnvelope(undefined), null);
+  });
+
+  await check('a wrapped handler answers a refusal and rethrows everything else', async () => {
+    const refused = wrapSessionActionHandler(async () => {
+      throw new FlowBoardFeatureRefusal('Task T-001 is not in review', 'NOT_IN_REVIEW');
+    });
+    assert.deepEqual(await refused({}), { ok: false, error: 'Task T-001 is not in review', code: 'NOT_IN_REVIEW' });
+    const boom = new TypeError('internal detail');
+    const broken = wrapSessionActionHandler(async () => {
+      throw boom;
+    });
+    await assert.rejects(() => broken({}), (error) => error === boom);
+    const fine = wrapSessionActionHandler(async (action) => ({ ok: true, result: action.payload }));
+    assert.deepEqual(await fine({ payload: 7 }), { ok: true, result: 7 });
+    assert.equal(wrapSessionActionHandler(undefined), undefined, 'a missing handler is left for the host to refuse');
+  });
+
+  await check('withRefusalEnvelopes wraps only registerSessionAction and passes the real api through', async () => {
+    const registered = [];
+    const services = [];
+    const api = {
+      id: 'flowboard',
+      pluginConfig: { dashboardPort: 1 },
+      logger: { warn() {} },
+      registerSessionAction(action) {
+        assert.equal(this, api, 'the real registrar runs on the real api');
+        registered.push(action);
+      },
+      registerService(service) {
+        assert.equal(this, api, 'other methods are bound to the real api');
+        services.push(service);
+      },
+    };
+    const view = withRefusalEnvelopes(api);
+    assert.notEqual(view, api);
+    assert.equal(view.id, 'flowboard');
+    assert.equal(view.pluginConfig, api.pluginConfig);
+    assert.equal(view.logger, api.logger);
+    const { registerService } = view;
+    registerService({ id: 'svc' });
+    assert.equal(services.length, 1, 'a detached method still reaches the real api');
+
+    // What defineFeaturePlugin's session-action handler does with our refusal:
+    // it rethrows every error that is not its own validation error.
+    const sdkHandler = async () => {
+      throw toFeatureError(new FlowBoardAdapterError('Task T-9 not found', 'flowboard_not_found'));
+    };
+    view.registerSessionAction({ id: 'task.get', description: 'Read', requiredScopes: ['operator.read'], handler: sdkHandler });
+    assert.equal(registered.length, 1);
+    assert.equal(registered[0].id, 'task.get');
+    assert.deepEqual(registered[0].requiredScopes, ['operator.read']);
+    assert.notEqual(registered[0].handler, sdkHandler);
+    assert.deepEqual(await registered[0].handler({ payload: {} }), {
+      ok: false,
+      error: 'Task T-9 not found',
+      code: 'flowboard_not_found',
+    });
+  });
+
+  await check('an api that cannot be shadowed is returned unchanged', () => {
+    assert.equal(withRefusalEnvelopes(null), null);
+    const noActions = { id: 'flowboard' };
+    assert.equal(withRefusalEnvelopes(noActions), noActions, 'a host without session actions is left alone');
+    const frozen = Object.freeze({ id: 'flowboard', registerSessionAction() {} });
+    assert.equal(withRefusalEnvelopes(frozen), frozen);
+  });
+
+  await check('a 404 without a code of its own is flowboard_not_found', async () => {
+    const { adapter } = adapterFor({
+      'PUT /api/projects/alpha/tasks/T-9': { __status: 404, error: 'Task not found' },
+      'POST /api/projects/alpha/tasks/T-9/approve': { __status: 404, error: 'Task T-9 not found', code: 'NOT_FOUND' },
+      'PUT /api/projects/alpha/tasks/T-8': { __status: 400, error: 'Invalid status' },
+    });
+    await assert.rejects(
+      () => adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-9', status: 'open' }),
+      (error) => error.code === 'flowboard_not_found' && error.message === 'Task not found',
+    );
+    await assert.rejects(
+      () => adapter.approveTask(PRINCIPAL, { project: 'alpha', id: 'T-9' }),
+      (error) => error.code === 'NOT_FOUND',
+      "FlowBoard's own code still wins",
+    );
+    await assert.rejects(
+      () => adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-8', status: 'open' }),
+      (error) => error.code === 'flowboard_rejected',
+    );
   });
 
   await check('a 409 with a code from task creation reaches the caller with that code', async () => {
@@ -1368,6 +1485,27 @@ async function httpTests() {
       );
     });
 
+    await check('a claimed task moves exactly as a dashboard drag does, releasing the claim (T-504)', async () => {
+      // The standalone board's drag and status picker send an actor-less
+      // `PUT { status }` (TasksView.jsx handleDrop / handleTaskUpdated), which
+      // FlowBoard treats as the trusted operator and allows — auto-releasing
+      // a live claim on review/done (ADR-0029, T-422-1, T-161-4). The native
+      // board sends the same request, so it must get the same answer.
+      const made = await api('POST', `/projects/${BOARD_PROJECT}/tasks`, { title: 'Held by a worker', priority: 'low' });
+      const heldId = made.body?.task?.id;
+      const claim = await api('POST', `/projects/${BOARD_PROJECT}/tasks/${heldId}/claim`, { agent: 'worker-one' });
+      assert.equal(claim.status, 200, 'setup: worker-one holds a live lease');
+
+      // An agent asserting a different actor is still refused on the same path.
+      const foreign = await api('PUT', `/projects/${BOARD_PROJECT}/tasks/${heldId}`, { status: 'review', actor: 'worker-two' });
+      assert.equal(foreign.status, 403);
+      assert.equal(foreign.body?.code, 'NOT_OWNER');
+
+      const moved = await adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: heldId, status: 'review' });
+      assert.equal(moved.task.status, 'review');
+      assert.equal(moved.task.leaseUntil, null, 'the operator move released the claim, like the dashboard');
+    });
+
     section('HTTP — task.approve and task.reject');
 
     await check('approving finalises the task and records who approved it', async () => {
@@ -1468,7 +1606,7 @@ async function httpTests() {
     await check('a comment on a missing task is FlowBoard\'s refusal', async () => {
       await assert.rejects(
         () => adapter.commentTask(OPERATOR, { project: BOARD_PROJECT, id: 'T-9999', message: 'hello' }),
-        /not found/i,
+        (error) => /not found/i.test(error.message) && error.code === 'flowboard_not_found',
       );
     });
 
