@@ -386,6 +386,13 @@
   display: none;
 }
 
+/* Their `display: flex` would otherwise override the hidden attribute: the
+   native board stayed on screen next to a framed tab, squeezing the frame. */
+.fb-board[hidden],
+.fb-rail__body[hidden] {
+  display: none;
+}
+
 .fb-frame {
   flex: 1 1 auto;
   min-height: 0;

@@ -2011,6 +2011,7 @@ function mountPage(container, context, identity) {
     if (next === view) return;
     const projectChanged = next.project !== view.project;
     const taskChanged = next.task !== view.task;
+    const fileChanged = next.file !== view.file;
     if (projectChanged) hideUndo();
     view = next;
     switcher.setViewing(view.project);
@@ -2021,8 +2022,28 @@ function mountPage(container, context, identity) {
       syncFocus();
     }
     if (taskChanged) syncPanel();
-    writePageParams();
+    // The page params carry the tab too (T-499), so a host remount lands on
+    // the same surface. They are rewritten only when the project, the task or
+    // the file changes, not on a bare tab click: every params navigation may
+    // make the Control UI remount this page, and a remount per tab click would
+    // reload the one frame that switching tabs is meant to keep alive.
+    if (projectChanged || taskChanged || fileChanged) schedulePageParams();
     render();
+  }
+
+  /*
+   * One write per burst of view changes, after the burst: a frame's
+   * `open-project` is "project, then board tab", and writing after the first
+   * step would record the old tab — which a remount would then restore.
+   */
+  let pageParamsPending = false;
+  function schedulePageParams() {
+    if (pageParamsPending) return;
+    pageParamsPending = true;
+    queueMicrotask(() => {
+      pageParamsPending = false;
+      if (!context.signal.aborted) writePageParams();
+    });
   }
 
   function writePageParams() {

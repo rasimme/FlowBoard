@@ -45,12 +45,20 @@ export function isFramedTab(tab) {
   return tab === SPECIFY_TAB || TABS.some((entry) => entry.id === tab && entry.kind === 'framed');
 }
 
+/**
+ * The view a page (re)mount starts from. Besides the selection, the page
+ * params carry the tab and — on Files — the open file (T-499): the Control UI
+ * may remount the page on a params navigation, and a remount must land on the
+ * same surface instead of dropping the operator back on the board. Specify is
+ * transient and never restored; an unknown tab means the board.
+ */
 export function initialViewState(selection = {}) {
+  const tab = TAB_IDS.has(selection.tab) ? selection.tab : DEFAULT_TAB;
   return {
     project: selection.project || null,
     task: (selection.project && selection.task) || null,
-    tab: DEFAULT_TAB,
-    file: null,
+    tab,
+    file: tab === 'files' && typeof selection.file === 'string' && selection.file ? selection.file : null,
     specify: null,
   };
 }
@@ -147,9 +155,20 @@ export function focusProject(state) {
   return state?.project || null;
 }
 
-/** The deep-link values for `buildPageParams` — the URL mirrors the view. */
+/**
+ * The deep-link values for `buildPageParams` — the URL mirrors the view. The
+ * board (the default) adds nothing, so board links stay exactly what they were
+ * before tabs were persisted. The transient Specify view is recorded as the
+ * tab it will return to, never as itself.
+ */
 export function selectionOf(state) {
-  return { project: state?.project || null, task: state?.task || null };
+  const selection = { project: state?.project || null, task: state?.task || null };
+  const tab = state?.tab === SPECIFY_TAB ? state.specify?.returnTab : state?.tab;
+  if (TAB_IDS.has(tab) && tab !== DEFAULT_TAB) {
+    selection.tab = tab;
+    if (tab === 'files' && state.tab === 'files' && state.file) selection.file = state.file;
+  }
+  return selection;
 }
 
 /** True when the native board is the visible main view. */

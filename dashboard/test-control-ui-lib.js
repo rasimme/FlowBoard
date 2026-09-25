@@ -154,9 +154,42 @@ async function deepLinkTests() {
   });
 
   check('props round-trip back into a selection', () => {
-    assert.deepEqual(readPageParams({ project: 'alpha', task: 'T-001' }), { project: 'alpha', task: 'T-001' });
-    assert.deepEqual(readPageParams({ task: 'T-001' }), { project: null, task: null });
-    assert.deepEqual(readPageParams(undefined), { project: null, task: null });
+    assert.deepEqual(readPageParams({ project: 'alpha', task: 'T-001' }), { project: 'alpha', task: 'T-001', tab: 'board', file: null });
+    assert.deepEqual(readPageParams({ task: 'T-001' }), { project: null, task: null, tab: 'board', file: null });
+    assert.deepEqual(readPageParams(undefined), { project: null, task: null, tab: 'board', file: null });
+  });
+
+  check('the tab and the Files file round-trip through the page params (T-499)', () => {
+    const files = buildPageParams({ project: 'alpha', tab: 'files', file: 'specs/T-1-plan.md' });
+    assert.deepEqual(files, { project: 'alpha', tab: 'files', file: 'specs/T-1-plan.md' });
+    assert.deepEqual(readPageParams(files), { project: 'alpha', task: null, tab: 'files', file: 'specs/T-1-plan.md' });
+    for (const tab of ['ideas', 'projects']) {
+      const params = buildPageParams({ project: 'alpha', task: 'T-1', tab });
+      assert.deepEqual(params, { project: 'alpha', task: 'T-1', tab });
+      assert.deepEqual(readPageParams(params), { project: 'alpha', task: 'T-1', tab, file: null });
+    }
+    // Projects needs no project to be restored.
+    assert.deepEqual(readPageParams(buildPageParams({ tab: 'projects' })), { project: null, task: null, tab: 'projects', file: null });
+  });
+
+  check('a link without a tab is the board, and the board is never written', () => {
+    assert.deepEqual(buildPageParams({ project: 'alpha', tab: 'board' }), { project: 'alpha' });
+    assert.equal(readPageParams({ project: 'alpha' }).tab, 'board');
+  });
+
+  check('an invalid tab or file in the params is ignored', () => {
+    for (const tab of ['nope', 'specify', 'BOARD', '', 7, null]) {
+      assert.deepEqual(buildPageParams({ project: 'alpha', tab }), { project: 'alpha' });
+      assert.equal(readPageParams({ project: 'alpha', tab }).tab, 'board');
+    }
+    for (const file of ['../secret.md', '/etc/passwd', 'a/../../b', 'x\u0000y', 'x'.repeat(600), '', 42]) {
+      assert.deepEqual(buildPageParams({ project: 'alpha', tab: 'files', file }), { project: 'alpha', tab: 'files' });
+      assert.equal(readPageParams({ project: 'alpha', tab: 'files', file }).file, null);
+    }
+    // A file belongs to Files only, and to a project.
+    assert.deepEqual(buildPageParams({ project: 'alpha', tab: 'ideas', file: 'a.md' }), { project: 'alpha', tab: 'ideas' });
+    assert.equal(readPageParams({ project: 'alpha', tab: 'ideas', file: 'a.md' }).file, null);
+    assert.equal(readPageParams({ tab: 'files', file: 'a.md' }).file, null);
   });
 
   check('without an agent the dashboard link is the configured URL byte-identical', () => {
@@ -845,6 +878,34 @@ async function viewStateTests() {
     assert.deepEqual(initialViewState({ project: 'alpha', task: 'T-1' }), v({ project: 'alpha', task: 'T-1', tab: 'board' }));
     assert.deepEqual(initialViewState({ project: null, task: 'T-1' }), v({ project: null, task: null, tab: 'board' }));
     assert.deepEqual(initialViewState(), v({ project: null, task: null, tab: 'board' }));
+  });
+
+  check('a remount restores the persisted tab and Files file, never Specify (T-499)', () => {
+    assert.deepEqual(initialViewState({ project: 'alpha', task: null, tab: 'ideas', file: null }), v({ project: 'alpha', task: null, tab: 'ideas' }));
+    assert.deepEqual(
+      initialViewState({ project: 'alpha', task: null, tab: 'files', file: 'specs/a.md' }),
+      v({ project: 'alpha', task: null, tab: 'files', file: 'specs/a.md' }),
+    );
+    assert.deepEqual(initialViewState({ project: 'alpha', tab: 'ideas', file: 'specs/a.md' }), v({ project: 'alpha', task: null, tab: 'ideas' }));
+    assert.deepEqual(initialViewState({ project: 'alpha', tab: 'specify' }), v({ project: 'alpha', task: null, tab: 'board' }));
+    assert.deepEqual(initialViewState({ project: 'alpha', tab: 'nope' }), v({ project: 'alpha', task: null, tab: 'board' }));
+  });
+
+  check('selectionOf persists framed tabs and the Files file, and never Specify', () => {
+    assert.deepEqual(selectionOf(v({ project: 'alpha', task: null, tab: 'board' })), { project: 'alpha', task: null });
+    assert.deepEqual(selectionOf(v({ project: 'alpha', task: null, tab: 'projects' })), { project: 'alpha', task: null, tab: 'projects' });
+    assert.deepEqual(
+      selectionOf(v({ project: 'alpha', task: null, tab: 'files', file: 'specs/a.md' })),
+      { project: 'alpha', task: null, tab: 'files', file: 'specs/a.md' },
+    );
+    // Specify records the tab it returns to, without a file.
+    const specify = viewReducer(v({ project: 'alpha', task: null, tab: 'ideas' }), { type: 'specify', title: 'x' });
+    assert.equal(specify.tab, 'specify');
+    assert.deepEqual(selectionOf(specify), { project: 'alpha', task: null, tab: 'ideas' });
+    const fromBoard = viewReducer(v({ project: 'alpha', task: null, tab: 'board' }), { type: 'specify', title: 'x' });
+    assert.deepEqual(selectionOf(fromBoard), { project: 'alpha', task: null });
+    const fromFiles = viewReducer(v({ project: 'alpha', task: null, tab: 'files', file: 'a.md' }), { type: 'specify' });
+    assert.deepEqual(selectionOf(fromFiles), { project: 'alpha', task: null, tab: 'files' });
   });
 }
 
