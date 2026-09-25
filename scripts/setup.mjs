@@ -61,6 +61,7 @@ const DASH = join(ROOT, 'dashboard');
 const requireDashboard = createRequire(join(DASH, 'server.js'));
 const { DEFAULT_DASHBOARD_PORT, LEGACY_DEFAULT_DASHBOARD_PORT } = requireDashboard('./flowboard-url.cjs');
 const { describeSandboxOverlap } = requireDashboard('./port-collision.js');
+const { parseServiceToken } = requireDashboard('./service-principal.js');
 const PLATFORM = process.env.NODE_ENV === 'test' && process.env.FLOWBOARD_SETUP_TEST_PLATFORM
   ? process.env.FLOWBOARD_SETUP_TEST_PLATFORM
   : platform();
@@ -140,13 +141,14 @@ const CONFIGURABLE_ENV_KEYS = [
   'ALLOWED_USER_IDS', 'AUTH_ALWAYS', 'DASHBOARD_ORIGIN', 'DEBUG',
   'FLOWBOARD_AGENT_IDLE_TTL_HOURS', 'FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK',
   'FLOWBOARD_ALLOW_LAN', 'FLOWBOARD_API', 'FLOWBOARD_BASE_URL',
-  'FLOWBOARD_ENABLE_SELF_UPDATE', 'FLOWBOARD_GITHUB_TOKEN',
+  'FLOWBOARD_ENABLE_SELF_UPDATE', 'FLOWBOARD_FRAME_ANCESTORS', 'FLOWBOARD_GITHUB_TOKEN',
   'FLOWBOARD_HOOK_FETCH_RETRIES', 'FLOWBOARD_HOOK_FETCH_TIMEOUT_MS',
   'FLOWBOARD_HOOK_TELEMETRY', 'FLOWBOARD_HOST', 'FLOWBOARD_KNOWN_AGENT_IDS',
   'FLOWBOARD_MANAGED_AGENT_IDS', 'FLOWBOARD_NOTIFICATION_CHANNEL',
   'FLOWBOARD_NOTIFICATION_TARGET', 'FLOWBOARD_NOTIFICATION_TO',
   'FLOWBOARD_NOTIFY_ON_COMPLETE', 'FLOWBOARD_PORT', 'FLOWBOARD_PROJECTS_DIR',
-  'FLOWBOARD_REPO', 'FLOWBOARD_RULES_TELEMETRY', 'FLOWBOARD_TELEGRAM_AGENT_IDS',
+  'FLOWBOARD_REPO', 'FLOWBOARD_RULES_TELEMETRY', 'FLOWBOARD_SERVICE_TOKEN',
+  'FLOWBOARD_TELEGRAM_AGENT_IDS',
   'FLOWBOARD_TRUSTED_PROXY_IPS',
   'FLOWBOARD_WAKE_AGENT', 'GATEWAY_PORT', 'GATEWAY_URL', 'GITHUB_TOKEN',
   'HOOKS_TOKEN', 'HZL_DB_PATH', 'HZL_INTEGRITY_STRICT', 'INTEGRITY_WEBHOOK_TOKEN',
@@ -990,6 +992,12 @@ const sandboxOverlap = describeSandboxOverlap(PORT, effectiveServiceEnv);
 if (sandboxOverlap) {
   log(`${c.warn} ${sandboxOverlap.replace(/^\[startup\] Warning: /, '')}`);
   log(c.dim(`  To move this install: FLOWBOARD_PORT=${DEFAULT_DASHBOARD_PORT} node scripts/setup.mjs --update --override-env FLOWBOARD_PORT`));
+}
+// T-487-7: the server ignores a service token outside its length bounds. Say
+// so here, by name only — the value itself is never printed.
+const serviceTokenCheck = parseServiceToken(effectiveServiceEnv.FLOWBOARD_SERVICE_TOKEN);
+if (serviceTokenCheck.warning) {
+  log(`${c.warn} ${serviceTokenCheck.warning.replace(/^⚠️\s+/, '')}`);
 }
 const remoteGaps = remoteConfigurationGaps();
 if (remoteGaps === null) {

@@ -214,7 +214,11 @@ Re-run with `--update` after `openclaw plugins update` to rebuild & restart.
 persisted environment (including auth/tunnel variables and `JWT_SECRET`). Shell
 variables never replace persisted update values implicitly. Persist a named,
 allowlisted shell value by adding `--override-env=VARIABLE` to the update
-command. Rotate `JWT_SECRET` only with
+command. The OpenClaw feature layer's `FLOWBOARD_SERVICE_TOKEN` and
+`FLOWBOARD_FRAME_ANCESTORS` are persisted the same way, for example
+`FLOWBOARD_SERVICE_TOKEN=… FLOWBOARD_FRAME_ANCESTORS=… node scripts/setup.mjs --update --override-env FLOWBOARD_SERVICE_TOKEN,FLOWBOARD_FRAME_ANCESTORS`
+(see [OpenClaw Control UI](docs/guide/openclaw-control-ui.md#turn-it-on));
+like every service value, the token is never printed. Rotate `JWT_SECRET` only with
 `node scripts/setup.mjs --rotate-secret`; rotation re-registers and restarts the
 service immediately. On macOS, setup writes launchd output to the owner-only
 `~/Library/Logs/FlowBoard/flowboard-dashboard.log` (directory `0700`, file

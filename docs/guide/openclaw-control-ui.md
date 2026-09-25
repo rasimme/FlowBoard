@@ -55,9 +55,25 @@ dashboard, and the plugin's backend operations stay available.
 
    Store `serviceToken` as a secret reference, never inline — it is the same
    value as the dashboard's `FLOWBOARD_SERVICE_TOKEN`.
-4. For the framed tabs, add the Control UI's origin to the dashboard's
-   `FLOWBOARD_FRAME_ANCESTORS` (for example `http://127.0.0.1:18789`) and
-   restart the dashboard.
+4. Give the dashboard service the same token, and allow the Control UI's origin
+   to frame the *Ideas*, *Files* and *Projects* tabs. For the standard per-user service
+   (launchd/systemd) created by `setup.mjs`, persist both in one update:
+
+   ```bash
+   FLOWBOARD_SERVICE_TOKEN=<the serviceToken value> \
+   FLOWBOARD_FRAME_ANCESTORS=http://127.0.0.1:18789 \
+     node scripts/setup.mjs --update --override-env FLOWBOARD_SERVICE_TOKEN,FLOWBOARD_FRAME_ANCESTORS
+   ```
+
+   Generate the token once (`openssl rand -hex 32`) and keep it out of shell
+   history, for example by reading it from the file your secret reference
+   points at. Use the origin you open the Control UI at for
+   `FLOWBOARD_FRAME_ANCESTORS` (several are comma-separated).
+
+   Setup writes both into the owner-only service definition, restarts the
+   dashboard, and never prints the token; later `--update` runs keep them. A
+   token shorter than 32 characters is reported and ignored by the dashboard.
+   With a custom supervisor, set both variables there instead.
 5. Open **FlowBoard** in the Control UI sidebar.
 
 ## What the rail does

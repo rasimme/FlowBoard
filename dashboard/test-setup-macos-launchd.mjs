@@ -310,6 +310,54 @@ let generatedLaunchdPlist = '';
   ok(result.stdout.includes('explicit service environment override requested for: DASHBOARD_ORIGIN'), 'explicit override is reported by key without its value');
 }
 
+// T-487-7 / T-487-10: the OpenClaw feature layer's service token and frame
+// ancestors can be persisted with setup; the token is never printed.
+{
+  const serviceToken = randomBytes(32).toString('hex');
+  const frameAncestors = 'http://127.0.0.1:18860,https://gateway.example.invalid';
+  for (const dry of [true, false]) {
+    const args = [...(dry ? ['--dry-run'] : []), '--update', '--override-env', 'FLOWBOARD_SERVICE_TOKEN,FLOWBOARD_FRAME_ANCESTORS'];
+    const result = await runSetup(args, existingPlist, {
+      FLOWBOARD_SERVICE_TOKEN: serviceToken,
+      FLOWBOARD_FRAME_ANCESTORS: frameAncestors,
+    });
+    const label = dry ? 'launchd --dry-run' : 'launchd';
+    ok(result.code === 0, `${label} override of the feature-layer variables succeeds`);
+    ok(!result.stdout.includes(serviceToken) && !result.stderr.includes(serviceToken), `${label} never prints FLOWBOARD_SERVICE_TOKEN`);
+    ok(result.stdout.includes('explicit service environment override requested for: FLOWBOARD_SERVICE_TOKEN, FLOWBOARD_FRAME_ANCESTORS'), `${label} reports the feature-layer override by key only`);
+    ok(!result.stdout.includes('FLOWBOARD_SERVICE_TOKEN is shorter'), `${label} accepts a 64-hex service token without a length warning`);
+    if (!dry) {
+      ok(result.plist.includes(`<key>FLOWBOARD_SERVICE_TOKEN</key><string>${serviceToken}</string>`), 'launchd persists FLOWBOARD_SERVICE_TOKEN via --override-env');
+      ok(result.plist.includes(`<key>FLOWBOARD_FRAME_ANCESTORS</key><string>${frameAncestors}</string>`), 'launchd persists FLOWBOARD_FRAME_ANCESTORS via --override-env');
+      ok(result.plist.includes(`<key>JWT_SECRET</key><string>${INSTALLER_FIXTURES.persistedJwt}</string>`), 'launchd feature-layer override keeps the existing JWT_SECRET');
+      ok(result.mode === 0o600, 'launchd plist holding the service token is owner-only');
+    }
+  }
+
+  const withFeatureLayer = existingPlist.replace(
+    '    <key>CUSTOM_PROXY_LABEL</key>',
+    `    <key>FLOWBOARD_SERVICE_TOKEN</key><string>${serviceToken}</string>\n    <key>FLOWBOARD_FRAME_ANCESTORS</key><string>${frameAncestors}</string>\n    <key>CUSTOM_PROXY_LABEL</key>`,
+  );
+  const shellToken = randomBytes(32).toString('hex');
+  const preserved = await runSetup(['--update'], withFeatureLayer, {
+    FLOWBOARD_SERVICE_TOKEN: shellToken,
+    FLOWBOARD_FRAME_ANCESTORS: 'https://shell-only.example.invalid',
+  });
+  ok(preserved.code === 0, 'launchd update with persisted feature-layer variables succeeds');
+  ok(preserved.plist.includes(`<key>FLOWBOARD_SERVICE_TOKEN</key><string>${serviceToken}</string>`), 'launchd --update preserves FLOWBOARD_SERVICE_TOKEN');
+  ok(preserved.plist.includes(`<key>FLOWBOARD_FRAME_ANCESTORS</key><string>${frameAncestors}</string>`), 'launchd --update preserves FLOWBOARD_FRAME_ANCESTORS');
+  ok(!preserved.plist.includes(shellToken) && !preserved.plist.includes('shell-only.example.invalid'), 'launchd --update ignores unnamed shell values for the feature-layer variables');
+  ok(![serviceToken, shellToken].some(value => preserved.stdout.includes(value) || preserved.stderr.includes(value)), 'launchd --update prints neither the persisted nor the shell service token');
+
+  const shortToken = randomBytes(8).toString('hex');
+  const short = await runSetup(['--dry-run', '--update', '--override-env=FLOWBOARD_SERVICE_TOKEN'], existingPlist, {
+    FLOWBOARD_SERVICE_TOKEN: shortToken,
+  });
+  ok(short.code === 0, 'launchd dry-run with a short service token still completes');
+  ok(short.stdout.includes('FLOWBOARD_SERVICE_TOKEN is shorter than 32 characters and is IGNORED'), 'setup warns that a short service token is ignored by the server');
+  ok(!short.stdout.includes(shortToken), 'the short-token warning does not print the value');
+}
+
 {
   const leakedStdout = INSTALLER_FIXTURES.failedLaunchctlStdout;
   const leakedStderr = INSTALLER_FIXTURES.failedLaunchctlStderr;
