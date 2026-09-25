@@ -312,9 +312,20 @@ if (AUTH_ENABLED && JWT_SECRET.trim().length < 32) {
   process.exit(1);
 }
 
-// Fail-closed: refuse to start in production without auth
-if (!AUTH_ENABLED && process.env.NODE_ENV === 'production') {
-  console.error('FATAL: Auth not configured in production. Set TELEGRAM_BOT_TOKEN, JWT_SECRET, and ALLOWED_USER_IDS.');
+// T-509 (ADR-0029 amendment): production mode does not imply Telegram. With
+// auth off, a loopback bind is the local-first single-operator posture
+// ("loopback == the operator") in any NODE_ENV, so production starts on
+// loopback with the warning below. A non-loopback bind with auth off stays
+// refused in production even with FLOWBOARD_ALLOW_LAN=true: the LAN opt-in is
+// a dev/trusted-LAN escape hatch, and production refused that combination
+// before T-509 too.
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (!AUTH_ENABLED && IS_PRODUCTION && !isLoopbackHost(HOST)) {
+  console.error(
+    `FATAL: refusing to bind non-loopback host '${HOST}' in production with auth disabled. ` +
+    `Bind a loopback host (FLOWBOARD_HOST=127.0.0.1) or configure auth ` +
+    `(TELEGRAM_BOT_TOKEN + JWT_SECRET + ALLOWED_USER_IDS).`
+  );
   process.exit(1);
 }
 // S-24 (T-422-3): boot bind guard. The local-first trust model is
@@ -341,7 +352,10 @@ if (!AUTH_ENABLED && !isLoopbackHost(HOST)) {
   );
 }
 if (!AUTH_ENABLED && isLoopbackHost(HOST)) {
-  console.warn('⚠️  AUTH DISABLED — only localhost access permitted');
+  console.warn(IS_PRODUCTION
+    ? `⚠️  NODE_ENV=production with AUTH DISABLED — the dashboard is unauthenticated and ` +
+      `loopback-only (${HOST}); tunnel and LAN requests are refused. Configure auth for remote access.`
+    : '⚠️  AUTH DISABLED — only localhost access permitted');
 }
 
 // --- Auth helpers ---

@@ -34,7 +34,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `HZL_INTEGRITY_STRICT` | unset (off) | Boot-time integrity check (see ADR-0018). When unset, a watermark regression is logged as a loud WARN and the service continues. When `true`, the service `process.exit(1)`s on regression — for setups that prefer hard fail-fast over silent operation on a rolled-back DB. To reset the baseline after a legitimate restore, clear the watermark manually: `DELETE FROM hzl_local_meta WHERE key LIKE 'integrity.%';` |
 | `INTEGRITY_WEBHOOK_URL` | empty | Optional. On integrity regression at boot, the server `POST`s a JSON body to this URL: `{ message, regression, current, stored, host }`. The `message` field matches the OpenClaw gateway `/hooks/agent` contract; the structured fields ride alongside for monitoring tools. Empty disables the push channel — the stderr WARN block and `GET /api/health/integrity` remain the only signal. Adopters running Slack / Discord / PagerDuty wire a small relay (those surfaces expect `text` / `content` / `payload.summary` respectively). |
 | `INTEGRITY_WEBHOOK_TOKEN` | empty | Bearer token sent with `Authorization: Bearer <token>` on the `INTEGRITY_WEBHOOK_URL` `POST`. Empty = unauthenticated request. |
-| `AUTH_ALWAYS` | unset (off) | Forces auth middleware on every request (otherwise loopback bypass applies in non-production). |
+| `AUTH_ALWAYS` | unset (off) | Forces auth middleware on every request (otherwise the loopback bypass applies, in any `NODE_ENV`). |
 | `FLOWBOARD_ALLOW_LAN` | unset (off) | S-13 opt-in. When auth is enabled, `LOCAL_HOSTNAME` is set, and the server is bound to a non-loopback interface, this must be `true` to allow unauthenticated LAN clients (192.168.*/10.*) through the auth middleware. Default-off: setting `LOCAL_HOSTNAME` alone no longer enables the LAN bypass. Only enable on a fully trusted LAN; prefer `AUTH_ALWAYS=true`. |
 | `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK` | unset (off) | Hook-only migration escape hatch. Set to `true` only during explicit legacy recovery if the FlowBoard API is unreachable and `ACTIVE-PROJECT.md` must be read once. Normal installs must leave this off so stale files cannot resurrect old project state during bootstrap or compaction. |
 
@@ -67,7 +67,7 @@ All environment variables read by the FlowBoard server (`dashboard/server.js`), 
 | `FLOWBOARD_RATE_LIMIT_BURST` | `30` tokens | Additional bounded burst capacity applied independently to each lane/principal bucket. |
 | `DASHBOARD_ORIGIN` | empty | Allowed CORS origin for browser clients. |
 | `OPENCLAW_HOOKS_TOKEN` (alias `HOOKS_TOKEN`) | empty | Shared secret required on `POST /api/hooks/task-complete`. Empty disables the endpoint. |
-| `NODE_ENV` | unset | When set to `production` *and* auth is unconfigured, the server fails closed at boot (`FATAL`) instead of serving an unauthenticated dashboard. |
+| `NODE_ENV` | unset | `production` with auth unconfigured: a loopback bind starts and warns that the dashboard is unauthenticated and loopback-only; a non-loopback bind fails closed at boot (`FATAL`), even with `FLOWBOARD_ALLOW_LAN=true`. Production also turns off the default request log (see `LOG_REQUESTS`). |
 
 The three ordered lists form one bot-identity configuration. For example,
 `TELEGRAM_BOT_TOKEN=<PRIMARY>`, `TELEGRAM_BOT_TOKENS=<SECOND>,<THIRD>`, and

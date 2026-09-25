@@ -38,7 +38,7 @@ from steady-state requests after the original WebApp payload naturally ages.
    primary tokens, invalid agent IDs, and count mismatches fail startup when the
    auth stack is otherwise configured (or an explicit mapping is malformed).
    A lone token may remain in an unfinished non-production local setup with auth
-   disabled; production still fails closed. Diagnostics identify codes and
+   disabled; production still fails closed on a non-loopback bind (ADR-0028, amended by T-509). Diagnostics identify codes and
    positions but never include token values.
 3. Treat supplied fresh init-data as authoritative over a JWT cookie. Successful
    verification issues or rebinds the cookie to the matched, server-confirmed

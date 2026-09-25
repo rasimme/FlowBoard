@@ -117,7 +117,7 @@ Status legend: `proposed` — surfaced, not yet triaged · `tasked` — accepted
 | Specify Workflow | 6-step protocol is content (`context/specify-prompt.md`), not server-enforced code | [specify-workflow.md](specify-workflow.md) | `dropped` — convention, documented in concept doc |
 | Specify Workflow | Agent — not user — decides task structure in step 3 | [specify-workflow.md](specify-workflow.md) | `dropped` — variant of persist-ordering (T-199-11), documented in concept doc |
 | Auth Model | Trust-on-write of `agentId`: agent is attribution, not authentication | [auth-model.md](auth-model.md) | `dropped` — already covered by ADR-0003 |
-| Auth Model | Localhost trusted by default; production fails closed without full auth config | [auth-model.md](auth-model.md) | `dropped` — Reference-layer fact, documented in env-vars.md and concept doc |
+| Auth Model | Localhost trusted by default; production refuses non-loopback binds without full auth config | [auth-model.md](auth-model.md) | `dropped` — Reference-layer fact, documented in env-vars.md and concept doc |
 | Auth Model | Cloudflare Tunnel detection via `cf-ray` is hard-coded | [auth-model.md](auth-model.md) | `dropped` — too small for own ADR; documented in concept doc |
 | Auth Model | JWT cookies cannot be revoked except by rotating `JWT_SECRET` | [auth-model.md](auth-model.md) | `dropped` — operational gotcha, belongs in Reference or operator runbook |
 

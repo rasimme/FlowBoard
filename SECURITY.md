@@ -100,7 +100,10 @@ non-loopback interface (`0.0.0.0`, `::`, or a routable address) — binding the
 unauthenticated control surface to the network is treated as a fail-closed boot
 error, not a silent default. The operator must configure auth, bind a loopback
 host, or explicitly accept the risk with `FLOWBOARD_ALLOW_LAN=true` (which then
-boots with a loud warning). Host classification (incl. IPv6 and bind-all forms)
+boots with a loud warning). Under `NODE_ENV=production` that opt-in is not
+honoured: a non-loopback bind without auth is always refused, while a loopback
+bind starts with a warning that the dashboard is unauthenticated and
+loopback-only (T-509). Host classification (incl. IPv6 and bind-all forms)
 is unit-tested in `dashboard/host-utils.js` / `dashboard/test-boot-bind-guard.js`.
 
 ## Agent identity (attribution, not authentication)
