@@ -53,8 +53,39 @@ dashboard, and the plugin's backend operations stay available.
    openclaw config set plugins.entries.flowboard.config.dashboardBaseUrl http://127.0.0.1:18700
    ```
 
-   Store `serviceToken` as a secret reference, never inline — it is the same
-   value as the dashboard's `FLOWBOARD_SERVICE_TOKEN`.
+   Store `serviceToken` as a secret reference rather than inline — it is the
+   same value as the dashboard's `FLOWBOARD_SERVICE_TOKEN`. For example, with
+   the token in a private JSON file (`chmod 600`, one hard link, owned by the
+   Gateway user) such as `{"flowboard": {"serviceToken": "<64 hex chars>"}}`:
+
+   ```json5
+   {
+     secrets: {
+       providers: {
+         flowboard: { source: "file", path: "~/.config/flowboard/secrets.json", mode: "json" },
+       },
+     },
+     plugins: {
+       entries: {
+         flowboard: {
+           config: {
+             serviceToken: { source: "file", provider: "flowboard", id: "/flowboard/serviceToken" },
+           },
+         },
+       },
+     },
+   }
+   ```
+
+   Any SecretRef source the Gateway supports works (`env`, `file`, `exec`,
+   `store`; see OpenClaw's *Secrets* docs). The Gateway resolves the reference
+   when it loads the plugin, and `openclaw config get` shows only the
+   reference, with its `id` redacted. A plain string of at least 32 characters is still accepted, and
+   is what OpenClaw versions before 2026.9 need — they cannot resolve a
+   SecretRef, and the native page that uses the token needs 2026.9.2 or newer
+   anyway. FlowBoard never sends a reference that reached it unresolved: it
+   logs a warning without the reference, and operations fall back to the local
+   operator.
 4. Give the dashboard service the same token, and allow the Control UI's origin
    to frame the *Ideas*, *Files* and *Projects* tabs. For the standard per-user service
    (launchd/systemd) created by `setup.mjs`, persist both in one update:

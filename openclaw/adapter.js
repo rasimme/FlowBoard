@@ -497,6 +497,23 @@ function readBinding(payload, { agentId, sessionKey }) {
 }
 
 /**
+ * Read the service credential from the plugin config.
+ *
+ * The manifest declares `serviceToken` under `configContracts.secretInputs`,
+ * so a host with SecretRef support hands the plugin the *resolved* string.
+ * An object that still looks like a SecretRef means the host did not resolve
+ * it (an older host, or a surface that loads plugins without the runtime
+ * secrets snapshot). It is never sent: the facade falls back to the local
+ * operator and the caller can say why, without echoing any part of it.
+ */
+export function readServiceToken(pluginConfig) {
+  const raw = pluginConfig?.serviceToken;
+  if (typeof raw === 'string') return { token: raw.trim(), unresolved: false };
+  const unresolved = Boolean(raw) && typeof raw === 'object' && !Array.isArray(raw) && typeof raw.source === 'string';
+  return { token: '', unresolved };
+}
+
+/**
  * Create an adapter bound to one plugin configuration.
  *
  * `pluginConfig` is the same object the project-context hook reads, so one
@@ -505,7 +522,7 @@ function readBinding(payload, { agentId, sessionKey }) {
  */
 export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
   const baseUrl = () => resolveDashboardBaseUrl(pluginConfig || {});
-  const serviceToken = typeof pluginConfig?.serviceToken === 'string' ? pluginConfig.serviceToken.trim() : '';
+  const { token: serviceToken, unresolved: serviceTokenUnresolved } = readServiceToken(pluginConfig);
   const fetchImpl = options.fetch || globalThis.fetch;
   // The trash timestamp is made here, in the Gateway process, never taken
   // from the caller. Injectable only so a test can pin it.
@@ -560,6 +577,7 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
   return {
     dashboardUrl: baseUrl,
     hasServiceToken: () => Boolean(serviceToken),
+    serviceTokenUnresolved: () => serviceTokenUnresolved,
 
     async listProjects(principal) {
       const payload = await call('GET', '/api/projects', { principal });

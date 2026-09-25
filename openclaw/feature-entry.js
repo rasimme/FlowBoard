@@ -189,7 +189,11 @@ export function createFeatureEntry(baseline) {
       // project-context hook stays the baseline contract (ADR-0001).
       baseline.register(api);
 
-      if (!adapter.hasServiceToken()) {
+      if (adapter.serviceTokenUnresolved()) {
+        api.logger?.warn?.(
+          '[flowboard] serviceToken is a SecretRef the host did not resolve — Gateway operations are attributed to the local operator. Check the secrets provider it names.',
+        );
+      } else if (!adapter.hasServiceToken()) {
         api.logger?.warn?.(
           '[flowboard] no serviceToken configured — Gateway operations are attributed to the local operator, not to the signed-in profile.',
         );

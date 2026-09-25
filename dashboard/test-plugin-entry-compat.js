@@ -87,6 +87,22 @@ function fakeApi() {
 // ---------------------------------------------------------------------------
 
 function staticGuards() {
+  section('serviceToken accepts a SecretRef (T-508)');
+  const manifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'openclaw.plugin.json'), 'utf8'));
+  check('the manifest declares serviceToken as a host secret input', () => {
+    const paths = manifest.configContracts?.secretInputs?.paths || [];
+    assert.deepEqual(paths.filter((entry) => entry.path === 'serviceToken'), [{ path: 'serviceToken', expected: 'string' }]);
+  });
+  check('the manifest schema takes an inline string (min 32) or a SecretRef object', () => {
+    const schema = manifest.configSchema;
+    assert.deepEqual(schema.properties.serviceToken.anyOf, [
+      { type: 'string', minLength: 32 },
+      { $ref: '#/$defs/secretRef' },
+    ]);
+    assert.deepEqual(schema.$defs.secretRef.required, ['source', 'provider', 'id']);
+    assert.equal(schema.$defs.secretRef.additionalProperties, false);
+  });
+
   section('baseline module graph');
   const entrySource = fs.readFileSync(ENTRY_PATH, 'utf8');
 
@@ -262,6 +278,24 @@ async function behaviourTests() {
       assert.equal(metadata.id, 'flowboard');
       assert.deepEqual(metadata.activation, { onStartup: true });
       assert.ok(metadata.configSchema.properties.serviceToken, 'serviceToken reaches the manifest');
+    });
+    check('the host config schema accepts an inline token and a SecretRef (T-508)', () => {
+      const parse = (value) => composed.configSchema.safeParse(value);
+      assert.equal(parse({ serviceToken: 'a'.repeat(32) }).success, true);
+      assert.equal(parse({ serviceToken: { source: 'file', provider: 'flowboard-secrets', id: '/flowboard/serviceToken' } }).success, true);
+      assert.equal(parse({ serviceToken: 'too-short' }).success, false);
+      assert.equal(parse({ serviceToken: { source: 'file', provider: 'flowboard-secrets' } }).success, false);
+      assert.equal(parse({ serviceToken: { source: 'file', provider: 'p', id: '/x', extra: 1 } }).success, false);
+    });
+    check('an unresolved SecretRef warns by name without echoing the reference (T-508)', () => {
+      const api = fakeApi();
+      const warnings = [];
+      api.logger.warn = (message) => warnings.push(String(message));
+      api.pluginConfig = { serviceToken: { source: 'file', provider: 'flowboard-secrets', id: '/flowboard/serviceToken' } };
+      composed.register(api);
+      assert.equal(warnings.length, 1, warnings.join(' | '));
+      assert.match(warnings[0], /SecretRef the host did not resolve/);
+      assert.equal(/flowboard-secrets|\/flowboard\/serviceToken/u.test(warnings[0]), false);
     });
     check('the composed register still installs the agent:bootstrap hook', () => {
       const api = fakeApi();

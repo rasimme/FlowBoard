@@ -10,6 +10,34 @@
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
+    "$defs": {
+      "secretRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "env",
+              "file",
+              "exec",
+              "store"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "provider",
+          "id"
+        ]
+      }
+    },
     "properties": {
       "projectsDir": {
         "type": "string",
@@ -28,9 +56,16 @@
         "description": "Optional dashboard API base URL for the project-context hook, for example http://localhost:18843."
       },
       "serviceToken": {
-        "type": "string",
-        "minLength": 32,
-        "description": "Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator; store it as a SecretRef, never inline."
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 32
+          },
+          {
+            "$ref": "#/$defs/secretRef"
+          }
+        ],
+        "description": "Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator. Accepts a SecretRef ({ source, provider, id }); prefer it over an inline string."
       }
     }
   },

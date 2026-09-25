@@ -43,9 +43,31 @@ export const PLUGIN_NAME = 'FlowBoard';
 export const PLUGIN_DESCRIPTION =
   'Project workspaces, dashboard, and project-context hook for OpenClaw agents.';
 
+/**
+ * Host SecretRef shape (`{ source, provider, id }`), mirrored from the bundled
+ * OpenClaw plugins (webhooks, imap). `serviceToken` accepts either an inline
+ * string or this object; `configContracts.secretInputs` in the manifest tells
+ * the host to resolve the reference before `api.pluginConfig` reaches the
+ * plugin, so runtime code only ever sees a string. Hosts without SecretRef
+ * support still accept the inline string branch.
+ */
+export const SECRET_REF_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    source: { type: 'string', enum: ['env', 'file', 'exec', 'store'] },
+    provider: { type: 'string' },
+    id: { type: 'string' },
+  },
+  required: ['source', 'provider', 'id'],
+};
+
 export const CONFIG_SCHEMA = {
   type: 'object',
   additionalProperties: false,
+  $defs: {
+    secretRef: SECRET_REF_SCHEMA,
+  },
   properties: {
     projectsDir: {
       type: 'string',
@@ -64,10 +86,9 @@ export const CONFIG_SCHEMA = {
       description: 'Optional dashboard API base URL for the project-context hook, for example http://localhost:18843.',
     },
     serviceToken: {
-      type: 'string',
-      minLength: 32,
+      anyOf: [{ type: 'string', minLength: 32 }, { $ref: '#/$defs/secretRef' }],
       description:
-        'Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator; store it as a SecretRef, never inline.',
+        'Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator. Accepts a SecretRef ({ source, provider, id }); prefer it over an inline string.',
     },
   },
 };

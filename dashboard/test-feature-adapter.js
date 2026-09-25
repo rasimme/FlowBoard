@@ -159,6 +159,39 @@ async function requestShapeTests() {
     assert.equal(read.binding.scope, null);
   });
 
+  section('serviceToken — resolved string vs unresolved SecretRef (T-508)');
+  {
+    const { readServiceToken } = await import(ADAPTER_URL);
+    const ref = { source: 'file', provider: 'flowboard-secrets', id: '/flowboard/serviceToken' };
+
+    await check('a host-resolved (or inline) string is used as the token', () => {
+      assert.deepEqual(readServiceToken({ serviceToken: `  ${SERVICE_TOKEN}  ` }), { token: SERVICE_TOKEN, unresolved: false });
+    });
+    await check('no serviceToken is simply absent, not unresolved', () => {
+      assert.deepEqual(readServiceToken({}), { token: '', unresolved: false });
+      assert.deepEqual(readServiceToken(undefined), { token: '', unresolved: false });
+    });
+    await check('a SecretRef object the host did not resolve is flagged, never used', () => {
+      assert.deepEqual(readServiceToken({ serviceToken: ref }), { token: '', unresolved: true });
+    });
+    await check('an unresolved SecretRef sends no Authorization header at all', async () => {
+      const recorder = recordingFetch({ 'GET /api/status': { activeProject: null, agentId: 'main' } });
+      const adapter = createFlowBoardAdapter({ dashboardBaseUrl: 'http://127.0.0.1:1', serviceToken: ref }, { fetch: recorder.fetch });
+      await adapter.getStatus(null, { agentId: 'main' });
+      assert.equal(adapter.hasServiceToken(), false);
+      assert.equal(adapter.serviceTokenUnresolved(), true);
+      assert.equal(Object.prototype.hasOwnProperty.call(recorder.calls[0].headers, 'Authorization'), false);
+      assert.equal(JSON.stringify(recorder.calls[0]).includes(ref.id), false);
+    });
+    await check('the resolved string reaches the Authorization header', async () => {
+      const recorder = recordingFetch({ 'GET /api/status': { activeProject: null, agentId: 'main' } });
+      const adapter = createFlowBoardAdapter({ dashboardBaseUrl: 'http://127.0.0.1:1', serviceToken: SERVICE_TOKEN }, { fetch: recorder.fetch });
+      await adapter.getStatus(null, { agentId: 'main' });
+      assert.equal(adapter.serviceTokenUnresolved(), false);
+      assert.equal(recorder.calls[0].headers.Authorization, `Bearer ${SERVICE_TOKEN}`);
+    });
+  }
+
   section('tasks.needing-me — bounded merge');
   {
     const projects = [projectRow('alpha', 2, 1), projectRow('beta', 0, 0), projectRow('gamma', 1, 0)];
