@@ -11,7 +11,7 @@ openclaw hooks info project-context
 # Expect: ✓ Ready, source openclaw-managed, subscribed to agent:bootstrap
 ```
 
-If it's missing, re-run the install step in the [README](../../../README.md#2-register-the-hook-with-openclaw). External agents (Codex, Cursor, …) don't get live injection — they fetch context on demand via `GET /api/projects/<project>/bootstrap`.
+If it's missing, re-run the install step in the [README](../../../README.md#2-register-the-hook-with-openclaw). Use the context already supplied to your own run when it contains `# Active Project:` or `# No Active Project` plus `## Identity`; do not fetch status/bootstrap again. When that context is absent, check status with this run's session key if known, then fetch `/api/projects/<project>/rules` and `/api/projects/<project>/files/PROJECT.md` (JSON `content`). The full bootstrap remains a large compatibility fallback. External-agent triggers retain their bootstrap startup path until their separate migration.
 
 ## “Context not ready”
 

@@ -123,7 +123,7 @@ AGENTS.md snippets stay minimal and only tell agents to consult FlowBoard when a
 
 **The Contract:**
 - AGENTS.md trigger is ≤30 lines total
-- **Trigger only**: status check, active-project detection, bootstrap fetch, rule pointers
+- **Trigger only**: injected-context detection, scoped status fallback, lightweight project-context fetch, rule/task pointers
 - **Never embed**: delegation endpoints, workflow details, HTTP protocol, error handling, retry logic
 - **All details in rules/**: agent-bridge (task execution), api-access (endpoint reference), error-handling (recovery)
 - **Detection**: `snippets-doctor` validates constraint violations at lint/CI time

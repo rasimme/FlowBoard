@@ -234,7 +234,7 @@ section('Upgrade action — identical file → current block + backup');
 
     // Post-state: file contains the current-snippet marker, not legacy
     const after = fs.readFileSync(paths.identicalPath, 'utf8');
-    assert(after.includes('Check your status'),
+    assert(after.includes('check your status'),
       'current snippet marker present after upgrade');
     assert(!after.includes('FlowBoard delivers project context automatically'),
       'legacy structural marker gone after upgrade');
@@ -267,7 +267,7 @@ section('Migrate action — drifted file → canonical block + backup');
     assert(r.applied[0].backup && fs.existsSync(r.applied[0].backup), 'backup written');
 
     const after = fs.readFileSync(paths.driftedPath, 'utf8');
-    assert(after.includes('Check your status'),
+    assert(after.includes('check your status'),
       'new block inserted after migrate');
     assert(!after.includes('my customized project context'),
       'user custom-drift line removed');
@@ -313,7 +313,7 @@ section('Migrate action — fingerprint-only drifted file → canonical block + 
     assertEqual(r.skipped.length, 0, 'fingerprint-only migration not skipped');
 
     const after = fs.readFileSync(filePath, 'utf8');
-    assert(after.includes('Check your status'),
+    assert(after.includes('check your status'),
       'fingerprint-only migration inserts current snippet');
     assert(!after.includes('FlowBoard delivers project context automatically'),
       'fingerprint-only migration removes legacy prose');
@@ -347,9 +347,9 @@ section('Add action — missing file → append at end, idempotent');
       'existing content preserved at top');
     assert(after.includes('Just some agent prose. No FlowBoard snippet anywhere.'),
       'existing body text preserved');
-    assert(after.includes('Check your status'),
+    assert(after.includes('check your status'),
       'current snippet appended');
-    assert(after.indexOf('Check your status') >
+    assert(after.indexOf('check your status') >
            after.indexOf('Just some agent prose'),
       'snippet is appended AFTER original content');
 
@@ -434,7 +434,7 @@ section('Batch apply — upgrade + migrate + add in one call');
     // Each file now has the current snippet
     for (const p of [paths.identicalPath, paths.driftedPath, paths.missingPath]) {
       const content = fs.readFileSync(p, 'utf8');
-      assert(content.includes('Check your status'),
+      assert(content.includes('check your status'),
         `${path.basename(path.dirname(p))} has current snippet after batch apply`);
     }
 

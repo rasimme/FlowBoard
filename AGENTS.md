@@ -10,23 +10,18 @@ This file is **only the trigger**. Everything else is fetched on demand.
 
 ## Start here
 
-1. **Check your status:** `GET /api/status?agentId=<your-id>`
-2. **If `activeProject === null`:** no project is active — work normally, don't infer state.
-3. **If `activeProject !== null`:**
-   - Wait for `contextReady` (details in `rules/error-handling`).
-   - **Fetch context:** `GET /api/projects/<activeProject>/bootstrap`. This includes the
-     project's `PROJECT.md`, which carries project knowledge **and the
-     project-specific development rules — read them before changing code.**
-   - Treat `GET /api/projects/<activeProject>/tasks` (the Operational Task State) as the
-     only current-task truth — not `PROJECT.md`.
-   - Load rule sections on demand: `GET /api/projects/<activeProject>/rules/<section>` —
-     `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`,
-     `error-handling`, `key-principles`, `overview`.
+1. **Injected context first:** If your own run context contains `# Active Project:` or `# No Active Project` together with `## Identity`, use it for this run. Do not fetch `/status` or `/bootstrap` again for passive startup.
+2. **Otherwise, check your status:** `GET /api/status?agentId=<resolved-agentId>&sessionKey=<current-sessionKey>` — use this run's OpenClaw session key if known; otherwise omit `sessionKey`, never invent it.
+   - If `activeProject === null`: no project active. Work normally, do not ask, and do not infer state.
+   - If active, wait for `contextReady`; details live in `rules/error-handling`.
+   - Fetch project context lightly: `GET /api/projects/<activeProject>/rules` + `GET /api/projects/<activeProject>/files/PROJECT.md` (JSON `content`). The large `GET /api/projects/<activeProject>/bootstrap` is only a compatibility fallback.
+3. **While active:** Load rules on demand via `GET /api/projects/<activeProject>/rules/<section>`; fetch current task state live via `GET /api/projects/<activeProject>/tasks`, never from context/history or `PROJECT.md`.
+4. **Explicit commands:** `FlowBoard: activate project <name>` and related commands follow `rules/commands`; OpenClaw activation defaults to this session, not agent-wide. Verify the same scope; do not fetch `/bootstrap` after activation.
 
 ## Where things live
 
 - **Project-specific development rules** (how to develop *this* project): the project's
-  `PROJECT.md`, served via `bootstrap`.
+  `PROJECT.md`, injected or read via `files/PROJECT.md` (JSON `content`).
 - **Repo / product conventions** (commit style, English-only UI strings): `CONTRIBUTING.md`.
 - **Task execution & delegation:** `rules/agent-bridge` + `rules/api-access`. Build spawn
   prompts with `dashboard/hzl-service.js:buildSpawnPrompt()` — do not hand-write them.
