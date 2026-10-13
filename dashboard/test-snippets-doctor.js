@@ -285,7 +285,7 @@ section('applySelected() — byte-identical only, with .bak');
     assert(afterIdentical.includes('do not infer state'), 'no-inference contract present');
     assert(afterIdentical.includes('contextReady'), 'contextReady trigger present');
     assert(afterIdentical.includes('project context'), 'project context wording present');
-    assert(afterIdentical.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker present');
+    assert(afterIdentical.includes('flowboard-snippet-contract: v4-injected-context-first'), 'v4 snippet contract marker present');
     assert(afterIdentical.includes('This file is only the trigger'), 'minimal-trigger boundary present');
     assert(afterIdentical.includes('rules/commands'), 'commands rule pointer present');
     assert(afterIdentical.includes('rules/agent-bridge'), 'agent-bridge rule pointer present');
@@ -428,7 +428,7 @@ section('applyActions() — migrate + add + state guards');
     assert(afterDrift.includes('do not infer state'), 'no-inference contract inserted');
     assert(afterDrift.includes('contextReady'), 'contextReady trigger inserted');
     assert(afterDrift.includes('project context'), 'project context wording inserted');
-    assert(afterDrift.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker inserted');
+    assert(afterDrift.includes('flowboard-snippet-contract: v4-injected-context-first'), 'v4 snippet contract marker inserted');
     assert(afterDrift.includes('This file is only the trigger'), 'minimal-trigger boundary inserted');
     assert(afterDrift.includes('rules/commands'), 'commands rule pointer inserted');
     assert(afterDrift.includes('rules/agent-bridge'), 'agent-bridge rule pointer inserted');
@@ -446,7 +446,7 @@ section('applyActions() — migrate + add + state guards');
     assert(afterMissing.includes('do not infer state'), 'no-inference contract appended');
     assert(afterMissing.includes('contextReady'), 'contextReady trigger appended');
     assert(afterMissing.includes('project context'), 'project context wording appended');
-    assert(afterMissing.includes('flowboard-snippet-contract: v3-command-startup-response'), 'v3 snippet contract marker appended');
+    assert(afterMissing.includes('flowboard-snippet-contract: v4-injected-context-first'), 'v4 snippet contract marker appended');
     assert(afterMissing.includes('This file is only the trigger'), 'minimal-trigger boundary appended');
     assert(afterMissing.includes('rules/commands'), 'commands rule pointer appended');
     assert(afterMissing.includes('rules/agent-bridge'), 'agent-bridge rule pointer appended');
@@ -526,6 +526,38 @@ section('scanSnippetForContractViolations() — minimal-trigger contract');
   assert(Array.isArray(doctor.MINIMAL_SNIPPET_CONSTRAINTS.forbiddenPhrases), 'forbidden phrases list exported');
   assert(doctor.MINIMAL_SNIPPET_CONSTRAINTS.forbiddenPhrases.includes('/checkpoint'), 'checkpoint endpoint in forbidden list');
   assert(doctor.MINIMAL_SNIPPET_CONSTRAINTS.maxLines === 30, 'max lines constraint is 30');
+}
+
+section('v3 contract — clear upgrade and safe migration');
+{
+  const dir = mkTmp();
+  try {
+    fs.mkdirSync(path.join(dir, 'workspace'), { recursive: true });
+    const file = path.join(dir, 'workspace', 'AGENTS.md');
+    const old = '## FlowBoard (API-First)\n<!-- flowboard-snippet-contract: v3-command-startup-response -->\n\nCheck your status: GET /api/status\n';
+    fs.writeFileSync(file, '# Agent\n\n' + old + '\n## User rules\nKeep me.\n');
+    const status = doctor.collectStatus(dir);
+    assertEqual(status.files[0].state, 'drifted', 'v3 is outdated, not current');
+    assert(status.files[0].summary.includes('v4 injected-context-first'), 'v3 upgrade explains new contract');
+    const result = doctor.applyActions(dir, [{ id: status.files[0].id, action: 'migrate' }]);
+    assertEqual(result.applied.length, 1, 'v3 migrates to v4');
+    const after = fs.readFileSync(file, 'utf8');
+    assert(after.includes(doctor.readCurrent('AGENTS-trigger.md').trimEnd()), 'full v4 body installed');
+    assert(after.includes('## User rules\nKeep me.'), 'following user section preserved');
+    assert(!after.includes('v3-command-startup-response'), 'old marker removed');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+section('AGENTS-trigger.md — injected context and scoped fallback');
+{
+  const content = doctor.readCurrent('AGENTS-trigger.md');
+  for (const phrase of ['# Active Project:', '# No Active Project', '## Identity', 'Do not fetch `/status` or `/bootstrap` again', 'sessionKey=<current-sessionKey>', 'never invent it', 'files/PROJECT.md', 'JSON `content`', 'compatibility fallback', 'defaults to this session', 'Verify the same scope']) {
+    assert(content.includes(phrase), `injected-first contract keeps: ${phrase}`);
+  }
+  assert(!content.includes('Operational Task State'), 'no injected task snapshot presented as current truth');
+  const commands = fs.readFileSync(path.join(__dirname, '..', 'docs/project-mode/commands.md'), 'utf8');
+  assert(commands.includes('without fetching `/bootstrap`'), 'activation avoids eager bootstrap');
+  assert(commands.includes('removing a session binding may expose an agent-level project'), 'deactivation documents inherited project');
 }
 
 section('AGENTS-trigger.md — minimal-trigger guardrails');

@@ -1,22 +1,18 @@
 ## FlowBoard (API-First)
-<!-- flowboard-snippet-contract: v3-command-startup-response -->
+<!-- flowboard-snippet-contract: v4-injected-context-first -->
 
 Project coordination via FlowBoard dashboard at `http://127.0.0.1:18700`.
 Use a local-capable tool for this localhost API (exec/curl/node or an internal API tool), never external web-fetch/browser. If an API call fails, do not infer state; report the blocker.
 
 ### Minimal trigger
 
-1. **Check your status:**
-   `GET /api/status?agentId=<resolved-agentId>`
-
-2. **If `activeProject === null`:** no project active. Work normally, do not ask, and do not infer state.
-
-3. **If `activeProject !== null`:**
-   - Wait for `contextReady` to be true; details live in `rules/error-handling`.
-   - Fetch project context: `GET /api/projects/<activeProject>/bootstrap`
-   - Treat `Operational Task State` / `GET /api/projects/<activeProject>/tasks` as the only current task truth. `PROJECT.md` content in bootstrap is stable project knowledge, not current work.
-   - Load rules on demand: `GET /api/projects/<activeProject>/rules/<section>`
-   - Sections: `commands`, `api-access`, `hzl`, `canvas`, `files`, `specify`, `agent-bridge`, `compliance`, `error-handling`, `key-principles`, `overview`
+1. **Injected context first:** If your own run context contains `# Active Project:` or `# No Active Project` together with `## Identity`, use it for this run. Do not fetch `/status` or `/bootstrap` again for passive startup.
+2. **Otherwise, check your status:** `GET /api/status?agentId=<resolved-agentId>&sessionKey=<current-sessionKey>` — use this run's OpenClaw session key if known; otherwise omit `sessionKey`, never invent it.
+   - If `activeProject === null`: no project active. Work normally, do not ask, and do not infer state.
+   - If active, wait for `contextReady`; details live in `rules/error-handling`.
+   - Fetch project context lightly: `GET /api/projects/<activeProject>/rules` + `GET /api/projects/<activeProject>/files/PROJECT.md` (JSON `content`). The large `GET /api/projects/<activeProject>/bootstrap` is only a compatibility fallback.
+3. **While active:** Load rules on demand via `GET /api/projects/<activeProject>/rules/<section>`; fetch current task state live via `GET /api/projects/<activeProject>/tasks`, never from context/history or `PROJECT.md`.
+4. **Explicit commands:** `FlowBoard: activate project <name>` and related commands follow `rules/commands`; OpenClaw activation defaults to this session, not agent-wide. Verify the same scope; do not fetch `/bootstrap` after activation.
 
 ### Where details live
 

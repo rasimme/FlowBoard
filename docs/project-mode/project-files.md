@@ -24,13 +24,13 @@ Stable project knowledge. Should be readable in isolation and explain what the p
 - **Project-specific development rules** — a `## Development rules` section is the
   canonical home for how to develop *this* project (branch/commit flow, build &
   test gate, where shared-file changes go, what must never be committed, deploy
-  steps). Because `bootstrap` serves `PROJECT.md` to every agent (OpenClaw and
-  external), these rules reach anyone working on the project without living in
+  steps). Because runtime injection and `GET /api/projects/:name/files/PROJECT.md`
+  (JSON `content`, or the compatibility bootstrap) deliver `PROJECT.md`, these rules reach anyone working on the project without living in
   the repo's public agent file. The scaffold seeds the section stub.
 
 **Not for:** current task focus, next implementation steps, claims, priorities, status labels, session history, decision rationale, task lists, specs.
 
-Operational work lives in FlowBoard/HZL tasks. If the bootstrap includes both `Operational Task State` and `PROJECT.md`, agents must use `Operational Task State` or `GET /api/projects/:name/tasks` for current work and treat `PROJECT.md` as non-authoritative project knowledge.
+Operational work lives in FlowBoard/HZL tasks. Fetch current state live via `POST /api/workflows/start` to resume/claim work or `GET /api/projects/:name/tasks` to inspect it. Injected context, bootstrap snapshots, and conversation history are not current task truth; `PROJECT.md` is stable project knowledge, not current work.
 
 ### SESSIONS.md
 
@@ -88,7 +88,7 @@ Agents can read and write project files through the API instead of the shell:
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/api/projects/:name/files` | List files. `?includeHidden=true` also returns the operational/non-Markdown files that are hidden by default. |
-| `GET` | `/api/projects/:name/files/<path>` | Read one file (returned as text). |
+| `GET` | `/api/projects/:name/files/<path>` | Read one file (JSON envelope; text is in `content`). |
 | `PUT` | `/api/projects/:name/files/<path>` | Write a file. Body: `{ content }`. |
 | `DELETE` | `/api/projects/:name/files/<path>` | Delete a file. |
 | `POST` | `/api/projects/:name/files/context` | Upload a file into `context/`. Body: `{ filename, content }` — `.md` only, **409** on duplicate. |

@@ -77,8 +77,8 @@ const TARGETS = [
     // a v3 layer rather than chaining markers here.
     vendored: 'AGENTS-trigger.v2.md',
     current: 'AGENTS-trigger.md',
-    summary: 'Replace shell-introspection identity guidance with API-first status check and lazy context loading',
-    addSummary: 'Add the minimal FlowBoard API-first trigger (status check → lazy load)',
+    summary: 'Upgrade to v4 injected-context-first startup: avoid duplicate status/bootstrap fetches and use session-scoped fallback',
+    addSummary: 'Add the minimal FlowBoard injected-context-first trigger',
     // Phrase unique to the canonical v2 snapshot. Doctor uses this for both
     // drift detection (file has the marker but body no longer byte-matches)
     // and for replaceDriftedBlock's heading anchor.
@@ -106,22 +106,22 @@ const TARGETS = [
       'do not infer state',
     ],
     currentFingerprint: [
-      'Check your status',
+      'check your status',
       'GET /api/status',
       'activeProject === null',
       'local-capable tool',
       'do not infer state',
       'contextReady',
-      'Fetch project context',
+      'Fetch project context lightly',
       'This file is only the trigger',
     ],
     currentMarkers: [
-      'flowboard-snippet-contract: v3-command-startup-response',
+      'flowboard-snippet-contract: v4-injected-context-first',
       '<resolved-agentId>',
       'local-capable tool',
       'do not infer state',
       'contextReady',
-      'Fetch project context',
+      'Fetch project context lightly',
       'This file is only the trigger',
       'Do not add workflow/API detail here',
       'rules/commands',
@@ -163,6 +163,11 @@ const MINIMAL_SNIPPET_CONSTRAINTS = {
   ],
   requiredPhrases: [
     'GET /api/status',
+    '# Active Project:',
+    '# No Active Project',
+    '## Identity',
+    'sessionKey',
+    'files/PROJECT.md',
     'activeProject === null',
     'contextReady',
     'GET /api/projects',
@@ -214,7 +219,7 @@ function scanSnippetForContractViolations(content, target) {
         line: 1,
         missing,
         message: `Minimal-trigger missing required phrases: ${missing.join(', ')}`,
-        suggestion: 'Add trigger phrases for status check, bootstrap fetch, and rule pointers',
+        suggestion: 'Add injected-context detection, scoped status fallback, lightweight context fetch, and rule pointers',
       });
     }
   }
@@ -580,7 +585,7 @@ function classifyFile(filePath, target, { legacyBlock, newBlock }) {
   if (containsCurrentSnippetBlock(content, newBlock)) {
     return { state: 'current', content, confidence: 1 };
   }
-  if (content.includes('flowboard-snippet-contract: v3-command-startup-response')) {
+  if (/flowboard-snippet-contract: v[34]-/.test(content)) {
     return { state: 'drifted', content, confidence: 1 };
   }
   const currentMatch = matchesFingerprint(content, target.currentMarkers || target.currentFingerprint, 1.0);
@@ -875,7 +880,7 @@ function runCli(argv, { stdout = process.stdout, stderr = process.stderr } = {})
         }
       } else if (cls.state === 'drifted') {
         divergent++;
-        stdout.write(`[DIVERGENT] FlowBoard snippet is present but differs from current canonical snippet.\n`);
+        stdout.write(`[DIVERGENT] FlowBoard snippet is outdated or differs from canonical v4-injected-context-first. Upgrade to avoid duplicate status/bootstrap fetches and use session scope.\n`);
         if (args.apply && args.migrate) {
           const result = applyActions(baseDir, [{ id: makeFileId(baseDir, file), action: 'migrate' }]);
           if (result.applied.length > 0) {

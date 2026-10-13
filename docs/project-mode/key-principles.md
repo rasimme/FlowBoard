@@ -32,7 +32,7 @@ Operational task truth comes from HZL through the Tasks API. Do not derive curre
 
 ### 4. Lazy-load capability docs
 
-The bootstrap endpoint carries the project rules index and compact current context. Detailed operational docs (`tasks-api.md`, `canvas-and-notes.md`, `agent-bridge.md`, `hzl.md`, `specify-workflow.md`, `project-files.md`) are requested on demand via `GET /api/projects/{project}/rules/{section}`. Read deeper detail only when the task actually needs it.
+Injected run context carries the rules manifest and stable project knowledge; do not fetch status/bootstrap again when it is present. Without injection, fetch scoped status, the rules manifest, and `files/PROJECT.md` (JSON `content`). The full bootstrap bundles all rules and is only a large compatibility fallback. Detailed operational docs (`tasks-api.md`, `canvas-and-notes.md`, `agent-bridge.md`, `hzl.md`, `specify-workflow.md`, `project-files.md`) are requested on demand via `GET /api/projects/{project}/rules/{section}`. Read deeper detail only when the task actually needs it.
 
 The installed `AGENTS.md` snippet is only a minimal trigger. Do not put workflow, API schema, identity policy, HTTP parsing, or retry details into the snippet. Those contracts live in rule sections and are protected by snippet-doctor tests.
 
