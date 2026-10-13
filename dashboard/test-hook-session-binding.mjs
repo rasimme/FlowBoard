@@ -39,9 +39,6 @@ async function runHook({ context, status }) {
     if (String(url).includes('/api/status')) {
       return { ok: true, status: 200, json: async () => status };
     }
-    if (String(url).includes('/tasks')) {
-      return { ok: true, status: 200, json: async () => ({ tasks: [] }) };
-    }
     return { ok: false, status: 404, json: async () => ({}) };
   };
   try {

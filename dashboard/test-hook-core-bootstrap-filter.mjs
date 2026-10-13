@@ -54,9 +54,6 @@ async function runHook(bootstrapFiles, { workspaceDir = WORKSPACE } = {}) {
         json: async () => ({ activeProject: 'demo', agentId: 'probe', binding: 'agent', contextReady: true }),
       };
     }
-    if (String(url).includes('/tasks')) {
-      return { ok: true, status: 200, json: async () => ({ tasks: [] }) };
-    }
     return { ok: false, status: 404, json: async () => ({}) };
   };
   try {

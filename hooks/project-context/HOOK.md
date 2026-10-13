@@ -1,6 +1,6 @@
 ---
 name: project-context
-description: "Live-injects the active-project bootstrap (Identity + rules manifest + live task state + PROJECT.md) into bootstrapFiles on every agent run"
+description: "Live-injects the active-project bootstrap (Identity + rules manifest + static task lookup directive + PROJECT.md) into bootstrapFiles on every agent run"
 metadata: { "openclaw": { "emoji": "📋", "events": ["agent:bootstrap"], "requires": { "config": ["workspace.dir"] } } }
 ---
 
@@ -32,7 +32,8 @@ the local API.
      The raw session key is never written into the document.
    - `## Identity` section with the agent's canonical id
    - Rules manifest (lazy-load index — see `dashboard/rules-api.js`)
-   - Live operational task state from `/api/projects/<name>/tasks`
+   - Static Task State directive: fetch tasks live via the workflow or Tasks API;
+     history and earlier tool results are stale, and Markdown is never a task source
    - Embedded `PROJECT.md` from `~/.openclaw/projects/<name>/` as task-neutral project knowledge
 5. Puts a `FLOWBOARD.md` entry (path `<workspaceDir>/FLOWBOARD.md`) into
    `event.context.bootstrapFiles`. An entry that already has that name or
@@ -73,7 +74,7 @@ but missed:
 `event.context.bootstrapFiles` as a mutable array — exactly the pattern
 the bundled `bootstrap-extra-files` hook uses to inject extra files.
 Live-injecting from the canonical DB on every run guarantees the
-bootstrap matches the current state, removes the file-write hot path,
+bootstrap matches the current project binding, removes the file-write hot path,
 and eliminates the cache↔projection drift class of bugs.
 
 ## Why the entry is called FLOWBOARD.md
@@ -99,20 +100,25 @@ hosts the allowlists run before the hooks, so every run type sees it.
 per-file limit (`bootstrapMaxChars`, default 20000 characters) and total
 limit (`bootstrapTotalMaxChars`, default 60000) and truncates beyond them.
 Very large `PROJECT.md` files are the usual reason to hit the per-file limit.
+Above 18000 characters the hook warns with the size and
+`agents.defaults.bootstrapMaxChars` setting (default 20000), without logging
+content. Warnings are deduplicated per process by agent, project, and size.
+
+**Prompt-cache stability.** With unchanged agent id, active project, binding,
+rules manifest, and `PROJECT.md`, the document is byte-identical across runs.
+The hook never requests the Tasks API, and task changes cannot change the
+bootstrap text. No timestamps or task counters are embedded; there is no
+last-good context cache. The `/bootstrap` API remains a separate surface.
 
 ## Failure Modes
 
-- **Status API unreachable**: emits projectless context by default; rules manifest
-  still served (inline fallback if `rules-api.js` cannot be required).
+- **Status API unreachable**: emits the transient `# Active Project: Unknown`
+  header and identity, asking the agent to retry without inferring a project.
   `ACTIVE-PROJECT.md` fallback is available only when
   `FLOWBOARD_ALLOW_ACTIVE_PROJECT_FILE_FALLBACK=true` is set for a migration
-  recovery window.
-- **Tasks API unreachable**: still injects active-project context, but the
-  `Operational Task State` section becomes an explicit blocker and tells the
-  agent not to infer task focus from `PROJECT.md`, `SESSIONS.md`, memory, or
-  conversation history.
-- **No active project**: writes only the Identity section so the agent
-  can still call `PUT /api/status` with the correct `agentId`.
+  recovery window. No last-good cache is used.
+- **No active project**: injects the explicit `# No Active Project` header and
+  Identity section, including session-scoped activation guidance.
 - **Build error**: leaves `bootstrapFiles` untouched (whatever the
   workspace loader found stands), logs a warning. Never throws.
 

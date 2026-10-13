@@ -2,7 +2,7 @@
 
 ## What
 
-FlowBoard ships exactly one OpenClaw hook, `project-context`. It subscribes to a single event — `agent:bootstrap` — and on each fire it mutates `event.context.bootstrapFiles` in place, adding a `FLOWBOARD.md` entry that contains the agent's identity, the active-project header, the rules manifest, the project's `PROJECT.md` content, and a live task-status summary. No file is written to disk.
+FlowBoard ships exactly one OpenClaw hook, `project-context`. It subscribes to a single event — `agent:bootstrap` — and on each fire it mutates `event.context.bootstrapFiles` in place, adding a `FLOWBOARD.md` entry that contains the agent's identity, the active-project header, the rules manifest, the project's `PROJECT.md` content, and a static live-task lookup directive. No file is written to disk.
 
 That's the entire surface. There are no other event subscriptions, no plugin hooks, no daemons, no caches.
 
@@ -33,8 +33,8 @@ on agent:bootstrap event:
     content = activeProjectHeader
             + identitySection
             + rulesManifest                                     // lazy-load index, not full bundle
+            + staticTaskStateDirective
             + PROJECT.md from ~/.openclaw/projects/<name>/
-            + taskStatusSummary
 
   replace the event.context.bootstrapFiles entry named FLOWBOARD.md
   (or at <workspaceDir>/FLOWBOARD.md); append if there is none.
@@ -53,6 +53,10 @@ on agent:bootstrap event:
 
 **Size is bounded by OpenClaw, not the hook.** The hook does not trim its document; core truncates each bootstrap file at `bootstrapMaxChars` (default 20000 characters) and all of them together at `bootstrapTotalMaxChars` (default 60000).
 
+**Stable prompt content.** For unchanged agent id, project, binding, rules manifest, and `PROJECT.md`, the injected document is byte-identical. Task state is deliberately excluded: the hook never requests `/tasks`. A static directive tells agents to query `POST /api/workflows/start` or the Tasks API before task statements or actions, treat history and earlier tool results as stale, and never use Markdown as a task source. The separate `/bootstrap` endpoint is unchanged. There is no last-good context cache.
+
+Above 18000 characters the hook logs a size-only warning pointing to OpenClaw `agents.defaults.bootstrapMaxChars` (default 20000). Warnings are deduplicated per process by agent id, project, and size.
+
 **No file writes.** The handler never calls `fs.writeFileSync`. A regression test parses the handler source and asserts no `fs.writeFileSync(.*BOOTSTRAP)` pattern exists. ADR-0004 covers the rationale.
 
 **Telemetry is gated.** A success log line (`[project-context] injected for <agentId>`) is emitted only when `FLOWBOARD_HOOK_TELEMETRY=1`. Error logs (`console.warn`) for unreachable API, missing rules, or build failures stay ungated — errors must be visible regardless of the env-var.
@@ -61,16 +65,17 @@ on agent:bootstrap event:
 
 - **External agents have no hook.** Agents not running under an OpenClaw workspace (Codex in a repo, Cursor on a developer's laptop, Claude Code in `~/repos/anywhere`) don't trigger `agent:bootstrap`. They fetch project context on demand via `GET /api/projects/<name>/bootstrap`. The hook is purely an OpenClaw integration; FlowBoard's API surface is the cross-cutting interface.
 - **Per-run cost is one DB read plus one in-memory build.** SQLite local on the same machine, prepared statements — sub-millisecond. Negligible compared to the per-turn model latency.
-- **State changes propagate within one turn.** `PUT /api/status` writes the DB; the next `agent:bootstrap` fire (next agent message) sees the new state. There is no caching, no invalidation, no stale window beyond a single turn.
+- **Project binding changes propagate within one turn.** `PUT /api/status` writes the DB; the next `agent:bootstrap` fire (next agent message) sees the new state. There is no caching, no invalidation, no stale window beyond a single turn.
 - **The hook is the only writer of the bootstrap document.** Nothing else in FlowBoard writes `FLOWBOARD.md` or `BOOTSTRAP.md`, in any form. If either appears on disk because of FlowBoard, something has gone wrong (or a contributor reverted ADR-0004's behavior — the regression test should catch this in CI).
 - **Failure is graceful.** If the FlowBoard API is unreachable, the hook returns identity plus a soft `# Active Project: Unknown` header. The agent learns its own id and that project state must be retried via the API — never a crash, never a stale project name from a stuck cache.
 
 ## Code
 
-- `hooks/project-context/handler.js` — the entire hook. Single file, no shared state.
+- `hooks/project-context/handler.js` — the entire hook. Single file; only size-warning deduplication is process-local state.
 - `hooks/project-context/HOOK.md` — the OpenClaw hook manifest declaring the `agent:bootstrap` subscription.
 - `dashboard/server.js` — `GET /api/status?agentId=<id>` (the canonical state read), `GET /api/projects/<name>/rules/<section>` (the lazy-loaded rule sections referenced by the manifest the hook injects).
 - `dashboard/test-t168-t177-integration.js` — regression test asserting no on-disk write.
+- `dashboard/test-hook-bootstrap-stability.mjs` — task-independent byte stability, no Tasks API requests, and size-warning deduplication.
 - `dashboard/test-hook-core-bootstrap-filter.mjs` — regression test proving the injected entry survives OpenClaw's `BOOTSTRAP.md` filters.
 
 ## See also

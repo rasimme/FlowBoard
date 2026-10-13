@@ -548,8 +548,8 @@ async function testHookLegacyFileFallbackGate() {
   }
 }
 
-async function testHookTaskStateComesFromTasksApi() {
-  section('T-202: bootstrap task state comes from Tasks API, not PROJECT.md');
+async function testHookTaskStateIsFetchedOnDemand() {
+  section('T-512: bootstrap directs live task lookup, never embeds Tasks API state');
 
   const originalFetch = global.fetch;
   const originalProjectsDir = process.env.FLOWBOARD_PROJECTS_DIR;
@@ -610,12 +610,12 @@ async function testHookTaskStateComesFromTasksApi() {
     await handler(event);
     const bs = getBootstrapEntry(event);
 
-    const taskStateIndex = bs?.content.indexOf('## Operational Task State') ?? -1;
+    const taskStateIndex = bs?.content.indexOf('## Task State') ?? -1;
     const projectIndex = bs?.content.indexOf('## Project Knowledge:') ?? -1;
-    ok(taskStateIndex > -1, 'Operational Task State section is present');
-    ok(projectIndex > taskStateIndex, 'Project knowledge appears after live task state');
-    ok(bs && bs.content.includes('- T-202: Bootstrap live task summary'),
-      'live in-progress task from Tasks API is listed');
+    ok(taskStateIndex > -1, 'static Task State section is present');
+    ok(projectIndex > taskStateIndex, 'Project knowledge appears after static task directive');
+    ok(bs && !bs.content.includes('Bootstrap live task summary'),
+      'live task payload is not embedded');
     ok(bs && !bs.content.includes('- T-999: Stale markdown task'),
       'done stale task is not listed as active work');
     ok(bs && bs.content.includes('not authoritative for current task focus'),
@@ -630,8 +630,8 @@ async function testHookTaskStateComesFromTasksApi() {
   }
 }
 
-async function testHookTasksApiFailureBlocksTaskInference() {
-  section('T-202/T-230: Tasks API failure degrades to a soft retry note that still blocks task inference');
+async function testHookDoesNotDependOnTasksApi() {
+  section('T-512: unavailable Tasks API does not affect stable hook context');
 
   const originalFetch = global.fetch;
   try {
@@ -655,13 +655,11 @@ async function testHookTasksApiFailureBlocksTaskInference() {
     await handler(event);
     const bs = getBootstrapEntry(event);
 
-    ok(bs && bs.content.includes('## Operational Task State'), 'Operational Task State section is present');
-    // T-230: a transient API miss (503) degrades softly after retries — no hard
-    // BLOCKER framing that pushed agents into improvising file scans.
-    ok(bs && bs.content.includes('temporarily unavailable'), 'Tasks API failure is surfaced as a soft transient note');
-    ok(bs && !bs.content.includes('**BLOCKER:**'), 'transient failure does NOT use hard BLOCKER framing');
-    ok(bs && bs.content.includes('Retry the Tasks API'), 'note tells the agent to retry the API');
-    ok(bs && bs.content.includes('find') && bs.content.includes('PROJECT.md'), 'note still blocks inference by forbidding file scans');
+    ok(bs && bs.content.includes('## Task State'), 'static Task State section is present');
+    ok(bs && !bs.content.includes('temporarily unavailable'), 'Tasks API availability is not rendered');
+    ok(bs && !bs.content.includes('**BLOCKER:**'), 'no task-state blocker is embedded');
+    ok(bs && bs.content.includes('POST /api/workflows/start'), 'directive gives the workflow entry point');
+    ok(bs && bs.content.includes('Never use `PROJECT.md`'), 'directive forbids Markdown task inference');
   } finally {
     global.fetch = originalFetch;
   }
@@ -731,7 +729,7 @@ async function testHookUsesPluginDashboardConfig() {
 
     ok(bs && bs.content.startsWith(`# Active Project: ${PROJECT_FOR_TESTS}`),
       'configured handler still produces active-project bootstrap content');
-    ok(calls.length >= 2, 'hook made status and tasks API calls');
+    ok(calls.length === 1 && calls[0].includes('/api/status'), 'hook only calls the status API');
     ok(calls.every(url => url.startsWith('http://127.0.0.1:18843/')),
       'all hook API calls use configured dashboardBaseUrl');
     ok(calls.some(url => url.includes('/api/status?agentId=t414-config-probe')),
@@ -745,7 +743,7 @@ async function testHookUsesPluginDashboardConfig() {
       existingFiles: [],
     });
     await portHandler(portEvent);
-    ok(calls.length >= 2 && calls.every(url => url.startsWith('http://localhost:18844/')),
+    ok(calls.length === 1 && calls.every(url => url.startsWith('http://localhost:18844/')),
       'dashboardPort config is used when dashboardBaseUrl is absent');
 
     calls.length = 0;
@@ -757,7 +755,7 @@ async function testHookUsesPluginDashboardConfig() {
     });
     overrideEvent.context.pluginConfig = { dashboardBaseUrl: 'http://127.0.0.1:18845' };
     await defaultHandler(overrideEvent);
-    ok(calls.length >= 2 && calls.every(url => url.startsWith('http://127.0.0.1:18845/')),
+    ok(calls.length === 1 && calls.every(url => url.startsWith('http://127.0.0.1:18845/')),
       'event pluginConfig overrides register-time pluginConfig');
   } finally {
     global.fetch = originalFetch;
@@ -900,8 +898,8 @@ async function runSuite() {
     await testHookSourceHasNoWritePatterns();
     await testHookHandlesMissingBootstrapFiles();
     await testHookLegacyFileFallbackGate();
-    await testHookTaskStateComesFromTasksApi();
-    await testHookTasksApiFailureBlocksTaskInference();
+    await testHookTaskStateIsFetchedOnDemand();
+    await testHookDoesNotDependOnTasksApi();
     await testHookStatusApiTransientFailureIsUnknownNotNone();
     await testHookUsesPluginDashboardConfig();
     await testContextFilePostRejectsOverwrite();
