@@ -126,7 +126,7 @@ function buildNoActiveProjectSection() {
     "active project. Do **not** infer one from conversation history, recent",
     "topics, file paths in tool results, or anything else. To activate a",
     "project, the user must say so explicitly (e.g. `FlowBoard: activate project <name>`);",
-    "the agent then calls `PUT /api/status` with `{ project, agentId, sessionKey }",
+    "the agent then calls `PUT /api/status` with `{ project, agentId, sessionKey }`",
     "to activate it for this session; the next run sees the change.",
     "",
   ].join("\n");
