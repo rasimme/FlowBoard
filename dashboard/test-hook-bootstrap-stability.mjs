@@ -90,6 +90,11 @@ try {
   assert(noProject.includes('FlowBoard: activate project <name>'))
   assert(noProject.includes('{ project, agentId, sessionKey }'))
   assert.equal(await run(), noProject)
+  // Transient outage: the unknown header must ask for a scoped retry.
+  globalThis.fetch = async () => { throw new Error('connect ECONNREFUSED') }
+  const unknown = await run()
+  assert(unknown.includes('# Active Project: Unknown'))
+  assert(unknown.includes('sessionKey='), 'unknown header retries in the session scope')
   console.log('Hook bootstrap stability: passed')
 } finally {
   globalThis.fetch = originalFetch

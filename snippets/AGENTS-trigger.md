@@ -6,7 +6,7 @@ Use a local-capable tool for this localhost API (exec/curl/node or an internal A
 
 ### Minimal trigger
 
-1. **Injected context first:** If your own run context contains `# Active Project:` or `# No Active Project` together with `## Identity`, use it for this run. Do not fetch `/status` or `/bootstrap` again for passive startup.
+1. **Injected context first:** If your own run context contains `# Active Project: <name>` or `# No Active Project` together with `## Identity`, use it for this run. Do not fetch `/status` or `/bootstrap` again for passive startup. `# Active Project: Unknown (…)` is not resolved context: continue with step 2.
 2. **Otherwise, check your status:** `GET /api/status?agentId=<resolved-agentId>&sessionKey=<current-sessionKey>` — use this run's OpenClaw session key if known; otherwise omit `sessionKey`, never invent it.
    - If `activeProject === null`: no project active. Work normally, do not ask, and do not infer state.
    - If active, wait for `contextReady`; details live in `rules/error-handling`.

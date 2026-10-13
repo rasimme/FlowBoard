@@ -2,7 +2,7 @@
 
 These rules apply whenever a project is active.
 
-**Context Loading:** Use your own injected `# Active Project:` / `# No Active Project` plus `## Identity` for this run; no passive `/status` or `/bootstrap` fetch. Without injection, check `/api/status?agentId=<agentId>&sessionKey=<current-sessionKey>` (omit unknown keys, never invent them), then fetch `/rules` and `/files/PROJECT.md` (JSON `content`) for the active project after `contextReady`. Load rule sections on demand; the large bootstrap is a compatibility fallback. DB-backed session → agent → null resolution is authoritative; legacy on-disk state is not.
+**Context Loading:** Use your own injected `# Active Project: <name>` / `# No Active Project` plus `## Identity` for this run; no passive `/status` or `/bootstrap` fetch (`# Active Project: Unknown (…)` counts as no injection). Without injection, check `/api/status?agentId=<agentId>&sessionKey=<current-sessionKey>` (omit unknown keys, never invent them), then fetch `/rules` and `/files/PROJECT.md` (JSON `content`) for the active project after `contextReady`. Load rule sections on demand; the large bootstrap is a compatibility fallback. DB-backed session → agent → null resolution is authoritative; legacy on-disk state is not.
 
 ---
 
