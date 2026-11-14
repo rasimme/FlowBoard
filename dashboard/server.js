@@ -556,8 +556,12 @@ installPrivacyFilter();
 // Import preview owns a bounded raw JSON parser. The global parser must skip
 // that route or it would consume the upload before the media/UTF-8 checks run.
 const globalJsonParser = express.json();
+const CONTEXT_UPLOAD_PATH = /^\/api\/projects\/[^/]+\/files\/context\/?$/;
 app.use((req, res, next) => {
   if (req.method === 'POST' && (req.path === '/api/projects/import/preview' || req.path === '/api/projects/import')) return next();
+  // The context upload route carries its own 5 MB parser (T-516). Parsing it
+  // here first applied the default 100 KB limit and rejected larger files.
+  if (req.method === 'POST' && CONTEXT_UPLOAD_PATH.test(req.path)) return next();
   return globalJsonParser(req, res, next);
 });
 

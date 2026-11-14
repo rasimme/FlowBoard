@@ -120,6 +120,15 @@ async function run() {
     ok((await api(base, 'DELETE', `/api/projects/${PROJECT}/files/${enc('context/link.md')}`)).status === 403,
       'DELETE through a symlink → 403');
     ok(fs.lstatSync(path.join(pdir, 'context', 'link.md')).isSymbolicLink(), 'symlink itself was not deleted');
+
+    // --- T-516: the context upload honours its own 5 MB limit ---
+    const upload = (name, kb) => api(base, 'POST', `/api/projects/${PROJECT}/files/context`,
+      { filename: name, content: '# big\n' + 'x'.repeat(kb * 1024) });
+    ok((await upload('big-150.md', 150)).status === 200, 'context upload of 150 KB → 200 (not capped by the global 100 KB parser)');
+    ok((await upload('big-4000.md', 4000)).status === 200, 'context upload of 4 MB → 200');
+    ok((await upload('big-6000.md', 6000)).status === 413, 'context upload above 5 MB → 413');
+    ok((await api(base, 'PUT', `/api/projects/${PROJECT}/files/${enc('context/note.md')}`, { content: 'x'.repeat(150 * 1024) })).status === 413,
+      'other JSON routes keep the default 100 KB limit');
   } finally {
     child.kill('SIGTERM');
     await new Promise(r => setTimeout(r, 300));
