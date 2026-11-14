@@ -160,12 +160,6 @@ export default defineControlUiPlugin({
           />
         )),
       }),
-      host.ui.registerAction({
-        id: 'open-task-panel',
-        label: 'FlowBoard task',
-        placement: 'header',
-        run: (context) => host.ui.openPanel(PANEL_ID, { sessionKey: context.sessionKey, agentId: context.agentId }),
-      }),
     ];
 
     return () => {
