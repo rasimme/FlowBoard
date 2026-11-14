@@ -11,7 +11,8 @@
  * CSS: every selector is prefixed with `.fb-native-root`, so nothing can match
  * a host element. Tokens the host theme also defines are not redeclared, so
  * the dashboard follows the host's light/dark/custom theme; FlowBoard-only
- * tokens (status, note hues, charts) keep their own values.
+ * tokens (status, note hues, charts) keep their own values. The page paints no
+ * background of its own, so the host's page background shows through.
  *
  * Usage: node scripts/build-native-ui.mjs
  */
@@ -83,8 +84,9 @@ async function buildCss() {
   ];
   const scoped = (await postcss([scopePlugin]).process(sheets.join('\n'), { from: undefined })).css;
   return `${scoped}
-${SCOPE}{position:relative;height:100%;min-height:0;overflow:hidden;color:var(--text);background:var(--bg)}
+${SCOPE}{position:relative;height:100%;min-height:0;overflow:hidden;color:var(--text);background:transparent}
 ${SCOPE} .app{height:100%}
+${SCOPE} .sidebar,${SCOPE} .tab-bar{background:transparent}
 `;
 }
 
