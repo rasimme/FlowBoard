@@ -130,7 +130,7 @@ async function allowListTests() {
     assert.equal(verdict({ ...base, body: { title: 'x' } }, true).code, 'GATEWAY_BODY_INVALID');
     assert.equal(verdict({ ...base, body: 'x'.repeat(p.MAX_REQUEST_BODY + 1) }, true).code, 'GATEWAY_BODY_TOO_LARGE');
     assert.equal(verdict({ ...base, body: '{}', contentType: 'text/html' }, true).code, 'GATEWAY_CONTENT_TYPE_NOT_ALLOWED');
-    assert.equal(verdict({ ...base, body: '{}', contentType: 'application/vnd.flowboard.project-bundle+json' }, true).ok, true);
+    assert.equal(verdict({ ...base, body: '{}', contentType: 'application/vnd.flowboard.project+json' }, true).ok, true);
   });
 }
 
@@ -226,12 +226,12 @@ async function transportTests() {
     const transport = createGatewayTransport(async (method, params) => { calls.push({ method, params }); return { status: 201, body: '{}' }; });
     await transport('/api/projects/import', {
       method: 'post', body: '{"a":1}',
-      headers: { 'Content-Type': 'application/vnd.flowboard.project-bundle+json', 'X-FlowBoard-Sensitive-Confirmation': 'allow' },
+      headers: { 'Content-Type': 'application/vnd.flowboard.project+json', 'X-FlowBoard-Sensitive-Confirmation': 'allow' },
     });
     await transport('/api/projects/demo/tasks/trash', { method: 'DELETE', body: '{"confirmation":"empty-trash"}', headers: { 'Content-Type': 'application/json' } });
     assert.deepEqual(calls[0], { method: 'flowboard.api.write', params: {
       path: '/api/projects/import', method: 'POST', body: '{"a":1}',
-      contentType: 'application/vnd.flowboard.project-bundle+json', sensitiveConfirmation: 'allow',
+      contentType: 'application/vnd.flowboard.project+json', sensitiveConfirmation: 'allow',
     } });
     assert.deepEqual(calls[1].params, { path: '/api/projects/demo/tasks/trash', method: 'DELETE', body: '{"confirmation":"empty-trash"}' });
   });

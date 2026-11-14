@@ -33,7 +33,7 @@ export const PASSTHROUGH_WRITE_TIMEOUT_MS = 30000;
 /** Request content types the dashboard client sends. */
 export const ALLOWED_CONTENT_TYPES = Object.freeze([
   'application/json',
-  'application/vnd.flowboard.project-bundle+json',
+  'application/vnd.flowboard.project+json',
 ]);
 
 /** Response headers the React client reads; nothing else is passed back. */
