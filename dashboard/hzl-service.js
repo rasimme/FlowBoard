@@ -3022,8 +3022,11 @@ function getProjectActivityDaily(project, days = 14) {
   // surfaces. `task_updated` is high-volume metadata churn (claim/lease
   // recalcs, internal writes) that would otherwise dwarf real work by ~100x
   // and make the momentum strip read tens-of-thousands on busy dev days.
+  // No ORDER BY: the rows are only counted. Ordering by id made SQLite walk
+  // the whole event table by rowid instead of using the timestamp index,
+  // which took tens of seconds on a store with a million events (T-515-5).
   const rows = _eventsDb.prepare(
-    "SELECT substr(timestamp, 1, 10) AS day, type, task_id FROM events WHERE timestamp > ? AND type != 'task_updated' ORDER BY id DESC"
+    "SELECT substr(timestamp, 1, 10) AS day, type, task_id FROM events INDEXED BY idx_events_timestamp WHERE timestamp > ? AND type != 'task_updated'"
   ).all(cutoff);
   const counts = new Map();
   // day -> Map(type -> count); powers the Momentum tooltip's action breakdown
