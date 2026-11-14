@@ -82,6 +82,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0039](0039-session-scoped-project-binding.md) — Session-scoped project binding with agent-level fallback; `sessionKey` is context, never authorization (2026-09-20)
 - [ADR-0040](0040-gateway-verified-principal-via-service-credential.md) — Gateway-verified principal via a loopback service credential; `X-FlowBoard-Gateway-*` headers are attribution only after the token matched (2026-09-20; extends ADR-0033)
 - [ADR-0041](0041-default-dashboard-port-18700.md) — Default dashboard port 18700, clear of OpenClaw's Gateway-derived ports; updates keep an existing install's port (2026-09-25)
+- [ADR-0042](0042-gateway-api-passthrough-for-native-dashboard.md) — Gateway API passthrough for the native React dashboard: two raw Gateway methods behind an explicit path allow-list (2026-11-14; extends ADR-0040)
 
 ## See also
 

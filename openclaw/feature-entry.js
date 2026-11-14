@@ -39,6 +39,7 @@ import {
   POLL_INTERVAL_MS,
   TASK_POLL_INTERVAL_MS,
 } from './change-poll.js';
+import { API_READ_METHOD, API_WRITE_METHOD } from './api-passthrough.js';
 import { contract } from './contract.js';
 
 // Re-exported so the poll keeps one documented import path even though its
@@ -236,6 +237,43 @@ export function createFeatureEntry(baseline) {
         },
         { scope: 'operator.read', profileAccess: 'required' },
       );
+
+      // API passthrough for the native React dashboard (T-515-1, ADR-0042).
+      // Feature operations are capped by the host at 256 KiB per payload,
+      // which a real board exceeds; raw Gateway methods are not. The host does
+      // not schema-check them, so the adapter checks every request against
+      // the allow-list in api-passthrough.js. The read lane can only GET.
+      const connectionPrincipal = (client) => {
+        const profile = readConnectionProfile(client);
+        return {
+          profileId: profile?.profileId ?? null,
+          displayName: profile?.displayName ?? null,
+          scopes: readConnectionScopes(client?.connect?.scopes),
+          agentId: null,
+          sessionKey: null,
+        };
+      };
+      const passthroughHandler = (allowWrite) => async (opts) => {
+        const params = opts?.params && typeof opts.params === 'object' ? opts.params : {};
+        try {
+          opts.respond(true, await adapter.passthrough(connectionPrincipal(opts?.client), params, { allowWrite }));
+        } catch {
+          // Never echo the cause: it can carry request headers.
+          opts.respond(true, {
+            status: 502,
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ok: false, error: 'FlowBoard is unavailable', code: 'GATEWAY_UPSTREAM_UNAVAILABLE' }),
+          });
+        }
+      };
+      api.registerGatewayMethod(API_READ_METHOD, passthroughHandler(false), {
+        scope: 'operator.read',
+        profileAccess: 'required',
+      });
+      api.registerGatewayMethod(API_WRITE_METHOD, passthroughHandler(true), {
+        scope: 'operator.write',
+        profileAccess: 'required',
+      });
 
       // The poll is a long-lived side effect, so it belongs to a service and
       // not to `setup` (the SDK is explicit about that).

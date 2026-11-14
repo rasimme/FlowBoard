@@ -34,6 +34,19 @@ async function authenticationFailureForResponse(response, path) {
   }
 }
 
+/**
+ * Optional replacement for the network call (T-515-1). The native OpenClaw
+ * page cannot reach the dashboard origin, so it routes every request through
+ * the Gateway instead. The transport receives the final `(path, init)` that
+ * `fetch` would have received and must answer with a fetch `Response`;
+ * deadlines, auth classification and error mapping stay here.
+ */
+let apiTransport = null;
+
+export function setApiTransport(transport) {
+  apiTransport = typeof transport === 'function' ? transport : null;
+}
+
 export function apiFetch(path, opts = {}) {
   const headers = { ...opts.headers };
 
@@ -72,7 +85,7 @@ export function apiFetch(path, opts = {}) {
   }
 
   // If Telegram WebApp is available and this is a same-origin /api request, send initData
-  const tg = window.Telegram?.WebApp;
+  const tg = apiTransport ? null : window.Telegram?.WebApp;
   if (isSameOriginApi && tg?.initData) {
     headers['X-Telegram-Init-Data'] = tg.initData;
   }
@@ -118,7 +131,7 @@ export function apiFetch(path, opts = {}) {
 
   let request;
   try {
-    request = fetch(path, {
+    request = (apiTransport || fetch)(path, {
       ...fetchOptions,
       headers,
       credentials,

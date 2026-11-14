@@ -17,6 +17,14 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  FORWARDED_RESPONSE_HEADERS,
+  MAX_RESPONSE_BODY,
+  PASSTHROUGH_READ_TIMEOUT_MS,
+  PASSTHROUGH_WRITE_TIMEOUT_MS,
+  checkApiRequest,
+  refusalResponse,
+} from './api-passthrough.js';
 
 const require = createRequire(import.meta.url);
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -574,7 +582,54 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
     return payload && typeof payload === 'object' ? payload : {};
   }
 
+  /**
+   * Replay one dashboard-client request (T-515-1, ADR-0042).
+   *
+   * Status, the few headers the React client reads, and the body go back
+   * verbatim so the client keeps its own error handling. The request is
+   * checked against the allow-list first; the principal headers and the
+   * service credential are added here exactly as for every other call, never
+   * taken from the caller.
+   */
+  async function passthrough(principal, request, { allowWrite = false } = {}) {
+    const checked = checkApiRequest(request, { allowWrite });
+    if (!checked.ok) return refusalResponse(checked);
+    const headers = { Accept: 'application/json', 'X-FlowBoard-Client': 'dashboard', ...buildPrincipalHeaders(principal) };
+    if (serviceToken) headers.Authorization = `Bearer ${serviceToken}`;
+    if (request.body !== undefined) headers['Content-Type'] = request.contentType || 'application/json';
+    const confirmation = boundedHeaderValue(request.sensitiveConfirmation);
+    if (confirmation) headers['X-FlowBoard-Sensitive-Confirmation'] = confirmation;
+    const ifNoneMatch = boundedHeaderValue(request.ifNoneMatch);
+    if (ifNoneMatch && checked.method === 'GET') headers['If-None-Match'] = ifNoneMatch;
+
+    let response;
+    let body;
+    try {
+      response = await fetchImpl(joinApiPath(baseUrl(), checked.path), {
+        method: checked.method,
+        headers,
+        ...(request.body === undefined ? {} : { body: request.body }),
+        signal: AbortSignal.timeout(checked.method === 'GET' ? PASSTHROUGH_READ_TIMEOUT_MS : PASSTHROUGH_WRITE_TIMEOUT_MS),
+      });
+      body = await response.text();
+    } catch (err) {
+      // Never surface the cause chain: it can contain the request headers.
+      const reason = err?.name === 'TimeoutError' ? 'timed out' : 'is unreachable';
+      return refusalResponse({ status: 502, code: 'GATEWAY_UPSTREAM_UNAVAILABLE', error: `FlowBoard dashboard ${reason} at ${baseUrl()}` });
+    }
+    if (body.length > MAX_RESPONSE_BODY) {
+      return refusalResponse({ status: 502, code: 'GATEWAY_RESPONSE_TOO_LARGE', error: 'The FlowBoard response is too large for the Gateway transport' });
+    }
+    const forwarded = {};
+    for (const name of FORWARDED_RESPONSE_HEADERS) {
+      const value = response.headers?.get?.(name);
+      if (typeof value === 'string' && value) forwarded[name] = value.slice(0, 512);
+    }
+    return { status: response.status, headers: forwarded, body };
+  }
+
   return {
+    passthrough,
     dashboardUrl: baseUrl,
     hasServiceToken: () => Boolean(serviceToken),
     serviceTokenUnresolved: () => serviceTokenUnresolved,
