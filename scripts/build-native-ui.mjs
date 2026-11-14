@@ -87,6 +87,19 @@ async function buildCss() {
 ${SCOPE}{position:relative;height:100%;min-height:0;overflow:hidden;color:var(--text);background:transparent}
 ${SCOPE} .app{height:100%}
 ${SCOPE} .sidebar,${SCOPE} .tab-bar{background:transparent}
+${SCOPE}.fb-native-view{height:100%;overflow:auto;font-size:13px}
+${SCOPE}.fb-native-view>.ov-widget{height:100%;box-sizing:border-box}
+${SCOPE} .fb-view-scroll{overflow:auto;display:flex;flex-direction:column;gap:10px}
+${SCOPE} .fb-view-label{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:2px 0 4px}
+${SCOPE} .fb-view-project{font-size:10px;color:var(--muted);white-space:nowrap}
+${SCOPE} .fb-view-panel{display:flex;flex-direction:column;gap:10px;padding:14px;box-sizing:border-box}
+${SCOPE} .fb-view-head,${SCOPE} .fb-view-actions,${SCOPE} .fb-view-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+${SCOPE} .fb-view-title{margin:0;font-size:15px;font-weight:600;color:var(--text-strong)}
+${SCOPE} .fb-view-text{max-height:220px;overflow:auto;font-size:12px}
+${SCOPE} .fb-view-notice{font-size:11px;color:var(--muted)}
+${SCOPE} .fb-view-feed{display:flex;flex-direction:column;gap:8px}
+${SCOPE} .fb-view-comment{display:flex;gap:6px;align-items:flex-end}
+${SCOPE} .fb-view-comment textarea{flex:1;resize:vertical;padding:6px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);font:inherit}
 `;
 }
 

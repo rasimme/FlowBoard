@@ -275,6 +275,16 @@ export function createFeatureEntry(baseline) {
         profileAccess: 'required',
       });
 
+      // Native dashboard widget (T-515-6). The browser registers the view; the
+      // host renders it only when this backend descriptor advertises the kind
+      // (`flowboard:needs-me`) for the connection's scopes.
+      api.session?.controls?.registerControlUiDescriptor?.({
+        id: 'needs-me',
+        surface: 'widget',
+        label: 'FlowBoard: needs me',
+        requiredScopes: ['operator.read'],
+      });
+
       // The poll is a long-lived side effect, so it belongs to a service and
       // not to `setup` (the SDK is explicit about that).
       //

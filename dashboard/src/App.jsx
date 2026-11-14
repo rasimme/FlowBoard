@@ -12,6 +12,31 @@ import { useDashboard } from './context/DashboardContext.jsx';
 import EmbedShell from './embed/EmbedShell.jsx';
 import { getEmbed } from './embed/embedRuntime.js';
 import { usesHostChrome } from './utils/shell.js';
+import { useEffect } from 'react';
+import { getState } from './state/appStore.mjs';
+import { subscribeDeepLink, takeDeepLink } from './utils/deepLink.js';
+
+// T-515-6: act on a project/task request from the host page's parameters or
+// from the native widget and panel. Sits after DetailPanel so the task opener
+// is installed.
+function DeepLinkBridge() {
+  const { viewProject, switchTab } = useDashboard();
+  useEffect(() => {
+    const apply = async () => {
+      const link = takeDeepLink();
+      if (!link) return;
+      if (!(getState().projects || []).some((p) => p?.name === link.project)) return;
+      if (getState().viewedProject !== link.project) await viewProject(link.project);
+      if (link.task) {
+        switchTab('tasks');
+        window.openTaskDetail?.(link.task);
+      }
+    };
+    apply();
+    return subscribeDeepLink(apply);
+  }, [viewProject, switchTab]);
+  return null;
+}
 
 function DashboardShell() {
   const { state } = useDashboard();
@@ -30,6 +55,7 @@ function DashboardShell() {
           <TabBar />
           <ViewShell />
           <DetailPanel />
+          <DeepLinkBridge />
         </>
       )}
     </>
