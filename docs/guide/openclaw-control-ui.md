@@ -369,6 +369,7 @@ the same project show the same tasks.
   is showing, so that project is watched in full — a task another agent moves
   appears on the board within a few seconds, without a reload. Switching
   projects or reconnecting always refetches.
+  As a safety net the page also reloads every 30 seconds while it is visible.
 - **Nothing is polled when nobody is watching.** The check runs only while a
   Control UI client has the plugin loaded.
 - **Permissions.** Reading uses your `operator.read` scope; every native write

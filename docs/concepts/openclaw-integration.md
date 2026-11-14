@@ -241,6 +241,12 @@ caller would get. Deliberately *not* digested: the stuck indicator, which FlowBo
 every evaluation, and the lease, which expires on a clock — either would wake every open page on a
 timer instead of on a change.
 
+The React page (T-515-8) uses the same events without `feature.watch`: it subscribes to
+`tasks-changed` and `projects-changed`, reloads its snapshot when one arrives, and reports the board
+on screen through `ui.focus`. Its own poll stays only as a safety net at the 30 s ceiling, for
+changes the digest above deliberately ignores. The standalone dashboard has no push source and keeps
+its adaptive 5–30 s poll.
+
 ## What the operator is trusting
 
 A native plugin bundle runs unsandboxed in the Control UI origin with the signed-in operator's
