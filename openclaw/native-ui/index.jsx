@@ -24,6 +24,7 @@ import TaskPanelView from './views/TaskPanelView.jsx';
 import { mountDashboard } from '../../dashboard/src/mount.jsx';
 import { setApiTransport } from '../../dashboard/src/utils/apiFetch.js';
 import { requestDeepLink } from '../../dashboard/src/utils/deepLink.js';
+import { setLiveUpdates } from '../../dashboard/src/utils/liveUpdates.js';
 
 const PLUGIN_ID = 'flowboard';
 const PAGE_ID = 'flowboard';
@@ -54,11 +55,12 @@ function linkFromProps(props) {
   if (project) requestDeepLink({ project, task });
 }
 
-function mountPage(container, context, transport) {
+function mountPage(container, context, transport, live) {
   const root = document.createElement('div');
   root.className = ROOT_CLASS;
   container.replaceChildren(root);
   linkFromProps(context.props);
+  setLiveUpdates(live);
 
   let handle = null;
   let disposed = false;
@@ -76,6 +78,7 @@ function mountPage(container, context, transport) {
     dispose() {
       disposed = true;
       handle?.dispose();
+      setLiveUpdates(null);
       // The widget and the panel outlive the page and share the transport.
       setApiTransport(transport);
       root.remove();
@@ -135,12 +138,29 @@ export default defineControlUiPlugin({
       try { return feature.on('tasks-changed', listener); } catch { return () => {}; }
     };
 
+    // Board changes reach the page as contract events (T-515-8); `ui.focus`
+    // makes the backend watch the board that is on screen.
+    const live = {
+      subscribe(listener) {
+        const stops = [];
+        for (const event of ['tasks-changed', 'projects-changed']) {
+          try { stops.push(feature.on(event, listener)); } catch { /* older contract: the slow poll remains */ }
+        }
+        return () => stops.forEach((stop) => stop?.());
+      },
+      focus(project) {
+        identity.ensure()
+          .then(() => feature.invoke('ui.focus', { project: project || null }))
+          .catch(() => { /* an optimisation, never a gate */ });
+      },
+    };
+
     const disposers = [
       host.ui.registerNavigation({ id: PAGE_ID, label: 'FlowBoard', page: { id: PAGE_ID }, icon: 'kanban' }),
       host.ui.registerPage({
         id: PAGE_ID,
         label: 'FlowBoard',
-        mount: (container, context) => mountPage(container, context, transport),
+        mount: (container, context) => mountPage(container, context, transport, live),
       }),
       host.ui.registerWidget({
         id: WIDGET_ID,

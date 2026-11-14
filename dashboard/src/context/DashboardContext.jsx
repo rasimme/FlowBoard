@@ -24,6 +24,7 @@ import {
 import { getLastMutationAt } from '../state/taskMutations.mjs';
 import { getEmbed } from '../embed/embedRuntime.js';
 import { shellQuery } from '../utils/shell.js';
+import { getLiveUpdates } from '../utils/liveUpdates.js';
 
 const DashboardContext = createContext(null);
 
@@ -686,17 +687,35 @@ export function DashboardProvider({ children }) {
     let timeoutId = null;
     let cancelled = false;
 
+    // T-515-8: with a push source the poll is only a safety net, so it stays
+    // at the ceiling; change events trigger the refresh instead.
+    const live = getLiveUpdates();
+    let running = false;
+    let rerun = false;
+
     const scheduleNext = () => {
       if (cancelled || document.hidden) return;
-      timeoutId = setTimeout(runTick, pollIntervalRef.current);
+      timeoutId = setTimeout(runTick, live ? POLL_INTERVAL_MAX_MS : pollIntervalRef.current);
     };
 
     const runTick = async () => {
+      if (timeoutId) clearTimeout(timeoutId);
       timeoutId = null;
       if (cancelled || document.hidden) return;
-      await pollOnce();
+      if (running) { rerun = true; return; }
+      running = true;
+      try {
+        do {
+          rerun = false;
+          await pollOnce();
+        } while (rerun && !cancelled && !document.hidden);
+      } finally {
+        running = false;
+      }
       scheduleNext();
     };
+
+    const unsubscribeLive = live?.subscribe(() => { runTick(); });
 
     const onVisibilityChange = () => {
       if (timeoutId) {
@@ -717,10 +736,20 @@ export function DashboardProvider({ children }) {
 
     return () => {
       cancelled = true;
+      unsubscribeLive?.();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [pollOnce, resetPollInterval]);
+
+  // T-515-8: tell a push source which board is on screen.
+  const viewedProjectName = state?.viewedProject || null;
+  useEffect(() => {
+    const live = getLiveUpdates();
+    if (!live?.focus) return undefined;
+    live.focus(viewedProjectName);
+    return () => live.focus(null);
+  }, [viewedProjectName]);
 
   useEffect(() => {
     unmountedRef.current = false;
