@@ -103,6 +103,9 @@ const steps = [
   // first and then diffing the two generated files is what actually catches
   // the drift that matters: a committed manifest that no longer matches the
   // plugin entry.
+  // T-515: the Control UI entry is the React dashboard, pre-compiled (JSX,
+  // Tailwind, scoped CSS) into .tmp/native-ui/ before the official build.
+  ['node', ['scripts/build-native-ui.mjs']],
   [pluginCli, ['plugins', 'build'], { env: pluginHome.env }],
   ['git', ['diff', '--exit-code', '--', 'openclaw.plugin.json', 'package.json']],
   [pluginCli, ['plugins', 'build', '--check'], { env: pluginHome.env }],

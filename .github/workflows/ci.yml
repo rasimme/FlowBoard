@@ -97,6 +97,11 @@ jobs:
           cache-dependency-path: package-lock.json
       - name: Install plugin toolchain (pinned openclaw + esbuild)
         run: npm ci
+      # The Control UI entry is the React dashboard (T-515); its pre-compile
+      # step needs the dashboard's own dependencies (React, Tailwind, PostCSS).
+      - name: Install dashboard dependencies
+        run: npm ci
+        working-directory: dashboard
       - name: Assert the toolchain Node satisfies the OpenClaw CLI
         run: node -e "const [a,b]=process.versions.node.split('.').map(Number); if (a<24 || (a===24 && b<16)) { console.error('OpenClaw >= 2026.9.3 needs Node >= 24.16, got ' + process.versions.node); process.exit(1) } console.log('node ' + process.versions.node)"
       # `dist/control-ui/` is gitignored, and both `validate` and

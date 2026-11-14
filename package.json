@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "build:plugin": "openclaw plugins build",
+    "build:plugin": "node scripts/build-native-ui.mjs && openclaw plugins build",
     "validate:plugin": "openclaw plugins validate --json"
   },
   "homepage": "https://github.com/rasimme/FlowBoard",
@@ -40,7 +40,7 @@
     "extensions": [
       "./openclaw/flowboard-plugin.js"
     ],
-    "controlUi": "./openclaw/control-ui/index.js",
+    "controlUi": "./.tmp/native-ui/index.js",
     "hooks": [
       "./hooks/project-context"
     ]
