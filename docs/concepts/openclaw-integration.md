@@ -94,6 +94,18 @@ feature today, at the cost of the limits listed under the attribution boundary b
 framed surface natively later stays possible surface by surface, and so does one sidebar entry per
 surface.
 
+### Widget and session panel (T-515-6)
+
+The same bundle registers two more views. The **"Needs me" widget** renders the `tasks.needing-me`
+query on a session dashboard; the host shows it only because the backend also registers a Control UI
+descriptor with `surface: "widget"` and the same id, which is how the Gateway advertises the kind
+`flowboard:needs-me` for a connection's scopes. The **task panel** is a session panel: it resolves
+the project from the session's binding (falling back to the agent's), lists the tasks that agent
+holds in progress or in review, and writes comments and approvals through the API passthrough
+(ADR-0042), so they carry the Gateway-verified operator like every other write. Both open the page
+through `host.navigation.openPage` with `project` / `task` parameters. Claims are per agent, not per
+session, so the panel cannot tell two sessions of one agent apart.
+
 ### Embed protocol v1
 
 The dashboard serves a single surface at

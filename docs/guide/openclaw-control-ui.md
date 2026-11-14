@@ -338,6 +338,28 @@ the board.
 - **Background refresh.** A hidden frame is still the dashboard, and keeps
   refreshing its own data while you are on the board.
 
+## Dashboard widget and session panel
+
+Two smaller FlowBoard views live outside the page, next to your sessions.
+
+**"Needs me" widget.** A widget for a session dashboard that lists what is
+waiting on you across projects: tasks in review, and blocked or stalled work.
+Clicking a row opens that task on the FlowBoard page. An agent places it with
+its `dashboard` tool, using the plugin widget kind `flowboard:needs-me`:
+
+```json
+{ "kind": "plugin", "pluginKind": "flowboard:needs-me" }
+```
+
+**Task panel.** In a session's side panel, choose **FlowBoard task**. The
+panel shows the tasks the session's agent has claimed — in progress or in
+review — in the project the session is bound to (or the agent's project when
+the session has no binding of its own). It shows the task's description and
+latest comments and checkpoints, takes a comment, approves a task in review,
+and **Open in FlowBoard** opens the task on the page. FlowBoard claims belong
+to an agent rather than to one session, so two sessions of the same agent in
+the same project show the same tasks.
+
 ## Other things worth knowing
 
 - **Refreshing.** The rail, the board and the open task refresh when something
