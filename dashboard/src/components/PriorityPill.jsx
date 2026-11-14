@@ -15,8 +15,10 @@
  */
 const styles = {
   low:    { color: '#64748b', bg: 'rgba(100,116,139,0.15)' },
-  medium: { color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
-  high:   { color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  // Theme tokens, so the pill follows a host theme (T-515-3). Standalone the
+  // tokens resolve to the same amber and red as before.
+  medium: { color: 'var(--warn)', bg: 'color-mix(in srgb, var(--warn) 15%, transparent)' },
+  high:   { color: 'var(--danger)', bg: 'color-mix(in srgb, var(--danger) 15%, transparent)' },
 };
 
 export default function PriorityPill({ priority, onClick, className = '' }) {
