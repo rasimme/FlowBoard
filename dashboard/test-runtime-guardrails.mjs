@@ -80,7 +80,7 @@ console.log('✅ runtime guard: taskMutations matches task API primitives')
 
 const dashboardContext = sourceFiles.find(file => file.path === 'src/context/DashboardContext.jsx')
 assert.ok(dashboardContext, 'DashboardContext exists')
-assert.match(dashboardContext.text, /querySelector\('\.sidebar-backdrop'\)/, 'DashboardContext owns migrated sidebar backdrop listener')
+assert.match(dashboardContext.text, /shellQuery\('\.sidebar-backdrop'\)/, 'DashboardContext owns migrated sidebar backdrop listener (looked up inside the shell, T-515-2)')
 assert.match(dashboardContext.text, /addEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is installed')
 assert.match(dashboardContext.text, /removeEventListener\('click', onBackdropClick\)/, 'sidebar backdrop click listener is cleaned up')
 assert.match(dashboardContext.text, /installGlobalToast/, 'DashboardContext installs global toast bridge for migrated React surfaces')
