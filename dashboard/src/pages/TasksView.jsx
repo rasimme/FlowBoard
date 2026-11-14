@@ -21,6 +21,7 @@ import { createBacklogTask } from '../utils/taskCreation.js';
 import { getTasks, replaceTasks, notify } from '../state/appStateBridge.mjs';
 import { patchTask, applyTaskResponse } from '../state/taskState.mjs';
 import { pendingReviewTasks, boardTopLevelTasks, describeStructureReasons } from '../utils/exceptionReview.mjs';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 // CSS-var pair for the active-claim contour pulse. The card's border-color
 // animates between the soft ring token and the full ring token. Returning null
@@ -1591,7 +1592,7 @@ export default function TasksView() {
       ghost.classList.add('drag-ghost');
       for (const a of ['data-task-id', 'data-react-tasks', 'id', 'draggable']) ghost.removeAttribute(a);
       ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
-      document.body.appendChild(ghost);
+      getPortalRoot().appendChild(ghost);
       cardEl.classList.add('dragging');
       kanbanRef.current?.classList.add('is-dragging');
     }

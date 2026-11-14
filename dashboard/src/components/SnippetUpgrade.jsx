@@ -14,6 +14,7 @@ import {
   CANVAS_MIGRATION_BACKUP_FILE,
 } from '../utils/canvasMigration.mjs';
 import { fetchUpdateStatus, runUpdate, pollUntilUpdated } from '../utils/appUpdate.mjs';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 /**
  * SnippetUpgrade — FlowBoard setup / migration header chip + modal.
@@ -552,7 +553,7 @@ function UpgradeModal({ open, onClose, status, canvasStatus, updateStatus, onApp
         </div>
       </div>
     </div>,
-    document.getElementById('modalRoot') || document.body
+    getPortalRoot()
   );
 }
 

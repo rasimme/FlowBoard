@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { getView } from '../config/views.js';
+import { shellQuery } from '../utils/shell.js';
 
 export default function ViewShell() {
   const { state } = useAppState();
@@ -10,7 +11,7 @@ export default function ViewShell() {
   const [container, setContainer] = useState(null);
 
   useLayoutEffect(() => {
-    const el = document.getElementById('content');
+    const el = shellQuery('#content');
     if (el) setContainer(el);
   }, []);
 
@@ -30,7 +31,7 @@ export default function ViewShell() {
 
   // Mirror the active tab onto the .app element so CSS can scope per-view styles.
   useEffect(() => {
-    const app = document.querySelector('.app');
+    const app = shellQuery('.app');
     if (app) app.setAttribute('data-view', currentTab);
   }, [currentTab]);
 

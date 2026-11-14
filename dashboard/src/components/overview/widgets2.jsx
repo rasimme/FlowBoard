@@ -10,6 +10,7 @@ import { apiFetch } from '../../utils/apiFetch.js';
 import { sortContextFiles } from '../../utils/contextSort.js';
 import { posToOffset, resolveSelection, estimateColumn } from '../../utils/notesLocate.mjs';
 import { safeExternalHttpUrl } from '../../utils/safeExternalUrl.mjs';
+import { getPortalRoot } from '../../utils/portalRoot.js';
 
 const MarkdownEditor = lazy(() => import('../MarkdownEditor.jsx'));
 const MarkdownPreview = lazy(() => import('../MarkdownPreview.jsx'));
@@ -1140,7 +1141,7 @@ export function StallDetectionWidget({ widget }) {
           </div>
         )}
       </div>,
-      document.body
+      getPortalRoot()
     )}
     </>
   );

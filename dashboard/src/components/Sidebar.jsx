@@ -16,6 +16,8 @@ import ProjectActionsMenu from './ProjectActionsMenu.jsx';
 import ImportProjectModal, { ExportProjectModal } from './ProjectBundleModals.jsx';
 import Popover from './Popover.jsx';
 import { getEmbed } from '../embed/embedRuntime.js';
+import { shellQuery } from '../utils/shell.js';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 const COLLAPSE_KEY = 'flowboard_sidebar_collapsed';
 const FOLDERS_LS_KEY = 'flowboard_user_folders';
@@ -239,7 +241,7 @@ export default function Sidebar() {
   const [newFolderValue, setNewFolderValue] = useState('');
 
   useLayoutEffect(() => {
-    const el = document.getElementById('sidebar');
+    const el = shellQuery('#sidebar');
     if (el) {
       el.innerHTML = '';
       setContainer(el);
@@ -556,7 +558,7 @@ export default function Sidebar() {
     ghost.classList.add('drag-ghost');
     for (const a of ['data-project', 'data-section', 'id', 'draggable']) ghost.removeAttribute(a);
     ghost.style.cssText = `position:fixed; left:${rect.left}px; top:${rect.top}px; width:${rect.width}px; margin:0; pointer-events:none; z-index:9999;`;
-    document.body.appendChild(ghost);
+    getPortalRoot().appendChild(ghost);
     itemEl.classList.add('dragging');
     let target = null; // { name|null, section, kind: 'before'|'after'|'into' }
     let lastX = e.clientX, lastY = e.clientY, raf = 0;

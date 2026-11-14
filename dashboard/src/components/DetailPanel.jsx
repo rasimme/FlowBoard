@@ -30,6 +30,8 @@ import {
   buildStuckIndicatorActionRequest,
   normalizeTaskWorkState,
 } from '../utils/workState.js';
+import { getPortalRoot } from '../utils/portalRoot.js';
+import { shellQuery } from '../utils/shell.js';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
 // critical parts are the resets (`border-0 outline-none`) — without
@@ -170,7 +172,7 @@ function showToast(msg, type = 'info') {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.textContent = msg;
-  const container = document.getElementById('toastContainer');
+  const container = shellQuery('#toastContainer');
   if (container) {
     container.appendChild(el);
     setTimeout(() => el.remove(), 3500);
@@ -1662,7 +1664,7 @@ export default function DetailPanel() {
         </div>
       </div>
     </>,
-    document.body
+    getPortalRoot()
   );
 }
 

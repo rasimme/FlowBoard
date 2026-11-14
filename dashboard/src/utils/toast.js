@@ -1,5 +1,6 @@
+import { shellQuery } from './shell.js';
 export function showToast(msg, type = 'info') {
-  const container = document.getElementById('toastContainer');
+  const container = shellQuery('#toastContainer');
   if (!container) return;
   const el = document.createElement('div');
   el.className = `toast ${type}`;

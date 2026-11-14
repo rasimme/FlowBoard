@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import Button from './Button.jsx';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 const widths = {
   sm: 'max-w-sm',
@@ -134,7 +135,7 @@ export default function Modal({
         )}
       </div>
     </div>,
-    document.getElementById('modalRoot') || document.body
+    getPortalRoot()
   );
 }
 

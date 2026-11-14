@@ -11,6 +11,7 @@ import DashboardConnectionState from './components/DashboardConnectionState.jsx'
 import { useDashboard } from './context/DashboardContext.jsx';
 import EmbedShell from './embed/EmbedShell.jsx';
 import { getEmbed } from './embed/embedRuntime.js';
+import { usesHostChrome } from './utils/shell.js';
 
 function DashboardShell() {
   const { state } = useDashboard();
@@ -24,7 +25,7 @@ function DashboardShell() {
       {!blocksShell && embed && <EmbedShell embed={embed} />}
       {!blocksShell && !embed && (
         <>
-          <Header />
+          {!usesHostChrome() && <Header />}
           <Sidebar />
           <TabBar />
           <ViewShell />

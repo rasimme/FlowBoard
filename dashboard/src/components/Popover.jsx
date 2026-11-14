@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 /**
  * Popover — Anchored floating panel with animation, viewport clamping, and auto-close.
@@ -77,7 +78,7 @@ export default function Popover({ open, onClose, anchorRect, children, width }) 
     >
       {children}
     </div>,
-    document.body
+    getPortalRoot()
   );
 }
 

@@ -8,6 +8,7 @@ import { formatDisplayName } from '../utils/formatting.js';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { useNavigation } from '../context/NavigationContext.jsx';
 import { apiFetch } from '../utils/apiFetch.js';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 /**
  * SearchPalette — global unified search (T-301, T-349).
@@ -174,6 +175,6 @@ export default function SearchPalette({ open, onClose, projects = [] }) {
         )}
       </div>
     </div>,
-    document.getElementById('modalRoot') || document.body
+    getPortalRoot()
   );
 }

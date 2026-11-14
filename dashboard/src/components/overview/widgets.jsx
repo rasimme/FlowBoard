@@ -14,6 +14,7 @@ import {
   buildActiveAgentWidgetRows,
   LEASE_HEALTH,
 } from '../../utils/activeAgents.js';
+import { getPortalRoot } from '../../utils/portalRoot.js';
 
 /**
  * Overview widget catalog (T-305) — live-data implementations of the
@@ -348,7 +349,7 @@ export function TaskStatsWidget({ widget, editing, onRemove }) {
         </div>
         <div className="sd-tip-total"><b>{tip.v.n}</b> done</div>
       </div>,
-      document.body
+      getPortalRoot()
     )}
     </>
   );

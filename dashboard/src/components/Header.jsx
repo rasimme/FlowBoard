@@ -1,31 +1,19 @@
 import { useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Menu, Search } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
 import SnippetUpgrade from './SnippetUpgrade.jsx';
-import SearchPalette from './SearchPalette.jsx';
+import SearchButton from './SearchButton.jsx';
 import logoSvg from '/favicon.svg';
+import { shellQuery } from '../utils/shell.js';
 
 export default function Header() {
   const { state } = useAppState();
   const [container, setContainer] = useState(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  // Cmd/Ctrl+K opens the global task search (T-301)
-  useLayoutEffect(() => {
-    const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
 
   useLayoutEffect(() => {
-    const el = document.querySelector('.header');
+    const el = shellQuery('.header');
     if (el) {
       el.innerHTML = '';
       setContainer(el);
@@ -41,7 +29,7 @@ export default function Header() {
           className="w-9 h-9 flex items-center justify-center border-none bg-transparent text-muted cursor-pointer rounded-[6px] transition-all duration-normal text-lg hover:text-text hover:bg-bg-hover"
           title="Toggle sidebar"
           onClick={() => {
-            document.getElementById('app')?.classList.toggle('sidebar-collapsed');
+            shellQuery('#app')?.classList.toggle('sidebar-collapsed');
             window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light');
           }}
         >
@@ -56,15 +44,7 @@ export default function Header() {
         </div>
       </div>
       <div className="flex items-center gap-2.5" id="headerRight">
-        <button
-          className="w-9 h-9 flex items-center justify-center border-none bg-transparent text-muted cursor-pointer rounded-[6px] transition-all duration-normal hover:text-text hover:bg-bg-hover"
-          title="Search tasks (⌘K)"
-          aria-label="Search tasks"
-          onClick={() => setSearchOpen(true)}
-        >
-          <Search size={17} />
-        </button>
-        <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} projects={state.projects} />
+        <SearchButton projects={state.projects} />
         <SnippetUpgrade />
         {state.viewedProject ? (
           <span className="text-[13px] tracking-[0.02em]">

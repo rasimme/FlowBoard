@@ -11,6 +11,7 @@ import {
   getLeaseHealth,
   taskId,
 } from '../utils/activeAgents.js';
+import { getPortalRoot } from '../utils/portalRoot.js';
 
 function formatHandle(agentId) {
   const s = String(agentId || '');
@@ -269,7 +270,7 @@ function ActiveAgentPill({
             ))}
           </ul>
         </div>,
-        document.body,
+        getPortalRoot(),
       )}
     </div>
   );

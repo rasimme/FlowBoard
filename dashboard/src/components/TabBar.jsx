@@ -3,6 +3,10 @@ import { createPortal } from 'react-dom';
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { VIEWS, getView } from '../config/views.js';
+import { shellQuery, usesHostChrome } from '../utils/shell.js';
+import { Menu } from 'lucide-react';
+import SearchButton from './SearchButton.jsx';
+import SnippetUpgrade from './SnippetUpgrade.jsx';
 
 /**
  * React-owned Tab Bar — renders via portal into the existing .tab-bar element.
@@ -14,12 +18,14 @@ import { VIEWS, getView } from '../config/views.js';
  */
 export default function TabBar() {
   const { state, dispatch } = useAppState();
-  const { switchTab } = useDashboard();
+  const { switchTab, toggleSidebar } = useDashboard();
+  // The host page supplies the header; its tools move into the tab bar (T-515-2).
+  const hostChrome = usesHostChrome();
   const [container, setContainer] = useState(null);
   const rightSlotRef = useRef(null);
 
   useLayoutEffect(() => {
-    const el = document.getElementById('tabBar');
+    const el = shellQuery('#tabBar');
     if (el) {
       // Preserve nothing — React owns the full tab bar now
       el.innerHTML = '';
@@ -48,6 +54,16 @@ export default function TabBar() {
 
   return createPortal(
     <>
+      {hostChrome && (
+        <button
+          className="w-8 h-8 mr-1 flex items-center justify-center border-none bg-transparent text-muted cursor-pointer rounded-[6px] hover:text-text hover:bg-bg-hover"
+          title="Toggle project list"
+          aria-label="Toggle project list"
+          onClick={toggleSidebar}
+        >
+          <Menu size={17} />
+        </button>
+      )}
       {VIEWS.filter(v => !v.hidden).map(view => {
         const isActive = currentTab === view.id;
         return (
@@ -62,6 +78,12 @@ export default function TabBar() {
         );
       })}
       <span className="flex-1" />
+      {hostChrome && (
+        <span className="flex items-center gap-1.5" data-host-chrome-tools>
+          <SearchButton projects={state.projects} />
+          <SnippetUpgrade />
+        </span>
+      )}
       <span id="tabBarRight" ref={rightSlotRef} />
     </>,
     container

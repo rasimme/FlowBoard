@@ -23,6 +23,7 @@ import {
 } from '../state/authState.mjs';
 import { getLastMutationAt } from '../state/taskMutations.mjs';
 import { getEmbed } from '../embed/embedRuntime.js';
+import { shellQuery } from '../utils/shell.js';
 
 const DashboardContext = createContext(null);
 
@@ -39,7 +40,7 @@ function retryAfterMs(error) {
 }
 
 function isUserInteracting() {
-  if (document.getElementById('modalOverlay')) return true;
+  if (shellQuery('#modalOverlay')) return true;
   const active = document.activeElement;
   return !!(active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'));
 }
@@ -608,7 +609,7 @@ export function DashboardProvider({ children }) {
   }, [dispatch]);
 
   const toggleSidebar = useCallback(() => {
-    document.getElementById('app')?.classList.toggle('sidebar-collapsed');
+    shellQuery('#app')?.classList.toggle('sidebar-collapsed');
     haptic('light');
   }, []);
 
@@ -638,7 +639,7 @@ export function DashboardProvider({ children }) {
     const uninstallToast = installGlobalToast();
 
     // Restore sidebar-backdrop click handler (was in legacy app.js, lost in migration)
-    const backdrop = document.querySelector('.sidebar-backdrop');
+    const backdrop = shellQuery('.sidebar-backdrop');
     const onBackdropClick = () => toggleSidebar();
     backdrop?.addEventListener('click', onBackdropClick);
 

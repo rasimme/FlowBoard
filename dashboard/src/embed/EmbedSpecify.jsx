@@ -16,6 +16,7 @@ import { getTasks, replaceTasks } from '../state/appStateBridge.mjs';
 import { applyTaskResponse } from '../state/taskState.mjs';
 import { MAX_TITLE_LENGTH, PRIORITIES } from './embedMode.mjs';
 import { useEmbedState } from './useEmbedState.js';
+import { shellQuery } from '../utils/shell.js';
 
 export default function EmbedSpecify({ embed }) {
   const { state } = useAppState();
@@ -29,7 +30,7 @@ export default function EmbedSpecify({ embed }) {
   const project = state?.viewedProject || null;
 
   useLayoutEffect(() => {
-    const el = document.getElementById('content');
+    const el = shellQuery('#content');
     if (el) setContainer(el);
   }, []);
 
