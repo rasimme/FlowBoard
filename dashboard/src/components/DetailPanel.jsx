@@ -30,7 +30,7 @@ import {
   buildStuckIndicatorActionRequest,
   normalizeTaskWorkState,
 } from '../utils/workState.js';
-import { getPortalRoot } from '../utils/portalRoot.js';
+import { getOverlayRoot } from '../utils/portalRoot.js';
 import { shellQuery } from '../utils/shell.js';
 
 // Shared Tailwind class strings for the Zone 1 / Zone 2 buttons. The
@@ -1664,7 +1664,7 @@ export default function DetailPanel() {
         </div>
       </div>
     </>,
-    getPortalRoot()
+    getOverlayRoot()
   );
 }
 

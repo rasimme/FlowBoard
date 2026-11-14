@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, RotateCcw, Trash2 } from 'lucide-react';
 import { apiFetch } from '../utils/apiFetch.js';
 import Button from './Button.jsx';
-import { getPortalRoot } from '../utils/portalRoot.js';
+import { getOverlayRoot } from '../utils/portalRoot.js';
 
 /**
  * TrashPanel — slide-in panel from the right (same pattern as
@@ -146,6 +146,6 @@ export default function TrashPanel({ open, project, trashedTasks, onClose, onRes
         </div>
       </div>
     </>,
-    getPortalRoot()
+    getOverlayRoot()
   );
 }

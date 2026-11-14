@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { getPortalRoot } from '../utils/portalRoot.js';
+import { getOverlayRoot } from '../utils/portalRoot.js';
 
 /**
  * UndoToast — sticky notification with an Undo action.
@@ -72,6 +72,6 @@ export default function UndoToast({ message, onUndo, onDismiss, duration = 8000 
         <X size={14} />
       </button>
     </div>,
-    getPortalRoot()
+    getOverlayRoot()
   );
 }

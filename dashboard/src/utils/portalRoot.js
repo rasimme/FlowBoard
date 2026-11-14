@@ -18,3 +18,13 @@ export function getPortalRoot() {
   if (portalRoot?.isConnected) return portalRoot;
   return shellQuery('#modalRoot') || document.body;
 }
+
+/**
+ * Root for overlays that are portalled straight into <body> standalone
+ * (popovers, tooltips, drag ghosts, side panels). Only a host mount redirects
+ * them; the standalone DOM placement is unchanged.
+ */
+export function getOverlayRoot() {
+  if (portalRoot?.isConnected) return portalRoot;
+  return document.body;
+}

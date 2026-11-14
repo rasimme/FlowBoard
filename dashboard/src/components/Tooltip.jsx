@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getPortalRoot } from '../utils/portalRoot.js';
+import { getOverlayRoot } from '../utils/portalRoot.js';
 
 /**
  * Tooltip — Hover/focus-triggered popup label, portal-rendered with auto-positioning.
@@ -73,7 +73,7 @@ export default function Tooltip({ content, placement = 'top', children }) {
         >
           {content}
         </div>,
-        getPortalRoot()
+        getOverlayRoot()
       )}
     </>
   );
