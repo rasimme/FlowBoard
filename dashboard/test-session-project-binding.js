@@ -432,6 +432,64 @@ async function httpSuite() {
       if (other) assert(Array.isArray(other.sessions), 'agents without sessions still carry an empty array');
     }
 
+    section('HTTP — a claim with sessionKey binds the session (T-520)');
+    {
+      const AGENT = 'codex-worker';
+      const S1 = 'agent:codex-worker:main';
+      const S2 = 'agent:codex-worker:telegram:99';
+      const mk = async (project, title) => (await call('POST', `/api/projects/${project}/tasks`, { title, status: 'open', description: 'binding test' })).body?.task?.id;
+      const status = async (key) => (await call('GET', `/api/status?agentId=${AGENT}${key ? `&sessionKey=${encodeURIComponent(key)}` : ''}`)).body;
+      const t1 = await mk('alpha-project', 'Bind on claim one');
+      const t2 = await mk('alpha-project', 'Bind on claim two');
+      const t3 = await mk('alpha-project', 'Bind on claim three');
+      assert(!!t1 && !!t2 && !!t3, 'test tasks created');
+
+      let r = await call('POST', `/api/projects/alpha-project/tasks/${t1}/claim`, { agent: AGENT });
+      assertEqual(r.status, 200, 'claim without sessionKey is 200');
+      assert(!('sessionBinding' in r.body), 'claim without sessionKey reports no binding');
+      assertEqual((await status()).binding, null, 'claim without sessionKey binds nothing');
+
+      r = await call('POST', `/api/projects/alpha-project/tasks/${t2}/claim`, { agent: AGENT, sessionKey: '' });
+      assertEqual(r.status, 400, 'claim with an invalid sessionKey is 400');
+      const t2state = (await call('GET', `/api/projects/alpha-project/tasks/${t2}`)).body?.task;
+      assertEqual(t2state?.status, 'open', 'a rejected sessionKey does not claim the task');
+
+      r = await call('POST', `/api/projects/alpha-project/tasks/${t2}/claim`, { agent: AGENT, sessionKey: S1 });
+      assertEqual(r.status, 200, 'claim with sessionKey is 200');
+      assertEqual(r.body.sessionBinding?.activeProject, 'alpha-project', 'claim reports the bound project');
+      assertEqual(r.body.sessionBinding?.changed, true, 'first claim creates the binding');
+      let st = await status(S1);
+      assertEqual(st.activeProject, 'alpha-project', 'the claiming session resolves to the project');
+      assertEqual(st.binding, 'session', 'the binding is session-scoped');
+      assertEqual((await status()).binding, null, 'the agent-level binding is untouched');
+      assertEqual((await status(S2)).binding, null, 'another session of the same agent is not bound');
+
+      r = await call('POST', `/api/projects/alpha-project/tasks/${t3}/claim`, { agent: AGENT, sessionKey: S1 });
+      assertEqual(r.body.sessionBinding?.changed, false, 'a second claim in the same project keeps the binding');
+
+      r = await call('POST', `/api/projects/alpha-project/tasks/${t3}/checkpoint`, { agent: AGENT, message: 'progress', sessionKey: S2 });
+      assertEqual(r.status, 200, 'checkpoint with sessionKey is 200');
+      assertEqual((await status(S2)).binding, null, 'a checkpoint never creates a binding');
+      r = await call('POST', `/api/projects/alpha-project/tasks/${t3}/checkpoint`, { agent: AGENT, message: 'progress', sessionKey: 7 });
+      assertEqual(r.status, 400, 'checkpoint with an invalid sessionKey is 400');
+      r = await call('POST', `/api/projects/alpha-project/tasks/${t3}/complete`, { agent: AGENT, sessionKey: S1 });
+      assertEqual(r.status, 200, 'complete with sessionKey is 200');
+      assertEqual((await status(S1)).activeProject, 'alpha-project', 'the binding survives completion');
+
+      await mk('beta-project', 'Bind on workflow start');
+      r = await call('POST', '/api/workflows/start', { agent: AGENT, project: 'beta-project', sessionKey: S2 });
+      assertEqual(r.status, 200, 'workflow start with sessionKey is 200');
+      assertEqual(r.body.mode, 'claim_next', 'workflow start claimed the task');
+      assertEqual(r.body.sessionBinding?.activeProject, 'beta-project', 'workflow start reports the binding');
+      st = await status(S2);
+      assertEqual(st.activeProject, 'beta-project', 'workflow start binds its session');
+      assertEqual((await status(S1)).activeProject, 'alpha-project', 'the other session keeps its own project');
+
+      r = await call('POST', '/api/workflows/start', { agent: 'idle-worker', project: 'beta-project', sessionKey: 'agent:idle-worker:main' });
+      assertEqual(r.body.mode, 'none', 'workflow start with nothing to claim');
+      assert(!('sessionBinding' in r.body), 'a start that holds no task binds nothing');
+    }
+
     section('HTTP — hard-deleting a project clears its session bindings');
     {
       await call('PUT', '/api/projects/beta-project', { archived: true });

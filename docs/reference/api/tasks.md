@@ -133,7 +133,9 @@ Permanently purge all soft-deleted tasks for the project.
 Claim a task. Optimistic-concurrency via lease. Successful claims automatically
 transition the task to `in-progress`; no additional `PUT` is required.
 
-**Body:** `{"agent": "<id>", "lease"?: <minutes>}`
+**Body:** `{"agent": "<id>", "lease"?: <minutes>, "sessionKey"?: "<key>"}`
+
+With `sessionKey`, a successful claim binds that session to the project (ADR-0039) and the response adds `sessionBinding: {sessionKey, activeProject, binding: "session", changed}`. An invalid key is a **400** and nothing is claimed.
 
 **Response 200:** `{"ok": true, "task": {<task with claim fields populated>}}`
 **409** `ALREADY_CLAIMED` — another agent holds an unexpired lease.
@@ -300,7 +302,9 @@ Cross-project list of stuck tasks that should notify now. Applies the same stale
 
 Resume the agent's in-progress task in a project, or claim the next eligible open/backlog task.
 
-**Body:** `{"agent":"<id>","project":"<name>","lease":120,"resumePolicy":"priority"}`
+**Body:** `{"agent":"<id>","project":"<name>","lease":120,"resumePolicy":"priority","sessionKey"?:"<key>"}`
+
+With `sessionKey`, mode `resume` or `claim_next` binds that session to the project and adds `sessionBinding` to the response; mode `none` binds nothing.
 **Response 200:** `{"ok": true, "workflow":"start", "mode":"resume|claim_next|none", "resumed": {...}, "claimed": {...}, "alternates": [...]}`
 
 ### `POST /api/workflows/handoff`

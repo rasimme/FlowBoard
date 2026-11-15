@@ -76,7 +76,8 @@ When reporting a blocker, stop the activation/context-loading flow and do not re
 This is a strict protocol, not a suggestion. The agent MUST follow these steps in order for every task:
 
 ### 1. Start
-`POST /api/workflows/start` with `{ agent, project }`.
+`POST /api/workflows/start` with `{ agent, project, sessionKey? }`.
+- With this run's `sessionKey`, a start that holds a task binds the session to the project; explicit activation is only needed for work without a task.
 - Resumes existing in-progress work for this agent, OR claims the next eligible task atomically.
 - **Do NOT** use `GET /api/tasks` + manual `claim` — that is the legacy fallback path.
 - After a successful start, the claimed task is in `in-progress` with a lease.
@@ -165,7 +166,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 ### Task actions via POST
 | Action | Endpoint | Body |
 |--------|----------|------|
-| **Claim** | `POST /api/projects/:name/tasks/:id/claim` | `{ agent }` |
+| **Claim** | `POST /api/projects/:name/tasks/:id/claim` | `{ agent, sessionKey? }` |
 | **Release** | `POST /api/projects/:name/tasks/:id/release` | `{ agent, reason }` |
 | **Complete → review** | `POST /api/projects/:name/tasks/:id/complete` | `{ agent }` |
 | **Checkpoint** | `POST /api/projects/:name/tasks/:id/checkpoint` | `{ agent, message, progress? }` |
@@ -196,7 +197,7 @@ Valid statuses: `open` → `in-progress` → `review` → `done` | `backlog` | `
 ### Workflow endpoints
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /api/workflows/start` | `{ agent, project }` — resume or claim next task atomically |
+| `POST /api/workflows/start` | `{ agent, project, sessionKey? }` — resume or claim next task atomically |
 | `POST /api/workflows/handoff` | Transition task to another agent with context |
 | `POST /api/workflows/delegate` | Delegate work to another agent without transferring ownership |
 

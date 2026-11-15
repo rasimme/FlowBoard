@@ -137,6 +137,18 @@ credential and must never be treated as one.
 - The dashboard UI does not yet render session bindings; it keeps showing the
   agent-level project. Surfacing them is follow-up work.
 
+## Amendment: a claim binds its session (T-520)
+
+Activation turned out to be a ritual: agents worked on tasks in sessions that
+were bound to another project or to none. `POST …/tasks/:id/claim` and
+`POST /api/workflows/start` now accept the same optional `sessionKey` and, when
+they end up holding a task, write the session row for that project. Checkpoint
+and complete refresh a matching row and never create one. Nothing else in this
+ADR changes: the key is still context rather than authorization, callers
+without it are unaffected, and the agent-level binding is never written on
+these paths. A new binding changes the injected context once, on the next run.
+The claim itself does not record which session made it.
+
 ## See also
 
 - [ADR-0001](0001-live-inject-bootstrap.md) — live-injected bootstrap from the canonical row

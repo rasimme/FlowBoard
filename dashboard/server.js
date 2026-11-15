@@ -4631,17 +4631,48 @@ app.put('/api/projects/:name/governance/mode', (req, res) => {
 // Phase 5: Coordination Primitives — Claim, Checkpoint, Complete, Comment, Stuck, Handoff
 // =============================================================================
 
-// POST /api/projects/:name/tasks/:id/claim
+// T-520: a claim made from a known session binds that session to the project,
+// so "what this session works on" and "what it has in context" stop drifting
+// apart. `sessionKey` stays optional context, never authorization (ADR-0039):
+// callers without one (external agents) behave exactly as before, and the
+// agent-level binding is never touched here.
+function readOptionalSessionKey(body) {
+  if (!body || body.sessionKey === undefined || body.sessionKey === null) return { ok: true, key: null };
+  const session = fbMeta.validateSessionKey(body.sessionKey);
+  return session.ok ? session : { ok: false, error: session.error + ' in request body' };
+}
+
+function bindSessionToProject(agentId, sessionKey, project) {
+  if (!sessionKey || !project) return null;
+  const row = fbMeta.getSessionProjectRow(agentId, sessionKey);
+  const changed = !(row && row.active_project === project);
+  if (changed) fbMeta.setSessionActiveProject(agentId, sessionKey, project);
+  else fbMeta.touchSessionLastSeen(agentId, sessionKey);
+  fbMeta.touchAgentLastSeen(agentId); // lazy-register without changing active_project
+  return { sessionKey, activeProject: project, binding: 'session', changed };
+}
+
+// Work on a task keeps an existing binding alive; it never creates one.
+function refreshSessionBinding(agentId, sessionKey, project) {
+  if (!sessionKey) return;
+  const row = fbMeta.getSessionProjectRow(agentId, sessionKey);
+  if (row && row.active_project === project) fbMeta.touchSessionLastSeen(agentId, sessionKey);
+}
+
 app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
   try {
     const { agent, lease } = req.body;
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const session = readOptionalSessionKey(req.body);
+    if (!session.ok) return res.status(400).json({ error: session.error });
     const task = hzlService.claimTask(req.params.name, req.params.id, { agent: identity.id, lease });
+    const sessionBinding = bindSessionToProject(identity.id, session.key, req.params.name);
     // T-366: claiming a subtask moves it to in-progress; pull the parent along
     // (backlog/open → in-progress) so a started subtask never sits under an
     // idle parent. claimTask bypasses the generic aggregation path.
     const response = { ok: true, task, agentIdentity: agentIdentity.responseMeta(identity) };
+    if (sessionBinding) response.sessionBinding = sessionBinding;
     const parentUpdated = recalcParentForResponse(req.params.name, task.parentId);
     if (parentUpdated) response.parentUpdated = parentUpdated;
     res.json(response);
@@ -4676,7 +4707,10 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
     const { agent } = req.body;
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const session = readOptionalSessionKey(req.body);
+    if (!session.ok) return res.status(400).json({ error: session.error });
     const task = hzlService.completeTask(req.params.name, req.params.id, { agent: identity.id });
+    refreshSessionBinding(identity.id, session.key, req.params.name);
     // Recalculate parent status if this is a subtask (T-366: also report it back)
     const response = { ok: true, task };
     const parentUpdated = recalcParentForResponse(req.params.name, task.parentId);
@@ -4799,7 +4833,10 @@ app.post('/api/projects/:name/tasks/:id/checkpoint', (req, res) => {
     const { message, agent, progress } = req.body;
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
+    const session = readOptionalSessionKey(req.body);
+    if (!session.ok) return res.status(400).json({ error: session.error });
     const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent: identity.id, progress });
+    refreshSessionBinding(identity.id, session.key, req.params.name);
     res.json({ ok: true, checkpoint, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
     const status = httpStatusForError(err);
@@ -5195,13 +5232,19 @@ app.post('/api/workflows/start', (req, res) => {
     const identity = agentIdentity.validateAgentId(agent, 'agent');
     if (!identity.ok) return res.status(400).json({ error: identity.error });
     if (!project) return res.status(400).json({ error: 'project is required' });
+    const session = readOptionalSessionKey(req.body);
+    if (!session.ok) return res.status(400).json({ error: session.error });
     const result = hzlService.workflowStart(project, {
       agent: identity.id,
       lease,
       resumePolicy,
       includeAlternates,
     });
-    res.json({ ok: true, ...result, agentIdentity: agentIdentity.responseMeta(identity) });
+    // T-520: only a start that actually holds a task binds the session.
+    const sessionBinding = (result.mode === 'resume' || result.mode === 'claim_next')
+      ? bindSessionToProject(identity.id, session.key, project)
+      : null;
+    res.json({ ok: true, ...result, ...(sessionBinding ? { sessionBinding } : {}), agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
     const status = httpStatusForError(err);
     res.status(status).json({ error: err.message });

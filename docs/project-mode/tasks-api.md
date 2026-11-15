@@ -180,7 +180,7 @@ Use these endpoints as the default agent execution protocol.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/workflows/start` | Resume agent work or claim next eligible task atomically. Body: `{ agent, project, lease?, resumePolicy? }` |
+| `POST` | `/workflows/start` | Resume agent work or claim next eligible task atomically. Body: `{ agent, project, lease?, resumePolicy?, sessionKey? }` |
 | `POST` | `/workflows/handoff` | Complete source task and create follow-on work. Body: `{ project, fromTaskId, title, agent? }` |
 | `POST` | `/workflows/delegate` | Create delegated child work. Body: `{ project, fromTaskId, title, agent?, pauseParent?, checkpoint? }` |
 
@@ -190,10 +190,10 @@ Primitive endpoints are used by the dashboard UI and for explicit edge cases. Ag
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/projects/:name/tasks/:id/claim` | Claim task; successful claims automatically set status to `in-progress`. Body: `{ agent, lease? }` |
+| `POST` | `/projects/:name/tasks/:id/claim` | Claim task; successful claims automatically set status to `in-progress`. Body: `{ agent, lease?, sessionKey? }` |
 | `POST` | `/projects/:name/tasks/:id/release` | Release claim. Body: `{ agent, force? }` |
-| `POST` | `/projects/:name/tasks/:id/complete` | Mark done. Body: `{ agent }` |
-| `POST` | `/projects/:name/tasks/:id/checkpoint` | Progress update. Body: `{ message, agent, progress? }` |
+| `POST` | `/projects/:name/tasks/:id/complete` | Mark done. Body: `{ agent, sessionKey? }` |
+| `POST` | `/projects/:name/tasks/:id/checkpoint` | Progress update. Body: `{ message, agent, progress?, sessionKey? }` |
 | `POST` | `/projects/:name/tasks/:id/comment` | Steering comment. Body: `{ message, author }` |
 | `POST` | `/projects/:name/tasks/:id/route` | Route to agent. Body: `{ agent }` |
 | `POST` | `/projects/:name/tasks/:id/approve` | Approve a `review` task → `done`. Body: `{ actor?, reason? }`. This is the review→done gate; the approver need not be the claimant. |
@@ -254,6 +254,7 @@ Project binding has two layers (ADR-0039). The agent-level row in `flowboard_age
 - `GET /status?agentId=<id>&sessionKey=<key>` resolves **session → agent → null** and always returns `binding` (`"session"`, `"agent"`, or `null`), echoing `sessionKey` when supplied.
 - `PUT /status { project, agentId, sessionKey }` writes only that session's binding; the agent-level project stays as it is.
 - `PUT /status { project: null, agentId, sessionKey }` deletes the session binding, after which the agent-level project applies again.
+- `POST /projects/:name/tasks/:id/claim` and `POST /workflows/start` accept an optional `sessionKey`. A successful claim (or a start that resumes or claims a task) binds that session to the task's project and reports it as `sessionBinding { sessionKey, activeProject, binding, changed }`. Checkpoint and complete accept it too, but only refresh an existing binding to the same project; they never create one. The agent-level project is never changed on these paths.
 - Omitting `sessionKey` everywhere is fully supported and behaves exactly as before — external agents without a session concept need no change.
 - `sessionKey` must be a non-empty string of at most 256 characters with no control characters (`400` otherwise). It is **context, never authorization**: it names a binding, it does not authenticate or authorize the caller.
 - Session bindings expire on the same idle TTL as agent activations and are deleted on expiry, so context falls back to the agent-level binding rather than to "no project".

@@ -39,8 +39,9 @@ Agents should use the workflow endpoints for normal execution. The primitive end
 ### Workflow-First Path
 
 1. **Start or resume work**
-   `POST /api/workflows/start` with `{ agent, project, lease?, resumePolicy? }`.
+   `POST /api/workflows/start` with `{ agent, project, lease?, resumePolicy?, sessionKey? }`.
    This either refreshes/resumes the agent's in-progress task or claims the next eligible open/backlog task.
+   OpenClaw agents send this run's `sessionKey`: a start that holds a task binds that session to the project, so no separate activation is needed to work on a task. Agents without a session key omit it.
 2. **Checkpoint progress**
    `POST /api/projects/:name/tasks/:id/checkpoint` with `{ agent, message, progress? }`.
 3. **Finish or transfer**
