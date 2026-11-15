@@ -19,6 +19,8 @@ Instead of hand-placing widgets, apply a **preset** (e.g. *default*, *coding*, *
 
 Bind **one repository per project** (repo status, CI history, PRs, releases, issues). A token is optional and only needed for private repos. Set the binding from any GitHub widget or via `PUT /api/projects/:name/github`.
 
+The token is entered in any GitHub widget and applies to all of them. **Replace GitHub token** swaps or removes a stored token. If GitHub rejects the token (expired or revoked), the widgets say so and offer the same field. A token set through `FLOWBOARD_GITHUB_TOKEN` or `GITHUB_TOKEN` takes precedence and has to be changed in the environment.
+
 ## Milestones & open questions
 
 - **Milestones** are just tasks tagged `milestone:<name>` — the milestones widget turns them into a definition-of-done checklist.

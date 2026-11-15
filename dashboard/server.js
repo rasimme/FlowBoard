@@ -4915,7 +4915,7 @@ app.get('/api/github/repo-status', async (req, res) => {
     res.json({ ok: true, status: await github.fetchRepoStatus(repo, branch) });
   } catch (err) {
     const status = err.status === 404 ? 404 : 502;
-    res.status(status).json({ error: `GitHub fetch failed: ${err.message}` });
+    res.status(status).json({ error: `GitHub fetch failed: ${err.message}`, ...(err.code ? { code: err.code } : {}) });
   }
 });
 
@@ -4948,7 +4948,9 @@ app.put('/api/projects/:name/github', (req, res) => {
 // An env token (FLOWBOARD_GITHUB_TOKEN/GITHUB_TOKEN) takes precedence.
 app.get('/api/settings/github-token', (req, res) => {
   const envSet = Boolean(process.env.FLOWBOARD_GITHUB_TOKEN || process.env.GITHUB_TOKEN);
-  res.json({ ok: true, set: github.hasToken(), source: envSet ? 'env' : (fbMeta.getSetting('github_token') ? 'settings' : null) });
+  // T-519: `rejected` is true once GitHub answered 401 to this token, so the
+  // UI can offer a replacement instead of a bare fetch error.
+  res.json({ ok: true, set: github.hasToken(), source: envSet ? 'env' : (fbMeta.getSetting('github_token') ? 'settings' : null), rejected: github.tokenRejected() });
 });
 
 app.put('/api/settings/github-token', (req, res) => {
@@ -4989,7 +4991,7 @@ app.get('/api/github/insight', async (req, res) => {
     res.json({ ok: true, insight: await github.fetchInsight(repo, view, branch) });
   } catch (err) {
     const status = err.status === 404 ? 404 : err.status === 400 ? 400 : 502;
-    res.status(status).json({ error: `GitHub fetch failed: ${err.message}` });
+    res.status(status).json({ error: `GitHub fetch failed: ${err.message}`, ...(err.code ? { code: err.code } : {}) });
   }
 });
 

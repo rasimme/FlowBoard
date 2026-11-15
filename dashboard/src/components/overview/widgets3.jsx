@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { OvWidget } from './widgets.jsx';
-import { TokenAffordance, useProjectGithub } from './widgets2.jsx';
+import { TokenAffordance, useProjectGithub, GITHUB_TOKEN_EVENT } from './widgets2.jsx';
 import ScrollArea from '../ScrollArea.jsx';
 import { useAppState } from '../../context/AppStateContext.jsx';
 import { useDashboard } from '../../context/DashboardContext.jsx';
@@ -26,30 +26,36 @@ function ago(ts) {
 function useInsight(repo, view, branch) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [rejected, setRejected] = useState(false);
   const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const reload = () => setTick(t => t + 1);
+    window.addEventListener(GITHUB_TOKEN_EVENT, reload);
+    return () => window.removeEventListener(GITHUB_TOKEN_EVENT, reload);
+  }, []);
   useEffect(() => {
     if (!repo) return;
     let alive = true;
-    setData(null); setError(null);
+    setData(null); setError(null); setRejected(false);
     const q = branch ? `&branch=${encodeURIComponent(branch)}` : '';
     apiFetch(`/api/github/insight?repo=${encodeURIComponent(repo)}&view=${view}${q}`)
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!alive) return;
         if (r.ok) setData(d.insight);
-        else setError(d.error || 'GitHub fetch failed');
+        else { setError(d.error || 'GitHub fetch failed'); setRejected(d.code === 'GITHUB_TOKEN_REJECTED'); }
       })
       .catch(() => { if (alive) setError('GitHub unreachable'); });
     return () => { alive = false; };
   }, [repo, view, branch, tick]);
-  return { data, error, reload: () => setTick(t => t + 1) };
+  return { data, error, rejected, reload: () => setTick(t => t + 1) };
 }
 
-function GhError({ error, editing, onRetry }) {
+function GhError({ error, editing, rejected }) {
   return (
     <div className="gh-errwrap">
       <div className="gh-error">{error}</div>
-      <TokenAffordance editing={editing} onSaved={onRetry} />
+      <TokenAffordance editing={editing} rejected={rejected} />
     </div>
   );
 }
@@ -110,7 +116,7 @@ function GhLink({ href, editing, className, children, title, style }) {
 /* ---------- gh-pulls: PR inbox ---------- */
 export function GhPullsWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
-  const { data, error, reload } = useInsight(repo, 'pulls');
+  const { data, error, rejected } = useInsight(repo, 'pulls');
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'Pull Requests'} meta="GitHub">
@@ -126,7 +132,7 @@ export function GhPullsWidget({ widget, editing }) {
 
   return (
     <OvWidget title={widget?.title || 'Pull Requests'} meta={data ? repo : 'GitHub'}>
-      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : (
+      {error ? <GhError error={error} editing={editing} rejected={rejected} /> : !data ? <div className="nt-loading">Loading…</div> : (
         <div className="ghp-wrap">
           <div className="ghp-kpis">
             <span className="ghp-kpi"><b>{ready.length}</b> ready</span>
@@ -166,7 +172,7 @@ const RUN_COLOR = { success: 'ok', failure: 'fail', cancelled: 'mute', timed_out
 
 export function GhCiWidget({ widget, editing }) {
   const { repo, branch, connect } = useRepoProp(widget);
-  const { data, error, reload } = useInsight(repo, 'ci', branch);
+  const { data, error, rejected } = useInsight(repo, 'ci', branch);
   const runCount = (data?.runs || []).length;
   // integer bar widths — fractional flex/grid tracks render with visibly
   // uneven gaps on some zoom levels. Hooks live ABOVE the early return:
@@ -204,7 +210,7 @@ export function GhCiWidget({ widget, editing }) {
   return (
     <OvWidget title={widget?.title || 'CI Runs'}
       meta={data ? `${data.branch}${passRate !== null ? ` · ${passRate}% pass` : ''}` : 'GitHub'}>
-      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : runs.length === 0 ? (
+      {error ? <GhError error={error} editing={editing} rejected={rejected} /> : !data ? <div className="nt-loading">Loading…</div> : runs.length === 0 ? (
         <span className="gh-none">No workflow runs on {data.branch} yet.</span>
       ) : (
         <div className="ghc-wrap">
@@ -238,7 +244,7 @@ export function GhCiWidget({ widget, editing }) {
 /* ---------- gh-releases: latest release + unreleased work ---------- */
 export function GhReleasesWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
-  const { data, error, reload } = useInsight(repo, 'releases');
+  const { data, error, rejected } = useInsight(repo, 'releases');
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'Releases'} meta="GitHub">
@@ -249,7 +255,7 @@ export function GhReleasesWidget({ widget, editing }) {
   }
   return (
     <OvWidget title={widget?.title || 'Releases'} meta={data ? repo : 'GitHub'}>
-      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : !data.latest ? (
+      {error ? <GhError error={error} editing={editing} rejected={rejected} /> : !data ? <div className="nt-loading">Loading…</div> : !data.latest ? (
         <span className="gh-none">No releases yet — tag one and it shows up here.</span>
       ) : (
         <div className="ghr-wrap">
@@ -288,7 +294,7 @@ export function GhReleasesWidget({ widget, editing }) {
 /* ---------- gh-issues: triage view ---------- */
 export function GhIssuesWidget({ widget, editing }) {
   const { repo, connect } = useRepoProp(widget);
-  const { data, error, reload } = useInsight(repo, 'issues');
+  const { data, error, rejected } = useInsight(repo, 'issues');
   if (!repo) {
     return (
       <OvWidget title={widget?.title || 'Issues'} meta="GitHub">
@@ -312,7 +318,7 @@ export function GhIssuesWidget({ widget, editing }) {
 
   return (
     <OvWidget title={widget?.title || 'Issues'} meta={data ? repo : 'GitHub'}>
-      {error ? <GhError error={error} editing={editing} onRetry={reload} /> : !data ? <div className="nt-loading">Loading…</div> : issues.length === 0 ? (
+      {error ? <GhError error={error} editing={editing} rejected={rejected} /> : !data ? <div className="nt-loading">Loading…</div> : issues.length === 0 ? (
         <span className="gh-none">No open issues — inbox zero.</span>
       ) : (
         <div className="ghi-wrap">

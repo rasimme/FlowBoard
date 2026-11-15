@@ -64,22 +64,44 @@ export async function persistWidgetProps(project, widgetId, mutate) {
 /**
  * T-320 — inline GitHub token entry. The token is stored server-side
  * (write-only; GET only reports whether one exists) and applies to every
- * gh-* widget at once. Hidden as soon as a token is configured.
+ * gh-* widget at once.
+ *
+ * T-519 — a stored token can be replaced or removed here too, and a token
+ * GitHub rejected (401) is called out instead of hiding the entry. A token
+ * from the environment cannot be changed from the UI, so that case only
+ * explains where to fix it.
  */
-export function TokenAffordance({ editing, onSaved }) {
-  const [state, setState] = useState(null); // { set, source }
+export const GITHUB_TOKEN_EVENT = 'fb:github-token';
+export function TokenAffordance({ editing, onSaved, rejected = false }) {
+  const [state, setState] = useState(null); // { set, source, rejected }
   const [open, setOpen] = useState(false);
   const [val, setVal] = useState('');
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     let alive = true;
-    apiFetch('/api/settings/github-token')
+    const load = () => apiFetch('/api/settings/github-token')
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (alive) setState(d); })
       .catch(() => {});
-    return () => { alive = false; };
-  }, []);
-  if (!state || state.set) return null;
+    load();
+    window.addEventListener(GITHUB_TOKEN_EVENT, load);
+    return () => { alive = false; window.removeEventListener(GITHUB_TOKEN_EVENT, load); };
+  }, [rejected]);
+  if (!state) return null;
+  const isRejected = Boolean(state.set && (rejected || state.rejected));
+  if (state.set && state.source === 'env') {
+    return isRejected ? (
+      <div className="gh-token-note">
+        GitHub rejected the token from the environment (FLOWBOARD_GITHUB_TOKEN or GITHUB_TOKEN). Replace it there and restart the dashboard.
+      </div>
+    ) : null;
+  }
+
+  function changed() {
+    setVal(''); setOpen(false);
+    window.dispatchEvent(new CustomEvent(GITHUB_TOKEN_EVENT));
+    onSaved?.();
+  }
 
   async function save() {
     if (!val.trim() || saving) return;
@@ -90,13 +112,29 @@ export function TokenAffordance({ editing, onSaved }) {
         body: JSON.stringify({ token: val.trim() }),
       });
       if (res.ok) {
-        setState({ set: true });
-        setVal(''); setOpen(false);
+        setState({ set: true, source: 'settings', rejected: false });
         window.showToast?.('GitHub token saved — applies to all GitHub widgets', 'success');
-        onSaved?.();
+        changed();
       } else {
         const d = await res.json().catch(() => ({}));
         window.showToast?.(d.error || 'Saving token failed', 'error');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await apiFetch('/api/settings/github-token', { method: 'DELETE' });
+      if (res.ok) {
+        setState({ set: false, source: null, rejected: false });
+        window.showToast?.('GitHub token removed', 'success');
+        changed();
+      } else {
+        window.showToast?.('Removing token failed', 'error');
       }
     } finally {
       setSaving(false);
@@ -112,10 +150,18 @@ export function TokenAffordance({ editing, onSaved }) {
       <button type="button" className="lk-btn" onClick={save} disabled={editing || saving || !val.trim()}>
         {saving ? '…' : 'Save'}
       </button>
+      {state.set && (
+        <button type="button" className="lk-btn" onClick={remove} disabled={editing || saving} title="Remove the stored token">
+          Remove
+        </button>
+      )}
     </div>
   ) : (
-    <button type="button" className="gh-token-toggle" onClick={() => setOpen(true)} disabled={editing}>
-      <KeyRound size={11} /> Add a GitHub token — private repos &amp; higher rate limit
+    <button type="button" className={'gh-token-toggle' + (isRejected ? ' rejected' : '')} onClick={() => setOpen(true)} disabled={editing}>
+      <KeyRound size={11} />{' '}
+      {isRejected ? 'GitHub rejected the stored token — replace it'
+        : state.set ? 'Replace GitHub token'
+        : 'Add a GitHub token — private repos & higher rate limit'}
     </button>
   );
 }
@@ -1168,20 +1214,25 @@ export function RepoStatusWidget({ widget, editing }) {
   const [saving, setSaving] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [rejected, setRejected] = useState(false);
   const [tick, setTick] = useState(0);
   const reload = () => setTick(t => t + 1);
+  useEffect(() => {
+    window.addEventListener(GITHUB_TOKEN_EVENT, reload);
+    return () => window.removeEventListener(GITHUB_TOKEN_EVENT, reload);
+  }, []);
 
   useEffect(() => {
     if (!repo) return;
     let alive = true;
-    setData(null); setError(null);
+    setData(null); setError(null); setRejected(false);
     const q = branch ? `&branch=${encodeURIComponent(branch)}` : '';
     apiFetch(`/api/github/repo-status?repo=${encodeURIComponent(repo)}${q}`)
       .then(async r => {
         const d = await r.json().catch(() => ({}));
         if (!alive) return;
         if (r.ok) setData(d.status);
-        else setError(d.error || 'GitHub fetch failed');
+        else { setError(d.error || 'GitHub fetch failed'); setRejected(d.code === 'GITHUB_TOKEN_REJECTED'); }
       })
       .catch(() => { if (alive) setError('GitHub unreachable'); });
     return () => { alive = false; };
@@ -1250,7 +1301,7 @@ export function RepoStatusWidget({ widget, editing }) {
       {error ? (
         <div className="gh-errwrap">
           <div className="gh-error">{error}</div>
-          <TokenAffordance editing={editing} onSaved={reload} />
+          <TokenAffordance editing={editing} rejected={rejected} />
         </div>
       ) : !data ? (
         <div className="nt-loading">Loading…</div>
@@ -1285,7 +1336,7 @@ export function RepoStatusWidget({ widget, editing }) {
           </div>
         </div>
       )}
-      {!editing && <TokenAffordance editing={editing} onSaved={reload} />}
+      {!editing && !error && <TokenAffordance editing={editing} />}
     </OvWidget>
   );
 }

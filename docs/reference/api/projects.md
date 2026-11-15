@@ -340,10 +340,14 @@ repo-status.
 
 ### GET | PUT | DELETE /api/settings/github-token
 Server-side GitHub token for the gh-* widgets, stored write-only in the
-meta DB: `GET` returns only `{ set, source }` (never the value), `PUT`
-`{ token }` stores it (a `FLOWBOARD_GITHUB_TOKEN`/`GITHUB_TOKEN` env var
-takes precedence), `DELETE` removes it. Saving clears the GitHub cache so
-the token applies immediately.
+meta DB: `GET` returns only `{ set, source, rejected }` (never the value),
+`PUT` `{ token }` stores it (a `FLOWBOARD_GITHUB_TOKEN`/`GITHUB_TOKEN` env
+var takes precedence), `DELETE` removes it. Saving or removing clears the
+GitHub cache so the change applies immediately. `rejected` is `true` once
+GitHub answered `401` to the configured token (expired or revoked); the
+`repo-status` and `insight` routes then answer **502** with
+`code: "GITHUB_TOKEN_REJECTED"`, and the GitHub widgets offer to replace or
+remove the token in place.
 
 ### GET /api/projects/:name/stats
 Project metrics — the same numbers the `task-stats` overview widget shows,

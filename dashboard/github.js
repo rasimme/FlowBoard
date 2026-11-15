@@ -18,6 +18,10 @@ const API = 'https://api.github.com';
 const TTL_OK = 150 * 1000;
 const TTL_ERR = 30 * 1000;
 const _cache = new Map(); // repo → { at, ttl, data?, error? }
+// T-519: GitHub answered 401 to a request that carried the token. Kept so the
+// settings route can say "replace me" without another GitHub round trip.
+const TOKEN_REJECTED = 'GITHUB_TOKEN_REJECTED';
+let _tokenRejected = false;
 
 // A GitHub owner/name segment: starts and ends alphanumeric, no `.`/`..`
 // segments. Rejecting these matters because `repo` is interpolated into
@@ -41,10 +45,16 @@ async function gh(path) {
     },
   });
   if (!res.ok) {
-    const err = new Error(res.status === 403 ? 'rate limited or forbidden' : `GitHub responded ${res.status}`);
+    const rejected = res.status === 401 && Boolean(token);
+    const err = new Error(
+      rejected ? 'GitHub rejected the stored token (expired or revoked)'
+        : res.status === 403 ? 'rate limited or forbidden' : `GitHub responded ${res.status}`,
+    );
     err.status = res.status;
+    if (rejected) { err.code = TOKEN_REJECTED; _tokenRejected = true; }
     throw err;
   }
+  if (token) _tokenRejected = false;
   return res.json();
 }
 
@@ -55,6 +65,7 @@ async function fetchRepoStatus(repo, branchOverride = null) {
     if (cached.error) {
       const err = new Error(cached.error.message);
       err.status = cached.error.status;
+      if (cached.error.code) err.code = cached.error.code;
       throw err;
     }
     return cached.data;
@@ -104,11 +115,11 @@ async function fetchRepoStatus(repo, branchOverride = null) {
     // serve the last good payload through rate limits/outages — a slightly
     // stale widget beats an error card
     const prior = _cache.get(cacheKey);
-    if (prior?.data) {
+    if (prior?.data && err.code !== TOKEN_REJECTED) {
       _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, data: prior.data });
       return prior.data;
     }
-    _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, error: { message: err.message, status: err.status || 502 } });
+    _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, error: { message: err.message, status: err.status || 502, code: err.code } });
     throw err;
   }
 }
@@ -124,6 +135,7 @@ async function fetchInsight(repo, view, branch = null) {
     if (cached.error) {
       const err = new Error(cached.error.message);
       err.status = cached.error.status;
+      if (cached.error.code) err.code = cached.error.code;
       throw err;
     }
     return cached.data;
@@ -212,11 +224,11 @@ async function fetchInsight(repo, view, branch = null) {
   } catch (err) {
     console.warn('[github]', repo, view, err.message, err.cause?.code || '');
     const prior = _cache.get(cacheKey);
-    if (prior?.data) {
+    if (prior?.data && err.code !== TOKEN_REJECTED) {
       _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, data: prior.data });
       return prior.data;
     }
-    _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, error: { message: err.message, status: err.status || 502 } });
+    _cache.set(cacheKey, { at: Date.now(), ttl: TTL_ERR, error: { message: err.message, status: err.status || 502, code: err.code } });
     throw err;
   }
 }
@@ -232,6 +244,7 @@ function validBranch(branch) {
 }
 
 function hasToken() { return Boolean(resolveToken()); }
-function clearCache() { _cache.clear(); }
+function clearCache() { _cache.clear(); _tokenRejected = false; }
+function tokenRejected() { return _tokenRejected && Boolean(resolveToken()); }
 
-module.exports = { fetchRepoStatus, fetchInsight, INSIGHT_VIEWS, validRepo, validBranch, setTokenProvider, hasToken, clearCache };
+module.exports = { fetchRepoStatus, fetchInsight, INSIGHT_VIEWS, validRepo, validBranch, setTokenProvider, hasToken, clearCache, tokenRejected, TOKEN_REJECTED };

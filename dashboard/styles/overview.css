@@ -938,6 +938,8 @@
   background: transparent; color: var(--muted); font-size: 10.5px; cursor: pointer;
 }
 .gh-token-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.gh-token-toggle.rejected { color: var(--warn); border-color: var(--warn); }
+.gh-token-note { font-size: 10.5px; color: var(--warn); line-height: 1.4; }
 
 /* milestones v2 (T-315): create / drilldown checklist */
 .ms-cta { margin-top: 8px; align-self: center; }

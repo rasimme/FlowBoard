@@ -115,6 +115,7 @@ async function run() {
     // GitHub token store — WRITE-ONLY: the value must never be echoed back
     r = await api('GET', '/settings/github-token');
     ok(r.status === 200 && r.body?.set === false, 'token store starts empty');
+    ok(r.body?.rejected === false, 'token store reports rejected=false without a token (T-519)');
     r = await api('PUT', '/settings/github-token', { token: 'short' });
     ok(r.status === 400, 'token store rejects a malformed token');
     const secret = CREDENTIALS.githubToken;
