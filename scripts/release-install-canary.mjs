@@ -362,14 +362,29 @@ function assertHookRegistered(cli, env, inspected, context) {
   throw new Error(`${REQUIRED_HOOK} hook is not registered ${context}`);
 }
 
+/**
+ * Hosts from 2026.10 verify where an installed plugin came from and warn when
+ * they cannot. The canary installs a locally packed archive, which has no
+ * provenance by construction, so that one warning is expected here and says
+ * nothing about the package. A release installed from ClawHub is verified by
+ * the host itself. Every other diagnostic still fails the canary.
+ */
+function isLocalArchiveProvenanceNote(entry) {
+  const message = String(entry?.message || '');
+  return entry?.level === 'warn'
+    && message.includes('reason=provenance-invalid')
+    && message.includes('installSource="archive"');
+}
+
 function assertInspect(cli, env, inspected) {
   if (inspected.status !== 'loaded') {
     throw new Error(`expected plugin status "loaded", got ${JSON.stringify(inspected.status)}`);
   }
   const hookDetail = assertHookRegistered(cli, env, inspected, 'after install');
 
-  if (inspected.diagnostics.length > 0) {
-    throw new Error(`plugin diagnostics are not empty: ${JSON.stringify(inspected.diagnostics)}`);
+  const diagnostics = inspected.diagnostics.filter((entry) => !isLocalArchiveProvenanceNote(entry));
+  if (diagnostics.length > 0) {
+    throw new Error(`plugin diagnostics are not empty: ${JSON.stringify(diagnostics)}`);
   }
   const unexpected = inspected.compatibility.filter(
     (entry) => !ALLOWED_COMPAT_CODES.has(entry.code) && !ALLOWED_COMPAT_CODES.has(entry.compatCode),
@@ -397,11 +412,39 @@ function assertInspect(cli, env, inspected) {
   return { featureLayer, hookDetail };
 }
 
+/**
+ * `plugins doctor` on a 2026.10 host exits non-zero when its only finding is
+ * the provenance warning for a locally packed archive (see
+ * `isLocalArchiveProvenanceNote`). That is the one failure the canary accepts;
+ * a plugin error, any other warning, shadowing or a configuration warning
+ * still fails it.
+ */
+function doctorFailedOnlyOnLocalArchiveProvenance(result, capabilities) {
+  if (!capabilities.doctorJson) return false;
+  let payload;
+  try {
+    payload = JSON.parse(result.stdout);
+  } catch {
+    return false;
+  }
+  const empty = (value) => !Array.isArray(value) || value.length === 0;
+  const diagnostics = Array.isArray(payload?.diagnostics) ? payload.diagnostics : [];
+  return empty(payload?.pluginErrors)
+    && empty(payload?.sourceShadowing)
+    && empty(payload?.configurationWarnings)
+    && empty(payload?.compatibility)
+    && empty(payload?.issues)
+    && diagnostics.length > 0
+    && diagnostics.every(isLocalArchiveProvenanceNote);
+}
+
 function assertDoctorClean(cli, env, capabilities) {
   const args = ['plugins', 'doctor'];
   if (capabilities.doctorJson) args.push('--json');
   const result = runCli(cli, args, { env });
-  if (!result.ok) throw new Error(`plugins doctor failed: ${stripAnsi(result.output).trim()}`);
+  if (!result.ok && !doctorFailedOnlyOnLocalArchiveProvenance(result, capabilities)) {
+    throw new Error(`plugins doctor failed: ${stripAnsi(result.output).trim()}`);
+  }
   if (capabilities.doctorJson) {
     let payload;
     try {
@@ -409,6 +452,7 @@ function assertDoctorClean(cli, env, capabilities) {
     } catch {
       return 'doctor ok (non-JSON output)';
     }
+    if (!result.ok) return 'doctor ok apart from the expected local-archive provenance note';
     const entries = [
       ...(payload.compatibility || []),
       ...(payload.diagnostics || []),
