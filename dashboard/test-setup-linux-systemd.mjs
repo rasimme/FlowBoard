@@ -712,7 +712,10 @@ const preservedUnit = port => existingUnit([
 }
 
 {
-  const result = await runSetup(['--dry-run'], {}, { FLOWBOARD_PORT: '' });
+  // --force: without it, a dashboard that happens to run on the default port
+  // (the CI fixture server, a developer's own install) ends the run early with
+  // "already healthy" and the plan under test is never printed.
+  const result = await runSetup(['--dry-run', '--force'], {}, { FLOWBOARD_PORT: '' });
   ok(result.code === 0, 'fresh dry-run install without FLOWBOARD_PORT succeeds (T-495)');
   ok(result.stdout.includes('would poll http://127.0.0.1:18700/api/health'), 'fresh install seeds the new default port 18700 (T-495)');
   ok(!result.stdout.includes('plugins.entries.flowboard.config.dashboardPort'), 'fresh default install needs no hook port command (T-495)');
@@ -880,7 +883,10 @@ for (const [label, assignment] of [
   const result = await runSetup(['--update'], {
     initialUnit: existingUnit(['EnvironmentFile=%h/.config/flowboard/invalid.env']),
     environmentFiles: {
-      '.config/flowboard/invalid.env': 'FLOWBOARD_PORT=18790\nOPENCLAW_WORKSPACE="/tmp/literal\\x20value"\n',
+      // The port is the harness's health server, not a fixed number: the
+      // update only succeeds when something answers there, and nothing in a
+      // test may depend on a dashboard that happens to run on the machine.
+      '.config/flowboard/invalid.env': port => `FLOWBOARD_PORT=${port}\nOPENCLAW_WORKSPACE="/tmp/literal\\x20value"\n`,
     },
     injectPort: false,
   });
