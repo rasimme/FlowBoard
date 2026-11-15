@@ -4,7 +4,9 @@
 
 ## Overview
 
-- [README](README.md) — quick start, install, features, external-agent onboarding
+- [README](README.md) — overview, features, quick start
+- [Install](docs/guide/install.md) — host versions, install consent, updating, manual install
+- [External agents](docs/guide/how-to/external-agents.md) — trigger snippet, discovery, agent ids
 - [CHANGELOG](CHANGELOG.md) — release notes
 - [CONTRIBUTING](CONTRIBUTING.md) — contributor guidelines
 

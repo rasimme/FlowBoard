@@ -235,6 +235,24 @@ cron / heartbeat / mDNS off):
 - `plugins update flowboard` reports `Skipping "flowboard" (source: archive)` —
   a locally installed artifact has no upstream to update from. Expected.
 
+### Demo media
+
+`docs/demo.gif` and the README screenshots come from a seeded demo project, never from a real instance. All of this is dev tooling and is excluded from the published package.
+
+```bash
+# 1. an isolated dashboard (own port and HZL_DB_PATH), then:
+FLOWBOARD_API=http://127.0.0.1:<port> node scripts/v5-demo-fixture.mjs seed
+# 2. stop that dashboard, spread the history over two weeks, start it again
+node scripts/v5-demo-backdate.mjs /path/to/demo/flowboard.db
+# 3. standalone screenshots
+FLOWBOARD_API=http://127.0.0.1:<port> node scripts/capture-v5-screenshots.mjs
+# 4. native GIF and stills, against a disposable Gateway with the plugin installed
+FLOWBOARD_GATEWAY_URL=http://localhost:<gw-port> OPENCLAW_GATEWAY_TOKEN=... \
+  node scripts/capture-native-media.mjs
+```
+
+`v5-demo-backdate.mjs` rewrites event timestamps, which the event store forbids on purpose. It refuses any database that contains a non-demo project; never point it at real data. Give the disposable Gateway its own `OPENCLAW_STATE_DIR`, config, `TMPDIR` and `logging.file`, so it shares nothing with a Gateway you use. `capture-native-media.mjs` replaces operator and session names on every frame; set `FLOWBOARD_CAPTURE_FORBIDDEN` to a regex of text that must never appear and review the frames before committing.
+
 ## Branch strategy
 
 - **`main`** — stable releases only

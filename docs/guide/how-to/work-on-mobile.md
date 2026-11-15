@@ -23,7 +23,7 @@ The Files page becomes a **master-detail** view: you see the list first, tap a f
 
 You can reach FlowBoard remotely as a Telegram Mini App through a secure tunnel:
 
-1. Set up a tunnel and authentication as described in the README under [Remote Access](../../../README.md#remote-access-telegram-mini-app) (Cloudflare Tunnel, bot token(s), the ordered `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping, `JWT_SECRET`, and your allowed user id).
+1. Set up a tunnel and authentication as described in [Remote access](remote-access.md) (Cloudflare Tunnel, bot token(s), the ordered `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping, `JWT_SECRET`, and your allowed user id).
 2. Register the dashboard URL as your bot's menu button via `@BotFather`.
 3. Open it from Telegram. Authentication uses Telegram's signed init-data (HMAC-SHA256); supported actions give light haptic feedback.
 

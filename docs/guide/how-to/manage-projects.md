@@ -92,4 +92,4 @@ Open **Deleted projects**, find the project, and **Restore** it — this brings 
 
 - [Getting started](../getting-started.md)
 - [Roll out task governance](roll-out-task-governance.md)
-- [README — architecture](../../../README.md#architecture) — where `PROJECT.md`, `specs/`, and `context/` live
+- [Browse and edit project files](browse-and-edit-files.md) — where `PROJECT.md`, `specs/`, and `context/` live

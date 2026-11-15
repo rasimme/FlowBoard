@@ -37,7 +37,7 @@ const PROJECT_MD = [
   '- context/campaign-brief.md — audience, tone, offer',
   '- context/launch-metrics.md — target metrics + event schema',
   '- context/NOTES.md — freeform scratchpad (Notes widget)',
-  '- specs/accessibility-pass.md — accessibility done-when',
+  '- specs/ — accessibility pass plus one spec per larger task (hero, analytics, release smoke)',
   '',
   '## Development rules',
   '- One primary CTA; measure before adding secondary actions.',
@@ -171,16 +171,27 @@ async function resetSupportProjects() {
 
 async function seedTasks() {
   await clearProjectTasks(PROJECT);
+  const sub = (parent, title, status = 'backlog', priority = 'medium') =>
+    createTask({ title, status, priority, parentId: parent.id });
 
-  const parent = await createTask({
-    title: 'Launch landing page for Atelier Nova',
-    priority: 'high',
-    status: 'open',
-  });
-  const hero = await createTask({ title: 'Build hero section with final CTA hierarchy', parentId: parent.id });
-  const editor = await createTask({ title: 'Draft launch playbook in Markdown editor', parentId: parent.id });
-  const analytics = await createTask({ title: 'Wire analytics and conversion events', parentId: parent.id });
-  const accessibility = await createTask({ title: 'Accessibility pass for launch page', parentId: parent.id });
+  // Three parents with subtasks in different states, so the board shows
+  // structure and the parent progress bars are not all alike.
+  const parent = await createTask({ title: 'Launch landing page for Atelier Nova', priority: 'high', status: 'open' });
+  const hero = await sub(parent, 'Build hero section with final CTA hierarchy', 'open', 'high');
+  const editor = await sub(parent, 'Draft launch playbook in Markdown editor', 'open');
+  const analytics = await sub(parent, 'Wire analytics and conversion events', 'open');
+  const accessibility = await sub(parent, 'Accessibility pass for launch page', 'open');
+
+  const brand = await createTask({ title: 'Brand and content system', priority: 'medium', status: 'open' });
+  const pricingCopy = await sub(brand, 'Write pricing and FAQ copy', 'open');
+  const brandKit = await sub(brand, 'Export brand kit assets', 'open', 'low');
+  const content = await sub(brand, 'Prepare SEO snippets and social preview', 'open');
+
+  const release = await createTask({ title: 'Release readiness', priority: 'high', status: 'open' });
+  const qa = await sub(release, 'Run release smoke on desktop and mobile', 'open', 'high');
+  const blocked = await sub(release, 'Resolve final domain handover note', 'open');
+  await sub(release, 'Set up uptime and error monitoring', 'backlog');
+  await sub(release, 'Rehearse the rollback plan', 'open', 'low');
 
   await claimTask(hero.id, 'design-agent', 'Hero layout framed; checking responsive edge cases.', 55);
   await claimTask(editor.id, 'content-agent', 'Launch playbook draft is in the editor with table, checklist, quote, and code block.', 70);
@@ -188,42 +199,61 @@ async function seedTasks() {
   await approveTask(accessibility.id, 'Accessible color and keyboard pass accepted.');
   await updateTask(analytics.id, { status: 'review' });
 
+  await completeTask(pricingCopy.id, 'content-agent');
+  await completeTask(brandKit.id, 'design-agent');
+  await approveTask(brandKit.id, 'Brand kit exported and linked.');
+
+  await claimTask(qa.id, 'qa-agent', 'Smoke matrix is running against the v5 fixture.', 35);
+  await updateTask(blocked.id, { workState: 'blocked', workStateDetails: { reason: 'Waiting for domain owner confirmation' } });
+  await claimTask(blocked.id, 'release-lead', 'Waiting for domain owner confirmation before DNS change.', 20);
+
+  // Standalone tasks spread over every column and priority.
   const design = await createTask({ title: 'Finalize responsive component states', priority: 'high', status: 'open' });
-  const qa = await createTask({ title: 'Run release smoke on desktop and mobile', priority: 'high', status: 'open' });
-  const content = await createTask({ title: 'Prepare SEO snippets and social preview', priority: 'medium', status: 'open' });
   const privacy = await createTask({ title: 'Audit privacy copy and consent wording', priority: 'medium', status: 'backlog' });
-  const backlog = await createTask({ title: 'Compare three post-launch roadmap options', priority: 'low', status: 'backlog' });
+  await createTask({ title: 'Compare three post-launch roadmap options', priority: 'low', status: 'backlog' });
+  await createTask({ title: 'Scope localization for the second campaign', priority: 'low', status: 'backlog' });
+  await createTask({ title: 'Draft the launch announcement email', priority: 'medium', status: 'open' });
+  await createTask({ title: 'Collect three launch testimonials', priority: 'low', status: 'open' });
   const review = await createTask({ title: 'Review pricing block microcopy', priority: 'medium', status: 'review' });
   const done = await createTask({ title: 'Approve visual direction and type scale', priority: 'high', status: 'open' });
-  const blocked = await createTask({ title: 'Resolve final domain handover note', priority: 'medium', status: 'open' });
+  const changelog = await createTask({ title: 'Publish the public changelog page', priority: 'low', status: 'open' });
 
   await claimTask(design.id, 'design-agent', 'Component states are being checked across breakpoints.', 45);
-  await claimTask(qa.id, 'qa-agent', 'Smoke matrix is running against the v5 fixture.', 35);
-  await updateTask(blocked.id, { blocked: true });
-  await claimTask(blocked.id, 'release-lead', 'Waiting for domain owner confirmation before DNS change.', 20);
   await completeTask(done.id, 'design-agent');
   await approveTask(done.id, 'Visual direction signed off for screenshot fixture.');
+  await completeTask(changelog.id, 'content-agent');
+  await approveTask(changelog.id, 'Changelog page is live on staging.');
 
   // Milestones are tasks tagged milestone:<name> (T-315) — mixed statuses give
   // the widget partial-progress rings.
-  await updateTask(parent.id, { tags: ['milestone:Public Launch'] });
-  await updateTask(design.id, { tags: ['milestone:Public Launch'] });
-  await updateTask(qa.id, { tags: ['milestone:Public Launch'] });
-  await updateTask(done.id, { tags: ['milestone:Public Launch'] });
-  await updateTask(content.id, { tags: ['milestone:Brand & Content'] });
-  await updateTask(review.id, { tags: ['milestone:Brand & Content'] });
-  await updateTask(privacy.id, { tags: ['milestone:Brand & Content'] });
+  for (const task of [parent, design, qa, done, release]) await updateTask(task.id, { tags: ['milestone:Public Launch'] });
+  for (const task of [brand, content, review, privacy, pricingCopy]) await updateTask(task.id, { tags: ['milestone:Brand & Content'] });
 
-  return { parentId: parent.id, editorTaskId: editor.id, reviewTaskId: review.id, contentTaskId: content.id };
+  return {
+    parentId: parent.id, brandParentId: brand.id, releaseParentId: release.id,
+    editorTaskId: editor.id, reviewTaskId: review.id, contentTaskId: content.id,
+    heroTaskId: hero.id, analyticsTaskId: analytics.id, smokeTaskId: qa.id,
+  };
+}
+
+async function writeTaskSpec(taskId, title, lines) {
+  // Specs are created through the spec endpoint, which names the file and
+  // links it to the task.
+  await request(`/api/projects/${PROJECT}/specs/${taskId}`, {
+    method: 'POST',
+    body: JSON.stringify({ title, content: lines.join('\n') }),
+  }).catch((e) => console.warn(`spec for ${taskId} failed:`, e.message));
 }
 
 async function seedFiles(taskIds) {
   // Clean context/ so re-seeds don't accumulate stray files from older fixtures.
   const tree = await request(`/api/projects/${PROJECT}/files`).catch(() => null);
-  const ctx = (tree?.tree || []).find((e) => e.name === 'context' && e.type === 'directory');
-  for (const f of ctx?.children || []) {
-    if (f.type === 'file') {
-      await request(`/api/projects/${PROJECT}/files/context/${f.name}`, { method: 'DELETE' }).catch(() => null);
+  for (const dir of ['context', 'specs']) {
+    const entry = (tree?.tree || []).find((e) => e.name === dir && e.type === 'directory');
+    for (const f of entry?.children || []) {
+      if (f.type === 'file' && f.name.endsWith('.md')) {
+        await request(`/api/projects/${PROJECT}/files/${dir}/${f.name}`, { method: 'DELETE' }).catch(() => null);
+      }
     }
   }
 
@@ -321,6 +351,52 @@ async function seedFiles(taskIds) {
     method: 'PUT',
     body: JSON.stringify({ specFile: 'context/launch-playbook.md' }),
   });
+
+  await writeTaskSpec(taskIds.heroTaskId, 'hero-section', [
+    '# Hero section',
+    '',
+    '## Goal',
+    'One concrete promise and one primary CTA above the fold on every breakpoint.',
+    '',
+    '## Done when',
+    '- [x] Headline and subline fit in two lines at 375px',
+    '- [x] CTA wording matches pricing and footer',
+    '- [ ] Hero image has a fixed aspect ratio (no layout shift)',
+    '- [ ] Reviewed against the campaign brief',
+    '',
+  ]);
+  await writeTaskSpec(taskIds.analyticsTaskId, 'analytics-events', [
+    '# Analytics and conversion events',
+    '',
+    '## Events',
+    '',
+    '| event | fires on | required props |',
+    '|---|---|---|',
+    '| launch_cta_click | hero, pricing, footer CTA | surface, campaign |',
+    '| form_start | first field focus | field_count |',
+    '| form_submit | successful submit | duration_ms |',
+    '',
+    '## Done when',
+    '- [x] Events fire once per interaction',
+    '- [x] Nothing is tracked before consent',
+    '- [ ] Dashboard shows the three funnel steps',
+    '',
+  ]);
+  await writeTaskSpec(taskIds.smokeTaskId, 'release-smoke', [
+    '# Release smoke',
+    '',
+    '## Matrix',
+    '',
+    '| device | browser | status |',
+    '|---|---|---|',
+    '| Desktop 1440 | Chrome, Safari, Firefox | passed |',
+    '| Tablet 768 | Safari | passed |',
+    '| Mobile 375 | Safari, Chrome | running |',
+    '',
+    '## Gate',
+    'Publish only when every row passed and analytics agrees with the form count.',
+    '',
+  ]);
 }
 
 async function seedCanvas() {
@@ -345,6 +421,11 @@ async function seedCanvas() {
     { n: 11, text: 'Launch gate: publish only after QA and analytics agree', x: 1175, y: 565, color: 'green', size: 'large' },
     { n: 12, text: 'Post-launch roadmap: save ideas that are not needed for v1', x: 430, y: 640, color: 'grey', size: 'small' },
     { n: 13, text: 'Localization later: keep copy adaptable, but out of launch scope', x: 720, y: 640, color: 'grey', size: 'small' },
+    { n: 14, text: 'Brand voice: precise, warm, no jargon', x: 110, y: 640, color: 'blue', size: 'medium' },
+    { n: 15, text: 'Type scale: two weights, one accent colour', x: 110, y: 860, color: 'blue', size: 'small' },
+    { n: 16, text: 'Open question: annual pricing toggle at launch?', x: 1600, y: 100, color: 'yellow', size: 'medium' },
+    { n: 17, text: 'Open question: who owns the support inbox on day one?', x: 1600, y: 330, color: 'yellow', size: 'small' },
+    { n: 18, text: 'Idea: launch-day status page with a live checklist', x: 1600, y: 565, color: 'teal', size: 'medium' },
   ];
   const idMap = {};
   for (const d of defs) {
@@ -369,6 +450,11 @@ async function seedCanvas() {
     { from: 9, to: 11, fromPort: 'bottom', toPort: 'left' },
     { from: 10, to: 11, fromPort: 'bottom', toPort: 'right' },
     { from: 12, to: 13, fromPort: 'right', toPort: 'left' },
+    { from: 4, to: 14, fromPort: 'bottom', toPort: 'top' },
+    { from: 14, to: 15, fromPort: 'bottom', toPort: 'top' },
+    { from: 8, to: 16, fromPort: 'right', toPort: 'left' },
+    { from: 16, to: 17, fromPort: 'bottom', toPort: 'top' },
+    { from: 11, to: 18, fromPort: 'right', toPort: 'left' },
   ];
   for (const c of conns) {
     if (idMap[c.from] == null || idMap[c.to] == null) continue;
@@ -406,6 +492,7 @@ async function seedOverview() {
         { id: 'w-notes', type: 'notes', grid: { x: 5, y: 5, w: 4, h: 2 } },
         { id: 'w-links', type: 'links', grid: { x: 9, y: 5, w: 3, h: 2 }, props: { links } },
         { id: 'w-stats', type: 'task-stats', grid: { x: 0, y: 7, w: 12, h: 2 } },
+        { id: 'w-board', type: 'kanban-mini', grid: { x: 0, y: 9, w: 12, h: 2 } },
       ],
     }),
   }).catch((e) => console.warn('overview seed failed:', e.message));

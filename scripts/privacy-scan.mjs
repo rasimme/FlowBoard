@@ -116,7 +116,7 @@ for (const file of gitFiles().filter(shouldScan)) {
 // tarball can ship files git never tracked (local plans, test residue,
 // SQLite WAL). Dry-run the pack and reject forbidden paths.
 const FORBIDDEN_PACK_PATHS = [
-  /^scripts\/(?:capture-|release-|privacy-scan|clawpack-gate|plugin-lint|v5-demo-fixture)/,
+  /^scripts\/(?:capture-|release-|privacy-scan|clawpack-gate|plugin-lint|v5-demo-)/,
   /^dashboard\/tools\//,
   /^docs\/dev\//,
   /^docs\/plans\//,

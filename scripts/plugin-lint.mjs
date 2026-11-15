@@ -33,7 +33,7 @@ const FORBIDDEN_PACK_PATTERNS = [
 ];
 
 const FORBIDDEN_PACKED_FILES = [
-  /^scripts\/(?:capture-|release-|privacy-scan|clawpack-gate|plugin-lint|v5-demo-fixture)/,
+  /^scripts\/(?:capture-|release-|privacy-scan|clawpack-gate|plugin-lint|v5-demo-)/,
   /^dashboard\/tools\//,
   /^docs\/dev\//,
   /^docs\/plans\//,

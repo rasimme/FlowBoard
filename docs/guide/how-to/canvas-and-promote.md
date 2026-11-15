@@ -21,6 +21,34 @@ The Idea Canvas is a spatial place to think before things are structured work. W
 
 No webhook or agent configuration is needed — the whole flow runs in the dashboard.
 
+## The chat-agent path (optional)
+
+OpenClaw webhooks are only needed for the **chat-agent path** (scripted
+callers passing an explicit `agentId`, so a chat-bound agent runs the
+clarification conversation instead of the dashboard stepper):
+
+**1. Enable webhooks** in `~/.openclaw/openclaw.json`:
+```json5
+{
+  hooks: {
+    enabled: true,
+    token: "your-secret-token",  // openssl rand -hex 16
+    path: "/hooks"
+  }
+}
+```
+
+**2. Set environment variables:**
+```bash
+OPENCLAW_HOOKS_TOKEN=your-secret-token
+OPENCLAW_GATEWAY_URL=http://127.0.0.1:18789
+OPENCLAW_DELIVER_CHANNEL=telegram        # or: discord, slack, etc.
+OPENCLAW_DELIVER_TO=your-chat-id         # optional
+```
+
+Without these, everything works — including canvas promote via the dashboard stepper; only the chat-agent promote path is unavailable.
+
+
 ## See also
 
 - [Work the Kanban board](work-the-kanban.md)

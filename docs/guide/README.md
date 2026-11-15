@@ -4,6 +4,7 @@ The user guide: how to install, set up, and operate FlowBoard day to day. These 
 
 ## Start here
 
+- [Install FlowBoard](install.md) — host versions, install consent, updating, manual install.
 - [Getting started](getting-started.md) — from a running dashboard to your first project and first task.
 
 ## How-to guides
@@ -26,10 +27,12 @@ Task-oriented answers to "how do I …?":
 **Platform**
 
 - [Use FlowBoard on a phone or in Telegram](how-to/work-on-mobile.md) — touch drag-and-drop, full-screen sheets, the Mini App.
+- [Remote access](how-to/remote-access.md) — tunnel, authentication, Telegram Mini App.
+- [Use FlowBoard with external agents](how-to/external-agents.md) — trigger snippet, discovery, agent ids.
 - [Keyboard and accessibility](how-to/keyboard-and-accessibility.md) — keyboard reorder, focus, screen-reader support.
 - [Update FlowBoard](how-to/update-flowboard.md) — apply a new version from the dashboard or CLI.
 - [Troubleshooting](how-to/troubleshooting.md) — hook not registered, context not ready, remote auth.
-- [FlowBoard inside OpenClaw](openclaw-control-ui.md) — the native Control UI page: the project switcher, "tasks needing me", the agent setting, and how to turn it off.
+- [FlowBoard inside OpenClaw](openclaw-control-ui.md) — the native Control UI page, the "Needs me" widget, the session task panel, and how to turn it off.
 
 ## Reference
 

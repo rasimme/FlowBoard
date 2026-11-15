@@ -11,7 +11,7 @@ openclaw hooks info project-context
 # Expect: ✓ Ready, source openclaw-managed, subscribed to agent:bootstrap
 ```
 
-If it's missing, re-run the install step in the [README](../../../README.md#2-register-the-hook-with-openclaw). Use the context already supplied to your own run when it contains `# Active Project:` or `# No Active Project` plus `## Identity`; do not fetch status/bootstrap again. When that context is absent, check status with this run's session key if known, then fetch `/api/projects/<project>/rules` and `/api/projects/<project>/files/PROJECT.md` (JSON `content`). The full bootstrap remains a large compatibility fallback. External-agent triggers retain their bootstrap startup path until their separate migration.
+If it's missing, re-run the install step in the [install guide](../install.md#2-register-the-hook-with-openclaw). Use the context already supplied to your own run when it contains `# Active Project:` or `# No Active Project` plus `## Identity`; do not fetch status/bootstrap again. When that context is absent, check status with this run's session key if known, then fetch `/api/projects/<project>/rules` and `/api/projects/<project>/files/PROJECT.md` (JSON `content`). The full bootstrap remains a large compatibility fallback. External-agent triggers retain their bootstrap startup path until their separate migration.
 
 ## “Context not ready”
 
@@ -67,8 +67,8 @@ On localhost the dashboard is trusted and open. Over a tunnel or LAN it
 **fails closed** unless authentication is fully configured:
 `TELEGRAM_BOT_TOKEN`, the exact ordered `FLOWBOARD_TELEGRAM_AGENT_IDS` mapping,
 `JWT_SECRET`, `ALLOWED_USER_IDS`, and `DASHBOARD_ORIGIN` must all be set (see
-the README [Remote Access](../../../README.md#remote-access-telegram-mini-app)
-section). Additional tokens in `TELEGRAM_BOT_TOKENS` need additional agent IDs
+the [Remote access](remote-access.md)
+guide). Additional tokens in `TELEGRAM_BOT_TOKENS` need additional agent IDs
 at the same positions. A missing value means no one is allowed in.
 For ngrok, Tailscale, or another non-Cloudflare tunnel, set `AUTH_ALWAYS=true`:
 those proxies do not provide FlowBoard's `cf-ray` routing marker, so the
