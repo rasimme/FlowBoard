@@ -66,6 +66,7 @@ For concrete endpoint shapes and request bodies, see `tasks-api.md` § Coordinat
 
 - **Workflow start**: Default entry point. Resumes in-progress work for the agent or atomically claims the next eligible task.
 - **Claim**: Primitive ownership operation. Only one agent at a time. Rejects if already claimed (409) unless lease expired. Rejects if routed to different agent (403). Rejects if dependencies incomplete.
+- **Checkpoint on commit (OpenClaw)**: a successful `git commit` whose subject contains the id of a task you hold (e.g. `(T-123)`) records a checkpoint automatically when the plugin option `commitCheckpoints` is on. Put the task id in commit subjects. This does not replace a closing checkpoint or `complete`.
 - **Checkpoint**: Only the claiming agent can checkpoint. Progress (0–100) updates the task. Checkpoints are append-only.
 - **Complete**: Only the claiming agent. Triggers parent status recalculation for subtasks.
 - **Release**: Returns task to `ready`, clears agent and lease. Use when blocked or reassigning.

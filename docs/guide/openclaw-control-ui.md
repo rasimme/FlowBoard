@@ -165,6 +165,43 @@ and **Open in FlowBoard** opens the task on the page. FlowBoard claims belong
 to an agent rather than to one session, so two sessions of the same agent in
 the same project show the same tasks.
 
+## Checkpoints without reminders
+
+Agents forget to record checkpoints. On OpenClaw 2026.9.2 or newer the plugin
+helps in two ways, neither of which changes the project context an agent
+receives (so the model's prompt cache is unaffected):
+
+- **Checkpoint on commit** (on by default). When an agent runs a successful
+  `git commit` whose subject contains the id of a task it holds, such as
+  `fix: retry upload (T-123)`, FlowBoard records a checkpoint
+  `Commit <sha>: <subject>` on that task. Nothing happens for a task the agent
+  does not hold, or in a session that is not bound to the task's project. Turn
+  it off with:
+
+  ```bash
+  openclaw config set plugins.entries.flowboard.config.commitCheckpoints false
+  ```
+
+- **Reminder before finishing** (off by default). When an agent is about to
+  finish while one of its claims has had no checkpoint for longer than the
+  stale threshold, it is asked for one more pass to record a checkpoint, or to
+  complete or release the task. This happens at most once per run and costs
+  one extra model pass. OpenClaw only lets a plugin do this with conversation
+  access, so it needs two settings:
+
+  ```bash
+  openclaw config set plugins.entries.flowboard.config.finalizeReminder true
+  openclaw config set plugins.entries.flowboard.hooks.allowConversationAccess true
+  ```
+
+  Without the second setting OpenClaw blocks the hook and logs a warning;
+  everything else keeps working. The reminder does not run when you stop a
+  run yourself.
+
+Agents outside OpenClaw have no such hooks. For them, and as the backstop for
+everyone, stalled claims still show up in the "Needs me" widget and the stall
+detection.
+
 ## Other things worth knowing
 
 - **Refreshing.** The page refreshes when something changes. While a

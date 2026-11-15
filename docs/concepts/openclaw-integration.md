@@ -109,6 +109,27 @@ holds in progress or in review, and writes comments and approvals through the AP
 through `host.navigation.openPage` with `project` / `task` parameters. Claims are per agent, not per
 session, so the panel cannot tell two sessions of one agent apart.
 
+### Checkpoint discipline hooks (T-521)
+
+Two typed host hooks (`openclaw/task-discipline.js`) nudge task hygiene without
+touching the injected project context. That constraint is the point: the
+context sits in the stable part of the system prompt, and a reminder that
+appears and disappears there would re-send the conversation uncached (T-512).
+
+- `after_tool_call`, matched to `exec`, observes a successful `git commit`. If
+  the subject names a task that the calling agent holds in the project its
+  session resolves to, the plugin records a checkpoint. It is an observation
+  hook: no model tokens, no conversation access.
+- `before_agent_finalize` is opt-in (`finalizeReminder`) and needs the
+  operator's `hooks.allowConversationAccess`. When the agent has a stale or
+  lease-expired claim, it returns `revise` with a retry capped at one attempt;
+  the instruction is appended to the end of the conversation.
+
+Both swallow their own failures, and a host that lacks either hook simply does
+not register it. These writes carry no Gateway connection, so FlowBoard
+attributes the checkpoint to the agent id and resolves the local operator as
+principal.
+
 ### The attribution boundary
 
 Every write from the page, the widget and the panel goes through the passthrough and carries the

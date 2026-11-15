@@ -90,6 +90,14 @@ export const CONFIG_SCHEMA = {
       description:
         'Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator. Accepts a SecretRef ({ source, provider, id }); prefer it over an inline string.',
     },
+    commitCheckpoints: {
+      type: 'boolean',
+      description: 'Record a FlowBoard checkpoint when an agent commits with the id of a task it holds in the commit subject (default true).',
+    },
+    finalizeReminder: {
+      type: 'boolean',
+      description: 'Ask an agent for one more pass before it finishes while one of its FlowBoard claims has no recent checkpoint (default false). Needs hooks.allowConversationAccess for this plugin.',
+    },
   },
 };
 

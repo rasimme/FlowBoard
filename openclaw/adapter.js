@@ -553,6 +553,27 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
     hasServiceToken: () => Boolean(serviceToken),
     serviceTokenUnresolved: () => serviceTokenUnresolved,
 
+    // T-521: the reads and the one write the task-discipline hooks need. They
+    // run without a Gateway connection, so FlowBoard sees the local operator.
+    async getStatus(agentId, sessionKey) {
+      const query = new URLSearchParams({ agentId });
+      if (sessionKey) query.set('sessionKey', sessionKey);
+      return call('GET', `/api/status?${query}`);
+    },
+    async getTask(project, id) {
+      const payload = await call('GET', taskPath(project, id));
+      return payload.task && typeof payload.task === 'object' ? payload.task : null;
+    },
+    async addCheckpoint(project, id, { agent, message, sessionKey } = {}) {
+      return call('POST', `${taskPath(project, id)}/checkpoint`, {
+        body: { agent, message, ...(sessionKey ? { sessionKey } : {}) },
+      });
+    },
+    async listStuck() {
+      const payload = await call('GET', '/api/tasks/stuck');
+      return payload.stuck && typeof payload.stuck === 'object' ? payload.stuck : {};
+    },
+
     async listProjects(principal) {
       const payload = await call('GET', '/api/projects', { principal });
       const rows = Array.isArray(payload.projects) ? payload.projects : [];

@@ -66,6 +66,14 @@
           }
         ],
         "description": "Service credential shared with the dashboard (FLOWBOARD_SERVICE_TOKEN). Lets the Gateway act for the signed-in operator. Accepts a SecretRef ({ source, provider, id }); prefer it over an inline string."
+      },
+      "commitCheckpoints": {
+        "type": "boolean",
+        "description": "Record a FlowBoard checkpoint when an agent commits with the id of a task it holds in the commit subject (default true)."
+      },
+      "finalizeReminder": {
+        "type": "boolean",
+        "description": "Ask an agent for one more pass before it finishes while one of its FlowBoard claims has no recent checkpoint (default false). Needs hooks.allowConversationAccess for this plugin."
       }
     }
   },
@@ -90,6 +98,16 @@
       "help": "Shared credential the Gateway sends to the dashboard (FLOWBOARD_SERVICE_TOKEN, at least 32 characters). Store it as a SecretRef; it lets the Gateway act for the signed-in operator on loopback.",
       "advanced": true,
       "secret": true
+    },
+    "commitCheckpoints": {
+      "label": "Checkpoint on Commit",
+      "help": "Record a checkpoint when an agent commits with the id of a task it holds in the commit subject. On by default.",
+      "advanced": true
+    },
+    "finalizeReminder": {
+      "label": "Checkpoint Reminder",
+      "help": "Ask an agent for one more pass before it finishes while one of its claims has no recent checkpoint. Off by default; also needs hooks.allowConversationAccess for this plugin.",
+      "advanced": true
     }
   },
   "configContracts": {

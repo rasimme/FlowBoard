@@ -32,6 +32,7 @@ import { buildJsonPluginConfigSchema, definePluginEntry } from 'openclaw/plugin-
 import { getToolPluginMetadata, toolPluginMetadataSymbol } from 'openclaw/plugin-sdk/tool-plugin';
 
 import { createFlowBoardAdapter, toFeatureError, withRefusalEnvelopes } from './adapter.js';
+import { registerTaskDiscipline } from './task-discipline.js';
 import {
   createChangePoller,
   createFocusRegistry,
@@ -189,6 +190,10 @@ export function createFeatureEntry(baseline) {
       // Exactly what an old host registers, and nothing else: the
       // project-context hook stays the baseline contract (ADR-0001).
       baseline.register(api);
+
+      // T-521: checkpoint discipline through typed hooks. Nothing here touches
+      // the injected project context, so the prompt cache is unaffected.
+      registerTaskDiscipline(api, { adapter, config: pluginConfig });
 
       if (adapter.serviceTokenUnresolved()) {
         api.logger?.warn?.(
