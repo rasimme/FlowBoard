@@ -27,7 +27,7 @@
 - [In-App Update](docs/concepts/app-update.md) — version detection; service-preserving rebuild/restart; launchd/systemd autostart
 - [Stuck Detection & Notifications](docs/concepts/stuck-notifications.md) — canonical work state; one transient indicator; retry/clear; backoff and session-safe routing
 - [Telegram Mini App](docs/concepts/telegram-mini-app.md) — ordered multi-bot HMAC auth; secure sessions; tunnel access
-- [OpenClaw Integration](docs/concepts/openclaw-integration.md) — hook, standalone dashboard, and the staged native Control UI page; host compatibility; what the unsandboxed native bundle is trusted with
+- [OpenClaw Integration](docs/concepts/openclaw-integration.md) — hook, standalone dashboard, and the native Control UI page (the React dashboard behind a Gateway API passthrough); host compatibility; what the unsandboxed native bundle is trusted with
 
 ## Decisions (ADRs)
 
@@ -98,7 +98,7 @@ Human-facing how-to guides live under the user guide:
 - [Troubleshooting](docs/guide/how-to/troubleshooting.md) — visible auth/API failures and remote access recovery
 - [Use FlowBoard on a phone or in Telegram](docs/guide/how-to/work-on-mobile.md) — Mini App and multi-bot sessions
 - [Manage projects](docs/guide/how-to/manage-projects.md) — export, preview, import, recovery, and archive/delete flows
-- [FlowBoard inside OpenClaw](docs/guide/openclaw-control-ui.md) — the native Control UI page: rail, project switcher, tasks needing me, deep-link limits
+- [FlowBoard inside OpenClaw](docs/guide/openclaw-control-ui.md) — the dashboard as a native Control UI page, the "Needs me" widget and the session task panel
 
 ## Operational rules (NOT for human reading)
 

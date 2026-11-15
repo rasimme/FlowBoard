@@ -143,7 +143,7 @@ one:
 |---|---|---|
 | **2026.6.6 – 2026.7.x** | Baseline: the `project-context` hook that tells every agent run which project it is on, plus the standalone dashboard | Nothing |
 | **2026.8.x** | Baseline, and the install asks you to approve FlowBoard's capabilities | Nothing |
-| **≥ 2026.9.2** | Baseline plus the feature layer: typed Gateway operations and a native **FlowBoard** page in the OpenClaw sidebar | The *Custom plugin UI* lab (`gateway.controlUi.experimental.customPlugins`), which is off by default (hosts before 2026.9.6 need a Gateway restart after enabling it) |
+| **≥ 2026.9.2** | Baseline plus the feature layer: the dashboard as a native **FlowBoard** page in the OpenClaw sidebar, a "Needs me" widget and a session task panel | The *Custom plugin UI* lab (`gateway.controlUi.experimental.customPlugins`), which is off by default (hosts before 2026.9.6 need a Gateway restart after enabling it) |
 | **No OpenClaw at all** | The standalone dashboard and the REST API for external agents | Nothing |
 
 Nothing above is a fork in the road: one install works on all of them. On an
@@ -166,7 +166,7 @@ openclaw plugins install flowboard          # shows what FlowBoard asks for, the
 
 Read the capability surface it prints before you accept. FlowBoard asks for a
 hook on `agent:bootstrap`, a background service, and — on ≥ 2026.9.2 — a
-Control UI page and Gateway operations scoped to `operator.read` / `operator.write`.
+Control UI page and Gateway methods scoped to `operator.read` / `operator.write`.
 The native page is **not sandboxed**: it runs in the Control UI origin with your
 Gateway authority, which is a trust decision and is written up in
 [SECURITY.md](SECURITY.md) and [ADR-0037](docs/adr/0037-trusted-collaborators-and-native-control-ui.md).

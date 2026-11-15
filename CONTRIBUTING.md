@@ -126,12 +126,13 @@ Rules when touching these files:
 ### Plugin build
 
 `openclaw/` is an OpenClaw feature plugin. After changing anything under
-`openclaw/control-ui/`, `openclaw/contract.js`, or the plugin config schema,
+`openclaw/native-ui/`, `openclaw/contract.js`, the dashboard source the page is
+built from (`dashboard/src`, `dashboard/styles`), or the plugin config schema,
 regenerate `openclaw.plugin.json` and the browser bundle:
 
 ```bash
 npm install          # repo root — installs the pinned openclaw + esbuild dev deps
-npm run build:plugin # openclaw plugins build → dist/control-ui/<hash>/ + manifest
+npm run build:plugin # pre-compile the React page, then openclaw plugins build → dist/control-ui/<hash>/ + manifest
 npm run validate:plugin
 ```
 

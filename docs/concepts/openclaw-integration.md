@@ -12,7 +12,7 @@ Three surfaces, in order of how long they have existed and how little they assum
 |---|---|---|---|
 | `agent:bootstrap` hook | Injects the active project's context into an agent run | 2026.6.6 | Disable the plugin |
 | Standalone dashboard | The full FlowBoard SPA on its own port and its own auth | none (no OpenClaw needed) | Stop the service |
-| Native Control UI page | FlowBoard as a page in the Control UI sidebar: native board, framed single surfaces | 2026.9.2 + lab flag | Lab flag, or disable the plugin |
+| Native Control UI page | The FlowBoard dashboard as a page in the Control UI sidebar, plus a widget and a session panel | 2026.9.2 + lab flag | Lab flag, or disable the plugin |
 
 The first two are the baseline and stay the baseline. The third is progressive enhancement.
 
@@ -50,49 +50,52 @@ The React SPA served by FlowBoard's own Express server, with FlowBoard's own aut
 loads, and what every non-OpenClaw client talks to over REST. No OpenClaw integration removes it,
 and every fallback path below lands here.
 
-### Native Control UI page — stages 0–3
+### Native Control UI page — the React dashboard (T-515)
 
 A feature plugin ships a compiled browser bundle that the Control UI imports same-origin and mounts
-as a real sidebar destination. Reached at `/plugin?plugin=flowboard&id=flowboard`. It is built in
-stages so that each one is independently useful and independently revertible:
+as a real sidebar destination, reached at `/plugin?plugin=flowboard&id=flowboard`. That bundle is
+the dashboard's own React app (`dashboard/src`), built a second time for this host. There is one
+codebase for the standalone dashboard and the page; a view that works in one works in the other.
 
-- **Stage 0 — frame the SPA (retired in T-499).** The native page mounted the existing dashboard in
-  the plugin's own iframe, with the SPA unchanged. The FlowBoard-side requirement it introduced,
-  `FLOWBOARD_FRAME_ANCESTORS` (T-487-10), stays: it adds the Control UI origin to the CSP
-  `frame-ancestors` directive and omits `X-Frame-Options`, since that header cannot express more
-  than one allowed ancestor, and since T-499 it also gates the dashboard's embed mode.
-- **Stages 1–3 — move the data layer onto the Gateway.** Native views replace framed ones, view by
-  view: first read-only strips and widgets, then the Kanban with writes, then a decision per
-  remaining surface (stage 3, below). Native views talk to FlowBoard through plugin-owned
-  feature-contract operations rather than through the browser, because the Control UI's
-  `connect-src` policy does not allow the page to `fetch()` FlowBoard's own port. That indirection is not a workaround — it is what lets a native
-  view carry the operator's verified identity into FlowBoard's attribution instead of relying on a
-  cookie the frame may not even be allowed to send.
+Four things make the same app run inside someone else's page:
 
-The whole-SPA iframe was to disappear once nothing depended on it, not before — which is what
-stage 3 did.
+- **A mount function instead of a document.** `mountDashboard(container)` renders the app into a
+  node the host hands over and returns a `dispose`. Overlays render into a root inside that node
+  rather than into `document.body`, and the globals the app used to own are set up per mount and
+  removed again.
+- **A transport seam.** The Control UI's `connect-src` policy does not let the page `fetch()`
+  FlowBoard's port. `apiFetch` therefore takes a transport: standalone it is `fetch`, in the page
+  it is the Gateway connection (below). The indirection is not a workaround — it is what lets a
+  write carry the operator's verified identity instead of a cookie.
+- **Scoped styles.** `scripts/build-native-ui.mjs` runs Tailwind and prefixes every selector with
+  `.fb-native-root`, so no FlowBoard rule can match a host element. Rules that name a class, id or
+  attribute carry the scope twice, because the host styles generic class names such as `.btn`
+  with selectors that would outrank a singly scoped rule; element and universal rules keep the
+  single scope so a reset cannot outrank a third-party class rule such as CodeMirror's.
+- **The host's theme.** Tokens the Control UI theme also defines are not redeclared, so the page
+  follows light, dark and custom themes. FlowBoard-only tokens (status, note hues, charts) keep
+  their values. The page paints no background of its own.
 
-Stage 1 (T-487-8) shipped the read-only rail. **Stage 2 (T-498) is the board itself**: `tasks.list`
-carries a whole card instead of five fields, `task.get` adds the detail read, and three write
-actions — `task.update`, `task.approve`, `task.reject` — move work from the Control UI.
+Earlier iterations of this page — a framed copy of the dashboard, then a hand-written board with
+framed tabs beside it — were built and removed before any release. What they proved is why the
+page is built this way: an iframe needs Gateway-wide sandbox changes or loses its cookies, and a
+second, hand-written UI means every feature is built twice.
 
-**Stage 3 (T-499) is done, and the whole-SPA iframe is retired.** Every FlowBoard surface in the
-Control UI is now either native on the feature contract or an explicitly bounded framed view:
+### How the page reaches FlowBoard: the API passthrough
 
-- **Native:** the rail and the board, with the everyday actions — move, work state, approve gate,
-  in-column reorder, archive and trash with undo, "New task", and a panel that edits title,
-  description, priority and tags and takes comments.
-- **Framed, one surface at a time:** *Ideas*, *Files* and *Projects*, loaded from the dashboard in
-  embed mode (below) without its chrome, for the project the native page is on. *Specify* is a
-  dialog rather than a surface: it works inside framed Ideas, and a native "New task" refused with
-  `SPECIFY_REQUIRED` opens a transient framed Specify view.
-- **Standalone only:** the Overview.
+Two raw Gateway methods, `flowboard.api.read` (`operator.read`) and `flowboard.api.write`
+(`operator.write`), forward one dashboard API request each
+([ADR-0042](../adr/0042-gateway-api-passthrough-for-native-dashboard.md)). They are raw methods
+rather than feature-contract operations because a contract payload is capped at 256 KiB, which a
+real board exceeds.
 
-The layout is one sidebar entry, "FlowBoard", with FlowBoard's own tabs (`Board | Ideas | Files |
-Projects`). Framing surfaces is the cheap, reversible choice: one codebase and every dashboard
-feature today, at the cost of the limits listed under the attribution boundary below. Porting a
-framed surface natively later stays possible surface by surface, and so does one sidebar entry per
-surface.
+A generic forwarder is only acceptable with a closed list in front of it. `openclaw/api-passthrough.js`
+allow-lists method and path, and leaves out what an operator session in a browser should not
+drive: self-update, the dashboard's own auth, webhooks, deleting agent rows, agent context,
+workflow and heal endpoints, and governance mode switches. Requests and responses are limited to
+16 MiB, reads time out after 15 s and writes after 30 s, and only a fixed set of content types and
+response headers passes. The caller's identity is never taken from the request: it is the profile
+the Gateway attested for that connection.
 
 ### Widget and session panel (T-515-6)
 
@@ -106,115 +109,45 @@ holds in progress or in review, and writes comments and approvals through the AP
 through `host.navigation.openPage` with `project` / `task` parameters. Claims are per agent, not per
 session, so the panel cannot tell two sessions of one agent apart.
 
-### Embed protocol v1
-
-The dashboard serves a single surface at
-`/?embed=<ideas|files|projects|specify>&project=<p>[&task][&file][&title&priority]&host=<Control UI
-origin>`. Embed mode is active only when the page is actually framed, `embed` names a known surface
-and `host` is an origin in the dashboard's `FLOWBOARD_FRAME_ANCESTORS` (injected into the page;
-where the browser exposes `location.ancestorOrigins`, the direct parent must match it too).
-Anything else — opened directly, top-level `?embed=`, no allow-list — is the unchanged standalone
-app, and an embed never stores an agent id.
-
-Page and frame talk through `postMessage` only, with one envelope:
-`{ type: 'flowboard:embed', v: 1, kind, ...payload }`.
-
-| Direction | `kind` | Payload | Effect |
-|---|---|---|---|
-| frame → host | `ready` | `surface` | Clears the ready clock; the host may now steer instead of reload |
-| frame → host | `open-task` | `project`, `task` | Native board, panel on that task |
-| frame → host | `open-surface` | `surface`, `project?`, `file?` | Switch tab (`tasks`/`board` = native board); a file opens Files at it |
-| frame → host | `open-project` | `project` | The native page shows that project (no agent rebinding) |
-| frame → host | `specify-closed` | `project?`, `task?` / `tasks[]` | Leave Specify; a created task opens on the board |
-| host → frame | `context` | `surface`, `project`, `file?` | Move the loaded frame without a reload |
-
-Both sides check `event.source` (the one owned iframe, respectively the parent window) *and*
-`event.origin` (the configured dashboard origin, respectively the verified host origin), and post
-with that exact origin as `targetOrigin`, never `'*'`. Every payload field is an identifier —
-bounded, pattern-checked project names, task ids and workspace-relative paths without traversal —
-never markup or a URL, so a compromised frame can at most select a project or task by name. A frame
-that has not said `ready` is steered by re-pointing `src` instead (an older dashboard ignores
-`context`), and after 8 seconds without `ready` the page shows a notice with a link to the full
-dashboard instead of an empty box. The frame is created lazily, once, and hidden rather than
-destroyed while the board is up.
-
 ### The attribution boundary
 
-Where a write comes from decides who it is recorded against:
-
-- **Native actions** go through the feature contract and carry the Gateway-verified principal under
-  the service credential (ADR-0040): moves, edits, comments, archive and trash are recorded against
-  the signed-in OpenClaw profile.
-- **Framed writes** are the dashboard's own requests from inside the iframe, so they are attributed
-  to the dashboard session the frame signed in with, not to the OpenClaw profile. ADR-0040 does not
-  reach into the frame.
-
-The same boundary explains the other framed limits: the frame keeps the dashboard's theme inside
-the host theme, a hidden frame keeps its own polling, and a cross-site dashboard that signs in only
-through Telegram cannot be embedded at all (a third-party frame gets no cookie, and the Telegram
-gate cannot run there) — the host shows its ready-timeout notice. Loopback and same-site
-dashboards work.
+Every write from the page, the widget and the panel goes through the passthrough and carries the
+Gateway-verified principal under the service credential
+([ADR-0040](../adr/0040-gateway-verified-principal-via-service-credential.md)). It is recorded
+against the signed-in OpenClaw profile; without a service token it is recorded as the local
+operator. Nothing in the browser can name a different actor.
 
 ## The contract surface
 
-Everything FlowBoard exposes through the Gateway, and the FlowBoard endpoint behind it. Queries
-require `operator.read`, actions `operator.write`; every one of them relays the Gateway-verified
-principal under the service credential (ADR-0040), and FlowBoard authorizes the write itself.
+What FlowBoard exposes through the Gateway. Reads require `operator.read`, writes `operator.write`;
+FlowBoard authorizes every write itself.
 
-| Operation | Kind | Scope | FlowBoard endpoint |
+| Name | Kind | Scope | What it is |
 |---|---|---|---|
-| `ui.config` | query | `operator.read` | — (resolves the configured dashboard URL) |
-| `projects.list` | query | `operator.read` | `GET /api/projects` |
-| `status.get` | query | `operator.read` | `GET /api/status` |
-| `tasks.list` | query | `operator.read` | `GET /api/projects/:project/tasks` |
-| `task.get` | query | `operator.read` | `GET …/tasks/:id` + `…/comments` + `…/checkpoints` |
-| `tasks.needing-me` | query | `operator.read` | `GET /api/tasks/stuck` + `GET …/tasks?status=review` |
-| `status.set` | action | `operator.write` | `PUT /api/status` |
-| `task.create` | action | `operator.write` | `POST /api/projects/:project/tasks` |
-| `task.update` | action | `operator.write` | `PUT …/tasks/:id` |
-| `task.comment` | action | `operator.write` | `POST …/tasks/:id/comment` |
-| `task.trash` | action | `operator.write` | `PUT …/tasks/:id` (`trashedAt`) |
-| `task.approve` | action | `operator.write` | `POST …/tasks/:id/approve` |
-| `task.reject` | action | `operator.write` | `POST …/tasks/:id/reject` |
-| `ui.focus` | action | `operator.write` | — (per-connection state in the Gateway) |
+| `flowboard.api.read` | Gateway method | `operator.read` | One allow-listed `GET` against the dashboard API |
+| `flowboard.api.write` | Gateway method | `operator.write` | One allow-listed `PUT`/`POST`/`DELETE` against the dashboard API |
+| `flowboard.ui.identity` | Gateway method | `operator.read` | Binds the connection's attested profile for later calls (ADR-0040) |
+| `tasks.needing-me` | contract query | `operator.read` | `GET /api/tasks/stuck` + `GET …/tasks?status=review`, merged and bounded |
+| `ui.focus` | contract action | `operator.write` | Per-connection state in the Gateway; writes nothing to FlowBoard |
+| `tasks-changed`, `projects-changed` | contract events | — | Emitted by the change poll |
 
-Four things about that table are decisions rather than mechanics:
+The feature contract is deliberately small. The typed transport is worth having where the host
+adds something: `feature.watch` re-runs the "needs me" query when an event arrives, and the events
+themselves are how a change reaches an open page. Everything else is the dashboard's own REST API
+behind the passthrough, so there is one definition of each operation, not two.
 
-- **`task.update` is additive, and the new actions are narrow (T-499).** Besides `status`,
-  `workState` and `workStateDetails`, `task.update` accepts `title` (1–200), `description` (up to
-  16384, the same bound `task.get` now returns, so an edit round-trips losslessly), `priority`,
-  `tags` (bounded) and `order` (a number, or null to unrank). Archiving is `status: 'archived'`
-  from done, unarchiving `status: 'done'`. `task.comment { project, id, message }` (1–2000
-  characters) signs the comment with the Gateway principal, never with an author from the input.
-  `task.trash { project, id, restore? }` sets or clears `trashedAt` with a timestamp made in the
-  Gateway; hard delete, cascades and emptying the Trash are not exposed. `tasks.list` drops trashed
-  tasks, and every action emits `tasks-changed`.
-- **The write actions are thin on purpose.** `task.update` is the generic update path and is
-  refused by FlowBoard for exactly the transitions that have their own endpoints — review → done
-  goes through `task.approve` (ADR-0022). A status move carries no `actor`, so FlowBoard treats it
-  as the trusted operator, exactly like a drag on the standalone board: moving a task another agent
-  actively holds is allowed and, into review or done, releases that claim (ADR-0029). The Gateway
-  does not pre-judge any of that; it relays FlowBoard's refusal, message and error code unchanged
-  as a `{ ok: false, error, code }` result (T-504) — the feature SDK would otherwise report every
-  refusal as "plugin session action failed".
-- **Approve, reject and comment name the operator, and the browser cannot.** Those endpoints read
-  the actor from their request *body*, not from the principal headers, so the plugin composes it in the
-  Gateway process from the connection's host-attested profile (`<display name> (gateway:<profile
-  id>)`, or `local:operator` for a CLI or token-only caller) and ignores anything the caller sent.
-  A status move through `task.update` carries no actor field at all: on that path `actor` is a
-  lease-ownership assertion, so sending one would refuse moves the dashboard itself allows.
-- **`ui.focus` writes nothing to FlowBoard.** It records, per Gateway connection, which project a
-  page is looking at, so the background poll watches that board and only that board. It is an
-  action rather than a query because it mutates server-side state, and it is bounded: 64
-  connections, at most 8 distinct boards watched, most recently focused first.
+`ui.focus` records, per Gateway connection, which project a page is looking at, so the background
+poll watches that board and only that board. It is an action rather than a query because it
+mutates server-side state, and it is bounded: 64 connections, at most 8 distinct boards watched,
+most recently focused first.
 
-### No `tool:` declarations (T-498, T-499)
+### No `tool:` declarations
 
 The contract operations are **not** exposed as agent tools, and `contracts.tools` in the generated
 manifest stays empty. Agents keep using FlowBoard's REST API, which is the project rule and already
 carries their identity. Declaring tools would change what the operator consents to when installing
 or updating the plugin — the capability consent prompt and the release canary matrix (T-487-1) —
-and that is a decision about the plugin's trust surface, not about the Kanban board. It is worth
+and that is a decision about the plugin's trust surface, not about the page. It is worth
 revisiting as its own task if agent-facing tools are ever wanted.
 
 ### How a native view stays fresh
@@ -292,10 +225,9 @@ The contract, decided in [ADR-0038](../adr/0038-workboard-coexistence-flowboard-
   note, never evidence about the task, and FlowBoard never reads it back.
 - **Link shape** (T-487-8): the Control UI deep link
   `/plugin?plugin=flowboard&id=flowboard&p.project=<name>&p.task=<id>`, or the standalone dashboard
-  URL where the native page is unavailable. The `p.*` names were fixed in stage 1 so links created
-  then keep working; the native board reads them (stage 2), and since T-499 `p.tab` and `p.file`
-  can add a framed tab and a file. The standalone SPA still has no URL routing for a task, so the
-  standalone dashboard URL opens FlowBoard without preselecting it.
+  URL where the native page is unavailable. The page reads `p.project` and `p.task` and opens that
+  task. The standalone SPA has no URL routing for a task, so the standalone dashboard URL opens
+  FlowBoard without preselecting it.
 
 ## Compatibility
 
@@ -303,7 +235,7 @@ The contract, decided in [ADR-0038](../adr/0038-workboard-coexistence-flowboard-
 |---|---|
 | Host < 2026.9.2 | The `controlUi` manifest field is additive and ignored; hook and standalone dashboard work normally |
 | Host ≥ 2026.9.2, lab flag off (the default) | No sidebar entry. Plugin backend and standalone dashboard are unaffected |
-| Host ≥ 2026.9.2, lab flag on | Native page appears; the framed Ideas/Files/Projects tabs additionally need `FLOWBOARD_FRAME_ANCESTORS` listing the Control UI origin |
+| Host ≥ 2026.9.2, lab flag on | Native page, widget and session panel appear; they need `dashboardBaseUrl` to reach the dashboard |
 | Plugin disabled, or FlowBoard run without OpenClaw | Standalone dashboard only; external agents keep using REST |
 
 `gateway.controlUi.experimental.customPlugins` is server-enforced and defaults to off. Hosts from
@@ -369,4 +301,4 @@ entry, which would make the entry fail to load on every host below 2026.9.2 and 
 - [Auth Model](auth-model.md) — how a principal is established on FlowBoard's own server
 - [Agent Identity](agent-identity.md) — why `agentId` is attribution and not a principal
 - [Governance Trust Contract](governance-trust-contract.md) — what FlowBoard does with a resolved principal
-- [Environment Variables](../reference/env-vars.md) — `FLOWBOARD_FRAME_ANCESTORS` and the rest
+- [Environment Variables](../reference/env-vars.md) — `FLOWBOARD_SERVICE_TOKEN` and the rest

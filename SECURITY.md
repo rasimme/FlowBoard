@@ -162,7 +162,8 @@ standalone dashboard give you the whole product and never load code into the Con
 ### What we commit to in exchange
 
 - **No third-party scripts and no remote code loading.** The bundle fetches no script, stylesheet or
-  font from a CDN or any third-party origin at runtime. Fonts and images are inlined.
+  font from a CDN or any third-party origin at runtime. It ships no fonts of its own and uses the
+  Control UI's; images are inlined.
 - **Pinned, lock-filed dependencies.** Everything that reaches the bundle is pinned and covered by
   the committed lockfile.
 - **Reproducible bundle, addressed by content hash.** The Gateway serves each build under an
@@ -192,6 +193,27 @@ Either switch is sufficient, and both belong to the operator, not to FlowBoard:
 
 Either one removes the native page. Neither affects the standalone dashboard, the REST API, or
 agents already using FlowBoard.
+
+### The API passthrough
+
+The native page is the dashboard, so it needs the dashboard's API. Two Gateway methods forward one
+request each — `flowboard.api.read` for `GET` (`operator.read`) and `flowboard.api.write` for
+`PUT`/`POST`/`DELETE` (`operator.write`). What that means for you:
+
+- **An operator with `operator.write` on your Gateway can change FlowBoard data** through that
+  path, the same way they could at the dashboard itself. On a single-operator Gateway that is you.
+  With trusted collaborators (ADR-0037, mode B) it is each of them, recorded under their own
+  profile.
+- **Only allow-listed methods and paths are forwarded.** Not forwarded: updating FlowBoard, the
+  dashboard's own sign-in, webhooks, deleting agent rows, agent context, workflow and heal
+  endpoints, and governance mode switches. Anything not on the list is refused in the Gateway
+  process and never reaches the dashboard.
+- **Bounded.** Requests and responses are limited to 16 MiB, reads time out after 15 seconds and
+  writes after 30, and only a fixed set of content types and response headers passes.
+- **The caller cannot name itself.** The identity forwarded to FlowBoard is the profile the
+  Gateway attested for the connection, never a value from the request.
+
+The reasoning is in [ADR-0042](docs/adr/0042-gateway-api-passthrough-for-native-dashboard.md).
 
 ### The service credential
 
