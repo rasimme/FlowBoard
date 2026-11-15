@@ -3624,8 +3624,10 @@ app.get('/api/projects/:name/files/{*filePath}', (req, res) => {
   }
 
   const stat = fs.statSync(resolved);
-  if (stat.size > 500 * 1024) {
-    return res.status(413).json({ error: 'File too large (max 500KB)' });
+  // Same ceiling as the context upload, so a file that can be uploaded can
+  // also be opened (T-516).
+  if (stat.size > 5 * 1024 * 1024) {
+    return res.status(413).json({ error: 'File too large (max 5MB)' });
   }
 
   try {

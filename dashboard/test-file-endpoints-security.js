@@ -127,6 +127,10 @@ async function run() {
     ok((await upload('big-150.md', 150)).status === 200, 'context upload of 150 KB → 200 (not capped by the global 100 KB parser)');
     ok((await upload('big-4000.md', 4000)).status === 200, 'context upload of 4 MB → 200');
     ok((await upload('big-6000.md', 6000)).status === 413, 'context upload above 5 MB → 413');
+    const big = await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('context/big-4000.md')}`);
+    ok(big.status === 200 && big.body.content.length > 4000 * 1024, 'an uploaded 4 MB file can be read back (read limit matches the upload limit)');
+    fs.writeFileSync(path.join(pdir, 'context', 'huge.md'), 'z'.repeat(5 * 1024 * 1024 + 1));
+    ok((await api(base, 'GET', `/api/projects/${PROJECT}/files/${enc('context/huge.md')}`)).status === 413, 'reading a file above 5 MB → 413');
     ok((await api(base, 'PUT', `/api/projects/${PROJECT}/files/${enc('context/note.md')}`, { content: 'x'.repeat(150 * 1024) })).status === 413,
       'other JSON routes keep the default 100 KB limit');
   } finally {
