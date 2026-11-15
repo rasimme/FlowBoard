@@ -8,35 +8,6 @@ function EmptyHint() {
   }, 'Double-click to add text…');
 }
 
-// T-345-9: scoped overrides for the inline (compact) MarkdownEditor on a card.
-// The global .markdown-editor / .cm-editor rules (styles/dashboard.css) force
-// height:100% + an opaque var(--bg) background, which is wrong for an editor
-// embedded in a coloured, content-sized card. These rules are intentionally
-// kept in the component (not styles/*.css — out of scope for this task) and
-// only target the inline editor inside .note-editor-inline, so the sidebar /
-// file editor usage is untouched.
-const INLINE_EDITOR_STYLE_ID = 'note-inline-editor-style';
-const INLINE_EDITOR_CSS = `
-.note-editor-inline .markdown-editor {
-  height: auto; background: transparent; overflow: visible;
-}
-.note-editor-inline .markdown-editor-body { min-height: 0; }
-.note-editor-inline .markdown-editor-body > div { height: auto; }
-.note-editor-inline .markdown-editor .cm-editor {
-  height: auto; background: transparent;
-}
-.note-editor-inline .cm-scroller { overflow: visible; }
-`;
-
-function ensureInlineEditorStyle() {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById(INLINE_EDITOR_STYLE_ID)) return;
-  const el = document.createElement('style');
-  el.id = INLINE_EDITOR_STYLE_ID;
-  el.textContent = INLINE_EDITOR_CSS;
-  document.head.appendChild(el);
-}
-
 /**
  * NoteCard (T-340-3) — React port of the vanilla note element
  * (js/canvas/notes.js noteHTML/createNoteElement/startNoteEdit).
@@ -63,7 +34,6 @@ export default function NoteCard({ note, selected, editing, onSaveText, onLayout
   // Load the note text into the editor each time editing (re)starts.
   useEffect(() => {
     if (editing) {
-      ensureInlineEditorStyle();
       setEditValue(note.text || '');
       savedRef.current = false;
     }

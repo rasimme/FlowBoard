@@ -62,7 +62,10 @@ const scopePlugin = {
       const s = selector.trim();
       if (s.startsWith(SCOPE)) return s;
       const match = s.match(ROOTISH);
-      if (!match) return `${INSIDE} ${s}`;
+      // Element and universal rules (resets such as `* { padding: 0 }`) keep
+      // the single scope: doubled, they would outrank class rules that are
+      // not part of this sheet, such as CodeMirror's own.
+      if (!match) return `${/[.#[]/.test(s) ? INSIDE : SCOPE} ${s}`;
       rootish = true;
       return `${SCOPE}${match[2].replace(/^\s*>?\s*body(?![\w-])/, '')}`;
     });

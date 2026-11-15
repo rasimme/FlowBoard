@@ -397,3 +397,17 @@
 }
 
 /* Cluster promote buttons removed — promote is now always via selection + renderPromoteButton */
+
+/* --- Inline note editor (T-345-9) ---
+   The global .markdown-editor / .cm-editor rules give the editor a fixed
+   height and an opaque background, which is wrong inside a coloured,
+   content-sized card. These only target the editor inside a card. */
+.note-editor-inline .markdown-editor {
+  height: auto; background: transparent; overflow: visible;
+}
+.note-editor-inline .markdown-editor-body { min-height: 0; }
+.note-editor-inline .markdown-editor-body > div { height: auto; }
+.note-editor-inline .markdown-editor .cm-editor {
+  height: auto; background: transparent;
+}
+.note-editor-inline .cm-scroller { overflow: visible; }

@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Bold, Code2, Heading1, Italic, Link, List, ListChecks, Quote, Table2 } from 'lucide-react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
@@ -168,6 +168,17 @@ const MarkdownEditor = forwardRef(function MarkdownEditor({
 }, ref) {
   const viewRef = useRef(null);
 
+  // CodeMirror mounts its stylesheet into the root it finds by walking up from
+  // the editor, and that walk follows `assignedSlot`. When the dashboard is
+  // slotted into a host component, it would pick the host's shadow root and
+  // the editor would render unstyled. Name the root the editor really lives in.
+  const [styleRoot, setStyleRoot] = useState(null);
+  const bodyRef = useCallback((el) => {
+    if (!el) return;
+    const root = el.getRootNode();
+    setStyleRoot(root.nodeType === 9 || root.nodeType === 11 ? root : document);
+  }, []);
+
   const extensions = useMemo(() => [
     markdown(),
     EditorView.lineWrapping,
@@ -318,8 +329,9 @@ const MarkdownEditor = forwardRef(function MarkdownEditor({
           ))}
         </div>
       )}
-      <div className="markdown-editor-body">
-        <CodeMirror
+      <div className="markdown-editor-body" ref={bodyRef}>
+        {styleRoot && <CodeMirror
+          root={styleRoot}
           value={value}
           height={compact ? undefined : '100%'}
           minHeight={compact ? '40px' : undefined}
@@ -344,7 +356,7 @@ const MarkdownEditor = forwardRef(function MarkdownEditor({
             indentOnInput: true,
             searchKeymap: true,
           }}
-        />
+        />}
       </div>
     </div>
   );
