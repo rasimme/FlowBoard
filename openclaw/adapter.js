@@ -1,8 +1,9 @@
 /**
- * FlowBoard HTTP adapter for the OpenClaw Gateway facade (T-487-7, ADR-0040;
- * "needing me" and session-scoped status added in T-487-8; the board
- * projection and the three write actions in T-498; edit fields, comments and
- * trash in T-499).
+ * FlowBoard HTTP adapter for the OpenClaw Gateway facade (T-487-7, ADR-0040).
+ *
+ * It serves three callers: the "needs me" query, the change poll (project
+ * list and board digest) and the API passthrough the native dashboard uses
+ * for everything else (ADR-0042).
  *
  * The Gateway process talks to the FlowBoard dashboard over loopback HTTP. It
  * authenticates with a shared service credential (`serviceToken` plugin config
@@ -32,8 +33,6 @@ const { joinApiPath, resolveDashboardBaseUrl } = require(join(PACKAGE_ROOT, 'das
 
 /** Read timeout for a single dashboard call. Loopback: fast, never unbounded. */
 export const DEFAULT_TIMEOUT_MS = 3000;
-/** Writes may touch the HZL event store and the policy ledger. */
-export const WRITE_TIMEOUT_MS = 5000;
 
 const MAX_ERROR_MESSAGE = 300;
 const HEADER_MAX = 256;
@@ -56,22 +55,9 @@ export const DEFAULT_NEEDS_ME_LIMIT = 40;
 /** Board bounds — the mirror of openclaw/contract.js, enforced before the wire. */
 export const MAX_TASK_LIST_LIMIT = 500;
 export const DEFAULT_TASK_LIST_LIMIT = 300;
-export const MAX_COMMENTS = 20;
-export const MAX_CHECKPOINTS = 10;
-/**
- * FlowBoard's own description limit (server.js T-396, 16 KB), so the detail
- * read round-trips every description the dashboard can store. Larger legacy
- * content is still cut and flagged with `descriptionTruncated`.
- */
-export const MAX_DESCRIPTION = 16384;
-/** One comment on the wire, in both directions (task.comment, task.get). */
-export const MAX_COMMENT = 2000;
-export const MAX_TITLE = 200;
 export const MAX_TAGS = 20;
 export const MAX_TAG_LENGTH = 40;
 export const MAX_DETAIL_LENGTH = 200;
-export const MAX_ACTOR_LENGTH = 128;
-export const MAX_REASON = 500;
 
 /** Errors the host turns into a feature-operation failure, message only. */
 export class FlowBoardAdapterError extends Error {
@@ -437,73 +423,6 @@ export function compareTasks(a, b) {
   return String(a?.id ?? '').localeCompare(String(b?.id ?? ''), 'en', { numeric: true });
 }
 
-/** Newest first, by FlowBoard's timestamp; entries without one sort last. */
-function byTimestampDesc(a, b) {
-  return String(b?.timestamp ?? '').localeCompare(String(a?.timestamp ?? ''));
-}
-
-export function projectComment(row) {
-  const id = Number.isInteger(row?.id) && row.id >= 0 ? row.id : null;
-  return {
-    id,
-    author: boundedOrNull(row?.author, 128),
-    message: boundedText(row?.message, MAX_COMMENT),
-    kind: boundedOrNull(row?.kind, 16),
-    timestamp: boundedOrNull(row?.timestamp, 64),
-  };
-}
-
-export function projectCheckpoint(row) {
-  return {
-    message: boundedText(row?.message, 256),
-    agent: optionalAgent(row?.agent),
-    progress: Number.isFinite(row?.progress) ? row.progress : null,
-    timestamp: boundedOrNull(row?.timestamp, 64),
-  };
-}
-
-/**
- * Who FlowBoard should record as the actor of a review decision.
- *
- * Approve and reject take the actor from their request *body* — they do not
- * read the Gateway principal headers (dashboard/server.js) — so the actor has
- * to be composed here, in the Gateway process, from the connection's
- * host-attested profile. It is never taken from operation input: the browser
- * cannot name who approved something.
- *
- * The form carries both halves on purpose: the display name is what a human
- * reads in the activity feed, and `gateway:<profileId>` is the same actor
- * string `governance.resolvePrincipal` derives from the headers, so a comment
- * and a governance record can still be tied together. Without a profile (a
- * CLI or token-only connection) the caller is the trusted local operator, and
- * FlowBoard's own vocabulary for that is `local:operator`.
- */
-export function principalActor(principal) {
-  const profileId = boundedHeaderValue(principal?.profileId);
-  if (!profileId) return 'local:operator';
-  const displayName = boundedHeaderValue(principal?.displayName);
-  const actor = displayName ? `${displayName} (gateway:${profileId})` : `gateway:${profileId}`;
-  return actor.slice(0, MAX_ACTOR_LENGTH);
-}
-
-/**
- * Project FlowBoard's status response onto the contract's binding object.
- *
- * `binding` on the wire is which layer answered — `session`, `agent`, or null
- * for "nothing bound" (flowboard-metadata `resolveActiveProject`). Anything
- * else is treated as unknown rather than passed through, so a newer server
- * cannot widen this enum behind the Gateway's validator.
- */
-function readBinding(payload, { agentId, sessionKey }) {
-  const scope = payload?.binding === 'session' || payload?.binding === 'agent' ? payload.binding : null;
-  return {
-    agentId: String(payload?.agentId ?? agentId).slice(0, 64),
-    contextReady: payload?.contextReady === true,
-    sessionKey: typeof sessionKey === 'string' && sessionKey ? sessionKey : null,
-    scope,
-  };
-}
-
 /**
  * Read the service credential from the plugin config.
  *
@@ -647,35 +566,6 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
       }));
     },
 
-    async getStatus(principal, { agentId, sessionKey }) {
-      // T-487-2 / ADR-0039: the session key names which binding to read. It is
-      // routing context, never authorization — FlowBoard validates its shape
-      // and answers with the layer that actually resolved (`binding`).
-      const query = new URLSearchParams({ agentId });
-      if (typeof sessionKey === 'string' && sessionKey) query.set('sessionKey', sessionKey);
-      const payload = await call('GET', `/api/status?${query.toString()}`, { principal });
-      return {
-        activeProject: typeof payload.activeProject === 'string' ? payload.activeProject : null,
-        binding: readBinding(payload, { agentId, sessionKey }),
-      };
-    },
-
-    async setStatus(principal, { agentId, project, sessionKey }) {
-      const payload = await call('PUT', '/api/status', {
-        principal,
-        body: {
-          agentId,
-          project: project === null ? 'none' : project,
-          ...(typeof sessionKey === 'string' && sessionKey ? { sessionKey } : {}),
-        },
-        timeoutMs: WRITE_TIMEOUT_MS,
-      });
-      return {
-        activeProject: typeof payload.activeProject === 'string' ? payload.activeProject : null,
-        binding: readBinding(payload, { agentId, sessionKey }),
-      };
-    },
-
     /**
      * Everything waiting on the human, in one bounded answer.
      *
@@ -765,218 +655,6 @@ export function createFlowBoardAdapter(pluginConfig = {}, options = {}) {
       const rows = Array.isArray(payload.tasks) ? payload.tasks.filter((task) => !task?.trashedAt) : [];
       const tasks = rows.map(projectTask).sort(compareTasks);
       return { tasks: tasks.slice(0, max), truncated: tasks.length > max };
-    },
-
-    /**
-     * One task with the context a detail panel shows.
-     *
-     * Three reads, in parallel: the canonical task, its comments and its
-     * checkpoints. Comments and checkpoints are best-effort — FlowBoard
-     * answers them from the event store, and a task whose history cannot be
-     * read is still a task worth opening.
-     */
-    async getTask(principal, { project, id } = {}) {
-      const base = `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`;
-      const [payload, comments, checkpoints] = await Promise.all([
-        call('GET', base, { principal }),
-        call('GET', `${base}/comments`, { principal }).catch(() => ({})),
-        call('GET', `${base}/checkpoints`, { principal }).catch(() => ({})),
-      ]);
-      const raw = payload?.task;
-      if (!raw || typeof raw !== 'object') {
-        throw new FlowBoardAdapterError(`Task not found: ${id}`, 'flowboard_not_found');
-      }
-      const description = typeof raw.description === 'string' ? raw.description : '';
-      const commentRows = Array.isArray(comments?.comments) ? comments.comments : [];
-      const checkpointRows = Array.isArray(checkpoints?.checkpoints) ? checkpoints.checkpoints : [];
-      return {
-        task: {
-          ...projectTask(raw),
-          description: description.slice(0, MAX_DESCRIPTION),
-          descriptionTruncated: description.length > MAX_DESCRIPTION,
-          specFile: boundedOrNull(raw.specFile, 512),
-        },
-        comments: [...commentRows].sort(byTimestampDesc).slice(0, MAX_COMMENTS).map(projectComment),
-        checkpoints: [...checkpointRows].sort(byTimestampDesc).slice(0, MAX_CHECKPOINTS).map(projectCheckpoint),
-      };
-    },
-
-    /**
-     * Resolve the task a write action answered with.
-     *
-     * `PUT /tasks/:id` answers with FlowBoard's fully enriched projection, but
-     * `/approve` and `/reject` answer with the raw service task — no
-     * `specExists`, because those endpoints never pass through
-     * `taskWithSpecStatus`. Rather than let a card lose its spec chip the
-     * moment it is approved, re-read the canonical task whenever the answer
-     * is not already enriched. If that read fails the write still happened,
-     * so the unenriched answer is returned rather than an error.
-     */
-    async taskAfterWrite(principal, project, payload) {
-      const raw = payload?.task;
-      if (raw && typeof raw.specExists === 'boolean') return { task: projectTask(raw) };
-      const id = typeof raw?.id === 'string' ? raw.id : null;
-      if (id) {
-        try {
-          const fresh = await call(
-            'GET',
-            `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}`,
-            { principal },
-          );
-          if (fresh?.task) return { task: projectTask(fresh.task) };
-        } catch {
-          /* the write succeeded; a failed re-read must not undo that */
-        }
-      }
-      return { task: projectTask(raw) };
-    },
-
-    /**
-     * Change status, work state and/or the editable card fields.
-     *
-     * Deliberately no `actor` in the body. On the generic update path that
-     * field is a lease-ownership *assertion* (server.js T-422-1): naming an
-     * actor different from the agent holding a live claim is refused with
-     * NOT_OWNER. An actor-less call is FlowBoard's trusted local operator and
-     * behaves exactly like the dashboard's own status picker, including its
-     * auto-release. The Gateway principal still travels in the headers.
-     *
-     * The edit fields (T-499) are forwarded as given — the Gateway has already
-     * validated them against the contract — and only when present: an empty
-     * description, an empty tag list and a null rank are values that clear
-     * something, not "leave it alone". FlowBoard validates them again.
-     */
-    async updateTask(
-      principal,
-      { project, id, status, workState, workStateDetails, title, description, priority, tags, order } = {},
-    ) {
-      const body = {};
-      if (title !== undefined) body.title = title;
-      if (description !== undefined) body.description = description;
-      if (priority !== undefined) body.priority = priority;
-      if (tags !== undefined) body.tags = tags;
-      if (order !== undefined) body.order = order;
-      if (status !== undefined) body.status = status;
-      if (workState !== undefined) body.workState = workState;
-      if (workStateDetails !== undefined) body.workStateDetails = projectWorkStateDetails(workStateDetails);
-      if (Object.keys(body).length === 0) {
-        throw new FlowBoardAdapterError(
-          'task.update needs at least one field to change: status, workState, workStateDetails, title, ' +
-            'description, priority, tags or order',
-          'flowboard_empty_update',
-        );
-      }
-      const payload = await call('PUT', taskPath(project, id), {
-        principal,
-        body,
-        timeoutMs: WRITE_TIMEOUT_MS,
-      });
-      return this.taskAfterWrite(principal, project, payload);
-    },
-
-    /**
-     * Accept work in review: review -> done plus an audit comment.
-     *
-     * `actor` is composed from the Gateway-verified profile here and never
-     * from operation input, because FlowBoard's approve endpoint reads it from
-     * the body and not from the principal headers.
-     */
-    async approveTask(principal, { project, id, reason } = {}) {
-      const note = boundedOrNull(reason, MAX_REASON);
-      const payload = await call(
-        'POST',
-        `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}/approve`,
-        {
-          principal,
-          body: { actor: principalActor(principal), ...(note ? { reason: note } : {}) },
-          timeoutMs: WRITE_TIMEOUT_MS,
-        },
-      );
-      return this.taskAfterWrite(principal, project, payload);
-    },
-
-    /**
-     * Send work back: review -> in-progress plus an audit comment.
-     *
-     * `target` is not exposed. FlowBoard's default sends the task back to
-     * in-progress and leaves its work state alone; `target: "blocked"` would
-     * additionally set workState=blocked, which the board can already do
-     * explicitly through `task.update` — and rejecting is a statement about
-     * the review, not about whether the assignee is blocked.
-     */
-    async rejectTask(principal, { project, id, reason } = {}) {
-      const note = boundedOrNull(reason, MAX_REASON);
-      if (!note) {
-        throw new FlowBoardAdapterError('A reason is required to reject a task in review', 'flowboard_reason_required');
-      }
-      const payload = await call(
-        'POST',
-        `/api/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(id)}/reject`,
-        {
-          principal,
-          body: { actor: principalActor(principal), reason: note },
-          timeoutMs: WRITE_TIMEOUT_MS,
-        },
-      );
-      return this.taskAfterWrite(principal, project, payload);
-    },
-
-    /**
-     * Add a comment signed by the operator behind the call.
-     *
-     * FlowBoard's comment endpoint takes its author from the request body (it
-     * does not read the principal headers), so the author is composed here
-     * from the Gateway-verified profile — the same actor string approve and
-     * reject sign with — and never from operation input.
-     */
-    async commentTask(principal, { project, id, message } = {}) {
-      if (typeof message !== 'string' || !message.trim()) {
-        throw new FlowBoardAdapterError('A comment needs a message', 'flowboard_message_required');
-      }
-      const payload = await call('POST', `${taskPath(project, id)}/comment`, {
-        principal,
-        body: { message: message.slice(0, MAX_COMMENT), author: principalActor(principal) },
-        timeoutMs: WRITE_TIMEOUT_MS,
-      });
-      return { comment: projectComment(payload?.comment) };
-    },
-
-    /**
-     * Move a task to FlowBoard's Trash, or restore it.
-     *
-     * Soft delete only: `trashedAt` is set to an ISO timestamp made in this
-     * process, or cleared. Hard delete and "empty trash" need FlowBoard's
-     * typed confirmations and are deliberately not reachable from here.
-     */
-    async trashTask(principal, { project, id, restore } = {}) {
-      const trashedAt = restore === true ? null : now().toISOString();
-      const payload = await call('PUT', taskPath(project, id), {
-        principal,
-        body: { trashedAt },
-        timeoutMs: WRITE_TIMEOUT_MS,
-      });
-      const raw = payload?.task;
-      const trashed = raw && Object.prototype.hasOwnProperty.call(raw, 'trashedAt')
-        ? Boolean(raw.trashedAt)
-        : trashedAt !== null;
-      return { id: typeof raw?.id === 'string' && raw.id ? raw.id.slice(0, 64) : id, trashed };
-    },
-
-    async createTask(principal, { project, title, description, priority }) {
-      const payload = await call('POST', `/api/projects/${encodeURIComponent(project)}/tasks`, {
-        principal,
-        body: {
-          title,
-          ...(description === undefined ? {} : { description }),
-          ...(priority === undefined ? {} : { priority }),
-        },
-        timeoutMs: WRITE_TIMEOUT_MS,
-      });
-      const id = payload?.task?.id;
-      if (typeof id !== 'string' || !id) {
-        throw new FlowBoardAdapterError('FlowBoard created the task but returned no id');
-      }
-      return { id };
     },
   };
 }

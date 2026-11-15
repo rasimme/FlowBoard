@@ -1,21 +1,14 @@
 /**
- * Deep links into the FlowBoard page (T-487-8, retargeted in T-498 and T-499).
+ * Deep links into the FlowBoard page (T-487-8, T-515-6).
  *
- *  - **Control UI page params** — `host.navigation.openPage({ id, params })`
- *    puts `?p.project=…&p.task=…` in the Control UI's own URL and hands them
- *    back as the view's `props`. They open the **native** board and its
- *    detail panel, so a shared link lands on the task itself; the back button
- *    and a reloaded page restore the same view.
- *  - **The standalone dashboard link** — "Open in FlowBoard ↗". The whole SPA
- *    is no longer framed (T-499 retired `buildFrameUrl`); framed surfaces are
- *    built by `embed.js`. The standalone SPA has no URL routing for a project
- *    or a task, so the link carries only the agent the rail follows, which
- *    the SPA does read (`agentId`).
+ * `host.navigation.openPage({ id, params })` puts `?p.project=…&p.task=…` in
+ * the Control UI's own URL and hands them back as the view's `props`. They
+ * select the project and open the task, so a shared link, a reload and the
+ * back button all arrive in the same place.
  */
 
 export const PROJECT_PARAM = 'project';
 export const TASK_PARAM = 'task';
-export const AGENT_PARAM = 'agentId';
 export const TAB_PARAM = 'tab';
 export const FILE_PARAM = 'file';
 
@@ -74,22 +67,4 @@ export function readPageParams(props) {
   const tab = LINK_TABS.has(props?.[TAB_PARAM]) ? props[TAB_PARAM] : 'board';
   const file = tab === 'files' && project ? boundedFile(props?.[FILE_PARAM]) : null;
   return { project: project || null, task: task || null, tab, file: file || null };
-}
-
-/**
- * The full dashboard in a new tab. Without an agent the configured URL is
- * returned unchanged; a URL the browser cannot parse is returned untouched.
- */
-export function buildDashboardUrl(dashboardUrl, { agentId } = {}) {
-  if (typeof dashboardUrl !== 'string' || !dashboardUrl) return '';
-  const agent = boundedParam(agentId);
-  if (!agent) return dashboardUrl;
-  let url;
-  try {
-    url = new URL(dashboardUrl);
-  } catch {
-    return dashboardUrl;
-  }
-  url.searchParams.set(AGENT_PARAM, agent);
-  return url.toString();
 }

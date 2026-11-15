@@ -15,7 +15,6 @@ import DeletedProjectsTrash from './DeletedProjectsTrash.jsx';
 import ProjectActionsMenu from './ProjectActionsMenu.jsx';
 import ImportProjectModal, { ExportProjectModal } from './ProjectBundleModals.jsx';
 import Popover from './Popover.jsx';
-import { getEmbed } from '../embed/embedRuntime.js';
 import { shellQuery } from '../utils/shell.js';
 import { getOverlayRoot } from '../utils/portalRoot.js';
 
@@ -204,12 +203,8 @@ function ProjectItem({
 export default function Sidebar() {
   const { state } = useAppState();
   const { viewProject, refreshProjectsOnly, switchTab } = useDashboard();
-  // A click/Enter on a project row. T-499: the framed Projects surface also
-  // tells the host, which switches its native board to that project.
-  const openProjectFromList = useCallback((name) => {
-    getEmbed()?.openProject(name);
-    return viewProject(name);
-  }, [viewProject]);
+  // A click/Enter on a project row.
+  const openProjectFromList = viewProject;
   const [container, setContainer] = useState(null);
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [userFolders, setUserFolders] = useState(loadUserFolders);

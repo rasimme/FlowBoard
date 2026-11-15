@@ -9,8 +9,6 @@ import ViewShell from './components/ViewShell.jsx';
 import DetailPanel from './components/DetailPanel.jsx';
 import DashboardConnectionState from './components/DashboardConnectionState.jsx';
 import { useDashboard } from './context/DashboardContext.jsx';
-import EmbedShell from './embed/EmbedShell.jsx';
-import { getEmbed } from './embed/embedRuntime.js';
 import { usesHostChrome } from './utils/shell.js';
 import { useEffect } from 'react';
 import { getState } from './state/appStore.mjs';
@@ -41,14 +39,11 @@ function DeepLinkBridge() {
 function DashboardShell() {
   const { state } = useDashboard();
   const blocksShell = !state?.connection?.hasData;
-  // T-499: null unless a verified host frames a single surface (?embed=…).
-  const embed = getEmbed();
 
   return (
     <>
       <DashboardConnectionState />
-      {!blocksShell && embed && <EmbedShell embed={embed} />}
-      {!blocksShell && !embed && (
+      {!blocksShell && (
         <>
           {!usesHostChrome() && <Header />}
           <Sidebar />

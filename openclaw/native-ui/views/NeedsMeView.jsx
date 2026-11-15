@@ -4,7 +4,7 @@
  * (`tasks.needing-me`); this view only renders it.
  */
 import { useEffect, useState } from 'react';
-import { describeNeedsMe, groupNeedsMe, reasonLabel } from '../../control-ui/lib/needs-me.js';
+import { describeNeedsMe, groupNeedsMe, reasonLabel } from '../lib/needs-me.js';
 
 export default function NeedsMeView({ watch, onOpen }) {
   const [state, setState] = useState({ items: null, truncated: false, error: null });

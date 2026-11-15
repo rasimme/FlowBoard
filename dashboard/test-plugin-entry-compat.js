@@ -41,8 +41,8 @@ const FEATURE_PATH = path.join(REPO_ROOT, 'openclaw', 'feature-entry.js');
 const CONTRACT_PATH = path.join(REPO_ROOT, 'openclaw', 'contract.js');
 const ADAPTER_PATH = path.join(REPO_ROOT, 'openclaw', 'adapter.js');
 const CHANGE_POLL_PATH = path.join(REPO_ROOT, 'openclaw', 'change-poll.js');
-const CONTROL_UI_DIR = path.join(REPO_ROOT, 'openclaw', 'control-ui');
-const CONTROL_UI_ENTRY = path.join(CONTROL_UI_DIR, 'index.js');
+const CONTROL_UI_DIR = path.join(REPO_ROOT, 'openclaw', 'native-ui');
+const CONTROL_UI_ENTRY = path.join(CONTROL_UI_DIR, 'index.jsx');
 const CONTROL_UI_LIB_DIR = path.join(CONTROL_UI_DIR, 'lib');
 
 let passed = 0;
@@ -166,9 +166,9 @@ function staticGuards() {
     assert.deepEqual(sdk.sort(), ['openclaw/plugin-sdk/control-ui', 'openclaw/plugin-sdk/feature-contract']);
   });
 
-  check('the extracted rail logic imports no SDK and no plugin backend', () => {
+  check('the extracted view logic imports no SDK and no plugin backend', () => {
     const files = fs.readdirSync(CONTROL_UI_LIB_DIR).filter((file) => file.endsWith('.js'));
-    assert.ok(files.length > 0, 'openclaw/control-ui/lib has modules to check');
+    assert.ok(files.length > 0, 'openclaw/native-ui/lib has modules to check');
     for (const file of files) {
       const source = fs.readFileSync(path.join(CONTROL_UI_LIB_DIR, file), 'utf8');
       const imports = [...source.matchAll(/^\s*import\s[^;]*?from\s+['"]([^'"]+)['"]/gmu)].map((match) => match[1]);

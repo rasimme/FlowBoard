@@ -12,7 +12,7 @@
  *    live stall detection. Nobody is waiting for a decision; the work stopped.
  *
  * Pure, DOM-free and dependency-free so it is unit-tested directly
- * (dashboard/test-control-ui-lib.js).
+ * (dashboard/test-native-ui-lib.js).
  */
 
 export const NEEDS_ME_GROUPS = [

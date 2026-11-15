@@ -747,10 +747,7 @@ function scriptJson(value) {
 
 // Both HTML entry points (`/` and the SPA fallback) serve dist/index.html with
 // the per-request CSP nonce on every inline <script> and the runtime config
-// the client reads before React boots. T-499: __FLOWBOARD_FRAME_ANCESTORS__ is
-// the embed-mode host allow-list — the same validated origins that CSP
-// frame-ancestors admits (FLOWBOARD_FRAME_ANCESTORS); empty means embed mode
-// can never activate.
+// the client reads before React boots.
 function renderIndexHtml(nonce) {
   const html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
   const config = {
@@ -758,7 +755,6 @@ function renderIndexHtml(nonce) {
     __AUTH_ENABLED__: AUTH_ENABLED,
     __FLOWBOARD_ENABLE_DASHBOARD_SNAPSHOT__: DASHBOARD_SNAPSHOT_ENABLED,
     __FLOWBOARD_STALE_THRESHOLD_MINUTES__: hzlService.getSchedulerStaleThreshold(),
-    __FLOWBOARD_FRAME_ANCESTORS__: EXTRA_FRAME_ANCESTORS,
   };
   const assignments = Object.entries(config)
     .map(([key, value]) => `window.${key} = ${scriptJson(value)};`)

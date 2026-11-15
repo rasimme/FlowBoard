@@ -1,39 +1,22 @@
 'use strict';
 
 /**
- * T-487-8 / T-498 — the Gateway adapter's operations and the change poll.
+ * The Gateway adapter and the change poll (T-487-8, T-498; cut down with the
+ * contract in T-515-7).
  *
- * `openclaw/adapter.js` is the only code that turns a feature operation into a
- * FlowBoard HTTP call, so two things are worth asserting there and nowhere
- * else:
+ * `openclaw/adapter.js` turns the remaining feature query and the change
+ * poll's reads into FlowBoard HTTP calls. What is worth asserting here:
  *
  *   1. **`tasks.needing-me` is FlowBoard's own answer, merged.** The review
  *      lane comes from the task API, the blocked/stalled lane from FlowBoard's
  *      stall detection (`GET /api/tasks/stuck`), and the merge is bounded: the
  *      per-project review fetch happens only where the project list already
  *      reports work in review, and never for more than MAX_REVIEW_PROJECTS.
- *      A rail that quietly turned into an N+1 scan of every project would be
- *      invisible until a big board made it slow.
- *   2. **`sessionKey` reaches `/api/status`.** T-487-2 made a binding
- *      session-scoped; if the adapter drops the key, a session-scoped switch
- *      silently rewrites the agent-level binding instead — the exact bug
- *      ADR-0039 exists to prevent.
- *
- * T-498 adds the board half, where three more things are only true if they are
- * asserted here:
- *
- *   3. **The board projection is FlowBoard's answer, narrowed.** `tasks.list`
- *      and `task.get` are what an unsandboxed browser bundle sees of a task,
- *      so the bounds (description, comment and checkpoint slices, tags, the
- *      five stuck-indicator fields) are the contract, not an implementation
- *      detail.
- *   4. **The write actions carry the operator, and FlowBoard decides.**
- *      Approve and reject read their actor from the request *body*, so the
- *      adapter has to compose it from the Gateway-verified profile — an
- *      `actor` taken from operation input would be a forgeable review
- *      signature. The review gate, the reject reason and the resulting status
- *      are FlowBoard's rules, and the tests below pin what they actually are.
- *   5. **The poll costs nothing when nobody is looking.** The board lane only
+ *   2. **The board projection is FlowBoard's answer, narrowed.** The task
+ *      list feeds the change poll's digest, so its bounds and ordering are
+ *      what decides which cards an event names.
+ *   3. **Refusals keep FlowBoard's message and code.**
+ *   4. **The poll costs nothing when nobody is looking.** The board lane only
  *      runs for focused projects and only while a client is registered; a
  *      regression there is a quiet one, because it looks exactly like a
  *      working poll.
@@ -111,54 +94,6 @@ function projectRow(name, review = 0, blocked = 0) {
 async function requestShapeTests() {
   const { createFlowBoardAdapter, MAX_REVIEW_PROJECTS, stuckEntryToItem, sortNeedsMe } = await import(ADAPTER_URL);
 
-  section('status — sessionKey forwarding');
-  {
-    const recorder = recordingFetch({
-      'GET /api/status': { activeProject: 'alpha', agentId: 'main', binding: 'session', contextReady: true, sessionKey: 's-1' },
-      'PUT /api/status': { ok: true, activeProject: 'alpha', agentId: 'main', binding: 'session', contextReady: true },
-    });
-    const adapter = createFlowBoardAdapter({ dashboardBaseUrl: 'http://127.0.0.1:1', serviceToken: SERVICE_TOKEN }, { fetch: recorder.fetch });
-
-    const read = await adapter.getStatus(null, { agentId: 'main', sessionKey: 's-1' });
-    await check('status.get sends ?sessionKey and reports the layer that answered', () => {
-      assert.equal(recorder.calls[0].search.get('agentId'), 'main');
-      assert.equal(recorder.calls[0].search.get('sessionKey'), 's-1');
-      assert.equal(read.binding.scope, 'session');
-      assert.equal(read.binding.sessionKey, 's-1');
-      assert.equal(read.binding.contextReady, true);
-      assert.equal(read.activeProject, 'alpha');
-    });
-
-    await adapter.getStatus(null, { agentId: 'main' });
-    await check('status.get omits the parameter entirely when there is no session', () => {
-      assert.equal(recorder.calls[1].search.has('sessionKey'), false);
-    });
-
-    const write = await adapter.setStatus(null, { agentId: 'main', project: 'alpha', sessionKey: 's-1' });
-    await check('status.set puts sessionKey in the body and returns the binding', () => {
-      assert.deepEqual(recorder.calls[2].body, { agentId: 'main', project: 'alpha', sessionKey: 's-1' });
-      assert.equal(write.binding.scope, 'session');
-      assert.equal(write.activeProject, 'alpha');
-    });
-
-    await adapter.setStatus(null, { agentId: 'main', project: null, sessionKey: 's-1' });
-    await check('clearing a session binding sends the documented "none" project', () => {
-      assert.deepEqual(recorder.calls[3].body, { agentId: 'main', project: 'none', sessionKey: 's-1' });
-    });
-
-    await adapter.setStatus(null, { agentId: 'main', project: 'alpha' });
-    await check('an agent-level switch carries no sessionKey key at all', () => {
-      assert.equal(Object.prototype.hasOwnProperty.call(recorder.calls[4].body, 'sessionKey'), false);
-    });
-  }
-
-  await check('an unexpected binding value is reported as "unknown", not passed through', async () => {
-    const recorder = recordingFetch({ 'GET /api/status': { activeProject: null, agentId: 'main', binding: 'tenant' } });
-    const adapter = createFlowBoardAdapter({ dashboardBaseUrl: 'http://127.0.0.1:1' }, { fetch: recorder.fetch });
-    const read = await adapter.getStatus(null, { agentId: 'main' });
-    assert.equal(read.binding.scope, null);
-  });
-
   section('serviceToken — resolved string vs unresolved SecretRef (T-508)');
   {
     const { readServiceToken } = await import(ADAPTER_URL);
@@ -175,18 +110,18 @@ async function requestShapeTests() {
       assert.deepEqual(readServiceToken({ serviceToken: ref }), { token: '', unresolved: true });
     });
     await check('an unresolved SecretRef sends no Authorization header at all', async () => {
-      const recorder = recordingFetch({ 'GET /api/status': { activeProject: null, agentId: 'main' } });
+      const recorder = recordingFetch({ 'GET /api/projects': { ok: true, projects: [] } });
       const adapter = createFlowBoardAdapter({ dashboardBaseUrl: 'http://127.0.0.1:1', serviceToken: ref }, { fetch: recorder.fetch });
-      await adapter.getStatus(null, { agentId: 'main' });
+      await adapter.listProjects(null);
       assert.equal(adapter.hasServiceToken(), false);
       assert.equal(adapter.serviceTokenUnresolved(), true);
       assert.equal(Object.prototype.hasOwnProperty.call(recorder.calls[0].headers, 'Authorization'), false);
       assert.equal(JSON.stringify(recorder.calls[0]).includes(ref.id), false);
     });
     await check('the resolved string reaches the Authorization header', async () => {
-      const recorder = recordingFetch({ 'GET /api/status': { activeProject: null, agentId: 'main' } });
+      const recorder = recordingFetch({ 'GET /api/projects': { ok: true, projects: [] } });
       const adapter = createFlowBoardAdapter({ dashboardBaseUrl: 'http://127.0.0.1:1', serviceToken: SERVICE_TOKEN }, { fetch: recorder.fetch });
-      await adapter.getStatus(null, { agentId: 'main' });
+      await adapter.listProjects(null);
       assert.equal(adapter.serviceTokenUnresolved(), false);
       assert.equal(recorder.calls[0].headers.Authorization, `Bearer ${SERVICE_TOKEN}`);
     });
@@ -382,8 +317,8 @@ const CARD_FIELDS = [
 
 async function boardShapeTests() {
   const {
-    createFlowBoardAdapter, compareTasks, principalActor, projectStuckIndicator, projectTask,
-    toFeatureError, FlowBoardAdapterError, FlowBoardFeatureRefusal, MAX_COMMENT, MAX_DESCRIPTION,
+    createFlowBoardAdapter, compareTasks, projectStuckIndicator, projectTask,
+    toFeatureError, FlowBoardAdapterError, FlowBoardFeatureRefusal,
     MAX_REFUSAL_MESSAGE, refusalEnvelope, wrapSessionActionHandler, withRefusalEnvelopes,
   } = await import(ADAPTER_URL);
 
@@ -511,263 +446,6 @@ async function boardShapeTests() {
     await adapter.listTasks(null, { project: 'alpha', status: 'archived' });
     assert.equal(recorder.calls[0].search.get('status'), 'archived');
     assert.equal(recorder.calls[0].search.get('includeArchived'), 'true');
-  });
-
-  section('task.get — the detail read');
-
-  const detailRoutes = (overrides = {}) => ({
-    'GET /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow({ description: 'short' }) },
-    'GET /api/projects/alpha/tasks/T-001/comments': {
-      ok: true,
-      comments: Array.from({ length: 25 }, (_, index) => ({
-        id: index,
-        taskId: 'T-001',
-        message: `comment ${index}`,
-        author: 'reviewer',
-        kind: index === 0 ? 'question' : undefined,
-        timestamp: `2026-09-${String(index + 1).padStart(2, '0')}T10:00:00Z`,
-      })),
-    },
-    'GET /api/projects/alpha/tasks/T-001/checkpoints': {
-      ok: true,
-      checkpoints: Array.from({ length: 15 }, (_, index) => ({
-        id: index,
-        message: `checkpoint ${index}`,
-        agent: 'codex',
-        author: 'codex',
-        progress: index / 15,
-        timestamp: `2026-09-${String(index + 1).padStart(2, '0')}T11:00:00Z`,
-        data: { secret: 'not for the browser' },
-      })),
-    },
-    ...overrides,
-  });
-
-  await check('one task read is three reads, on the documented paths', async () => {
-    const { adapter, recorder } = adapterFor(detailRoutes());
-    await adapter.getTask(null, { project: 'alpha', id: 'T-001' });
-    assert.deepEqual(recorder.calls.map((call) => call.pathname).sort(), [
-      '/api/projects/alpha/tasks/T-001',
-      '/api/projects/alpha/tasks/T-001/checkpoints',
-      '/api/projects/alpha/tasks/T-001/comments',
-    ]);
-  });
-
-  await check('the detail task is a card plus description, truncation flag and spec link', async () => {
-    const { adapter } = adapterFor(detailRoutes());
-    const detail = await adapter.getTask(null, { project: 'alpha', id: 'T-001' });
-    assert.deepEqual(
-      Object.keys(detail.task).sort(),
-      [...CARD_FIELDS, 'description', 'descriptionTruncated', 'specFile'].sort(),
-    );
-    assert.equal(detail.task.specFile, 'specs/T-001.md');
-    assert.equal(detail.task.descriptionTruncated, false);
-  });
-
-  await check('a long description is cut and says so', async () => {
-    const { adapter } = adapterFor(
-      detailRoutes({
-        'GET /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow({ description: 'y'.repeat(MAX_DESCRIPTION + 500) }) },
-      }),
-    );
-    const detail = await adapter.getTask(null, { project: 'alpha', id: 'T-001' });
-    assert.equal(detail.task.description.length, MAX_DESCRIPTION);
-    assert.equal(detail.task.descriptionTruncated, true);
-  });
-
-  await check('comments and checkpoints are the newest slice, newest first, bounded', async () => {
-    const { adapter } = adapterFor(detailRoutes());
-    const detail = await adapter.getTask(null, { project: 'alpha', id: 'T-001' });
-    assert.equal(detail.comments.length, 20);
-    assert.equal(detail.comments[0].message, 'comment 24');
-    assert.deepEqual(Object.keys(detail.comments[0]).sort(), ['author', 'id', 'kind', 'message', 'timestamp']);
-    assert.equal(detail.comments[0].kind, null, 'an untyped comment reports kind: null');
-    assert.equal(detail.checkpoints.length, 10);
-    assert.equal(detail.checkpoints[0].message, 'checkpoint 14');
-    assert.deepEqual(Object.keys(detail.checkpoints[0]).sort(), ['agent', 'message', 'progress', 'timestamp']);
-  });
-
-  await check('an unreadable history still opens the task', async () => {
-    const { adapter } = adapterFor(
-      detailRoutes({
-        'GET /api/projects/alpha/tasks/T-001/comments': { __status: 400, error: 'Task not found: T-001' },
-        'GET /api/projects/alpha/tasks/T-001/checkpoints': { __status: 500 },
-      }),
-    );
-    const detail = await adapter.getTask(null, { project: 'alpha', id: 'T-001' });
-    assert.equal(detail.task.id, 'T-001');
-    assert.deepEqual(detail.comments, []);
-    assert.deepEqual(detail.checkpoints, []);
-  });
-
-  await check('a missing task is an error, not an empty panel', async () => {
-    const { adapter } = adapterFor({ 'GET *': { ok: true } });
-    await assert.rejects(() => adapter.getTask(null, { project: 'alpha', id: 'T-404' }), /Task not found: T-404/);
-  });
-
-  section('write actions — request shape');
-
-  const PRINCIPAL = { profileId: 'p-17', displayName: 'Ada Lovelace', scopes: ['operator.write'] };
-
-  await check('task.update sends only the fields it was given, and never an actor', async () => {
-    const { adapter, recorder } = adapterFor({
-      'PUT /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow({ status: 'review' }) },
-    });
-    const result = await adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-001', status: 'review' });
-    assert.deepEqual(recorder.calls[0].body, { status: 'review' });
-    assert.equal(recorder.calls[0].method, 'PUT');
-    assert.equal(result.task.status, 'review');
-    assert.equal(recorder.calls.length, 1, 'an enriched answer needs no re-read');
-  });
-
-  await check('task.update relays the Gateway profile in the headers', async () => {
-    const { adapter, recorder } = adapterFor({
-      'PUT /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow() },
-    });
-    await adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-001', workState: 'paused' });
-    assert.equal(recorder.calls[0].headers['X-FlowBoard-Gateway-Profile-Id'], 'p-17');
-    assert.equal(recorder.calls[0].headers['X-FlowBoard-Gateway-Profile-Name'], 'Ada Lovelace');
-    assert.equal(recorder.calls[0].headers.Authorization, `Bearer ${SERVICE_TOKEN}`);
-  });
-
-  await check('work-state details are passed through, bounded, without the server-owned setAt', async () => {
-    const { adapter, recorder } = adapterFor({
-      'PUT /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow() },
-    });
-    await adapter.updateTask(PRINCIPAL, {
-      project: 'alpha',
-      id: 'T-001',
-      workState: 'waiting',
-      workStateDetails: { reason: 'r'.repeat(400), waitingFor: 'ops', setAt: '2020-01-01T00:00:00Z' },
-    });
-    assert.deepEqual(recorder.calls[0].body, {
-      workState: 'waiting',
-      workStateDetails: { reason: 'r'.repeat(200), waitingFor: 'ops', responsible: null, checkAgainAt: null },
-    });
-  });
-
-  await check('an update with nothing to change never reaches FlowBoard', async () => {
-    const { adapter, recorder } = adapterFor({ 'PUT *': { ok: true, task: taskRow() } });
-    await assert.rejects(
-      () => adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-001' }),
-      (error) => error.code === 'flowboard_empty_update' && /at least one field/.test(error.message),
-    );
-    assert.equal(recorder.calls.length, 0);
-  });
-
-  await check('task.update carries the edit fields verbatim, and only those it was given (T-499)', async () => {
-    const { adapter, recorder } = adapterFor({
-      'PUT /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow({ title: 'Renamed' }) },
-    });
-    const description = 'd'.repeat(5000);
-    const result = await adapter.updateTask(PRINCIPAL, {
-      project: 'alpha',
-      id: 'T-001',
-      title: 'Renamed',
-      description,
-      priority: 'low',
-      tags: ['ui', 'native'],
-      order: 2.5,
-      actor: 'forged',
-    });
-    assert.deepEqual(recorder.calls[0].body, {
-      title: 'Renamed',
-      description,
-      priority: 'low',
-      tags: ['ui', 'native'],
-      order: 2.5,
-    });
-    assert.equal(result.task.title, 'Renamed');
-  });
-
-  await check('an empty description and a null rank are real values, not "unchanged"', async () => {
-    const { adapter, recorder } = adapterFor({ 'PUT *': { ok: true, task: taskRow() } });
-    await adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-001', description: '', order: null });
-    assert.deepEqual(recorder.calls[0].body, { description: '', order: null });
-    await adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-001', tags: [] });
-    assert.deepEqual(recorder.calls[1].body, { tags: [] });
-  });
-
-  section('task.comment and task.trash — request shape (T-499)');
-
-  await check('a comment is signed by the Gateway-verified operator, never by input', async () => {
-    const { adapter, recorder } = adapterFor({
-      'POST /api/projects/alpha/tasks/T-001/comment': (url) => ({
-        ok: true,
-        comment: {
-          id: 41,
-          taskId: 'T-001',
-          message: recorder.calls.at(-1).body.message,
-          author: recorder.calls.at(-1).body.author,
-          timestamp: '2026-09-25T10:00:00Z',
-        },
-      }),
-    });
-    const result = await adapter.commentTask(PRINCIPAL, {
-      project: 'alpha',
-      id: 'T-001',
-      message: 'Looks right to me',
-      author: 'someone else',
-      agent: 'codex',
-    });
-    assert.equal(recorder.calls[0].method, 'POST');
-    assert.deepEqual(recorder.calls[0].body, { message: 'Looks right to me', author: 'Ada Lovelace (gateway:p-17)' });
-    assert.deepEqual(result, {
-      comment: {
-        id: 41,
-        author: 'Ada Lovelace (gateway:p-17)',
-        message: 'Looks right to me',
-        kind: null,
-        timestamp: '2026-09-25T10:00:00Z',
-      },
-    });
-  });
-
-  await check('a comment without a profile is the trusted local operator', async () => {
-    const { adapter, recorder } = adapterFor({ 'POST *': { ok: true, comment: { id: 1, message: 'x' } } });
-    await adapter.commentTask(null, { project: 'alpha', id: 'T-001', message: 'x' });
-    assert.equal(recorder.calls[0].body.author, 'local:operator');
-  });
-
-  await check('a blank comment is refused before the request', async () => {
-    const { adapter, recorder } = adapterFor({ 'POST *': { ok: true, comment: {} } });
-    await assert.rejects(
-      () => adapter.commentTask(PRINCIPAL, { project: 'alpha', id: 'T-001', message: '  \n ' }),
-      (error) => error.code === 'flowboard_message_required',
-    );
-    assert.equal(recorder.calls.length, 0);
-  });
-
-  await check('comments are projected at MAX_COMMENT in both the detail read and the comment answer', () => {
-    assert.equal(MAX_COMMENT, 2000);
-    assert.equal(MAX_DESCRIPTION, 16384);
-  });
-
-  await check('trashing stamps the time in the Gateway process and reports the new state', async () => {
-    const recorder = recordingFetch({
-      'PUT /api/projects/alpha/tasks/T-001': () => ({
-        ok: true,
-        task: taskRow({ trashedAt: recorder.calls.at(-1).body.trashedAt }),
-      }),
-    });
-    const adapter = createFlowBoardAdapter(
-      { dashboardBaseUrl: 'http://127.0.0.1:1', serviceToken: SERVICE_TOKEN },
-      { fetch: recorder.fetch, now: () => new Date('2026-09-25T08:30:00.000Z') },
-    );
-    const trashed = await adapter.trashTask(PRINCIPAL, { project: 'alpha', id: 'T-001', trashedAt: '1999-01-01' });
-    assert.deepEqual(recorder.calls[0].body, { trashedAt: '2026-09-25T08:30:00.000Z' });
-    assert.deepEqual(trashed, { id: 'T-001', trashed: true });
-
-    const restored = await adapter.trashTask(PRINCIPAL, { project: 'alpha', id: 'T-001', restore: true });
-    assert.deepEqual(recorder.calls[1].body, { trashedAt: null });
-    assert.deepEqual(restored, { id: 'T-001', trashed: false });
-    assert.equal(recorder.calls[1].headers['X-FlowBoard-Gateway-Profile-Id'], 'p-17');
-  });
-
-  await check('trash is soft only: no DELETE ever leaves the adapter', async () => {
-    const { adapter, recorder } = adapterFor({ 'PUT *': { ok: true, task: taskRow({ trashedAt: '2026-09-25T00:00:00Z' }) } });
-    await adapter.trashTask(PRINCIPAL, { project: 'alpha', id: 'T-001' });
-    assert.deepEqual(recorder.calls.map((call) => call.method), ['PUT']);
   });
 
   section('tasks.list — trash (T-499)');
@@ -909,99 +587,22 @@ async function boardShapeTests() {
 
   await check('a 404 without a code of its own is flowboard_not_found', async () => {
     const { adapter } = adapterFor({
-      'PUT /api/projects/alpha/tasks/T-9': { __status: 404, error: 'Task not found' },
-      'POST /api/projects/alpha/tasks/T-9/approve': { __status: 404, error: 'Task T-9 not found', code: 'NOT_FOUND' },
-      'PUT /api/projects/alpha/tasks/T-8': { __status: 400, error: 'Invalid status' },
+      'GET /api/projects/alpha/tasks': { __status: 404, error: 'Project not found' },
+      'GET /api/projects/beta/tasks': { __status: 404, error: 'Project beta not found', code: 'NOT_FOUND' },
+      'GET /api/projects/gamma/tasks': { __status: 400, error: 'Invalid status' },
     });
     await assert.rejects(
-      () => adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-9', status: 'open' }),
-      (error) => error.code === 'flowboard_not_found' && error.message === 'Task not found',
+      () => adapter.listTasks(null, { project: 'alpha' }),
+      (error) => error.code === 'flowboard_not_found' && error.message === 'Project not found',
     );
     await assert.rejects(
-      () => adapter.approveTask(PRINCIPAL, { project: 'alpha', id: 'T-9' }),
+      () => adapter.listTasks(null, { project: 'beta' }),
       (error) => error.code === 'NOT_FOUND',
       "FlowBoard's own code still wins",
     );
     await assert.rejects(
-      () => adapter.updateTask(PRINCIPAL, { project: 'alpha', id: 'T-8', status: 'open' }),
+      () => adapter.listTasks(null, { project: 'gamma' }),
       (error) => error.code === 'flowboard_rejected',
-    );
-  });
-
-  await check('a 409 with a code from task creation reaches the caller with that code', async () => {
-    const { adapter } = adapterFor({
-      'POST /api/projects/alpha/tasks': {
-        __status: 409,
-        error: 'This project requires a specification before creating tasks',
-        code: 'SPECIFY_REQUIRED',
-        specifyRequest: { origin: 'task-create' },
-      },
-    });
-    await assert.rejects(
-      () => adapter.createTask(PRINCIPAL, { project: 'alpha', title: 'New' }),
-      (error) => error.code === 'SPECIFY_REQUIRED' && /specification/.test(error.message),
-    );
-  });
-
-  await check('approve names the Gateway-verified operator as the actor', async () => {
-    const { adapter, recorder } = adapterFor({
-      // The real endpoint answers with the unenriched service task.
-      'POST /api/projects/alpha/tasks/T-001/approve': { ok: true, task: { ...taskRow({ status: 'done' }), specExists: undefined } },
-      'GET /api/projects/alpha/tasks/T-001': { ok: true, task: taskRow({ status: 'done' }) },
-    });
-    const result = await adapter.approveTask(PRINCIPAL, { project: 'alpha', id: 'T-001', reason: 'looks good' });
-    assert.deepEqual(recorder.calls[0].body, { actor: 'Ada Lovelace (gateway:p-17)', reason: 'looks good' });
-    assert.equal(result.task.status, 'done');
-    assert.equal(result.task.specExists, true, 'the spec chip survives an approval');
-    assert.equal(recorder.calls[1]?.pathname, '/api/projects/alpha/tasks/T-001', 're-read for the enriched card');
-  });
-
-  await check('the actor comes from the connection, never from operation input', async () => {
-    const { adapter, recorder } = adapterFor({
-      'POST /api/projects/alpha/tasks/T-001/approve': { ok: true, task: taskRow({ status: 'done', specExists: true }) },
-    });
-    await adapter.approveTask(PRINCIPAL, { project: 'alpha', id: 'T-001', actor: 'someone else', author: 'nope' });
-    assert.equal(recorder.calls[0].body.actor, 'Ada Lovelace (gateway:p-17)');
-    assert.equal(Object.keys(recorder.calls[0].body).join(','), 'actor');
-  });
-
-  await check('a connection without a profile approves as the trusted local operator', () => {
-    assert.equal(principalActor(null), 'local:operator');
-    assert.equal(principalActor({ scopes: ['operator.write'] }), 'local:operator');
-    assert.equal(principalActor({ profileId: 'p-1' }), 'gateway:p-1');
-    assert.equal(principalActor({ profileId: 'p-1', displayName: 'Ada' }), 'Ada (gateway:p-1)');
-    assert.ok(principalActor({ profileId: 'p'.repeat(200), displayName: 'd'.repeat(200) }).length <= 128);
-  });
-
-  await check('reject sends the reason and does not choose a target for the reviewer', async () => {
-    const { adapter, recorder } = adapterFor({
-      'POST /api/projects/alpha/tasks/T-001/reject': { ok: true, task: taskRow({ status: 'in-progress', specExists: true }) },
-    });
-    await adapter.rejectTask(PRINCIPAL, { project: 'alpha', id: 'T-001', reason: 'tests missing' });
-    assert.deepEqual(recorder.calls[0].body, { actor: 'Ada Lovelace (gateway:p-17)', reason: 'tests missing' });
-    assert.equal(Object.prototype.hasOwnProperty.call(recorder.calls[0].body, 'target'), false);
-  });
-
-  await check('a rejection without a reason is refused before the request', async () => {
-    const { adapter, recorder } = adapterFor({ 'POST *': { ok: true, task: taskRow() } });
-    await assert.rejects(
-      () => adapter.rejectTask(PRINCIPAL, { project: 'alpha', id: 'T-001', reason: '   ' }),
-      /reason is required/i,
-    );
-    assert.equal(recorder.calls.length, 0);
-  });
-
-  await check("FlowBoard's own refusal reaches the caller with its code", async () => {
-    const { adapter } = adapterFor({
-      'POST /api/projects/alpha/tasks/T-001/approve': {
-        __status: 409,
-        error: 'Task T-001 is not in review (status: open); cannot approve',
-        code: 'NOT_IN_REVIEW',
-      },
-    });
-    await assert.rejects(
-      () => adapter.approveTask(PRINCIPAL, { project: 'alpha', id: 'T-001' }),
-      (error) => error.code === 'NOT_IN_REVIEW' && /not in review/.test(error.message),
     );
   });
 }
@@ -1348,47 +949,6 @@ async function httpTests() {
       assert.deepEqual(scoped.items, []);
     });
 
-    section('HTTP — session-scoped binding');
-    const agentLevel = await adapter.setStatus(null, { agentId: 'main', project: PROJECT });
-    await check('an agent-level switch reports the agent binding', () => {
-      assert.equal(agentLevel.activeProject, PROJECT);
-      assert.equal(agentLevel.binding.scope, 'agent');
-      assert.equal(agentLevel.binding.sessionKey, null);
-    });
-
-    const sessionLevel = await adapter.setStatus(null, {
-      agentId: 'main',
-      project: OTHER_PROJECT,
-      sessionKey: 'agent:main:rail',
-    });
-    await check('a session-scoped switch does not rewrite the agent binding', async () => {
-      assert.equal(sessionLevel.activeProject, OTHER_PROJECT);
-      assert.equal(sessionLevel.binding.scope, 'session');
-      const stillAgent = await adapter.getStatus(null, { agentId: 'main' });
-      assert.equal(stillAgent.activeProject, PROJECT, 'the agent-level binding must survive');
-      assert.equal(stillAgent.binding.scope, 'agent');
-    });
-
-    await check('reading with the session key resolves the session binding', async () => {
-      const read = await adapter.getStatus(null, { agentId: 'main', sessionKey: 'agent:main:rail' });
-      assert.equal(read.activeProject, OTHER_PROJECT);
-      assert.equal(read.binding.scope, 'session');
-      assert.equal(read.binding.sessionKey, 'agent:main:rail');
-    });
-
-    await check('releasing the session falls back to the agent binding', async () => {
-      const released = await adapter.setStatus(null, { agentId: 'main', project: null, sessionKey: 'agent:main:rail' });
-      assert.equal(released.activeProject, PROJECT);
-      assert.equal(released.binding.scope, 'agent');
-    });
-
-    await check('FlowBoard\'s own rejection message survives the adapter', async () => {
-      await assert.rejects(
-        () => adapter.setStatus(null, { agentId: 'main', project: 'does-not-exist' }),
-        /Unknown project/,
-      );
-    });
-
     // ---------------------------------------------------------------------
     // T-498 — the board half, against the real server
     // ---------------------------------------------------------------------
@@ -1449,243 +1009,6 @@ async function httpTests() {
       const limited = await adapter.listTasks(OPERATOR, { project: BOARD_PROJECT, limit: 2 });
       assert.equal(limited.tasks.length, 2);
       assert.equal(limited.truncated, true);
-    });
-
-    section('HTTP — task.get');
-
-    await check('the detail read carries the description, the comments and the checkpoints', async () => {
-      await api('PUT', `/projects/${BOARD_PROJECT}/tasks/${created.first}`, { description: 'Inline context.' });
-      await api('POST', `/projects/${BOARD_PROJECT}/tasks/${created.first}/comment`, {
-        message: 'First note',
-        author: 'reviewer',
-      });
-      await api('POST', `/projects/${BOARD_PROJECT}/tasks/${created.first}/comment`, {
-        message: 'Second note',
-        author: 'reviewer',
-      });
-      await api('POST', `/projects/${BOARD_PROJECT}/tasks/${created.first}/checkpoint`, {
-        message: 'Halfway there',
-        agent: 'codex',
-      });
-
-      const detail = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.first });
-      assert.equal(detail.task.description, 'Inline context.');
-      assert.equal(detail.task.descriptionTruncated, false);
-      assert.equal(detail.task.specFile, null);
-      assert.equal(detail.comments[0].message, 'Second note', 'newest comment first');
-      assert.equal(detail.comments.length, 2);
-      assert.equal(detail.checkpoints[0].message, 'Halfway there');
-      assert.equal(detail.checkpoints[0].agent, 'codex');
-    });
-
-    section('HTTP — task.update');
-
-    await check('a status move and a work-state change both land', async () => {
-      const moved = await adapter.updateTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.first,
-        status: 'in-progress',
-      });
-      assert.equal(moved.task.status, 'in-progress');
-
-      const blocked = await adapter.updateTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.first,
-        workState: 'blocked',
-        workStateDetails: { reason: 'waiting for the API key', waitingFor: 'ops' },
-      });
-      assert.equal(blocked.task.workState, 'blocked');
-      assert.equal(blocked.task.workStateDetails.reason, 'waiting for the API key');
-      assert.equal(blocked.task.workStateDetails.waitingFor, 'ops');
-      assert.equal(blocked.task.status, 'in-progress', 'work state is beside the lifecycle, not instead of it');
-    });
-
-    await check('the review gate is FlowBoard\'s, and the native board is refused like everyone else', async () => {
-      // ADR-0022: review -> done belongs to the approve endpoint. The generic
-      // update path must not become a way around it.
-      await assert.rejects(
-        () => adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: created.approved, status: 'done' }),
-        (error) => /approve/i.test(error.message),
-      );
-      const still = await adapter.listTasks(OPERATOR, { project: BOARD_PROJECT, status: 'review' });
-      assert.equal(still.tasks.some((task) => task.id === created.approved), true);
-    });
-
-    await check('an invalid work state is FlowBoard\'s 400, verbatim', async () => {
-      await assert.rejects(
-        () => adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: created.first, workState: 'vibing' }),
-        /Invalid workState/,
-      );
-    });
-
-    await check('a claimed task moves exactly as a dashboard drag does, releasing the claim (T-504)', async () => {
-      // The standalone board's drag and status picker send an actor-less
-      // `PUT { status }` (TasksView.jsx handleDrop / handleTaskUpdated), which
-      // FlowBoard treats as the trusted operator and allows — auto-releasing
-      // a live claim on review/done (ADR-0029, T-422-1, T-161-4). The native
-      // board sends the same request, so it must get the same answer.
-      const made = await api('POST', `/projects/${BOARD_PROJECT}/tasks`, { title: 'Held by a worker', priority: 'low' });
-      const heldId = made.body?.task?.id;
-      const claim = await api('POST', `/projects/${BOARD_PROJECT}/tasks/${heldId}/claim`, { agent: 'worker-one' });
-      assert.equal(claim.status, 200, 'setup: worker-one holds a live lease');
-
-      // An agent asserting a different actor is still refused on the same path.
-      const foreign = await api('PUT', `/projects/${BOARD_PROJECT}/tasks/${heldId}`, { status: 'review', actor: 'worker-two' });
-      assert.equal(foreign.status, 403);
-      assert.equal(foreign.body?.code, 'NOT_OWNER');
-
-      const moved = await adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: heldId, status: 'review' });
-      assert.equal(moved.task.status, 'review');
-      assert.equal(moved.task.leaseUntil, null, 'the operator move released the claim, like the dashboard');
-    });
-
-    section('HTTP — task.approve and task.reject');
-
-    await check('approving finalises the task and records who approved it', async () => {
-      const approved = await adapter.approveTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.approved,
-        reason: 'verified against the gate',
-      });
-      assert.equal(approved.task.status, 'done');
-      assert.equal(approved.task.specExists, false, 'the card stays the enriched projection after a write');
-
-      const detail = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.approved });
-      const audit = detail.comments[0];
-      assert.match(audit.message, /^Approved by Ada Lovelace \(gateway:p-17\) \(review -> done\)/);
-      assert.match(audit.message, /Reason: verified against the gate/);
-      assert.equal(audit.author, 'Ada Lovelace (gateway:p-17)', 'the operator, not the browser, signs the decision');
-    });
-
-    await check('rejecting sends the task back to in-progress with the reason attached', async () => {
-      const rejected = await adapter.rejectTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.rejected,
-        reason: 'tests are missing',
-      });
-      assert.equal(rejected.task.status, 'in-progress', 'reject lands in in-progress, not back in open');
-      assert.equal(rejected.task.workState, 'working', 'a rejection does not declare the assignee blocked');
-
-      const detail = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.rejected });
-      assert.match(detail.comments[0].message, /^Rejected by Ada Lovelace \(gateway:p-17\) \(review -> in-progress\)/);
-      assert.match(detail.comments[0].message, /Reason: tests are missing/);
-    });
-
-    await check('only work in review can be approved or rejected', async () => {
-      // The real server must send the service code, not only the sentence,
-      // or the native board falls back to a generic refusal (T-499 live proof).
-      await assert.rejects(
-        () => adapter.approveTask(OPERATOR, { project: BOARD_PROJECT, id: created.first }),
-        (error) => /is not in review/.test(error.message) && error.code === 'NOT_IN_REVIEW',
-      );
-      await assert.rejects(
-        () => adapter.rejectTask(OPERATOR, { project: BOARD_PROJECT, id: created.first, reason: 'no' }),
-        (error) => /is not in review/.test(error.message) && error.code === 'NOT_IN_REVIEW',
-      );
-    });
-
-    section('HTTP — T-499 edits, comments, archive and trash');
-
-    await check('title, a 5,000-character description, priority, tags and rank land in one update', async () => {
-      const description = `${'Context line.\n'.repeat(357)}end`.slice(0, 5000);
-      assert.equal(description.length, 5000);
-      const edited = await adapter.updateTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.first,
-        title: 'First card, renamed',
-        description,
-        priority: 'high',
-        tags: ['native', 'ui'],
-        order: 0.5,
-      });
-      assert.equal(edited.task.title, 'First card, renamed');
-      assert.equal(edited.task.priority, 'high');
-      assert.deepEqual(edited.task.tags, ['native', 'ui']);
-      assert.equal(edited.task.order, 0.5);
-
-      const detail = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.first });
-      assert.equal(detail.task.description, description, 'the description round-trips exactly');
-      assert.equal(detail.task.descriptionTruncated, false);
-    });
-
-    await check('a description at the server maximum round-trips losslessly', async () => {
-      const description = 'z'.repeat(16384);
-      await adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: created.first, description });
-      const detail = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.first });
-      assert.equal(detail.task.description.length, 16384);
-      assert.equal(detail.task.descriptionTruncated, false);
-      await adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: created.first, description: '', order: null });
-      const cleared = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.first });
-      assert.equal(cleared.task.description, '');
-      assert.equal(cleared.task.order, null);
-    });
-
-    await check('a comment is attributed to the Gateway profile, not to anything the caller sent', async () => {
-      const message = `Reviewed from the native board. ${'m'.repeat(1968)}`;
-      assert.equal(message.length, 2000);
-      const { comment } = await adapter.commentTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.first,
-        message,
-        author: 'forged',
-      });
-      assert.equal(comment.author, 'Ada Lovelace (gateway:p-17)');
-      assert.equal(comment.message, message);
-      assert.ok(Number.isInteger(comment.id), 'FlowBoard answers with the event row id');
-
-      const detail = await adapter.getTask(OPERATOR, { project: BOARD_PROJECT, id: created.first });
-      assert.equal(detail.comments[0].author, 'Ada Lovelace (gateway:p-17)');
-      assert.equal(detail.comments[0].message, message, 'the detail read carries the full 2,000 characters');
-    });
-
-    await check('a comment on a missing task is FlowBoard\'s refusal', async () => {
-      await assert.rejects(
-        () => adapter.commentTask(OPERATOR, { project: BOARD_PROJECT, id: 'T-9999', message: 'hello' }),
-        (error) => /not found/i.test(error.message) && error.code === 'flowboard_not_found',
-      );
-    });
-
-    await check('archive (from done) and unarchive are plain status updates', async () => {
-      const archived = await adapter.updateTask(OPERATOR, {
-        project: BOARD_PROJECT,
-        id: created.approved,
-        status: 'archived',
-      });
-      assert.equal(archived.task.status, 'archived');
-      const board = await adapter.listTasks(OPERATOR, { project: BOARD_PROJECT });
-      assert.equal(board.tasks.some((task) => task.id === created.approved), false);
-
-      const restored = await adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: created.approved, status: 'done' });
-      assert.equal(restored.task.status, 'done');
-    });
-
-    await check('trash takes a task off the board and restore puts it back', async () => {
-      const trashed = await adapter.trashTask(OPERATOR, { project: BOARD_PROJECT, id: created.rejected });
-      assert.deepEqual(trashed, { id: created.rejected, trashed: true });
-      const board = await adapter.listTasks(OPERATOR, { project: BOARD_PROJECT });
-      assert.equal(board.tasks.some((task) => task.id === created.rejected), false, 'a trashed task is not a card');
-
-      const raw = await api('GET', `/projects/${BOARD_PROJECT}/tasks/${created.rejected}`);
-      assert.ok(Date.parse(raw.body?.task?.trashedAt), 'FlowBoard stored the ISO timestamp the Gateway made');
-
-      const restored = await adapter.trashTask(OPERATOR, { project: BOARD_PROJECT, id: created.rejected, restore: true });
-      assert.deepEqual(restored, { id: created.rejected, trashed: false });
-      const back = await adapter.listTasks(OPERATOR, { project: BOARD_PROJECT });
-      assert.equal(back.tasks.some((task) => task.id === created.rejected), true);
-    });
-
-    await check('a task trashed in the dashboard disappears from the native board', async () => {
-      await api('PUT', `/projects/${BOARD_PROJECT}/tasks/${created.rejected}`, { trashedAt: new Date().toISOString() });
-      const board = await adapter.listTasks(OPERATOR, { project: BOARD_PROJECT });
-      assert.equal(board.tasks.some((task) => task.id === created.rejected), false);
-      await api('PUT', `/projects/${BOARD_PROJECT}/tasks/${created.rejected}`, { trashedAt: null });
-    });
-
-    await check('an over-long field is FlowBoard\'s 400 when a caller skips the contract', async () => {
-      await assert.rejects(
-        () => adapter.updateTask(OPERATOR, { project: BOARD_PROJECT, id: created.first, description: 'x'.repeat(16385) }),
-        /at most 16KB/,
-      );
     });
 
     section('HTTP — the change poll against the real dashboard');

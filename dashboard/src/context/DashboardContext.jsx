@@ -22,7 +22,6 @@ import {
   subscribeAuthState,
 } from '../state/authState.mjs';
 import { getLastMutationAt } from '../state/taskMutations.mjs';
-import { getEmbed } from '../embed/embedRuntime.js';
 import { shellQuery } from '../utils/shell.js';
 import { getLiveUpdates } from '../utils/liveUpdates.js';
 
@@ -603,9 +602,6 @@ export function DashboardProvider({ children }) {
 
   const switchTab = useCallback((tab) => {
     if (!tab) return;
-    // T-499: a framed single surface asks the host to open other surfaces.
-    const embed = getEmbed();
-    if (embed) { embed.requestTab(tab); return; }
     dispatch({ currentTab: tab });
   }, [dispatch]);
 
@@ -619,9 +615,6 @@ export function DashboardProvider({ children }) {
       showToast(`No spec linked${taskId ? ` for ${taskId}` : ''}`, 'warn');
       return;
     }
-    // T-499: outside the framed Files surface the host opens its Files view.
-    const embed = getEmbed();
-    if (embed && embed.surface() !== 'files') { embed.openSpec(specPath); return; }
     dispatch({
       pendingSpecFile: specPath,
       pendingSpecTaskId: taskId || null,

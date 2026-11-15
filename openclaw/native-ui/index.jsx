@@ -17,7 +17,7 @@ import { createRoot } from 'react-dom/client';
 import { defineControlUiPlugin } from 'openclaw/plugin-sdk/control-ui';
 import { createFeatureClient } from 'openclaw/plugin-sdk/feature-contract';
 import { contract } from '../contract.js';
-import { readPageParams } from '../control-ui/lib/deep-link.js';
+import { readPageParams } from './lib/deep-link.js';
 import { createGatewayTransport } from './gateway-transport.js';
 import NeedsMeView from './views/NeedsMeView.jsx';
 import TaskPanelView from './views/TaskPanelView.jsx';
