@@ -121,8 +121,10 @@ appears and disappears there would re-send the conversation uncached (T-512).
   session resolves to, the plugin records a checkpoint. It is an observation
   hook: no model tokens, no conversation access.
 - `before_agent_finalize` is opt-in (`finalizeReminder`) and needs the
-  operator's `hooks.allowConversationAccess`. When the agent has a stale or
-  lease-expired claim, it returns `revise` with a retry capped at one attempt;
+  operator's `hooks.allowConversationAccess`. Claims belong to an agent, not
+  a session, so the hook only acts in a session bound to the claim's project
+  and never in a subagent run. When the agent has a stale or lease-expired
+  claim there, it returns `revise` with a retry capped at one attempt;
   the instruction is appended to the end of the conversation.
 
 Both swallow their own failures, and a host that lacks either hook simply does

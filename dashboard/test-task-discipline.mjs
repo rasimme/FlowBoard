@@ -1,6 +1,6 @@
 // T-521 — checkpoint discipline hooks, unit-tested without the SDK.
 import assert from 'node:assert/strict';
-import { readCommit, taskIdsIn, agentIdFrom, checkpointMessage, createTaskDiscipline, registerTaskDiscipline, REMINDER_KEY } from '../openclaw/task-discipline.js';
+import { readCommit, taskIdsIn, agentIdFrom, checkpointMessage, createTaskDiscipline, registerTaskDiscipline, isSubagentSession, REMINDER_KEY } from '../openclaw/task-discipline.js';
 
 let passed = 0; let failed = 0;
 async function check(name, fn) {
@@ -11,7 +11,7 @@ function fakeAdapter(over = {}) {
   const calls = [];
   return {
     calls,
-    getStatus: async (a, s) => { calls.push(['status', a, s]); return { activeProject: 'demo' }; },
+    getStatus: async (a, s) => { calls.push(['status', a, s]); return { activeProject: 'demo', binding: 'session' }; },
     getTask: async (p, id) => { calls.push(['task', p, id]); return { agent: 'dev', claimedAt: 'x', status: 'in-progress' }; },
     addCheckpoint: async (p, id, body) => { calls.push(['checkpoint', p, id, body]); return {}; },
     listStuck: async () => ({ stale: [{ project: 'demo', taskId: 'T-1', agent: 'dev' }, { project: 'demo', taskId: 'T-2', agent: 'other' }], expired: [] }),
@@ -82,6 +82,18 @@ await check('finalize asks once for a stale claim of this agent only', async () 
   assert.equal(await hooks.onBeforeAgentFinalize({ stopHookActive: true, sessionKey: 'agent:dev:main' }, {}), undefined);
   assert.equal(await hooks.onBeforeAgentFinalize({ stopHookActive: false, sessionKey: 'agent:idle:main' }, {}), undefined);
 });
+await check('finalize stays quiet outside the session that works on the claim', async () => {
+  const ev = (sessionKey) => ({ stopHookActive: false, sessionKey });
+  assert.equal(isSubagentSession('agent:dev:subagent:1234'), true);
+  assert.equal(isSubagentSession('agent:dev:main'), false);
+  const hooks = createTaskDiscipline({ adapter: fakeAdapter() });
+  assert.equal(await hooks.onBeforeAgentFinalize(ev('agent:dev:subagent:1234'), {}), undefined, 'subagent run');
+  assert.equal(await hooks.onBeforeAgentFinalize({ stopHookActive: false }, { agentId: 'dev' }), undefined, 'no session key');
+  for (const status of [{ activeProject: 'demo', binding: 'agent' }, { activeProject: null, binding: null }, { activeProject: 'other', binding: 'session' }]) {
+    const h = createTaskDiscipline({ adapter: fakeAdapter({ getStatus: async () => status }) });
+    assert.equal(await h.onBeforeAgentFinalize(ev('agent:dev:main'), {}), undefined, JSON.stringify(status));
+  }
+});
 await check('registration follows config and host support', () => {
   const on = []; const api = { on: (n, h, o) => on.push([n, o]) };
   assert.deepEqual(registerTaskDiscipline(api, { adapter: fakeAdapter() }), ['after_tool_call']);
@@ -127,6 +139,10 @@ await check('registration follows config and host support', () => {
       const stuck = await adapter.listStuck();
       assert.ok(Array.isArray(stuck.stale) && Array.isArray(stuck.expired));
       assert.equal(await hooks.onBeforeAgentFinalize({ stopHookActive: false, sessionKey: SESSION }, {}), undefined);
+    });
+    await check('HTTP: the real status answer carries the binding the finalize hook checks', async () => {
+      assert.equal((await adapter.getStatus(AGENT, SESSION)).binding, 'session');
+      assert.equal((await adapter.getStatus(AGENT, 'agent:dev-worker:subagent:abc')).binding, null);
     });
   }, { prefix: 'flowboard-task-discipline-' });
 }

@@ -77,6 +77,11 @@ export function agentIdFrom(ctx, sessionKey) {
   return match ? match[1] : null;
 }
 
+/** A child run of another session: it works for its parent and holds no claims of its own. */
+export function isSubagentSession(sessionKey) {
+  return /^agent:[^:]+:subagent:/u.test(typeof sessionKey === 'string' ? sessionKey : '');
+}
+
 export function checkpointMessage(commit) {
   const text = commit.sha ? `Commit ${commit.sha}: ${commit.subject}` : `Commit: ${commit.subject}`;
   return text.replace(/\s+/gu, ' ').slice(0, MAX_CHECKPOINT_MESSAGE);
@@ -127,8 +132,16 @@ export function createTaskDiscipline({ adapter, logger } = {}) {
       const sessionKey = event?.sessionKey || ctx?.sessionKey || null;
       const agentId = agentIdFrom(ctx, sessionKey);
       if (!agentId) return undefined;
+      // Claims belong to an agent, not to a session, so "this agent has a stale
+      // claim" is true in every one of its sessions. Remind only where the work
+      // happens: a session bound to the claim's project (a claim made with
+      // sessionKey binds it, T-520), and never a subagent run.
+      if (!sessionKey || isSubagentSession(sessionKey)) return undefined;
+      const status = await adapter.getStatus(agentId, sessionKey);
+      if (status?.binding !== 'session' || !status.activeProject) return undefined;
       const stuck = await adapter.listStuck();
-      const mine = [...(stuck?.stale || []), ...(stuck?.expired || [])].filter((entry) => entry?.agent === agentId);
+      const mine = [...(stuck?.stale || []), ...(stuck?.expired || [])]
+        .filter((entry) => entry?.agent === agentId && entry.project === status.activeProject);
       const ids = [...new Set(mine.map((entry) => `${entry.project}/${entry.taskId || entry.id}`))].slice(0, 5);
       if (ids.length === 0) return undefined;
       const instruction =

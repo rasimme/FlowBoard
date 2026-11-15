@@ -186,7 +186,9 @@ receives (so the model's prompt cache is unaffected):
   finish while one of its claims has had no checkpoint for longer than the
   stale threshold, it is asked for one more pass to record a checkpoint, or to
   complete or release the task. This happens at most once per run and costs
-  one extra model pass. OpenClaw only lets a plugin do this with conversation
+  one extra model pass. The reminder only appears in a session that is bound
+  to the task's project — claiming a task binds the session — and never in a
+  subagent run, so other sessions of the same agent are left alone. OpenClaw only lets a plugin do this with conversation
   access, so it needs two settings:
 
   ```bash
