@@ -84,6 +84,7 @@ if (process.env.NODE_ENV !== 'test' && process.env.SPECIFY_WORKER_DISABLED !== '
 const rulesApi = require('./rules-api.js');
 const snippetsDoctor = require('./snippets-doctor.js');
 const agentIdentity = require('./agent-identity.js');
+const claimGate = require('./claim-gate.js');
 const { buildTelegramAuthConfig, validateTelegramInitData } = require('./telegram-auth.js');
 const {
   RateLimiter,
@@ -1899,6 +1900,7 @@ function getSubtaskProgress(tasks, parentId) {
 const ERROR_CODE_STATUS = {
   NOT_FOUND: 404,
   NOT_OWNER: 403,
+  NOT_CLAIMED: 409,
   AGENT_REQUIRED: 403,
   ROUTING_MISMATCH: 403,
   NOT_IN_REVIEW: 409,
@@ -4682,6 +4684,12 @@ app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
   }
 });
 
+// T-526: checkpoint and complete need the caller's own claim (see claim-gate.js).
+function notClaimedRefusal(project, taskId, agent, action, extra = {}) {
+  const task = hzlService.getTask(project, taskId, { includeArchived: true });
+  return claimGate.notClaimedRefusal(task, { project, taskId, agent, action, ...extra });
+}
+
 // POST /api/projects/:name/tasks/:id/release
 app.post('/api/projects/:name/tasks/:id/release', (req, res) => {
   try {
@@ -4709,6 +4717,8 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
     if (!identity.ok) return res.status(400).json({ error: identity.error });
     const session = readOptionalSessionKey(req.body);
     if (!session.ok) return res.status(400).json({ error: session.error });
+    const refusal = notClaimedRefusal(req.params.name, req.params.id, identity.id, 'complete', { sessionKey: session.key });
+    if (refusal) return res.status(409).json(refusal);
     const task = hzlService.completeTask(req.params.name, req.params.id, { agent: identity.id });
     refreshSessionBinding(identity.id, session.key, req.params.name);
     // Recalculate parent status if this is a subtask (T-366: also report it back)
@@ -4718,7 +4728,7 @@ app.post('/api/projects/:name/tasks/:id/complete', (req, res) => {
     res.json(response);
   } catch (err) {
     const status = httpStatusForError(err);
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.message, ...(typeof err.code === 'string' ? { code: err.code } : {}) });
   }
 });
 
@@ -4835,12 +4845,15 @@ app.post('/api/projects/:name/tasks/:id/checkpoint', (req, res) => {
     if (!identity.ok) return res.status(400).json({ error: identity.error });
     const session = readOptionalSessionKey(req.body);
     if (!session.ok) return res.status(400).json({ error: session.error });
+    if (!message) return res.status(400).json({ error: 'Checkpoint message is required' });
+    const refusal = notClaimedRefusal(req.params.name, req.params.id, identity.id, 'checkpoint', { sessionKey: session.key, message, progress });
+    if (refusal) return res.status(409).json(refusal);
     const checkpoint = hzlService.addCheckpoint(req.params.name, req.params.id, { message, agent: identity.id, progress });
     refreshSessionBinding(identity.id, session.key, req.params.name);
     res.json({ ok: true, checkpoint, agentIdentity: agentIdentity.responseMeta(identity) });
   } catch (err) {
     const status = httpStatusForError(err);
-    res.status(status).json({ error: err.message });
+    res.status(status).json({ error: err.message, ...(typeof err.code === 'string' ? { code: err.code } : {}) });
   }
 });
 

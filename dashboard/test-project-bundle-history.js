@@ -53,6 +53,9 @@ async function main() {
       message: 'What should we review?', kind: 'question', author: 'reviewer',
     });
     assert.equal(question.status, 200, JSON.stringify(question.body));
+    // T-526: a checkpoint needs the writer's own claim.
+    const claim = await source.api('POST', `/projects/history-source/tasks/${taskId}/claim`, { agent: 'history-worker' });
+    assert.equal(claim.status, 200, JSON.stringify(claim.body));
     const checkpoint = await source.api('POST', `/projects/history-source/tasks/${taskId}/checkpoint`, {
       message: 'Review started', agent: 'history-worker', progress: 25,
     });

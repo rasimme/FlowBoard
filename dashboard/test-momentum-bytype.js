@@ -49,6 +49,7 @@ async function run() {
     ok(!!id, 'task created');
     await api('PUT', '/projects/mo/tasks/' + id, { status: 'open' });            // status_changed
     await api('POST', '/projects/mo/tasks/' + id + '/comment', { agent: 'tester', message: 'hi' }); // comment_added
+    await api('POST', '/projects/mo/tasks/' + id + '/claim', { agent: 'tester' });                  // T-526: checkpoint needs a claim
     await api('POST', '/projects/mo/tasks/' + id + '/checkpoint', { agent: 'tester', message: 'cp' }); // checkpoint_recorded
     await sleep(150);
 
