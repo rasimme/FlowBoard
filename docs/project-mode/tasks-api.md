@@ -223,6 +223,7 @@ The soft/global protocol for agent task execution:
 
 Rules:
 - Only the claiming agent can checkpoint/complete/release (unless `force: true`)
+- Checkpoint and complete on a task the caller has not claimed are refused with `409 NOT_CLAIMED`; the body names the claim call (`hint`), the rules section (`rules`) and, for a checkpoint, echoes the refused `message`/`progress` in `rejected` so it can be resent after claiming. A live claim of another agent stays `403 NOT_OWNER`. Workflow endpoints (`handoff`, `delegate`) are not gated, nor is `PUT /tasks/:id` (T-526, ADR-0043)
 - Expired leases allow steal by other agents
 - Completing a subtask triggers parent status recalculation
 

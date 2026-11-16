@@ -1,5 +1,11 @@
 # Changelog
 
+### Unreleased
+
+- **Checkpoint and complete need a claim (T-526, ADR-0043). Behaviour change for agents that skip the claim.** `POST …/tasks/:id/checkpoint` and `POST …/tasks/:id/complete` used to succeed on a task nobody had claimed, so agents wrote dozens of checkpoints on backlog tasks while every claim-based feature (session binding, commit checkpoints, stale detection) ignored that work. Both now answer `409 NOT_CLAIMED` when the caller holds no claim on the task. The response says how to fix it: `hint` holds the exact claim call (or `POST /api/workflows/start`), `rules` points at `rules/agent-bridge`, and a refused checkpoint comes back in `rejected` so it can be resent unchanged after claiming. An own claim with an expired lease still works and is renewed, a closing checkpoint after `complete` still works, and a live claim of another agent is still `403 NOT_OWNER` (its `code` is now in the body). Handoff, delegate, imports and migrations are not affected, and neither is `PUT /tasks/:id`. External agents and scripts that checkpoint without claiming need to claim first.
+- **Refused writes are visible (T-526).** Every `NOT_CLAIMED` refusal is recorded (kept 7 days, at most 1000 rows) and `GET /api/tasks/stuck` lists the last 24 hours as `stuck.rejectedUnclaimed`, one entry per agent and task with count, times, actions and the last message. A claim by the same agent clears its entries. They are not part of `combined` and never send a reminder.
+- **One more line in the rules manifest (T-526).** "When to load what" now says to claim a task (or use `workflows/start`) before working on, checkpointing or completing it. The line is static, so `FLOWBOARD.md` stays independent of task state and the prompt cache is unaffected.
+
 ### v5.3.1 (2026-11-16) — Smaller package
 
 - **The README media no longer ship in the published package.** The demo GIF and screenshots stay in the repository and the README links them by URL. The package is back to about a quarter of the 5.3.0 size; nothing else changed.

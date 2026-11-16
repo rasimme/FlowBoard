@@ -150,6 +150,7 @@ function buildRulesManifest() {
   // assumptions (e.g. writing a spec file by hand instead of via the API).
   lines.push('When to load what — read the section BEFORE the action:');
   lines.push('- Before creating, claiming, or transitioning tasks → `api-access`.');
+  lines.push('- Before working on, checkpointing or completing a task → `agent-bridge`: claim it (or `POST /api/workflows/start`) first; FlowBoard rejects checkpoints and completion on tasks you have not claimed (`409 NOT_CLAIMED`).');
   lines.push('- Before composing or editing a project overview layout → `overview`.');
   lines.push('- Before creating or editing specs, or writing ANY file under the project dir → `files` and `specify`. **Spec files are never written by hand — always use `POST /api/projects/{project}/specs/{taskId}`.**');
   lines.push('- Before canvas / promote operations → `canvas`.');

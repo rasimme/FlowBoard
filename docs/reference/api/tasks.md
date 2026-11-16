@@ -154,9 +154,10 @@ Release a claim.
 
 Transition the task to `review` (work done, awaiting acceptance). For subtasks, the parent's status is recalculated.
 
-**Body:** `{"agent": "<id>"}`
+**Body:** `{"agent": "<id>", "sessionKey"?: "<key>"}`
 **Response 200:** `{"ok": true, "task": {<task in review>}}`
-**403** `AGENT_REQUIRED` or `NOT_OWNER`.
+**409** `NOT_CLAIMED` — the caller holds no claim on the task (see [Claim required](#claim-required-for-checkpoint-and-complete)).
+**403** `AGENT_REQUIRED` or `NOT_OWNER` (another agent holds a live claim).
 **404** if the task doesn't exist.
 
 Acceptance (review → done) is performed via `POST /api/projects/:name/tasks/:id/approve` — see below.
@@ -203,9 +204,52 @@ The rejection is recorded as a comment (`Rejected by <actor> (review -> in-progr
 
 Add a progress checkpoint. Resets the lease timer.
 
-**Body:** `{"agent": "<id>", "message": "<text>", "progress"?: <0-100>}`
+**Body:** `{"agent": "<id>", "message": "<text>", "progress"?: <0-100>, "sessionKey"?: "<key>"}`
 **Response 200:** `{"ok": true, "checkpoint": {<entry>}}`
-**403** `NOT_OWNER`. **404** task not found.
+**400** `message` missing. **409** `NOT_CLAIMED` — the caller holds no claim on
+the task; the refused text comes back in `rejected`. **403** `NOT_OWNER`
+(another agent holds a live claim). **404** task not found.
+
+### Claim required for checkpoint and complete
+
+Since T-526 ([ADR-0043](../../adr/0043-claim-required-for-agent-task-writes.md))
+`checkpoint` and `complete` need the caller's own claim. The routes decide:
+
+- live claim of the caller (`agent` is the caller and `claimedAt` is set) —
+  allowed, even when the lease has expired; a checkpoint renews it;
+- live claim of another agent — `403 NOT_OWNER`, as before;
+- the caller's own task after `complete` (`review`/`done`, `agent` kept as
+  history) — allowed, so a closing checkpoint still works;
+- anything else (never claimed, released, routed but not claimed, finished by
+  someone else) — `409 NOT_CLAIMED`.
+
+The refusal says what to do next:
+
+```json
+{
+  "error": "Task T-12 is not claimed by \"worker\"; claim it before you checkpoint it.",
+  "code": "NOT_CLAIMED",
+  "hint": {
+    "method": "POST",
+    "path": "/api/projects/demo/tasks/T-12/claim",
+    "body": { "agent": "worker", "sessionKey": "agent:worker:main" },
+    "alternative": { "method": "POST", "path": "/api/workflows/start", "body": { "agent": "worker", "sessionKey": "agent:worker:main", "project": "demo" } }
+  },
+  "rules": "/api/projects/demo/rules/agent-bridge",
+  "rejected": { "message": "Parser done, tests next", "progress": 40 }
+}
+```
+
+`hint.body` carries `sessionKey` only when the refused request sent one.
+`rejected` appears on checkpoint refusals only: claim, then resend it
+unchanged. Every refusal is recorded and listed in
+[`GET /api/tasks/stuck`](#get-apitasksstuck) as `rejectedUnclaimed`.
+
+Internal workflows are not gated: `workflows/handoff` writes its handoff
+checkpoint on the unclaimed follow-on task, `workflows/delegate` checkpoints
+the source, and imports and migrations write history directly. The generic
+`PUT /api/projects/:name/tasks/:id` is not gated either: its body carries no
+agent identity, and the dashboard and operator change status through it.
 
 ### `GET /api/projects/:name/tasks/:id/checkpoints`
 
@@ -355,6 +399,7 @@ Error codes are surfaced as HTTP status:
 | `PARENT_NOT_CLAIMABLE`  | 409 | Parent task is in a state that blocks subtask claim |
 | `ROUTING_MISMATCH`      | 403 | Task is routed to a different agent |
 | `NOT_OWNER`             | 403 | Caller does not hold the lease |
+| `NOT_CLAIMED`           | 409 | `checkpoint`/`complete` on a task the caller has not claimed (T-526) |
 | `AGENT_REQUIRED`        | 403 | Operation needs an `agent` field |
 | `NOT_IN_REVIEW`         | 409 | `/approve` or `/reject` called on a task not in `review` |
 | `REASON_REQUIRED`       | 400 | `/reject` body lacked a non-empty `reason` |
