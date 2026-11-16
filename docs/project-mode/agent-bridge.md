@@ -172,6 +172,10 @@ The `/tasks/stuck` endpoint returns cross-project tasks that are:
 - with an expired lease (expired)
 - **routed to an agent but not yet claimed** (routed-unclaimed) — indicates handoff contract violation
 
+Separately, `stuck.rejectedUnclaimed` lists checkpoint/complete calls refused
+with `NOT_CLAIMED` in the last 24 hours (per agent and task). It is a
+compliance signal, not a stuck task, and never triggers a reminder.
+
 See `compliance.md` for detailed compliance monitoring, health metrics, and troubleshooting.
 
 ## Multi-Agent Patterns

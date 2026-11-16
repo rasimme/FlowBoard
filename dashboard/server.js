@@ -4669,6 +4669,7 @@ app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
     const session = readOptionalSessionKey(req.body);
     if (!session.ok) return res.status(400).json({ error: session.error });
     const task = hzlService.claimTask(req.params.name, req.params.id, { agent: identity.id, lease });
+    resolveRejectedWrites(req.params.name, req.params.id, identity.id);
     const sessionBinding = bindSessionToProject(identity.id, session.key, req.params.name);
     // T-366: claiming a subtask moves it to in-progress; pull the parent along
     // (backlog/open → in-progress) so a started subtask never sits under an
@@ -4685,9 +4686,25 @@ app.post('/api/projects/:name/tasks/:id/claim', (req, res) => {
 });
 
 // T-526: checkpoint and complete need the caller's own claim (see claim-gate.js).
+// Every refusal is also recorded (T-526-3) so the miss is visible in
+// GET /api/tasks/stuck as `rejectedUnclaimed`, not just in the agent's reply.
 function notClaimedRefusal(project, taskId, agent, action, extra = {}) {
   const task = hzlService.getTask(project, taskId, { includeArchived: true });
-  return claimGate.notClaimedRefusal(task, { project, taskId, agent, action, ...extra });
+  const refusal = claimGate.notClaimedRefusal(task, { project, taskId, agent, action, ...extra });
+  if (refusal) {
+    try {
+      fbMeta.recordRejectedWrite({ project, taskId, agentId: agent, sessionKey: extra.sessionKey, action, message: extra.message });
+    } catch (err) {
+      console.warn('[claim-gate] could not record the refusal:', err.message);
+    }
+  }
+  return refusal;
+}
+
+function resolveRejectedWrites(project, taskId, agent) {
+  try { fbMeta.resolveRejectedWrites(project, taskId, agent); } catch (err) {
+    console.warn('[claim-gate] could not resolve refusals:', err.message);
+  }
 }
 
 // POST /api/projects/:name/tasks/:id/release
@@ -5217,6 +5234,11 @@ app.get('/api/tasks/stuck', (req, res) => {
   try {
     const staleThreshold = req.query.staleThreshold !== undefined ? Math.max(0, parseInt(req.query.staleThreshold) || 0) : 10;
     const stuck = hzlService.getStuckTasks({ staleThreshold });
+    // T-526-3: refused unclaimed writes of the last 24 h, one entry per agent +
+    // task. A compliance signal only: deliberately not part of `combined` and
+    // never fed to the stuck notifications.
+    stuck.rejectedUnclaimed = fbMeta.listRejectedWrites({ sinceHours: 24 })
+      .filter(entry => hzlService.getTask(entry.project, entry.taskId));
     res.json({ ok: true, stuck });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });
@@ -5253,6 +5275,8 @@ app.post('/api/workflows/start', (req, res) => {
       resumePolicy,
       includeAlternates,
     });
+    const heldTaskId = result.resumed?.id || result.claimed?.id;
+    if (heldTaskId && (result.mode === 'resume' || result.mode === 'claim_next')) resolveRejectedWrites(project, heldTaskId, identity.id);
     // T-520: only a start that actually holds a task binds the session.
     const sessionBinding = (result.mode === 'resume' || result.mode === 'claim_next')
       ? bindSessionToProject(identity.id, session.key, project)

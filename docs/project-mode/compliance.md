@@ -99,6 +99,33 @@ GET /api/tasks/stuck
 
 The endpoint is cross-project; filter by `project` in the response if needed.
 
+### Rejected Unclaimed Writes (T-526)
+
+FlowBoard refuses `checkpoint` and `complete` from an agent that holds no
+claim on the task (`409 NOT_CLAIMED`, see `agent-bridge`). The refusal tells
+the agent what to do, but it would otherwise leave no trace for the operator,
+so every refusal is recorded:
+
+- **Stored:** time, project, task, agent, `sessionKey` (if sent), action
+  (`checkpoint`/`complete`) and the checkpoint text shortened to 200
+  characters, in the `flowboard_rejected_writes` table of the FlowBoard
+  metadata database — not in the task's event history.
+- **Bounded:** rows older than 7 days are pruned, and the table keeps at most
+  1000 rows.
+- **Visible:** `GET /api/tasks/stuck` returns `stuck.rejectedUnclaimed`, the
+  refusals of the last 24 hours grouped per agent and task with `count`,
+  `firstAt`, `lastAt`, `actions`, `sessionKey` and `lastMessage`.
+- **Resolved:** once the same agent claims the task (`claim` or
+  `workflows/start`), its earlier refusals for that task are marked resolved
+  and drop out of the list.
+- **Quiet:** the entries are not part of `combined` and never produce a stuck
+  reminder. A repeated entry for one agent points at a prompt or contract that
+  skips the claim step, not at stuck work.
+
+```bash
+curl -s http://127.0.0.1:18700/api/tasks/stuck | jq '.stuck.rejectedUnclaimed'
+```
+
 ### Checkpoint Health
 
 Tasks with infrequent checkpoints indicate potential stalling or agent disconnection.

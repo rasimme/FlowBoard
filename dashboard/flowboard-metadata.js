@@ -109,6 +109,30 @@ const CREATE_PROJECT_IMPORTS_TABLE_SQL = `
     ON flowboard_project_imports(target_name, updated_at);
 `;
 
+// T-526-3: checkpoint/complete calls refused with NOT_CLAIMED. A compliance
+// signal, not task history: bounded by age and row count, never part of the
+// HZL event stream. `resolved_at` is set once the same agent claims the task.
+const CREATE_REJECTED_WRITES_TABLE_SQL = `
+  CREATE TABLE IF NOT EXISTS flowboard_rejected_writes (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at   TEXT NOT NULL,
+    project      TEXT NOT NULL,
+    task_id      TEXT NOT NULL,
+    agent_id     TEXT NOT NULL,
+    session_key  TEXT,
+    action       TEXT NOT NULL,
+    message      TEXT,
+    resolved_at  TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_flowboard_rejected_writes_task
+    ON flowboard_rejected_writes(project, task_id, agent_id, resolved_at);
+  CREATE INDEX IF NOT EXISTS idx_flowboard_rejected_writes_created
+    ON flowboard_rejected_writes(created_at);
+`;
+const REJECTED_WRITES_RETENTION_DAYS = 7;
+const REJECTED_WRITES_MAX_ROWS = 1000;
+const REJECTED_WRITE_MESSAGE_MAX = 200;
+
 /**
  * Initialize with a better-sqlite3 db handle (from hzl-service cacheDb).
  * Creates the flowboard_projects table if it does not exist.
@@ -121,8 +145,9 @@ function init(db) {
   _db.prepare(CREATE_DELETED_PROJECTS_TABLE_SQL).run();
   _db.prepare(CREATE_SETTINGS_TABLE_SQL).run();
   _db.exec(CREATE_PROJECT_IMPORTS_TABLE_SQL);
+  _db.exec(CREATE_REJECTED_WRITES_TABLE_SQL);
   ensureSessionProjectsSchema();
-  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_session_projects, flowboard_migrations, flowboard_deleted_projects, flowboard_settings');
+  console.log('[flowboard-meta] Tables ready: flowboard_projects, flowboard_agents, flowboard_session_projects, flowboard_migrations, flowboard_deleted_projects, flowboard_settings, flowboard_rejected_writes');
 }
 
 /**
@@ -837,6 +862,67 @@ function deleteAgentRow(agentId) {
   return result.changes;
 }
 
+// ── T-526-3: rejected unclaimed writes ──────────────────────────────────────
+
+/** Record one NOT_CLAIMED refusal and prune what falls out of retention. */
+function recordRejectedWrite({ project, taskId, agentId, sessionKey = null, action, message = null, now = new Date() } = {}) {
+  if (!_db) throw new Error('[flowboard-meta] Not initialized — call init() first');
+  const at = now.toISOString();
+  const text = typeof message === 'string' && message ? message.slice(0, REJECTED_WRITE_MESSAGE_MAX) : null;
+  _db.prepare(`
+    INSERT INTO flowboard_rejected_writes (created_at, project, task_id, agent_id, session_key, action, message)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(at, project, taskId, agentId, sessionKey || null, action, text);
+  const cutoff = new Date(now.getTime() - REJECTED_WRITES_RETENTION_DAYS * 86400000).toISOString();
+  _db.prepare('DELETE FROM flowboard_rejected_writes WHERE created_at < ?').run(cutoff);
+  _db.prepare(`
+    DELETE FROM flowboard_rejected_writes WHERE id <= (
+      SELECT id FROM flowboard_rejected_writes ORDER BY id DESC LIMIT 1 OFFSET ?
+    )
+  `).run(REJECTED_WRITES_MAX_ROWS);
+}
+
+/** The same agent claimed the task: its earlier refusals are resolved. */
+function resolveRejectedWrites(project, taskId, agentId, now = new Date()) {
+  if (!_db) return 0;
+  return _db.prepare(`
+    UPDATE flowboard_rejected_writes SET resolved_at = ?
+     WHERE project = ? AND task_id = ? AND agent_id = ? AND resolved_at IS NULL
+  `).run(now.toISOString(), project, taskId, agentId).changes;
+}
+
+/**
+ * Unresolved refusals since `sinceHours`, one entry per agent + task, newest
+ * first: `{ project, taskId, agent, count, firstAt, lastAt, actions,
+ * sessionKey, lastMessage }`.
+ */
+function listRejectedWrites({ sinceHours = 24, now = new Date() } = {}) {
+  if (!_db) return [];
+  const since = new Date(now.getTime() - sinceHours * 3600000).toISOString();
+  const rows = _db.prepare(`
+    SELECT created_at, project, task_id, agent_id, session_key, action, message
+      FROM flowboard_rejected_writes
+     WHERE resolved_at IS NULL AND created_at >= ?
+     ORDER BY id
+  `).all(since);
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.project}\u0000${row.task_id}\u0000${row.agent_id}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = { project: row.project, taskId: row.task_id, agent: row.agent_id, count: 0,
+        firstAt: row.created_at, lastAt: row.created_at, actions: [], sessionKey: null, lastMessage: null };
+      groups.set(key, group);
+    }
+    group.count += 1;
+    group.lastAt = row.created_at;
+    if (!group.actions.includes(row.action)) group.actions.push(row.action);
+    if (row.session_key) group.sessionKey = row.session_key;
+    if (row.message) group.lastMessage = row.message;
+  }
+  return [...groups.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt));
+}
+
 module.exports = {
   init,
   countProjects,
@@ -883,6 +969,11 @@ module.exports = {
   resolveActiveProject,
   getSetting,
   setSetting,
+  recordRejectedWrite,
+  resolveRejectedWrites,
+  listRejectedWrites,
+  REJECTED_WRITES_RETENTION_DAYS,
+  REJECTED_WRITES_MAX_ROWS,
   AGENT_IDLE_TTL_HOURS,
   SESSION_KEY_MAX_LENGTH,
 };

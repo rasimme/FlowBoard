@@ -15,7 +15,9 @@ const { spawn } = require('child_process');
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
+const { DatabaseSync } = require('node:sqlite');
 const claimGate = require('./claim-gate.js');
+const fbMeta = require('./flowboard-metadata.js');
 
 const ROOT = __dirname;
 const PORT = 18871;
@@ -67,6 +69,38 @@ function unitTests() {
   ok(threw, 'unknown action is a programming error');
 }
 
+function rejectedWritesUnitTests() {
+  console.log('# rejected unclaimed writes (unit, T-526-3)');
+  fbMeta.init(new DatabaseSync(':memory:'));
+  const now = new Date('2026-11-17T12:00:00.000Z');
+  const at = (minutesAgo) => new Date(now.getTime() - minutesAgo * 60000);
+  const rec = (taskId, agentId, action, minutesAgo, extra = {}) =>
+    fbMeta.recordRejectedWrite({ project: 'p', taskId, agentId, action, now: at(minutesAgo), ...extra });
+  rec('T-1', 'a', 'checkpoint', 30, { sessionKey: 'agent:a:main', message: 'first' });
+  rec('T-1', 'a', 'complete', 20);
+  rec('T-1', 'a', 'checkpoint', 10, { message: 'y'.repeat(500) });
+  rec('T-1', 'b', 'checkpoint', 5);
+  rec('T-2', 'a', 'checkpoint', 60 * 30); // older than the 24 h window
+  let list = fbMeta.listRejectedWrites({ now });
+  const a1 = list.find(e => e.taskId === 'T-1' && e.agent === 'a');
+  ok(list.length === 2, 'grouped per agent + task inside the 24 h window');
+  ok(a1?.count === 3 && a1.firstAt === at(30).toISOString() && a1.lastAt === at(10).toISOString(), 'group carries count, first and last time');
+  ok(JSON.stringify(a1?.actions) === '["checkpoint","complete"]' && a1.sessionKey === 'agent:a:main', 'group carries actions and the session key');
+  ok(a1?.lastMessage?.length === 200, 'stored message is shortened to 200 characters');
+  ok(list[0].agent === 'b', 'newest group first');
+  ok(fbMeta.listRejectedWrites({ now, sinceHours: 48 }).length === 3, 'the window is a read filter; the row is kept');
+  ok(fbMeta.resolveRejectedWrites('p', 'T-1', 'a', now) === 3, 'claim by the same agent resolves its refusals');
+  list = fbMeta.listRejectedWrites({ now });
+  ok(list.length === 1 && list[0].agent === 'b', 'resolved refusals drop out; another agent\'s stay');
+  rec('T-old', 'a', 'checkpoint', 60 * 24 * (fbMeta.REJECTED_WRITES_RETENTION_DAYS + 1));
+  ok(fbMeta.listRejectedWrites({ now, sinceHours: 24 * 30 }).some(e => e.taskId === 'T-old'), 'setup: a row older than retention exists');
+  rec('T-3', 'a', 'checkpoint', 0);
+  ok(fbMeta.listRejectedWrites({ now, sinceHours: 24 * 30 }).every(e => e.taskId !== 'T-old'), 'rows past retention are pruned on insert');
+  for (let i = 0; i < fbMeta.REJECTED_WRITES_MAX_ROWS + 5; i++) rec(`T-${i}`, 'flood', 'checkpoint', 0);
+  const total = fbMeta.listRejectedWrites({ now, sinceHours: 24 * 30 }).reduce((n, e) => n + e.count, 0);
+  ok(total === fbMeta.REJECTED_WRITES_MAX_ROWS, `row count is capped at ${fbMeta.REJECTED_WRITES_MAX_ROWS} (got ${total})`);
+}
+
 async function httpTests() {
   console.log('# claim gate (HTTP)');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-claimgate-'));
@@ -112,8 +146,23 @@ async function httpTests() {
     ok(r.status === 409 && r.body?.code === 'NOT_CLAIMED' && !('rejected' in r.body), 'unclaimed complete -> 409 NOT_CLAIMED');
     ok((await api(base, 'GET', `${P}/tasks/${t1.id}`)).body?.task?.status === 'backlog', 'refused complete left the status alone');
 
+    // 2b. Refusals show up in GET /api/tasks/stuck as rejectedUnclaimed, not in combined (T-526-3).
+    const stuck = async () => (await api(base, 'GET', '/api/tasks/stuck')).body?.stuck || {};
+    const rejectedFor = (s, taskId, agent) => (s.rejectedUnclaimed || []).find(e => e.taskId === taskId && e.agent === agent);
+    let s1 = await stuck();
+    let entry = rejectedFor(s1, t1.id, 'worker-one');
+    ok(entry?.project === PROJECT && entry.count === 3, 'stuck.rejectedUnclaimed counts the three refusals (the 400 is not one)');
+    ok(JSON.stringify(entry?.actions) === '["checkpoint","complete"]' && entry.sessionKey === sessionKey && entry.lastMessage === 'x',
+      'entry carries actions, session key and the last message');
+    ok(typeof entry?.lastAt === 'string' && typeof entry.firstAt === 'string', 'entry carries first and last time');
+    ok(!(s1.combined || []).some(e => e.taskId === t1.id), 'refusals are not part of stuck.combined');
+    const notifiable = (await api(base, 'GET', '/api/tasks/notifiable-stuck?staleThreshold=0')).body?.notifiable || {};
+    ok(!JSON.stringify(notifiable).includes('rejectedUnclaimed') && !(notifiable.combined || []).some(e => e.taskId === t1.id),
+      'refusals never reach the stuck notifications');
+
     // 3. Own claim -> checkpoint 200 -> complete 200 -> closing checkpoint 200.
     ok((await api(base, 'POST', `${P}/tasks/${t1.id}/claim`, { agent: 'worker-one' })).status === 200, 'claim succeeds');
+    ok(!rejectedFor(await stuck(), t1.id, 'worker-one'), 'claim by the same agent resolves the rejectedUnclaimed entry');
     r = await api(base, 'POST', `${P}/tasks/${t1.id}/checkpoint`, { agent: 'worker-one', message: 'did a thing', progress: 40 });
     ok(r.status === 200 && r.body?.checkpoint?.message === 'did a thing', 'resent checkpoint after claim -> 200');
     r = await api(base, 'POST', `${P}/tasks/${t1.id}/complete`, { agent: 'worker-one' });
@@ -138,11 +187,17 @@ async function httpTests() {
     r = await api(base, 'POST', `${P}/tasks/${t2.id}/checkpoint`, { agent: 'worker-two', message: 'after release' });
     ok(r.status === 409 && r.body?.code === 'NOT_CLAIMED', 'other agent on a released task -> NOT_CLAIMED (claim would succeed)');
 
-    // 6. workflows/start claims, after which checkpoint works.
-    await newTask('t3'); // something for workflows/start to pick
+    // 6. workflows/start claims, after which checkpoint works and only that task's refusal resolves.
+    const t3 = await newTask('t3');
+    await api(base, 'POST', `${P}/tasks/${t3.id}/checkpoint`, { agent: 'worker-two', message: 'early' });
+    ok(!!rejectedFor(await stuck(), t2.id, 'worker-two') && !!rejectedFor(await stuck(), t3.id, 'worker-two'), 'setup: worker-two has refusals on t2 and t3');
     r = await api(base, 'POST', '/api/workflows/start', { agent: 'worker-two', project: PROJECT });
-    const startedId = r.body?.claimed?.id || r.body?.task?.id;
-    ok(r.status === 200 && !!startedId, 'workflows/start claims a task');
+    const startedId = r.body?.claimed?.id;
+    ok(r.status === 200 && [t2.id, t3.id].includes(startedId), 'workflows/start claims a task');
+    const otherId = startedId === t2.id ? t3.id : t2.id;
+    s1 = await stuck();
+    ok(!rejectedFor(s1, startedId, 'worker-two') && !!rejectedFor(s1, otherId, 'worker-two'), 'workflows/start resolves only the task it claimed');
+    ok(!!rejectedFor(s1, t2.id, 'worker-one'), 'another agent\'s refusal on the same task stays open');
     r = await api(base, 'POST', `${P}/tasks/${startedId}/checkpoint`, { agent: 'worker-two', message: 'started via workflow' });
     ok(r.status === 200, 'checkpoint after workflows/start -> 200');
 
@@ -188,6 +243,7 @@ async function httpTests() {
 
 async function run() {
   unitTests();
+  rejectedWritesUnitTests();
   await httpTests();
   console.log(`\n# results: ${pass} passed, ${fail} failed`);
   if (fail > 0) { console.log('# failures:'); failures.forEach(f => console.log(`#   - ${f}`)); process.exitCode = 1; }

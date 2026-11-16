@@ -281,7 +281,16 @@ read-default of `10` minutes.
 Cross-project list of tasks with stale claims or expired leases.
 
 **Query:** `staleThreshold` — minutes (default `10`).
-**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "routedUnclaimed": [...], "workState": [...], "combined": [...]}}`
+**Response 200:** `{"ok": true, "stuck": {"stale": [...], "expired": [...], "routedUnclaimed": [...], "workState": [...], "combined": [...], "rejectedUnclaimed": [...]}}`
+
+`rejectedUnclaimed` (T-526) lists checkpoint/complete calls refused with
+`409 NOT_CLAIMED` in the last 24 hours, one entry per agent and task:
+`{ project, taskId, agent, count, firstAt, lastAt, actions, sessionKey, lastMessage }`.
+`actions` holds `checkpoint` and/or `complete`; `sessionKey` is the latest one
+sent (or `null`); `lastMessage` is the latest refused checkpoint text,
+shortened to 200 characters. An entry is resolved, and drops out, once the same
+agent claims the task (`claim` or `workflows/start`). It is a compliance signal
+only: it is not part of `combined` and never triggers a stuck notification.
 
 Each task may additionally expose one transient `stuckIndicator` object.  The
 monitor updates this object in place and clears it on checkpoint, recovery,
