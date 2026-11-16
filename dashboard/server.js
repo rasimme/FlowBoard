@@ -5237,8 +5237,14 @@ app.get('/api/tasks/stuck', (req, res) => {
     // T-526-3: refused unclaimed writes of the last 24 h, one entry per agent +
     // task. A compliance signal only: deliberately not part of `combined` and
     // never fed to the stuck notifications.
-    stuck.rejectedUnclaimed = fbMeta.listRejectedWrites({ sinceHours: 24 })
-      .filter(entry => hzlService.getTask(entry.project, entry.taskId));
+    // A broken log must not take the stuck endpoint down with it.
+    try {
+      stuck.rejectedUnclaimed = fbMeta.listRejectedWrites({ sinceHours: 24 })
+        .filter(entry => hzlService.getTask(entry.project, entry.taskId));
+    } catch (logErr) {
+      console.warn('[api] rejected-writes log unavailable:', logErr?.message || logErr);
+      stuck.rejectedUnclaimed = [];
+    }
     res.json({ ok: true, stuck });
   } catch (err) {
     console.error('[api]', err); res.status(500).json({ error: 'Internal server error' });

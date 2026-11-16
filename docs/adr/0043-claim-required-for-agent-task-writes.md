@@ -110,3 +110,7 @@ step before it starts checkpointing.
   through `PUT` on a task nobody claimed still succeeds. ADR-0035 applies:
   FlowBoard enforces the form it can see, and this is form per agent id, not
   authorization. Agent ids remain self-asserted (ADR-0003).
+- **Known limit: the workflow routes are not gated.** `POST /api/workflows/handoff`
+  completes its source task and `POST /api/workflows/delegate` can checkpoint it
+  without a claim check. Both are reachable by agents; they stay unchanged
+  because they are multi-step workflows with their own source-task contract.
