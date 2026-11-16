@@ -42,6 +42,11 @@ step before it starts checkpointing.
      answering `403 NOT_OWNER` (now with `code` in the body).
    - The caller's own task in `review`/`done` passes, so a closing checkpoint
      after `complete` keeps working.
+   - A parent task (one with subtasks) passes. It cannot be claimed
+     (`PARENT_NOT_CLAIMABLE`), its status is aggregated from its subtasks, and
+     orchestrators checkpoint it without a claim (production locks, stage
+     notes). Its checkpoint and complete behave exactly as before, including
+     the owner check.
    - Everything else is `NOT_CLAIMED`: never claimed, released, routed but not
      claimed, finished by another agent.
 
@@ -96,6 +101,9 @@ step before it starts checkpointing.
 - Tests that checkpointed without a claim now claim first.
 - The manifest, and therefore `FLOWBOARD.md`, grows by one line (about 200
   characters); the document stays independent of task state.
+- **Exception: parent tasks.** Checkpoints on a task with subtasks need no
+  claim, because a parent cannot be claimed. Complete on a parent is not an
+  agent path and keeps its previous answer.
 - **Known limit: `PUT /api/projects/:name/tasks/:id` is not gated.** Its body
   carries no required agent identity (`actor` is optional), and the dashboard
   and operator move tasks through it. A status change to `review`

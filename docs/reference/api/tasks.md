@@ -220,6 +220,9 @@ Since T-526 ([ADR-0043](../../adr/0043-claim-required-for-agent-task-writes.md))
 - live claim of another agent — `403 NOT_OWNER`, as before;
 - the caller's own task after `complete` (`review`/`done`, `agent` kept as
   history) — allowed, so a closing checkpoint still works;
+- a parent task (one with subtasks) — not gated: it cannot be claimed, its
+  status is aggregated, and orchestrators checkpoint it without a claim;
+  checkpoint and complete behave as before;
 - anything else (never claimed, released, routed but not claimed, finished by
   someone else) — `409 NOT_CLAIMED`.
 

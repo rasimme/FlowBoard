@@ -56,6 +56,10 @@ function unitTests() {
     'live claim of another agent passes on to the service (NOT_OWNER)');
   ok(claimGate.notClaimedRefusal({ agent: 'a', claimedAt: null, status: 'review' }, opts) === null,
     'own finished task passes (closing checkpoint after complete)');
+  ok(claimGate.notClaimedRefusal({ agent: null, claimedAt: null, status: 'in-progress', subtaskIds: ['T-1-1'] }, opts) === null,
+    'parent task (has subtasks) is not gated');
+  ok(claimGate.notClaimedRefusal({ agent: null, claimedAt: null, status: 'open', subtaskIds: [] }, opts)?.code === 'NOT_CLAIMED',
+    'empty subtask list is not a parent');
   const unclaimed = claimGate.notClaimedRefusal({ agent: null, claimedAt: null, status: 'backlog' }, opts);
   ok(unclaimed?.code === 'NOT_CLAIMED', 'never claimed -> NOT_CLAIMED');
   ok(claimGate.notClaimedRefusal({ agent: 'a', claimedAt: null, status: 'open' }, opts)?.code === 'NOT_CLAIMED',
@@ -218,6 +222,19 @@ async function httpTests() {
     r = await api(base, 'POST', '/api/workflows/delegate', { project: PROJECT, fromTaskId: parent.id, title: 'delegated child', checkpoint: 'delegated' });
     ok(r.status === 200 && r.body?.checkpointAdded === true, 'delegate on an unclaimed source still records its checkpoint');
     ok((await checkpoints(parent.id)).some(cp => cp.message === 'delegated'), 'delegate checkpoint is stored');
+
+    // 8b. Parent tasks are not claimable, so they are not gated: orchestrators
+    //     checkpoint them without a claim; complete keeps its previous behaviour.
+    const parentTask = await newTask('parent with subtasks');
+    const sub = (await api(base, 'POST', `${P}/tasks`, { title: 'subtask', status: 'open', parentId: parentTask.id })).body?.task;
+    ok(!!sub && (await api(base, 'GET', `${P}/tasks/${parentTask.id}`)).body?.task?.subtaskIds?.includes(sub.id), 'setup: parent has a subtask');
+    ok((await api(base, 'POST', `${P}/tasks/${parentTask.id}/claim`, { agent: 'worker-one' })).status !== 200, 'precondition: a parent cannot be claimed');
+    r = await api(base, 'POST', `${P}/tasks/${parentTask.id}/checkpoint`, { agent: 'worker-one', message: 'production lock held' });
+    ok(r.status === 200, 'checkpoint on an unclaimed parent -> 200 (orchestrator note)');
+    ok((await checkpoints(parentTask.id)).some(cp => cp.message === 'production lock held'), 'parent checkpoint is stored');
+    r = await api(base, 'POST', `${P}/tasks/${parentTask.id}/complete`, { agent: 'worker-one' });
+    ok(r.body?.code !== 'NOT_CLAIMED', `complete on a parent is not gated (keeps its previous answer, got ${r.status})`);
+    ok(!rejectedFor(await stuck(), parentTask.id, 'worker-one'), 'parent writes are not recorded as rejectedUnclaimed');
 
     // 9. Commit-checkpoint hook (openclaw/task-discipline.js) still records on a live claim and skips otherwise.
     const { createTaskDiscipline } = await import('../openclaw/task-discipline.js');

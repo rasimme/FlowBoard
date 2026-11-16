@@ -15,6 +15,9 @@
  *   answering NOT_OWNER;
  * - the caller's own finished task (review/done, `agent` kept as history)
  *   passes, so a closing checkpoint after complete still works;
+ * - a parent task (one with subtasks) passes: it cannot be claimed, its
+ *   status is aggregated from its subtasks, and orchestrators checkpoint it
+ *   (production locks, stage notes). The service's owner check still applies;
  * - everything else has no claim to work under: NOT_CLAIMED.
  *
  * The refusal teaches the next call and echoes a rejected checkpoint so the
@@ -26,6 +29,7 @@ const ACTIONS = Object.freeze(['checkpoint', 'complete']);
 function isClaimedFor(task, agent) {
   if (!task) return true; // nothing to gate; the service answers 404
   if (task.agent && task.claimedAt) return true;
+  if (Array.isArray(task.subtaskIds) && task.subtaskIds.length > 0) return true;
   return task.agent === agent && (task.status === 'review' || task.status === 'done');
 }
 
