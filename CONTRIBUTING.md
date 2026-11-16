@@ -237,7 +237,7 @@ cron / heartbeat / mDNS off):
 
 ### Demo media
 
-`docs/demo.gif` and the README screenshots come from a seeded demo project, never from a real instance. All of this is dev tooling and is excluded from the published package.
+`docs/demo.gif` and the README screenshots come from a seeded demo project, never from a real instance. All of this is dev tooling and is excluded from the published package. The media files themselves are excluded too (`!docs/demo.gif`, `!docs/screenshot-*.png` in `package.json`), so the README links them by absolute GitHub URL; keep it that way when adding images.
 
 ```bash
 # 1. an isolated dashboard (own port and HZL_DB_PATH), then:

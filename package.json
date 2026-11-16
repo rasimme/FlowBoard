@@ -1,6 +1,6 @@
 {
   "name": "flowboard",
-  "version": "5.3.0",
+  "version": "5.3.1",
   "description": "FlowBoard project workspaces, dashboard, and project-context hook for OpenClaw agents.",
   "type": "module",
   "license": "MIT",
@@ -74,6 +74,8 @@
     "!docs/plans/**",
     "!docs/reviews/**",
     "!docs/dev/**",
+    "!docs/demo.gif",
+    "!docs/screenshot-*.png",
     "!docs/project-mode/legacy/**",
     "!snippets/legacy/**",
     "!dashboard/projects/**",

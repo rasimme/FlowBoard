@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/rasimme/FlowBoard/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
-  <a href="https://github.com/rasimme/FlowBoard/releases"><img src="https://img.shields.io/badge/version-v5.3.0-orange.svg" alt="Version"></a>
+  <a href="https://github.com/rasimme/FlowBoard/releases"><img src="https://img.shields.io/badge/version-v5.3.1-orange.svg" alt="Version"></a>
   <a href="https://github.com/rasimme/FlowBoard"><img src="https://img.shields.io/github/stars/rasimme/FlowBoard?style=social" alt="Stars"></a>
 </p>
 
@@ -25,7 +25,7 @@ Your agent starts every session blank. What was I building? What did we decide? 
 
 **FlowBoard gives each project a memory and a board that you and your agents share.**
 
-![FlowBoard running as a native page inside OpenClaw](docs/demo.gif)
+![FlowBoard running as a native page inside OpenClaw](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/demo.gif)
 
 - **Context that follows the project.** An agent working on a project gets its goal, decisions and rules — loaded on demand, so token use stays low.
 - **A Kanban you both use.** Agents create tasks, write specs, claim work, checkpoint progress and hand over for review. You approve.
@@ -49,9 +49,9 @@ On OpenClaw 2026.9.2 or newer, FlowBoard is a page in the OpenClaw sidebar — t
 
 | | |
 |---|---|
-| ![The FlowBoard page in the OpenClaw sidebar](docs/screenshot-openclaw-page.png) | **The whole dashboard, native.** Overview, Ideas, Tasks and Files, following your OpenClaw theme (light, dark or custom). |
-| ![The "Needs me" widget on a session dashboard](docs/screenshot-openclaw-widget.png) | **"Needs me" widget.** Reviews waiting for you and blocked or stalled work, across all projects, on any session dashboard. |
-| ![The task panel next to a session](docs/screenshot-openclaw-panel.png) | **Task panel.** The task a session is working on, next to the chat: activity, comments, approve. |
+| ![The FlowBoard page in the OpenClaw sidebar](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-openclaw-page.png) | **The whole dashboard, native.** Overview, Ideas, Tasks and Files, following your OpenClaw theme (light, dark or custom). |
+| ![The "Needs me" widget on a session dashboard](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-openclaw-widget.png) | **"Needs me" widget.** Reviews waiting for you and blocked or stalled work, across all projects, on any session dashboard. |
+| ![The task panel next to a session](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-openclaw-panel.png) | **Task panel.** The task a session is working on, next to the chat: activity, comments, approve. |
 
 It also helps agents keep the board honest:
 
@@ -68,7 +68,7 @@ Neither changes the project context an agent receives, so the model's prompt cac
 
 A widget dashboard per project that you and your agents can both arrange: what needs you, live activity and momentum, milestones, board preview, GitHub status, notes and links. 26 widgets, drag-and-drop editing, presets.
 
-![FlowBoard Overview](docs/screenshot-overview.png)
+![FlowBoard Overview](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-overview.png)
 
 ### 📋 Agent-native Kanban
 
@@ -80,19 +80,19 @@ Agents use the same REST API as the board. Tasks move `backlog → open → in-p
 - Work states (`Working`, `Waiting`, `Blocked`, `Paused`) and stall detection
 - A live view of which agent holds what
 
-![FlowBoard Kanban](docs/screenshot-kanban.png)
+![FlowBoard Kanban](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-kanban.png)
 
 ### 💡 Idea Canvas
 
 Sticky notes and connections. **Create task** runs the Specify workflow: a few clarifying questions, then a proposal you review — a single task, a task with a spec, or a parent with subtasks.
 
-![FlowBoard Canvas](docs/screenshot-canvas.png)
+![FlowBoard Canvas](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-canvas.png)
 
 ### 📁 Files
 
 Browse, preview and edit the project's knowledge: `PROJECT.md`, decisions, context files and specs, with a Markdown editor.
 
-![FlowBoard Files](docs/screenshot-files.png)
+![FlowBoard Files](https://raw.githubusercontent.com/rasimme/FlowBoard/main/docs/screenshot-files.png)
 
 ### 🤝 Works with any agent
 

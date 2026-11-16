@@ -1,5 +1,9 @@
 # Changelog
 
+### v5.3.1 (2026-11-16) — Smaller package
+
+- **The README media no longer ship in the published package.** The demo GIF and screenshots stay in the repository and the README links them by URL. The package is back to about a quarter of the 5.3.0 size; nothing else changed.
+
 ### v5.3.0 (2026-11-16) — FlowBoard inside OpenClaw
 
 The React dashboard now runs as a native page in the OpenClaw Control UI, with a "Needs me" widget and a session task panel. Claiming a task binds the session to its project, commits record checkpoints, and the project context no longer breaks the prompt cache.
