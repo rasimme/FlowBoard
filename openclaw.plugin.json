@@ -122,9 +122,9 @@
     }
   },
   "controlUi": {
-    "entry": "dist/control-ui/3da7511d55a408c474cded6429ef1e8e1223663cad4dac448fb4dc14a419d2c1/index.js",
+    "entry": "dist/control-ui/f821ead3f33efaf58291bcddf2faba18a0d436eeae4793efac619c9af8d16086/index.js",
     "styles": [
-      "dist/control-ui/3da7511d55a408c474cded6429ef1e8e1223663cad4dac448fb4dc14a419d2c1/index.css"
+      "dist/control-ui/f821ead3f33efaf58291bcddf2faba18a0d436eeae4793efac619c9af8d16086/index.css"
     ]
   },
   "contracts": {
