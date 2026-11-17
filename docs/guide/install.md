@@ -19,7 +19,8 @@ older host FlowBoard notices the newer SDK is absent and runs hook-only; with
 the lab off there is simply no sidebar entry.
 
 Every release installs the same packed artifact on real hosts and checks that
-the hook comes back — currently 2026.6.6, 2026.7.1-2, 2026.9.5 and 2026.9.6
+the hook comes back — currently 2026.6.6, 2026.7.1-2, 2026.9.5, 2026.9.6 and
+2026.10.9, with CI also trying the newest published OpenClaw
 (`node scripts/release-host-matrix.mjs`, see [CONTRIBUTING](../../CONTRIBUTING.md)).
 Details in [OpenClaw Integration](../concepts/openclaw-integration.md).
 

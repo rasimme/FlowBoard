@@ -58,6 +58,20 @@ const FEATURE_GATEWAY_METHOD = 'flowboard.ui.identity';
  * baseline, not a defect.
  */
 const ALLOWED_COMPAT_CODES = new Set(['hook-only', 'hook-only-plugin-shape']);
+/**
+ * Newer hosts (seen on 2026.11.5) flag `openclaw/plugin-sdk/tool-plugin` as an
+ * older API at `info` severity ("keeps working for now"). FlowBoard's feature
+ * entry reads tool-plugin metadata from it on purpose, so that one note is
+ * tolerated; any other deprecated API, or a higher severity, still fails.
+ */
+const TOLERATED_DEPRECATED_APIS = new Set(['openclaw/plugin-sdk/tool-plugin']);
+
+function isToleratedCompatNote(entry) {
+  if (ALLOWED_COMPAT_CODES.has(entry?.code) || ALLOWED_COMPAT_CODES.has(entry?.compatCode)) return true;
+  if (entry?.code !== 'deprecated-sdk-api' || entry?.severity !== 'info') return false;
+  const apis = Array.isArray(entry.apis) ? entry.apis : [];
+  return apis.length > 0 && apis.every((api) => TOLERATED_DEPRECATED_APIS.has(api?.id));
+}
 
 const steps = [];
 let hostInfo = { cli: null, version: null, commit: null, capabilities: null };
@@ -386,9 +400,7 @@ function assertInspect(cli, env, inspected) {
   if (diagnostics.length > 0) {
     throw new Error(`plugin diagnostics are not empty: ${JSON.stringify(diagnostics)}`);
   }
-  const unexpected = inspected.compatibility.filter(
-    (entry) => !ALLOWED_COMPAT_CODES.has(entry.code) && !ALLOWED_COMPAT_CODES.has(entry.compatCode),
-  );
+  const unexpected = inspected.compatibility.filter((entry) => !isToleratedCompatNote(entry));
   if (unexpected.length > 0) {
     throw new Error(`unexpected compatibility notes: ${JSON.stringify(unexpected)}`);
   }
@@ -432,7 +444,7 @@ function doctorFailedOnlyOnLocalArchiveProvenance(result, capabilities) {
   return empty(payload?.pluginErrors)
     && empty(payload?.sourceShadowing)
     && empty(payload?.configurationWarnings)
-    && empty(payload?.compatibility)
+    && (Array.isArray(payload?.compatibility) ? payload.compatibility : []).every(isToleratedCompatNote)
     && empty(payload?.issues)
     && diagnostics.length > 0
     && diagnostics.every(isLocalArchiveProvenanceNote);
@@ -462,8 +474,7 @@ function assertDoctorClean(cli, env, capabilities) {
       (entry) =>
         entry.severity &&
         entry.severity !== 'info' &&
-        !ALLOWED_COMPAT_CODES.has(entry.code) &&
-        !ALLOWED_COMPAT_CODES.has(entry.compatCode),
+        !isToleratedCompatNote(entry),
     );
     if (bad.length > 0) throw new Error(`plugins doctor reported issues: ${JSON.stringify(bad)}`);
     return `doctor ok (${entries.length} note(s), all info)`;

@@ -158,6 +158,25 @@ with it. FlowBoard ships **source installs only** (ClawHub package, `--link`,
 or the npm tarball). See
 [ADR-0040](docs/adr/0040-gateway-verified-principal-via-service-credential.md).
 
+### Build pin and dependency audit
+
+The root `openclaw` devDependency is the **build CLI**: it generates
+`openclaw.plugin.json` and the Control UI bundle and runs `plugins validate`.
+It is not shipped. It stays at **2026.9.6**, the oldest host with the feature
+layer, so every release proves the generated metadata is accepted there; newer
+hosts are covered by the install canary (CI job `host-canary`) rather than by
+moving the pin. Raising the pin is a deliberate change: do it when the build
+needs a newer CLI, and re-run `npm run build:plugin` so a changed bundle hash
+lands in the manifest.
+
+`npm audit` at the root must stay free of high findings. Most findings sit in
+OpenClaw's own dependency tree (undici, zod, hono, ...). Because the CLI is only
+used at build time, `overrides` in `package.json` raise those transitive
+packages to their patched versions instead of chasing newer OpenClaw releases
+that bring other findings with them (2026.10.9 and 2026.11.5 both still audit
+high). Re-check with `npm audit` after changing the pin or the overrides, and
+drop an override once the pinned OpenClaw ships the fix itself.
+
 ### Host compatibility canaries
 
 Two scripts prove the supported host range instead of asserting it. Both are
@@ -174,7 +193,8 @@ node scripts/release-install-canary.mjs --json         # machine-readable report
 # Several hosts, one packed artifact, one table
 FLOWBOARD_HOST_MATRIX="\
 2026.6.6: node=/opt/node24/bin/node /opt/oc66/node_modules/.bin/openclaw,\
-2026.9.6: node=/opt/node2421/bin/node /opt/oc96/node_modules/.bin/openclaw" \
+2026.9.6: node=/opt/node2421/bin/node /opt/oc96/node_modules/.bin/openclaw,\
+2026.10.9: node=/opt/node2422/bin/node /opt/oc109/node_modules/.bin/openclaw" \
   node scripts/release-host-matrix.mjs
 ```
 

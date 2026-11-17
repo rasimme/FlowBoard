@@ -269,17 +269,18 @@ rather than assuming forward compatibility.
 
 "Supported" means a release has installed the packed artifact on that host and watched the hook come
 back. `scripts/release-host-matrix.mjs` runs `scripts/release-install-canary.mjs` against each CLI
-and prints the table; CI runs the two ends of it on every push (Node 22 + 2026.6.6, Node 24 +
-2026.9.6). What differs between hosts is the *install lifecycle*, not FlowBoard's behaviour:
+and prints the table; CI runs it on every push: Node 22 + 2026.6.6, Node 24 + 2026.9.6 (the pinned build CLI) and
+Node 24 + 2026.10.9, plus the newest published OpenClaw as a non-blocking check. 2026.10.x requires
+Node ≥ 24.22.1. What differs between hosts is the *install lifecycle*, not FlowBoard's behaviour:
 
-| | 2026.6.6 | 2026.7.1-2 | ≥ 2026.9.2 (verified on 2026.9.5 and 2026.9.6) |
+| | 2026.6.6 | 2026.7.1-2 | ≥ 2026.9.2 (verified on 2026.9.5, 2026.9.6, 2026.10.9) |
 |---|---|---|---|
 | `agent:bootstrap` hook + standalone dashboard | yes | yes | yes |
 | Plugin shape reported by the host | `hook-only`, info-level note | `hook-only`, info-level note | `non-capability`, with feature services |
 | Feature contract, `flowboard.ui.identity`, native page | no — SDK subpaths do not exist | no | yes |
 | Capability consent (`--accept-capabilities`) | no such concept | no such concept (`--acknowledge-clawhub-risk` is *source* trust, not consent) | required; re-asked when the plugin changes |
 | `plugins doctor --json`, `plugins reload`, `plugins pack` | no | no | yes |
-| Node the CLI accepts | 22+ | 22+ | ≥ 24.16 |
+| Node the CLI accepts | 22+ | 22+ | ≥ 24.16 (2026.10.x: ≥ 24.22.1) |
 
 Two consequences cost real debugging time, so they are encoded in the tooling rather than in a
 maintainer's memory:
