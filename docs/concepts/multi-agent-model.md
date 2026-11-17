@@ -20,9 +20,12 @@ The model has three components: agent registration (lazy), active-project tracki
 
 **Task ownership.** Tasks live in HZL's event-sourced store. The materialized view `tasks_current` carries one row per task with the current claim state: `agent` (the holder, or `NULL`), `claimed_at`, `lease_until`, `status`. A task is claimed via `POST /api/projects/<name>/tasks/<id>/claim {agent}`, with optimistic concurrency — a second agent's claim returns 409 unless the lease has expired. Released tasks (or expired leases) become claimable again. Completed tasks transition to `review` (work done, awaiting acceptance) and then `done` (accepted) — both terminal states preserve `agent` as the holder of record.
 
+**Project activity.** Whether anyone is working on a project right now is derived, not stored (ADR-0044). A project is active when an agent holds a live claim there (task `in-progress`, lease not expired) or a session binding (`flowboard_session_projects`, ADR-0039) or agent-wide binding points at it and was seen within `FLOWBOARD_PROJECT_ACTIVITY_WINDOW_MINUTES` (default 30). Archived projects never are. `GET /api/projects` and the dashboard snapshot carry the result per project as `activity: { active, lastActivityAt, claims, sessions, agents }`; the sidebar activity dot reads it, and a fresh dashboard load opens the most recently active project. Several projects can be active at once. The derivation reads the task cache and the two binding tables, never the event store, and does not change the agent prompt.
+
 **The endpoints:**
 
-- `GET /api/agents` — lists the `flowboard_agents` rows, used by the UI's active-agents bar.
+- `GET /api/agents` — lists the `flowboard_agents` rows (with their session bindings), used by the UI's active-agents bar.
+- `GET /api/projects` — every project with its derived `activity`.
 - `GET /api/status?agentId=<id>` — one agent's row.
 - `PUT /api/status {agentId, project|null}` — set or clear the agent's active project.
 - `DELETE /api/agents/:id` — remove the row. Returns 409 if the agent has active claims; `?force=true` releases them (status preserved, lease dropped) and proceeds.
@@ -41,12 +44,14 @@ The model has three components: agent registration (lazy), active-project tracki
 ## Code
 
 - `dashboard/flowboard-metadata.js` — `flowboard_agents` table CRUD: `setAgentActiveProject`, `listAgents`, `getAgentRow`, `deleteAgentRow`.
-- `dashboard/hzl-service.js` — task claim/release/complete, lease semantics, `listTasksClaimedBy(agentId)`.
+- `dashboard/hzl-service.js` — task claim/release/complete, lease semantics, `listTasksClaimedBy(agentId)`, `listClaimedTasks()`.
+- `dashboard/project-activity.js` — `deriveProjectActivity` (live claims + recent bindings → per-project `activity`) and `mostRecentActiveProject`.
 - `dashboard/server.js` — `/api/agents` (list), `/api/status` (per-agent active-project), `DELETE /api/agents/:id` (with `?force=`), the per-task endpoints under `/api/projects/<name>/tasks/<id>/{claim,release,complete,checkpoint,comment}`.
 - `dashboard/migrations.js` — the `flowboard_agents` schema and the `m003` one-shot backfill from the legacy `ACTIVE-PROJECT.md`.
 
 ## See also
 
 - [ADR-0003](../adr/0003-dashboard-has-no-agent-identity.md) — Dashboard has no agent identity (the foundation that makes external agents first-class)
+- [ADR-0044](../adr/0044-project-activity-from-live-claims-and-recent-bindings.md) — Project activity from live claims and recent session bindings
 - [Agent Identity](agent-identity.md) — how the agent-id string is sourced for OpenClaw vs. external agents
 - [Hook Architecture](hook-architecture.md) — how OpenClaw agents receive their per-run context

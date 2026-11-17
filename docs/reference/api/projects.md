@@ -4,7 +4,7 @@ Project CRUD + the bootstrap and rules endpoints used by external agents to fetc
 
 ## `GET /api/projects`
 
-Lists every project with task counts. Per-agent active-project state is not included here — read `/api/agents` or `/api/status?agentId=<id>` for that (ADR-0003).
+Lists every project with task counts and derived activity. Per-agent active-project state is not included here — read `/api/agents` or `/api/status?agentId=<id>` for that (ADR-0003).
 
 **Response 200:**
 
@@ -12,10 +12,29 @@ Lists every project with task counts. Per-agent active-project state is not incl
 {
   "ok": true,
   "projects": [
-    { "name": "flowboard", "displayName": "FlowBoard", "archived": false, "group": null, "order": 0, "taskCounts": {"backlog": 12, "in-progress": 3, "review": 4, "done": 80} }
+    {
+      "name": "flowboard", "displayName": "FlowBoard", "archived": false, "group": null, "order": 0,
+      "taskCounts": {"backlog": 12, "in-progress": 3, "review": 4, "done": 80},
+      "activity": {
+        "active": true,
+        "lastActivityAt": "2026-11-17T13:16:19.226Z",
+        "claims": 1,
+        "sessions": 2,
+        "agents": ["claude-code", "dev-agent"]
+      }
+    }
   ]
 }
 ```
+
+`activity` (T-529, [ADR-0044](../../adr/0044-project-activity-from-live-claims-and-recent-bindings.md)) is derived on the server:
+
+- `active` — `true` when an agent holds a live claim in the project (task `in-progress`, claimed, lease not expired) or a session binding or agent-wide binding points at it and was seen within `FLOWBOARD_PROJECT_ACTIVITY_WINDOW_MINUTES` (default 30). Archived projects are never active.
+- `lastActivityAt` — newest claim time, last checkpoint or binding `last_seen` over those sources; `null` when inactive.
+- `claims` — number of live claims; `sessions` — number of recent bindings (session-scoped plus agent-wide).
+- `agents` — agent ids behind those claims and bindings, deduplicated and sorted.
+
+The dashboard uses it for the sidebar activity dot and to pick the start project. The same objects appear in the dashboard snapshot (`GET /api/dashboard/snapshot/v1`).
 
 ## `POST /api/projects`
 

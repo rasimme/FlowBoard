@@ -4,8 +4,12 @@
 
 Returns one versioned, in-process read snapshot for the dashboard shell. The
 optional `agentId` selects the caller's active-project status, and `project`
-selects the currently viewed project's tasks. When `project` is omitted, the
-active project is used.
+selects the currently viewed project's tasks. When `project` is omitted (a
+fresh load), the server picks `viewedProject` in this order: the project with
+the most recent `activity` (see [projects.md](projects.md#get-apiprojects)),
+the caller's active project, another agent's active project, the first
+project. Each entry in `projects` carries the same `activity` object as
+`GET /api/projects`.
 
 ```json
 {

@@ -78,6 +78,7 @@
 - [ADR-0041](docs/adr/0041-default-dashboard-port-18700.md) — Default dashboard port 18700, below OpenClaw's Gateway-derived port block; `setup.mjs --update` keeps an existing install's port
 - [ADR-0042](docs/adr/0042-gateway-api-passthrough-for-native-dashboard.md) — Gateway API passthrough for the native React dashboard: two raw Gateway methods behind an explicit path allow-list
 - [ADR-0043](docs/adr/0043-claim-required-for-agent-task-writes.md) — Claim required for agent task writes: checkpoint/complete on an unclaimed task answer `409 NOT_CLAIMED` with the claim call in the body; refusals are recorded as `rejectedUnclaimed`
+- [ADR-0044](docs/adr/0044-project-activity-from-live-claims-and-recent-bindings.md) — Project activity is derived server-side from live claims and session/agent bindings seen within a window; it drives the sidebar dot and the viewer's start project
 
 ## Reference
 

@@ -84,6 +84,7 @@ ADRs are numbered monotonically: `0001`, `0002`, …. Numbers are assigned at me
 - [ADR-0041](0041-default-dashboard-port-18700.md) — Default dashboard port 18700, clear of OpenClaw's Gateway-derived ports; updates keep an existing install's port (2026-09-25)
 - [ADR-0042](0042-gateway-api-passthrough-for-native-dashboard.md) — Gateway API passthrough for the native React dashboard: two raw Gateway methods behind an explicit path allow-list (2026-11-14; extends ADR-0040)
 - [ADR-0043](0043-claim-required-for-agent-task-writes.md) — Claim required for agent task writes: checkpoint and complete on an unclaimed task answer `409 NOT_CLAIMED` with the fix in the body; refusals are recorded; `PUT` stays ungated (2026-11-17)
+- [ADR-0044](0044-project-activity-from-live-claims-and-recent-bindings.md) — Project activity is derived from live claims and recent session bindings; it drives the sidebar dot and the viewer's start project (2026-11-17)
 
 ## See also
 
