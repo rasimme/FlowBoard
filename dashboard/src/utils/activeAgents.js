@@ -36,6 +36,20 @@ function activeProject(agent) {
   return agent?.active_project ?? agent?.activeProject ?? null;
 }
 
+// T-529: since ADR-0039 an activation usually writes a session binding
+// (`agent.sessions[]` from /api/agents) and leaves `active_project` null.
+// An agent is bound to a project through either.
+function sessionProjects(agent) {
+  return (Array.isArray(agent?.sessions) ? agent.sessions : [])
+    .map((s) => s?.activeProject ?? s?.active_project ?? null)
+    .filter(Boolean);
+}
+
+function isBoundToProject(agent, project) {
+  if (project == null) return false;
+  return activeProject(agent) === project || sessionProjects(agent).includes(project);
+}
+
 /**
  * Group displayable claims by the canonical owner slug without losing a
  * second claim for the same owner. The first occurrence of a task id wins:
@@ -89,7 +103,7 @@ export function buildActiveAgentRows({
     const slug = canonicalAgentSlug(agent);
     if (!slug || seenAgents.has(slug)) continue;
     const claims = claimsByAgent.get(slug) || [];
-    if (activeProject(agent) !== viewedProject && claims.length === 0) continue;
+    if (!isBoundToProject(agent, viewedProject) && claims.length === 0) continue;
     seenAgents.add(slug);
     rows.push({
       agentId: slug,
@@ -195,7 +209,8 @@ export function buildActiveAgentWidgetRows({
  * `FLOWBOARD_AGENT_IDLE_TTL_HOURS` changes), this filters on the
  * threshold's observable *effect*: auto-deactivation nulls `active_project`
  * once an agent trips it. So "routable" mirrors `isAgentIdleExpired`'s own
- * guard clauses — an agent stays eligible when `active_project` is set, or
+ * guard clauses — an agent stays eligible when `active_project` is set (or,
+ * since T-529, it holds a session binding), or
  * it holds a currently-claimed task whose lease has not expired (mirrors
  * the backend's `countLiveClaims`: a claim with no lease is conservatively
  * treated as live).
@@ -210,7 +225,7 @@ export function buildActiveAgentWidgetRows({
  * protects it from being cleared).
  */
 export function isRoutableAgent(agent, tasks = [], now = Date.now()) {
-  if (activeProject(agent) != null) return true;
+  if (activeProject(agent) != null || sessionProjects(agent).length > 0) return true;
   const slug = canonicalAgentSlug(agent);
   if (!slug) return false;
   return (Array.isArray(tasks) ? tasks : []).some((task) => {
@@ -232,8 +247,8 @@ export function buildRoutableAgentRows({ agents = [], tasks = [], viewedProject 
   const list = Array.isArray(agents) ? agents : [];
   const routable = list.filter((agent) => isRoutableAgent(agent, tasks, now));
   return routable.sort((a, b) => {
-    const aHere = viewedProject != null && activeProject(a) === viewedProject ? 0 : 1;
-    const bHere = viewedProject != null && activeProject(b) === viewedProject ? 0 : 1;
+    const aHere = isBoundToProject(a, viewedProject) ? 0 : 1;
+    const bHere = isBoundToProject(b, viewedProject) ? 0 : 1;
     return aHere - bHere;
   });
 }

@@ -1,3 +1,7 @@
+import { mostRecentActiveProject } from './projectActivity.mjs';
+
+export { mostRecentActiveProject };
+
 const AGENT_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function normalizeAgentId(value) {
@@ -40,9 +44,17 @@ export function resolveDashboardAgentIdentity({ urlSearch = '', telegramWebApp =
   };
 }
 
+/**
+ * Which project the viewer shows. An explicit view (the user's own choice,
+ * kept across polls) wins; on a fresh load the most recently active project
+ * wins; then the caller's active project, another agent's active project, and
+ * finally the first project.
+ */
 export function selectViewedProject({ projects = [], agents = [], activeProject = null, currentViewedProject = null } = {}) {
   const names = new Set(projects.map((p) => p?.name).filter(Boolean));
   if (currentViewedProject && names.has(currentViewedProject)) return currentViewedProject;
+  const recentActive = mostRecentActiveProject(projects);
+  if (recentActive) return recentActive;
   if (activeProject && names.has(activeProject)) return activeProject;
 
   const activeAgentProject = agents.find((a) => a?.active_project && names.has(a.active_project))?.active_project;

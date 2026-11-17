@@ -99,6 +99,10 @@ async function run() {
     const t1 = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'Shell task one' })).body?.task?.id;
     const t2 = (await fetchJson(base, 'POST', `/api/projects/${PROJECT}/tasks`, { title: 'Shell task two' })).body?.task?.id;
     ok(!!t1 && !!t2, `seed tasks created (${t1}, ${t2})`);
+    // T-529: another agent's session binding on zzz-bbb, newer than
+    // shell-tester's agent-wide one — the derived activity must open it first.
+    await new Promise(r => setTimeout(r, 20));
+    await fetchJson(base, 'PUT', '/api/status', { agentId: 'activity-probe', project: 'zzz-bbb', sessionKey: 'agent:activity-probe:main' });
 
     const puppeteer = require('puppeteer-core');
     browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new', args: ['--no-sandbox'] });
@@ -107,6 +111,24 @@ async function run() {
     await page.goto(base + '/?agentId=shell-tester', { waitUntil: 'networkidle2' });
     await page.waitForSelector('.app', { timeout: 8000 });
     await page.waitForSelector('#tabBar .tab', { timeout: 8000 });
+
+    // --- Flow 0 (T-529): project activity drives the start project + sidebar dot ---
+    await waitFor(() => page.evaluate(() => !!window.appState?.viewedProject), 'initial viewedProject');
+    ok(await page.evaluate(() => window.appState?.viewedProject === 'zzz-bbb'),
+      'fresh load opens the most recently active project (session binding beats the viewer\'s own older binding)');
+    const dots = await waitFor(() => page.evaluate(() => {
+      const out = {};
+      for (const el of document.querySelectorAll('.project-item')) {
+        const dot = el.querySelector('.agent-pulse');
+        const name = (el.textContent || '').trim();
+        out[name] = dot ? dot.getAttribute('aria-label') : null;
+      }
+      return Object.keys(out).length >= 3 ? out : null;
+    }), 'sidebar items render');
+    const dotFor = (name) => Object.entries(dots).find(([text]) => text.includes(name))?.[1] ?? null;
+    ok(dotFor('zzz-bbb') === 'Active: 1 session', `session-bound project shows the dot (${dotFor('zzz-bbb')})`);
+    ok(dotFor(PROJECT) === 'Active: 1 session', `agent-wide binding shows the dot (${dotFor(PROJECT)})`);
+    ok(dotFor('zzz-aaa') === null, 'idle project has no dot');
 
     // Select the project (real sidebar click when present, else the documented
     // _viewProject entry point — both end in the same reactive update).
@@ -138,6 +160,15 @@ async function run() {
     await page.click('#tabBar .tab[data-tab="tasks"]');
     await waitFor(() => page.$('.kanban'), 'back to kanban');
     ok(true, 'tab switching mounts the right view both ways');
+
+    // T-529: an explicit choice survives the next background poll even though
+    // zzz-bbb is the more recently active project.
+    await new Promise(r => setTimeout(r, 6000));
+    ok(await page.evaluate((p) => window.appState?.viewedProject === p, PROJECT),
+      'explicit project choice is not replaced by activity on a later poll');
+    // Later flows reload the page (setViewport) and expect to land on PROJECT
+    // again; drop the probe binding so PROJECT is the only active project.
+    await fetchJson(base, 'PUT', '/api/status', { agentId: 'activity-probe', project: null, sessionKey: 'agent:activity-probe:main' });
 
     // --- Flow 3: agents fetch propagated into appState ---
     const agentsOk = await page.evaluate(() => Array.isArray(window.appState?.agents) && window.appState.agents.some(a => a.agent_id === 'shell-tester'));

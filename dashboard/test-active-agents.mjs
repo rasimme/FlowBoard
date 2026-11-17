@@ -180,6 +180,36 @@ assert.equal(
   'buildActiveAgentRows forwards the configured scheduler threshold to lease health',
 );
 
+// T-529: a session-scoped binding (ADR-0039) binds the agent like the
+// agent-wide active_project does.
+const sessionRows = buildActiveAgentRows({
+  viewedProject: 'flowboard',
+  now: NOW,
+  agents: [
+    { agent_id: 'session-bound', active_project: null, sessions: [{ sessionKey: 's1', activeProject: 'flowboard' }] },
+    { agent_id: 'elsewhere', active_project: null, sessions: [{ sessionKey: 's2', activeProject: 'creon' }] },
+  ],
+  tasks: [],
+});
+assert.deepEqual(sessionRows.map((row) => row.agentId), ['session-bound'], 'T-529: session-bound agent shows as idle on its project only');
+assert.equal(
+  isRoutableAgent({ agent_id: 'session-only', active_project: null, sessions: [{ sessionKey: 's', activeProject: 'creon' }] }, [], NOW),
+  true,
+  'T-529: an agent with only a session binding is routable',
+);
+assert.deepEqual(
+  buildRoutableAgentRows({
+    viewedProject: 'flowboard',
+    now: NOW,
+    agents: [
+      { agent_id: 'a-other', active_project: 'creon' },
+      { agent_id: 'b-session-here', active_project: null, sessions: [{ sessionKey: 's', activeProject: 'flowboard' }] },
+    ],
+  }).map((a) => a.agent_id),
+  ['b-session-here', 'a-other'],
+  'T-529: session-bound agents sort first in the route popover',
+);
+
 assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.CURRENT), 'Current', 'current lease health has a visible label');
 assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.STALE), 'Stale', 'stale lease health has a visible label');
 assert.equal(activeAgentLeaseHealthLabel(LEASE_HEALTH.EXPIRED), 'Expired', 'expired lease health has a visible label');

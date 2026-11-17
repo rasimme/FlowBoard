@@ -4,6 +4,7 @@ import { Archive, ChevronDown, Folder, FolderPlus, GripVertical, Plus, Upload } 
 import { useAppState } from '../context/AppStateContext.jsx';
 import { useDashboard } from '../context/DashboardContext.jsx';
 import { formatDisplayName } from '../utils/formatting.js';
+import { projectActivityLabel } from '../utils/projectActivity.mjs';
 import { apiFetch } from '../utils/apiFetch.js';
 import CreateProjectModal from './CreateProjectModal.jsx';
 import Modal from './Modal.jsx';
@@ -94,7 +95,6 @@ function ProjectItem({
   project,
   section,
   isViewed,
-  hasAgentActivity,
   allProjects,
   folders,
   renaming,
@@ -114,6 +114,9 @@ function ProjectItem({
 }) {
   const [renameValue, setRenameValue] = useState(project.displayName || project.name);
   const inputRef = useRef(null);
+  // T-529 (ADR-0044): the dot reads the server-derived project activity
+  // (live claims + recently seen session/agent bindings), never active_project.
+  const activityLabel = projectActivityLabel(project);
 
   useLayoutEffect(() => {
     if (renaming) {
@@ -177,11 +180,12 @@ function ProjectItem({
       ) : (
         <span className="proj-name">{formatDisplayName(project.name, allProjects)}</span>
       )}
-      {!renaming && hasAgentActivity && (
+      {!renaming && activityLabel && (
         <span
           className="agent-pulse"
-          aria-label="Agent active on this project"
-          title="Agent active on this project"
+          role="img"
+          aria-label={activityLabel}
+          title={activityLabel}
         >
           <span className="agent-pulse-halo" />
           <span className="agent-pulse-dot" />
@@ -254,17 +258,6 @@ export default function Sidebar() {
   const projects = state?.projects || [];
   const activeProject = state?.activeProject;
   const viewedProject = state?.viewedProject;
-  // T-161 B4 Pulse: set of project names that have at least one agent actively
-  // working on them. Source of truth is flowboard_agents via /api/agents.
-  // Kept deliberately independent of state.activeProject (legacy single-active
-  // concept) so Layer 1 (project activity) ≠ Layer 2 (task claim).
-  const agentActiveProjects = useMemo(() => {
-    const set = new Set();
-    for (const a of state?.agents || []) {
-      if (a?.active_project) set.add(a.active_project);
-    }
-    return set;
-  }, [state?.agents]);
 
   const { rootItems, folders, folderItems, archiveItems } = useMemo(() => {
     const active = [];
@@ -726,7 +719,6 @@ export default function Sidebar() {
       project={p}
       section={sectionKey}
       isViewed={p.name === viewedProject}
-      hasAgentActivity={agentActiveProjects.has(p.name)}
       allProjects={projects}
       folders={folders}
       renaming={renamingName === p.name}

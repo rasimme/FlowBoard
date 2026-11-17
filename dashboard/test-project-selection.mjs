@@ -108,4 +108,40 @@ assert.equal(
   'falls back to first project'
 )
 
+// T-529 (ADR-0044): server-derived project activity drives the start project.
+const act = (name, active, lastActivityAt) => ({
+  name,
+  activity: { active, lastActivityAt, claims: active ? 1 : 0, sessions: 0, agents: [] },
+})
+const activeProjects = [act('alpha', false, null), act('flowboard', true, '2026-11-17T10:00:00.000Z'), act('zeta', true, '2026-11-17T11:00:00.000Z')]
+assert.equal(
+  selection.selectViewedProject({ projects: activeProjects, agents, activeProject: 'alpha' }),
+  'zeta',
+  'T-529: fresh load opens the most recently active project'
+)
+assert.equal(
+  selection.selectViewedProject({ projects: activeProjects, agents, currentViewedProject: 'alpha' }),
+  'alpha',
+  'T-529: an explicit view is never replaced by activity on a later poll'
+)
+assert.equal(
+  selection.selectViewedProject({ projects: [act('alpha', false, null), act('zeta', false, null)], agents: [], activeProject: 'zeta' }),
+  'zeta',
+  'T-529: without activity the previous fallback holds'
+)
+assert.equal(
+  selection.mostRecentActiveProject([{ ...act('zeta', true, '2026-11-17T11:00:00.000Z'), archived: true }]),
+  null,
+  'T-529: archived projects never win'
+)
+
+const activityUi = await import('./src/utils/projectActivity.mjs')
+const label = (activity, extra = {}) => activityUi.projectActivityLabel({ name: 'p', activity, ...extra })
+assert.equal(label({ active: true, claims: 2, sessions: 1 }), 'Active: 2 claims, 1 session')
+assert.equal(label({ active: true, claims: 1, sessions: 0 }), 'Active: 1 claim')
+assert.equal(label({ active: true, claims: 0, sessions: 3 }), 'Active: 3 sessions')
+assert.equal(label({ active: false, claims: 0, sessions: 0 }), null, 'inactive project has no dot')
+assert.equal(label(undefined), null, 'missing activity (older server) has no dot')
+assert.equal(label({ active: true, claims: 1, sessions: 0 }, { archived: true }), null, 'archived project has no dot')
+
 console.log('✅ project-selection tests passed')

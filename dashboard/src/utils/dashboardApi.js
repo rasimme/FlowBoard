@@ -114,6 +114,18 @@ function validateProject(project, index, path) {
     require(hasOwn(project.taskCounts, field) && isNonNegativeInteger(project.taskCounts[field]), path,
       `${at}.taskCounts.${field} to be a non-negative integer`);
   }
+
+  // T-529: derived project activity. Optional so a dashboard bundle keeps
+  // working against a server that predates the field.
+  if (project.activity !== undefined) {
+    const activity = project.activity;
+    require(isRecord(activity), path, `${at}.activity to be an object`);
+    require(typeof activity.active === 'boolean', path, `${at}.activity.active to be a boolean`);
+    require(isNullableString(activity.lastActivityAt), path, `${at}.activity.lastActivityAt to be a string or null`);
+    require(isNonNegativeInteger(activity.claims), path, `${at}.activity.claims to be a non-negative integer`);
+    require(isNonNegativeInteger(activity.sessions), path, `${at}.activity.sessions to be a non-negative integer`);
+    require(isStringArray(activity.agents), path, `${at}.activity.agents to be an array of strings`);
+  }
 }
 
 function validateAgent(agent, index, path) {
