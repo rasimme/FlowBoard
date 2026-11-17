@@ -4,11 +4,23 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  # Root: the build toolchain only (pinned openclaw CLI, esbuild). Nothing here
+  # ships in the published package; see CONTRIBUTING.md "Build pin and
+  # dependency audit" before raising the openclaw pin.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    groups:
+      build-toolchain:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /dashboard
     schedule:
       interval: weekly
+    groups:
+      dashboard-minor-patch:
+        update-types: ["minor", "patch"]
