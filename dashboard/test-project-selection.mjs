@@ -135,6 +135,22 @@ assert.equal(
   'T-529: archived projects never win'
 )
 
+// The server snapshot (project-activity.js) and the client selector use the
+// same rule; keep them in step.
+const { createRequire } = await import('node:module')
+const serverActivity = createRequire(import.meta.url)('./project-activity.js')
+const parityFixtures = [
+  activeProjects,
+  [act('a', true, '2026-11-17T10:00:00.000Z'), act('b', true, '2026-11-17T10:00:00.000Z')],
+  [act('a', true, null), act('b', true, 'not a date'), act('c', false, '2026-11-17T12:00:00.000Z')],
+  [{ ...act('a', true, '2026-11-17T12:00:00.000Z'), archived: true }, act('b', true, '2026-11-17T09:00:00.000Z')],
+  [],
+]
+for (const fixture of parityFixtures) {
+  assert.equal(selection.mostRecentActiveProject(fixture), serverActivity.mostRecentActiveProject(fixture),
+    'T-529: client and server start-project rules agree')
+}
+
 const activityUi = await import('./src/utils/projectActivity.mjs')
 const label = (activity, extra = {}) => activityUi.projectActivityLabel({ name: 'p', activity, ...extra })
 assert.equal(label({ active: true, claims: 2, sessions: 1 }), 'Active: 2 claims, 1 session')

@@ -14,9 +14,10 @@
  *
  * Archived projects are never active. The function is pure: callers pass the
  * cached claims and the two binding tables, so a request never scans the
- * event store. Only the `active` booleans depend on `nowMs`; every other field
- * is a plain projection of stored timestamps, which keeps the dashboard
- * snapshot ETag stable between polls while nothing changes.
+ * event store. The result depends on `nowMs` only through which sources are
+ * live or fresh; all values are projections of stored timestamps, so the
+ * output changes only when a source enters or leaves the active set. That
+ * keeps the dashboard snapshot ETag stable between polls while nothing changes.
  */
 
 const DEFAULT_ACTIVITY_WINDOW_MINUTES = 30;
@@ -101,20 +102,36 @@ function deriveProjectActivity({
     bump(e, claim.claimedAt, claim.lastCheckpointAt);
   }
 
+  // Agents seen working through a session binding or a live claim. Their
+  // flowboard_agents.last_seen is refreshed by that work too (claims and
+  // session activations touch it), so it says nothing about an old
+  // agent-wide binding of the same agent.
+  const busyAgents = new Set();
+  for (const claim of claims) {
+    if (eligible.has(claim?.project) && isLiveClaim(claim, nowMs)) busyAgents.add(String(claim.agent));
+  }
+
   for (const binding of sessionBindings) {
     const project = binding?.active_project;
     if (!eligible.has(project) || !isFreshBinding(binding.last_seen, nowMs, windowMs)) continue;
     const e = entry(project);
     e.sessions++;
-    if (binding.agent_id) e.agents.add(String(binding.agent_id));
+    if (binding.agent_id) {
+      e.agents.add(String(binding.agent_id));
+      busyAgents.add(String(binding.agent_id));
+    }
     bump(e, binding.last_seen);
   }
 
   // Legacy agent-wide binding (pre-ADR-0039 and explicit agent-scope
-  // activations). It counts as one binding of that agent.
+  // activations). It counts as one binding of that agent, and only for an
+  // agent that has no fresh session binding and no live claim: otherwise its
+  // heartbeat comes from that other work, and a same-project session binding
+  // would count the agent twice.
   for (const agent of agents) {
     const project = agent?.active_project;
     if (!eligible.has(project) || !isFreshBinding(agent.last_seen, nowMs, windowMs)) continue;
+    if (agent.agent_id && busyAgents.has(String(agent.agent_id))) continue;
     const e = entry(project);
     e.sessions++;
     if (agent.agent_id) e.agents.add(String(agent.agent_id));

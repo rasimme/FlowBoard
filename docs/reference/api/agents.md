@@ -19,7 +19,7 @@ Lists every row in `flowboard_agents`. Used by the UI's active-agents bar.
       "active_project": "flowboard",
       "activated_at": "2026-05-02T22:23:09.339Z",
       "sessions": [
-        { "sessionKey": "agent:claude-code:telegram:4711", "activeProject": "creon", "activatedAt": "2026-09-20T09:12:00.000Z", "lastSeen": "2026-09-20T09:40:00.000Z" }
+        { "sessionKey": "agent:claude-code:telegram:4711", "activeProject": "creon", "activatedAt": "2026-09-20T09:12:00.000Z", "lastSeen": "2026-09-20T09:40:00.000Z", "active": true }
       ]
     }
   ]
@@ -28,7 +28,9 @@ Lists every row in `flowboard_agents`. Used by the UI's active-agents bar.
 
 `sessions` (ADR-0039) is additive and may be empty: one entry per session-scoped
 project binding of that agent. The legacy `agent_id` / `active_project` fields
-are unchanged.
+are unchanged. `active` (T-529, ADR-0044) is `true` while the binding's
+`lastSeen` is within `FLOWBOARD_PROJECT_ACTIVITY_WINDOW_MINUTES`; the Active
+Agents bar and overview widgets only count active sessions.
 
 ## `DELETE /api/agents/:id`
 

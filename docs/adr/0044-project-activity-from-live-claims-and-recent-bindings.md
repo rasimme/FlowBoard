@@ -41,8 +41,12 @@ abandoned yesterday still looks bound.
      `last_seen` is within the activity window. The window defaults to 30
      minutes and is set with `FLOWBOARD_PROJECT_ACTIVITY_WINDOW_MINUTES`.
 
-   Archived projects are never active. Several projects can be active at the
-   same time.
+   An agent-wide binding counts only for an agent without a fresh session
+   binding and without a live claim: claims and session activations refresh
+   `flowboard_agents.last_seen` too, so for such an agent the heartbeat says
+   nothing about its old agent-wide binding, and a same-project session would
+   count the agent twice. Archived projects are never active. Several projects
+   can be active at the same time.
 
 2. **The server derives it; clients only read it.** Every project in
    `GET /api/projects` and in the dashboard snapshot carries
@@ -53,10 +57,11 @@ abandoned yesterday still looks bound.
    deduplicated and sorted. The derivation reads the RAM task cache and the two
    binding tables only, never the event store.
 
-3. **The snapshot ETag stays stable.** Only the `active` booleans depend on the
-   current time; every other field is a projection of stored timestamps. A
-   poll with nothing changed still gets `304`; a claim expiring or a binding
-   leaving the window changes the snapshot.
+3. **The snapshot ETag stays stable.** The current time only decides which
+   sources are live or fresh; every value is a projection of stored
+   timestamps, so `activity` changes only when a source enters or leaves the
+   active set. A poll with nothing changed still gets `304`; a claim expiring
+   or a binding leaving the window changes the snapshot.
 
 4. **Start project.** The viewer keeps an explicit view first. On a fresh load
    (no viewed project yet) it opens the active project with the most recent
@@ -67,9 +72,11 @@ abandoned yesterday still looks bound.
    activity on a later poll.
 
 5. **The activity dot reads `project.activity.active`**, labelled for example
-   "Active: 2 claims, 1 session". The Active Agents bar, the overview widgets
-   and the route popover also treat a session binding as binding the agent to
-   its project.
+   "Active: 2 claims, 1 session". The Active Agents bar and the overview
+   widgets also treat a session binding as binding the agent to its project,
+   as long as it is within the window (`GET /api/agents` marks each session
+   with `active`). The route popover keeps listing every agent with a binding
+   until the idle TTL removes it.
 
 6. **The agent prompt is unchanged.** `FLOWBOARD.md` and the rules manifest do
    not include activity.
@@ -79,7 +86,9 @@ abandoned yesterday still looks bound.
 - The dot and the start project work again for session-scoped activations and
   stop showing projects nobody has touched within the window.
 - An agent-wide binding of an agent that keeps calling `GET /api/status` stays
-  active, because every such call refreshes `last_seen`.
+  active, because every such call refreshes `last_seen`. Claims and session
+  activations refresh it as well; that is why an agent working through a
+  session or a claim does not keep its agent-wide project active.
 - On a fresh load, an active project of another agent wins over the viewer's
   own older or inactive binding. Users who want a specific project pick it;
   that choice holds until the page is reloaded.

@@ -86,6 +86,9 @@ async function main() {
       { ...projects.gamma.activity, lastActivityAt: undefined },
       { active: true, lastActivityAt: undefined, claims: 0, sessions: 1, agents: ['dev-agent'] },
     );
+    const agentsRes = await api('GET', '/agents');
+    const devAgent = agentsRes.body.agents.find(a => a.agent_id === 'dev-agent');
+    assert.equal(devAgent.sessions[0].active, true, '/api/agents marks a fresh session active');
     ok('a fresh session binding makes its project active');
 
     snap = await snapshot();
@@ -114,6 +117,9 @@ async function main() {
     }
     projects = await projectsByName();
     assert.equal(projects.gamma.activity.active, false);
+    const agedAgents = await api('GET', '/agents');
+    assert.equal(agedAgents.body.agents.find(a => a.agent_id === 'dev-agent').sessions[0].active, false,
+      '/api/agents marks an old session inactive');
     ok('a session binding older than the window is not active');
 
     const afterAgeing = await snapshot('?project=alpha', { 'If-None-Match': first.etag });

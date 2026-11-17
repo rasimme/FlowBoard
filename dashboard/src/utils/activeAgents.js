@@ -38,16 +38,19 @@ function activeProject(agent) {
 
 // T-529: since ADR-0039 an activation usually writes a session binding
 // (`agent.sessions[]` from /api/agents) and leaves `active_project` null.
-// An agent is bound to a project through either.
-function sessionProjects(agent) {
+// An agent is bound to a project through either. `freshOnly` skips sessions
+// the server marks as outside the project-activity window (`active: false`,
+// ADR-0044); a server without the flag counts every session.
+function sessionProjects(agent, { freshOnly = false } = {}) {
   return (Array.isArray(agent?.sessions) ? agent.sessions : [])
+    .filter((s) => !freshOnly || s?.active !== false)
     .map((s) => s?.activeProject ?? s?.active_project ?? null)
     .filter(Boolean);
 }
 
 function isBoundToProject(agent, project) {
   if (project == null) return false;
-  return activeProject(agent) === project || sessionProjects(agent).includes(project);
+  return activeProject(agent) === project || sessionProjects(agent, { freshOnly: true }).includes(project);
 }
 
 /**

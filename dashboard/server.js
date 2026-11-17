@@ -1861,6 +1861,9 @@ function listDashboardAgents() {
         activeProject: s.active_project || null,
         activatedAt: s.activated_at,
         lastSeen: s.last_seen,
+        // T-529 (ADR-0044): seen within the project-activity window. Flips
+        // only when the binding enters or leaves the window.
+        active: nowMs - Date.parse(s.last_seen) <= PROJECT_ACTIVITY_WINDOW_MINUTES * 60 * 1000,
       });
     }
     // Additive field — existing consumers (ActiveAgentsBar, overview widgets,

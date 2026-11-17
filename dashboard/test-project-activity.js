@@ -131,6 +131,20 @@ check('legacy agent-wide binding counts when recently seen', () => {
   assert.equal(result.get('beta').active, false);
 });
 
+check('legacy binding is ignored for an agent working elsewhere (claim or session) and never counted twice', () => {
+  const result = derive({
+    claims: [liveClaim({ project: 'beta', agent: 'worker' })],
+    sessionBindings: [{ agent_id: 'dev', session_key: 's', active_project: 'gamma', last_seen: iso(-1 * MIN) }],
+    agents: [
+      { agent_id: 'worker', active_project: 'alpha', last_seen: iso(0) },
+      { agent_id: 'dev', active_project: 'gamma', last_seen: iso(0) },
+    ],
+  });
+  assert.equal(result.get('alpha').active, false, 'heartbeat from the claim in beta does not revive alpha');
+  assert.equal(result.get('beta').claims, 1);
+  assert.equal(result.get('gamma').sessions, 1, 'session + agent-wide binding of one agent count once');
+});
+
 check('archived projects are never active', () => {
   const result = derive({
     claims: [liveClaim({ project: 'old' })],

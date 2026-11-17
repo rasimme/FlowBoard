@@ -188,10 +188,11 @@ const sessionRows = buildActiveAgentRows({
   agents: [
     { agent_id: 'session-bound', active_project: null, sessions: [{ sessionKey: 's1', activeProject: 'flowboard' }] },
     { agent_id: 'elsewhere', active_project: null, sessions: [{ sessionKey: 's2', activeProject: 'creon' }] },
+    { agent_id: 'stale-session', active_project: null, sessions: [{ sessionKey: 's3', activeProject: 'flowboard', active: false }] },
   ],
   tasks: [],
 });
-assert.deepEqual(sessionRows.map((row) => row.agentId), ['session-bound'], 'T-529: session-bound agent shows as idle on its project only');
+assert.deepEqual(sessionRows.map((row) => row.agentId), ['session-bound'], 'T-529: fresh session-bound agent shows as idle on its project only; a session outside the activity window does not');
 assert.equal(
   isRoutableAgent({ agent_id: 'session-only', active_project: null, sessions: [{ sessionKey: 's', activeProject: 'creon' }] }, [], NOW),
   true,
