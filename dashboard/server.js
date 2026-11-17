@@ -97,6 +97,7 @@ const {
   readRateLimitConfig,
 } = require('./rate-limiter.js');
 const { buildDashboardSnapshot } = require('./dashboard-snapshot.js');
+const projectActivity = require('./project-activity.js');
 const { installPrivacyFilter } = require('./privacy-filter.js');
 const taskTransitionGuard = require('./task-transition-guard.js');
 const { autoPlaceNote } = require('./canvas-placement.js');
@@ -1803,6 +1804,30 @@ function getTaskCounts(projectName) {
   return hzlService.getTaskCounts(projectName);
 }
 
+// T-529 (ADR-0044): the project list read model shared by GET /api/projects
+// and the dashboard snapshot. `activity` is derived from the RAM task cache
+// (claims) and the two small binding tables — no event-store reads.
+const PROJECT_ACTIVITY_WINDOW_MINUTES = projectActivity.activityWindowMinutes(
+  process.env.FLOWBOARD_PROJECT_ACTIVITY_WINDOW_MINUTES,
+);
+
+function listProjectsWithActivity(nowMs = Date.now()) {
+  const projects = fbMeta.listProjects(hzlService.listHzlProjects());
+  const activity = projectActivity.deriveProjectActivity({
+    projects,
+    claims: hzlService.listClaimedTasks(),
+    sessionBindings: fbMeta.listAllSessionBindings(),
+    agents: fbMeta.listAgents(),
+    nowMs,
+    windowMinutes: PROJECT_ACTIVITY_WINDOW_MINUTES,
+  });
+  return projects.map(p => ({
+    ...p,
+    taskCounts: getTaskCounts(p.name),
+    activity: activity.get(p.name) || projectActivity.inactiveActivity(),
+  }));
+}
+
 // Shared in-process agent read model for /api/agents and the versioned
 // dashboard snapshot. Keeping the idle cleanup here avoids re-fetching the
 // same agent state through the HTTP stack when the dashboard polls.
@@ -2212,13 +2237,14 @@ app.post('/api/projects/:name/restore', (req, res) => {
 // per-agent rows — read /api/agents (list with active_project per agent)
 // or /api/status?agentId=<id> for one. Frontend already uses /api/agents
 // (Sidebar.jsx:215-228) as the source of truth.
+//
+// T-529 (ADR-0044): every project carries a derived `activity` object
+// ({ active, lastActivityAt, claims, sessions, agents }) — live claims plus
+// session/agent bindings seen within FLOWBOARD_PROJECT_ACTIVITY_WINDOW_MINUTES.
+// The sidebar dot and the viewer's start project read it.
 app.get('/api/projects', (req, res) => {
   try {
-    const hzlProjects = hzlService.listHzlProjects();
-    const projects = fbMeta.listProjects(hzlProjects).map(p => ({
-      ...p,
-      taskCounts: getTaskCounts(p.name),
-    }));
+    const projects = listProjectsWithActivity();
     return res.json({ ok: true, projects });
   } catch (e) {
     console.error('[projects] Failed to list DB-backed projects:', e.message);
@@ -2587,13 +2613,7 @@ app.get('/api/dashboard/snapshot/v1', (req, res) => {
     const snapshot = buildDashboardSnapshot({
       agentId,
       requestedProject,
-      listProjects: () => {
-        const hzlProjects = hzlService.listHzlProjects();
-        return fbMeta.listProjects(hzlProjects).map(p => ({
-          ...p,
-          taskCounts: getTaskCounts(p.name),
-        }));
-      },
+      listProjects: () => listProjectsWithActivity(),
       listAgents: listDashboardAgents,
       getStatus: (id) => {
         if (!id) return { agentId: null, activeProject: null, contextReady: false };

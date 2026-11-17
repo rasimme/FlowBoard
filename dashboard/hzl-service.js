@@ -4519,6 +4519,31 @@ function listTasksClaimedBy(agentId) {
   return out;
 }
 
+/**
+ * T-529: every task in the RAM cache that currently carries a claim
+ * (`agent` and `claimedAt` set), across all projects, in one pass. Feeds the
+ * project-activity derivation (project-activity.js), which decides liveness;
+ * this read never touches the event store.
+ */
+function listClaimedTasks() {
+  const out = [];
+  for (const [, task] of _cache) {
+    if (!task.agent || !task.claimedAt) continue;
+    if (task.status === 'archived') continue;
+    out.push({
+      project: task._project,
+      id: task.id,
+      agent: task.agent,
+      status: task.status,
+      claimedAt: task.claimedAt,
+      leaseUntil: task.leaseUntil || null,
+      lastCheckpointAt: task.lastCheckpointAt || null,
+      trashedAt: task.trashedAt || null,
+    });
+  }
+  return out;
+}
+
 // =============================================================================
 // --- Canvas store (T-344-1) ---
 //
@@ -4945,6 +4970,7 @@ module.exports = {
   getEventsDb,
   listHzlProjects,
   listTasksClaimedBy,
+  listClaimedTasks,
   // T-344-1: canvas DB store (replaces canvas.json, see ADR-0025 draft)
   canvasEnsureSchema,
   canvasGet,

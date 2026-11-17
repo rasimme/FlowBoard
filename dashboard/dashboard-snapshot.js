@@ -9,6 +9,8 @@
  * as data in `sections`, while the response remains a valid versioned envelope.
  */
 
+const { mostRecentActiveProject } = require('./project-activity.js');
+
 const SNAPSHOT_VERSION = 1;
 const SECTION_NAMES = ['projects', 'agents', 'status', 'tasks'];
 
@@ -72,9 +74,12 @@ function buildDashboardSnapshot({
   const projectNames = new Set(projects.map(project => project?.name).filter(Boolean));
   const activeAgentProject = agents.find(agent => agent?.active_project
     && projectNames.has(agent.active_project))?.active_project || null;
-  // Match the legacy selector: preserve an explicit view, then the caller's
-  // active project, then another agent's active project, then the first project.
+  // Match the client selector (projectSelection.mjs): preserve an explicit
+  // view, then the project with the most recent activity (T-529, ADR-0044),
+  // then the caller's active project, then another agent's active project,
+  // then the first project.
   const viewedProject = (projectHint && projectNames.has(projectHint) ? projectHint : null)
+    || mostRecentActiveProject(projects)
     || (activeProject && projectNames.has(activeProject) ? activeProject : null)
     || activeAgentProject
     || projects.find(project => project?.name)?.name
