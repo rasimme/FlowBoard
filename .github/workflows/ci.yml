@@ -156,9 +156,10 @@ jobs:
         run: npm ci
         working-directory: dashboard
       # The canary packs the repo, and the artifact must contain the Control UI
-      # bundle or a feature host cannot load the page.
-      - name: Build Control UI bundle
-        run: node scripts/build-native-ui.mjs
+      # bundle under dist/control-ui/ or a feature host cannot load the page.
+      # build:plugin compiles it and places it there with the pinned CLI.
+      - name: Build plugin metadata and Control UI bundle
+        run: npm run build:plugin
       - name: Install OpenClaw ${{ matrix.host }}
         run: npm install --prefix "$RUNNER_TEMP/openclaw-host" "openclaw@${{ matrix.host }}"
       - name: Release install canary (openclaw ${{ matrix.host }})
