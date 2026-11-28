@@ -91,6 +91,6 @@
   ],
   "devDependencies": {
     "esbuild": "0.28.2",
-    "openclaw": "2026.9.6"
+    "openclaw": "2026.11.10"
   }
 }
